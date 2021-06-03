@@ -13,15 +13,10 @@ TBD
 
 
 ## Developer Documentation
-A quick note on package naming: A keen observer will notice that our package (as defined in `setup.cfg`) is named
-`libera_sdp` but the pip package directory on Nexus is named `libera-sdp`. 
-Both names will work for `pip install` but
-hyphens are not allowed in Python package names and underscores are automatically replaced with hyphens 
-in PyPI to facilitate nicely formatted URLs.
-The upshot is that `libera_sdp` is the same as `libera-sdp` for pip installation purposes.
+The LASP Python style guide can be found here on Confluence, here: [https://confluence.lasp.colorado.edu/x/XiqyAw]()
 
 
-## Git-LFS
+### Git-LFS
 We use Git-LFS to manage large file storage while maintaining git clone performance. To add a large file to repository,
 first consider whether it's really necessary. Upon that consideration, run `git-lfs track <pattern>` where `<pattern>` 
 is a pattern that matches the file you are adding. The patterns are the same as those you might use 
