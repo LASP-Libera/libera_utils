@@ -1,4 +1,4 @@
-test_data filter=lfs diff=lfs merge=lfs -text
+
 **/de440.bsp filter=lfs diff=lfs merge=lfs -text
 tests/test_data/testtextfile.txt.gz filter=lfs diff=lfs merge=lfs -text
 tests/test_data/tier0_geo/CER_BDS_NOAA20-FM6_Edition1_100111.20210409.lonlat.2min.csv filter=lfs diff=lfs merge=lfs -text
