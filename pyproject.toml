@@ -1,0 +1,9 @@
+[build-system]
+# Minimum requirements for the build system to execute.
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "libera_sdp/_version.py"
+version_scheme = "post-release"
+
