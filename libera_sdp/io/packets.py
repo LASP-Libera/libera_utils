@@ -3,9 +3,14 @@ import logging
 
 import numpy as np
 
-from lasp_packets import xtce, parser
 
 logger = logging.getLogger(__name__)
+_attitude_fields = [
+    'ADAET2DAY', 'ADAET2MS', 'ADAET2US', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3', 'ADCFAQ4'
+]  # Name origin is the JPSS packet definition
+_ephemeris_fields = [
+    'ADAET1DAY', 'ADAET1MS', 'ADAET1US', 'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ', 'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'
+]  # Name origin is the JPSS packet definition
 
 
 def array_from_packets(packets: list, apid: int = None):
