@@ -1,8 +1,53 @@
 """Tests for kernels module"""
 import pytest
 
+import numpy as np
+
 from libera_sdp import kernels
 
 
-def test_test_function():
-    assert kernels.simple_test_function() == -9
+def test_write_kernel_input_file(tmp_path):
+    """Test writing ephemeris or attitude data to an input file for MSOPCK or MKSPK"""
+    filepath = tmp_path / 'ephemeris.txt'
+    data = np.array([
+        (23109, 7, 137, 159, 23109, 30, 941, 6389695.5, 2786021.5, 1825377.375, 2383.52880859, -785.88641357,
+         -7105.89892578, 23108, 86399930, 941, -0.21635266, 0.76247245, 0.25699475, 0.5529747),
+        (23109, 1005, 176, 159, 23109, 1030, 945, 6392075.5, 2785233.75, 1818270.5, 2376.63305664, -789.18908691,
+         -7107.84667969, 23109, 930, 945, -0.21621905, 0.76218551, 0.25710732, 0.55337006),
+        (23109, 2007, 518, 159, 23109, 2030, 940, 6394449., 2784443., 1811161.75, 2369.73461914, -792.4899292,
+         -7109.78662109, 23109, 1930, 940, -0.2160861, 0.76189834, 0.25721949, 0.55376518),
+        (23109, 3005, 706, 159, 23109, 3030, 940, 6396815., 2783648.75, 1804051., 2362.83325195, -795.78894043,
+         -7111.71875, 23109, 2930, 940, -0.21595182, 0.76161075, 0.25733218, 0.55416065),
+        (23109, 4007, 267, 159, 23109, 4030, 940, 6399174.5, 2782851.25, 1796938.25, 2355.92871094, -799.08605957,
+         -7113.64355469, 23109, 3930, 940, -0.21582, 0.7613225, 0.25744519, 0.55455542)
+    ], dtype=[
+        ('DOY', '<i8'), ('MSEC', '<i8'), ('USEC', '<i8'),
+        ('ADAESCID', '<i8'),
+        ('ADAET1DAY', '<i8'), ('ADAET1MS', '<i8'), ('ADAET1US', '<i8'),
+        ('ADGPSPOSX', '<f8'), ('ADGPSPOSY', '<f8'), ('ADGPSPOSZ', '<f8'),
+        ('ADGPSVELX', '<f8'), ('ADGPSVELY', '<f8'), ('ADGPSVELZ', '<f8'),
+        ('ADAET2DAY', '<i8'), ('ADAET2MS', '<i8'), ('ADAET2US', '<i8'),
+        ('ADCFAQ1', '<f8'), ('ADCFAQ2', '<f8'), ('ADCFAQ3', '<f8'), ('ADCFAQ4', '<f8')
+    ])
+    fields = [
+        'ADAET1DAY', 'ADAET1MS', 'ADAET1US',
+        'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ',
+        'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'
+    ]
+    kernels.write_kernel_input_file(data, filepath, fields)
+
+
+def test_write_kernel_setup_file(tmp_path):
+    """Test writing a setup file for MSOPCK or MKSPK"""
+    filepath = tmp_path / 'setup.txt'
+    defaults = {
+        "INPUT_DATA_TYPE": "MATRICES",
+        "INPUT_TIME_TYPE": "ET",
+        "ANGULAR_RATE_PRESENT": 'MAKE UP/NO AVERAGING',
+        "CK_TYPE": 3,
+        "LIST_OF_VALUES": ["FIELD1", "FIELD2", "FIELD3"],
+        "DICT_OF_VALUES": {'DISTANCES': 'METERS', 'ANGLES': 'DEGREES'},
+        "SOME_FILEPATH": "myfile"
+    }
+    kernels.write_kernel_setup_file(defaults, filepath)
+    print(filepath)
