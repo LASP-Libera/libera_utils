@@ -1,8 +1,18 @@
 """Module for dealing with time and time convensions"""
+import re
 from astropy import time as aptime
 import numpy as np
 
-_ccsds_jd_epoch = np.float64(2436204.5)
+_CCSDS_JD_EPOCH = np.float64(2436204.5)
+
+ISOT_REGEX = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
+                        r"[T|t]"
+                        r"(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})"
+                        r"(?:\.(?P<fractional_second>[0-9]*))?$")
+
+PRINTABLE_TS_REGEX = re.compile(r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})"
+                                r"[T|t]"
+                                r"(?P<hour>[0-9]{2})(?P<minute>[0-9]{2})(?P<second>[0-9]{2})$")
 
 
 def ccsdsjd_2_jd(ccsds_jd: np.float64 or np.ndarray):
@@ -18,11 +28,11 @@ def ccsdsjd_2_jd(ccsds_jd: np.float64 or np.ndarray):
     : np.float64 or np.ndarray
         Julian day
     """
-    return ccsds_jd + _ccsds_jd_epoch
+    return ccsds_jd + _CCSDS_JD_EPOCH
 
 
-def tuple_2_jd(days: np.int64 or np.ndarray, ms: np.int64 or np.ndarray, us: np.int64 or np.ndarray):
-    """Convert a tuple of days, milliseconds, microseconds to a Julian day representation.
+def days_ms_us_2_decimal_days(days: np.int64 or np.ndarray, ms: np.int64 or np.ndarray, us: np.int64 or np.ndarray):
+    """Convert a tuple of days, milliseconds, microseconds to decimal days.
 
     Parameters
     ----------
@@ -81,3 +91,4 @@ def jd_2_utc(jd: np.float64 or np.ndarray):
         return np.array([aptime.Time(t, format='jd', scale='utc').isot for t in jd])
     else:
         return aptime.Time(jd, format='jd', scale='utc').isot
+
