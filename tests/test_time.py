@@ -45,9 +45,9 @@ def test_ccsdsjd_2_jd(ccsds_jd, jd):
 
     ]
 )
-def test_tuple_2_jd(days, ms, us, expected):
+def test_days_ms_us_2_decimal_days(days, ms, us, expected):
     """Test conversion of distinct time parts to a Julian day representation"""
-    result = time.tuple_2_jd(days, ms, us)
+    result = time.days_ms_us_2_decimal_days(days, ms, us)
     if isinstance(expected, np.ndarray):
         assert np.array_equal(result, expected)
     else:
