@@ -1,4 +1,7 @@
 {
   "TEST_KEY": -999,
-  "JPSS1_NORAD_ID": 43013
+  "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
+  "FALLBACK_LSK": "{PKG_ROOT}/data/naif0012.tls",
+  "JPSS1_NORAD_ID": 43013,
+  "JPSS1_APID11_PACKET_DEFINITION": "{LIBSDP_DATA_DIR}/jpss1_geolocation_xtce_v1.xml"
 }

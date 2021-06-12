@@ -18,7 +18,7 @@ default_spk_setup = {
     'PRODUCER_ID': 'Gavin Medley (for Libera SDC)',
     'DATA_ORDER': ['epoch', 'x', 'y', 'z', 'vx', 'vy', 'vz'],
     'DATA_DELIMITER': ' ',
-    'LEAPSECONDS_FILE': '/tmp/naif0012.tls',
+    'LEAPSECONDS_FILE': f'{config.get("LIBSDP_DATA_DIR")}/naif0012.tls',
     # 'FRAME_DEF_FILE': 'frame definition file name',  # TODO: If we need to use a non-standard frame, we need this
     'INPUT_DATA_UNITS': {'ANGLES': 'DEGREES', 'DISTANCES': 'METERS'},
     'IGNORE_FIRST_LINE': 0,
@@ -31,7 +31,7 @@ default_spk_setup = {
 }
 
 default_ck_setup = {
-    "LSK_FILE_NAME": "/tmp/naif0012.tls",
+    "LSK_FILE_NAME": f'{config.get("LIBSDP_DATA_DIR")}/naif0012.tls',
     "MAKE_FAKE_SCLK": "/tmp/fake.tsc",
     "REFERENCE_FRAME_NAME": "J2000",
     "INPUT_DATA_TYPE": "SPICE QUATERNIONS",
@@ -46,7 +46,7 @@ default_ck_setup = {
 # TODO: Consider storing these constants in config.json
 
 
-def write_kernel_input_file(data: np.ndarray, filepath: Path, fields: list = None, fmt: str or list = "%.16f"):
+def write_kernel_input_file(data: np.ndarray, filepath: str or Path, fields: list = None, fmt: str or list = "%.16f"):
     """Write ephemeris and attitude data to MKSPK and MSOPCK input data files, respectively.
     See MSOPCK documentation here:
         https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/msopck.html
@@ -57,7 +57,7 @@ def write_kernel_input_file(data: np.ndarray, filepath: Path, fields: list = Non
     ----------
     data : np.ndarray
         Structured array (named, with data types) of attitude or ephemeris data.
-    filepath : Path
+    filepath : str or Path
         Filepath to write to.
     fields : list
         Optional. List of field names to write out to the data file. If not specified, assume fields are already
