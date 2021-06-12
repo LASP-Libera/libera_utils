@@ -2,9 +2,9 @@
 import json
 import logging
 import os
-import string
 from pathlib import Path
-
+import string
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,9 @@ class _ConfigurationCache:
         """
         if key is None:
             return self._cached_json_config
+
+        if key == 'PKG_ROOT':
+            return str(Path(sys.modules[__name__.split('.')[0]].__file__).parent)
 
         if key in self._cached_json_config:
             result = self._cached_json_config[key]

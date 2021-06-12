@@ -1,16 +1,13 @@
 """Module for reading packet data"""
 import logging
+from pathlib import Path
 
+import bitstring
+from lasp_packets import parser
 import numpy as np
-
+import numpy.lib.recfunctions as nprf
 
 logger = logging.getLogger(__name__)
-_attitude_fields = [
-    'ADAET2DAY', 'ADAET2MS', 'ADAET2US', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3', 'ADCFAQ4'
-]  # Name origin is the JPSS packet definition
-_ephemeris_fields = [
-    'ADAET1DAY', 'ADAET1MS', 'ADAET1US', 'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ', 'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'
-]  # Name origin is the JPSS packet definition
 
 
 def array_from_packets(packets: list, apid: int = None):
@@ -47,3 +44,35 @@ def array_from_packets(packets: list, apid: int = None):
     names = tuple(pdi.name for pdi in packets[0].data.values())  # Get data field names from the first Packet
     formats = tuple(type(val) if not isinstance(val, str) else object for val in field_values[0])
     return np.array(field_values, dtype={'names': names, 'formats': formats})
+
+
+def parse_packets(packet_parser: parser.PacketParser, packet_data_filepaths: list, apid: int = None):
+    """Parse a recarray from a list of packet filepaths, assuming the same parser for all
+
+    Parameters
+    ----------
+    packet_parser : parser.PacketParser
+        Parser, already initialized with the anticipated definition.
+    packet_data_filepaths : list
+        List of filepaths to packets files.
+    apid : int
+        Filter on APID so we don't get mismatches in case the parser finds multiple parsable packet definitions
+        in the files. This can happen if the XTCE document contains definitions for multiple packet types and >1 of
+        those packet types is present in the packet data files.
+
+    Returns
+    -------
+    : np.recarray
+        Concatenated arrays of packet data.
+    """
+    data_arrays = []
+    for packet_data_filepath in packet_data_filepaths:
+        packet_data_filepath = Path(packet_data_filepath)
+        binary_packet_data = bitstring.ConstBitStream(filename=packet_data_filepath)
+
+        packet_generator = packet_parser.generator(binary_packet_data)
+        data_arrays.append(array_from_packets(list(packet_generator), apid=apid))
+
+    packet_data = nprf.stack_arrays(data_arrays, asrecarray=True, usemask=False)  # Stack recarrays
+    # Remove any duplicates in case we got the same packet twice in different files
+    return np.unique(packet_data, axis=0)
