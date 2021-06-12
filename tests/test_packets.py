@@ -2,7 +2,7 @@
 import numpy as np
 from lasp_packets import parser
 
-from libera_sdp.io import packets as packet_io
+from libera_sdp import packets as libera_packets
 
 
 def test_array_from_packets():
@@ -57,7 +57,7 @@ def test_array_from_packets():
             }
         )
     ]
-    result = packet_io.array_from_packets(packets, apid=11)
+    result = libera_packets.array_from_packets(packets, apid=11)
     expected = np.array([
         ('foostring', 42.42, 3.14),
         ('barstring', 52.43, 4.15),

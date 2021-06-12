@@ -20,7 +20,7 @@ The LASP Python style guide can be found here on Confluence, here: [https://conf
 We use Git-LFS to manage large file storage while maintaining git clone performance. To add a large file to repository,
 first consider whether it's really necessary. Upon that consideration, run `git-lfs track <pattern>` where `<pattern>` 
 is a pattern that matches the file you are adding. The patterns are the same as those you might use 
-in .gitignore.
+in .gitignore (though it's not an intuitive syntax unfortunately).
 
 
 ### Installing Optional Dependencies
