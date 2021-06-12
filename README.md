@@ -9,8 +9,23 @@ pip install libera-sdp --index https://artifacts.pdmz.lasp.colorado.edu/reposito
 
 
 ## Basic Usage
-TBD
 
+### CLI Entrypoints
+
+#### `make-jpss-spk`
+```shell
+make-jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+```
+
+#### `make-jpss-ck`
+```shell
+make-jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+```
+
+#### `make-libera-az-el-ck`
+```shell
+Not yet implemented
+```
 
 ## Developer Documentation
 The LASP Python style guide can be found here on Confluence, here: [https://confluence.lasp.colorado.edu/x/XiqyAw]()
@@ -22,6 +37,14 @@ first consider whether it's really necessary. Upon that consideration, run `git-
 is a pattern that matches the file you are adding. The patterns are the same as those you might use 
 in .gitignore (though it's not an intuitive syntax unfortunately).
 
+To see a list of files managed by Git-LFS, run `git lfs ls-files`.
+
+If you have accidentally stored a large file normally, you must "migrate" and "import" the file into the git-lfs
+system. To see a dry run of what you will be importing, run 
+`git lfs migrate info --everything --include="path/to/large_file.big"`
+
+[See here](https://github.com/git-lfs/git-lfs/blob/main/docs/man/git-lfs-migrate.1.ronn) for more documentation on 
+importing objects into git-lfs.
 
 ### Installing Optional Dependencies
 The package comes with three sets of options: `dev`, `test`, and `build`. The `build` option contains all the 
@@ -51,6 +74,9 @@ coverage html -d coverage_report
 coverage xml -o libera_sdp_corbertura_report.xml
 ```
 
+For convenience during development, we have a script called `test.sh`. This script will run the tests with coverage, 
+generate an interactive HTML report (if tests all pass), and open the report in your default browser. The script only
+supports Darwin and Linux platforms.
 
 ### Release Process
 Reference: [https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow]()
