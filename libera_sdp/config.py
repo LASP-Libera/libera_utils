@@ -1,0 +1,88 @@
+"""Configuration reader. To modify the configuration, see file: emus_config.json"""
+import json
+import logging
+import os
+from pathlib import Path
+import string
+import sys
+
+logger = logging.getLogger(__name__)
+
+
+class ConfigurationFormatter(string.Formatter):
+    """Customize the string formatter to replace fields in a config string
+    with values from the configuration dictionary. This will allow configuration
+    parameters in the emus_config.json file to be based off of other configuration
+    parameters by wrapping the configuration key in curly braces."""
+
+    def get_value(self, key: str, *args, **kwargs):
+        """Overrides the default get_value method in the python formatter. This will
+        return the value from the emus configuration with the specified key."""
+        return config.get(key)
+
+
+class _ConfigurationCache:
+    """Class that stores the JSON configuration and provides methods for accessing configuration information"""
+
+    def __init__(self):
+        logger.debug(f"Initializing configuration cache from config.json.")
+        with open(Path(__file__).parent / 'config.json') as config_file:
+            self._cached_json_config = json.load(config_file)
+
+    def _format_return_value(self, value: str):
+        """Recursively formats the returned value, looking for config keys to substitute.
+
+        Parameters
+        ----------
+        value : str
+            String to format
+
+        Returns
+        -------
+        str
+        """
+        if isinstance(value, str):
+            formatter = ConfigurationFormatter()
+            # if the string contains only a curly bracket keyword, return the value of get_config(keyword)
+            key_iter = formatter.parse(value)
+            text_and_key = next(key_iter)
+            if text_and_key[0] == '' and not any(key_iter):
+                return config.get(text_and_key[1])
+
+            return formatter.format(value)
+        elif isinstance(value, list):
+            return [self._format_return_value(x) for x in value]
+        else:
+            return value
+
+    def get(self, key):
+        """Retrieves a configuration value from either the cached JSON or from the environment
+
+        Parameters
+        ----------
+        key : str
+            Key for which to retrieve the configured value.
+
+        Returns
+        -------
+        : any
+            Resulting value
+        """
+        if key is None:
+            return self._cached_json_config
+
+        if key == 'PKG_ROOT':
+            return str(Path(sys.modules[__name__.split('.')[0]].__file__).parent)
+
+        if key in self._cached_json_config:
+            result = self._cached_json_config[key]
+            return self._format_return_value(result)
+
+        if os.getenv(key):
+            result = os.getenv(key)
+            return self._format_return_value(result)
+
+        raise KeyError('Configuration variable {} not found.'.format(key))
+
+
+config = _ConfigurationCache()
