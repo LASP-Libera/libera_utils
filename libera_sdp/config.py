@@ -52,6 +52,8 @@ class _ConfigurationCache:
             return formatter.format(value)
         elif isinstance(value, list):
             return [self._format_return_value(x) for x in value]
+        elif isinstance(value, dict):
+            return {k: self._format_return_value(v) for k, v in value.items()}
         else:
             return value
 
@@ -71,7 +73,7 @@ class _ConfigurationCache:
         if key is None:
             return self._cached_json_config
 
-        if key == 'PKG_ROOT':
+        if key == 'PKG_ROOT':  # Special case for root of installed package
             return str(Path(sys.modules[__name__.split('.')[0]].__file__).parent)
 
         if key in self._cached_json_config:
