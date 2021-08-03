@@ -1,7 +1,8 @@
 """Module for reading packet data"""
+# Standard
 import logging
 from pathlib import Path
-
+# Installed
 import bitstring
 from lasp_packets import parser
 import numpy as np

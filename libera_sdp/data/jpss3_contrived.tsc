@@ -1,0 +1,30 @@
+KPL/SCLK
+ 
+Fake SCLK Kernel for JPSS-1
+--------------------------------------------------------
+ 
+   This SCLK kernel contains the data necessary for converting from
+   ephemeris time (ET) to JPSS-3 spacecraft clock ticks in the format,
+   day:ms:us since Jan 1, 1958.
+ 
+   This file was created by Gavin Medley (for Libera SDC)
+   on 2021-08-02/12:08:57.
+ 
+Kernel data
+--------------------------------------------------------
+ 
+   \begindata
+ 
+      SCLK_KERNEL_ID = ( @2021-08-02/12:08:57 )
+      SCLK_DATA_TYPE_143       = ( 1 )
+      SCLK01_TIME_SYSTEM_143   = ( 1 )
+      SCLK01_N_FIELDS_143      = ( 2 )
+      SCLK01_MODULI_143        = ( 3155760000 1000 )
+      SCLK01_OFFSETS_143       = ( 0 0 )
+      SCLK01_OUTPUT_DELIM_143  = ( 1 )
+      SCLK_PARTITION_START_143 = ( 0.00000E+00 )
+      SCLK_PARTITION_END_143   = ( 3.15576E+12 )
+      SCLK01_COEFFICIENTS_143  = ( 0.0 @2000-JAN-01-12:00:00.000 1.0 )
+ 
+   \begintext
+ 
