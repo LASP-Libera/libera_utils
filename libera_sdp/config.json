@@ -1,7 +1,8 @@
 {
   "TEST_KEY": -999,
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
-  "FALLBACK_LSK": "{PKG_ROOT}/data/naif0012.tls",
+  "FALLBACK_LSK": "{LIBSDP_DATA_DIR}/naif0012.tls",
+  "JPSS_SCLK": "{LIBSDP_DATA_DIR}/jpss3_contrived.tsc",
   "JPSS1_NORAD_ID": 43013,
   "JPSS1_APID11_PACKET_DEFINITION": "{LIBSDP_DATA_DIR}/jpss1_geolocation_xtce_v1.xml",
   "MKSPK_SETUPFILE_CONTENTS": {
@@ -13,7 +14,7 @@
     "PRODUCER_ID": "Gavin Medley (for Libera SDC)",
     "DATA_ORDER": ["epoch", "x", "y", "z", "vx", "vy", "vz"],
     "DATA_DELIMITER": " ",
-    "LEAPSECONDS_FILE": "{LIBSDP_DATA_DIR}/naif0012.tls",
+    "LEAPSECONDS_FILE": "{FALLBACK_LSK}",
     "INPUT_DATA_UNITS": { "ANGLES": "DEGREES", "DISTANCES": "METERS" },
     "IGNORE_FIRST_LINE": 0,
     "LINES_PER_RECORD": 1,
@@ -22,11 +23,11 @@
     "APPEND_TO_OUTPUT": "NO"
   },
   "MSOPCK_SETUPFILE_CONTENTS": {
-    "LSK_FILE_NAME": "{LIBSDP_DATA_DIR}/naif0012.tls",
-    "SCLK_FILE_NAME": "{LIBSDP_DATA_DIR}/jpss3_contrived.tsc",
+    "LSK_FILE_NAME": "{FALLBACK_LSK}",
+    "SCLK_FILE_NAME": "{JPSS_SCLK}",
     "REFERENCE_FRAME_NAME": "J2000",
     "INPUT_DATA_TYPE": "SPICE QUATERNIONS",
-    "INPUT_TIME_TYPE": "UTC",
+    "INPUT_TIME_TYPE": "SCLK",
     "ANGULAR_RATE_PRESENT": "MAKE UP/NO AVERAGING",
     "CHECK_TIME_ORDER": "YES",
     "CK_TYPE": 3,
