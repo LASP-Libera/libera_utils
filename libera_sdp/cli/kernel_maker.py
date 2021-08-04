@@ -81,6 +81,8 @@ def make_jpss_spk(cli_args: list = None):
         )
     )
     packet_data = nprf.append_fields(packet_data, 'EPHEMJD', ephemeris_jd, dtypes=(np.float64,))
+    # TODO: Instead of using Julian day, use TDB time directly. Will require a time function wrapper for SCS2E
+    #   Don't forget to change the config for MKSPK at the same time
 
     with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -155,7 +157,7 @@ def make_jpss_ck(cli_args: list = None):
         stream_handler.setLevel(logging.DEBUG)
 
     output_dir = Path(parsed_args.outdir)
-    logger.info(f"Writing resulting SPK to {output_dir}")
+    logger.info(f"Writing resulting CK to {output_dir}")
 
     packet_definition_filepath = Path(config.get('JPSS1_APID11_PACKET_DEFINITION'))
     logger.info(f"Using packet definition {packet_definition_filepath}")
@@ -168,18 +170,23 @@ def make_jpss_ck(cli_args: list = None):
     packet_data = libera_packets.parse_packets(packet_parser, parsed_args.packet_data_filepaths)
     logger.info("Done.")
 
+    # Add a column that is an ISO timestamp to the input data
     attitude_jd = time.ccsdsjd_2_jd(
         time.days_ms_us_2_decimal_days(
             packet_data['ADAET2DAY'], packet_data['ADAET2MS'], packet_data['ADAET2US']))
     attitude_isot = time.jd_2_utc(attitude_jd)
     packet_data = nprf.append_fields(packet_data, 'ATTISO', attitude_isot)
 
+    # Add a column that is the SCLK string, formatted with delimiters, to the input data recarray
+    attitude_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
+    packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', attitude_sclk_string)
+
     with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:
         tmp_path = Path(tmp_dir)
         ck_data_filepath = libera_kernels.write_kernel_input_file(
             packet_data,
             filepath=tmp_path / 'msopck_data.txt',
-            fields=['ATTISO', 'ADCFAQ4', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3'],
+            fields=['ATTSCLKSTR', 'ADCFAQ4', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3'],
             fmt=['%s', '%.16f', '%.16f', '%.16f', '%.16f']
         )  # produces w + i + j + k in SPICE_QUATERNION style
         logger.info(f"MSOPCK input data written to {ck_data_filepath}")
