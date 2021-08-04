@@ -4,6 +4,28 @@ import pytest
 import numpy as np
 
 from libera_sdp import kernels
+from libera_sdp.config import config
+
+
+def test_ls_kernels(furnish_sclk):
+    """Test listing all furnished kernels"""
+    result = kernels.ls_kernels(verbose=True, log=True)
+    assert result == [kernels.KernelFileRecord('TEXT', config.get('JPSS_SCLK'))]
+
+
+def test_ls_spice_constants(furnish_lsk):
+    """Test listing all kernel pool variables"""
+    # TODO: When we have a FK in the repo, furnish that here using a fixture and check the values
+    kernels.ls_spice_constants(True)
+
+
+def test_ls_kernel_coverage(furnish_jpss_ck, furnish_sclk):
+    """Test listing all kernel time coverage"""
+    kernels.ls_kernel_coverage('CK', True)
+    kernels.ls_kernel_coverage('SPK', True)
+
+    with pytest.raises(ValueError):
+        kernels.ls_kernel_coverage('FOO', True)
 
 
 def test_write_kernel_input_file(tmp_path):
