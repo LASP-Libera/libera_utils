@@ -1,89 +1,106 @@
 """Tests for time module"""
 import numpy as np
 import pytest
+from datetime import datetime
+from typing import Iterable
 
 from libera_sdp import time
 
 
 @pytest.mark.parametrize(
-    ('ccsds_jd', 'jd'),
-    [
-        (23171.80139, 2459376.30139),
-        (np.float64(23171.80139), np.float64(2459376.30139)),
-        (np.array([23171.80139], dtype=np.float64), np.array([2459376.30139], dtype=np.float64)),
-        (
-                np.array([23171.80139, 23171.80139], dtype=np.float64),
-                np.array([2459376.30139, 2459376.30139], dtype=np.float64)
-        )
-    ]
+    "et, expected",
+    [(0, datetime.strptime('2000-01-01T11:58:55.816073', '%Y-%m-%dT%H:%M:%S.%f')),
+     (378651667, datetime.strptime('2012-01-01T01:00:00.816089', '%Y-%m-%dT%H:%M:%S.%f')),
+     ([378651667, 378651668], [datetime.strptime('2012-01-01T01:00:00.816089', '%Y-%m-%dT%H:%M:%S.%f'),
+                               datetime.strptime('2012-01-01T01:00:01.816089', '%Y-%m-%dT%H:%M:%S.%f')])]
 )
-def test_ccsdsjd_2_jd(ccsds_jd, jd):
-    """Test conversion of CCSDS JD to JD"""
-    result = time.ccsdsjd_2_jd(ccsds_jd)
-    if isinstance(jd, np.ndarray):
-        assert np.array_equal(result, jd)
-    else:
-        assert result == jd
+def test_et_2_datetime(et, expected):
+    """Test et_2_datetime wrapper function"""
+    assert np.array_equal(time.et_2_datetime(et), expected)
 
 
 @pytest.mark.parametrize(
-    ('days', 'ms', 'us', 'expected'),
-    [
-        (23109, 7, 137, 23109.000000082604),
-        (
-            np.array([23109], dtype=np.int64),
-            np.array([7], dtype=np.int64),
-            np.array([137], dtype=np.int64),
-            np.array([23109.000000082604], dtype=np.float64)
-        ),
-        (
-            np.array([23109, 23109], dtype=np.int64),
-            np.array([7, 1005], dtype=np.int64),
-            np.array([137, 176], dtype=np.int64),
-            np.array([23109.000000082604, 23109.000011633983], dtype=np.float64)
-        ),
+    "et, fmt, expected",
+    [(0, '%Y%m%dt%H%M%S', '20000101t115855'),
+     (378651667, '%Y%m%dt%H%M%S.%f', '20120101t010000.816089'),
+     ([378651667, 378651668], '%Y/%j %b %d %H:%M:%S', ['2012/001 Jan 01 01:00:00', '2012/001 Jan 01 01:00:01'])]
+)
+def test_et_2_timestamp(et, fmt, expected):
+    """Test et_2_timestamp wrapper function"""
+    result = time.et_2_timestamp(et, fmt)
+    assert np.array_equal(result, expected)
 
+
+@pytest.mark.parametrize(
+    ('sclk_str', 'expected'),
+    [
+        ('15340:43200000:000', 0.000000),
+        ('23109:50398930:938', 671248798.930938),
+        (['23109:50398930:938', '23109:50398930:938'], np.array([671248798.930938, 671248798.930938])),
+        (np.array(['23109:50398930:938', '23109:50398930:938']), np.array([671248798.930938, 671248798.930938])),
     ]
 )
-def test_days_ms_us_2_decimal_days(days, ms, us, expected):
-    """Test conversion of distinct time parts to a Julian day representation"""
-    result = time.days_ms_us_2_decimal_days(days, ms, us)
-    if isinstance(expected, np.ndarray):
+def test_scs2e_wrapper(sclk_str, expected):
+    """Test conversion of SCLK strings to ET"""
+    result = time.scs2e_wrapper(sclk_str)
+    if isinstance(sclk_str, Iterable):
         assert np.array_equal(result, expected)
     else:
         assert result == expected
 
 
 @pytest.mark.parametrize(
-    ('s', 'jd'),
+    ('et', 'expected'),
     [
-        ('1873-12-29T12:04:08', 2405522.00287037),  # MSD 0 epoch
-        ('1992-02-25T03:45:15', 2448677.656423611),  # Random time
-        ('1958-01-01T00:00:00', 2436204.5),  # CCSDS JD epoch
-        (np.array(['1873-12-29T12:04:08', '1992-02-25T03:45:15']), np.array([2405522.00287037, 2448677.656423611]))
-    ])
-def test_utc_2_jd(s, jd):
-    """Test converting ISO timestamps to Julian day"""
-    result = time.utc_2_jd(s)
-    if isinstance(result, np.ndarray):
-        assert np.array_equal(result, jd)
+        (0.000000, '1/15340:43200000:000'),  # Ephemeris epoch in SCLK time
+        (671248798.9309382, '1/23109:50398930:938'),
+        ([671248798.9309382, 671248798.9309382], np.array(['1/23109:50398930:938', '1/23109:50398930:938'])),
+        (np.array([671248798.9309382, 671248798.9309382]), np.array(['1/23109:50398930:938', '1/23109:50398930:938'])),
+    ]
+)
+def test_sce2s_wrapper(et, expected):
+    """Test conversion of ET to SCLK strings"""
+    result = time.sce2s_wrapper(et)
+    if isinstance(et, Iterable):
+        assert np.array_equal(result, expected)
     else:
-        assert result == jd
+        assert result == expected
 
 
 @pytest.mark.parametrize(
-    ('isot', 'jd'),
+    ('et', 'expected'),
     [
-        ('1873-12-29T12:04:08.000', 2405522.00287037),  # MSD 0 epoch
-        ('1992-02-25T03:45:15.000', 2448677.656423611),  # Random time
-        ('1958-01-01T00:00:00.000', 2436204.5),  # CCSDS JD epoch
-        (np.array(['1873-12-29T12:04:08.000', '1992-02-25T03:45:15.000']),
-         np.array([2405522.00287037, 2448677.656423611]))
-    ])
-def test_jd_2_utc(isot, jd):
-    """Test converting Julian day to ISO timestamps"""
-    result = time.jd_2_utc(jd)
-    if isinstance(result, np.ndarray):
-        assert np.array_equal(result, isot)
+        (671248798.9309382, '2021-04-09T13:58:49.745289445'),
+        ([671248798.9309382, 671248798.9309382],
+         np.array(['2021-04-09T13:58:49.745289445', '2021-04-09T13:58:49.745289445'])),
+        (np.array([671248798.9309382, 671248798.9309382]),
+         np.array(['2021-04-09T13:58:49.745289445', '2021-04-09T13:58:49.745289445'])),
+    ]
+)
+def test_et2utc_wrapper(et, expected):
+    """Test conversion of ET to UTC strings"""
+    prec = 9
+    result = time.et2utc_wrapper(et, 'ISOC', prec)
+    if isinstance(et, Iterable):
+        assert np.array_equal(result, expected)
     else:
-        assert result == isot
+        assert result == expected
+
+
+@pytest.mark.parametrize(
+    ('utc_str', 'expected'),
+    [
+        ('2021-04-09T13:58:49.745289445', 671248798.9309382),
+        (['2021-04-09T13:58:49.745289445', '2021-04-09T13:58:49.745289445'],
+         np.array([671248798.9309382, 671248798.9309382])),
+        (np.array(['2021-04-09T13:58:49.745289445', '2021-04-09T13:58:49.745289445']),
+         np.array([671248798.9309382, 671248798.9309382])),
+    ]
+)
+def test_utc2et_wrapper(utc_str, expected):
+    """Test conversion of ET to UTC strings"""
+    result = time.utc2et_wrapper(utc_str)
+    if isinstance(utc_str, Iterable):
+        assert np.array_equal(result, expected)
+    else:
+        assert result == expected
