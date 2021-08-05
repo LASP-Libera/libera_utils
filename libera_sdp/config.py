@@ -1,10 +1,12 @@
 """Configuration reader. To modify the configuration, see file: emus_config.json"""
+# Standard
 import json
 import logging
 import os
 from pathlib import Path
 import string
 import sys
+import warnings
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class _ConfigurationCache:
         logger.debug(f"Initializing configuration cache from config.json.")
         with open(Path(__file__).parent / 'config.json') as config_file:
             self._cached_json_config = json.load(config_file)
+            self._known_config_variables = {key for key in self._cached_json_config}
 
     def _format_return_value(self, value: str):
         """Recursively formats the returned value, looking for config keys to substitute.
@@ -70,6 +73,11 @@ class _ConfigurationCache:
         : any
             Resulting value
         """
+        if (key != 'PKG_ROOT') and (key not in self._known_config_variables):
+            warnings.warn(f"Configuration key {key} is not known to the config module. "
+                          f"We will try to find it in the environment anyway but a default should be added to "
+                          f"the config.json file.")
+
         if key is None:
             return self._cached_json_config
 
