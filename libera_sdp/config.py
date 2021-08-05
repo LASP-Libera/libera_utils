@@ -76,12 +76,13 @@ class _ConfigurationCache:
         if key == 'PKG_ROOT':  # Special case for root of installed package
             return str(Path(sys.modules[__name__.split('.')[0]].__file__).parent)
 
-        if key in self._cached_json_config:
-            result = self._cached_json_config[key]
-            return self._format_return_value(result)
-
+        # Checking the environment first allows easy override of any json config variable
         if os.getenv(key):
             result = os.getenv(key)
+            return self._format_return_value(result)
+
+        if key in self._cached_json_config:
+            result = self._cached_json_config[key]
             return self._format_return_value(result)
 
         raise KeyError('Configuration variable {} not found.'.format(key))
