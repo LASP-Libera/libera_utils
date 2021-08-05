@@ -1,16 +1,20 @@
 """Tests for kernels module"""
+# Standard
+import logging
 import pytest
-
+# Installed
 import numpy as np
-
+# Local
 from libera_sdp import kernels
 from libera_sdp.config import config
 
 
-def test_ls_kernels(furnish_sclk):
+def test_ls_kernels(furnish_sclk, caplog):
     """Test listing all furnished kernels"""
+    caplog.set_level(logging.DEBUG)
     result = kernels.ls_kernels(verbose=True, log=True)
     assert result == [kernels.KernelFileRecord('TEXT', config.get('JPSS_SCLK'))]
+    assert 'jpss3_contrived.tsc' in caplog.records[0].message
 
 
 def test_ls_spice_constants(furnish_lsk):
