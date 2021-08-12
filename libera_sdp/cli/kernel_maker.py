@@ -1,6 +1,7 @@
 """Module containing CLI tool for creating SPICE kernels from packets"""
 # Standard
 import argparse
+from datetime import datetime
 import logging
 from pathlib import Path
 import subprocess
@@ -10,7 +11,7 @@ import numpy as np
 import numpy.lib.recfunctions as nprf
 from lasp_packets import parser, xtce
 # Local
-from libera_sdp import LOG_MESSAGE_FORMAT
+from libera_sdp.logutil import setup_task_logger
 from libera_sdp import kernels as libera_kernels
 from libera_sdp.config import config
 from libera_sdp.io import filenaming
@@ -30,16 +31,6 @@ def make_jpss_spk(cli_args: list = None):
     -------
     None
     """
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(LOG_MESSAGE_FORMAT)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    stream_handler.setLevel(logging.INFO)
-    logger.addHandler(stream_handler)
-
-    logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
-
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument('packet_data_filepaths',
                            nargs='+',
@@ -58,7 +49,16 @@ def make_jpss_spk(cli_args: list = None):
     parsed_args = argparser.parse_args(cli_args)
 
     if parsed_args.verbose:
-        stream_handler.setLevel(logging.DEBUG)
+        stream_log_level = logging.DEBUG
+    else:
+        stream_log_level = logging.NOTSET
+
+    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    log_filepath = setup_task_logger(f'spk_generator_{now}', stream_log_level=stream_log_level)
+    logger = logging.getLogger(__name__)
+
+    logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
+    logger.info(f"Logging to {log_filepath}")
 
     output_dir = Path(parsed_args.outdir)
     logger.info(f"Writing resulting SPK to {output_dir}")
@@ -103,11 +103,14 @@ def make_jpss_spk(cli_args: list = None):
             output_filepath.unlink(missing_ok=True)
 
         logger.info("Running MKSPK...")
-        subprocess.run(['mkspk',
-                        '-setup', str(spk_setup_filepath),
-                        '-input', str(spk_data_filepath),
-                        '-output', str(output_filepath)],
-                       check=True)
+        result = subprocess.run(['mkspk',
+                                 '-setup', str(spk_setup_filepath),
+                                 '-input', str(spk_data_filepath),
+                                 '-output', str(output_filepath)],
+                                capture_output=True, check=True)
+        logger.info(result.stdout.decode())
+        if result.stderr:
+            logger.error(result.stderr.decode())
         logger.info(f"Finished! SPK written to {output_filepath}")
 
 
@@ -123,16 +126,6 @@ def make_jpss_ck(cli_args: list = None):
     -------
     None
     """
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(LOG_MESSAGE_FORMAT)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    stream_handler.setLevel(logging.INFO)
-    logger.addHandler(stream_handler)
-
-    logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
-
     argparser = argparse.ArgumentParser(description=__doc__)
     argparser.add_argument('packet_data_filepaths',
                            nargs='+',
@@ -151,7 +144,16 @@ def make_jpss_ck(cli_args: list = None):
     parsed_args = argparser.parse_args(cli_args)
 
     if parsed_args.verbose:
-        stream_handler.setLevel(logging.DEBUG)
+        stream_log_level = logging.DEBUG
+    else:
+        stream_log_level = logging.NOTSET
+
+    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    log_filepath = setup_task_logger(f'ck_generator_{now}', stream_log_level=stream_log_level)
+    logger = logging.getLogger(__name__)
+
+    logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
+    logger.info(f"Logging to {log_filepath}")
 
     output_dir = Path(parsed_args.outdir)
     logger.info(f"Writing resulting CK to {output_dir}")
@@ -195,6 +197,9 @@ def make_jpss_ck(cli_args: list = None):
             output_filepath.unlink(missing_ok=True)
 
         logger.info("Running MSOPCK...")
-        subprocess.run(['msopck', str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
-                       check=True)
-        logger.info(f"Finished! SPK written to {output_filepath}")
+        result = subprocess.run(['msopck', str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
+                                capture_output=True, check=True)
+        logger.info(result.stdout.decode())
+        if result.stderr:
+            logger.error(result.stderr.decode())
+        logger.info(f"Finished! CK written to {output_filepath}")

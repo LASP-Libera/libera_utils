@@ -1,5 +1,6 @@
 {
-  "TEST_KEY": -999,
+  "LIBSDP_LOG_DIR": "/tmp",
+  "LIBSDP_STREAM_LOG_LEVEL": "INFO",
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
   "FALLBACK_LSK": "{LIBSDP_DATA_DIR}/naif0012.tls",
   "JPSS_SCLK": "{LIBSDP_DATA_DIR}/jpss3_contrived.tsc",
@@ -35,5 +36,6 @@
     "INSTRUMENT_ID": -143013,
     "INCLUDE_INTERVAL_TABLE": "YES",
     "PRODUCER_ID": "Gavin Medley (for Libera SDC)"
-  }
+  },
+  "TEST_KEY": -999
 }
