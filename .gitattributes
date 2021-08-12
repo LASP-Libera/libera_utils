@@ -11,3 +11,5 @@
 *.DAT1 filter=lfs diff=lfs merge=lfs -text
 *.xml filter=lfs diff=lfs merge=lfs -text
 *.tls filter=lfs diff=lfs merge=lfs -text
+*.tsc filter=lfs diff=lfs merge=lfs -text
+*.bc filter=lfs diff=lfs merge=lfs -text
