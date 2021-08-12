@@ -1,9 +1,14 @@
 """Module for dealing with time and time convensions"""
+# Standard
 import re
-from astropy import time as aptime
+from datetime import datetime
+from typing import Union, Collection
+# Installed
 import numpy as np
-
-_CCSDS_JD_EPOCH = np.float64(2436204.5)
+import spiceypy as spice
+# Local
+from libera_sdp.config import config
+from libera_sdp.decorators import ensure_spice
 
 ISOT_REGEX = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
                         r"[T|t]"
@@ -14,81 +19,154 @@ PRINTABLE_TS_REGEX = re.compile(r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>
                                 r"[T|t]"
                                 r"(?P<hour>[0-9]{2})(?P<minute>[0-9]{2})(?P<second>[0-9]{2})$")
 
+PRINTABLE_TS_FORMAT = "%Y%m%dt%H%M%S"
 
-def ccsdsjd_2_jd(ccsds_jd: np.float64 or np.ndarray):
-    """Convert CCSDS Julian Day (since 0h 1/1/1958) to standard Julian Day (since 12h Jan 1, 4713 BC)
+
+def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],
+                   fmt: str = '%Y%m%dt%H%M%S.%f') -> Union[str, Collection[str]]:
+    """
+    Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
 
     Parameters
     ----------
-    ccsds_jd : np.float64 or np.ndarray
-        CCSDS Julian day
+    et: Union[float, Collection[float], np.ndarray]
+        Ephemeris Time to be converted.
+    fmt: str, optional
+        Format string as defined by the datetime.strftime() function.
 
     Returns
     -------
-    : np.float64 or np.ndarray
-        Julian day
+    : Union[str, Collection[str]]
+        Formatted timestamps
     """
-    return ccsds_jd + _CCSDS_JD_EPOCH
+    datetime_objs = et_2_datetime(et)
 
-
-def days_ms_us_2_decimal_days(days: np.int64 or np.ndarray, ms: np.int64 or np.ndarray, us: np.int64 or np.ndarray):
-    """Convert a tuple of days, milliseconds, microseconds to decimal days.
-
-    Parameters
-    ----------
-    days: np.int64 or np.ndarray
-        Days since epoch (could be any epoch, this function is agnostic).
-    ms : np.int64 or np.ndarray
-        Milliseconds
-    us : np.int64 or np.ndarray
-        Microseconds
-
-    Returns
-    -------
-    : np.float64 or np.ndarray
-        Julian day
-    """
-    ms_in_days = (np.float64(ms) * 1e-3) / 86400.
-    us_in_days = (np.float64(us) * 1e-6) / 86400.
-    return days + ms_in_days + us_in_days
-
-
-def utc_2_jd(iso_str: str or np.ndarray):
-    """Convert a UTC string to Julian day
-
-    Parameters
-    ----------
-    iso_str : str or np.ndarray
-        UTC ISO-T string or array of strings to convert
-
-    Returns
-    -------
-    : np.float64 or np.ndarray
-        JD as a float or an array of floats
-    """
-
-    if isinstance(iso_str, np.ndarray):
-        return np.array([aptime.Time(s, format='isot', scale='utc').jd for s in iso_str])
+    if isinstance(datetime_objs, Collection):
+        time_out = np.array([t.strftime(fmt) for t in datetime_objs])
     else:
-        return aptime.Time(iso_str, format='isot', scale='utc').jd
+        time_out = datetime_objs.strftime(fmt)
+
+    return time_out
 
 
-def jd_2_utc(jd: np.float64 or np.ndarray):
-    """Convert a Julian day value to a UTC string
+def et_2_datetime(et: Union[float, Collection[float], np.ndarray]) -> Union[datetime, np.ndarray]:
+    """
+    Convert ephemeris time to a python datetime object by first converting it to a UTC timestamp.
 
     Parameters
     ----------
-    jd : np.float64 or np.ndarray
-        Float or an array of floats.
+    et: Union[float, Collection[float], np.ndarray]
+        Ephemeris times to be converted.
 
     Returns
     -------
-    : str or np.ndarray
-        UTC ISO-T string or an array of them
+    : Union[datetime, np.ndarray]
+        Object representation of ephemeris times.
     """
+    isoc_fmt = '%Y-%m-%dT%H:%M:%S.%f'
+    isoc_prec = 6
 
-    if isinstance(jd, np.ndarray):
-        return np.array([aptime.Time(t, format='jd', scale='utc').isot for t in jd])
+    isoc_timestamp = et2utc_wrapper(et, 'ISOC', isoc_prec)
+    if isinstance(et, Collection):
+        return np.array([datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
     else:
-        return aptime.Time(jd, format='jd', scale='utc').isot
+        return datetime.strptime(isoc_timestamp, isoc_fmt)
 
+
+@ensure_spice(time_kernels_only=True)
+def et2utc_wrapper(et: Union[float, Collection[float], np.ndarray], fmt: str, prec: int) -> Union[str, Collection[str]]:
+    """
+    Convert ephemeris times to UTC ISO strings.
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/et2utc_c.html
+    Decorated wrapper for spiceypy.et2utc that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    et: Union[float, Collection[float], np.ndarray]
+        The ephemeris time value to be converted to UTC.
+    fmt: str
+        Format string defines the format of the output time string. See CSPICE docs.
+    prec: int
+        Number of digits of precision for fractional seconds.
+
+    Returns
+    -------
+    : Union[np.ndarray, str]
+        UTC time string(s)
+    """
+    return spice.et2utc(et, fmt, prec)
+
+
+@ensure_spice(time_kernels_only=True)
+def utc2et_wrapper(iso_str: Union[str, Collection[str]]) -> Union[float, np.ndarray]:
+    """
+    Convert UTC ISO strings to ephemeris times.
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/utc2et_c.html
+    Decorated wrapper for spiceypy.utc2et that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    iso_str: Union[str, Collection[str]]
+        The UTC to convert to ephemeris time
+
+    Returns
+    -------
+    : Union[float, np.ndarray]
+        Ephemeris time
+    """
+    if isinstance(iso_str, str):
+        return spice.utc2et(iso_str)
+    else:
+        return np.array([spice.utc2et(s) for s in iso_str])
+
+
+@ensure_spice(time_kernels_only=True)
+def scs2e_wrapper(sclk_str: Union[str, Collection[str]]) -> Union[float, np.ndarray]:
+    """
+    Convert SCLK strings to ephemeris time.
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/scs2e_c.html
+    Decorated wrapper for spiceypy.scs2e that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    sclk_str: Union[str, Collection[str]]
+        Spacecraft clock string
+
+    Returns
+    -------
+    : Union[float, np.ndarray]
+        Ephemeris time
+    """
+    sc_id = config.get("JPSS_SC_ID")
+    if isinstance(sclk_str, str):
+        return spice.scs2e(sc_id, sclk_str)
+    else:
+        return np.array([spice.scs2e(sc_id, s) for s in sclk_str])
+
+
+@ensure_spice(time_kernels_only=True)
+def sce2s_wrapper(et: Union[float, Collection[float], np.ndarray]) -> Union[str, np.ndarray]:
+    """
+    Convert ephemeris times to SCLK string
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sce2s_c.html
+    Decorated wrapper for spiceypy.sce2s that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    et: Union[float, Collection[float], np.ndarray]
+        Ephemeris time
+
+    Returns
+    -------
+    : Union[str, Collection[str]]
+        SCLK string
+    """
+    sc_id = config.get("JPSS_SC_ID")
+    if isinstance(et, Collection):
+        return np.array([spice.sce2s(sc_id, t) for t in et])
+    else:
+        return spice.sce2s(sc_id, et)

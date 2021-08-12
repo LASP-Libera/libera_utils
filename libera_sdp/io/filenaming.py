@@ -1,8 +1,10 @@
 """Module for file naming utilities"""
-from pathlib import Path
+# Standard
 import re
-
-from libera_sdp.time import ISOT_REGEX, PRINTABLE_TS_REGEX
+from datetime import datetime
+from pathlib import Path
+# Local
+from libera_sdp.time import ISOT_REGEX, PRINTABLE_TS_REGEX, PRINTABLE_TS_FORMAT
 
 
 SPK_REGEX = re.compile(r"^libera_jpss"
@@ -28,19 +30,16 @@ class EphemerisKernelFilename:
     _regex = SPK_REGEX
     _fmt_str = "libera_jpss_{utc_start}_{utc_end}.bsp"
 
-    def __init__(self, utc_start: str, utc_end: str):
+    def __init__(self, utc_start: datetime, utc_end: datetime):
         """Constructor
 
         Parameters
         ----------
-        utc_start : str
+        utc_start : datetime
             First timestamp in the SPK
-        utc_end : str
+        utc_end : datetime
             Last timestamp in the SPK
         """
-        # TODO: Store these start and end times in a more useful format for comparisons
-        assert PRINTABLE_TS_REGEX.match(utc_start)
-        assert PRINTABLE_TS_REGEX.match(utc_end)
         self.utc_start = utc_start
         self.utc_end = utc_end
 
@@ -61,7 +60,9 @@ class EphemerisKernelFilename:
             path = Path(path)
 
         m = cls._regex.match(path.name)
-        return cls(utc_start=m['utc_start'], utc_end=m['utc_end'])
+        utc_start = datetime.strptime(m['utc_start'], PRINTABLE_TS_FORMAT)
+        utc_end = datetime.strptime(m['utc_end'], PRINTABLE_TS_FORMAT)
+        return cls(utc_start=utc_start, utc_end=utc_end)
 
     @property
     def name(self):
@@ -72,7 +73,9 @@ class EphemerisKernelFilename:
         : str
             String filename
         """
-        return self._fmt_str.format(**{'utc_start': self.utc_start, 'utc_end': self.utc_end})
+        return self._fmt_str.format(**{
+            'utc_start': self.utc_start.strftime(PRINTABLE_TS_FORMAT),
+            'utc_end': self.utc_end.strftime(PRINTABLE_TS_FORMAT)})
 
     @property
     def path(self):
@@ -91,21 +94,18 @@ class AttitudeKernelFilename:
     _regex = CK_REGEX
     _fmt_str = "libera_{object}_{utc_start}_{utc_end}.bc"
 
-    def __init__(self, ck_object: str, utc_start: str, utc_end: str):
+    def __init__(self, ck_object: str, utc_start: datetime, utc_end: datetime):
         """Constructor
 
         Parameters
         ----------
         ck_object : str
             Object for which the CK is valid. e.g. a particular spacecraft name or an instrument component.
-        utc_start : str
+        utc_start : datetime
             First timestamp in the CK
-        utc_end : str
+        utc_end : datetime
             Last timestamp in the CK
         """
-        # TODO: Store these start and end times in a more useful format for comparisons
-        assert PRINTABLE_TS_REGEX.match(utc_start)
-        assert PRINTABLE_TS_REGEX.match(utc_end)
         self.ck_object = ck_object
         self.utc_start = utc_start
         self.utc_end = utc_end
@@ -127,7 +127,9 @@ class AttitudeKernelFilename:
             path = Path(path)
 
         m = cls._regex.match(path.name)
-        return cls(ck_object=m['ck_object'], utc_start=m['utc_start'], utc_end=m['utc_end'])
+        utc_start = datetime.strptime(m['utc_start'], PRINTABLE_TS_FORMAT)
+        utc_end = datetime.strptime(m['utc_end'], PRINTABLE_TS_FORMAT)
+        return cls(ck_object=m['ck_object'], utc_start=utc_start, utc_end=utc_end)
 
     @property
     def name(self):
@@ -139,7 +141,9 @@ class AttitudeKernelFilename:
             String filename
         """
         return self._fmt_str.format(
-            **{'object': self.ck_object, 'utc_start': self.utc_start, 'utc_end': self.utc_end})
+            **{'object': self.ck_object,
+               'utc_start': self.utc_start.strftime(PRINTABLE_TS_FORMAT),
+               'utc_end': self.utc_end.strftime(PRINTABLE_TS_FORMAT)})
 
     @property
     def path(self):
@@ -151,21 +155,3 @@ class AttitudeKernelFilename:
             Path representation of filename
         """
         return Path(self.name)
-
-
-def isot_printable(isot: str):
-    """Make an ISO-T timestamp printable in filenames by removing hyphens, semicolons, and the trailing
-    fractional seconds.
-
-    Parameters
-    ----------
-    isot : str
-        ISO T timestamp or an array of them
-
-    Returns
-    -------
-    : str
-        Reformatted string or strings for printing
-    """
-    m = ISOT_REGEX.match(isot)
-    return f"{m['year']}{m['month']}{m['day']}t{m['hour']}{m['minute']}{m['second']}"
