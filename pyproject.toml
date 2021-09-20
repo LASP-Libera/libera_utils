@@ -1,9 +1,31 @@
+
+[tool.poetry]
+name = "libera_sdp"
+version = "0.1.0"
+description = "Science data processing library and applications for the Libera instrument."
+authors = ["Gavin Medley <gavin.medley@lasp.colorado.edu>", "Stephane Beland <stephane.beland@lasp.colorado.edu>"]
+
+[[tool.poetry.source]]
+name = "lasp-pypi"  # This name will be used in the configuration to retreive the proper credentials
+url = "https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple"  # URL used to download your packages from
+
+[tool.poetry.dependencies]
+python = "^3.9"
+astropy = "^4.2.1"
+h5py = "^3.3.0"
+numpy = "^1.21.0"
+spiceypy = "^4.0.1"
+lasp-packets = "1.0"
+
+[tool.poetry.dev-dependencies]
+pytest-cov = "^2.12.1"
+pylint = "^2.9.3"
+
+[tool.poetry.scripts]
+make-jpss-spk = 'libera_sdp.cli.kernel_maker:make_jpss_spk'
+make-jpss-ck = 'libera_sdp.cli.kernel_maker:make_jpss_ck'
+make-libera-az-el-ck = 'libera_sdp.cli.kernel_maker:make_az_el_ck'
+
 [build-system]
-# Minimum requirements for the build system to execute.
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools_scm]
-write_to = "libera_sdp/_version.py"
-version_scheme = "post-release"
-
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
