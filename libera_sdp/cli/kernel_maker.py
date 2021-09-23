@@ -60,7 +60,7 @@ def make_jpss_spk(cli_args: list = None):
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
     logger.info(f"Logging to {log_filepath}")
 
-    output_dir = Path(parsed_args.outdir)
+    output_dir = Path(parsed_args.outdir).expanduser().absolute()
     logger.info(f"Writing resulting SPK to {output_dir}")
 
     packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
@@ -103,12 +103,19 @@ def make_jpss_spk(cli_args: list = None):
             output_filepath.unlink(missing_ok=True)
 
         logger.info("Running MKSPK...")
-        result = subprocess.run(['mkspk',
-                                 '-setup', str(spk_setup_filepath),
-                                 '-input', str(spk_data_filepath),
-                                 '-output', str(output_filepath)],
-                                capture_output=True, check=True)
-        logger.info(result.stdout.decode())
+        try:
+            result = subprocess.run(['mkspk',
+                                     '-setup', str(spk_setup_filepath),
+                                     '-input', str(spk_data_filepath),
+                                     '-output', str(output_filepath)],
+                                    capture_output=True, check=True)
+        except subprocess.CalledProcessError as cpe:
+            logger.info(f"Captured stdout: \n{cpe.stdout.decode()}")
+            if cpe.stderr:
+                logger.error(f"Captured stderr: \n{cpe.stderr.decode()}")
+            raise
+
+        logger.info(f"Captured stdout:\n{result.stdout.decode()}")
         if result.stderr:
             logger.error(result.stderr.decode())
         logger.info(f"Finished! SPK written to {output_filepath}")
@@ -155,7 +162,7 @@ def make_jpss_ck(cli_args: list = None):
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
     logger.info(f"Logging to {log_filepath}")
 
-    output_dir = Path(parsed_args.outdir)
+    output_dir = Path(parsed_args.outdir).expanduser().absolute()
     logger.info(f"Writing resulting CK to {output_dir}")
 
     packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
@@ -197,9 +204,16 @@ def make_jpss_ck(cli_args: list = None):
             output_filepath.unlink(missing_ok=True)
 
         logger.info("Running MSOPCK...")
-        result = subprocess.run(['msopck', str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
-                                capture_output=True, check=True)
-        logger.info(result.stdout.decode())
+        try:
+            result = subprocess.run(['msopck', str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
+                                    capture_output=True, check=True)
+        except subprocess.CalledProcessError as cpe:
+            logger.info(f"Captured stdout: \n{cpe.stdout.decode()}")
+            if cpe.stderr:
+                logger.error(f"Captured stderr: \n{cpe.stderr.decode()}")
+            raise
+
+        logger.info(f"Captured stdout:\n{result.stdout.decode()}")
         if result.stderr:
             logger.error(result.stderr.decode())
         logger.info(f"Finished! CK written to {output_filepath}")

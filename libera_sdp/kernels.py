@@ -185,7 +185,7 @@ def write_kernel_setup_file(data: dict, filepath: Path):
     : Path
         Absolute path to written file.
     """
-    with open(filepath, 'w') as fh:
+    with open(filepath, 'x+') as fh:
         fh.write("\\begindata\n")
         for key, value in data.items():
             if key in ('PATH_VALUES', 'PATH_SYMBOLS', 'KERNELS_TO_LOAD'):
@@ -203,4 +203,6 @@ def write_kernel_setup_file(data: dict, filepath: Path):
                 value_str = f"{value}"
             fh.write(f"{key}={value_str}\n")
         fh.write("\\begintext\n")
+        fh.seek(0)
+        logger.info(f"Setup file contents:\n{''.join(fh.readlines())}")
     return filepath.absolute()

@@ -4,14 +4,15 @@
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
   "FALLBACK_LSK": "{LIBSDP_DATA_DIR}/naif0012.tls",
   "JPSS_SCLK": "{LIBSDP_DATA_DIR}/jpss3_contrived.tsc",
+  "LIBERA_FK": "{LIBSDP_DATA_DIR}/libera_fk_rev01.tf",
   "JPSS_NORAD_ID": 43013,
-  "JPSS_SC_ID": -143,
+  "JPSS_SC_ID": -143013,
   "JPSS_GEOLOCATION_PACKET_DEFINITION": "{LIBSDP_DATA_DIR}/jpss1_geolocation_xtce_v1.xml",
   "MKSPK_SETUPFILE_CONTENTS": {
     "INPUT_DATA_TYPE": "STATES",
     "OUTPUT_SPK_TYPE": 13,
     "OBJECT_ID": -143013,
-    "CENTER_ID": -1,
+    "CENTER_ID": 3,
     "REF_FRAME_NAME": "ITRF93",
     "PRODUCER_ID": "Gavin Medley (for Libera SDC)",
     "DATA_ORDER": ["epoch", "x", "y", "z", "vx", "vy", "vz"],
@@ -22,7 +23,8 @@
     "LINES_PER_RECORD": 1,
     "TIME_WRAPPER": "# ETSECONDS",
     "POLYNOM_DEGREE": 7,
-    "APPEND_TO_OUTPUT": "NO"
+    "APPEND_TO_OUTPUT": "NO",
+    "FRAME_DEF_FILE": "{LIBERA_FK}"
   },
   "MSOPCK_SETUPFILE_CONTENTS": {
     "LSK_FILE_NAME": "{FALLBACK_LSK}",
@@ -33,7 +35,7 @@
     "ANGULAR_RATE_PRESENT": "MAKE UP/NO AVERAGING",
     "CHECK_TIME_ORDER": "YES",
     "CK_TYPE": 3,
-    "INSTRUMENT_ID": -143013,
+    "INSTRUMENT_ID": -143013000,
     "INCLUDE_INTERVAL_TABLE": "YES",
     "PRODUCER_ID": "Gavin Medley (for Libera SDC)"
   },
