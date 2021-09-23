@@ -23,7 +23,7 @@ def test_ls_spice_constants(furnish_lsk):
     kernels.ls_spice_constants(True)
 
 
-def test_ls_kernel_coverage(furnish_jpss_ck, furnish_sclk):
+def test_ls_kernel_coverage(furnish_jpss_ck, furnish_jpss_spk, furnish_sclk):
     """Test listing all kernel time coverage"""
     kernels.ls_kernel_coverage('CK', True)
     kernels.ls_kernel_coverage('SPK', True)

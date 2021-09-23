@@ -40,7 +40,15 @@ def furnish_lsk():
 @pytest.fixture
 def furnish_jpss_ck(libera_sdp_test_data_dir):
     """Furnishes (temporarily) a JPSS CK"""
-    spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235959_20210409t015958.bc'))
+    spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235850_20210409t015849.bc'))
+    yield
+    spice.kclear()
+
+
+@pytest.fixture
+def furnish_jpss_spk(libera_sdp_test_data_dir):
+    """Furnishes (temporarily) a JPSS SPK"""
+    spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235850_20210409t015849.bsp'))
     yield
     spice.kclear()
 
