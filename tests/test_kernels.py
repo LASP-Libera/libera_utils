@@ -14,7 +14,7 @@ def test_ls_kernels(furnish_sclk, caplog):
     caplog.set_level(logging.DEBUG)
     result = kernels.ls_kernels(verbose=True, log=True)
     assert result == [kernels.KernelFileRecord('TEXT', config.get('JPSS_SCLK'))]
-    assert 'jpss3_contrived.tsc' in caplog.records[0].message
+    assert 'jpss1_contrived.tsc' in caplog.records[0].message
 
 
 def test_ls_spice_constants(furnish_lsk):
