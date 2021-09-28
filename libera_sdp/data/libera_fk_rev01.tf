@@ -14,6 +14,13 @@ Libera instrument
     > Total (TOT) Radiometer
 as well as the frame definition for the JPSS spacecraft.
 
+This frame kernel also includes a kernel pool variable that defines the
+EARTH_FIXED frame (ECEF) as relative to the high-precision ITRF93 reference
+frame rather than the default IAU_EARTH frame. The ITRF93 frame requires loading
+a high precision PCK from:
+https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/
+see aareadme.md for details on high precision Earth kernels.
+
 Version and Date (most recent at top)
 ===============================================================================
 --------------------
@@ -73,6 +80,12 @@ Frame Specification
   Frame Class_id:  -10000001   (ID code in C-kernel for Waldo)
 
 \begindata
+
+  TKFRAME_EARTH_FIXED_RELATIVE = 'ITRF93'
+  TKFRAME_EARTH_FIXED_SPEC     = 'MATRIX'
+  TKFRAME_EARTH_FIXED_MATRIX   = ( 1   0   0
+                                   0   1   0
+                                   0   0   1 )
 
   FRAME_JPSS_SPACECRAFT            = -143013000
   FRAME_-143013000_NAME            = 'JPSS_SPACECRAFT'

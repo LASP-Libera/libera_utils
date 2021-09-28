@@ -3,7 +3,7 @@
   "LIBSDP_STREAM_LOG_LEVEL": "INFO",
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
   "FALLBACK_LSK": "{LIBSDP_DATA_DIR}/naif0012.tls",
-  "JPSS_SCLK": "{LIBSDP_DATA_DIR}/jpss3_contrived.tsc",
+  "JPSS_SCLK": "{LIBSDP_DATA_DIR}/jpss1_contrived.tsc",
   "LIBERA_FK": "{LIBSDP_DATA_DIR}/libera_fk_rev01.tf",
   "JPSS_NORAD_ID": 43013,
   "JPSS_SC_ID": -143013,
