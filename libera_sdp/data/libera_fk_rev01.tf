@@ -42,6 +42,11 @@ Frames Hierarchy
              "JPSS_SPACECRAFT"
              -----------------
                      |
+                     | <- fixed
+                     V
+            "LIBERA_MOUNT_PLATE"
+            --------------------
+                     |
                      | <- ck
                      V
           "LIBERA_AZIMUTH_MECHANISM"
@@ -95,21 +100,30 @@ Frame Specification
   CK_-143013000_SCLK               = -143013
   CK_-143013000_SPK                = -143013
 
-  FRAME_LIBERA_AZIMUTH_MECHANISM   = -143013001
-  FRAME_-143013001_NAME            = 'LIBERA_AZIMUTH_MECHANISM'
-  FRAME_-143013001_CLASS           =  3
+  FRAME_LIBERA_MOUNT_PLATE         = -143013001
+  FRAME_-143013001_NAME            = 'LIBERA_MOUNT_PLATE'
+  FRAME_-143013001_CLASS           =  4
   FRAME_-143013001_CLASS_ID        = -143013001
   FRAME_-143013001_CENTER          = -143013
-  CK_-143013001_SCLK               = -143013
-  CK_-143013001_SPK                = -143013
-
-  FRAME_LIBERA_ELEVATION_MECHANISM = -143013002
-  FRAME_-143013002_NAME            = 'LIBERA_ELEVATION_MECHANISM'
+  TKFRAME_-143013001_SPEC          = 'QUATERNION'
+  TKFRAME_-143013001_RELATIVE      = 'JPSS_SPACECRAFT'
+  TKFRAME_-143013001_Q             = (1.0, 0.0, 0.0, 0.0)
+  
+  FRAME_LIBERA_AZIMUTH_MECHANISM   = -143013002
+  FRAME_-143013002_NAME            = 'LIBERA_AZIMUTH_MECHANISM'
   FRAME_-143013002_CLASS           =  3
   FRAME_-143013002_CLASS_ID        = -143013002
   FRAME_-143013002_CENTER          = -143013
   CK_-143013002_SCLK               = -143013
   CK_-143013002_SPK                = -143013
+
+  FRAME_LIBERA_ELEVATION_MECHANISM = -143013003
+  FRAME_-143013003_NAME            = 'LIBERA_ELEVATION_MECHANISM'
+  FRAME_-143013003_CLASS           =  3
+  FRAME_-143013003_CLASS_ID        = -143013003
+  FRAME_-143013003_CENTER          = -143013
+  CK_-143013003_SCLK               = -143013
+  CK_-143013003_SPK                = -143013
 
   FRAME_LIBERA_WFOV_CAMERA         = -143013010
   FRAME_-143013010_NAME            = 'LIBERA_WFOV_CAMERA'
@@ -155,5 +169,20 @@ Frame Specification
   TKFRAME_-143013014_SPEC          = 'QUATERNION'
   TKFRAME_-143013014_RELATIVE      = 'LIBERA_ELEVATION_MECHANISM'
   TKFRAME_-143013014_Q             = (1.0, 0.0, 0.0, 0.0)
+
+\begintext
+
+JPSS NAIF ID Codes -- Definitions
+=====================================================================
+
+   This section contains name to NAIF ID mappings for the JPSS mission.
+   Once the contents of this file are loaded into the KERNEL POOL, these
+   mappings become available within SPICE, making it possible to use
+   names instead of ID code in high level SPICE routine calls.
+
+\begindata
+
+  NAIF_BODY_NAME   += ( 'JPSS'  )
+  NAIF_BODY_CODE   += ( -143013 )
 
 \begintext
