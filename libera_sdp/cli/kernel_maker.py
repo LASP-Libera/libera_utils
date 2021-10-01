@@ -11,8 +11,8 @@ import numpy as np
 import numpy.lib.recfunctions as nprf
 from lasp_packets import parser, xtce
 # Local
+from libera_sdp.spiceutil import logger
 from libera_sdp.logutil import setup_task_logger
-from libera_sdp import kernels as libera_kernels
 from libera_sdp.config import config
 from libera_sdp.io import filenaming
 from libera_sdp import packets as libera_packets
@@ -83,13 +83,13 @@ def make_jpss_spk(cli_args: list = None):
 
     with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:
         tmp_path = Path(tmp_dir)
-        spk_data_filepath = libera_kernels.write_kernel_input_file(
+        spk_data_filepath = write_kernel_input_file(
             packet_data,
             filepath=tmp_path / 'mkspk_data.txt',
             fields=['ET', 'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ', 'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'])
         logger.info(f"MKSPK input data written to {spk_data_filepath}")
 
-        spk_setup_filepath = libera_kernels.write_kernel_setup_file(
+        spk_setup_filepath = write_kernel_setup_file(
             config.get("MKSPK_SETUPFILE_CONTENTS"),
             filepath=tmp_path / 'mkspk_setup.txt')
         logger.info(f"MKSPK setup file written to {spk_setup_filepath}")
@@ -182,7 +182,7 @@ def make_jpss_ck(cli_args: list = None):
 
     with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:
         tmp_path = Path(tmp_dir)
-        ck_data_filepath = libera_kernels.write_kernel_input_file(
+        ck_data_filepath = write_kernel_input_file(
             packet_data,
             filepath=tmp_path / 'msopck_data.txt',
             fields=['ATTSCLKSTR', 'ADCFAQ4', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3'],
@@ -190,7 +190,7 @@ def make_jpss_ck(cli_args: list = None):
         )  # produces w + i + j + k in SPICE_QUATERNION style
         logger.info(f"MSOPCK input data written to {ck_data_filepath}")
 
-        ck_setup_filepath = libera_kernels.write_kernel_setup_file(
+        ck_setup_filepath = write_kernel_setup_file(
             config.get("MSOPCK_SETUPFILE_CONTENTS"),
             filepath=tmp_path / 'msopck_setup.txt')
         logger.info(f"MSOPCK setup file written to {ck_setup_filepath}")
@@ -217,3 +217,75 @@ def make_jpss_ck(cli_args: list = None):
         if result.stderr:
             logger.error(result.stderr.decode())
         logger.info(f"Finished! CK written to {output_filepath}")
+
+
+def write_kernel_input_file(data: np.ndarray, filepath: str or Path, fields: list = None, fmt: str or list = "%.16f"):
+    """Write ephemeris and attitude data to MKSPK and MSOPCK input data files, respectively.
+
+    See MSOPCK documentation here:
+        https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/msopck.html
+    See MKSPK documentation here:
+        https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/mkspk.html
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Structured array (named, with data types) of attitude or ephemeris data.
+    filepath : str or Path
+        Filepath to write to.
+    fields : list
+        Optional. List of field names to write out to the data file. If not specified, assume fields are already
+        in the proper order.
+    fmt : str or list
+        Format specifier(s) to pass to np.savetxt. Default is to assume everything should be floats with 16 decimal
+        places of precision (%.16f). If a list is passed, it must contain a format specifier for each column in data.
+
+    Returns
+    -------
+    : Path
+        Absolute path to written file.
+    """
+    if fields:
+        np.savetxt(filepath, data[fields], delimiter=" ", fmt=fmt)
+    else:
+        np.savetxt(filepath, data[:], delimiter=" ", fmt=fmt)
+    return filepath.absolute()
+
+
+def write_kernel_setup_file(data: dict, filepath: Path):
+    """Write an MSOPCK or MKSPK compatible setup file of key-value pairs.
+    See documentation here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/msopck.html#Input%20Data%20Format
+
+    Parameters
+    ----------
+    data : dict
+        Dictionary of key-value pairs to write to the setup file.
+    filepath : Path
+        Filepath to write to.
+
+    Returns
+    -------
+    : Path
+        Absolute path to written file.
+    """
+    with open(filepath, 'x+') as fh:
+        fh.write("\\begindata\n")
+        for key, value in data.items():
+            if key in ('PATH_VALUES', 'PATH_SYMBOLS', 'KERNELS_TO_LOAD'):
+                inside = ", ".join([f"\n\t'{item}'" for item in value])
+                value_str = f"({inside}\n)"
+            elif isinstance(value, str):
+                value_str = f"'{value}'"
+            elif isinstance(value, list):
+                list_str = " ".join(value)
+                value_str = f"'{list_str}'"
+            elif isinstance(value, dict):
+                dict_str = " ".join([f"\n\t'{k}={v}'" for k, v in value.items()])
+                value_str = f"({dict_str}\n)"
+            else:
+                value_str = f"{value}"
+            fh.write(f"{key}={value_str}\n")
+        fh.write("\\begintext\n")
+        fh.seek(0)
+        logger.info(f"Setup file contents:\n{''.join(fh.readlines())}")
+    return filepath.absolute()

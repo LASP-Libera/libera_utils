@@ -5,31 +5,32 @@ import pytest
 # Installed
 import numpy as np
 # Local
-from libera_sdp import kernels
+import libera_sdp.cli.kernel_maker
+from libera_sdp import spiceutil
 from libera_sdp.config import config
 
 
 def test_ls_kernels(furnish_sclk, caplog):
     """Test listing all furnished kernels"""
     caplog.set_level(logging.DEBUG)
-    result = kernels.ls_kernels(verbose=True, log=True)
-    assert result == [kernels.KernelFileRecord('TEXT', config.get('JPSS_SCLK'))]
+    result = spiceutil.ls_kernels(verbose=True, log=True)
+    assert result == [spiceutil.KernelFileRecord('TEXT', config.get('JPSS_SCLK'))]
     assert 'jpss1_contrived.tsc' in caplog.records[0].message
 
 
 def test_ls_spice_constants(furnish_lsk):
     """Test listing all kernel pool variables"""
     # TODO: When we have a FK in the repo, furnish that here using a fixture and check the values
-    kernels.ls_spice_constants(True)
+    spiceutil.ls_spice_constants(True)
 
 
 def test_ls_kernel_coverage(furnish_jpss_ck, furnish_jpss_spk, furnish_sclk):
     """Test listing all kernel time coverage"""
-    kernels.ls_kernel_coverage('CK', True)
-    kernels.ls_kernel_coverage('SPK', True)
+    spiceutil.ls_kernel_coverage('CK', True)
+    spiceutil.ls_kernel_coverage('SPK', True)
 
     with pytest.raises(ValueError):
-        kernels.ls_kernel_coverage('FOO', True)
+        spiceutil.ls_kernel_coverage('FOO', True)
 
 
 def test_write_kernel_input_file(tmp_path):
@@ -60,7 +61,7 @@ def test_write_kernel_input_file(tmp_path):
         'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ',
         'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'
     ]
-    kernels.write_kernel_input_file(data, filepath, fields)
+    libera_sdp.cli.kernel_maker.write_kernel_input_file(data, filepath, fields)
 
 
 def test_write_kernel_setup_file(tmp_path):
@@ -75,5 +76,5 @@ def test_write_kernel_setup_file(tmp_path):
         "DICT_OF_VALUES": {'DISTANCES': 'METERS', 'ANGLES': 'DEGREES'},
         "SOME_FILEPATH": "myfile"
     }
-    kernels.write_kernel_setup_file(defaults, filepath)
+    libera_sdp.cli.kernel_maker.write_kernel_setup_file(defaults, filepath)
     print(filepath)
