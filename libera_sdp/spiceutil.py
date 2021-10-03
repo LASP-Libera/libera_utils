@@ -13,6 +13,13 @@ from spiceypy.utils.exceptions import NotFoundError
 # Local
 from libera_sdp.io import caching
 
+NAIF_PCK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/"
+NAIF_LSK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/"
+NAIF_DEVELOPMENT_EPHEMERIS_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/"
+NAIF_HIGH_PREC_PCK_REGEX = "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc"
+NAIF_LSK_REGEX = "naif[0-9]{4}.tls"
+NAIF_DE_REGEX = "de[0-9]{3}.bsp"
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,27 +52,8 @@ class KernelFileCache:
         self.max_cache_age = max_cache_age
         self.fallback_kernel = fallback_kernel
 
-    def get_cached_kernels(self, include_stale: bool = False) -> list:
-        """Check the cache directory for files matching the given kernel file regex and within cache age limit.
-
-        Parameters
-        ----------
-        include_stale : bool
-            Default False. If True, results include kernel that are past the max age.
-
-        Returns
-        -------
-        list
-            List of Paths to valid cached kernel files (matching regex and optionally within age limit).
-        """
-        valid_kernels = []
-        for file in self.cache_dir.glob("*"):
-            last_modified = datetime.datetime.fromtimestamp(file.stat().st_mtime)
-            if re.search(self.kernel_file_regex, file.name):
-                if include_stale or datetime.datetime.now() - last_modified < self.max_cache_age:
-                    valid_kernels.append(file)
-        valid_kernels.sort()
-        return valid_kernels
+    def __str__(self):
+        return str(self.cache_dir / self.kernel_file_regex)
 
     @property
     def kernel_link_regex(self):
@@ -111,10 +99,39 @@ class KernelFileCache:
                 else:
                     raise
 
+    def furnsh(self):
+        """Furnish the cached kernel"""
+        spice.furnsh(str(self.kernel_path))
+
     def clear(self):
         """Remove all cached files matching the kernel file regex from the cache directory"""
+        removed_kernels = []
         for kernel in self.get_cached_kernels(include_stale=True):
             os.remove(kernel)
+            removed_kernels.append(kernel)
+        return removed_kernels
+
+    def get_cached_kernels(self, include_stale: bool = False) -> list:
+        """Check the cache directory for files matching the given kernel file regex and within cache age limit.
+
+        Parameters
+        ----------
+        include_stale : bool
+            Default False. If True, results include kernel that are past the max age.
+
+        Returns
+        -------
+        list
+            List of Paths to valid cached kernel files (matching regex and optionally within age limit).
+        """
+        valid_kernels = []
+        for file in self.cache_dir.glob("*"):
+            last_modified = datetime.datetime.fromtimestamp(file.stat().st_mtime)
+            if re.search(self.kernel_file_regex, file.name):
+                if include_stale or datetime.datetime.now() - last_modified < self.max_cache_age:
+                    valid_kernels.append(file)
+        valid_kernels.sort()
+        return valid_kernels
 
     def download_kernel(self, kernel_filename: str) -> Path:
         """
