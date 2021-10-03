@@ -2,6 +2,7 @@
 # Standard
 import logging
 import pytest
+from pathlib import Path
 from unittest import mock
 # Installed
 import numpy as np
@@ -12,50 +13,69 @@ from libera_sdp import spiceutil
 from libera_sdp.config import config
 
 
+def test_kernel_file_cache_cache_dir(monkeypatch):
+    """Test the property getter for finding the proper cache path based on the system"""
+    cache = spiceutil.KernelFileCache("irrelevent-url", 'irrelevant-regex')
+
+    with mock.patch("libera_sdp.spiceutil.version", return_value="0.0.0"):
+        with mock.patch("sys.platform", "darwin"):
+            assert cache.cache_dir == Path('~/Library/Caches').expanduser() / "libera_sdp/0.0.0"
+        with mock.patch("sys.platform", "linux of some type"):
+            assert cache.cache_dir == Path("~/.cache").expanduser() / 'libera_sdp/0.0.0'
+
+            monkeypatch.setenv('XDG_CACHE_HOME', '/home/myuser/.cache')
+            assert cache.cache_dir == Path("/home/myuser/.cache/libera_sdp/0.0.0")
+
+
 @responses.activate
-def test_kernel_file_cache(libera_sdp_test_data_dir, tmp_path):
+def test_kernel_file_cache(libera_sdp_test_data_dir, tmp_path, monkeypatch):
     """Test caching a kernel file from NAIF, mocking out the actual HTTP requests."""
     # Name of a file mentioned in the test naif page
     test_kernel_filename = 'earth_000101_211220_210926.bpc'
-    # regex string to match filenames mentioned in the naif test page
-    test_kernel_regex = "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc"
-    # Name of file containing a NAIF index page
-    naif_index_filename = 'naif_pck_index.html'
-    # Full path to NAIF index filename (used to mock out the HTTP request)
-    mock_naif_index_page = libera_sdp_test_data_dir / naif_index_filename
 
-    cache = spiceutil.KernelFileCache("https://fake-naif.page/{}".format(naif_index_filename),
-                                      test_kernel_regex)
+    cache = spiceutil.KernelFileCache("https://fake-naif-page", "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc",
+                                      fallback_kernel=libera_sdp_test_data_dir / test_kernel_filename)
 
-    with open(mock_naif_index_page, 'r') as fh:
+    # Mock the response for the index page with the saved html
+    with open(libera_sdp_test_data_dir / 'naif_pck_index.html', 'r') as fh:
         responses.add(
-            responses.GET, 'https://fake-naif.page/{}'.format(naif_index_filename),
+            responses.GET, 'https://fake-naif-page/',
             body=fh.read(), status=200,
             content_type='text/html'
         )
 
+    # Prove that the regex search of the html index page works
     assert cache.find_most_recent_kernel() == test_kernel_filename
 
-    # Location of the actual file (used to mock out the HTTP download response)
-    bpc_content_path = libera_sdp_test_data_dir / test_kernel_filename
-    with open(bpc_content_path, 'rb') as fh:
+    # Mock out the download URL for the kernel file with the local test file
+    with open(libera_sdp_test_data_dir / test_kernel_filename, 'rb') as fh:
         responses.add(
-            responses.GET, 'https://should.not/matter/{}'.format(test_kernel_filename),
+            responses.GET, 'https://fake-naif-page/{}'.format(test_kernel_filename),
             body=fh.read(), status=200,
             content_type='application/octet-stream',
             adding_headers={'Transfer-Encoding': 'chunked'},
             stream=True
         )
 
-    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir', new_callable=mock.PropertyMock) as mock_kernel_cache_dir:
-        mock_kernel_cache_dir.return_value = tmp_path
+    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir',
+                    new_callable=mock.PropertyMock, return_value=tmp_path):
 
-        cache = spiceutil.KernelFileCache("https://should.not/matter",
-                                          test_kernel_regex)
-
+        # Prove that the download logic works for putting a file in the cache
         cache.download_kernel(test_kernel_filename)
-        assert cache.cache_dir / test_kernel_filename in cache.get_cached_kernels()
+        assert cache.get_cached_kernels() == [cache.cache_dir / test_kernel_filename]
         assert cache.kernel_path == tmp_path / test_kernel_filename
+
+        # Prove that the automatic download logic works when we ask for the kernel_path
+        cache.clear()
+        assert cache.get_cached_kernels() == []
+        # Tests the automomatic searching and downloading of a new (mocked) kernel
+        assert cache.kernel_path == tmp_path / test_kernel_filename
+
+        # Test fallback kernel functionality
+        cache.clear()
+        assert cache.get_cached_kernels() == []
+        responses.replace(responses.GET, 'https://fake-naif-page/', status=500)
+        assert cache.kernel_path == libera_sdp_test_data_dir / test_kernel_filename
 
 
 def test_ls_kernels(furnish_sclk, caplog):
