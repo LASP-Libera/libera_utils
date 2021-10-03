@@ -5,13 +5,13 @@ import logging
 import os
 import re
 import requests
-import sys
-from importlib.metadata import version
 from pathlib import Path
 from typing import NamedTuple
 # Installed
 import spiceypy as spice
 from spiceypy.utils.exceptions import NotFoundError
+# Local
+from libera_sdp.io import caching
 
 logger = logging.getLogger(__name__)
 
@@ -80,33 +80,14 @@ class KernelFileCache:
 
     @property
     def cache_dir(self):
-        """Determine where to cache files based on the system and installed package version.
+        """Property that calls out to get the proper local cache directory
 
         Returns
         -------
-        : Path
-            Path to the cache directory for this version of this package on the current system
+        Path
+            Path to the proper local cache for the system.
         """
-        system = sys.platform
-        package_name = __name__.split('.', 1)[0]
-        package_version = version(package_name)
-        if system == 'darwin':
-            path = Path('~/Library/Caches').expanduser()
-            if package_name:
-                path = path / package_name
-        elif system.startswith('linux'):
-            if os.getenv('XDG_CACHE_HOME'):
-                path = Path(os.getenv('XDG_CACHE_HOME'))
-            else:
-                path = Path('~/.cache').expanduser()
-            if package_name:
-                path = path / package_name
-        else:
-            raise NotImplemented("Only MacOS (darwin) and Linux (linux) platforms are currently supported. "
-                                 "Unsupported platform appears to be %s", system)
-        if package_name and version:
-            path = path / package_version
-        return path
+        return caching.get_local_cache_dir()
 
     @property
     def kernel_path(self) -> Path:
