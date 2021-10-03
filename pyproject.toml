@@ -16,10 +16,12 @@ h5py = "^3.3.0"
 numpy = "^1.21.0"
 spiceypy = "^4.0.1"
 lasp-packets = "1.0"
+requests = "^2.26.0"
 
 [tool.poetry.dev-dependencies]
 pytest-cov = "^2.12.1"
 pylint = "^2.9.3"
+responses = "^0.14.0"
 
 [tool.poetry.scripts]
 make-jpss-spk = 'libera_sdp.cli.kernel_maker:make_jpss_spk'

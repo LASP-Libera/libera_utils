@@ -1,11 +1,13 @@
 """Pytest fixtures"""
+# Standard
 import logging
 from pathlib import Path
 import sys
-
+# Installed
 import pytest
 import spiceypy as spice
-
+from requests import Response
+# Local
 from libera_sdp.config import config
 from libera_sdp import logutil
 
@@ -62,3 +64,17 @@ def setup_test_logging(tmpdir, monkeypatch):
     yield log_filepath
     # Remove all handlers from root logger. No other loggers should ever have handlers attached.
     logging.getLogger().handlers = []
+
+
+@pytest.fixture
+def mock_http_response():
+    """Provides a mock response from a webpage with response content sourced from a file"""
+    def mock_response_factory(content_path, status=200):
+        """Factory method to create mock responses"""
+        with open(content_path, 'r') as fh:
+            mock_response = Response()
+            mock_response._content = "".join(fh.readlines()).encode()
+            mock_response.status_code = status
+        return mock_response
+
+    yield mock_response_factory
