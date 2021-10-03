@@ -2,12 +2,60 @@
 # Standard
 import logging
 import pytest
+from unittest import mock
 # Installed
 import numpy as np
+import responses
+from requests.models import Response
 # Local
 import libera_sdp.cli.kernel_maker
 from libera_sdp import spiceutil
 from libera_sdp.config import config
+
+
+# TODO: replace mock with requests.activate decorator from responses library
+@mock.patch("requests.get")
+def test_kernel_file_cache(mock_get, libera_sdp_test_data_dir, mock_http_response):
+    """Test caching a kernel file, mocking out the actual HTTP requests"""
+    mock_index_page = mock_http_response(libera_sdp_test_data_dir / 'naif_pck_index.html')
+
+    mock_get.side_effect = [
+        mock_index_page
+        ]
+
+    cache = spiceutil.KernelFileCache("https://should.not/matter",
+                                      "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc")
+    # TODO: figure out how to ensure the cache is cleared at the start
+    # assert not cache.get_cached_kernels(True)
+    assert cache.find_most_recent_kernel() == 'earth_000101_211222_210929.bpc'
+
+
+@responses.activate
+def test_kernel_file_download(tmp_path, libera_sdp_test_data_dir):
+    # Name of a file mentioned in the test naif page
+    test_kernel_filename = 'earth_000101_211220_210926.bpc'
+    # regex string to match filenames mentioned in the naif test page
+    test_kernel_regex = "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc"
+    # Location of the actual file (used to mock out the HTTP download response)
+    content_path = libera_sdp_test_data_dir / test_kernel_filename
+    with open(content_path, 'rb') as fh:
+        responses.add(
+            responses.GET, 'https://should.not/matter/{}'.format(test_kernel_filename),
+            body="fh.read()", status=200,
+            content_type='application/octet-stream',
+            adding_headers={'Transfer-Encoding': 'chunked'},
+            stream=True
+        )
+
+    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir', new_callable=mock.PropertyMock) as mock_kernel_cache_dir:
+        mock_kernel_cache_dir.return_value = tmp_path
+
+        cache = spiceutil.KernelFileCache("https://should.not/matter",
+                                          test_kernel_regex)
+
+        cache.download_kernel(test_kernel_filename)
+        assert cache.cache_dir / test_kernel_filename in cache.get_cached_kernels()
+        assert cache.kernel_path == tmp_path / test_kernel_filename
 
 
 def test_ls_kernels(furnish_sclk, caplog):
