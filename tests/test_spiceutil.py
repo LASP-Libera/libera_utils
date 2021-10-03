@@ -2,7 +2,6 @@
 # Standard
 import logging
 import pytest
-from pathlib import Path
 from unittest import mock
 # Installed
 import numpy as np
@@ -11,20 +10,6 @@ import responses
 import libera_sdp.cli.kernel_maker
 from libera_sdp import spiceutil
 from libera_sdp.config import config
-
-
-def test_kernel_file_cache_cache_dir(monkeypatch):
-    """Test the property getter for finding the proper cache path based on the system"""
-    cache = spiceutil.KernelFileCache("irrelevent-url", 'irrelevant-regex')
-
-    with mock.patch("libera_sdp.spiceutil.version", return_value="0.0.0"):
-        with mock.patch("sys.platform", "darwin"):
-            assert cache.cache_dir == Path('~/Library/Caches').expanduser() / "libera_sdp/0.0.0"
-        with mock.patch("sys.platform", "linux of some type"):
-            assert cache.cache_dir == Path("~/.cache").expanduser() / 'libera_sdp/0.0.0'
-
-            monkeypatch.setenv('XDG_CACHE_HOME', '/home/myuser/.cache')
-            assert cache.cache_dir == Path("/home/myuser/.cache/libera_sdp/0.0.0")
 
 
 @responses.activate
