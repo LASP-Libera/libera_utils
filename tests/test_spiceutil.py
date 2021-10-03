@@ -6,42 +6,42 @@ from unittest import mock
 # Installed
 import numpy as np
 import responses
-from requests.models import Response
 # Local
 import libera_sdp.cli.kernel_maker
 from libera_sdp import spiceutil
 from libera_sdp.config import config
 
 
-# TODO: replace mock with requests.activate decorator from responses library
-@mock.patch("requests.get")
-def test_kernel_file_cache(mock_get, libera_sdp_test_data_dir, mock_http_response):
-    """Test caching a kernel file, mocking out the actual HTTP requests"""
-    mock_index_page = mock_http_response(libera_sdp_test_data_dir / 'naif_pck_index.html')
-
-    mock_get.side_effect = [
-        mock_index_page
-        ]
-
-    cache = spiceutil.KernelFileCache("https://should.not/matter",
-                                      "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc")
-    # TODO: figure out how to ensure the cache is cleared at the start
-    # assert not cache.get_cached_kernels(True)
-    assert cache.find_most_recent_kernel() == 'earth_000101_211222_210929.bpc'
-
-
 @responses.activate
-def test_kernel_file_download(tmp_path, libera_sdp_test_data_dir):
+def test_kernel_file_cache(libera_sdp_test_data_dir, tmp_path):
+    """Test caching a kernel file from NAIF, mocking out the actual HTTP requests."""
     # Name of a file mentioned in the test naif page
     test_kernel_filename = 'earth_000101_211220_210926.bpc'
     # regex string to match filenames mentioned in the naif test page
     test_kernel_regex = "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc"
+    # Name of file containing a NAIF index page
+    naif_index_filename = 'naif_pck_index.html'
+    # Full path to NAIF index filename (used to mock out the HTTP request)
+    mock_naif_index_page = libera_sdp_test_data_dir / naif_index_filename
+
+    cache = spiceutil.KernelFileCache("https://fake-naif.page/{}".format(naif_index_filename),
+                                      test_kernel_regex)
+
+    with open(mock_naif_index_page, 'r') as fh:
+        responses.add(
+            responses.GET, 'https://fake-naif.page/{}'.format(naif_index_filename),
+            body=fh.read(), status=200,
+            content_type='text/html'
+        )
+
+    assert cache.find_most_recent_kernel() == test_kernel_filename
+
     # Location of the actual file (used to mock out the HTTP download response)
-    content_path = libera_sdp_test_data_dir / test_kernel_filename
-    with open(content_path, 'rb') as fh:
+    bpc_content_path = libera_sdp_test_data_dir / test_kernel_filename
+    with open(bpc_content_path, 'rb') as fh:
         responses.add(
             responses.GET, 'https://should.not/matter/{}'.format(test_kernel_filename),
-            body="fh.read()", status=200,
+            body=fh.read(), status=200,
             content_type='application/octet-stream',
             adding_headers={'Transfer-Encoding': 'chunked'},
             stream=True
@@ -66,10 +66,11 @@ def test_ls_kernels(furnish_sclk, caplog):
     assert 'jpss1_contrived.tsc' in caplog.records[0].message
 
 
-def test_ls_spice_constants(furnish_lsk):
+def test_ls_spice_constants(furnish_lsk, furnish_fk):
     """Test listing all kernel pool variables"""
-    # TODO: When we have a FK in the repo, furnish that here using a fixture and check the values
-    spiceutil.ls_spice_constants(True)
+    spice_pool = spiceutil.ls_spice_constants(True)
+    print(spice_pool)
+    assert spice_pool['TKFRAME_EARTH_FIXED_RELATIVE'] == ['ITRF93']
 
 
 def test_ls_kernel_coverage(furnish_jpss_ck, furnish_jpss_spk, furnish_sclk):

@@ -39,7 +39,8 @@ class KernelFileCache:
         fallback_kernel : Path
             Path pointing to a fallback kernel location. May be None, which disallows a fallback.
         """
-        self.naif_base_url = naif_base_url if naif_base_url[-1] == '/' else naif_base_url + '/'
+        # Remove any trailing slash from naif_base_url (we assume no trailing slash in methods)
+        self.naif_base_url = naif_base_url if naif_base_url[-1] != '/' else naif_base_url[0:-1]
         self.kernel_file_regex = kernel_file_regex
         self.max_cache_age = max_cache_age
         self.fallback_kernel = fallback_kernel
@@ -140,7 +141,7 @@ class KernelFileCache:
         Path
             Location of downloaded file
         """
-        download_url = self.naif_base_url + kernel_filename
+        download_url = self.naif_base_url + "/" + kernel_filename
         local_filepath = self.cache_dir / kernel_filename
         if not local_filepath.parent.exists():
             local_filepath.parent.mkdir(parents=True)
@@ -243,12 +244,12 @@ def ls_spice_constants(verbose: bool = False) -> dict:
         n, kernel_type = spice.dtpool(kervar)
         if verbose:
             print("%-50s %s %d" % (kervar, kernel_type, n))
-        if type == 'N':
+        if kernel_type == 'N':
             values = spice.gdpool(kervar, 0, n)
             result[kervar] = values
             if verbose:
                 print(values)
-        elif type == 'C':
+        elif kernel_type == 'C':
             values = spice.gcpool(kervar, 0, n, 81)
             result[kervar] = values
             if verbose:
