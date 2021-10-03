@@ -95,7 +95,10 @@ class KernelFileCache:
             if package_name:
                 path = path / package_name
         elif system.startswith('linux'):
-            path = os.getenv('XDG_CACHE_HOME', Path('~/.cache').expanduser())
+            if os.getenv('XDG_CACHE_HOME'):
+                path = Path(os.getenv('XDG_CACHE_HOME'))
+            else:
+                path = Path('~/.cache').expanduser()
             if package_name:
                 path = path / package_name
         else:
@@ -118,7 +121,11 @@ class KernelFileCache:
                 downloaded_kernel = self.download_kernel(most_recent_kernel)
                 return downloaded_kernel
             except Exception as unhandled:
+                logger.exception(unhandled)
                 if self.fallback_kernel:
+                    logger.error(
+                        f"Error finding and downloading the most recent kernel matching {self.kernel_file_regex}. "
+                        f"Falling back to {self.fallback_kernel}")
                     return self.fallback_kernel
                 else:
                     raise
