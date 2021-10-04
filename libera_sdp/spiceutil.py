@@ -1,16 +1,20 @@
 """Modules for SPICE kernel creation, management, and usage"""
 # Standard
 import datetime
+import functools
 import logging
 import os
 import re
+from enum import Enum
+
 import requests
 from pathlib import Path
 from typing import NamedTuple
 # Installed
 import spiceypy as spice
-from spiceypy.utils.exceptions import NotFoundError
+from spiceypy.utils.exceptions import NotFoundError, SpiceyError
 # Local
+from libera_sdp.config import config
 from libera_sdp.io import caching
 
 NAIF_PCK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/"
@@ -194,6 +198,98 @@ class KernelFileRecord(NamedTuple):
         return f"KernelFileRecord({self.kernel_type}, {self.file_name})"
 
 
+def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
+    # FIXME: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't figured out
+    #  exactly how we want to use it for SPK and CK files.
+    #  Perhaps this decorator should only be smart enough to check for generic kernels?
+    """
+    Before trying to understand this piece of code, read this:
+    https://stackoverflow.com/questions/5929107/decorators-with-parameters/60832711#60832711
+
+    Decorator/wrapper that tries to ensure that a metakernel is furnished in as complete a way as possible.
+
+    ======================
+    Control flow overview:
+    ======================
+    1. Try simply calling the wrapped function naively.
+    --> SUCCESS? Great! We're done.
+    --> SpiceyError? Go to step 2.
+
+    2. Furnish metakernel at SPICE_METAKERNEL
+    --> SUCCESS? Great, return the original function again (so it can be re-run).
+    --> KeyError? Seems like SPICE_METAKERNEL isn't set, no problem. Go to step 3.
+
+    ======
+    Usage:
+    ======
+    Three ways to use this object:
+    1) A decorator with no arguments
+    ```
+    @ensure_spice
+    def my_spicey_func(a, b):
+        pass
+    ```
+    2) A decorator with parameters. This is useful
+    if we only need the latest SCLK and LSK kernels for the function involved.
+    ```
+    @ensure_spice(time_kernels_only=True)
+    def my_spicey_time_func(a, b):
+        pass
+    ```
+    3) An explicit wrapper function, providing a dynamically set value for parameters, e.g. time_kernels_only
+    ```
+    wrapped = ensure_spice(spicey_func, time_kernels_only=True)
+    result = wrapped(*args, **kwargs)
+    ```
+
+    Parameters
+    ----------
+    f_py: callable
+        The function requiring SPICE that we are going to wrap if being used explicitly,
+        Otherwise None, in which case ensure_spice is being used, not as a function wrapper (see l2a_processing.py) but
+        as a true decorator without an explicit function argument.
+    time_kernels_only: bool, optional
+        Specify that we only need to furnish time kernels
+        (if SPICE_METAKERNEL is set, we still just furnish that metakernel and assume the time kernels are included.
+
+    Returns
+    -------
+    : callable
+        Decorated function, with spice error handling
+    """
+    assert callable(f_py) or f_py is None  # If this is set, it must be a callable object
+
+    def _decorator(func):
+        """This is either a decorator or a function wrapper, depending on how ensure_spice is being used"""
+
+        @functools.wraps(func)
+        def wrapper_ensure_spice(*args, **kwargs):
+            """
+            This function wraps the actual function that ensure_spice is wrapping/decorating. *args and **kwargs
+            refer to those passed to the decorated function.
+            """
+            try:
+                # Step 1.
+                return func(*args, **kwargs)  # Naive first try. Maybe SPICE is already furnished.
+            except SpiceyError as spcy_err:
+                try:
+                    # Step 2.
+                    metakernel_path = os.environ['SPICE_METAKERNEL']
+                    spice.furnsh(metakernel_path)
+                except KeyError:
+                    if time_kernels_only:
+                        lsk = KernelFileCache(NAIF_LSK_INDEX_URL, NAIF_LSK_REGEX)
+                        spice.furnsh(str(lsk.kernel_path))
+                        spice.furnsh(config.get('JPSS_SCLK'))
+                    else:
+                        raise SpiceyError(f"When calling a function requiring SPICE, we failed to load a metakernel. "
+                                          f"SPICE_METAKERNEL is not set, and time_kernels_only is not set to True"
+                                          ) from spcy_err
+                return func(*args, **kwargs)
+        return wrapper_ensure_spice
+    return _decorator(f_py) if callable(f_py) else _decorator
+
+
 def ls_kernels(verbose: bool = False, log: bool = False) -> list:
     """
     List all furnished spice kernels.
@@ -280,7 +376,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
         Key is filename, value is a list of tuples giving the start and end times in ET.
     """
     if kernel_type not in ('CK', 'SPK'):
-        raise ValueError(f"Invalid kernel_type argument to ls_kernel_coverage {kernel_type}.")
+        raise ValueError(f"Invalid kernel_type argument to ls_kernel_coverage {kernel_type}. Must be CK or SPK.")
 
     result = {}
     count = spice.ktotal(kernel_type)
@@ -289,19 +385,49 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
         result[file] = []
         if kernel_type.upper() == 'CK':
             ids = spice.ckobj(file)
-        elif kernel_type.upper() == 'SPK':
+        else:  # Must be SPK
             ids = spice.spkobj(file)
 
-        for id in ids:
+        for kernel_id in ids:
             cover = spice.cell_double(10000)
             if kernel_type.upper() == 'CK':
-                cover = spice.ckcov(file, id, False, 'INTERVAL', 0.0, 'TDB', cover)
-            else:
-                cover = spice.spkcov(file, id, cover)
+                cover = spice.ckcov(file, kernel_id, False, 'INTERVAL', 0.0, 'TDB', cover)
+            else:  # Must be SPK
+                cover = spice.spkcov(file, kernel_id, cover)
             card = spice.wncard(cover)
             for i_window in range(card):
                 left, right = spice.wnfetd(cover, i_window)
                 result[file].append((left, right))
                 if verbose:
-                    print("%s,%s,%d,%17.6f,%s,%17.6f,%s" % (kernel_type, file, id, left, spice.etcal(left), right, spice.etcal(right)))
+                    print("%s,%s,%d,%17.6f,%s,%17.6f,%s" %
+                          (kernel_type, file, kernel_id, left, spice.etcal(left), right, spice.etcal(right)))
     return result
+
+
+class SpiceId(NamedTuple):
+    """Class that represents a unique identifier in the NAIF SPICE library"""
+    strid: str
+    numid: int
+
+
+class SpiceBody(Enum):
+    """Enum containing SPICE IDs for ephemeris bodies that we use."""
+    JPSS = SpiceId('JPSS', config.get('JPSS_SC_ID'))
+    SSB = SpiceId('SOLAR_SYSTEM_BARYCENTER', 0)
+    SUN = SpiceId('SUN', 10)
+    EARTH = SpiceId('EARTH', 399)
+
+
+class SpiceInstrument(Enum):
+    """Enum containing SPICE IDs for instrument geometries configured in the Instrument Kernel (IK)"""
+    # TODO: We don't have an IK yet. Once we do we should add instrument names and IDs, like
+    #  LIBERA_SW_RADIOMETER = SpiceId('LIBERA_SW_RADIOMETER', -143013301)
+    #  Do the required reading on NAIF on how to assign IDs to instrument bodies in an IK,
+    #  here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/25_ik.pdf
+    #  and here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/kernel.html#Kernel%20Types
+    raise NotImplementedError
+
+
+class SpiceFrame(Enum):
+    """Enum containing SPICE IDs for reference frames, possibly defined in the Frame Kernel (FK)"""
+    J2000 = SpiceId('J2000', 1)

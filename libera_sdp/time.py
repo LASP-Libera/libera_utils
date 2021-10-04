@@ -16,7 +16,7 @@ import numpy as np
 import spiceypy as spice
 # Local
 from libera_sdp.config import config
-from libera_sdp.decorators import ensure_spice
+from libera_sdp.spiceutil import ensure_spice
 
 ISOT_REGEX = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
                         r"[T|t]"
