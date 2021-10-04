@@ -13,6 +13,9 @@ from libera_sdp.config import config
 
 
 def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
+    # FIXME: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't figured out
+    #  exactly how we want to use it for SPK and CK files.
+    #  Perhaps this decorator should only be smart enough to check for generic kernels?
     """
     Before trying to understand this piece of code, read this:
     https://stackoverflow.com/questions/5929107/decorators-with-parameters/60832711#60832711
@@ -47,7 +50,7 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
     def my_spicey_time_func(a, b):
         pass
     ```
-    3) An explicit wrapper function, providing dynamic parameters to the SDC API call.
+    3) An explicit wrapper function, providing a dynamically set value for parameters, e.g. time_kernels_only
     ```
     wrapped = ensure_spice(spicey_func, time_kernels_only=True)
     result = wrapped(*args, **kwargs)
@@ -61,7 +64,7 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
         as a true decorator without an explicit function argument.
     time_kernels_only: bool, optional
         Specify that we only need to furnish time kernels
-        (if SPICE_METAKERNEL is set, we still just furnish that metakernel.
+        (if SPICE_METAKERNEL is set, we still just furnish that metakernel and assume the time kernels are included.
 
     Returns
     -------
