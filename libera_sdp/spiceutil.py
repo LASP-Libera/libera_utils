@@ -158,6 +158,7 @@ class KernelFileCache:
                     # and set chunk_size parameter to None.
                     # if chunk:
                     f.write(chunk)
+        logger.info(f"Cached kernel file to {local_filepath}")
         return local_filepath
 
     def find_most_recent_kernel(self) -> str:

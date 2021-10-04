@@ -8,6 +8,7 @@ import os
 import spiceypy as spice
 from spiceypy.utils.exceptions import SpiceyError
 # Local
+from libera_sdp import spiceutil
 from libera_sdp.config import config
 
 
@@ -88,7 +89,8 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
                     spice.furnsh(metakernel_path)
                 except KeyError:
                     if time_kernels_only:
-                        spice.furnsh(config.get('FALLBACK_LSK'))
+                        lsk = spiceutil.KernelFileCache(spiceutil.NAIF_LSK_INDEX_URL, spiceutil.NAIF_LSK_REGEX)
+                        spice.furnsh(str(lsk.kernel_path))
                         spice.furnsh(config.get('JPSS_SCLK'))
                     else:
                         raise SpiceyError(f"When calling a function requiring SPICE, we failed to load a metakernel. "

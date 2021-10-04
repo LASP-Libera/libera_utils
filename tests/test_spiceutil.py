@@ -131,4 +131,3 @@ def test_write_kernel_setup_file(tmp_path):
         "SOME_FILEPATH": "myfile"
     }
     libera_sdp.cli.kernel_maker.write_kernel_setup_file(defaults, filepath)
-    print(filepath)

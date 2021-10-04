@@ -31,7 +31,7 @@ def get_local_cache_dir():
     else:
         raise NotImplemented("Only MacOS (darwin) and Linux (linux) platforms are currently supported. "
                              "Unsupported platform appears to be %s", system)
-    if package_name and version:
+    if package_name and package_version:
         path = path / package_version
     return path
 

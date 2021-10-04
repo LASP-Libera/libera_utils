@@ -1,8 +1,9 @@
 """Pytest fixtures"""
 # Standard
 import logging
-from pathlib import Path
 import sys
+import tempfile
+from pathlib import Path
 # Installed
 import pytest
 import spiceypy as spice
@@ -12,13 +13,19 @@ from libera_sdp import logutil
 
 
 @pytest.fixture
-def libera_sdp_test_data_dir():
-    """Returns the test data directory
-
-    Returns
-    -------
-    : Path
+def short_tmp_path():
+    """Creates a short temporary directory and returns a Path object pointing to it.
+    This is specifically useful for mocking directories that need to be pointed to from SPICE
+    text kernels (e.g. MSOPCK and MKSPK setup files).
+    For all other use cases that don't require a short path, use the pytest tmp_path fixture.
     """
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as td:
+        yield Path(td)
+
+
+@pytest.fixture
+def libera_sdp_test_data_dir():
+    """Returns the test data directory"""
     return Path(sys.modules[__name__.split('.')[0]].__file__).parent / 'test_data'
 
 
@@ -39,16 +46,16 @@ def furnish_sclk():
 
 
 @pytest.fixture
-def furnish_lsk():
-    """Furnishes (temporarily) the fallback LSK"""
-    spice.furnsh(config.get('FALLBACK_LSK'))
+def furnish_lsk(libera_sdp_test_data_dir):
+    """Furnishes (temporarily) the testing LSK"""
+    spice.furnsh(str(libera_sdp_test_data_dir / 'naif0012.tls'))
     yield
     spice.kclear()
 
 
 @pytest.fixture
 def furnish_jpss_ck(libera_sdp_test_data_dir):
-    """Furnishes (temporarily) a JPSS CK"""
+    """Furnishes (temporarily) a testing JPSS CK"""
     spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235850_20210409t015849.bc'))
     yield
     spice.kclear()
@@ -56,7 +63,7 @@ def furnish_jpss_ck(libera_sdp_test_data_dir):
 
 @pytest.fixture
 def furnish_jpss_spk(libera_sdp_test_data_dir):
-    """Furnishes (temporarily) a JPSS SPK"""
+    """Furnishes (temporarily) a testing JPSS SPK"""
     spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235850_20210409t015849.bsp'))
     yield
     spice.kclear()
