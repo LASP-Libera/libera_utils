@@ -24,6 +24,11 @@ LIBERA_PRODUCT_REGEX = re.compile(r"^libera"
                                   r"_(?P<utc_end>[0-9]{8}(?:t[0-9]{6})?)"
                                   r"\.(?P<extension>pkts|h5)$")
 
+# TODO: Make an ABC for KernelFilename for EphemerisKernelFilename and AttitudeKernelFilename
+#  to inherit from to clarify the interface.
+
+# TODO: Need a LiberaProductFilename that should probably also inherit from the ABC KernelFilename
+
 
 class EphemerisKernelFilename:
     """Class to construct, store, and manipulate an SPK filename"""
