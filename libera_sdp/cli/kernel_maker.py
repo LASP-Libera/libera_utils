@@ -11,12 +11,14 @@ import numpy as np
 import numpy.lib.recfunctions as nprf
 from lasp_packets import parser, xtce
 # Local
-from libera_sdp.spiceutil import logger
+from libera_sdp import spiceutil
 from libera_sdp.logutil import setup_task_logger
 from libera_sdp.config import config
 from libera_sdp.io import filenaming
 from libera_sdp import packets as libera_packets
 from libera_sdp import time
+
+logger = logging.getLogger(__name__)
 
 
 def make_jpss_spk(cli_args: list = None):
@@ -55,7 +57,6 @@ def make_jpss_spk(cli_args: list = None):
 
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
     log_filepath = setup_task_logger(f'spk_generator_{now}', stream_log_level=stream_log_level)
-    logger = logging.getLogger(__name__)
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
     logger.info(f"Logging to {log_filepath}")
@@ -157,7 +158,6 @@ def make_jpss_ck(cli_args: list = None):
 
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
     log_filepath = setup_task_logger(f'ck_generator_{now}', stream_log_level=stream_log_level)
-    logger = logging.getLogger(__name__)
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
     logger.info(f"Logging to {log_filepath}")
@@ -274,6 +274,9 @@ def write_kernel_setup_file(data: dict, filepath: Path):
             if key in ('PATH_VALUES', 'PATH_SYMBOLS', 'KERNELS_TO_LOAD'):
                 inside = ", ".join([f"\n\t'{item}'" for item in value])
                 value_str = f"({inside}\n)"
+            elif key in ('LSK_FILE_NAME', 'LEAPSECONDS_FILE'):
+                lsk = spiceutil.KernelFileCache(spiceutil.NAIF_LSK_INDEX_URL, spiceutil.NAIF_LSK_REGEX)
+                value_str = f"'{str(lsk.kernel_path)}'"
             elif isinstance(value, str):
                 value_str = f"'{value}'"
             elif isinstance(value, list):

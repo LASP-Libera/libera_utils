@@ -2,7 +2,6 @@
   "LIBSDP_LOG_DIR": "/tmp",
   "LIBSDP_STREAM_LOG_LEVEL": "INFO",
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
-  "FALLBACK_LSK": "{LIBSDP_DATA_DIR}/naif0012.tls",
   "JPSS_SCLK": "{LIBSDP_DATA_DIR}/jpss1_contrived.tsc",
   "LIBERA_FK": "{LIBSDP_DATA_DIR}/libera_fk_rev01.tf",
   "JPSS_NORAD_ID": 43013,
@@ -17,7 +16,7 @@
     "PRODUCER_ID": "Gavin Medley (for Libera SDC)",
     "DATA_ORDER": ["epoch", "x", "y", "z", "vx", "vy", "vz"],
     "DATA_DELIMITER": " ",
-    "LEAPSECONDS_FILE": "{FALLBACK_LSK}",
+    "LEAPSECONDS_FILE": "auto-populated",
     "INPUT_DATA_UNITS": { "ANGLES": "DEGREES", "DISTANCES": "METERS" },
     "IGNORE_FIRST_LINE": 0,
     "LINES_PER_RECORD": 1,
@@ -27,7 +26,7 @@
     "FRAME_DEF_FILE": "{LIBERA_FK}"
   },
   "MSOPCK_SETUPFILE_CONTENTS": {
-    "LSK_FILE_NAME": "{FALLBACK_LSK}",
+    "LSK_FILE_NAME": "auto-populated",
     "SCLK_FILE_NAME": "{JPSS_SCLK}",
     "REFERENCE_FRAME_NAME": "J2000",
     "INPUT_DATA_TYPE": "SPICE QUATERNIONS",
