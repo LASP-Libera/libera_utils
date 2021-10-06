@@ -425,9 +425,11 @@ class SpiceInstrument(Enum):
     #  Do the required reading on NAIF on how to assign IDs to instrument bodies in an IK,
     #  here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/25_ik.pdf
     #  and here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/kernel.html#Kernel%20Types
-    raise NotImplementedError
+    pass
 
 
 class SpiceFrame(Enum):
     """Enum containing SPICE IDs for reference frames, possibly defined in the Frame Kernel (FK)"""
     J2000 = SpiceId('J2000', 1)
+    EARTH_FIXED = SpiceId('EARTH_FIXED', None)  # EARTH_FIXED is a generic frame. I can't find an ID for it.
+    ITRF93 = SpiceId('ITRF93', None)
