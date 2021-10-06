@@ -11,6 +11,9 @@ import spiceypy as spice
 from libera_sdp.config import config
 from libera_sdp import logutil
 
+# TODO: Investigate creating a stub conftest.py and a conftest package so we can split up our fixtures more logically,
+#  e.g. here: https://stackoverflow.com/a/27068195/2970906
+
 
 @pytest.fixture
 def short_tmp_path():
@@ -23,15 +26,62 @@ def short_tmp_path():
         yield Path(td)
 
 
+# Paths to test data directories
+# ------------------------------
 @pytest.fixture
-def libera_sdp_test_data_dir():
-    """Returns the test data directory"""
+def test_data_path():
+    """Returns the Path to the test_data directory"""
     return Path(sys.modules[__name__.split('.')[0]].__file__).parent / 'test_data'
 
 
 @pytest.fixture
+def spice_test_data_path(test_data_path):
+    """Returns the spice subdirectory of the test_data directory
+    This directory contains kernel that are either generated (SPK and CK) or dynamically downloaded.
+    Any kernels that are available directly in the libera_sdp/data directory should be sourced from there.
+    """
+    return test_data_path / 'spice'
+
+
+# Paths to commonly used test data files
+# --------------------------------------
+@pytest.fixture
+def test_lsk(spice_test_data_path):
+    """Path to the LSK stored in the test_data directory to provide a single configuration for all tests"""
+    return spice_test_data_path / 'naif0012.tls'
+
+
+@pytest.fixture
+def test_jpss_ck(spice_test_data_path):
+    """Path to the testing JPSS CK stored in the test_data directory to provide a single configuration for all tests"""
+    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849.bc'
+
+
+@pytest.fixture
+def test_jpss_spk(spice_test_data_path):
+    """Path to the testing JPSS SPK stored in the test_data directory to provide a single configuration for all tests"""
+    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849.bsp'
+
+
+@pytest.fixture
+def test_de_spk(spice_test_data_path):
+    """Path to the testing default ephemeris kernel stored in the test_data directory
+    to provide a single configuration for all tests"""
+    return spice_test_data_path / 'de440.bsp'
+
+
+@pytest.fixture
+def test_pck(spice_test_data_path):
+    """Path to the testing high precision planetary constants kernel (PCK) stored in the test_data directory
+    to provide a single configuration for all tests"""
+    return spice_test_data_path / 'earth_000101_211220_210926.bpc'
+
+
+# Furnishing fixtures for testing kernels
+# ---------------------------------------
+@pytest.fixture
 def furnish_fk():
-    """Furnishes (temporarily) the Libera frame kernel (FK)"""
+    """Furnishes (temporarily) the Libera frame kernel (FK) stored in the package data directory"""
     spice.furnsh(config.get('LIBERA_FK'))
     yield
     spice.kclear()
@@ -39,41 +89,66 @@ def furnish_fk():
 
 @pytest.fixture
 def furnish_sclk():
-    """Furnishes (temporarily) the default SCLK for JPSS"""
+    """Furnishes (temporarily) the SCLK for JPSS stored in the package data directory"""
     spice.furnsh(config.get('JPSS_SCLK'))
     yield
     spice.kclear()
 
 
 @pytest.fixture
-def furnish_lsk(libera_sdp_test_data_dir):
+def furnish_test_lsk(test_lsk):
     """Furnishes (temporarily) the testing LSK"""
-    spice.furnsh(str(libera_sdp_test_data_dir / 'naif0012.tls'))
+    spice.furnsh(str(test_lsk))
     yield
     spice.kclear()
 
 
 @pytest.fixture
-def furnish_jpss_ck(libera_sdp_test_data_dir):
+def furnish_test_jpss_ck(test_jpss_ck):
     """Furnishes (temporarily) a testing JPSS CK"""
-    spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235850_20210409t015849.bc'))
+    spice.furnsh(str(test_jpss_ck))
     yield
     spice.kclear()
 
 
 @pytest.fixture
-def furnish_jpss_spk(libera_sdp_test_data_dir):
+def furnish_test_jpss_spk(test_jpss_spk):
     """Furnishes (temporarily) a testing JPSS SPK"""
-    spice.furnsh(str(libera_sdp_test_data_dir / 'libera_jpss_20210408t235850_20210409t015849.bsp'))
+    spice.furnsh(str(test_jpss_spk))
     yield
     spice.kclear()
 
 
 @pytest.fixture
-def setup_test_logging(tmpdir, monkeypatch):
+def furnish_test_de_spk(test_de_spk):
+    """Furnishes (temporarily) a testing development ephemeris SPK kernel"""
+    spice.furnsh(str(test_de_spk))
+    yield
+    spice.kclear()
+
+
+@pytest.fixture
+def furnish_test_pck(test_pck):
+    """Furnishes (temporarily) a testing PCK kernel"""
+    spice.furnsh(str(test_pck))
+    yield
+    spice.kclear()
+
+
+@pytest.fixture
+def furnish_testing_kernels(furnish_fk,
+                            furnish_sclk, furnish_test_lsk,
+                            furnish_test_de_spk, furnish_test_pck,
+                            furnish_test_jpss_ck, furnish_test_jpss_spk):
+    """Furnishes all the testing kernels provided above, basically as a syntactic shortcut"""
+    yield
+
+
+@pytest.fixture
+def setup_test_logging(tmp_path, monkeypatch):
     """Sets up a task logger for a test"""
     monkeypatch.setenv('LIBSDP_STREAM_LOG_LEVEL', 'DEBUG')
-    monkeypatch.setenv('LIBSDP_LOG_DIR', str(tmpdir))
+    monkeypatch.setenv('LIBSDP_LOG_DIR', str(tmp_path))
     log_filepath = logutil.setup_task_logger('test_log')
     yield log_filepath
     # Remove all handlers from root logger. No other loggers should ever have handlers attached.

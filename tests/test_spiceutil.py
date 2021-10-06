@@ -13,16 +13,16 @@ from libera_sdp.config import config
 
 
 @responses.activate
-def test_kernel_file_cache(libera_sdp_test_data_dir, tmp_path, monkeypatch):
+def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path, monkeypatch):
     """Test caching a kernel file from NAIF, mocking out the actual HTTP requests."""
     # Name of a file mentioned in the test naif page
     test_kernel_filename = 'earth_000101_211220_210926.bpc'
 
     cache = spiceutil.KernelFileCache("https://fake-naif-page", "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc",
-                                      fallback_kernel=libera_sdp_test_data_dir / test_kernel_filename)
+                                      fallback_kernel=spice_test_data_path / test_kernel_filename)
 
     # Mock the response for the index page with the saved html
-    with open(libera_sdp_test_data_dir / 'naif_pck_index.html', 'r') as fh:
+    with open(test_data_path / 'naif_pck_index.html', 'r') as fh:
         responses.add(
             responses.GET, 'https://fake-naif-page/',
             body=fh.read(), status=200,
@@ -33,7 +33,7 @@ def test_kernel_file_cache(libera_sdp_test_data_dir, tmp_path, monkeypatch):
     assert cache.find_most_recent_kernel() == test_kernel_filename
 
     # Mock out the download URL for the kernel file with the local test file
-    with open(libera_sdp_test_data_dir / test_kernel_filename, 'rb') as fh:
+    with open(spice_test_data_path / test_kernel_filename, 'rb') as fh:
         responses.add(
             responses.GET, 'https://fake-naif-page/{}'.format(test_kernel_filename),
             body=fh.read(), status=200,
@@ -60,7 +60,7 @@ def test_kernel_file_cache(libera_sdp_test_data_dir, tmp_path, monkeypatch):
         cache.clear()
         assert cache.get_cached_kernels() == []
         responses.replace(responses.GET, 'https://fake-naif-page/', status=500)
-        assert cache.kernel_path == libera_sdp_test_data_dir / test_kernel_filename
+        assert cache.kernel_path == spice_test_data_path / test_kernel_filename
 
 
 def test_ls_kernels(furnish_sclk, caplog):
@@ -68,17 +68,18 @@ def test_ls_kernels(furnish_sclk, caplog):
     caplog.set_level(logging.DEBUG)
     result = spiceutil.ls_kernels(verbose=True, log=True)
     assert result == [spiceutil.KernelFileRecord('TEXT', config.get('JPSS_SCLK'))]
-    assert 'jpss1_contrived.tsc' in caplog.records[0].message
+    assert 'jpss_sclk_v01.tsc' in caplog.records[0].message
 
 
-def test_ls_spice_constants(furnish_lsk, furnish_fk):
+def test_ls_spice_constants(furnish_test_lsk, furnish_fk):
     """Test listing all kernel pool variables"""
     spice_pool = spiceutil.ls_spice_constants(True)
     print(spice_pool)
     assert spice_pool['TKFRAME_EARTH_FIXED_RELATIVE'] == ['ITRF93']
+    assert spice_pool['DELTET/DELTA_T_A'] == [32.184]
 
 
-def test_ls_kernel_coverage(furnish_jpss_ck, furnish_jpss_spk, furnish_sclk):
+def test_ls_kernel_coverage(furnish_test_jpss_ck, furnish_test_jpss_spk, furnish_sclk):
     """Test listing all kernel time coverage"""
     spiceutil.ls_kernel_coverage('CK', True)
     spiceutil.ls_kernel_coverage('SPK', True)
