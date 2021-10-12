@@ -13,7 +13,8 @@ pip install libera-sdp --index https://artifacts.pdmz.lasp.colorado.edu/reposito
 
 ### CLI Entrypoints
 Depending on how you have install `libera_sdp`, your CLI runner may vary. The commands below assume that your 
-virtual environment's `bin` directory is in your `PATH`. 
+virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you will
+likely want to use `poetry run` to run CLI commands.
 
 #### `make-jpss-spk`
 ```shell
@@ -38,15 +39,11 @@ The LASP Python style guide can be found here on Confluence, here: [https://conf
 
 
 ### Installing Optional Dependencies
-The package comes with three sets of options: `dev`, `test`, and `build`. The `build` option contains all the 
-dependencies for both `dev` and `test`. To install an option (e.g. `dev`):
-```bash
-pip install "libera_sdp[dev]" --index https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
-```
-Or from a local copy, from the repo root:
-```bash
-pip install ".[dev]"
-```
+To install without development dependencies, as specified in `pyproject.toml` under `tool.poetry.dev-dependencies`, run 
+`poetry install --no-dev`. By default, dev dependencies are installed.
+
+To install optional dependencies, specified in groups in `pyproject.toml` under `tool.poetry.extras`, run
+`poetry install -E <name-of-group>`. For example, `poetry install -E plotting` to include the bokeh dependency. 
 
 
 ### Testing
