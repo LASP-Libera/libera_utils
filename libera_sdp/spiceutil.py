@@ -416,6 +416,7 @@ class SpiceBody(Enum):
     SSB = SpiceId('SOLAR_SYSTEM_BARYCENTER', 0)
     SUN = SpiceId('SUN', 10)
     EARTH = SpiceId('EARTH', 399)
+    EARTH_MOON_BARYCENTER = SpiceId('EARTH-MOON BARYCENTER', 3)
 
 
 class SpiceInstrument(Enum):
@@ -431,5 +432,9 @@ class SpiceInstrument(Enum):
 class SpiceFrame(Enum):
     """Enum containing SPICE IDs for reference frames, possibly defined in the Frame Kernel (FK)"""
     J2000 = SpiceId('J2000', 1)
-    EARTH_FIXED = SpiceId('EARTH_FIXED', None)  # EARTH_FIXED is a generic frame. I can't find an ID for it.
-    ITRF93 = SpiceId('ITRF93', None)
+    ITRF93 = SpiceId('ITRF93', 3000)
+    # EARTH_FIXED is a generic frame used only by the internals of SPICE. See docs here:
+    # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/frames.html \
+    #     #Appendix.%20High%20Precision%20Earth%20Fixed%20Frames
+    # We mention it here only for consistency and documentation purposes.
+    EARTH_FIXED = ITRF93
