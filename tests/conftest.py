@@ -72,6 +72,13 @@ def test_de_spk(spice_test_data_path):
 
 @pytest.fixture
 def test_pck(spice_test_data_path):
+    """Path to the testing standard text planetary constants kernel (PCK) stored in the test_data directory
+    to provide a single configuration for all tests"""
+    return spice_test_data_path / 'pck00010.tpc'
+
+
+@pytest.fixture
+def test_itrf93_pck(spice_test_data_path):
     """Path to the testing high precision planetary constants kernel (PCK) stored in the test_data directory
     to provide a single configuration for all tests"""
     return spice_test_data_path / 'earth_000101_211220_210926.bpc'
@@ -129,8 +136,19 @@ def furnish_test_de_spk(test_de_spk):
 
 @pytest.fixture
 def furnish_test_pck(test_pck):
-    """Furnishes (temporarily) a testing PCK kernel"""
+    """Furnishes (temporarily) a testing text PCK kernel"""
     spice.furnsh(str(test_pck))
+    yield
+    spice.kclear()
+
+
+@pytest.fixture
+def furnish_test_itrf93_pck(test_itrf93_pck):
+    """Furnishes (temporarily) a testing ITRF93 high precision binary PCK kernel
+    Also furnishes (temporarily) a NAIF-produced FK that associates the Earth body with the ITRF93 reference frame.
+    """
+    spice.furnsh(str(test_itrf93_pck))
+    spice.furnsh(config.get('EARTH_ASSOC_ITRF93_FK'))
     yield
     spice.kclear()
 
@@ -138,9 +156,13 @@ def furnish_test_pck(test_pck):
 @pytest.fixture
 def furnish_testing_kernels(furnish_fk,
                             furnish_sclk, furnish_test_lsk,
-                            furnish_test_de_spk, furnish_test_pck,
+                            furnish_test_de_spk, furnish_test_pck, furnish_test_itrf93_pck,
                             furnish_test_jpss_ck, furnish_test_jpss_spk):
-    """Furnishes all the testing kernels provided above, basically as a syntactic shortcut"""
+    """Furnishes all the testing kernels provided above, basically as a syntactic shortcut. Fixtures are executed
+    from left to right in order so the first argument to this fixture furnishes first.
+    Note: Order matters here if multiple files furnish the same data. The latest file furnished is always used.
+    e.g. if two files provide overlapping attitude data, be sure to put the latest/most up to date file last.
+    """
     yield
 
 

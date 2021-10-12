@@ -1,9 +1,11 @@
 """Module containing CLI tool for creating SPICE kernels from packets"""
 # Standard
 import argparse
+import warnings
 from datetime import datetime
 import logging
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 # Installed
@@ -276,7 +278,18 @@ def write_kernel_setup_file(data: dict, filepath: Path):
                 value_str = f"({inside}\n)"
             elif key in ('LSK_FILE_NAME', 'LEAPSECONDS_FILE'):
                 lsk = spiceutil.KernelFileCache(spiceutil.NAIF_LSK_INDEX_URL, spiceutil.NAIF_LSK_REGEX)
-                value_str = f"'{str(lsk.kernel_path)}'"
+                if len(str(lsk.kernel_path)) > 78:
+                    # MSOPCK is limited to 80 character file names (including single quotes)
+                    # so we copy the kernel to the same directory where we are writing this setup file
+                    copied_kernel = shutil.copy(str(lsk.kernel_path), filepath.parent)
+                    value_str = f"'{copied_kernel}'"
+                else:
+                    value_str = f"'{str(lsk.kernel_path)}'"
+            elif key == 'SCLK_FILE_NAME' and len(value) > 78:
+                # MSOPCK is limited to 80 character file names (including single quotes) so we copy the SCLK to the
+                # same directory where we are writing this setup file
+                copied_sclk = shutil.copy(value, filepath.parent)
+                value_str = f"'{copied_sclk}'"
             elif isinstance(value, str):
                 value_str = f"'{value}'"
             elif isinstance(value, list):
@@ -287,6 +300,9 @@ def write_kernel_setup_file(data: dict, filepath: Path):
                 value_str = f"({dict_str}\n)"
             else:
                 value_str = f"{value}"
+            if len(value_str) > 80:
+                warnings.warn("Detected a SPICE setup file value that is over 80 characters. "
+                              f"This will likely cause an error. {value_str}")
             fh.write(f"{key}={value_str}\n")
         fh.write("\\begintext\n")
         fh.seek(0)

@@ -15,8 +15,11 @@ Libera instrument
 as well as the frame definition for the JPSS spacecraft.
 
 This frame kernel also includes a kernel pool variable that defines the
-EARTH_FIXED frame (ECEF) as relative to the high-precision ITRF93 reference
-frame rather than the default IAU_EARTH frame. The ITRF93 frame requires loading
+EARTH_FIXED frame (ECEF) as identical to the high-precision ITRF93 reference
+frame rather than the default IAU_EARTH frame. See docs here:
+https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/frames.html \
+  #Appendix.%20High%20Precision%20Earth%20Fixed%20Frames
+The ITRF93 frame requires loading
 a high precision PCK from:
 https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/
 see aareadme.md for details on high precision Earth kernels.
