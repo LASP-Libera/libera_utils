@@ -43,7 +43,7 @@ To install without development dependencies, as specified in `pyproject.toml` un
 `poetry install --no-dev`. By default, dev dependencies are installed.
 
 To install optional dependencies, specified in groups in `pyproject.toml` under `tool.poetry.extras`, run
-`poetry install -E <name-of-group>`. For example, `poetry install -E plotting` to include the bokeh dependency. 
+`poetry install -E <name-of-group>`. For example, `poetry install -E plotting` to include plotting-related packages. 
 
 
 ### Testing
