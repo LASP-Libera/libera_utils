@@ -1,4 +1,12 @@
-"""Module for dealing with time and time convensions"""
+"""Module for dealing with time and time convensions
+
+Some convention for this module
+1. Only decorate direct spiceypy wrapper functions with the ensure_spice decorator. They should directly call
+    a spiceypy function.
+2. All spiceypy wrapper functions should read as <spiceypyfunc>_wrapper. We really only use these to allow array
+    inputs for spiceypy functions that aren't already vectorized in C and to wrap them in ensure_spice.
+3. All functions should have robust type-hinting.
+"""
 # Standard
 import re
 from datetime import datetime
@@ -8,7 +16,7 @@ import numpy as np
 import spiceypy as spice
 # Local
 from libera_sdp.config import config
-from libera_sdp.decorators import ensure_spice
+from libera_sdp.spiceutil import ensure_spice
 
 ISOT_REGEX = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
                         r"[T|t]"
