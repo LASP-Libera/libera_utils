@@ -169,7 +169,9 @@ def test_sub_observer_point(furnish_testing_kernels,
                             target, et, frame, observer,
                             lon_expected, lat_expected, spoint_alt_expected, observer_alt_expected):
     """Test function that calculates the point on a planetary body directly under an observing object"""
-    lon, lat, spoint_alt, observer_alt = geo.sub_observer_point(target, et, frame, observer)
+    spoint, observer_alt = geo.sub_observer_point(target, et, frame, observer)
+    # We convert to lon lat because the original test values were constructed that way
+    lon, lat, spoint_alt = geo.cartesian_to_planetographic(spoint)
     print(lon, lat, spoint_alt, observer_alt)
     assert np.array_equal(lon, lon_expected)
     assert np.array_equal(lat, lat_expected)
@@ -197,11 +199,13 @@ def test_sub_solar_point(furnish_testing_kernels,
                          target, et, frame, observer,
                          lon_expected, lat_expected, alt_expected):
     """Test function that calculates the position of the sub solar point"""
-    lon, lat, alt = geo.sub_solar_point(target, et, frame, observer)
-    print(lon, lat, alt)
+    spoint, trgepc, srfvec = geo.sub_solar_point(target, et, frame, observer)
+    # We convert to lon lat because the original test values were constructed that way
+    lon, lat, spoint_alt = geo.cartesian_to_planetographic(spoint)
+    print(lon, lat, spoint_alt)
     assert np.array_equal(lon, lon_expected)
     assert np.array_equal(lat, lat_expected)
-    assert np.array_equal(alt, alt_expected)
+    assert np.array_equal(spoint_alt, alt_expected)
 
 
 @pytest.mark.parametrize(

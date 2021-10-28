@@ -176,13 +176,9 @@ def target_position(target: spiceutil.SpiceBody, et: float or np.ndarray,
 @spiceutil.ensure_spice
 def sub_observer_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
                        frame: spiceutil.SpiceFrame, observer: spiceutil.SpiceBody,
-                       abcorr: str = 'NONE', method: str = 'NEAR POINT/ELLIPSOID', degrees: bool = True):
-    """Computes the planetographic latitude and longitude of the sub-observer point at time `et`.
-    Returns units of radians or, optionally, degrees. Longitude runs 0-360 such that longitude appears to increase
-    as the planet rotates when viewed by an observer and latitude is calculated from a surface normal vector rather
-    than a line through the planet center. See
-    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/17_frames_and_coordinate_systems.pdf
-    for reference.
+                       abcorr: str = 'NONE', method: str = 'NEAR POINT/ELLIPSOID'):
+    """Computes the cartesian coordinates of the sub-observer point at time `et` and the observer altitude
+    above the point. Units in km.
 
     Parameters
     ----------
@@ -201,14 +197,12 @@ def sub_observer_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
         String specifying what kind of method to use to find the vector between the observer and the target.
         Default is `NEAR POINT/ELLIPSOID`, which uses the nearest point on the ellipsoid rather than drawing a line
         through the center of the ellipsoid.
-    degrees : bool, Optional
-        Whether to return degrees (instead of radians)
 
     Returns
     -------
-    : np.ndarray
-        Planetographic point on the target body surface in the specified reference frame
-        and also the euclidean distance between the observer and the sub point in order: (lon, lat, alt, obs_alt).
+    : np.ndarray, float
+        Cartesian point on the target body surface in the specified reference frame
+        and also the euclidean distance between the observer and the sub point in order: [x, y, z], obs_alt
     """
 
     spoint, trgepc, obs_tgt_vec = vec_subpnt(method, target.value.strid, et, frame.value.strid,
@@ -217,16 +211,14 @@ def sub_observer_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
         observer_alt = np.linalg.norm(obs_tgt_vec, axis=1)  # Calculate distance from obs to spoint as observer altitude
     else:
         observer_alt = np.linalg.norm(obs_tgt_vec)
-    spoint_lon, spoint_lat, spoint_alt = cartesian_to_planetographic(spoint, degrees=degrees)
-    return spoint_lon, spoint_lat, spoint_alt, observer_alt
+    return spoint, observer_alt
 
 
 @spiceutil.ensure_spice
 def sub_solar_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
                     frame: spiceutil.SpiceFrame, observer: spiceutil.SpiceBody,
-                    abcorr='LT+S', method='NEAR POINT/ELLIPSOID', degrees=True):
-    """Computes the planetographic latitude and longitude of the subsolar point at ephemeris time et.
-    Returns units of radians or, optionally, degrees.
+                    abcorr='LT+S', method='NEAR POINT/ELLIPSOID'):
+    """Computes the cartesian coordinates of the subsolar point at ephemeris time et.
 
     Parameters
     ----------
@@ -245,19 +237,18 @@ def sub_solar_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
         String specifying what kind of method to use to find the vector between the observer and the target.
         Default is `NEAR POINT/ELLIPSOID`, which uses the nearest point on the ellipsoid rather than drawing a line
         through the center of the ellipsoid.
-    degrees : bool
-        Whether to return degrees (instead of radians)
 
     Returns
     -------
-    : np.ndarray
-        Point on the ellipsoid surface in the specified reference frame in format (long, lat, alt)
+    : np.ndarray, np.ndarray, np.ndarray
+        Subsolar point on the ellipsoid surface in the specified reference frame, apparent epoch at that point (depending
+        on specified light time correction), and vector from observer to subsolar point.
     """
     fixref = frame.value.strid
     obsrvr = observer.value.strid
     spoint, trgepc, srfvec = vec_subslr(method, target.value.strid, et, fixref, abcorr, obsrvr)
 
-    return cartesian_to_planetographic(spoint, degrees=degrees)
+    return spoint, trgepc, srfvec
 
 
 @spiceutil.ensure_spice
@@ -441,8 +432,8 @@ def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
         pnear_dist = [spice.npedln(re_earth, re_earth, rp_earth, loc, look)
                       for loc, look in zip(sc_location, look_vector_ecef)]
         # [([x, y, z], d), ...]
-        pnear = np.array([p for p, d in pnear_dist])
-        dist = np.array([d for p, d in pnear_dist])
+        pnear = np.array([p for p, d in pnear_dist])  # [[x1, y1, z1], [x2, y2, z2], ...]
+        dist = np.array([d for p, d in pnear_dist])  # [d1, d2, ...]
     else:  # Just one sc_location and look_vector
         pnear, dist = spice.npedln(re_earth, re_earth, rp_earth, sc_location, look_vector_ecef)
     return pnear, dist
