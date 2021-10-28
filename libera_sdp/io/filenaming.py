@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 # Local
-from libera_sdp.time import ISOT_REGEX, PRINTABLE_TS_REGEX, PRINTABLE_TS_FORMAT
+from libera_sdp.time import PRINTABLE_TS_FORMAT
 
 
 SPK_REGEX = re.compile(r"^libera_jpss"
@@ -12,7 +12,7 @@ SPK_REGEX = re.compile(r"^libera_jpss"
                        r"_(?P<utc_end>[0-9]{8}(?:t[0-9]{6})?)"
                        r"\.bsp$")
 
-CK_REGEX = re.compile(r"^libera_(?P<ck_object>jpss|rad)"
+CK_REGEX = re.compile(r"^libera_(?P<ck_object>jpss|azrot|elscan)"
                       r"_(?P<utc_start>[0-9]{8}(?:t[0-9]{6})?)"
                       r"_(?P<utc_end>[0-9]{8}(?:t[0-9]{6})?)"
                       r"\.bc$")
@@ -23,6 +23,11 @@ LIBERA_PRODUCT_REGEX = re.compile(r"^libera"
                                   r"_(?P<utc_start>[0-9]{8}(?:t[0-9]{6})?)"
                                   r"_(?P<utc_end>[0-9]{8}(?:t[0-9]{6})?)"
                                   r"\.(?P<extension>pkts|h5)$")
+
+# TODO: Make an ABC for KernelFilename for EphemerisKernelFilename and AttitudeKernelFilename
+#  to inherit from to clarify the interface.
+
+# TODO: Need a LiberaProductFilename that should probably also inherit from the ABC KernelFilename
 
 
 class EphemerisKernelFilename:
