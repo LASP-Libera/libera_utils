@@ -1,11 +1,8 @@
 # Usage of SPICE in Libera SDP
 
-------------------------------
-
 
 ## Static Kernels Generated at Libera SDC
 
------------------------------------------
 
 ### Frame Kernel (FK)
 e.g. `libera_fk_v01.tf`
@@ -27,7 +24,6 @@ Note: These parameters have not yet been specified.
 
 ## Dynamic Kernels Generated at Libera SDC
 
-------------------------------------------
 
 ### JPSS Ephemeris Kernel (SPK)
 e.g. `libera_jpss_20210408t235850_20210409t015849.bsp`
@@ -56,7 +52,6 @@ Note: there is currently no mechanism for creating this kernel because no teleme
 
 ## Kernels Retrieved from NAIF
 
-------------------------------
 
 ### Leapseconds Kernel (LSK)
 e.g. `naif0012.tls`
