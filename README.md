@@ -104,3 +104,9 @@ Reference: [https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-
 3. To upload the wheel to Nexus, run `poetry publish --repository lasp-pypi`. Note that the repository must first
    be configured according to the Poetry docs 
    (here)[https://python-poetry.org/docs/repositories/#using-a-private-repository]
+
+
+# Further Documentation
+- [Configuration](doc/configuration.md)
+- [Spice Usage](doc/spice.md)
+- [Nexus Container Registry](doc/nexus_container_registry.md)
