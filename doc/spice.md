@@ -1,4 +1,8 @@
-# Usage of SPICE in Libera SDP
+# Usage of SPICE
+
+
+Fun fact: SPICE stands for "Spacecraft Planet Instrument C-matrix Events,"
+which were the original primary concerns of those developing the library.
 
 
 ## Static Kernels Generated at Libera SDC
