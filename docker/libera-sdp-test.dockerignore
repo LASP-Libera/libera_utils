@@ -20,8 +20,8 @@
 
 # Unused repo contents
 poetry.lock
+/libera_sdp
+/doc
 /analysis
 /docker_build.sh
 /docker
-/tests
-

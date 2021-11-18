@@ -11,6 +11,12 @@ WORKDIR $LIBSDP_INSTALL_LOCATION
 # Turn of interactive shell to suppress configuration errors
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Install spice utilities directly from NAIF (precompiled for Linux)
+ADD https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z /tmp/cspice.tar.Z
+ENV CSPICE_DIR=/opt/naif
+RUN mkdir -p $CSPICE_DIR && tar -C $CSPICE_DIR -xvzf /tmp/cspice.tar.Z cspice/exe && rm -r /tmp/cspice.tar.Z
+ENV PATH="$PATH:$CSPICE_DIR/cspice/exe"
+
 # Create virtual environment and permanently activate it for this image
 ENV VIRTUAL_ENV=/opt/venv
 RUN python -m venv $VIRTUAL_ENV
@@ -26,11 +32,12 @@ RUN curl -sSL https://install.python-poetry.org | python -
 # Add poetry to path
 ENV PATH="$PATH:/root/.local/bin"
 
-# Copy libera_sdp, requirements.txt, README.md, and setup.py
+# Copy necessary files over (except for dockerignore-d files)
 COPY libera_sdp $LIBSDP_INSTALL_LOCATION/libera_sdp
 COPY README.md $LIBSDP_INSTALL_LOCATION
 COPY doc $LIBSDP_INSTALL_LOCATION/doc
 COPY pyproject.toml $LIBSDP_INSTALL_LOCATION
+COPY LICENSE $LIBSDP_INSTALL_LOCATION
 
 # This is so stupid but it fixes known a bug in docker build
 # https://github.com/moby/moby/issues/37965
