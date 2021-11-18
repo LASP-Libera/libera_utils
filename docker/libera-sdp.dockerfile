@@ -1,7 +1,7 @@
 # Dockerfile that installs libera_sdp and its dependencies
 
 # Start with debian with python installed
-FROM python:3.9-slim
+FROM python:3.9.0-slim
 USER root
 
 # Location for Core package installation location. This can be used later by images that inherit from this one

@@ -40,7 +40,7 @@ def test_vec_pxform(from_frame, to_frame, et, expected_rotation,
     Note: This test will need to be updated when we update the reference frame offsets in the frame kernel
     and when we change the JPSS test kernels."""
     rotation = geo.vec_pxform(from_frame, to_frame, et)
-    assert np.array_equal(rotation, expected_rotation)
+    assert np.allclose(rotation, expected_rotation, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -54,9 +54,9 @@ def test_vec_pxform(from_frame, to_frame, et, expected_rotation,
         ('EARTH', [671202069.186, 671202969.186], 'EARTH_FIXED', 'JPSS',  # 2021-04-09T01:00:00, 2021-04-09T01:15:00
          [[-5924.69221986335, -258.12245062133303, 2339.8978174477925],
           [-1670.8876960739055, 868.4422364857616, 6073.382565056971]],
-        [6.712020691832341e+08, 6.712029691832025e+08],
-        [[769.9013027778929, 33.542469994191606, -306.1140491597953],
-         [219.03353146673703, -113.84246253012918, -801.5139623581053]]
+         [6.712020691832341e+08, 6.712029691832025e+08],
+         [[769.9013027778929, 33.542469994191606, -306.1140491597953],
+          [219.03353146673703, -113.84246253012918, -801.5139623581053]]
          ),
     ]
 )
@@ -68,9 +68,9 @@ def test_vec_subpnt(furnish_testing_kernels,
     abcorr = 'LT+S'
     spoint, trgepc, obs_tgt_vec = geo.vec_subpnt(method, target, et, frame, abcorr, observer)
     print(spoint, trgepc, obs_tgt_vec)
-    assert np.array_equal(spoint, expected_spoint)
-    assert np.array_equal(trgepc, expected_trgepc)
-    assert np.array_equal(obs_tgt_vec, expected_obs_tgt_vec)
+    assert np.allclose(spoint, expected_spoint, atol=1e-16)
+    assert np.allclose(trgepc, expected_trgepc, atol=1e-16)
+    assert np.allclose(obs_tgt_vec, expected_obs_tgt_vec, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -97,12 +97,9 @@ def test_vec_subslr(furnish_testing_kernels,
     method = 'NEAR POINT/ELLIPSOID'
     abcorr = 'LT+S'
     spoint, trgepc, srfvec = geo.vec_subslr(method, target, et, frame, abcorr, observer)
-    print(spoint)
-    print(trgepc)
-    print(srfvec)
-    assert np.array_equal(spoint, expected_spoint)
-    assert np.array_equal(trgepc, expected_trgepc)
-    assert np.array_equal(srfvec, expected_srfvec)
+    assert np.allclose(spoint, expected_spoint, atol=1e-16)
+    assert np.allclose(trgepc, expected_trgepc, atol=1e-16)
+    assert np.allclose(srfvec, expected_srfvec, atol=1e-16)
 
 
 def test_get_earth_radii(furnish_test_pck):
@@ -143,9 +140,9 @@ def test_target_position(furnish_testing_kernels,
     assert isinstance(x, np.ndarray)
     assert isinstance(v, np.ndarray)
     assert x.dtype == v.dtype == np.float64
-    assert np.array_equal(x, x_expected)
-    assert np.array_equal(v, v_expected)
-    assert np.array_equal(lt, lt_expected)
+    assert np.allclose(x, x_expected, atol=1e-16)
+    assert np.allclose(v, v_expected, atol=1e-16)
+    assert np.allclose(lt, lt_expected, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -173,10 +170,10 @@ def test_sub_observer_point(furnish_testing_kernels,
     # We convert to lon lat because the original test values were constructed that way
     lon, lat, spoint_alt = geo.cartesian_to_planetographic(spoint)
     print(lon, lat, spoint_alt, observer_alt)
-    assert np.array_equal(lon, lon_expected)
-    assert np.array_equal(lat, lat_expected)
-    assert np.array_equal(spoint_alt, spoint_alt_expected)
-    assert np.array_equal(observer_alt, observer_alt_expected)
+    assert np.allclose(lon, lon_expected, atol=1e-16)
+    assert np.allclose(lat, lat_expected, atol=1e-16)
+    assert np.allclose(spoint_alt, spoint_alt_expected, atol=1e-16)
+    assert np.allclose(observer_alt, observer_alt_expected, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -203,9 +200,9 @@ def test_sub_solar_point(furnish_testing_kernels,
     # We convert to lon lat because the original test values were constructed that way
     lon, lat, spoint_alt = geo.cartesian_to_planetographic(spoint)
     print(lon, lat, spoint_alt)
-    assert np.array_equal(lon, lon_expected)
-    assert np.array_equal(lat, lat_expected)
-    assert np.array_equal(spoint_alt, alt_expected)
+    assert np.allclose(lon, lon_expected, atol=1e-16)
+    assert np.allclose(lat, lat_expected, atol=1e-16)
+    assert np.allclose(spoint_alt, alt_expected, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -232,7 +229,7 @@ def test_frame_transform(furnish_testing_kernels,
                          expectation):
     """Test function that transforms vectors between reference frames (possibly dynamic frames)"""
     result = geo.frame_transform(from_frame, to_frame, et, position, normalize)
-    assert np.array_equal(result, expectation)
+    assert np.allclose(result, expectation, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -247,7 +244,7 @@ def test_frame_transform(furnish_testing_kernels,
 def test_angle_between(v1, v2, degrees, expected_angle):
     """Test function that calculates the angle between two (sets of) vectors"""
     angle = geo.angle_between(v1, v2, degrees)
-    assert np.allclose(angle, expected_angle, atol=1e-8)
+    assert np.allclose(angle, expected_angle, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -265,9 +262,9 @@ def test_cartesian_to_planetographic(furnish_testing_kernels,
     """Test function that converts cartesian coordinates to planetographic coordinates"""
     lon, lat, alt = geo.cartesian_to_planetographic(v, degrees=degrees)
     print(lon, lat, alt)
-    assert np.array_equal(lon, expected_lon)
-    assert np.array_equal(lat, expected_lat)
-    assert np.array_equal(alt, expected_alt)
+    assert np.allclose(lon, expected_lon, atol=1e-16)
+    assert np.allclose(lat, expected_lat, atol=1e-16)
+    assert np.allclose(alt, expected_alt, atol=1e-16)
 
 
 @pytest.mark.parametrize(
@@ -289,5 +286,5 @@ def test_surface_intercept_point(furnish_testing_kernels,
         pnear, dist = geo.surface_intercept_point(sc_location, look_vector, look_frame)
 
     print(pnear, dist)
-    assert np.array_equal(pnear, expected_pnear)
-    assert np.array_equal(dist, expected_dist)
+    assert np.allclose(pnear, expected_pnear, atol=1e-16)
+    assert np.allclose(dist, expected_dist, atol=1e-16)

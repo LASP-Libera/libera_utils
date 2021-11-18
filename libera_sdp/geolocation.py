@@ -408,7 +408,7 @@ def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
         Look direction unit vector (e.g. an instrument look direction)
     look_frame : spiceutil.SpiceFrame
         Reference frame of `look_vector`
-    et : float or np.ndarray, Optional
+    et : float or np.ndarray or None, Optional
         Ephemeris time (at spacecraft at photon detection time). Only required if look_frame is not ITRF93.
         
     Returns
