@@ -23,5 +23,4 @@ poetry.lock
 /analysis
 /docker_build.sh
 /docker
-/tests
 

@@ -114,5 +114,5 @@ Reference: [https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-
 
 # Further Documentation
 - [Configuration](doc/configuration.md)
-- [Spice Usage](doc/spice.md)
-- [Nexus Container Registry](doc/nexus_container_registry.md)
+- [SPICE Usage](doc/spice.md)
+- [Docker (Including Nexus)](doc/docker.md)

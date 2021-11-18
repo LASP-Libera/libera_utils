@@ -1,7 +1,8 @@
 # Dockerfile that installs libera_sdp and its dependencies
 
-# Start with debian with python installed
-FROM python:3.9.0-slim
+# libera-sdp
+# ----------
+FROM python:3.9.0-slim AS libera-sdp
 USER root
 
 # Location for Core package installation location. This can be used later by images that inherit from this one
@@ -49,3 +50,17 @@ RUN poetry install --no-dev
 # Define the entrypoint of the container. Passing arguments when running the
 # container will be passed as arguments to the function
 ENTRYPOINT ["/bin/bash"]
+
+
+# libera-sdp-test
+# ---------------
+FROM libera-sdp AS libera-sdp-test
+
+# Install dev dependencies (not installed in libera-sdp image)
+RUN poetry install
+
+# Copy tests over
+COPY tests $LIBSDP_INSTALL_LOCATION/tests
+
+# Set entrypoint
+ENTRYPOINT pytest $LIBSDP_INSTALL_LOCATION
