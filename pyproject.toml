@@ -23,6 +23,7 @@ matplotlib = {version = "^3.4.3", optional = true}
 pytest-cov = "^2.12.1"
 pylint = "^2.9.3"
 responses = "^0.14.0"
+pytest-randomly = "^3.10.2"
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
