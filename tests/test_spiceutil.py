@@ -7,7 +7,7 @@ from unittest import mock
 import numpy as np
 import responses
 # Local
-import libera_sdp.cli.kernel_maker
+import libera_sdp.kernel_maker
 from libera_sdp import spiceutil
 from libera_sdp.config import config
 
@@ -116,7 +116,7 @@ def test_write_kernel_input_file(tmp_path):
         'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ',
         'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'
     ]
-    libera_sdp.cli.kernel_maker.write_kernel_input_file(data, filepath, fields)
+    libera_sdp.kernel_maker.write_kernel_input_file(data, filepath, fields)
 
 
 def test_write_kernel_setup_file(tmp_path):
@@ -131,4 +131,4 @@ def test_write_kernel_setup_file(tmp_path):
         "DICT_OF_VALUES": {'DISTANCES': 'METERS', 'ANGLES': 'DEGREES'},
         "SOME_FILEPATH": "myfile"
     }
-    libera_sdp.cli.kernel_maker.write_kernel_setup_file(defaults, filepath)
+    libera_sdp.kernel_maker.write_kernel_setup_file(defaults, filepath)
