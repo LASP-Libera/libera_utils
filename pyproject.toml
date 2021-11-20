@@ -28,9 +28,7 @@ responses = "^0.14.0"
 plotting = ["matplotlib"]
 
 [tool.poetry.scripts]
-make-jpss-spk = 'libera_sdp.cli.kernel_maker:make_jpss_spk'
-make-jpss-ck = 'libera_sdp.cli.kernel_maker:make_jpss_ck'
-make-libera-az-el-ck = 'libera_sdp.cli.kernel_maker:make_az_el_ck'
+sdp = 'libera_sdp.cli.cli:main'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
