@@ -29,7 +29,7 @@ pytest-randomly = "^3.10.2"
 plotting = ["matplotlib"]
 
 [tool.poetry.scripts]
-sdp = 'libera_sdp.cli.cli:main'
+sdp = 'libera_sdp.cli:main'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

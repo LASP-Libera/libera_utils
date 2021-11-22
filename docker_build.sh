@@ -26,7 +26,7 @@ echo "Building target images: ${TARGETS[@]}"
 
 for target in ${TARGETS[@]}; do
   echo; echo "Building target image: ${target}..."
-  docker build -t ${target}:$LIBERA_SDP_VERSION --target ${target} .
+  docker build -t ${target}:$LIBERA_SDP_VERSION -t ${target}:latest --target ${target} .
 done
 
 echo "Finished! Yay!"
