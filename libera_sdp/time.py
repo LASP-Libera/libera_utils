@@ -77,8 +77,8 @@ def et_2_datetime(et: Union[float, Collection[float], np.ndarray]) -> Union[date
     isoc_timestamp = et2utc_wrapper(et, 'ISOC', isoc_prec)
     if isinstance(et, Collection):
         return np.array([datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
-    else:
-        return datetime.strptime(isoc_timestamp, isoc_fmt)
+
+    return datetime.strptime(isoc_timestamp, isoc_fmt)
 
 
 @ensure_spice(time_kernels_only=True)
@@ -126,8 +126,8 @@ def utc2et_wrapper(iso_str: Union[str, Collection[str]]) -> Union[float, np.ndar
     """
     if isinstance(iso_str, str):
         return spice.utc2et(iso_str)
-    else:
-        return np.array([spice.utc2et(s) for s in iso_str])
+
+    return np.array([spice.utc2et(s) for s in iso_str])
 
 
 @ensure_spice(time_kernels_only=True)
@@ -151,8 +151,8 @@ def scs2e_wrapper(sclk_str: Union[str, Collection[str]]) -> Union[float, np.ndar
     sc_id = config.get("JPSS_SC_ID")
     if isinstance(sclk_str, str):
         return spice.scs2e(sc_id, sclk_str)
-    else:
-        return np.array([spice.scs2e(sc_id, s) for s in sclk_str])
+
+    return np.array([spice.scs2e(sc_id, s) for s in sclk_str])
 
 
 @ensure_spice(time_kernels_only=True)
@@ -176,5 +176,5 @@ def sce2s_wrapper(et: Union[float, Collection[float], np.ndarray]) -> Union[str,
     sc_id = config.get("JPSS_SC_ID")
     if isinstance(et, Collection):
         return np.array([spice.sce2s(sc_id, t) for t in et])
-    else:
-        return spice.sce2s(sc_id, et)
+
+    return spice.sce2s(sc_id, et)

@@ -17,6 +17,7 @@ from libera_sdp.version import version as libera_sdp_version
 
 
 def main(cli_args: list = None):
+    """Main CLI entrypoint that runs the function inferred from the specified subcommand"""
     args = parse_cli_args(cli_args)
     args.func(args)
 
@@ -75,7 +76,7 @@ def parse_cli_args(cli_args: list):
                                 help="force overwriting an existing kernel if it exists")
     jpss_ck_parser.add_argument('-v', '--verbose', action='store_true',
                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
-    
+
     # make-kernel azel-ck
     azel_ck_parser = make_kernel_subparsers.add_parser('azel-ck', help="generate Libera Az-El CK kernel from telemetry")
     azel_ck_parser.set_defaults(func=kernel_maker.make_azel_ck)

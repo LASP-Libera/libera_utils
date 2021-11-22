@@ -44,13 +44,13 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     log_filepath = setup_task_logger(f'spk_generator_{now}', stream_log_level=stream_log_level)
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
-    logger.info(f"Logging to {log_filepath}")
+    logger.info("Logging to %s", log_filepath)
 
     output_dir = Path(parsed_args.outdir).expanduser().absolute()
-    logger.info(f"Writing resulting SPK to {output_dir}")
+    logger.info("Writing resulting SPK to %s", output_dir)
 
     packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
-    logger.info(f"Using packet definition {packet_definition_filepath}")
+    logger.info("Using packet definition %s", packet_definition_filepath)
 
     packet_definition = xtce.XtcePacketDefinition(xtce_document=str(packet_definition_filepath))
     # TODO: eventually XtcePacketDefinition will accept a Path object. When we update that, remove the str() above
@@ -73,12 +73,12 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
             packet_data,
             filepath=tmp_path / 'mkspk_data.txt',
             fields=['ET', 'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ', 'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'])
-        logger.info(f"MKSPK input data written to {spk_data_filepath}")
+        logger.info("MKSPK input data written to %s", spk_data_filepath)
 
         spk_setup_filepath = write_kernel_setup_file(
             config.get("MKSPK_SETUPFILE_CONTENTS"),
             filepath=tmp_path / 'mkspk_setup.txt')
-        logger.info(f"MKSPK setup file written to {spk_setup_filepath}")
+        logger.info("MKSPK setup file written to %s", spk_setup_filepath)
 
         utc_start_str = time.et_2_datetime(ephemeris_time[0])
         utc_end_str = time.et_2_datetime(ephemeris_time[-1])
@@ -96,15 +96,15 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
                                      '-output', str(output_filepath)],
                                     capture_output=True, check=True)
         except subprocess.CalledProcessError as cpe:
-            logger.info(f"Captured stdout: \n{cpe.stdout.decode()}")
+            logger.info("Captured stdout: \n%s", cpe.stdout.decode())
             if cpe.stderr:
-                logger.error(f"Captured stderr: \n{cpe.stderr.decode()}")
+                logger.error("Captured stderr: \n%s", cpe.stderr.decode())
             raise
 
-        logger.info(f"Captured stdout:\n{result.stdout.decode()}")
+        logger.info("Captured stdout:\n%s", result.stdout.decode())
         if result.stderr:
             logger.error(result.stderr.decode())
-        logger.info(f"Finished! SPK written to {output_filepath}")
+        logger.info("Finished! SPK written to %s", output_filepath)
 
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
@@ -128,13 +128,13 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     log_filepath = setup_task_logger(f'ck_generator_{now}', stream_log_level=stream_log_level)
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
-    logger.info(f"Logging to {log_filepath}")
+    logger.info("Logging to %s", log_filepath)
 
     output_dir = Path(parsed_args.outdir).expanduser().absolute()
-    logger.info(f"Writing resulting CK to {output_dir}")
+    logger.info("Writing resulting CK to %s", output_dir)
 
     packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
-    logger.info(f"Using packet definition {packet_definition_filepath}")
+    logger.info("Using packet definition %s", packet_definition_filepath)
 
     packet_definition = xtce.XtcePacketDefinition(xtce_document=str(packet_definition_filepath))
     # TODO: eventually XtcePacketDefinition will accept a Path object. When we update that, remove the str() above
@@ -156,12 +156,12 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
             fields=['ATTSCLKSTR', 'ADCFAQ4', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3'],
             fmt=['%s', '%.16f', '%.16f', '%.16f', '%.16f']
         )  # produces w + i + j + k in SPICE_QUATERNION style
-        logger.info(f"MSOPCK input data written to {ck_data_filepath}")
+        logger.info("MSOPCK input data written to %s", ck_data_filepath)
 
         ck_setup_filepath = write_kernel_setup_file(
             config.get("MSOPCK_SETUPFILE_CONTENTS"),
             filepath=tmp_path / 'msopck_setup.txt')
-        logger.info(f"MSOPCK setup file written to {ck_setup_filepath}")
+        logger.info("MSOPCK setup file written to %s", ck_setup_filepath)
 
         utc_start_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
         utc_end_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
@@ -176,15 +176,15 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
             result = subprocess.run(['msopck', str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
                                     capture_output=True, check=True)
         except subprocess.CalledProcessError as cpe:
-            logger.info(f"Captured stdout: \n{cpe.stdout.decode()}")
+            logger.info("Captured stdout: \n%s", cpe.stdout.decode())
             if cpe.stderr:
-                logger.error(f"Captured stderr: \n{cpe.stderr.decode()}")
+                logger.error("Captured stderr: \n%s", cpe.stderr.decode())
             raise
 
-        logger.info(f"Captured stdout:\n{result.stdout.decode()}")
+        logger.info("Captured stdout:\n%s", result.stdout.decode())
         if result.stderr:
             logger.error(result.stderr.decode())
-        logger.info(f"Finished! CK written to {output_filepath}")
+        logger.info("Finished! CK written to %s", output_filepath)
 
 
 def make_azel_ck(parsed_args: argparse.Namespace):
@@ -252,7 +252,7 @@ def write_kernel_setup_file(data: dict, filepath: Path):
     : Path
         Absolute path to written file.
     """
-    with open(filepath, 'x+') as fh:
+    with open(filepath, 'x+', encoding='utf_8') as fh:
         fh.write("\\begindata\n")
         for key, value in data.items():
             if key in ('PATH_VALUES', 'PATH_SYMBOLS', 'KERNELS_TO_LOAD'):
@@ -288,5 +288,5 @@ def write_kernel_setup_file(data: dict, filepath: Path):
             fh.write(f"{key}={value_str}\n")
         fh.write("\\begintext\n")
         fh.seek(0)
-        logger.info(f"Setup file contents:\n{''.join(fh.readlines())}")
+        logger.info("Setup file contents:\n%s", ''.join(fh.readlines()))
     return filepath.absolute()
