@@ -11,26 +11,32 @@ pip install libera-sdp --index https://artifacts.pdmz.lasp.colorado.edu/reposito
 ## Basic Usage
 
 
-### CLI Entrypoints
+### Command Line Interface
 Depending on how you have install `libera_sdp`, your CLI runner may vary. The commands below assume that your 
-virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you will
-likely want to use `poetry run` to run CLI commands.
+virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you may
+want to use `poetry run` to run CLI commands.
 
-#### `make-jpss-spk`
+#### Top Level Command `sdp`
 ```shell
-make-jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+sdp [--version] [-h]
+```
+
+#### Sub-Command `sdp make-kernel jpss-spk`
+```shell
+sdp make-kernel jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
 ```
 
 
-#### `make-jpss-ck`
+#### Sub-Command `sdp make-kernel jpss-ck`
 ```shell
-make-jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+sdp make-kernel jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
 ```
 
 
-#### `make-libera-az-el-ck`
-```shell
+#### Sub-Command `sdp make-kernel azel-ck`
 Not yet implemented
+```shell
+sdp make-kernel azel-ck [-h]
 ```
 
 

@@ -86,6 +86,14 @@ def test_itrf93_pck(spice_test_data_path):
 
 # Furnishing fixtures for testing kernels
 # ---------------------------------------
+@pytest.fixture(autouse=True)
+def autoclear_spice():
+    """Automatically clears out all SPICE remnants after every single test to prevent the kernel pool from
+    interfering with future tests. Option autouse ensures this is run after every test."""
+    yield
+    spice.kclear()
+
+
 @pytest.fixture
 def furnish_fk():
     """Furnishes (temporarily) the Libera frame kernel (FK) stored in the package data directory"""
@@ -164,6 +172,7 @@ def furnish_testing_kernels(furnish_fk,
     e.g. if two files provide overlapping attitude data, be sure to put the latest/most up to date file last.
     """
     yield
+    spice.kclear()
 
 
 @pytest.fixture
