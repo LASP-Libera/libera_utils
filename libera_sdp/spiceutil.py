@@ -1,16 +1,15 @@
 """Modules for SPICE kernel creation, management, and usage"""
 # Standard
 import datetime
+from enum import Enum
 import functools
 import logging
 import os
-import re
-from enum import Enum
-
-import requests
 from pathlib import Path
+import re
 from typing import NamedTuple
 # Installed
+import requests
 import spiceypy as spice
 from spiceypy.utils.exceptions import NotFoundError, SpiceyError
 # Local
@@ -68,7 +67,7 @@ class KernelFileCache:
         re.Pattern
             Compiled regex pattern for finding links to downloadable files on NAIF pages
         """
-        return re.compile(r'href="({0})"'.format(self.kernel_file_regex))
+        return re.compile(f'href="({self.kernel_file_regex})"')
 
     @property
     def cache_dir(self):
@@ -85,23 +84,23 @@ class KernelFileCache:
     def kernel_path(self) -> Path:
         """Return the get_cached_kernels path, as set by the _get_from_naif method."""
         cached_valid_kernels = self.get_cached_kernels()
+
         if cached_valid_kernels:
             return cached_valid_kernels[-1]
-        else:
-            logger.info(f"No valid cached files for {self.kernel_file_regex} in {self.cache_dir}")
-            try:
-                most_recent_kernel = self.find_most_recent_kernel()
-                downloaded_kernel = self.download_kernel(most_recent_kernel)
-                return downloaded_kernel
-            except Exception as unhandled:
-                logger.exception(unhandled)
-                if self.fallback_kernel:
-                    logger.error(
-                        f"Error finding and downloading the most recent kernel matching {self.kernel_file_regex}. "
-                        f"Falling back to {self.fallback_kernel}")
-                    return self.fallback_kernel
-                else:
-                    raise
+
+        logger.info("No valid cached files for %s in %s",
+                    self.kernel_file_regex, self.cache_dir)
+        try:
+            most_recent_kernel = self.find_most_recent_kernel()
+            downloaded_kernel = self.download_kernel(most_recent_kernel)
+            return downloaded_kernel
+        except Exception as unhandled:
+            logger.exception(unhandled)
+            if self.fallback_kernel:
+                logger.error("Error finding and downloading the most recent kernel matching %s. Falling back to %s",
+                             self.kernel_file_regex, self.fallback_kernel)
+                return self.fallback_kernel
+            raise
 
     def furnsh(self):
         """Furnish the cached kernel"""
@@ -162,7 +161,7 @@ class KernelFileCache:
                     # and set chunk_size parameter to None.
                     # if chunk:
                     f.write(chunk)
-        logger.info(f"Cached kernel file to {local_filepath}")
+        logger.info("Cached kernel file to %s", local_filepath)
         return local_filepath
 
     def find_most_recent_kernel(self) -> str:
@@ -192,7 +191,7 @@ class KernelFileRecord(NamedTuple):
     file_name: str
 
     def __str__(self):
-        return "%06s %s" % (self.kernel_type, self.file_name)
+        return f"{self.kernel_type:06} {self.file_name}"
 
     def __repr__(self):
         return f"KernelFileRecord({self.kernel_type}, {self.file_name})"
@@ -282,8 +281,8 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
                         spice.furnsh(str(lsk.kernel_path))
                         spice.furnsh(config.get('JPSS_SCLK'))
                     else:
-                        raise SpiceyError(f"When calling a function requiring SPICE, we failed to load a metakernel. "
-                                          f"SPICE_METAKERNEL is not set, and time_kernels_only is not set to True"
+                        raise SpiceyError("When calling a function requiring SPICE, we failed to load a metakernel. "
+                                          "SPICE_METAKERNEL is not set, and time_kernels_only is not set to True"
                                           ) from spcy_err
                 return func(*args, **kwargs)
         return wrapper_ensure_spice
@@ -311,14 +310,14 @@ def ls_kernels(verbose: bool = False, log: bool = False) -> list:
         print(f"SPICE ktotal reports {count} kernels loaded")
     result = []
     for i in range(count):
-        file, kernel_type, source, handle = spice.kdata(i, 'ALL')
+        file, kernel_type, _, _ = spice.kdata(i, 'ALL')
         kfr = KernelFileRecord(kernel_type=kernel_type, file_name=file)
         if verbose:
             print(kfr)
         result.append(kfr)
     if log:
         formatted_kernels = "\n\t".join([str(kfr) for kfr in result])
-        logger.debug(f"Kernels currently loaded:\n\t{formatted_kernels}")
+        logger.debug("Kernels currently loaded:\n\t%s", formatted_kernels)
     return result
 
 
@@ -345,7 +344,7 @@ def ls_spice_constants(verbose: bool = False) -> dict:
     for kervar in sorted(kervars):
         n, kernel_type = spice.dtpool(kervar)
         if verbose:
-            print("%-50s %s %d" % (kervar, kernel_type, n))
+            print(f"{kervar:<50} {kernel_type} {n}")
         if kernel_type == 'N':
             values = spice.gdpool(kervar, 0, n)
             result[kervar] = values
@@ -381,7 +380,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
     result = {}
     count = spice.ktotal(kernel_type)
     for i in range(count):
-        file, _, source, handle = spice.kdata(i, kernel_type)
+        file, _, _, _ = spice.kdata(i, kernel_type)
         result[file] = []
         if kernel_type.upper() == 'CK':
             ids = spice.ckobj(file)
@@ -399,8 +398,8 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
                 left, right = spice.wnfetd(cover, i_window)
                 result[file].append((left, right))
                 if verbose:
-                    print("%s,%s,%d,%17.6f,%s,%17.6f,%s" %
-                          (kernel_type, file, kernel_id, left, spice.etcal(left), right, spice.etcal(right)))
+                    print(f"{kernel_type},{file},{kernel_id},"
+                          f"{left:17.6f},{spice.etcal(left)},{right:17.6f},{spice.etcal(right)}")
     return result
 
 
