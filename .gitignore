@@ -70,4 +70,3 @@ venv
 ##################
 .python-version
 pytest.ini
-.dockerignore

@@ -27,10 +27,10 @@ class _ConfigurationCache:
     """Class that stores the JSON configuration and provides methods for accessing configuration information"""
 
     def __init__(self):
-        logger.debug(f"Initializing configuration cache from config.json.")
-        with open(Path(__file__).parent / 'config.json') as config_file:
+        logger.debug("Initializing configuration cache from config.json.")
+        with open(Path(__file__).parent / 'config.json', encoding='utf_8') as config_file:
             self._cached_json_config = json.load(config_file)
-            self._known_config_variables = {key for key in self._cached_json_config}
+            self._known_config_variables = set(self._cached_json_config)
 
     def _format_return_value(self, value: str):
         """Recursively formats the returned value, looking for config keys to substitute.
@@ -53,12 +53,14 @@ class _ConfigurationCache:
                 return config.get(text_and_key[1])
 
             return formatter.format(value)
-        elif isinstance(value, list):
+
+        if isinstance(value, list):
             return [self._format_return_value(x) for x in value]
-        elif isinstance(value, dict):
+
+        if isinstance(value, dict):
             return {k: self._format_return_value(v) for k, v in value.items()}
-        else:
-            return value
+
+        return value
 
     def get(self, key):
         """Retrieves a configuration value from either the cached JSON or from the environment
@@ -82,7 +84,7 @@ class _ConfigurationCache:
             return self._cached_json_config
 
         if key == 'PKG_ROOT':  # Special case for root of installed package
-            return str(Path(sys.modules[__name__.split('.')[0]].__file__).parent)
+            return str(Path(sys.modules[__name__.split('.', maxsplit=1)[0]].__file__).parent)
 
         # Checking the environment first allows easy override of any json config variable
         if os.getenv(key):
@@ -93,7 +95,7 @@ class _ConfigurationCache:
             result = self._cached_json_config[key]
             return self._format_return_value(result)
 
-        raise KeyError('Configuration variable {} not found.'.format(key))
+        raise KeyError(f'Configuration variable {key} not found.')
 
 
 config = _ConfigurationCache()
