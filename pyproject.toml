@@ -23,14 +23,13 @@ matplotlib = {version = "^3.4.3", optional = true}
 pytest-cov = "^2.12.1"
 pylint = "^2.9.3"
 responses = "^0.14.0"
+pytest-randomly = "^3.10.2"
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
 
 [tool.poetry.scripts]
-make-jpss-spk = 'libera_sdp.cli.kernel_maker:make_jpss_spk'
-make-jpss-ck = 'libera_sdp.cli.kernel_maker:make_jpss_ck'
-make-libera-az-el-ck = 'libera_sdp.cli.kernel_maker:make_az_el_ck'
+sdp = 'libera_sdp.cli.cli:main'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

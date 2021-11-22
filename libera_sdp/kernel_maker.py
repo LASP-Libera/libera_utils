@@ -23,35 +23,18 @@ from libera_sdp import time
 logger = logging.getLogger(__name__)
 
 
-def make_jpss_spk(cli_args: list = None):
-    """CLI tool that creates a JPSS SPK from APID 11 CCSDS packets.
+def make_jpss_spk(parsed_args: argparse.Namespace):
+    """Create a JPSS SPK from APID 11 CCSDS packets.
 
     Parameters
     ----------
-    cli_args : list
-        Allows programmatic testing of this tool, including argparsing.
+    parsed_args : argparse.Namespace
+        Namespace of parsed CLI arguments
 
     Returns
     -------
     None
     """
-    argparser = argparse.ArgumentParser(description=__doc__)
-    argparser.add_argument('packet_data_filepaths',
-                           nargs='+',
-                           type=str,
-                           help="Path to an L0 packet file.")
-    argparser.add_argument('--outdir',
-                           type=str,
-                           default='/tmp',
-                           help="Output directory for SPK")
-    argparser.add_argument('--overwrite',
-                           action='store_true',
-                           help="Force overwriting an existing kernel if it exists.")
-    argparser.add_argument('-v', '--verbose',
-                           action='store_true',
-                           help="Verbose output (DEBUG level instead of INFO).")
-    parsed_args = argparser.parse_args(cli_args)
-
     if parsed_args.verbose:
         stream_log_level = logging.DEBUG
     else:
@@ -124,35 +107,18 @@ def make_jpss_spk(cli_args: list = None):
         logger.info(f"Finished! SPK written to {output_filepath}")
 
 
-def make_jpss_ck(cli_args: list = None):
-    """CLI tool that creates a JPSS CK from APID 11 CCSDS packets.
+def make_jpss_ck(parsed_args: argparse.Namespace):
+    """Create a JPSS CK from APID 11 CCSDS packets.
 
     Parameters
     ----------
-    cli_args : list
-        Allows programmatic testing of this tool, including argparsing.
+    parsed_args : argparse.Namespace
+        Namespace of parsed CLI arguments
 
     Returns
     -------
     None
     """
-    argparser = argparse.ArgumentParser(description=__doc__)
-    argparser.add_argument('packet_data_filepaths',
-                           nargs='+',
-                           type=str,
-                           help="Path to an L0 packet file.")
-    argparser.add_argument('--outdir',
-                           type=str,
-                           default='/tmp',
-                           help="Output directory for CK")
-    argparser.add_argument('--overwrite',
-                           action='store_true',
-                           help="Force overwriting an existing kernel if it exists.")
-    argparser.add_argument('-v', '--verbose',
-                           action='store_true',
-                           help="Verbose output (DEBUG level instead of INFO).")
-    parsed_args = argparser.parse_args(cli_args)
-
     if parsed_args.verbose:
         stream_log_level = logging.DEBUG
     else:
@@ -219,6 +185,22 @@ def make_jpss_ck(cli_args: list = None):
         if result.stderr:
             logger.error(result.stderr.decode())
         logger.info(f"Finished! CK written to {output_filepath}")
+
+
+def make_azel_ck(parsed_args: argparse.Namespace):
+    """Create a Libera Az-El CK from CCSDS packets
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Namespace of parsed CLI arguments
+
+    Returns
+    -------
+    None
+    """
+    print(parsed_args)
+    raise NotImplementedError("CK generation for the Az-El mechanism isn't implemented yet.")
 
 
 def write_kernel_input_file(data: np.ndarray, filepath: str or Path, fields: list = None, fmt: str or list = "%.16f"):
