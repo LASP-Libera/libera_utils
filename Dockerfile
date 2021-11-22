@@ -61,6 +61,7 @@ RUN poetry install
 
 # Copy tests over
 COPY tests $LIBSDP_INSTALL_LOCATION/tests
+COPY pylintrc $LIBSDP_INSTALL_LOCATION
 
 # Set entrypoint
 ENTRYPOINT pytest $LIBSDP_INSTALL_LOCATION
