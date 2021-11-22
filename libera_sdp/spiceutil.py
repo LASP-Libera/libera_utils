@@ -191,7 +191,7 @@ class KernelFileRecord(NamedTuple):
     file_name: str
 
     def __str__(self):
-        return f"{self.kernel_type:06} {self.file_name}"
+        return f"{self.kernel_type:<6} {self.file_name}"
 
     def __repr__(self):
         return f"KernelFileRecord({self.kernel_type}, {self.file_name})"
