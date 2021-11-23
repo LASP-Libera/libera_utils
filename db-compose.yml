@@ -1,0 +1,49 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:14
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=libera_master
+      - POSTGRES_PASSWORD=masterpass
+      - POSTGRES_DB=postgres
+    volumes:
+      - ./database/initdb:/docker-entrypoint-initdb.d
+
+  flyway-sdp-dev:
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_PASSWORD=masterpass
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://postgres:5432/sdp_dev migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
+    depends_on:
+      - postgres
+
+  flyway-sdp-test:
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_PASSWORD=masterpass
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://postgres:5432/sdp_test migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
+    depends_on:
+      - postgres
+
+  flyway-sdp-prod:
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_PASSWORD=masterpass
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://postgres:5432/sdp_prod migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
+    depends_on:
+      - postgres
