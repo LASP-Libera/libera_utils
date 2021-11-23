@@ -26,9 +26,11 @@ class ConfigurationFormatter(string.Formatter):
 class _ConfigurationCache:
     """Class that stores the JSON configuration and provides methods for accessing configuration information"""
 
+    _json_config_filepath = Path(__file__).parent / 'data/config.json'
+
     def __init__(self):
         logger.debug("Initializing configuration cache from config.json.")
-        with open(Path(__file__).parent / 'config.json', encoding='utf_8') as config_file:
+        with open(self._json_config_filepath, encoding='utf_8') as config_file:
             self._cached_json_config = json.load(config_file)
             self._known_config_variables = set(self._cached_json_config)
 
