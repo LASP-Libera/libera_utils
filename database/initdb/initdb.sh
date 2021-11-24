@@ -10,9 +10,9 @@ CREATE ROLE reader_role;
 CREATE ROLE processor_role;  -- privileges for processing data
 CREATE ROLE tester_role;  -- privileges for running unit tests
 
-CREATE USER libera_unit_tester PASSWORD 'testerpass' WITH ROLE tester_role;
-CREATE USER libera_processor PASSWORD 'processorpass' WITH ROLE processor_role;
-CREATE USER libera_reader PASSWORD 'readerpass' WITH ROLE reader_role;
+CREATE USER libera_unit_tester PASSWORD 'testerpass' IN ROLE tester_role;
+CREATE USER libera_processor PASSWORD 'processorpass' IN ROLE processor_role;
+CREATE USER libera_reader PASSWORD 'readerpass' IN ROLE reader_role;
 
 CREATE DATABASE sdp_dev OWNER libera_master;
 CREATE DATABASE sdp_test OWNER libera_master;

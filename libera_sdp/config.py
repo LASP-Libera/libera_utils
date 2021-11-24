@@ -64,6 +64,10 @@ class _ConfigurationCache:
 
         return value
 
+    def force_reload(self):
+        """Force reloading of the JSON config"""
+        self.__init__()
+
     def get(self, key):
         """Retrieves a configuration value from either the cached JSON or from the environment
 
