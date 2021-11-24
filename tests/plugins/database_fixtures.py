@@ -2,7 +2,7 @@
 # Installed
 import pytest
 # Local
-from libera_sdp.db.database import db
+from libera_sdp.db.database import getdb
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -12,14 +12,14 @@ def use_test_db(monkeypatch_session):
     monkeypatch_session.setenv('LIBERA_DB_USER', 'libera_unit_tester')
     monkeypatch_session.setenv('LIBERA_DB_HOST', 'localhost')
     monkeypatch_session.setenv('PGPASSWORD', 'testerpass')
-    db.refresh()  # Forces the global db object to source the patched environment variables
 
 
 @pytest.fixture
-def clean_db():
+def clean_sdp_test_db():
     """Ensure the TEST database is in a clean state and return it to clean after we're done testing.
     Note: If this weren't such a costly operation, we would set this to autouse=True
     """
+    db = getdb()
     db.truncate_product_tables()
     yield
     db.truncate_product_tables()
@@ -30,7 +30,7 @@ def insert_test_data():
     """Provides a function to insert test data records into the DB"""
 
     def _insert(*record_objects):
-        with db.session() as s:
+        with getdb().session() as s:
             for record in record_objects:
                 s.add(record)
 

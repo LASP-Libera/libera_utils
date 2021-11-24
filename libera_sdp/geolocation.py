@@ -141,7 +141,7 @@ def target_position(target: spiceutil.SpiceBody, et: float or np.ndarray,
     observer : spiceutil.SpiceBody
         The observer of the target. Resulting coordinates point from observer to target.
     abcorr : str
-        A scalar string that indicates the aberration corrections to apply to the state of the target body to account
+        A scalar string that indicates the aberration corrections to apply to the database of the target body to account
         for one-way light time and stellar aberration. Default is 'NONE'.
     normalize : bool, Optional
         Return unit vectors for position and velocity (light time output is unchanged)
