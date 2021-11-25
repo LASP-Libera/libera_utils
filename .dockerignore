@@ -19,7 +19,6 @@
 /.gitmodules
 
 # Unused repo contents
-poetry.lock
 /analysis
 /docker_build.sh
 /docker

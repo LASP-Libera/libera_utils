@@ -22,8 +22,8 @@ spiceypy = "^4.0.1"
 lasp-packets = "1.0"
 requests = "^2.26.0"
 matplotlib = {version = "^3.4.3", optional = true}
-SQLAlchemy = {version = "^1.4.27", optional = true}
-psycopg2 = {version = "^2.9.2", optional = true}
+SQLAlchemy = "^1.4.27"
+psycopg2 = "^2.9.2"
 
 [tool.poetry.dev-dependencies]
 pytest-cov = "^2.12.1"
@@ -33,7 +33,6 @@ pytest-randomly = "^3.10.2"
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
-db = ["sqlalchemy", "psycopg2"]
 
 [tool.poetry.scripts]
 sdp = 'libera_sdp.cli:main'

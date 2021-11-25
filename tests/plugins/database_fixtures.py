@@ -10,7 +10,6 @@ def use_test_db(monkeypatch_session):
     """Set environment variables to use the testing database"""
     monkeypatch_session.setenv('LIBERA_DB_NAME', 'sdp_test')
     monkeypatch_session.setenv('LIBERA_DB_USER', 'libera_unit_tester')
-    monkeypatch_session.setenv('LIBERA_DB_HOST', 'localhost')
     monkeypatch_session.setenv('PGPASSWORD', 'testerpass')
 
 

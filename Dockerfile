@@ -12,6 +12,9 @@ WORKDIR $LIBSDP_INSTALL_LOCATION
 # Turn of interactive shell to suppress configuration errors
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Install libpq so we can install psycopg2 later and curl so we can install poetry
+RUN apt-get update && apt-get install -y libpq-dev curl gcc
+
 # Install spice utilities directly from NAIF (precompiled for Linux)
 ADD https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z /tmp/cspice.tar.Z
 ENV CSPICE_DIR=/opt/naif
@@ -26,8 +29,6 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # Upgrade pip to the latest version because poetry uses pip in the background to install packages
 RUN pip install --upgrade pip
 
-# Install curl so we can install python poetry
-RUN apt-get update && apt-get install -y curl
 # Install poetry
 RUN curl -sSL https://install.python-poetry.org | python -
 # Add poetry to path
@@ -38,6 +39,7 @@ COPY libera_sdp $LIBSDP_INSTALL_LOCATION/libera_sdp
 COPY README.md $LIBSDP_INSTALL_LOCATION
 COPY doc $LIBSDP_INSTALL_LOCATION/doc
 COPY pyproject.toml $LIBSDP_INSTALL_LOCATION
+COPY poetry.lock $LIBSDP_INSTALL_LOCATION
 COPY LICENSE $LIBSDP_INSTALL_LOCATION
 
 # This is so stupid but it fixes known a bug in docker build
