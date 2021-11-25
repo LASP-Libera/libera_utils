@@ -37,15 +37,20 @@ class _DatabaseManager:
         if not self.user:
             raise DatabaseException(f"Missing database user.")
 
-        self.host = dbhost or config.get('LIBERA_DB_HOST')
-        if not self.host:
-            raise DatabaseException(f"Missing database host.")
+        if dbhost:
+            self.host = dbhost
+        else:
+            try:
+                self.host = config.get('LIBERA_DB_HOST')
+            except KeyError:
+                self.host = 'localhost'
 
         self.password = dbpass
         self.engine = create_engine(self.url)
+        logger.info(f"Initialized {self}")
 
     def __str__(self):
-        return f"_DatabaseManager(user={self.user}, host={self.host}, db={self.database.name})"
+        return f"_DatabaseManager(user={self.user}, host={self.host}, db={self.database})"
 
     def __bool__(self):
         return bool(self.engine)
@@ -117,6 +122,7 @@ class _DatabaseManager:
                 self.engine.execute(table.delete())
 
 
+# TODO: Make this a classmethod on _DatabaseManager. Maybe also make the cache internal to _DatabaseManager
 def getdb(dbname: str = None, dbuser: str = None, dbhost: str = None, dbpass: str = ""):
     """Retrieve an existing DB manager from the cache if one already exists in the same PID and configuration
     (identified by hash). If no identical manager exists in this process already, create a new one and return it.
@@ -131,7 +137,7 @@ def getdb(dbname: str = None, dbuser: str = None, dbhost: str = None, dbpass: st
     dbuser : str, Optional
         User
     dbhost : str, Optional
-        Host
+        Host. Default localhost
     dbpass : str, Optional
         Password
 
