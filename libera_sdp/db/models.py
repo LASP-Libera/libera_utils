@@ -6,6 +6,9 @@ from sqlalchemy.orm import relationship, backref
 from libera_sdp.db import Base
 
 
+# TODO: This is basically a dummy model. It has a few unit tests that rely on it but we shuold consider this to be
+#    a work in progress. Change tests as needed. Just be sure that any changes made here are first made to the DB schema
+#    using a flyway migration.
 class Level0(Base):
     """
     Defines a level0 file object, as well as a table to hold level0 file names. The filename key is a foreign key to
