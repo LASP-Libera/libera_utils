@@ -2,10 +2,11 @@
 # Standard
 import multiprocessing
 import os
-# Local
+# Installed
 import pytest
-
-from libera_sdp.db.database import getdb, DatabaseException
+# Local
+from libera_sdp.db import getdb
+from libera_sdp.db.database import DatabaseException
 from libera_sdp.db.models import *
 
 

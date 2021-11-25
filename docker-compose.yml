@@ -49,7 +49,7 @@ services:
     depends_on:
       - libera-dev-db
 
-  processing:
+  sdp:
     image: libera-sdp:latest
     build:
       context: .
