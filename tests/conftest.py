@@ -9,7 +9,8 @@ from libera_sdp import logutil
 pytest_plugins = [
     "tests.plugins.data_path_fixtures",
     "tests.plugins.spice_fixtures",
-    "tests.plugins.database_fixtures"
+    "tests.plugins.database_fixtures",
+    "tests.plugins.s3_fixtures"
 ]
 
 
