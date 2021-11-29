@@ -26,6 +26,20 @@ def spice_test_data_path(test_data_path):
 # Paths to commonly used test data files
 # --------------------------------------
 @pytest.fixture
+def test_txt(test_data_path):
+    """Path to a simple txt file"""
+    return test_data_path / 'testtextfile.txt'
+
+
+@pytest.fixture
+def test_txt_gz(test_data_path):
+    """Path to a gzipped version of the simple txt file"""
+    return test_data_path / 'testtextfile.txt.gz'
+
+
+# SPICE test data
+# ---------------
+@pytest.fixture
 def test_lsk(spice_test_data_path):
     """Path to the LSK stored in the test_data directory to provide a single configuration for all tests"""
     return spice_test_data_path / 'naif0012.tls'
