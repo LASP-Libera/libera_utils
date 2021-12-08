@@ -11,7 +11,7 @@ import tempfile
 # Installed
 import numpy as np
 import numpy.lib.recfunctions as nprf
-from lasp_packets import parser, xtce
+from lasp_packets import parser, xtcedef
 # Local
 from libera_sdp import spiceutil
 from libera_sdp.logutil import setup_task_logger
@@ -52,8 +52,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
     logger.info("Using packet definition %s", packet_definition_filepath)
 
-    packet_definition = xtce.XtcePacketDefinition(xtce_document=str(packet_definition_filepath))
-    # TODO: eventually XtcePacketDefinition will accept a Path object. When we update that, remove the str() above
+    packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
     packet_parser = parser.PacketParser(packet_definition=packet_definition)
 
     logger.info("Parsing packets...")
@@ -136,8 +135,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
     logger.info("Using packet definition %s", packet_definition_filepath)
 
-    packet_definition = xtce.XtcePacketDefinition(xtce_document=str(packet_definition_filepath))
-    # TODO: eventually XtcePacketDefinition will accept a Path object. When we update that, remove the str() above
+    packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
     packet_parser = parser.PacketParser(packet_definition=packet_definition)
 
     logger.info("Parsing packets...")
