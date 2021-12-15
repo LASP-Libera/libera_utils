@@ -1,0 +1,2 @@
+See:
+https://flywaydb.org/documentation/concepts/migrations#sql-based-migrations
