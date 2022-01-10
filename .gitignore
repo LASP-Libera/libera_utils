@@ -27,6 +27,7 @@ tests/test_data/hidden
 build
 dist
 libera_sdp/_version.py
+poetry.lock
 
 # Packages #
 ############
