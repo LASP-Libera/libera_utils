@@ -4,7 +4,11 @@ Science data processing algorithms for the Libera mission.
 
 ## Installation from LASP PyPI
 ```bash
+# Inside the LASP VPN only
 pip install libera-sdp --index https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
+
+# From any whitelisted IP (including any IP inside the LASP VPN)
+pip install libera-sdp --index https://lasp.colorado.edu/repository/lasp-pypi/simple
 ```
 
 
@@ -121,12 +125,18 @@ Reference: [https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-
    
 2. To build the distribution archives, run `poetry build`.
    
-3. To upload the wheel to Nexus, run `poetry publish --repository lasp-pypi`. Note that the repository must first
-   be configured according to the Poetry docs 
-   (here)[https://python-poetry.org/docs/repositories/#using-a-private-repository]
+3. To upload the wheel to Nexus, run `poetry publish --repository lasp-pypi`. Note that the repository, which is 
+   named `lasp-pypi` in this example must first be configured according to the Poetry docs 
+   (here)[https://python-poetry.org/docs/repositories/#using-a-private-repository]. To configure the repo for 
+   publishing, run 
+   ```
+   poetry config repositories.lasp-pypi https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/
+   ```
+   Note that the trailing slash is required at the end of the URL.
 
 
 # Further Documentation
 - [Configuration](doc/configuration.md)
 - [SPICE Usage](doc/spice.md)
 - [Docker (Including Nexus)](doc/docker.md)
+- [Database](doc/database.md)
