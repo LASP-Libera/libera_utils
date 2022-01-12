@@ -11,26 +11,32 @@ pip install libera-sdp --index https://artifacts.pdmz.lasp.colorado.edu/reposito
 ## Basic Usage
 
 
-### CLI Entrypoints
+### Command Line Interface
 Depending on how you have install `libera_sdp`, your CLI runner may vary. The commands below assume that your 
-virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you will
-likely want to use `poetry run` to run CLI commands.
+virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you may
+want to use `poetry run` to run CLI commands.
 
-#### `make-jpss-spk`
+#### Top Level Command `sdp`
 ```shell
-make-jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+sdp [--version] [-h]
+```
+
+#### Sub-Command `sdp make-kernel jpss-spk`
+```shell
+sdp make-kernel jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
 ```
 
 
-#### `make-jpss-ck`
+#### Sub-Command `sdp make-kernel jpss-ck`
 ```shell
-make-jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+sdp make-kernel jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
 ```
 
 
-#### `make-libera-az-el-ck`
-```shell
+#### Sub-Command `sdp make-kernel azel-ck`
 Not yet implemented
+```shell
+sdp make-kernel azel-ck [-h]
 ```
 
 
@@ -47,6 +53,9 @@ To install optional dependencies, specified in groups in `pyproject.toml` under 
 
 
 ### Testing
+
+
+#### Testing Locally
 Testing is run with `pytest`. To run all tests, make sure the `test` optional dependencies are installed and run:
 ```bash
 pytest tests
@@ -61,6 +70,17 @@ pytest --cov-report=html:coverage_report --cov=libera_sdp tests
 # Generate Corbertura-compatible XML report
 pytest --cov-report=xml:coverage.xml --cov=libera_sdp tests
 ```
+
+
+#### Testing in Docker
+
+
+To run the unit tests in docker, run
+```shell
+docker compose up -d flyway-sdp-dev flyway-sdp-test flyway-sdp-prod && docker compose run tests
+```
+This ensures the dev database server is up, runs the latest flyway migrations against it, 
+and runs the tests container service defined in the `docker-compose.yml` file.
 
 
 ### Release Process
@@ -108,5 +128,5 @@ Reference: [https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-
 
 # Further Documentation
 - [Configuration](doc/configuration.md)
-- [Spice Usage](doc/spice.md)
-- [Nexus Container Registry](doc/nexus_container_registry.md)
+- [SPICE Usage](doc/spice.md)
+- [Docker (Including Nexus)](doc/docker.md)

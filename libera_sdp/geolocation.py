@@ -37,16 +37,16 @@ Vectorized form of spice.subpnt function
 corrected for light time and stellar aberration."
 https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/subpnt_c.html
 
-   Variable  I/O  Description 
-   --------  ---  -------------------------------------------------- 
-   method     I   Computation method. 
-   target     I   Name of target body. 
-   et         I   Epoch in TDB seconds past J2000 TDB. 
-   fixref     I   Body-fixed, body-centered target body frame. 
-   abcorr     I   Aberration correction flag. 
-   obsrvr     I   Name of observing body. 
-   spoint     O   Sub-observer point on the target body. 
-   trgepc     O   Sub-observer point epoch. 
+   Variable  I/O  Description
+   --------  ---  --------------------------------------------------
+   method     I   Computation method.
+   target     I   Name of target body.
+   et         I   Epoch in TDB seconds past J2000 TDB.
+   fixref     I   Body-fixed, body-centered target body frame.
+   abcorr     I   Aberration correction flag.
+   obsrvr     I   Name of observing body.
+   spoint     O   Sub-observer point on the target body.
+   trgepc     O   Sub-observer point epoch.
    srfvec     O   Vector from observer to sub-observer point.
 """
 vec_subpnt = np.vectorize(spice.subpnt,
@@ -61,17 +61,17 @@ Vectorized form of spice.subslr function
 corrected for light time and stellar aberration."
 https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/subslr_c.html
 
-   Variable  I/O  Description 
-   --------  ---  -------------------------------------------------- 
-   method     I   Computation method. 
-   target     I   Name of target body. 
-   et         I   Epoch in ephemeris seconds past J2000 TDB. 
-   fixref     I   Body-fixed, body-centered target body frame. 
-   abcorr     I   Aberration correction. 
-   obsrvr     I   Name of observing body. 
-   spoint     O   Sub-solar point on the target body. 
-   trgepc     O   Sub-solar point epoch. 
-   srfvec     O   Vector from observer to sub-solar point. 
+   Variable  I/O  Description
+   --------  ---  --------------------------------------------------
+   method     I   Computation method.
+   target     I   Name of target body.
+   et         I   Epoch in ephemeris seconds past J2000 TDB.
+   fixref     I   Body-fixed, body-centered target body frame.
+   abcorr     I   Aberration correction.
+   obsrvr     I   Name of observing body.
+   spoint     O   Sub-solar point on the target body.
+   trgepc     O   Sub-solar point epoch.
+   srfvec     O   Vector from observer to sub-solar point.
 """
 vec_subslr = np.vectorize(spice.subslr,
                           excluded=['method', 'target', 'fixref', 'abcorr', 'obsrvr'],
@@ -85,15 +85,15 @@ Vectorized form of spice.npedln function
 "Find nearest point on a triaxial ellipsoid to a specified line, and the distance from the ellipsoid to the line."
 https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/npedln_c.html
 
-   Variable  I/O  Description 
-   --------  ---  -------------------------------------------------- 
-   a          I   Length of ellipsoid's semi-axis in the x direction 
-   b          I   Length of ellipsoid's semi-axis in the y direction 
-   c          I   Length of ellipsoid's semi-axis in the z direction 
-   linept     I   Point on line 
-   linedr     I   Direction vector of line 
-   pnear      O   Nearest point on ellipsoid to line 
-   dist       O   Distance of ellipsoid from line 
+   Variable  I/O  Description
+   --------  ---  --------------------------------------------------
+   a          I   Length of ellipsoid's semi-axis in the x direction
+   b          I   Length of ellipsoid's semi-axis in the y direction
+   c          I   Length of ellipsoid's semi-axis in the z direction
+   linept     I   Point on line
+   linedr     I   Direction vector of line
+   pnear      O   Nearest point on ellipsoid to line
+   dist       O   Distance of ellipsoid from line
 """
 vec_npedln = np.vectorize(spice.npedln,
                           excluded=['a', 'b', 'c'],
@@ -141,7 +141,7 @@ def target_position(target: spiceutil.SpiceBody, et: float or np.ndarray,
     observer : spiceutil.SpiceBody
         The observer of the target. Resulting coordinates point from observer to target.
     abcorr : str
-        A scalar string that indicates the aberration corrections to apply to the state of the target body to account
+        A scalar string that indicates the aberration corrections to apply to the database of the target body to account
         for one-way light time and stellar aberration. Default is 'NONE'.
     normalize : bool, Optional
         Return unit vectors for position and velocity (light time output is unchanged)
@@ -205,7 +205,7 @@ def sub_observer_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
         and also the euclidean distance between the observer and the sub point in order: [x, y, z], obs_alt
     """
 
-    spoint, trgepc, obs_tgt_vec = vec_subpnt(method, target.value.strid, et, frame.value.strid,
+    spoint, _, obs_tgt_vec = vec_subpnt(method, target.value.strid, et, frame.value.strid,
                                              abcorr, observer.value.strid)
     if hasattr(et, '__len__'):
         observer_alt = np.linalg.norm(obs_tgt_vec, axis=1)  # Calculate distance from obs to spoint as observer altitude
@@ -241,8 +241,8 @@ def sub_solar_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
     Returns
     -------
     : np.ndarray, np.ndarray, np.ndarray
-        Subsolar point on the ellipsoid surface in the specified reference frame, apparent epoch at that point (depending
-        on specified light time correction), and vector from observer to subsolar point.
+        Subsolar point on the ellipsoid surface in the specified reference frame, apparent epoch at that point
+        (depending on specified light time correction), and vector from observer to subsolar point.
     """
     fixref = frame.value.strid
     obsrvr = observer.value.strid
@@ -271,7 +271,7 @@ def frame_transform(from_frame: spiceutil.SpiceFrame, to_frame: spiceutil.SpiceF
         <x, y, z> vector or array of vectors in reference frame `from_frame`
     normalize : bool, Optional
         Optionally normalize the output vector
-    
+
     Returns
     -------
     : np.ndarray
@@ -312,7 +312,7 @@ def angle_between(v1: np.ndarray, v2: np.ndarray, degrees: bool = False):
         Vector(s) 2. May be shape (D,) or (N, D).
     degrees : bool
         Specify True to return result in degrees. Default is False (returns radians).
-        
+
     Returns
     -------
     : float or np.ndarray
@@ -357,7 +357,7 @@ def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = Tr
     : np.ndarray
         Each coordinate is returned as (longitude, latitude, altitude).
     """
-    re, rp, flat = get_earth_radii()
+    re, _, flat = get_earth_radii()
 
     # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/recpgr_c.html
     if hasattr(cartesian_coords[0], '__len__'):
@@ -381,8 +381,8 @@ def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = Tr
 
     if degrees:
         return np.rad2deg(longitude), np.rad2deg(latitude), altitude
-    else:
-        return longitude, latitude, altitude
+
+    return longitude, latitude, altitude
 
 
 @spiceutil.ensure_spice
@@ -408,9 +408,9 @@ def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
         Look direction unit vector (e.g. an instrument look direction)
     look_frame : spiceutil.SpiceFrame
         Reference frame of `look_vector`
-    et : float or np.ndarray, Optional
+    et : float or np.ndarray or None, Optional
         Ephemeris time (at spacecraft at photon detection time). Only required if look_frame is not ITRF93.
-        
+
     Returns
     -------
     : tuple (pnear, alt)

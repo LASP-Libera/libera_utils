@@ -1,0 +1,66 @@
+version: '3'
+
+services:
+  libera-dev-db:
+    image: postgres:14
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=libera_master
+      - POSTGRES_PASSWORD=masterpass
+      - POSTGRES_DB=postgres
+    volumes:
+      - ./database/initdb:/docker-entrypoint-initdb.d
+
+  flyway-sdp-dev:
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_PASSWORD=masterpass
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://libera-dev-db:5432/sdp_dev migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
+    depends_on:
+      - libera-dev-db
+
+  flyway-sdp-test:
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_PASSWORD=masterpass
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://libera-dev-db:5432/sdp_test migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
+    depends_on:
+      - libera-dev-db
+
+  flyway-sdp-prod:
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_PASSWORD=masterpass
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://libera-dev-db:5432/sdp_prod migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
+    depends_on:
+      - libera-dev-db
+
+  sdp:
+    image: libera-sdp:latest
+    build:
+      context: .
+      target: libera-sdp
+
+  tests:
+    image: libera-sdp-test:latest
+    build:
+      context: .
+      target: libera-sdp-test
+    environment:
+      - LIBERA_DB_HOST=libera-dev-db
+    depends_on:
+      - flyway-sdp-test

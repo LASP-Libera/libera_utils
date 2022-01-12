@@ -1,3 +1,16 @@
+#  Building Docker Images
+
+
+The `docker_build.sh` script builds target docker images from our multistage Dockerfile.
+It accepts, as arguments, the names of target docker image stages to be built. For example,
+
+```shell
+docker_build.sh libera-sdp  # Builds the libera-sdp target
+docker_build.sh libera-sdp libera-sdp-test  # Builds both targets
+docker_build.sh  # ERROR must provide at least one argument
+```
+
+
 # Nexus Docker Container Registry
 
 

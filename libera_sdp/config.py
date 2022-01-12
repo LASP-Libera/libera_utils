@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import string
 import sys
 import warnings
@@ -26,11 +27,21 @@ class ConfigurationFormatter(string.Formatter):
 class _ConfigurationCache:
     """Class that stores the JSON configuration and provides methods for accessing configuration information"""
 
+    _json_config_filepath = Path(__file__).parent / 'data/config.json'
+
+    # Should handle all floats
+    FLOAT_REGEXP = re.compile(r'^[-+]?([0-9]+|[0-9]*\.[0-9]+)([eE][-+]?[0-9]+)?$')
+    # Example "-12.34E+56"      # sign (-)
+    #     integer (12)
+    #           OR
+    #             int/mantissa (12.34)
+    #                            exponent (E+56)
+
     def __init__(self):
-        logger.debug(f"Initializing configuration cache from config.json.")
-        with open(Path(__file__).parent / 'config.json') as config_file:
+        logger.debug("Initializing configuration cache from config.json.")
+        with open(self._json_config_filepath, encoding='utf_8') as config_file:
             self._cached_json_config = json.load(config_file)
-            self._known_config_variables = {key for key in self._cached_json_config}
+            self._known_config_variables = set(self._cached_json_config)
 
     def _format_return_value(self, value: str):
         """Recursively formats the returned value, looking for config keys to substitute.
@@ -53,12 +64,41 @@ class _ConfigurationCache:
                 return config.get(text_and_key[1])
 
             return formatter.format(value)
-        elif isinstance(value, list):
+
+        if isinstance(value, list):
             return [self._format_return_value(x) for x in value]
-        elif isinstance(value, dict):
+
+        if isinstance(value, dict):
             return {k: self._format_return_value(v) for k, v in value.items()}
-        else:
+
+        return value
+
+    def _parse_numeric_types(self, value: str):
+        """Checks the final result of a config retrieval. If it is a string that can be interpreted as a float or int,
+        parse it and return that.
+
+        Parameters
+        ----------
+        value : any
+            Final formatted value.
+
+        Returns
+        -------
+        : str or float or int
+        """
+        if not isinstance(value, str):  # Indicates a non-string type came from the JSON config. Leave it as is.
             return value
+
+        if self.FLOAT_REGEXP.match(value):
+            f = float(value)
+            if f.is_integer():
+                return int(f)
+            return f
+        return value
+
+    def force_reload(self):
+        """Force reloading of the JSON config"""
+        self.__init__()
 
     def get(self, key):
         """Retrieves a configuration value from either the cached JSON or from the environment
@@ -82,18 +122,18 @@ class _ConfigurationCache:
             return self._cached_json_config
 
         if key == 'PKG_ROOT':  # Special case for root of installed package
-            return str(Path(sys.modules[__name__.split('.')[0]].__file__).parent)
+            return str(Path(sys.modules[__name__.split('.', maxsplit=1)[0]].__file__).parent)
 
         # Checking the environment first allows easy override of any json config variable
         if os.getenv(key):
             result = os.getenv(key)
-            return self._format_return_value(result)
+            return self._parse_numeric_types(self._format_return_value(result))
 
         if key in self._cached_json_config:
             result = self._cached_json_config[key]
-            return self._format_return_value(result)
+            return self._parse_numeric_types(self._format_return_value(result))
 
-        raise KeyError('Configuration variable {} not found.'.format(key))
+        raise KeyError(f'Configuration variable {key} not found.')
 
 
 config = _ConfigurationCache()
