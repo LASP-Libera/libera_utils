@@ -3,7 +3,11 @@
 name = "libera_sdp"
 version = "0.1.0"
 description = "Science data processing library and applications for the Libera instrument."
-authors = ["Gavin Medley <gavin.medley@lasp.colorado.edu>", "Stephane Beland <stephane.beland@lasp.colorado.edu>"]
+authors = [  # Alphabetical
+    "Stephane Beland <stephane.beland@lasp.colorado.edu>",
+    "Gavin Medley <gavin.medley@lasp.colorado.edu>",
+    "Laura Sandoval <laura.sandoval@lasp.colorado.edu>"
+]
 
 [[tool.poetry.source]]
 name = "lasp-pypi"  # This name will be used in the configuration to retreive the proper credentials
@@ -15,22 +19,25 @@ astropy = "^4.2.1"
 h5py = "^3.3.0"
 numpy = "^1.21.0"
 spiceypy = "^4.0.1"
-lasp-packets = "1.0"
+lasp-packets = "1.2"
 requests = "^2.26.0"
 matplotlib = {version = "^3.4.3", optional = true}
+SQLAlchemy = "^1.4.27"
+psycopg2 = "^2.9.2"
+cloudpathlib = {extras = ["s3"], version = "^0.6.2"}
 
 [tool.poetry.dev-dependencies]
 pytest-cov = "^2.12.1"
 pylint = "^2.9.3"
 responses = "^0.14.0"
+pytest-randomly = "^3.10.2"
+moto = {extras = ["s3"], version = "^2.2.16"}
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
 
 [tool.poetry.scripts]
-make-jpss-spk = 'libera_sdp.cli.kernel_maker:make_jpss_spk'
-make-jpss-ck = 'libera_sdp.cli.kernel_maker:make_jpss_ck'
-make-libera-az-el-ck = 'libera_sdp.cli.kernel_maker:make_az_el_ck'
+sdp = 'libera_sdp.cli:main'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

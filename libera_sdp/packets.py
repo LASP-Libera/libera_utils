@@ -31,11 +31,11 @@ def array_from_packets(packets: list, apid: int = None):
     """
     apids_present = {packet.header['PKT_APID'].raw_value for packet in packets}
     if apid is not None and apid not in apids_present:
-        raise ValueError(f"Requested APID not found in parsed packets.")
-    elif apid is None and len(apids_present) > 1:
-        raise ValueError(f"Multiple APIDs present. To create an array you must specify which APID you want.")
-    else:
-        apid = apid or apids_present.pop()
+        raise ValueError("Requested APID not found in parsed packets.")
+    if apid is None and len(apids_present) > 1:
+        raise ValueError("Multiple APIDs present. To create an array you must specify which APID you want.")
+
+    apid = apid or apids_present.pop()
 
     field_values = [
         tuple(pdi.derived_value or pdi.raw_value for pdi in packet.data.values())

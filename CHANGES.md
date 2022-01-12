@@ -9,3 +9,5 @@
 - Added tools in spiceutil module for caching SPICE kernels from NAIF
 - Added missing unit testing coverage
 - Added spice.md documentation on how the package uses and manages SPICE kernels
+- Add database tooling, dev database, and ORM setup
+- Add smart_open for opening local or S3 objects
