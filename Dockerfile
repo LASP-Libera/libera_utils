@@ -39,7 +39,6 @@ COPY libera_sdp $LIBSDP_INSTALL_LOCATION/libera_sdp
 COPY README.md $LIBSDP_INSTALL_LOCATION
 COPY doc $LIBSDP_INSTALL_LOCATION/doc
 COPY pyproject.toml $LIBSDP_INSTALL_LOCATION
-COPY poetry.lock $LIBSDP_INSTALL_LOCATION
 COPY LICENSE $LIBSDP_INSTALL_LOCATION
 
 # This is so stupid but it fixes known a bug in docker build
