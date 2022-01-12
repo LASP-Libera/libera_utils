@@ -27,6 +27,7 @@ tests/test_data/hidden
 build
 dist
 libera_sdp/_version.py
+poetry.lock
 
 # Packages #
 ############
@@ -44,7 +45,6 @@ libera_sdp/_version.py
 # Logs and databases #
 ######################
 *.log
-*.sql
 *.sqlite
 
 # OS generated files #
