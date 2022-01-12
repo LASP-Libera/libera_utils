@@ -1,7 +1,6 @@
-"""Module for Swath HDF-EOS5 filehandling"""
+"""First pass at module for Swath HDF-EOS5 filehandling"""
 # Standard
 import h5py as h5
-import json
 import numpy as np
 from datetime import date
 
@@ -9,35 +8,29 @@ from datetime import date
 class SwathHdfEos5(h5.File):
     """Creates structure for hdf5 swath file requirements.
     Note: Requirements and assertions from: https://cdn.earthdata.nasa.gov/conduit/upload/4880/ESDS-RFC-008-v1.1.pdf
+    TODO: Revisit with more up to date requirements in future and add necessary exceptions
     """
 
-    def __init__(self, path: str, attribute_path: str, **kwargs):
-        """Initialize upstream attributes and modifies path in attributes.json
+    def __init__(self, path, filename, file_version, doi):
+        """Create a hdf5 file
 
         Parameters
         ----------
         path : str
-            Path for hdf5 file.
-        attribute_path : str
-            Path for json file attributes.
+            File directory
+        filename : str
+            Filename
+        file_version : str in the form of #.#.#
+            File version
+        doi : str
+            doi information
         """
+        self.__dir = '/'.join([path, filename])
+        self.__hierarchicalFile = h5.File(self.__dir, "w")
+        self.__file_version = file_version
+        self.__doi = doi
 
-        attributes = open(attribute_path, "r")
-        json_object = json.load(attributes)
-        attributes.close()
-
-        json_object["path"] = path
-
-        attributes = open(attribute_path, "w")
-        json.dump(json_object, attributes, indent=4)
-        attributes.close()
-
-        attributes = open(attribute_path, "r")
-        self.attributes = json.load(attributes)
-
-        super().__init__(path, **kwargs)
-
-    def create_swath_groups(self, swath_names: list):
+    def create_swath_groups(self, swath_names):
         """Create swath groups and subgroups
 
         Parameters
@@ -45,13 +38,13 @@ class SwathHdfEos5(h5.File):
         swath_names : list of str
             List of swath names
         """
-        grp1 = self.create_group('HDFEOS')
+        grp1 = self.__hierarchicalFile.create_group('HDFEOS')
         grp3 = grp1.create_group("SWATHS")
         grp4 = grp1.create_group("ADDITIONAL")
         grp4.create_group('FILE_ATTRIBUTES')
 
-        grp2 = self.create_group('HDFEOS INFORMATION')
-        grp2.attrs['HDFEOSVersion'] = '_'.join(['HDFEOS', self.attributes['version']])
+        grp2 = self.__hierarchicalFile.create_group('HDFEOS INFORMATION')
+        grp2.attrs['HDFEOSVersion'] = '_'.join(['HDFEOS', self.__file_version])
 
         for i in swath_names:
             grp5 = grp3.create_group(i)
@@ -61,8 +54,7 @@ class SwathHdfEos5(h5.File):
             grp5.create_group('ProfileField')
             grp5.create_group('Dimension')
 
-    def add_swath_dataset(
-            self, dataset_path: str, dataset_names: list, datasets: list, dataset_units: list, fill_value=-9999.0):
+    def add_swath_dataset(self, dataset_path, dataset_names, datasets, dataset_units):
         """Create datasets in directory defined by dataset path.
 
         Parameters
@@ -75,34 +67,33 @@ class SwathHdfEos5(h5.File):
             Actual datasets
         dataset_units : list of str
             Dataset units
-        fill_value : float (optional)
-            Fill value
         """
+        with h5.File(self.__dir, mode='a') as f:
 
-        for i in range(len(dataset_names)):
+            for i in range(len(dataset_names)):
 
-            d1 = self[dataset_path].create_dataset(
-                dataset_names[i], datasets[i].shape, data=datasets[i], dtype=datasets[i].dtype)
+                d1 = f[dataset_path].create_dataset(
+                    dataset_names[i], datasets[i].shape, data=datasets[i], dtype=datasets[i].dtype)
 
-            d1.attrs['_FillValue'] = fill_value
-            d1.attrs['units'] = dataset_units[i]
+                d1.attrs['_FillValue'] = -9999.0
+                d1.attrs['units'] = dataset_units[i]
 
     def add_swath_file_attr(self):
         """Add file attributes.
         Note: this was modeled after a template sent by sdps-support@earthdata.nasa.gov :
         AMSR_E_L2_Rain_V13_200706062353_D.he5
         """
+        with h5.File(self.__dir, mode='a') as f:
 
-        self.attrs['institution'] = self.attributes['institution']
-        self.attrs['references'] = ''.join(['Please cite these data as: ', self.attributes['pi'], '. ',
-                                            str(date.today().year), '. ', self.attributes['title'],
-                                            ', Version ', self.attributes['version'],
-                                            '. ', self.attributes['institute'], '.', self.attributes['doi']])
-        self.attrs['source'] = self.attributes['source']
-        self.attrs['title'] = self.attributes['title']
+            f.attrs['institution'] = "NASA's EVC1 Science Investigator-led Processing System"
+            f.attrs['references'] = ''.join(['Please cite these data as: Peter Pilewskie. ', str(date.today().year),
+                                             '. Libera L2 Data Product, Version ', str(self.__file_version),
+                                             '. Laboratory for Atmospheric and Space Physics. Boulder, Colorado, USA.',
+                                             ' doi: ', str(self.__doi)])
+            f.attrs['source'] = 'satellite observation'
+            f.attrs['title'] = 'Level 2 Libera Data'
 
-    @classmethod
-    def create_metadata_struct(cls, obj, swaths, string, i=0, j=0, group=None):
+    def descend_obj(self, obj, swaths, string, i=0, j=0, group=None):
         """
         Iterates through groups in a HDF5 file and creates a string of the groups and objects
 
@@ -126,7 +117,7 @@ class SwathHdfEos5(h5.File):
         string : Metadata string
         """
 
-        if isinstance(obj, h5.Group):
+        if type(obj) is h5._hl.group.Group:
 
             for key in obj.keys():
                 if key in swaths:
@@ -135,11 +126,11 @@ class SwathHdfEos5(h5.File):
                     swath_name = ''.join(['SwathName=', key])
 
                     string = ''.join([string, '\n\t', swath_group, '\n\t\t', swath_name])
-                    string = cls.create_metadata_struct(obj[key], swaths, string, i=i)
+                    string = self.descend_obj(obj[key], swaths, string, i=i)
                     string = ''.join([string, '\n\t', 'END_', swath_group])
-                elif isinstance(obj[key], h5.Group):
+                elif type(obj[key]) is h5._hl.group.Group:
                     string = ''.join([string, '\n\t\t', 'GROUP=', key])
-                    string = cls.create_metadata_struct(obj[key], swaths, string, group=key)
+                    string = self.descend_obj(obj[key], swaths, string, group=key)
                     string = ''.join([string, '\n\t\t', 'END_GROUP=', key])
                 else:
                     j += 1
@@ -151,7 +142,7 @@ class SwathHdfEos5(h5.File):
                     end_object = ''.join([tri_indent, 'END_OBJECT=', object_number])
 
                     string = ''.join([string, object_string, name, datatype, end_object])
-                    string = cls.create_metadata_struct(obj[key], swaths, string, j=j)
+                    string = self.descend_obj(obj[key], swaths, string, j=j)
 
         return string
 
@@ -162,56 +153,14 @@ class SwathHdfEos5(h5.File):
         """
         swaths = np.array([])
 
-        string = 'GROUP=SwathStructure'
-        obj = self['HDFEOS/SWATHS']
+        with h5.File(self.__dir, 'r') as f:
+            string = 'GROUP=SwathStructure'
+            obj = f['HDFEOS/SWATHS']
 
-        for key in obj.keys():
-            swaths = np.append(swaths, key)
+            for key in obj.keys():
+                swaths = np.append(swaths, key)
 
-        string = self.create_metadata_struct(obj, swaths, string)
-        self['HDFEOS INFORMATION'].create_dataset('StructMetadata.0', (1,), data=string)
-
-        return
-
-    @classmethod
-    def validate(cls, thisdict):
-        """
-        Class method for validation
-
-        Parameters
-        ----------
-        thisdict : dict
-            Dictionary containing information for hdf5 file.
-
-        """
-        val = cls(thisdict['path'], thisdict['attribute_path'], mode="w")
-        val.add_swath_file_attr()
-        val.create_swath_groups(thisdict['swath_names'])
-        val.add_swath_dataset(
-            thisdict['dataset_path'], thisdict['dataset_names'], thisdict['datasets'], thisdict['dataset_units'])
-        val.add_swath_metadata()
-
-        val.validate_self(thisdict)
+            string = self.descend_obj(obj, swaths, string)
+            f['HDFEOS INFORMATION'].create_dataset('StructMetadata.0', (1,), data=string)
 
         return
-
-    def validate_self(self, thisdict):
-        """Validates self.
-
-        Parameters
-        ----------
-        thisdict : dict
-            Dictionary containing information for hdf5 file.
-
-        """
-
-        for i in thisdict['swath_names']:
-            assert(i in self['HDFEOS/SWATHS'].keys()), f"{i} is missing"
-
-        for i in thisdict['dataset_names']:
-            assert(i in self[thisdict['dataset_path']].keys()), \
-                '/'.join([f"{i} is missing from", thisdict['dataset_path'][0]])
-
-        for i in range(len(thisdict['dataset_names'])):
-            unit_path = '/'.join([thisdict['dataset_path'], thisdict['dataset_names'][i]])
-            assert(self[unit_path].attrs['units'] == thisdict['dataset_units'][i])
