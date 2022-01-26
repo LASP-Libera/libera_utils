@@ -1,13 +1,21 @@
-#  Building Docker Images
+# Installation
+Follow the Docker Desktop installation instructions here:
+https://docs.docker.com/desktop/mac/install/
+
+Note: On recent Docker Desktop for Mac, the `compose` command has been added as a subcommand of the `docker` command.
+This is not the case on Linux distributions, where (currently) `docker-compose` is a hyphenated command and is a
+different executable that must be installed separately.
+
+To install `docker-compose` on Linux, see instructions here: 
+https://docs.docker.com/compose/install/
 
 
-The `docker_build.sh` script builds target docker images from our multistage Dockerfile.
-It accepts, as arguments, the names of target docker image stages to be built. For example,
+# Building Docker Images
 
+
+Using docker compose:
 ```shell
-docker_build.sh libera-sdp  # Builds the libera-sdp target
-docker_build.sh libera-sdp libera-sdp-test  # Builds both targets
-docker_build.sh  # ERROR must provide at least one argument
+docker-compose build
 ```
 
 

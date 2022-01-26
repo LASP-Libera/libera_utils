@@ -6,6 +6,7 @@ which were the original primary concerns of those developing the library.
 
 
 ## Static Kernels Generated at Libera SDC
+These kernels are part of the package data, are manually edited, and change rarely.
 
 
 ### Frame Kernel (FK)
@@ -27,6 +28,8 @@ Note: These parameters have not yet been specified.
 
 
 ## Dynamic Kernels Generated at Libera SDC
+These kernels are binary generated kernels. They are ancillary data products and are created 
+as part of pipeline processing.
 
 
 ### JPSS Ephemeris Kernel (SPK)
@@ -55,6 +58,10 @@ Note: there is currently no mechanism for creating this kernel because no teleme
 
 
 ## Kernels Retrieved from NAIF
+These kernels are generated at NAIF. We download them as needed using the `KernelFileCache` class,
+which is configured with a NAIF index page URL and a regex string that finds the proper download URL
+on the index page. The downloaded file is put in a cache so the download only occurs after the cached
+data is of a specified age.
 
 
 ### Leapseconds Kernel (LSK)
