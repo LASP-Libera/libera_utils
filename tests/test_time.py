@@ -7,6 +7,8 @@ from typing import Iterable
 from libera_sdp import time
 
 
+# TODO: Prevent these tests from retrieving their LSK from NAIF by
+#  providing a mocked metakernel and asserting that it gets furnished by checking numbers of calls
 @pytest.mark.parametrize(
     "et, expected",
     [(0, datetime.strptime('2000-01-01T11:58:55.816073', '%Y-%m-%dT%H:%M:%S.%f')),
