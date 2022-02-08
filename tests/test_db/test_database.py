@@ -47,16 +47,16 @@ def test_db_manager_multiprocessing(insert_test_data, clean_sdp_test_db):
 
     for method in ('spawn', 'fork'):
         with multiprocessing.get_context(method).Pool(4) as pool:
-            res = pool.starmap(db_testfunc,
-                               [
-                                   ('foofile.txt', 1),
-                                   ('zipfile.txt', None),
-                                   ('bazfile.txt', None),
-                                   (None, 0),
-                                   (None, 1),
-                                   ('barfile.txt', 1),
-                                   ('barfile.txt', 0)
-                               ])
+            pool.starmap(db_testfunc,
+                         [
+                            ('foofile.txt', 1),
+                            ('zipfile.txt', None),
+                            ('bazfile.txt', None),
+                            (None, 0),
+                            (None, 1),
+                            ('barfile.txt', 1),
+                            ('barfile.txt', 0)
+                         ])
 
 
 def test_db_manager_multiple_configs():
