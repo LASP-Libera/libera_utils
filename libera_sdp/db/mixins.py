@@ -1,7 +1,9 @@
 """Module containing Mixin classes for providing common functionality to ORM objects."""
 # Installed
-from sqlalchemy import inspect
-from sqlalchemy.orm import Session
+from sqlalchemy import inspect, func
+from sqlalchemy.orm import Session, Query
+# Local
+from libera_sdp.db import getdb
 
 
 class ReprMixin:
@@ -14,6 +16,10 @@ class ReprMixin:
     __abstract__ = True
     __repr_attrs__ = []
     __repr_max_length__ = 36
+
+    def __init__(self, *args, **kwargs):
+        # TODO: Remove this after PyCharm updates past 2021.3.2. It's only here to suppress an IDE warning.
+        pass
 
     @property
     def _id_str(self):
@@ -71,52 +77,50 @@ class DataProductMixin:
     """
     __abstract__ = True
 
-    @classmethod
-    def query(cls, session: Session = None, **filters):
-        """Simple query interface that retrieves objects based on simple filter parameters. Does not support
-        queries involving other relations.
-
-        Parameters
-        ----------
-        session: Session, Optional
-            Existing session to avoid overhead of accessing cached database manager and creating a new session.
-        filters: dict, Optional
-            Dictionary passed as extra keyword arguments. Passed to `.filter()`
-
-        Returns
-        -------
-        : list
-            List of objects
-        """
-        # TODO: Implement generic filterable query
+    def __init__(self, *args, **kwargs):
+        # TODO: Remove this after PyCharm updates past 2021.3.2. It's only here to suppress an IDE warning.
         pass
 
     @classmethod
-    def latest(cls, **filters):
+    def _filter(cls, query: Query, **filters):
+        """Filters an existing query object for a set of keyword filters"""
+        for attr, value in filters.items():
+            query.filter(getattr(cls, attr) == value)
+        return query
+
+    @classmethod
+    def latest(cls, session: Session = None, **filters):
         """Finds the latest products (highest version), filtered by **filters
 
         Parameters
         ----------
+        session: Session, Optional
+            If None, creates a new session
         filters: dict
+            Optional filters to narrow down results
 
         Returns
         -------
-
+        : list
         """
-        # TODO: Implement "best" latest data product retrieval
+        # TODO: Implement logic for finding the latest version of each "unique observation", whatever that ends up
+        #    meaning. For BDS products, that could be a specific timerange or just a date.
         pass
 
     @classmethod
-    def flagged(cls, **filters):
-        """Queries products with quality flags
+    def flagged(cls, session: Session = None, **filters):
+        """Queries products with quality flags, optionally filtered by **filters
 
         Parameters
         ----------
-        filters
+        session: Session, Optional
+            If None, creates a new session
+        filters: dict
+            Optional filters to narrow results
 
         Returns
         -------
-
+        : list
         """
-        # TODO: Implement retrieval of quality-flagged data products
+        # TODO: Implement retrieval of quality-flagged data products once quality flags are defined
         pass

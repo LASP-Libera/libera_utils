@@ -20,6 +20,7 @@ url = "https://lasp.colorado.edu/repository/lasp-pypi/simple"
 [tool.poetry.dependencies]
 python = "^3.9"
 astropy = "^4.2.1"
+bitstring = "^3.1"
 h5py = "^3.3.0"
 numpy = "^1.21.0"
 spiceypy = "^4.0.1"
