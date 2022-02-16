@@ -99,4 +99,26 @@ def test_add_swath_file_attr():
 
     f = nx.nxload('/'.join([path, filename]))
 
-    assert 'Conventions' in f.tree
+    assert 'Level 2 Libera Data' in f.tree
+
+def test_validate():
+    path = '../../libera_sdp/data/hdf5'
+    filename = 'swath_test.he5'
+
+    if exists('/'.join([path, filename])):
+        os.remove('/'.join([path, filename]))
+
+    hdfeos = SwathHdfEos5(path, filename, '0.0.0', 'doi')
+
+    swath_names = ['Swath1', 'Swath2']
+    dataset_path = 'HDFEOS/SWATHS/Swath1/DataField'
+    dataset_names = ['Temperature', 'SunglintAngle']
+    datasets = [np.array([1, 1]), np.array([2, 2])]
+    dataset_units = ['Kelvin', 'radians']
+
+    hdfeos.validate(swath_names, dataset_path, dataset_names, datasets, dataset_units)
+
+    #c = SwathHdfEos5(path, filename, '0.0.0', 'doi').validate(swath_names, dataset_path, dataset_names, datasets, dataset_units)
+    #c.add_swath_file_attr()
+    print('hi')
+
