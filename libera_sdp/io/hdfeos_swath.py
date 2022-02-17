@@ -1,4 +1,4 @@
-"""First pass at module for Swath HDF-EOS5 filehandling"""
+"""Module for Swath HDF-EOS5 filehandling"""
 # Standard
 import h5py as h5
 import json
@@ -9,49 +9,33 @@ from datetime import date
 class SwathHdfEos5(h5.File):
     """Creates structure for hdf5 swath file requirements.
     Note: Requirements and assertions from: https://cdn.earthdata.nasa.gov/conduit/upload/4880/ESDS-RFC-008-v1.1.pdf
-
-    Attributes:
-        file_version : str in the form of #.#.#
-            File version.
-        doi : str
-            doi information
-    TODO: Revisit with more up to date requirements in future and add necessary exceptions
     """
 
-    path = '../../libera_sdp/data/hdf5'
-    filename = 'swath_test.he5'
-
-    attribute_path = '../../libera_sdp/data/hdf5'
-    attribute_filename = 'attributes.json'
-
-
-    def __init__(self, path: str, filename: str, **kwargs):
-        """Create a hdf5 file
+    def __init__(self, path: str, attribute_path: str, **kwargs):
+        """Initialize upstream attributes and modifies path in attributes.json
 
         Parameters
         ----------
         path : str
-            File directory
-        filename : str
-            Filename
+            Path for hdf5 file.
+        attribute_path : str
+            Path for json file attributes.
         """
-        self.dir = '/'.join([path, filename])
-        self.config = '/'.join([self.attribute_path, self.attribute_filename])
 
-        #load attributes
-        self.attributes = open(self.config, "r")
-        json_object = json.load(self.attributes)
-        self.attributes.close()
+        attributes = open(attribute_path, "r")
+        json_object = json.load(attributes)
+        attributes.close()
 
         json_object["path"] = path
-        json_object["filename"] = filename
 
-        self.attributes = open(self.config, "w")
-        json.dump(json_object, self.attributes, indent=4)
-        self.attributes.close()
+        attributes = open(attribute_path, "w")
+        json.dump(json_object, attributes, indent=4)
+        attributes.close()
 
-        super().__init__(self.dir, **kwargs)
+        attributes = open(attribute_path, "r")
+        self.attributes = json.load(attributes)
 
+        super().__init__(path, **kwargs)
 
     def create_swath_groups(self, swath_names: list):
         """Create swath groups and subgroups
@@ -78,7 +62,7 @@ class SwathHdfEos5(h5.File):
             grp5.create_group('Dimension')
 
     def add_swath_dataset(
-            self, dataset_path: str, dataset_names: list, datasets: list, dataset_units: list, fill_value = -9999.0):
+            self, dataset_path: str, dataset_names: list, datasets: list, dataset_units: list, fill_value=-9999.0):
         """Create datasets in directory defined by dataset path.
 
         Parameters
@@ -110,10 +94,10 @@ class SwathHdfEos5(h5.File):
         """
 
         self.attrs['institution'] = self.attributes['institution']
-        self.attrs['references'] = ''.join(['Please cite these data as: ', self.attributes['pi'],'. ', str(date.today().year),
-                                             '. ', self.attributes['title'],', Version ', self.attributes['version'],
-                                             '. ', self.attributes['institute'],'.',
-                                             self.attributes['doi']])
+        self.attrs['references'] = ''.join(['Please cite these data as: ', self.attributes['pi'], '. ',
+                                            str(date.today().year), '. ', self.attributes['title'],
+                                            ', Version ', self.attributes['version'],
+                                            '. ', self.attributes['institute'], '.', self.attributes['doi']])
         self.attrs['source'] = self.attributes['source']
         self.attrs['title'] = self.attributes['title']
 
@@ -190,44 +174,44 @@ class SwathHdfEos5(h5.File):
         return
 
     @classmethod
-    def validate(cls, source):
+    def validate(cls, thisdict):
         """
         Class method for validation
 
+        Parameters
+        ----------
+        thisdict : dict
+            Dictionary containing information for hdf5 file.
+
+        """
+        val = cls(thisdict['path'], thisdict['attribute_path'], mode="w")
+        val.add_swath_file_attr()
+        val.create_swath_groups(thisdict['swath_names'])
+        val.add_swath_dataset(
+            thisdict['dataset_path'], thisdict['dataset_names'], thisdict['datasets'], thisdict['dataset_units'])
+        val.add_swath_metadata()
+
+        val.validate_self(thisdict)
+
+        return
+
+    def validate_self(self, thisdict):
+        """Validates self.
+
+        Parameters
+        ----------
+        thisdict : dict
+            Dictionary containing information for hdf5 file.
+
         """
 
-        #cls.add_swath_file_attr()
-        #cls.create_swath_groups(swath_names)
-        #cls.add_swath_dataset(dataset_path, dataset_names, datasets, dataset_units)
-        #cls.add_swath_metadata()
-        print('hi')
+        for i in thisdict['swath_names']:
+            assert(i in self['HDFEOS/SWATHS'].keys()), f"{i} is missing"
 
-if __name__ == "__main__":
+        for i in thisdict['dataset_names']:
+            assert(i in self[thisdict['dataset_path']].keys()), \
+                '/'.join([f"{i} is missing from", thisdict['dataset_path'][0]])
 
-    filename = 'swath_test.he6'
-    path = '../../libera_sdp/data/hdf6'
-
-    swath_names = ['Swath1']
-    dataset_path = 'HDFEOS/SWATHS/Swath1/DataField'
-    dataset_names = ['Temperature', 'SunglintAngle']
-    datasets = [np.array([1, 1]), np.array([2, 2])]
-    dataset_units = ['Kelvin', 'radians']
-
-    validate_instance = SwathHdfEos5(path, filename, mode="w")
-    SwathHdfEos5.add_swath_file_attr(validate_instance)
-    SwathHdfEos5.create_swath_groups(validate_instance,swath_names)
-    SwathHdfEos5.add_swath_dataset(validate_instance, dataset_path, dataset_names, datasets, dataset_units)
-    SwathHdfEos5.add_swath_metadata(validate_instance)
-
-    print('hi')
-
-
-
-
-
-
-
-
-
-
-
+        for i in range(len(thisdict['dataset_names'])):
+            unit_path = '/'.join([thisdict['dataset_path'], thisdict['dataset_names'][i]])
+            assert(self[unit_path].attrs['units'] == thisdict['dataset_units'][i])
