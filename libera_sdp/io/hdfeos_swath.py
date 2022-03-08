@@ -26,6 +26,8 @@ class SwathHdfEos5(h5.File):
         json_object = json.load(attributes)
         attributes.close()
 
+        super().__init__(path, **kwargs)
+
         json_object["path"] = path
 
         attributes = open(attribute_path, "w")
@@ -36,6 +38,20 @@ class SwathHdfEos5(h5.File):
         self.attributes = json.load(attributes)
 
         super().__init__(path, **kwargs)
+
+    def create_swath_groups(self, swath_names: list):
+        attributes = open(attribute_path, "r")
+        json_object = json.load(attributes)
+        attributes.close()
+
+        json_object["path"] = path
+
+        attributes = open(attribute_path, "w")
+        json.dump(json_object, attributes, indent=4)
+        attributes.close()
+
+        attributes = open(attribute_path, "r")
+        self.attributes = json.load(attributes)
 
     def create_swath_groups(self, swath_names: list):
         """Create swath groups and subgroups
