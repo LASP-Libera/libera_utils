@@ -1,56 +1,50 @@
 """Tests module for Swath HDF-EOS5 filehandling"""
 # Standard
+import h5py as h5
 import nexusformat.nexus as nx
 import numpy as np
-import os
 import pytest
-from os.path import exists
 # Local
 from libera_sdp.io.hdfeos_swath import SwathHdfEos5
+from libera_sdp.io.hdf import h5dump
 
 
-def test_create_swath_file():
-    """Test ability to create file"""
+@pytest.fixture()
+def test_dict(tmp_path):
+    """Test dictionary"""
 
-    path = '../../libera_sdp/data/hdf5'
-    filename = 'swath_test.he5'
+    dir = tmp_path / "sub"
+    dir.mkdir()
+    path = dir / "swath_test.he5"
 
-    if exists('/'.join([path, filename])):
-        os.remove('/'.join([path, filename]))
+    testdict = {
+        'path': str(path),
+        'attribute_path': '../../libera_sdp/data/hdf5/attributes.json',
+        'swath_names': ['Swath1'],
+        'dataset_path': 'HDFEOS/SWATHS/Swath1/DataField',
+        'dataset_names': ['Temperature', 'SunglintAngle'],
+        'datasets': [np.array([1, 1]), np.array([2, 2])],
+        'dataset_units': ['Kelvin', 'radians']
+    }
 
-    SwathHdfEos5(path, filename, '0.0.0', 'doi')
-
-    assert exists('/'.join([path, filename]))
+    return testdict
 
 
-def test_create_swath_groups():
+def test_create_swath_groups(test_dict):
     """Test ability to add groups"""
 
-    path = '../../libera_sdp/data/hdf5'
-    filename = 'swath_test.he5'
-
-    if exists('/'.join([path, filename])):
-        os.remove('/'.join([path, filename]))
-
-    hdfeos = SwathHdfEos5(path, filename, '0.0.0', 'doi')
+    hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
 
     hdfeos.create_swath_groups(['Swath1', 'Swath2'])
+    f = h5dump(h5.File(test_dict['path']))
 
-    f = nx.nxload('/'.join([path, filename]))
-
-    assert 'Swath1' in f.tree
+    assert 'Swath1' in f
 
 
-def test_add_swath_datasets():
+def test_add_swath_datasets(test_dict):
     """Test ability to add datasets and metadata"""
 
-    path = '../../libera_sdp/data/hdf5'
-    filename = 'swath_test.he5'
-
-    if exists('/'.join([path, filename])):
-        os.remove('/'.join([path, filename]))
-
-    hdfeos = SwathHdfEos5(path, filename, '0.0.0', 'doi')
+    hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
 
     hdfeos.create_swath_groups(['Swath1', 'Swath2'])
 
@@ -71,32 +65,28 @@ def test_add_swath_datasets():
     hdfeos.add_swath_dataset(dataset_path_2, dataset_names, datasets, dataset_units)
     hdfeos.add_swath_metadata()
 
-    f = nx.nxload('/'.join([path, filename]))
+    f = h5dump(h5.File(test_dict['path']))
 
-    print('\n\nEntire Directory')
-    print(f.tree)
-
-    struct_metadata = f['HDFEOS INFORMATION/StructMetadata.0']
-    print('\nMetadata')
-    print(struct_metadata)
-
-    assert 'Temperature' in f.tree
-    assert 'tai93time' in f.tree
+    assert 'Temperature' in f
+    assert 'tai93time' in f
 
 
-def test_add_swath_file_attr():
+def test_add_swath_file_attr(test_dict):
     """Test file attributes"""
 
-    path = '../../libera_sdp/data/hdf5'
-    filename = 'swath_test.he5'
-
-    if exists('/'.join([path, filename])):
-        os.remove('/'.join([path, filename]))
-
-    hdfeos = SwathHdfEos5(path, filename, '0.0.0', 'doi')
+    hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
 
     hdfeos.add_swath_file_attr()
 
-    f = nx.nxload('/'.join([path, filename]))
+    f = nx.nxload(test_dict['path'])
 
-    assert 'Conventions' in f.tree
+    assert 'Level 2 Libera Data' in f.tree
+
+
+def test_validate(test_dict):
+    """Test file attributes"""
+
+    try:
+        SwathHdfEos5.validate(test_dict)
+    except AssertionError as err:
+        print(err)
