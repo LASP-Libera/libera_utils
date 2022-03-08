@@ -24,23 +24,24 @@ def test_h5dump(minimal_h5, capsys):
     """Test printing of HDF5 contents"""
 
     with h5.File(minimal_h5) as f:
-        hdf.h5dump(f)
+        s = hdf.h5dump(f, stdout=True)
         captured = capsys.readouterr()
-        assert captured.out == """\
+        assert s == captured.out == """\
 Group:Test Group (1 members, 2 attributes)
-    @floatattr = 3.14
-    @strattr = a string
+    @ floatattr = 3.14
+    @ strattr = a string
 Dataset:Test Group/test_ds (shape=(3, 3), type=float64, 1 attributes)
-    @dsattr = 42
+    @ dsattr = 42
 """
-        hdf.h5dump(f['Test Group'])
+        s = hdf.h5dump(f['Test Group'], stdout=True)
         captured = capsys.readouterr()
-        assert captured.out == """\
+        assert s == captured.out == """\
 Dataset:test_ds (shape=(3, 3), type=float64, 1 attributes)
-    @dsattr = 42
+    @ dsattr = 42
 """
-        hdf.h5dump(f['Test Group'], include_attrs=False)
+        s = hdf.h5dump(f['Test Group'], include_attrs=False, stdout=False)
         captured = capsys.readouterr()
-        assert captured.out == """\
+        assert s == """\
 Dataset:test_ds (shape=(3, 3), type=float64, 1 attributes)
 """
+        assert captured.out == ""

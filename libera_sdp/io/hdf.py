@@ -3,7 +3,7 @@
 import h5py as h5
 
 
-def h5dump(f: h5.File or h5.Group, include_attrs: bool = True):
+def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = False):
     """Prints the contents of an HDF5 object.
 
     Parameters
@@ -12,21 +12,38 @@ def h5dump(f: h5.File or h5.Group, include_attrs: bool = True):
         File, Group object from which to start inspecting.
     include_attrs: bool, Optional
         Default True.
+    stdout: bool, Optional
+        Default False. If True, prints to stdout as the object tree is traversed.
 
     Returns
     -------
-    None
+    : str
+        Concatenated string of HDF5 contents
     """
+    srep = []
+
     def _print(name, obj):
         if isinstance(obj, h5.Group):
-            print(f"Group:{name} ({len(obj)} members, {len(obj.attrs) if obj.attrs else 0} attributes)")
+            s = f"Group:{name} ({len(obj)} members, {len(obj.attrs) if obj.attrs else 0} attributes)"
+            srep.append(s + '\n')
         elif isinstance(obj, h5.Dataset):
-            print(f"Dataset:{name} "
-                  f"(shape={obj.shape}, type={obj.dtype}, {len(obj.attrs) if obj.attrs else 0} attributes)")
+            s = f"Dataset:{name} (shape={obj.shape}, type={obj.dtype}, {len(obj.attrs) if obj.attrs else 0} attributes)"
+            srep.append(s + '\n')
+        elif isinstance(obj, h5.Datatype):
+            s = f"Datatype:{name} {obj}"
+            srep.append(s + '\n')
         else:
             raise ValueError(f"Unrecognized object discovered in h5dump, of type {type(obj)}.")
+
+        if stdout:
+            print(s)
+
         if include_attrs and obj.attrs:
             for key, val in obj.attrs.items():
-                print(f"    @{key} = {val}")
+                s = f"    @ {key} = {val}"
+                srep.append(s + '\n')
+                if stdout:
+                    print(s)
 
     f.visititems(_print)
+    return "".join(srep)
