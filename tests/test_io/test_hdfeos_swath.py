@@ -1,10 +1,12 @@
 """Tests module for Swath HDF-EOS5 filehandling"""
 # Standard
+import h5py as h5
 import nexusformat.nexus as nx
 import numpy as np
 import pytest
 # Local
 from libera_sdp.io.hdfeos_swath import SwathHdfEos5
+from libera_sdp.io.hdf import h5dump
 
 
 @pytest.fixture()
@@ -34,10 +36,9 @@ def test_create_swath_groups(test_dict):
     hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
 
     hdfeos.create_swath_groups(['Swath1', 'Swath2'])
+    f = h5dump(h5.File(test_dict['path']))
 
-    f = nx.nxload(test_dict['path'])
-
-    assert 'Swath1' in f.tree
+    assert 'Swath1' in f
 
 
 def test_add_swath_datasets(test_dict):
@@ -64,17 +65,10 @@ def test_add_swath_datasets(test_dict):
     hdfeos.add_swath_dataset(dataset_path_2, dataset_names, datasets, dataset_units)
     hdfeos.add_swath_metadata()
 
-    f = nx.nxload(test_dict['path'])
+    f = h5dump(h5.File(test_dict['path']))
 
-    print('\n\nEntire Directory')
-    print(f.tree)
-
-    struct_metadata = f['HDFEOS INFORMATION/StructMetadata.0']
-    print('\nMetadata')
-    print(struct_metadata)
-
-    assert 'Temperature' in f.tree
-    assert 'tai93time' in f.tree
+    assert 'Temperature' in f
+    assert 'tai93time' in f
 
 
 def test_add_swath_file_attr(test_dict):
