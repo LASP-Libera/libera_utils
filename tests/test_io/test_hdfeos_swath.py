@@ -78,9 +78,9 @@ def test_add_swath_file_attr(test_dict):
 
     hdfeos.add_swath_file_attr()
 
-    f = nx.nxload(test_dict['path'])
+    f = h5dump(h5.File(test_dict['path']))
 
-    assert 'Level 2 Libera Data' in f.tree
+    assert 'Level 2 Libera Data' in f
 
 
 def test_validate(test_dict):
