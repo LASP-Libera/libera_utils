@@ -1,6 +1,7 @@
 """Tests module for Swath HDF-EOS5 filehandling"""
 # Standard
 import h5py as h5
+import nexusformat.nexus as nx
 import numpy as np
 import pytest
 # Local
