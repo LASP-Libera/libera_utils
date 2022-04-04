@@ -36,8 +36,11 @@ Important considerations:
 1. Remember that the production schema contains data. Many schema changes work correctly on an empty 
    schema but fail in the presence of data. e.g. Adding a NOT NULL constraint to a column containing
    NULL values will need to fill those NULLs first.
-2. Repeatable migrations MUST be idempotent and are not guaranteed to run in a particular order.
-3. 
+2. Repeatable migrations MUST be idempotent and are not guaranteed to run in a particular order relative to versioned
+   migrations. They run based on a difference in checksum between the current migration script and the last.
+3. There is no such thing as truly reversing a database change. Reversion of a DB schema is much like reverting a
+   erroneous git commit. Rather than truly backing out the changes, you simply add a new change that alters things
+   back to the way you want them. The upshot: NEVER delete a sql migration 
 
 
 # Accessing Databases from Python
@@ -51,12 +54,12 @@ In short, use the following pattern to create database connections:
 
 ```python
 from libera_sdp.db import getdb
-from libera_sdp.db.models import Level0
+from libera_sdp.db.models import L0
 
 
 db = getdb()
 with db.session() as s:
-    records = s.query(Level0).filter(Level0.filename == 'foofile.txt').all()
+    records = s.query(L0).filter(L0.filename == 'foofile.txt').all()
 ```
 
 
