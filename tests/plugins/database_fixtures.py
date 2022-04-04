@@ -1,4 +1,5 @@
 """Pytest plugin module for database-related fixtures"""
+# pylint: disable=redefined-outer-name
 # Installed
 import pytest
 # Local
@@ -25,8 +26,9 @@ def clean_sdp_test_db():
 
 
 @pytest.fixture
-def insert_test_data():
-    """Provides a function to insert test data records into the DB"""
+def insert_test_data(clean_sdp_test_db):
+    """Provides a function to insert test data records into the DB.
+    Clears out the DB before and after the test."""
 
     def _insert(*record_objects):
         with getdb().session() as s:
