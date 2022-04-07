@@ -2,6 +2,7 @@
   "LIBSDP_LOG_DIR": "/tmp",
   "LIBSDP_STREAM_LOG_LEVEL": "INFO",
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
+  "LIBSDP_ATTR": "{LIBSDP_DATA_DIR}/hdf5/attributes.json",
   "LIBERA_DB_NAME": null,
   "LIBERA_DB_USER": null,
   "LIBERA_DB_HOST": null,
