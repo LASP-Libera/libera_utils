@@ -4,6 +4,7 @@ import h5py as h5
 import numpy as np
 import pytest
 # Local
+from libera_sdp.config import config
 from libera_sdp.io.hdfeos_swath import SwathHdfEos5
 from libera_sdp.io.hdf import h5dump
 
@@ -18,7 +19,7 @@ def dict(tmp_path):
 
     testdict = {
         'path': str(path),
-        'attribute_path': '../../libera_sdp/data/hdf5/attributes.json',
+        'attribute_path': config.get("LIBSDP_ATTR"),
         'swath_names': ['Swath1'],
         'dataset_path': 'HDFEOS/SWATHS/Swath1/DataField',
         'dataset_names': ['Temperature', 'SunglintAngle'],
