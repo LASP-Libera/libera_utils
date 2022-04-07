@@ -9,7 +9,7 @@ from libera_sdp.io.hdf import h5dump
 
 
 @pytest.fixture()
-def test_dict(tmp_path):
+def dict(tmp_path):
     """Test dictionary"""
 
     dir = tmp_path / "sub"
@@ -29,21 +29,21 @@ def test_dict(tmp_path):
     return testdict
 
 
-def test_create_swath_groups(test_dict):
+def test_create_swath_groups(dict):
     """Test ability to add groups"""
 
-    hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
+    hdfeos = SwathHdfEos5(dict['path'], dict['attribute_path'], mode="w")
 
     hdfeos.create_swath_groups(['Swath1', 'Swath2'])
-    f = h5dump(h5.File(test_dict['path']))
+    f = h5dump(h5.File(dict['path']))
 
     assert 'Swath1' in f
 
 
-def test_add_swath_datasets(test_dict):
+def test_add_swath_datasets(dict):
     """Test ability to add datasets and metadata"""
 
-    hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
+    hdfeos = SwathHdfEos5(dict['path'], dict['attribute_path'], mode="w")
 
     hdfeos.create_swath_groups(['Swath1', 'Swath2'])
 
@@ -64,28 +64,28 @@ def test_add_swath_datasets(test_dict):
     hdfeos.add_swath_dataset(dataset_path_2, dataset_names, datasets, dataset_units)
     hdfeos.add_swath_metadata()
 
-    f = h5dump(h5.File(test_dict['path']))
+    f = h5dump(h5.File(dict['path']))
 
     assert 'Temperature' in f
     assert 'tai93time' in f
 
 
-def test_add_swath_file_attr(test_dict):
+def test_add_swath_file_attr(dict):
     """Test file attributes"""
 
-    hdfeos = SwathHdfEos5(test_dict['path'], test_dict['attribute_path'], mode="w")
+    hdfeos = SwathHdfEos5(dict['path'], dict['attribute_path'], mode="w")
 
     hdfeos.add_swath_file_attr()
 
-    f = h5dump(h5.File(test_dict['path']))
+    f = h5dump(h5.File(dict['path']))
 
     assert 'Level 2 Libera Data' in f
 
 
-def test_validate(test_dict):
+def test_validate(dict):
     """Test file attributes"""
 
     try:
-        SwathHdfEos5.validate(test_dict)
+        SwathHdfEos5.validate(dict)
     except AssertionError as err:
         print(err)
