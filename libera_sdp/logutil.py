@@ -155,8 +155,14 @@ def configure_cloudwatch_logging(root_logger: logging.Logger, log_group_name: st
 
     cloudwatch_handler = watchtower.CloudWatchLogHandler(log_group=log_group_name, create_log_group=True,
                                                          stream_name=log_stream_name)
-    # TODO: Use CloudWatchLogFormatter to send logs as structured data instead of strings
-    cloudwatch_handler.setFormatter(standard_log_formatter)
+    # The `msg` attribute is always included but `message` is not (msg != message). If we start seeing
+    # oddities, we may need to start including `message` as well.
+    # See https://docs.python.org/3/library/logging.html#logrecord-attributes
+    structured_formatter = watchtower.CloudWatchLogFormatter(
+        add_log_record_attrs=('asctime', 'levelname',
+                              'process', 'processName',
+                              'filename', 'lineno', 'funcName'))
+    cloudwatch_handler.setFormatter(structured_formatter)
     cloudwatch_handler.setLevel('DEBUG')  # Always log to custom cloudwatch log_stream at DEBUG level
     root_logger.addHandler(cloudwatch_handler)
     logger.info(f"Set up Cloudwatch {log_level} logging to {log_group_name}/{log_stream_name}.")
