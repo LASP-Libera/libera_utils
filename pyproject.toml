@@ -30,6 +30,7 @@ matplotlib = {version = "^3.4.3", optional = true}
 SQLAlchemy = "^1.4.27"
 psycopg2 = "^2.9.2"
 cloudpathlib = {extras = ["s3"], version = "^0.6.2"}
+watchtower = "^3.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest-cov = "^2.12.1"
