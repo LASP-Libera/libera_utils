@@ -10,6 +10,7 @@ Science data processing algorithms for the Libera mission.
 - [SPICE Usage](doc/spice.md)
 - [Docker (Including Nexus)](doc/docker.md)
 - [Database Usage](doc/database.md)
+- [Logging Usage](doc/logging.md)
 
 
 ## Installation from LASP PyPI
