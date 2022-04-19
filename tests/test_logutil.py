@@ -5,8 +5,9 @@ import logging
 from libera_sdp import logutil
 
 
-def test_logging_behavior(setup_test_logging, caplog):
+def test_logging_behavior(setup_test_logging, caplog, monkeypatch, tmp_path):
     """Test that log messages appear (or don't appear) as desired"""
+    monkeypatch.setenv('LIBSDP_LOG_DIR', str(tmp_path))
 
     root_log = logging.getLogger()  # root logger
     assert root_log.level == logging.INFO
