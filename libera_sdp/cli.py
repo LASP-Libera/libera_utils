@@ -1,6 +1,6 @@
 """Module for the Libera SDP CLI
 
-sdp
+libera
     make-kernel
         jpss-spk
         jpss-ck
@@ -40,12 +40,12 @@ def parse_cli_args(cli_args: list):
     Namespace
         Parsed arguments in a Namespace object
     """
-    parser = argparse.ArgumentParser(prog="sdp", description="Libera science data processing CLI")
+    parser = argparse.ArgumentParser(prog="libera", description="Libera science data processing CLI")
     parser.add_argument("--version",
                         action='store_const', dest='func', const=print_version_info,
                         help="print current version of the CLI")
 
-    subparsers = parser.add_subparsers(description="sub-commands for sdp CLI")
+    subparsers = parser.add_subparsers(description="sub-commands for libera CLI")
 
     # make-kernel
     make_kernel_parser = subparsers.add_parser('make-kernel',
