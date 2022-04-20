@@ -38,6 +38,7 @@ pylint = "^2.9.3"
 responses = "^0.14.0"
 pytest-randomly = "^3.10.2"
 moto = {extras = ["s3"], version = "^2.2.16"}
+bandit = "^1.7.4"
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
