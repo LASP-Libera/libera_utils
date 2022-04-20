@@ -27,29 +27,29 @@ pip install libera-sdp --index https://lasp.colorado.edu/repository/lasp-pypi/si
 
 
 ### Command Line Interface
-Depending on how you have install `libera_sdp`, your CLI runner may vary. The commands below assume that your 
+Depending on how you have installed `libera_sdp`, your CLI runner may vary. The commands below assume that your 
 virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you may
 want to use `poetry run` to run CLI commands.
 
 #### Top Level Command `sdp`
 ```shell
-sdp [--version] [-h]
+libera [--version] [-h]
 ```
 
-#### Sub-Command `sdp make-kernel jpss-spk`
+#### Sub-Command `libera make-kernel jpss-spk`
 ```shell
-sdp make-kernel jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+libera make-kernel jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
 ```
 
 
-#### Sub-Command `sdp make-kernel jpss-ck`
+#### Sub-Command `libera make-kernel jpss-ck`
 ```shell
-sdp make-kernel jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
+libera make-kernel jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
 ```
 
 
-#### Sub-Command `sdp make-kernel azel-ck`
+#### Sub-Command `libera make-kernel azel-ck`
 Not yet implemented
 ```shell
-sdp make-kernel azel-ck [-h]
+libera make-kernel azel-ck [-h]
 ```
