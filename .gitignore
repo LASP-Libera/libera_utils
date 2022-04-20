@@ -15,7 +15,7 @@ analysis
 
 # Testing Artifacts #
 #####################
-.coverage
+.coverage*
 coverage_report
 corbertura_report.xml
 tests/test_data/hidden
