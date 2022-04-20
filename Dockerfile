@@ -2,14 +2,14 @@
 
 # libera-sdp
 # ----------
-FROM python:3.9.0-slim AS libera-sdp
+FROM python:3.9-slim AS libera-sdp
 USER root
 
 # Location for Core package installation location. This can be used later by images that inherit from this one
 ENV LIBSDP_INSTALL_LOCATION=/opt/libera
 WORKDIR $LIBSDP_INSTALL_LOCATION
 
-# Turn of interactive shell to suppress configuration errors
+# Turn off interactive shell to suppress configuration errors
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install libpq so we can install psycopg2 later and curl so we can install poetry
