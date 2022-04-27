@@ -4,7 +4,7 @@ Science data processing algorithms for the Libera mission.
 
 ## Further Documentation
 - [Development Environment Setup](doc/dev_environment_setup.md)
-- [Testing](doc/testing.md)
+- [Testing and Static Analysis](doc/testing.md)
 - [Release Process and Distribution](doc/build_release.md)
 - [Package Configuration](doc/configuration.md)
 - [SPICE Usage](doc/spice.md)
