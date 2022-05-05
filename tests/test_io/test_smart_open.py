@@ -1,11 +1,24 @@
 """Tests for smart_open module"""
 # Standard
+import h5py as h5
+import numpy as np
 from pathlib import Path
 # Installed
 import pytest
 from cloudpathlib import S3Path, AnyPath
 # Local
 from libera_sdp.io.smart_open import smart_open, is_gzip, is_s3
+
+
+@pytest.fixture()
+def path(tmp_path):
+    """Test path"""
+
+    path = tmp_path / "mydir/swath_test.he5"
+    path.parent.mkdir()
+    path.touch()
+
+    return path
 
 
 @pytest.mark.parametrize(
@@ -71,6 +84,51 @@ def test_smart_open_s3(test_txt, test_txt_gz, create_mock_bucket, write_file_to_
 
 @pytest.mark.parametrize(
     "wrapper",
+    [AnyPath, S3Path, str]
+)
+def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrapper):
+    """Test smart_open on mocked S3 objects and locally"""
+    bucket = 'silly-bucket'
+    create_mock_bucket(bucket)
+    key = 'somepath'
+    hdf5_uri = f"s3://{bucket}/{key}/test_hdf5"
+    write_file_to_s3(test_hdf5, hdf5_uri)
+
+    hdf5_wrapped = wrapper(hdf5_uri)
+    # Check that the contents of the files match, regardless of s3 or local
+    with h5.File(smart_open(test_hdf5), 'r') as fh:
+        dataset_local = np.array(fh[list(fh.keys())[0]])
+    with h5.File(smart_open(hdf5_wrapped), 'r') as fh:
+        dataset_s3 = np.array(fh[list(fh.keys())[0]])
+    assert dataset_local.all() == dataset_s3.all()
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [AnyPath, S3Path, str]
+)
+def test_smart_open_mode(path, create_mock_bucket, write_file_to_s3, wrapper):
+    """
+    Test smart_open can read in and write to hdf5.
+    """
+    bucket = 'silly-bucket'
+    create_mock_bucket(bucket)
+    key = 'somepath'
+    hdf5_uri = f"s3://{bucket}/{key}/path"
+    write_file_to_s3(path, hdf5_uri)
+
+    hdf5_wrapped = wrapper(hdf5_uri)
+
+    with smart_open(hdf5_wrapped, 'wb') as fh:
+        with h5.File(fh, 'r+') as hdf:
+            hdf.create_group('new_group')
+    with h5.File(smart_open(hdf5_wrapped), 'r') as fh:
+        print(dict(fh.items()))
+    assert list(fh.keys())[0] == 'new_group'
+
+
+@pytest.mark.parametrize(
+    "wrapper",
     [AnyPath, Path, str]
 )
 def test_smart_open_local(test_txt, test_txt_gz, wrapper):
@@ -83,3 +141,4 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     with smart_open(gz_wrapped) as fh_compressed:
         compressed_contents = fh_compressed.readlines()
     assert uncompressed_contents == compressed_contents
+
