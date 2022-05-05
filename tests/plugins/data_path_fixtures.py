@@ -30,10 +30,12 @@ def test_txt(test_data_path):
     """Path to a simple txt file"""
     return test_data_path / 'testtextfile.txt'
 
+
 @pytest.fixture
 def test_hdf5(test_data_path):
     """Path to a simple hdf5 file"""
     return test_data_path / 'testhdf5file.he5'
+
 
 @pytest.fixture
 def test_txt_gz(test_data_path):
@@ -80,4 +82,3 @@ def test_itrf93_pck(spice_test_data_path):
     """Path to the testing high precision planetary constants kernel (PCK) stored in the test_data directory
     to provide a single configuration for all tests"""
     return spice_test_data_path / 'earth_000101_211220_210926.bpc'
-

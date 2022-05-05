@@ -141,4 +141,3 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     with smart_open(gz_wrapped) as fh_compressed:
         compressed_contents = fh_compressed.readlines()
     assert uncompressed_contents == compressed_contents
-
