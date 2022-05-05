@@ -107,7 +107,7 @@ def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrappe
     "wrapper",
     [AnyPath, S3Path, str]
 )
-def test_smart_open_mode(path, create_mock_bucket, write_file_to_s3, wrapper):
+def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, path):
     """
     Test smart_open can read in and write to hdf5.
     """
@@ -123,8 +123,8 @@ def test_smart_open_mode(path, create_mock_bucket, write_file_to_s3, wrapper):
         with h5.File(fh, 'r+') as hdf:
             hdf.create_group('new_group')
     with h5.File(smart_open(hdf5_wrapped), 'r') as fh:
-        print(dict(fh.items()))
-    assert list(fh.keys())[0] == 'new_group'
+        group_name = list(fh.keys())[0]
+    assert group_name == 'new_group'
 
 
 @pytest.mark.parametrize(
