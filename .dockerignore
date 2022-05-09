@@ -1,0 +1,25 @@
+# Python build artifacts
+/dist
+**/*.egg-info
+
+# Test and run artifacts
+**/*.pytest_cache
+**/dask-worker-space
+**/__pycache__
+
+# Virtual environment
+/venv
+
+# Configs
+/.idea
+/.python-version
+/.git
+/.gitattributes
+/.gitignore
+/.gitmodules
+
+# Unused repo contents
+/analysis
+/docker_build.sh
+/docker
+
