@@ -1,0 +1,41 @@
+KPL/SCLK
+ 
+SCLK Kernel for JPSS-3
+--------------------------------------------------------
+ 
+   This SCLK kernel contains the data necessary for converting from
+   ephemeris time (ET) to JPSS-3 spacecraft clock ticks in the format,
+   day:ms:us since Jan 1, 1958.
+
+   DATA_TYPE means we use SCLK01 type (the only type?)
+   TIME_SYSTEM is the time system to which SCLK times are
+       converted before being converted to ET. 1 means TDB, 2 means TDT
+   N_FIELDS is the number of fields in the SCLK string (3)
+   MODULI refers to the max value of each field + 1
+   OFFSETS Not sure I understand these. Think they should always be 0
+   OUTPUT_DELIM I like ':' characters (2)
+   PARTITION_XX boundaries. Given in ticks (usec in this case)
+   COEFFICIENTS Each entry is (sclk value, corresponding parallel time value, rate)
+       Since we assume JPSS seconds are "perfect", rate should always be 1.0
+       We only have one partition currently
+ 
+   This file was created by Gavin Medley (for Libera SDC)
+   on 2021-08-02/12:08:57.
+
+Kernel data
+--------------------------------------------------------
+ 
+   \begindata
+ 
+      SCLK_KERNEL_ID = ( @2021-08-02/12:08:57 )
+      SCLK_DATA_TYPE_143013       = ( 1 )
+      SCLK01_TIME_SYSTEM_143013   = ( 1 )
+      SCLK01_N_FIELDS_143013      = ( 3 )
+      SCLK01_MODULI_143013        = ( 65536 86400000 1000 )
+      SCLK01_OFFSETS_143013       = ( 0 0 0 )
+      SCLK01_OUTPUT_DELIM_143013  = ( 2 )
+      SCLK_PARTITION_START_143013 = ( 0.0 )
+      SCLK_PARTITION_END_143013   = ( 2E+16 )
+      SCLK01_COEFFICIENTS_143013  = ( 1.3254192E+15 0.0 86400 )
+ 
+   \begintext
