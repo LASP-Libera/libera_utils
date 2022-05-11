@@ -1,7 +1,7 @@
 
 [tool.poetry]
 name = "libera_sdp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Science data processing library and applications for the Libera instrument."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
