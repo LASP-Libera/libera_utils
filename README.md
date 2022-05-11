@@ -17,10 +17,10 @@ Science data processing algorithms for the Libera mission.
 Note: This only works for officially released versions.
 ```bash
 # Inside the LASP VPN only
-pip install libera-sdp --index https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
+pip install libera-sdp --extra-index-url https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
 
 # From any whitelisted IP (including any IP inside the LASP VPN)
-pip install libera-sdp --index https://lasp.colorado.edu/repository/lasp-pypi/simple
+pip install libera-sdp --extra-index-url https://lasp.colorado.edu/repository/lasp-pypi/simple
 ```
 
 
