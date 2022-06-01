@@ -24,7 +24,7 @@ bitstring = "^3.1"
 h5py = "^3.3.0"
 numpy = "^1.21.0"
 spiceypy = "^4.0.1"
-lasp-packets = "1.2"
+lasp-packets = "^2.0"
 requests = "^2.26.0"
 matplotlib = {version = "^3.4.3", optional = true}
 SQLAlchemy = "^1.4.27"
