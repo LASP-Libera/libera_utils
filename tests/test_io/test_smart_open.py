@@ -10,17 +10,6 @@ from cloudpathlib import S3Path, AnyPath
 from libera_sdp.io.smart_open import smart_open, is_gzip, is_s3
 
 
-@pytest.fixture()
-def path(tmp_path):
-    """Test path"""
-
-    path = tmp_path / "mydir/swath_test.he5"
-    path.parent.mkdir()
-    path.touch()
-
-    return path
-
-
 @pytest.mark.parametrize(
     ("path", "expectation"),
     [
@@ -107,7 +96,7 @@ def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrappe
     "wrapper",
     [AnyPath, S3Path, str]
 )
-def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, path):
+def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, test_hdf5):
     """
     Test smart_open can read in and write to hdf5.
     """
@@ -115,7 +104,7 @@ def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, path):
     create_mock_bucket(bucket)
     key = 'somepath'
     hdf5_uri = f"s3://{bucket}/{key}/path"
-    write_file_to_s3(path, hdf5_uri)
+    write_file_to_s3(test_hdf5, hdf5_uri)
 
     hdf5_wrapped = wrapper(hdf5_uri)
 
