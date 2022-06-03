@@ -58,7 +58,8 @@ def parse_cli_args(cli_args: list):
     jpss_spk_parser.set_defaults(func=kernel_maker.make_jpss_spk)
     jpss_spk_parser.add_argument('packet_data_filepaths', nargs='+', type=str,
                                  help="paths to L0 packet files")
-    jpss_spk_parser.add_argument('--outdir', type=str, default='/tmp',
+    jpss_spk_parser.add_argument('--outdir', '-o', type=str,
+                                 required=True,
                                  help="output directory for generated SPK")
     jpss_spk_parser.add_argument('--overwrite', action='store_true',
                                  help="force overwriting an existing kernel if it exists")
@@ -70,7 +71,8 @@ def parse_cli_args(cli_args: list):
     jpss_ck_parser.set_defaults(func=kernel_maker.make_jpss_ck)
     jpss_ck_parser.add_argument('packet_data_filepaths', nargs='+', type=str,
                                 help="paths to L0 packet files")
-    jpss_ck_parser.add_argument('--outdir', type=str, default='/tmp',
+    jpss_ck_parser.add_argument('--outdir', '-o', type=str,
+                                required=True,
                                 help="output directory for generated CK")
     jpss_ck_parser.add_argument('--overwrite', action='store_true',
                                 help="force overwriting an existing kernel if it exists")
@@ -82,7 +84,8 @@ def parse_cli_args(cli_args: list):
     azel_ck_parser.set_defaults(func=kernel_maker.make_azel_ck)
     azel_ck_parser.add_argument('packet_data_filepaths', nargs='+', type=str,
                                 help="paths to L0 packet files")
-    azel_ck_parser.add_argument('--outdir', type=str, default='/tmp',
+    azel_ck_parser.add_argument('--outdir', '-o', type=str,
+                                required=True,
                                 help="output directory for generated CK")
     azel_ck_parser.add_argument('--overwrite', action='store_true',
                                 help="force overwriting an existing kernel if it exists")

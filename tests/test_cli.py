@@ -9,18 +9,18 @@ from libera_sdp import cli, kernel_maker
 @pytest.mark.parametrize(
     ("cli_args", "parsed"),
     [
-        (['make-kernel', 'jpss-spk', 'file1.pkts', 'file2.pkts'],
+        (['make-kernel', 'jpss-spk', '-ofakedir', 'file1.pkts', 'file2.pkts'],
          argparse.Namespace(
              func=kernel_maker.make_jpss_spk,
              packet_data_filepaths=['file1.pkts', 'file2.pkts'],
-             outdir='/tmp',
+             outdir='fakedir',
              verbose=False,
              overwrite=False)),
-        (['make-kernel', 'jpss-ck', 'file1.pkts', 'file2.pkts'],
+        (['make-kernel', 'jpss-ck', '--outdir', 'fakedir', 'file1.pkts', 'file2.pkts'],
          argparse.Namespace(
              func=kernel_maker.make_jpss_ck,
              packet_data_filepaths=['file1.pkts', 'file2.pkts'],
-             outdir='/tmp',
+             outdir='fakedir',
              verbose=False,
              overwrite=False)),
         (['--version'],
