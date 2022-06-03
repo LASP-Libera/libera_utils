@@ -256,7 +256,9 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
     : callable
         Decorated function, with spice error handling
     """
-    assert callable(f_py) or f_py is None  # If this is set, it must be a callable object
+    if f_py and not callable(f_py):
+        raise ValueError(f"Received a non-callable object {f_py} as the f_py argument to ensure_spice. "
+                         "f_py must be a callable object.")
 
     def _decorator(func):
         """This is either a decorator or a function wrapper, depending on how ensure_spice is being used"""
