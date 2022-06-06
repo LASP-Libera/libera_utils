@@ -32,6 +32,12 @@ def test_txt(test_data_path):
 
 
 @pytest.fixture
+def test_hdf5(test_data_path):
+    """Path to a simple hdf5 file"""
+    return test_data_path / 'testhdf5file.he5'
+
+
+@pytest.fixture
 def test_txt_gz(test_data_path):
     """Path to a gzipped version of the simple txt file"""
     return test_data_path / 'testtextfile.txt.gz'
