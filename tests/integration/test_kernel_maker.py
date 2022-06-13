@@ -8,10 +8,6 @@ import pytest
 from libera_sdp import kernel_maker
 
 
-# FIXME: These are bad unit tests in that they are not "unit".
-#  They both call out to NAIF to download real kernels.
-#  Those calls should be mocked and replaced with local test data.
-
 def test_make_jpss_spk(test_data_path, short_tmp_path):
     """Test creating a SPK from packets"""
     with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir',
