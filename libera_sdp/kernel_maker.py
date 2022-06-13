@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import shutil
-import subprocess
+import subprocess  # nosec CWE-78
 import tempfile
 # Installed
 import numpy as np
@@ -66,7 +66,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     )
     packet_data = nprf.append_fields(packet_data, 'ET', ephemeris_time, dtypes=(np.float64,))
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec CWE-377
         tmp_path = Path(tmp_dir)
         spk_data_filepath = write_kernel_input_file(
             packet_data,
@@ -146,7 +146,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     attitude_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
     packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', attitude_sclk_string)
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec CWE-377
         tmp_path = Path(tmp_dir)
         ck_data_filepath = write_kernel_input_file(
             packet_data,
