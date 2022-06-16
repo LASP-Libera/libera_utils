@@ -162,8 +162,8 @@
                 <xtce:BaseContainer containerRef="CCSDSPacket">
                     <xtce:RestrictionCriteria>
                         <xtce:ComparisonList>
-                            <xtce:Comparison parameterRef="VERSION" value="0"/>
-                            <xtce:Comparison parameterRef="TYPE" value="0"/>
+                            <xtce:Comparison parameterRef="VERSION" value="0" useCalibratedValue="false"/>
+                            <xtce:Comparison parameterRef="TYPE" value="0" useCalibratedValue="false"/>
                         </xtce:ComparisonList>
                     </xtce:RestrictionCriteria>
                 </xtce:BaseContainer>
@@ -207,7 +207,7 @@
                 <xtce:BaseContainer containerRef="CCSDSTelemetryPacket">
                     <xtce:RestrictionCriteria>
                         <xtce:ComparisonList>
-                            <xtce:Comparison parameterRef="PKT_APID" value="11"/>
+                            <xtce:Comparison parameterRef="PKT_APID" value="11" useCalibratedValue="false"/>
                         </xtce:ComparisonList>
                     </xtce:RestrictionCriteria>
                 </xtce:BaseContainer>
