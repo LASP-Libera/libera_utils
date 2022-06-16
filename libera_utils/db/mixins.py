@@ -3,7 +3,7 @@
 from sqlalchemy import inspect, func
 from sqlalchemy.orm import Session, Query
 # Local
-from libera_sdp.db import getdb
+from libera_utils.db import getdb
 
 
 class ReprMixin:

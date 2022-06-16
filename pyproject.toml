@@ -1,8 +1,8 @@
 
 [tool.poetry]
-name = "libera_sdp"
-version = "0.1.1"
-description = "Science data processing library and applications for the Libera instrument."
+name = "libera_utils"
+version = "0.1"
+description = "Utility package for Libera Science Data Processing and the Libera Science Data Center."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
     "Gavin Medley <gavin.medley@lasp.colorado.edu>",
@@ -44,7 +44,7 @@ bandit = "^1.7.4"
 plotting = ["matplotlib"]
 
 [tool.poetry.scripts]
-libera = 'libera_sdp.cli:main'
+libera = 'libera_utils.cli:main'
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

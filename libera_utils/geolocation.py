@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import spiceypy as spice
 # Local
-from libera_sdp import spiceutil
+from libera_utils import spiceutil
 
 logger = logging.getLogger(__name__)
 

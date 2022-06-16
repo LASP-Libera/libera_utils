@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from libera_sdp.io import filenaming
+from libera_utils.io import filenaming
 
 
 def test_ephemeris_kernel_filename():

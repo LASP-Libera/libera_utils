@@ -7,7 +7,7 @@ import os
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.orm import sessionmaker
 # Local
-from libera_sdp.config import config
+from libera_utils.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class _DatabaseManager:
     A caching class used to manage database connections.
 
     This class should never be instantiated directly. Instead, users should use the convenience method
-    libera_sdp.db.database.getdb, which is an alias for the _DatabaseManager.get factory method.
+    libera_utils.db.database.getdb, which is an alias for the _DatabaseManager.get factory method.
     """
     _db_manager_cache = {}
 

@@ -6,7 +6,7 @@ from warnings import warn
 # Installed
 import watchtower
 # Local
-from libera_sdp.config import config
+from libera_utils.config import config
 
 LOG_MESSAGE_FORMAT = "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"
 standard_log_formatter = logging.Formatter(LOG_MESSAGE_FORMAT)
@@ -49,9 +49,9 @@ def setup_task_logger(task_id: str,
     root_logger.setLevel(logging.INFO)
     root_logger.handlers = []  # Remove handlers, so they don't duplicate when dask worker processes are reused
 
-    # Set up the libera_sdp "parent" logger from which all module level loggers will inherit, since all modules are
-    # submodules of libera_sdp
-    libsdp_logger = logging.getLogger('libera_sdp')
+    # Set up the libera_utils "parent" logger from which all module level loggers will inherit, since all modules are
+    # submodules of libera_utils
+    libsdp_logger = logging.getLogger('libera_utils')
     libsdp_logger.handlers = []  # Prevent this logger from doing anything except passing logs up to the root
     libsdp_logger.setLevel(logging.DEBUG)  # Setting this level means that all child loggers will pass DEBUG messages up
 

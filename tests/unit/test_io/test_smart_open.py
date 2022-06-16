@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from cloudpathlib import S3Path, AnyPath
 # Local
-from libera_sdp.io.smart_open import smart_open, is_gzip, is_s3
+from libera_utils.io.smart_open import smart_open, is_gzip, is_s3
 
 
 @pytest.mark.parametrize(

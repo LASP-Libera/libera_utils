@@ -3,7 +3,7 @@
 import argparse
 import pytest
 # Local
-from libera_sdp import cli, kernel_maker
+from libera_utils import cli, kernel_maker
 
 
 @pytest.mark.parametrize(

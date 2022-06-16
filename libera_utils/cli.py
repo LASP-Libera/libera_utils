@@ -12,8 +12,8 @@ libera
 # Standard
 import argparse
 # Local
-from libera_sdp import kernel_maker
-from libera_sdp.version import version as libera_sdp_version
+from libera_utils import kernel_maker
+from libera_utils.version import version as libera_utils_version
 
 
 def main(cli_args: list = None):
@@ -24,7 +24,7 @@ def main(cli_args: list = None):
 
 def print_version_info(*args):
     """Print CLI version information"""
-    print(f"Libera science data processing CLI\n\tVersion {libera_sdp_version()}")
+    print(f"Libera science data processing CLI\n\tVersion {libera_utils_version()}")
 
 
 def parse_cli_args(cli_args: list):

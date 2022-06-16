@@ -53,9 +53,8 @@ copy the existing cache but the cache lookup no longer matches that manager beca
 In short, use the following pattern to create database connections:
 
 ```python
-from libera_sdp.db import getdb
-from libera_sdp.db.models import L0
-
+from libera_utils.db import getdb
+from libera_utils.db.models import L0
 
 db = getdb()
 with db.session() as s:

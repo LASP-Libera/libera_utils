@@ -4,8 +4,8 @@ from sqlalchemy import Column, SmallInteger, Integer, Text, DateTime, Boolean, F
 from sqlalchemy.dialects.postgresql import BIT
 from sqlalchemy.orm import relationship, backref
 # Local
-from libera_sdp.db import Base
-from libera_sdp.db.mixins import ReprMixin, DataProductMixin
+from libera_utils.db import Base
+from libera_utils.db.mixins import ReprMixin, DataProductMixin
 
 
 class APID(Base, ReprMixin):

@@ -13,8 +13,8 @@ import requests
 import spiceypy as spice
 from spiceypy.utils.exceptions import NotFoundError, SpiceyError
 # Local
-from libera_sdp.config import config
-from libera_sdp.io import caching
+from libera_utils.config import config
+from libera_utils.io import caching
 
 NAIF_PCK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/"
 NAIF_LSK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/"
@@ -31,7 +31,7 @@ class KernelFileCache:
 
     It attempts to find a cached kernel file in the user's cache directory (OS-specific location).
     If that file is not there or is old, it attempts to download the latest kernel from NAIF.
-    If it is unable to do that, it can optionally read a fallback file included in the libera_sdp package.
+    If it is unable to do that, it can optionally read a fallback file included in the libera_utils package.
     """
 
     def __init__(self, naif_base_url: str, kernel_file_regex: str,

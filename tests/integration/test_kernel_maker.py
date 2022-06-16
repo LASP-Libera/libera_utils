@@ -5,12 +5,12 @@ from unittest import mock
 # Installed
 import pytest
 # Local
-from libera_sdp import kernel_maker
+from libera_utils import kernel_maker
 
 
 def test_make_jpss_spk(test_data_path, short_tmp_path):
     """Test creating a SPK from packets"""
-    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir',
+    with mock.patch('libera_utils.spiceutil.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
         mock_parsed_args = argparse.Namespace(
@@ -25,7 +25,7 @@ def test_make_jpss_spk(test_data_path, short_tmp_path):
 
 def test_make_jpss_ck(test_data_path, short_tmp_path):
     """Test creating a CK from packets"""
-    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir',
+    with mock.patch('libera_utils.spiceutil.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
         mock_parsed_args = argparse.Namespace(
@@ -41,7 +41,7 @@ def test_make_jpss_ck(test_data_path, short_tmp_path):
 @pytest.mark.xfail
 def test_make_azel_ck(test_data_path, short_tmp_path):
     """Test creating a CK from packets"""
-    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir',
+    with mock.patch('libera_utils.spiceutil.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         packet_data_path = test_data_path / 'add-a-test-data-file.pkts'
         mock_parsed_args = argparse.Namespace(

@@ -5,8 +5,8 @@ import pytz
 # Installed
 import pytest
 # Local
-from libera_sdp.db import getdb
-from libera_sdp.db.models import APID, Packet, L0, L1b
+from libera_utils.db import getdb
+from libera_utils.db.models import APID, Packet, L0, L1b
 
 
 @pytest.fixture

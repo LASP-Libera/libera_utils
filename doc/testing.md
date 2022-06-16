@@ -10,11 +10,11 @@ pytest
 With coverage for generating reports on code coverage:
 ```bash
 # Create coverage data (stored in .coverage)
-pytest --cov=libera_sdp --junit-xml=junit.xml
+pytest --cov=libera_utils --junit-xml=junit.xml
 # Generate interactive HTML coverage report
-pytest --cov-report=html:coverage_report --cov=libera_sdp
+pytest --cov-report=html:coverage_report --cov=libera_utils
 # Generate Corbertura-compatible XML report
-pytest --cov-report=xml:coverage.xml --cov=libera_sdp
+pytest --cov-report=xml:coverage.xml --cov=libera_utils
 ```
 
 

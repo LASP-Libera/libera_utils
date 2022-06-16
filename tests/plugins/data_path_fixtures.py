@@ -18,7 +18,7 @@ def test_data_path():
 def spice_test_data_path(test_data_path):
     """Returns the spice subdirectory of the test_data directory
     This directory contains kernel that are either generated (SPK and CK) or dynamically downloaded.
-    Any kernels that are available directly in the libera_sdp/data directory should be sourced from there.
+    Any kernels that are available directly in the libera_utils/data directory should be sourced from there.
     """
     return test_data_path / 'spice'
 

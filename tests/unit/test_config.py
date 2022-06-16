@@ -2,7 +2,7 @@
 # Installed
 import pytest
 # Local
-from libera_sdp.config import config
+from libera_utils.config import config
 
 
 def test_get_config_test_key():

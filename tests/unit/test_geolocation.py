@@ -3,8 +3,8 @@
 import pytest
 import numpy as np
 # Local
-from libera_sdp import geolocation as geo
-from libera_sdp import spiceutil
+from libera_utils import geolocation as geo
+from libera_utils import spiceutil
 
 np.set_printoptions(precision=64)
 
