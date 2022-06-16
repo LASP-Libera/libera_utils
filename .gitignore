@@ -26,7 +26,7 @@ tests/test_data/hidden
 .eggs
 build
 dist
-libera_sdp/_version.py
+libera_utils/_version.py
 poetry.lock
 
 # Packages #

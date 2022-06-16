@@ -1,8 +1,8 @@
-"""Tests for libera_sdp.io.packets module"""
+"""Tests for libera_utils.io.packets module"""
 import numpy as np
 from lasp_packets import parser
 
-from libera_sdp import packets as libera_packets
+from libera_utils import packets as libera_packets
 
 
 def test_array_from_packets():

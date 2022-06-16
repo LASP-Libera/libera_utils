@@ -50,31 +50,31 @@ services:
       - libera-dev-db
 
   sdp:
-    image: libera-sdp:latest
+    image: libera-utils:latest
     build:
       context: .
-      target: libera-sdp
+      target: libera-utils
 
   tests:
-    image: libera-sdp-test:latest
+    image: libera-utils-test:latest
     build:
       context: .
-      target: libera-sdp-test
+      target: libera-utils-test
     environment:
       - LIBERA_DB_HOST=libera-dev-db
     depends_on:
       - flyway-sdp-test
 
   linting:
-    image: libera-sdp-test:latest
+    image: libera-utils-test:latest
     build:
       context: .
-      target: libera-sdp-test
-    entrypoint: ["pylint", "libera_sdp"]
+      target: libera-utils-test
+    entrypoint: ["pylint", "libera_utils"]
 
   ast:
-    image: libera-sdp-test:latest
+    image: libera-utils-test:latest
     build:
       context: .
-      target: libera-sdp-test
-    entrypoint: [ "bandit", "-r", "libera_sdp" ]
+      target: libera-utils-test
+    entrypoint: [ "bandit", "-r", "libera_utils" ]

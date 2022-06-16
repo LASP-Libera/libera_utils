@@ -4,8 +4,8 @@ import h5py as h5
 import numpy as np
 import pytest
 # Local
-from libera_sdp.config import config
-from libera_sdp.io import hdf
+from libera_utils.config import config
+from libera_utils.io import hdf
 
 
 @pytest.fixture

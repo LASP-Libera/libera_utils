@@ -17,10 +17,10 @@ Science data processing algorithms for the Libera mission.
 Note: This only works for officially released versions.
 ```bash
 # Inside the LASP VPN only
-pip install libera-sdp --extra-index-url https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
+pip install libera-utils --extra-index-url https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
 
 # From any whitelisted IP (including any IP inside the LASP VPN)
-pip install libera-sdp --extra-index-url https://lasp.colorado.edu/repository/lasp-pypi/simple
+pip install libera-utils --extra-index-url https://lasp.colorado.edu/repository/lasp-pypi/simple
 ```
 
 
@@ -28,11 +28,11 @@ pip install libera-sdp --extra-index-url https://lasp.colorado.edu/repository/la
 
 
 ### Command Line Interface
-Depending on how you have installed `libera_sdp`, your CLI runner may vary. The commands below assume that your 
+Depending on how you have installed `libera_utils`, your CLI runner may vary. The commands below assume that your 
 virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you may
 want to use `poetry run` to run CLI commands.
 
-#### Top Level Command `sdp`
+#### Top Level Command `libera`
 ```shell
 libera [--version] [-h]
 ```

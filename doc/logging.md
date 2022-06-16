@@ -30,14 +30,13 @@ AWS Cloudwatch logging.
 ```python
 """Logging setup example"""
 import logging
-from libera_sdp.logutil import setup_task_logger
-
+from libera_utils.logutil import setup_task_logger
 
 log_dir = '/tmp'
 task_id = 'processing-task-1'
 stream_log_level = 'DEBUG'
 setup_task_logger(task_id, stream_log_level, log_dir)
-libera_log = logging.getLogger('libera_sdp.my_application')
+libera_log = logging.getLogger('libera_utils.my_application')
 external_library_log = logging.getLogger('some_library')
 
 libera_log.debug('subtle but important message gets passed through')

@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 # Local
-from libera_sdp.time import PRINTABLE_TS_FORMAT
+from libera_utils.time import PRINTABLE_TS_FORMAT
 
 
 SPK_REGEX = re.compile(r"^libera_jpss"

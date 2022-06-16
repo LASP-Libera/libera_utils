@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime
 from typing import Iterable
 
-from libera_sdp import time
+from libera_utils import time
 
 
 # TODO: Prevent these tests from retrieving their LSK from NAIF by

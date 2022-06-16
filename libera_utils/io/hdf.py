@@ -5,7 +5,7 @@ import h5py as h5
 import json
 import numpy as np
 # Local
-from libera_sdp.io.smart_open import smart_open
+from libera_utils.io.smart_open import smart_open
 
 
 def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = False):

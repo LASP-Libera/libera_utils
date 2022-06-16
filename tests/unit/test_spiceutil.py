@@ -7,9 +7,9 @@ from unittest import mock
 import numpy as np
 import responses
 # Local
-import libera_sdp.kernel_maker
-from libera_sdp import spiceutil
-from libera_sdp.config import config
+import libera_utils.kernel_maker
+from libera_utils import spiceutil
+from libera_utils.config import config
 
 
 @responses.activate
@@ -42,7 +42,7 @@ def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path, monke
             stream=True
         )
 
-    with mock.patch('libera_sdp.spiceutil.KernelFileCache.cache_dir',
+    with mock.patch('libera_utils.spiceutil.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=tmp_path):
 
         # Prove that the download logic works for putting a file in the cache
@@ -116,7 +116,7 @@ def test_write_kernel_input_file(tmp_path):
         'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ',
         'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'
     ]
-    libera_sdp.kernel_maker.write_kernel_input_file(data, filepath, fields)
+    libera_utils.kernel_maker.write_kernel_input_file(data, filepath, fields)
 
 
 def test_write_kernel_setup_file(tmp_path):
@@ -131,4 +131,4 @@ def test_write_kernel_setup_file(tmp_path):
         "DICT_OF_VALUES": {'DISTANCES': 'METERS', 'ANGLES': 'DEGREES'},
         "SOME_FILEPATH": "myfile"
     }
-    libera_sdp.kernel_maker.write_kernel_setup_file(defaults, filepath)
+    libera_utils.kernel_maker.write_kernel_setup_file(defaults, filepath)

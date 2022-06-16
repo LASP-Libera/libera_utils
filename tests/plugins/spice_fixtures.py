@@ -5,7 +5,7 @@ import pytest
 import spiceypy as spice
 import tempfile
 # Local
-from libera_sdp.config import config
+from libera_utils.config import config
 
 
 @pytest.fixture

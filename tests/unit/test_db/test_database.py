@@ -5,9 +5,9 @@ import os
 # Installed
 import pytest
 # Local
-from libera_sdp.db import getdb
-from libera_sdp.db.database import DatabaseException
-from libera_sdp.db.models import L0
+from libera_utils.db import getdb
+from libera_utils.db.database import DatabaseException
+from libera_utils.db.models import L0
 
 
 def db_testfunc(filename: str = None, version: int = None):

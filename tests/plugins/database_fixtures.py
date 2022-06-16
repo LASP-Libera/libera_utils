@@ -3,7 +3,7 @@
 # Installed
 import pytest
 # Local
-from libera_sdp.db import getdb
+from libera_utils.db import getdb
 
 
 @pytest.fixture(scope='session', autouse=True)

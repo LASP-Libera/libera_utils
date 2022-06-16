@@ -1,13 +1,13 @@
-# Dockerfile that installs libera_sdp and its dependencies
+# Dockerfile that installs libera_utils and its dependencies
 
-# libera-sdp
+# libera-utils
 # ----------
-FROM python:3.9-slim AS libera-sdp
+FROM python:3.9-slim AS libera-utils
 USER root
 
 # Location for Core package installation location. This can be used later by images that inherit from this one
-ENV LIBSDP_INSTALL_LOCATION=/opt/libera
-WORKDIR $LIBSDP_INSTALL_LOCATION
+ENV LIBERA_UTILS_DIRECTORY=/opt/libera
+WORKDIR $LIBERA_UTILS_DIRECTORY
 
 # Turn off interactive shell to suppress configuration errors
 ARG DEBIAN_FRONTEND=noninteractive
@@ -35,17 +35,17 @@ RUN curl -sSL https://install.python-poetry.org | python -
 ENV PATH="$PATH:/root/.local/bin"
 
 # Copy necessary files over (except for dockerignore-d files)
-COPY libera_sdp $LIBSDP_INSTALL_LOCATION/libera_sdp
-COPY README.md $LIBSDP_INSTALL_LOCATION
-COPY doc $LIBSDP_INSTALL_LOCATION/doc
-COPY pyproject.toml $LIBSDP_INSTALL_LOCATION
-COPY LICENSE $LIBSDP_INSTALL_LOCATION
+COPY libera_utils $LIBERA_UTILS_DIRECTORY/libera_utils
+COPY README.md $LIBERA_UTILS_DIRECTORY
+COPY doc $LIBERA_UTILS_DIRECTORY/doc
+COPY pyproject.toml $LIBERA_UTILS_DIRECTORY
+COPY LICENSE $LIBERA_UTILS_DIRECTORY
 
 # This is so stupid but it fixes known a bug in docker build
 # https://github.com/moby/moby/issues/37965
 RUN true
 
-# Install libera_sdp and all its (non-dev) dependencies according to pyproject.toml
+# Install libera_utils and all its (non-dev) dependencies according to pyproject.toml
 RUN poetry install --no-dev
 
 # Define the entrypoint of the container. Passing arguments when running the
@@ -53,16 +53,16 @@ RUN poetry install --no-dev
 ENTRYPOINT ["sdp"]
 
 
-# libera-sdp-test
+# libera-utils-test
 # ---------------
-FROM libera-sdp AS libera-sdp-test
+FROM libera-utils AS libera-utils-test
 
-# Install dev dependencies (not installed in libera-sdp image)
+# Install dev dependencies (not installed in libera-utils image)
 RUN poetry install
 
 # Copy tests over
-COPY tests $LIBSDP_INSTALL_LOCATION/tests
-COPY pylintrc $LIBSDP_INSTALL_LOCATION
+COPY tests $LIBERA_UTILS_DIRECTORY/tests
+COPY pylintrc $LIBERA_UTILS_DIRECTORY
 
 # Set entrypoint
 ENTRYPOINT pytest
