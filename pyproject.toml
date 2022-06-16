@@ -19,11 +19,11 @@ url = "https://lasp.colorado.edu/repository/lasp-pypi/simple"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-astropy = "^4.2.1"
+astropy = "^5.1"
 bitstring = "^3.1"
 h5py = "^3.3"
 numpy = "^1.21"
-spiceypy = "^4.0.1"
+spiceypy = "^5.0"
 lasp-packets = {version = "^2.0", source = "lasp-pypi"}
 requests = "^2.26"
 matplotlib = {version = "^3.4", optional = true}
@@ -33,11 +33,11 @@ cloudpathlib = {extras = ["s3"], version = "^0.9"}
 watchtower = "^3.0"
 
 [tool.poetry.dev-dependencies]
-pytest-cov = "^2.12.1"
+pytest-cov = "^3.0"
 pylint = "^2.9.3"
-responses = "^0.14.0"
+responses = "^0.21"
 pytest-randomly = "^3.10.2"
-moto = {extras = ["s3"], version = "^2.2.16"}
+moto = {extras = ["s3"], version = "^3.1"}
 bandit = "^1.7.4"
 
 [tool.poetry.extras]
