@@ -1,7 +1,7 @@
 
 [tool.poetry]
 name = "libera_utils"
-version = "0.1"
+version = "0.1.1"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
