@@ -1,13 +1,10 @@
-"""Module for the Libera SDP CLI
+"""Module for the Libera SDC utilities CLI
 
-libera
+libera-utils
     make-kernel
         jpss-spk
         jpss-ck
         azel-ck
-    l1b
-        bds
-        recon-img
 """
 # Standard
 import argparse
@@ -24,7 +21,7 @@ def main(cli_args: list = None):
 
 def print_version_info(*args):
     """Print CLI version information"""
-    print(f"Libera science data processing CLI\n\tVersion {libera_utils_version()}")
+    print(f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}")
 
 
 def parse_cli_args(cli_args: list):
@@ -40,12 +37,12 @@ def parse_cli_args(cli_args: list):
     Namespace
         Parsed arguments in a Namespace object
     """
-    parser = argparse.ArgumentParser(prog="libera", description="Libera science data processing CLI")
+    parser = argparse.ArgumentParser(prog="libera-utils", description="Libera SDC utilities CLI")
     parser.add_argument("--version",
                         action='store_const', dest='func', const=print_version_info,
                         help="print current version of the CLI")
 
-    subparsers = parser.add_subparsers(description="sub-commands for libera CLI")
+    subparsers = parser.add_subparsers(description="sub-commands for libera-utils CLI")
 
     # make-kernel
     make_kernel_parser = subparsers.add_parser('make-kernel',
@@ -91,10 +88,6 @@ def parse_cli_args(cli_args: list):
                                 help="force overwriting an existing kernel if it exists")
     azel_ck_parser.add_argument('-v', '--verbose', action='store_true',
                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
-
-    # l1b
-    l1b_parser = subparsers.add_parser('l1b',
-                                       help="run L1b processing")
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args
