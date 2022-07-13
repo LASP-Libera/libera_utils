@@ -29,7 +29,19 @@ class _DatabaseManager:
     _db_manager_cache = {}
 
     def __init__(self, dbhost: str, dbuser: str, dbpass: str, dbname: str):
-        """ _DatabaseManager constructor"""
+        """_DatabaseManager constructor
+
+        Parameters
+        ----------
+        dbhost : str
+            Database host
+        dbuser : str
+            Database user
+        dbpass : str
+            Database password for user login
+        dbname : str
+            Database name
+        """
         self.pid = os.getpid()  # Store the PID of the process in which this object was created
 
         self.database = dbname or config.get('LIBERA_DB_NAME')
@@ -82,13 +94,13 @@ class _DatabaseManager:
         Parameters
         ----------
         dbname : str, Optional
-            Database name
+            Database name. If not provided, LIBERA_DB_NAME environment variable is used.
         dbuser : str, Optional
-            User
+            Database user. If not provided, LIBERA_DB_USER environment variable is used.
         dbhost : str, Optional
-            Host. Default localhost
+            Database host. If not provided, 'localhost' is used.
         dbpass : str, Optional
-            Password
+            Database password for user. If not provided, PGPASSWORD environment variable or ~/.pgpass file is used.
 
         Returns
         -------
