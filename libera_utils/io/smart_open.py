@@ -2,6 +2,7 @@
 # Standard
 from gzip import GzipFile
 from pathlib import Path
+import warnings
 # Installed
 from cloudpathlib import S3Path, AnyPath
 
@@ -20,8 +21,10 @@ def is_s3(path: str or Path or S3Path):
     """
 
     if isinstance(path, str):
-        return path.startswith('s3://')
+        return path.startswith('s3:')
     if isinstance(path, Path):
+        if str(path).startswith('s3:'):
+            warnings.warn(f"Path object appears to contain an S3 path. You should use S3Path to refer to S3 object urls.")
         return False
     if isinstance(path, S3Path):
         return True
