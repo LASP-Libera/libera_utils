@@ -1,4 +1,5 @@
 {
+  "manifest_type": "INPUT",
   "inputs": [
     {
       "name": "L1B2_TEMPLATE",
