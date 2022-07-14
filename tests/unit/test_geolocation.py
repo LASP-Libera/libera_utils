@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 # Local
 from libera_utils import geolocation as geo
-from libera_utils import spiceutil
+from libera_utils import spice_utils
 
 np.set_printoptions(precision=64)
 
@@ -113,16 +113,16 @@ def test_get_earth_radii(furnish_test_pck):
 @pytest.mark.parametrize(
     ('target', 'et', 'frame', 'observer', 'normalize', 'x_expected', 'v_expected', 'lt_expected'),
     [
-        (spiceutil.SpiceBody.JPSS,
+        (spice_utils.SpiceBody.JPSS,
          671202069.186,  # 2021-04-09T01:00:00
-         spiceutil.SpiceFrame.EARTH_FIXED, spiceutil.SpiceBody.EARTH,
+         spice_utils.SpiceFrame.EARTH_FIXED, spice_utils.SpiceBody.EARTH,
          True,
          [-6694.613946694387, -291.66107948757536, 2646.041752848919],
          [2.6289067240007404, 1.8164855012053074, 6.82444215353862],
          0.02403154161898258),
-        (spiceutil.SpiceBody.JPSS,
+        (spice_utils.SpiceBody.JPSS,
          [671202069.186, 671202969.186],  # 2021-04-09T01:00:00, 2021-04-09T01:15:00
-         spiceutil.SpiceFrame.EARTH_FIXED, spiceutil.SpiceBody.EARTH,
+         spice_utils.SpiceFrame.EARTH_FIXED, spice_utils.SpiceBody.EARTH,
          True,
          [[-6694.613946694387, -291.66107948757536, 2646.041752848919],
           [-1889.9076314428785, 982.2901645209304, 6874.926264639398]],
@@ -149,13 +149,13 @@ def test_target_position(furnish_testing_kernels,
     ('target', 'et', 'frame', 'observer',
      'lon_expected', 'lat_expected', 'spoint_alt_expected', 'observer_alt_expected'),
     [
-        (spiceutil.SpiceBody.EARTH,
+        (spice_utils.SpiceBody.EARTH,
          671202069.186,  # 2021-04-09T01:00:00
-         spiceutil.SpiceFrame.EARTH_FIXED, spiceutil.SpiceBody.JPSS,
+         spice_utils.SpiceFrame.EARTH_FIXED, spice_utils.SpiceBody.JPSS,
          182.49460063928385, 21.66436881194109, -0.0, 829.2336304511722),
-        (spiceutil.SpiceBody.EARTH,
+        (spice_utils.SpiceBody.EARTH,
          [671202069.186, 671202969.186],  # 2021-04-09T01:00:00, 2021-04-09T01:15:00
-         spiceutil.SpiceFrame.EARTH_FIXED, spiceutil.SpiceBody.JPSS,
+         spice_utils.SpiceFrame.EARTH_FIXED, spice_utils.SpiceBody.JPSS,
          [182.49460063928385, 152.536589920107],
          [21.66436881194109, 72.88225824594679],
          [-0., -0.],
@@ -180,13 +180,13 @@ def test_sub_observer_point(furnish_testing_kernels,
     ('target', 'et', 'frame', 'observer',
      'lon_expected', 'lat_expected', 'alt_expected'),
     [
-        (spiceutil.SpiceBody.EARTH,
+        (spice_utils.SpiceBody.EARTH,
          671202069.186,  # 2021-04-09T01:00:00
-         spiceutil.SpiceFrame.EARTH_FIXED, spiceutil.SpiceBody.JPSS,
+         spice_utils.SpiceFrame.EARTH_FIXED, spice_utils.SpiceBody.JPSS,
          165.41115061997294, 7.593299184359046, 0.0),
-        (spiceutil.SpiceBody.EARTH,
+        (spice_utils.SpiceBody.EARTH,
          [671202069.186, 671202969.186],  # 2021-04-09T01:00:00, 2021-04-09T01:15:00
-         spiceutil.SpiceFrame.EARTH_FIXED, spiceutil.SpiceBody.JPSS,
+         spice_utils.SpiceFrame.EARTH_FIXED, spice_utils.SpiceBody.JPSS,
          [165.41115061997294, 161.660508386243],
          [7.593299184359046, 7.5971804272542585],
          [0., -0.]),
@@ -208,15 +208,15 @@ def test_sub_solar_point(furnish_testing_kernels,
 @pytest.mark.parametrize(
     ('from_frame', 'to_frame', 'et', 'position', 'normalize', 'expectation'),
     [
-        (spiceutil.SpiceFrame.J2000, spiceutil.SpiceFrame.J2000, 671202069.186, np.array([10., 20., 30.]), True,
+        (spice_utils.SpiceFrame.J2000, spice_utils.SpiceFrame.J2000, 671202069.186, np.array([10., 20., 30.]), True,
          np.array([0.2672612419124244, 0.5345224838248488, 0.8017837257372731])),
-        (spiceutil.SpiceFrame.J2000, spiceutil.SpiceFrame.J2000, [671202069.186, 671202069.186],
+        (spice_utils.SpiceFrame.J2000, spice_utils.SpiceFrame.J2000, [671202069.186, 671202069.186],
          np.array([[10., 20., 30.],
                    [5., 5., 5.]]),
          True,
          np.array([[0.2672612419124244, 0.5345224838248488, 0.8017837257372731],
                    [0.5773502691896257, 0.5773502691896257, 0.5773502691896257]])),
-        (spiceutil.SpiceFrame.ITRF93, spiceutil.SpiceFrame.J2000, [671202069.186, 671202969.186],
+        (spice_utils.SpiceFrame.ITRF93, spice_utils.SpiceFrame.J2000, [671202069.186, 671202969.186],
          np.array([[10., 20., 30.],
                    [5., 5., 5.]]),
          False,
@@ -270,10 +270,10 @@ def test_cartesian_to_planetographic(furnish_testing_kernels,
 @pytest.mark.parametrize(
     ('sc_location', 'look_vector', 'look_frame', 'et', 'expected_pnear', 'expected_dist'),
     [
-        (np.array([0, 0, 2*6356.7519]), np.array([0, 0, -1]), spiceutil.SpiceFrame.ITRF93, None,
+        (np.array([0, 0, 2*6356.7519]), np.array([0, 0, -1]), spice_utils.SpiceFrame.ITRF93, None,
          np.array([0, 0, 6356.7519]), 0.0),
         (np.array([[0, 0, 2*6356.7519], [2*6378.1366, 0, 0]]), np.array([[0, 0, -1], [-1, 0, 0]]),
-         spiceutil.SpiceFrame.ITRF93, None,
+         spice_utils.SpiceFrame.ITRF93, None,
          np.array([[0, 0, 6356.7519], [6378.1366, 0, 0]]), [0.0, 0.0])
     ]
 )

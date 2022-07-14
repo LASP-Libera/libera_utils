@@ -13,7 +13,7 @@ import numpy as np
 import numpy.lib.recfunctions as nprf
 from lasp_packets import parser, xtcedef
 # Local
-from libera_utils import spiceutil
+from libera_utils import spice_utils
 from libera_utils.logutil import setup_task_logger
 from libera_utils.config import config
 from libera_utils.io import filenaming
@@ -257,7 +257,9 @@ def write_kernel_setup_file(data: dict, filepath: Path):
                 inside = ", ".join([f"\n\t'{item}'" for item in value])
                 value_str = f"({inside}\n)"
             elif key in ('LSK_FILE_NAME', 'LEAPSECONDS_FILE'):
-                lsk = spiceutil.KernelFileCache(spiceutil.NAIF_LSK_INDEX_URL, spiceutil.NAIF_LSK_REGEX)
+                lsk_url = spice_utils.find_most_recent_naif_kernel(spice_utils.NAIF_LSK_INDEX_URL,
+                                                                   spice_utils.NAIF_LSK_REGEX)
+                lsk = spice_utils.KernelFileCache(lsk_url)
                 if len(str(lsk.kernel_path)) > 78:
                     # MSOPCK is limited to 80 character file names (including single quotes)
                     # so we copy the kernel to the same directory where we are writing this setup file
