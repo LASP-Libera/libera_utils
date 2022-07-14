@@ -182,14 +182,24 @@ class KernelFileCache:
         """
         kernel_name = kernel_url.name if isinstance(kernel_url, S3Path) else os.path.basename(kernel_url)
         local_filepath = self.cache_dir / kernel_name
-        if not local_filepath.parent.exists():
-            local_filepath.parent.mkdir(parents=True)
-        with requests.get(kernel_url, stream=True) as r:
-            r.raise_for_status()
-            with open(local_filepath, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        logger.info("Cached kernel file to %s", local_filepath)
+
+        # If kernel_url is an S3 object location
+        if smart_open.is_s3(kernel_url):
+            with smart_open.smart_open(kernel_url) as s3_object:
+                with local_filepath.open('wb') as local_object:
+                    local_object.write(s3_object.read())
+        elif isinstance(kernel_url, str):
+            # Else, treat as URL string
+            if not local_filepath.parent.exists():
+                local_filepath.parent.mkdir(parents=True)
+            with requests.get(kernel_url, stream=True) as r:
+                r.raise_for_status()
+                with open(local_filepath, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            logger.info("Cached kernel file to %s", local_filepath)
+        else:
+            raise ValueError(f"Kernel URL must be of type S3Path or str (for URL). Got {type(kernel_url)}")
         return local_filepath
 
 

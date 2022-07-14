@@ -31,7 +31,7 @@ def test_find_most_recent_naif_kernel(test_data_path):
 
 
 @responses.activate
-def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path, monkeypatch):
+def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
     """Test caching a kernel file from NAIF, mocking out the actual HTTP requests."""
     # Name of a file mentioned in the test naif page
     test_kernel_filename = 'earth_000101_211220_210926.bpc'
@@ -76,6 +76,22 @@ def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path, monke
         assert cache.is_cached() is False
         responses.replace(responses.GET, full_file_url, status=500)
         assert cache.kernel_path == spice_test_data_path / test_kernel_filename
+
+
+def test_kernel_file_cache_s3(write_file_to_s3, test_jpss_spk, tmp_path):
+    """Test caching and furnishing a kernel stored as an S3 object"""
+    s3_url = f"s3://test-bucket/{test_jpss_spk.name}"
+    write_file_to_s3(test_jpss_spk, s3_url)
+    cache = spice_utils.KernelFileCache(s3_url)
+
+    with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
+                    new_callable=mock.PropertyMock, return_value=tmp_path):
+        assert cache.is_cached() is False
+        assert cache.is_cached() is False  # still
+        assert cache.kernel_path == tmp_path / test_jpss_spk.name
+        assert cache.is_cached() is True
+        cache.furnsh()
+        assert spice_utils.ls_kernels() == [spice_utils.KernelFileRecord('SPK', str(cache.kernel_path))]
 
 
 def test_ls_kernels(furnish_sclk, caplog):
