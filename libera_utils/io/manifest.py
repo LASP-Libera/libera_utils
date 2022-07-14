@@ -74,7 +74,7 @@ class Manifest:
                    filename=filepath)
 
     def write(self, filepath: str or Path or S3Path):
-        """Write a manifest file from a Manifest object.
+        """Write a manifest file from a Manifest object (self).
 
         Parameters
         ----------
