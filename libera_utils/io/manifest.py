@@ -33,7 +33,7 @@ class Manifest:
     )
 
     def __init__(self, manifest_type: ManifestType,
-                 inputs: list, outputs: list, tmp: dict, logs: dict, configuration: dict):
+                 inputs: list, outputs: list, tmp: dict, logs: dict, configuration: dict, filename: str = None):
         # TODO: Strive to implement structure on this Manifest object. Ideally we don't just want a bunch of
         #    dictionaries, though at least that is a lowest common denominator.
         self.manifest_type = manifest_type
@@ -42,6 +42,10 @@ class Manifest:
         self.tmp = tmp
         self.logs = logs
         self.configuration = configuration
+        self.filename = filename
+
+    def __str__(self):
+        return f"""{self.__class__.__name__}({self.manifest_type.name}, '{Path(self.filename).name}')"""
 
     @classmethod
     def from_file(cls, filepath: str or Path or S3Path):
@@ -66,7 +70,8 @@ class Manifest:
                    contents['outputs'],
                    contents['tmp'],
                    contents['logs'],
-                   contents['configuration'])
+                   contents['configuration'],
+                   filename=filepath)
 
     def write(self, filepath: str or Path or S3Path):
         """Write a manifest file from a Manifest object.

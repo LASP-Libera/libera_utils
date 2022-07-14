@@ -46,7 +46,7 @@ def create_mock_bucket(mock_s3_context):
 
     def _create_bucket(bucket_name: str):
         bucket = s3.Bucket(bucket_name)
-        if not bucket.creation_date:
+        if not bucket.creation_date:  # If bucket doesn't already exist
             bucket.create()
             print(f"Created mock S3 bucket {bucket}.")
         return bucket
@@ -64,7 +64,7 @@ def write_file_to_s3(mock_s3_context, create_mock_bucket):
         filepath : Path
             Path object pointing to the file to be put into the S3 bucket.
         uri : str
-            URI of the mock bucket.
+            Fully specified desired s3 object path (<bucket>/<key>)
 
         Returns
         -------

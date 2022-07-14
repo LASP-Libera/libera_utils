@@ -90,7 +90,7 @@
       ]
     }
   ],
-  "outputs": {
+  "outputs": [{
       "name": "L1B2",
       "file_paths": [
         "/app/data/Release5/release_5_test.r0.5.0/inputs/bank/pge4_o17.2019002423/MAIA_L1B2_TERRAIN_20190102T145808Z_NOM_R00_USA-Boston_Step5of5SP_O000017_F01_01p00p06.nc",
@@ -99,7 +99,7 @@
         "/app/data/Release5/release_5_test.r0.5.0/inputs/bank/pge4_o17.2019002423/MAIA_L1B2_TERRAIN_20190102T145633Z_NOM_R00_USA-Boston_Step4of5SP_O000017_F01_01p00p06.nc",
         "/app/data/Release5/release_5_test.r0.5.0/inputs/bank/pge4_o17.2019002423/MAIA_L1B2_TERRAIN_20190102T145339Z_NOM_R00_USA-Boston_Step2of5SP_O000017_F01_01p00p06.nc"
       ]
-  },
+  }],
   "tmp": {
     "tmp_dir": "/app/data/Release5/release_5_test.r0.5.0/inputs/data_out/pge4_o17.2019002423.01p00p06"
   },
