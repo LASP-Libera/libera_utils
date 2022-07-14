@@ -5,7 +5,7 @@ import logging
 import numpy as np
 import spiceypy as spice
 # Local
-from libera_utils import spiceutil
+from libera_utils import spice_utils
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ vec_npedln = np.vectorize(spice.npedln,
 #  off of the higher level functions below and onto the vectorized spice functions above.
 
 
-@spiceutil.ensure_spice
+@spice_utils.ensure_spice
 def get_earth_radii():
     """
     Retrieve Earth radii values from SPICE
@@ -115,16 +115,16 @@ def get_earth_radii():
         (re, rp, flat) tuple of equatorial and polar ellipsoid radii and a flattening coefficient
     """
     # Retrieve Earth radii
-    _, radii = spice.bodvrd(spiceutil.SpiceBody.EARTH.value.strid, 'RADII', 3)
+    _, radii = spice.bodvrd(spice_utils.SpiceBody.EARTH.value.strid, 'RADII', 3)
     re = radii[0]  # Equatorial
     rp = radii[2]  # Polar
     flat = (re - rp) / re
     return re, rp, flat
 
 
-@spiceutil.ensure_spice
-def target_position(target: spiceutil.SpiceBody, et: float or np.ndarray,
-                    frame: spiceutil.SpiceFrame, observer: spiceutil.SpiceBody,
+@spice_utils.ensure_spice
+def target_position(target: spice_utils.SpiceBody, et: float or np.ndarray,
+                    frame: spice_utils.SpiceFrame, observer: spice_utils.SpiceBody,
                     abcorr: str = 'NONE', normalize: bool = False):
     """Calculates the position and velocity of the `target` at ephemeris time `et` relative to `observer` in
     reference frame `frame`.
@@ -132,13 +132,13 @@ def target_position(target: spiceutil.SpiceBody, et: float or np.ndarray,
 
     Parameters
     ----------
-    target : spiceutil.SpiceBody
+    target : spice_utils.SpiceBody
         Target body for which to calculate position and velocity relative to observer
     et : float or numpy array
         Ephemeris time(s)
-    frame : spiceutil.SpiceFrame
+    frame : spice_utils.SpiceFrame
         Reference frame (unit vectors)
-    observer : spiceutil.SpiceBody
+    observer : spice_utils.SpiceBody
         The observer of the target. Resulting coordinates point from observer to target.
     abcorr : str
         A scalar string that indicates the aberration corrections to apply to the database of the target body to account
@@ -173,22 +173,22 @@ def target_position(target: spiceutil.SpiceBody, et: float or np.ndarray,
     return position, velocity, light_time_between
 
 
-@spiceutil.ensure_spice
-def sub_observer_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
-                       frame: spiceutil.SpiceFrame, observer: spiceutil.SpiceBody,
+@spice_utils.ensure_spice
+def sub_observer_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
+                       frame: spice_utils.SpiceFrame, observer: spice_utils.SpiceBody,
                        abcorr: str = 'NONE', method: str = 'NEAR POINT/ELLIPSOID'):
     """Computes the cartesian coordinates of the sub-observer point at time `et` and the observer altitude
     above the point. Units in km.
 
     Parameters
     ----------
-    target : spiceutil.SpiceBody
+    target : spice_utils.SpiceBody
         Body on which the sub point will be calculated (usually a planetary body).
     et : float or np.ndarray
         Ephemeris time of observation.
-    frame : spiceutil.SpiceFrame
+    frame : spice_utils.SpiceFrame
         Reference frame for returned vectors.
-    observer : spiceutil.SpiceBody
+    observer : spice_utils.SpiceBody
         The object from which to calculate the sub point (e.g. a spacecraft). A-B correction is applied based on the
         distance between observer and sub observer point.
     abcorr : str, Optional
@@ -214,21 +214,21 @@ def sub_observer_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
     return spoint, observer_alt
 
 
-@spiceutil.ensure_spice
-def sub_solar_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
-                    frame: spiceutil.SpiceFrame, observer: spiceutil.SpiceBody,
+@spice_utils.ensure_spice
+def sub_solar_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
+                    frame: spice_utils.SpiceFrame, observer: spice_utils.SpiceBody,
                     abcorr='LT+S', method='NEAR POINT/ELLIPSOID'):
     """Computes the cartesian coordinates of the subsolar point at ephemeris time et.
 
     Parameters
     ----------
-    target : spiceutil.SpiceBody
+    target : spice_utils.SpiceBody
         Body on which the sub point will be calculated (usually a planetary body).
     et : float or np.ndarray
         Ephemeris time of observation.
-    frame : spiceutil.SpiceFrame
+    frame : spice_utils.SpiceFrame
         Reference frame for returned vectors.
-    observer : spiceutil.SpiceBody
+    observer : spice_utils.SpiceBody
         The object from which to calculate the subsolar point (e.g. a spacecraft).
         A-B correction is applied based on the distance between observer and subsolar point.
     abcorr : str
@@ -251,8 +251,8 @@ def sub_solar_point(target: spiceutil.SpiceBody, et: float or np.ndarray,
     return spoint, trgepc, srfvec
 
 
-@spiceutil.ensure_spice
-def frame_transform(from_frame: spiceutil.SpiceFrame, to_frame: spiceutil.SpiceFrame,
+@spice_utils.ensure_spice
+def frame_transform(from_frame: spice_utils.SpiceFrame, to_frame: spice_utils.SpiceFrame,
                     et: float or np.ndarray, position: np.ndarray,
                     normalize: bool = False) -> np.ndarray:
     """
@@ -260,9 +260,9 @@ def frame_transform(from_frame: spiceutil.SpiceFrame, to_frame: spiceutil.SpiceF
 
     Parameters
     ----------
-    from_frame : spiceutil.SpiceFrame
+    from_frame : spice_utils.SpiceFrame
         Reference frame of position
-    to_frame : spiceutil.SpiceFrame
+    to_frame : spice_utils.SpiceFrame
         Reference frame of output
     et : np.float64 or np.ndarray with dtype np.float64
         Ephemeris time(s) corresponding to position(s).
@@ -335,7 +335,7 @@ def angle_between(v1: np.ndarray, v2: np.ndarray, degrees: bool = False):
     return theta
 
 
-@spiceutil.ensure_spice
+@spice_utils.ensure_spice
 def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = True):
     """
     Convert cartesian coordinates in the ITRF93 frame to planetographic latitude and longitude.
@@ -363,7 +363,7 @@ def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = Tr
     if hasattr(cartesian_coords[0], '__len__'):
         nan_locations = np.any(np.isnan(cartesian_coords), axis=1)
         result = np.array([
-            spice.recpgr(spiceutil.SpiceBody.EARTH.value.strid, p.astype(np.float64), re, flat)
+            spice.recpgr(spice_utils.SpiceBody.EARTH.value.strid, p.astype(np.float64), re, flat)
             for p in cartesian_coords
         ])
         longitude = result[:, 0]
@@ -377,7 +377,7 @@ def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = Tr
             longitude, latitude, altitude = (np.nan, np.nan, np.nan)
         else:
             longitude, latitude, altitude = spice.recpgr(
-                spiceutil.SpiceBody.EARTH.value.strid, cartesian_coords.astype(np.float64), re, flat)
+                spice_utils.SpiceBody.EARTH.value.strid, cartesian_coords.astype(np.float64), re, flat)
 
     if degrees:
         return np.rad2deg(longitude), np.rad2deg(latitude), altitude
@@ -385,9 +385,9 @@ def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = Tr
     return longitude, latitude, altitude
 
 
-@spiceutil.ensure_spice
+@spice_utils.ensure_spice
 def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
-                            look_frame: spiceutil.SpiceFrame, et: float or np.ndarray = None):
+                            look_frame: spice_utils.SpiceFrame, et: float or np.ndarray = None):
     """
     Returns rectangular coordinates of the point of interception of a look direction from the spacecraft onto
     the Earth ellipsoid. If the look vector misses the planet, then the distance returned will be non-zero and the
@@ -406,7 +406,7 @@ def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
         The location of the observing body (i.e. the spacecraft body) with respect to Earth
     look_vector : np.ndarray
         Look direction unit vector (e.g. an instrument look direction)
-    look_frame : spiceutil.SpiceFrame
+    look_frame : spice_utils.SpiceFrame
         Reference frame of `look_vector`
     et : float or np.ndarray or None, Optional
         Ephemeris time (at spacecraft at photon detection time). Only required if look_frame is not ITRF93.
@@ -418,11 +418,11 @@ def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
         between the line and the near point.
     """
     # Transform look unit vector(s) from instrument frame into the ITRF93 frame
-    if look_frame != spiceutil.SpiceFrame.ITRF93:
+    if look_frame != spice_utils.SpiceFrame.ITRF93:
         if not et:
             raise ValueError("You specified a look_frame other than ITRF93 but no ephemeris time. "
                              "ET is required to transform your look vector to ITRF93 frame.")
-        look_vector_ecef = frame_transform(look_frame, spiceutil.SpiceFrame.ITRF93, et, look_vector, normalize=True)
+        look_vector_ecef = frame_transform(look_frame, spice_utils.SpiceFrame.ITRF93, et, look_vector, normalize=True)
     else:
         look_vector_ecef = look_vector
 
