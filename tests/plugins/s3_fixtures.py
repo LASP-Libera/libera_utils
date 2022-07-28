@@ -16,6 +16,8 @@ def mock_aws_credentials(monkeypatch_session):
     monkeypatch_session.setenv('AWS_SECURITY_TOKEN', 'testing')
     monkeypatch_session.setenv('AWS_SESSION_TOKEN', 'testing')
     monkeypatch_session.delenv('AWS_PROFILE', raising=False)
+    monkeypatch_session.delenv('AWS_REGION', raising=False)
+    monkeypatch_session.delenv('AWS_DEFAULT_REGION', raising=False)
 
 
 @pytest.fixture(scope='session', autouse=True)
