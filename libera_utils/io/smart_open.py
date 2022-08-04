@@ -63,7 +63,7 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
         Optional string specifying the mode in which the file is opened. Defaults
         to 'rb'.
     enable_gzip : bool, Optional
-        Flag to specify that *.gz files should be opened as a `GzipFile` object.
+        Flag to specify that .gz files should be opened as a `GzipFile` object.
         Setting this to False is useful when creating the md5sum of a .gz file.
         Defaults to True.
 

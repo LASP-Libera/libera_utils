@@ -269,13 +269,19 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
     ======
     Usage:
     ======
-    Three ways to use this object:
+    Three ways to use this object
     1) A decorator with no arguments
-    ```
-    @ensure_spice
-    def my_spicey_func(a, b):
-        pass
-    ```
+
+    ``
+    .. code-block:: python
+
+        @ensure_spice
+        def my_spicey_func(a, b):
+
+        ::
+            pass
+    ``
+
     2) A decorator with parameters. This is useful
     if we only need the latest SCLK and LSK kernels for the function involved.
     ```

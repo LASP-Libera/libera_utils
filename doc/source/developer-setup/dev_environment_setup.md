@@ -6,7 +6,7 @@ Pyenv is one solution that allows you to maintain many versions
 of Python that are kept entirely siloed from the core 
 system version of Python, and even from Python versions installed by other means such as Homebrew.
 
-The Github for `pyenv` can be found here: https://github.com/pyenv/pyenv
+The Github for `pyenv` can be found here:  
 
 1. Install pyenv with `brew update && brew install pyenv`.
 2. Follow the instructions on the Github page to set up your shell's rc files or profile files 

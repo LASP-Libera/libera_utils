@@ -1,4 +1,6 @@
-"""Module containing Mixin classes for providing common functionality to ORM objects."""
+"""
+Module containing Mixin classes for providing common functionality to ORM objects.
+"""
 # Installed
 from sqlalchemy import inspect, func
 from sqlalchemy.orm import Session, Query
@@ -23,7 +25,8 @@ class ReprMixin:
 
     @property
     def _id_str(self):
-        """Figure out what the ID string should be.
+        """
+        Figure out what the ID string should be.
 
         Returns
         -------
@@ -83,14 +86,15 @@ class DataProductMixin:
 
     @classmethod
     def _filter(cls, query: Query, **filters):
-        """Filters an existing query object for a set of keyword filters"""
+        """ Filters an existing query object for a set of keyword filters """
         for attr, value in filters.items():
             query.filter(getattr(cls, attr) == value)
         return query
 
     @classmethod
     def latest(cls, session: Session = None, **filters):
-        """Finds the latest products (highest version), filtered by **filters
+        """
+        Finds the latest products (highest version), filtered by **filters**
 
         Parameters
         ----------
@@ -109,7 +113,8 @@ class DataProductMixin:
 
     @classmethod
     def flagged(cls, session: Session = None, **filters):
-        """Queries products with quality flags, optionally filtered by **filters
+        """
+        Queries products with quality flags, optionally filtered by **filters**
 
         Parameters
         ----------
