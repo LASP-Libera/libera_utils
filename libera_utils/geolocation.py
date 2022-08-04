@@ -151,7 +151,7 @@ def target_position(target: spice_utils.SpiceBody, et: float or np.ndarray,
     : tuple
         (x: np.ndarray, v: np.ndarray, lt: np.ndarray) or (x: float, v: float, lt: float)
         Rectangular position and velocity vectors (x, y, z), (v_x, v_y, v_z) where position
-        points from the planet center of mass location at `et' to the aberration-corrected location of the target.
+        points from the planet center of mass location at ``et`` to the aberration-corrected location of the target.
         Light time (lt) between planetary body and target.
     """
     # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/spkezr_c.html
