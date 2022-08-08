@@ -79,3 +79,5 @@ and a PostgreSQL Server "App" that is frankly not very useful now that we have D
 
 On Linux, use your package manager to install your Linux flavor's equivalent package of `libpq` and `libpq-dev` (the
 package naming varies slightly between SUSE, Debian, and Redhat flavors).
+
+For details on starting the local dev database and loading test schema, see the [database documentation](database.md).
