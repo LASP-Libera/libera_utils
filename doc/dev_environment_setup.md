@@ -68,3 +68,14 @@ Once poetry is installed, check that it works by running `poetry --version`. You
    `sdp` command line utility that is included in the package. You can also directly check that the `sdp` entrypoint
    exists in `venv/bin`. This can also be run with `poetry run sdp --version`.
 6. Next, go run the tests.
+
+
+## Installing Postgres Client Drivers
+The `psycopg2` package interfaces with the low level system drivers provided in `libpq`. 
+
+To install those drivers on a Mac, simply install the [PostgreSQL application](https://postgresapp.com/), 
+which comes with the low level drivers, CLI tools,
+and a PostgreSQL Server "App" that is frankly not very useful now that we have Docker.
+
+On Linux, use your package manager to install your Linux flavor's equivalent package of `libpq` and `libpq-dev` (the
+package naming varies slightly between SUSE, Debian, and Redhat flavors).
