@@ -32,7 +32,22 @@ release = '0.1.1'
 # ones.
 extensions = ["myst_parser", "sphinx.ext.autodoc",
               "sphinx.ext.coverage", "sphinx.ext.autosummary",
-              "numpydoc", "autoapi.extension"]
+              "numpydoc", "autoapi.extension",
+              "sphinxcontrib.confluencebuilder"]
+
+# Standard Confluence Settings
+confluence_publish = True
+confluence_space_key = 'LIBERASDPDOC'
+confluence_ask_password = True
+# (or, for Confluence Server)
+confluence_server_url = 'https://lasp.colorado.edu/galaxy'
+confluence_server_user = 'mwatwood'
+# Optional Confluence Settings
+confluence_page_hierarchy = True
+# Optional Parent Page
+confluence_parent_page = 'Libera Science Data Processing Documentation Home'
+# Use when testing
+#confluence_publish_dryrun = True
 
 autoapi_type = "python"
 autoapi_dirs = ['../../libera_utils']
@@ -56,7 +71,7 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'furo'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

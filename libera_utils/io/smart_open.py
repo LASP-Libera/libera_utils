@@ -52,7 +52,7 @@ def is_gzip(path: str or Path or S3Path):
 def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool = True):
     """
     Open function that can handle local files or files in an S3 bucket. It also
-    correctly handles gzip files determined by a '.gz' extension.
+    correctly handles gzip files determined by a '\*.gz' extension.
 
     Parameters
     ----------
@@ -63,8 +63,8 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
         Optional string specifying the mode in which the file is opened. Defaults
         to 'rb'.
     enable_gzip : bool, Optional
-        Flag to specify that .gz files should be opened as a `GzipFile` object.
-        Setting this to False is useful when creating the md5sum of a .gz file.
+        Flag to specify that \*.gz files should be opened as a `GzipFile` object.
+        Setting this to False is useful when creating the md5sum of a \*.gz file.
         Defaults to True.
 
     Returns

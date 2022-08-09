@@ -39,16 +39,17 @@ responses = "^0.21"
 pytest-randomly = "^3.10.2"
 moto = {extras = ["s3"], version = "^3.1"}
 bandit = "^1.7.4"
-Sphinx = { version = "^4.2.0", optional = true }
-sphinx-rtd-theme = { version = "^1.0.0", optional = true }
-sphinxcontrib-napoleon = { version = "^0.7", optional = true }
-sphinx-autoapi = { version = "^1.8.4", optional = true}
-myst-parser = {version = "^0.18.0", optional = true}
-numpydoc = {version = "^1.4.0", optional = true}
+Sphinx = { version = "^4.2.0"}
+sphinx-rtd-theme = { version = "^1.0.0"}
+sphinxcontrib-napoleon = { version = "^0.7"}
+sphinxcontrib-confluencebuilder = { version = "1.8.0"}
+sphinx-autoapi = { version = "^1.8.4"}
+myst-parser = {version = "^0.18.0"}
+numpydoc = {version = "^1.4.0"}
+furo = {version = "^2022.6.21"}
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
-docs = ["Sphinx", "sphinx-rtd-theme", "myst-parser", "numpydoc", "sphinx-autoapi", "sphinx-pyproject"]
 
 [tool.poetry.scripts]
 libera-utils = 'libera_utils.cli:main'

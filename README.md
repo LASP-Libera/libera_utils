@@ -3,14 +3,14 @@ Science data processing algorithms for the Libera mission.
 
 
 ## Further Documentation
-- [Development Environment Setup](doc/dev_environment_setup.md)
-- [Testing and Static Analysis](doc/testing.md)
-- [Release Process and Distribution](doc/build_release.md)
-- [Package Configuration](doc/configuration.md)
-- [SPICE Usage](doc/spice.md)
-- [Docker (Including Nexus)](doc/docker.md)
-- [Database Usage](doc/database.md)
-- [Logging Usage](doc/logging.md)
+- [Development Environment Setup](doc/source/developer-setup/dev_environment_setup.md)
+- [Testing and Static Analysis](doc/source/developer-setup/testing.md)
+- [Release Process and Distribution](doc/source/developer-setup/build_release.md)
+- [Package Configuration](doc/source/developer-setup/configuration.md)
+- [SPICE Usage](doc/source/developer-setup/spice.md)
+- [Docker (Including Nexus)](doc/source/developer-setup/docker.md)
+- [Database Usage](doc/source/developer-setup/database.md)
+- [Logging Usage](doc/source/developer-setup/logging.md)
 
 
 ## Installation from LASP PyPI

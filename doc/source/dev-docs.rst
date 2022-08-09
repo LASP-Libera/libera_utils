@@ -14,3 +14,4 @@ This page contains links to documentation written for any developer contributing
     developer-setup/logging
     developer-setup/spice
     developer-setup/testing
+    developer-setup/sphinx
