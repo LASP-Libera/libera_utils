@@ -255,45 +255,43 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
 
     Decorator/wrapper that tries to ensure that a metakernel is furnished in as complete a way as possible.
 
-    ======================
-    Control flow overview:
-    ======================
+    **Control flow overview:**
+
     1. Try simply calling the wrapped function naively.
-    --> SUCCESS? Great! We're done.
-    --> SpiceyError? Go to step 2.
+        * SUCCESS? Great! We're done.
+        * SpiceyError? Go to step 2.
 
     2. Furnish metakernel at SPICE_METAKERNEL
-    --> SUCCESS? Great, return the original function again (so it can be re-run).
-    --> KeyError? Seems like SPICE_METAKERNEL isn't set, no problem. Go to step 3.
+        * SUCCESS? Great, return the original function again (so it can be re-run).
+        * KeyError? Seems like SPICE_METAKERNEL isn't set, no problem. Go to step 3.
 
-    ======
-    Usage:
-    ======
+    **Usage:**
+
     Three ways to use this object
-    1) A decorator with no arguments
 
-    ``
+    1. A decorator with no arguments
+
     .. code-block:: python
 
         @ensure_spice
         def my_spicey_func(a, b):
-
-        ::
             pass
-    ``
 
-    2) A decorator with parameters. This is useful
+    2. A decorator with parameters. This is useful
     if we only need the latest SCLK and LSK kernels for the function involved.
-    ```
-    @ensure_spice(time_kernels_only=True)
-    def my_spicey_time_func(a, b):
-        pass
-    ```
-    3) An explicit wrapper function, providing a dynamically set value for parameters, e.g. time_kernels_only
-    ```
-    wrapped = ensure_spice(spicey_func, time_kernels_only=True)
-    result = wrapped(*args, **kwargs)
-    ```
+
+    .. code-block:: python
+
+        @ensure_spice(time_kernels_only=True)
+        def my_spicey_time_func(a, b):
+            pass
+
+    3. An explicit wrapper function, providing a dynamically set value for parameters, e.g. time_kernels_only
+
+    .. code-block:: python
+
+        wrapped = ensure_spice(spicey_func, time_kernels_only=True)
+        result = wrapped(*args, **kwargs)
 
     Parameters
     ----------

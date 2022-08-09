@@ -9,27 +9,35 @@ from libera_utils import spice_utils
 
 logger = logging.getLogger(__name__)
 
+
+vec_pxform = np.vectorize(spice.pxform,
+                          excluded=['fromstr', 'tostr'],
+                          signature='(),(),()->(3,3)',
+                          otypes=[np.float64])
 """
 Vectorized form of spice.pxform function.
 
 "Return the matrix that transforms position vectors from one specified frame to another at a specified epoch."
 https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/pxform_c.html
 
-   VARIABLE  I/O  DESCRIPTION
-   --------  ---  --------------------------------------------------
-   from       I   Name of the frame to transform from.
-   to         I   Name of the frame to transform to.
-   et         I   Epoch of the rotation matrix.
-   rotate     O   A rotation matrix.
+======== ==== ===============================================
+VARIABLE  I/O  DESCRIPTION
+======== ==== ===============================================
+from       I   Name of the frame to transform from.
+to         I   Name of the frame to transform to.
+et         I   Epoch of the rotation matrix.
+rotate     O   A rotation matrix.
+======== ==== ===============================================
 
 Note: For time-independent reference frames transformations, the ET value passed doesn't matter,
 as long as it is a valid ephemeris time.
 """
-vec_pxform = np.vectorize(spice.pxform,
-                          excluded=['fromstr', 'tostr'],
-                          signature='(),(),()->(3,3)',
-                          otypes=[np.float64])
 
+
+vec_subpnt = np.vectorize(spice.subpnt,
+                          excluded=['method', 'target', 'fixref', 'abcorr', 'obsrvr'],
+                          signature='(),(),(),(),(),()->(3),(),(3)',
+                          otypes=[np.float64, np.float64, np.float64])
 """
 Vectorized form of spice.subpnt function
 
@@ -37,23 +45,26 @@ Vectorized form of spice.subpnt function
 corrected for light time and stellar aberration."
 https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/subpnt_c.html
 
-   Variable  I/O  Description
-   --------  ---  --------------------------------------------------
-   method     I   Computation method.
-   target     I   Name of target body.
-   et         I   Epoch in TDB seconds past J2000 TDB.
-   fixref     I   Body-fixed, body-centered target body frame.
-   abcorr     I   Aberration correction flag.
-   obsrvr     I   Name of observing body.
-   spoint     O   Sub-observer point on the target body.
-   trgepc     O   Sub-observer point epoch.
-   srfvec     O   Vector from observer to sub-observer point.
+======== ==== ===============================================
+Variable  I/O  Description
+======== ==== ===============================================
+method     I   Computation method.
+target     I   Name of target body.
+et         I   Epoch in TDB seconds past J2000 TDB.
+fixref     I   Body-fixed, body-centered target body frame.
+abcorr     I   Aberration correction flag.
+obsrvr     I   Name of observing body.
+spoint     O   Sub-observer point on the target body.
+trgepc     O   Sub-observer point epoch.
+srfvec     O   Vector from observer to sub-observer point.
+======== ==== ===============================================
 """
-vec_subpnt = np.vectorize(spice.subpnt,
+
+
+vec_subslr = np.vectorize(spice.subslr,
                           excluded=['method', 'target', 'fixref', 'abcorr', 'obsrvr'],
                           signature='(),(),(),(),(),()->(3),(),(3)',
                           otypes=[np.float64, np.float64, np.float64])
-
 """
 Vectorized form of spice.subslr function
 
@@ -61,44 +72,46 @@ Vectorized form of spice.subslr function
 corrected for light time and stellar aberration."
 https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/subslr_c.html
 
-   Variable  I/O  Description
-   --------  ---  --------------------------------------------------
-   method     I   Computation method.
-   target     I   Name of target body.
-   et         I   Epoch in ephemeris seconds past J2000 TDB.
-   fixref     I   Body-fixed, body-centered target body frame.
-   abcorr     I   Aberration correction.
-   obsrvr     I   Name of observing body.
-   spoint     O   Sub-solar point on the target body.
-   trgepc     O   Sub-solar point epoch.
-   srfvec     O   Vector from observer to sub-solar point.
+======== ==== ===============================================
+Variable  I/O  Description
+======== ==== ===============================================
+method     I   Computation method.
+target     I   Name of target body.
+et         I   Epoch in ephemeris seconds past J2000 TDB.
+fixref     I   Body-fixed, body-centered target body frame.
+abcorr     I   Aberration correction.
+obsrvr     I   Name of observing body.
+spoint     O   Sub-solar point on the target body.
+trgepc     O   Sub-solar point epoch.
+srfvec     O   Vector from observer to sub-solar point.
+======== ==== ===============================================
 """
-vec_subslr = np.vectorize(spice.subslr,
-                          excluded=['method', 'target', 'fixref', 'abcorr', 'obsrvr'],
-                          signature='(),(),(),(),(),()->(3),(),(3)',
-                          otypes=[np.float64, np.float64, np.float64])
 
-
-"""
-Vectorized form of spice.npedln function
-
-"Find nearest point on a triaxial ellipsoid to a specified line, and the distance from the ellipsoid to the line."
-https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/npedln_c.html
-
-   Variable  I/O  Description
-   --------  ---  --------------------------------------------------
-   a          I   Length of ellipsoid's semi-axis in the x direction
-   b          I   Length of ellipsoid's semi-axis in the y direction
-   c          I   Length of ellipsoid's semi-axis in the z direction
-   linept     I   Point on line
-   linedr     I   Direction vector of line
-   pnear      O   Nearest point on ellipsoid to line
-   dist       O   Distance of ellipsoid from line
-"""
 vec_npedln = np.vectorize(spice.npedln,
                           excluded=['a', 'b', 'c'],
                           signature='(),(),(),(3),(3)->(3),()',
                           otypes=[np.float64, np.float64])
+"""
+Vectorized form of spice.subslr function
+
+"Compute the rectangular coordinates of the sub-solar point on a target body at a specified epoch, optionally
+corrected for light time and stellar aberration."
+https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/subslr_c.html
+
+======== ==== ===============================================
+Variable  I/O  Description
+======== ==== ===============================================
+method     I   Computation method.
+target     I   Name of target body.
+et         I   Epoch in ephemeris seconds past J2000 TDB.
+fixref     I   Body-fixed, body-centered target body frame.
+abcorr     I   Aberration correction.
+obsrvr     I   Name of observing body.
+spoint     O   Sub-solar point on the target body.
+trgepc     O   Sub-solar point epoch.
+srfvec     O   Vector from observer to sub-solar point.
+======== ==== ===============================================
+"""
 
 # TODO: Try moving the ensure_spice decorators
 #  off of the higher level functions below and onto the vectorized spice functions above.
