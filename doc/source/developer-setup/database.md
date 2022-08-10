@@ -43,7 +43,7 @@ Important considerations:
    back to the way you want them. The upshot: NEVER delete a sql migration 
 
 
-# Accessing Databases from Python
+## Accessing Databases from Python
 To facilitate multiprocessing safety and reduce strain on database resources, we use a manager pattern to
 manage database connections. A unique manager object is identified by its connection URL and the process ID
 in which it was created. SQLAlchemy engines are not safe to pass between forked processes (they seem 
@@ -62,7 +62,7 @@ with db.session() as s:
 ```
 
 
-# Dockerized Dev Database
+## Dockerized Dev Database
 The Dockerized development database is a carbon copy of the production schema, 
 dynamically generated based on the SQL migration scripts in the `database` 
 directory. It can be deployed (and redeployed) locally by running 

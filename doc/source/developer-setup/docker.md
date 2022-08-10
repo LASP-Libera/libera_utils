@@ -1,4 +1,6 @@
-# Installation
+# Docker 
+
+## Docker Installation
 Follow the Docker Desktop installation instructions here:
 https://docs.docker.com/desktop/mac/install/
 
@@ -10,7 +12,7 @@ To install `docker-compose` on Linux, see instructions here:
 https://docs.docker.com/compose/install/
 
 
-# Building Docker Images
+## Building Docker Images
 
 
 Using docker compose:
@@ -19,10 +21,10 @@ docker-compose build
 ```
 
 
-# Nexus Docker Container Registry
+## Nexus Docker Container Registry
 
 
-## Basics
+### Basics
 
 
 Nexus is an artifact storage service run by the LASP webteam. It contains an area that we use as a container
@@ -32,7 +34,7 @@ access Nexus and its web UI is only available from inside LASP's network (e.g. v
 Nexus is located in the DMZ at https://artifacts.pdmz.lasp.colorado.edu/
 
 
-## Usage
+### Usage
 
 
 Fundamentally, all that the container registry does is provide a web API that the docker cli can interface with. 
@@ -51,7 +53,7 @@ due to a load balancer issue on LASP's network. It's recommended that you use th
 on the LASP network.
 
 
-### Docker Login
+#### Docker Login
 
 
 1. Check that you are not already logged in by running `cat ~/.docker/config.json` and ensuring that neither 
@@ -63,7 +65,7 @@ Nexus registry URL is in the list of logged in registries.
     registry url.
 
 
-### Pulling and Pushing
+#### Pulling and Pushing
 
 
 Images in a docker registry are uniquely identified by their URL path. "Repositories" within a registry are separated
@@ -96,7 +98,7 @@ docker pull docker-registry.pdmz.lasp.colorado.edu/libera/my-image:my-tag
 ```
 
 
-### Re-Tagging
+#### Re-Tagging
 
 
 For example, you just pushed `my-image:v1.1.1` but you also want it tagged as `latest` so it becomes the default image.

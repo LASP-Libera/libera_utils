@@ -1,12 +1,12 @@
-# Installing Sphinx Autodocumentation
+# Sphinx Autodocumentation
 
-## Step by Step Guide
+## Step-by-Step Installation Guide
 This should all be done while in the virtual environment that is configured for this project.
 See documentation dev-environment-setup.md in the libera-sdp repository for poetry instructions.
 
 1. Run `poetry update`
    - This ensures that the poetry install is up-to-date
-2. Run `poetry install --extras docs`  
+2. Run `poetry install`  
    - This installs the packages defined in pyproject.toml extras as "docs" to install Sphinx and dependencies in the environment
 3. Navigate to the Sphinx document source folder `cd ./doc/source`
 4. Build the html files in the build folder `sphinx-build -b html . ../build`

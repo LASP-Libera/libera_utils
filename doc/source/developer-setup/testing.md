@@ -30,12 +30,12 @@ and runs the tests container service defined in the `docker-compose.yml` file. T
 docker to rebuild the testing container image before running (e.g. if things have changed).
 
 
-# Static Analysis
+## Static Analysis
 NPR7150.2C requires that we perform static analysis of our codebase to check for common vulnerabilities and 
 statically detectable code weaknesses.
 
 
-## Pylint for Code Style
+### Pylint for Code Style
 [Pylint](https://pylint.pycqa.org/en/latest/) is a powerful and highly configurable static analysis tool that 
 analyzes Python code for coding standards (e.g. PEP8), code smells, type errors, and violations of common 
 best practices. Together, these violations are common code weaknesses and we strive to eliminate them.
@@ -57,7 +57,7 @@ testing docker container.
 NOTE: Pylint almost always produces non-zero exit codes. It's extremely strict to require pylint to exit 0.
 
 
-## Bandit for Automated Security Testing (AST)
+### Bandit for Automated Security Testing (AST)
 [Bandit](https://github.com/PyCQA/bandit) is a security vulnerability tester that analyzes Python code for common 
 weaknesses, including the "official" CWE set provided by the [MITRE Corp.](https://cwe.mitre.org/). 
 

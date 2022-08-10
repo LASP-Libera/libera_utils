@@ -1,5 +1,7 @@
-# Release Process
-[Reference:](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow)
+# Build Release
+
+## Release Process
+[Atlassian Git Workflow Reference:](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow)
 
 1. Create a release candidate branch named according to the version to be released. This branch is used to polish
    the release while work continues on dev (towards the next release). The naming convention is `release/X.Y.Z`
@@ -30,7 +32,7 @@
    in `dev`. 
 
 
-# Building and Distribution
+## Building and Distribution
 
 1. Ensure that `poetry` is installed by running `poetry --version`.
    
