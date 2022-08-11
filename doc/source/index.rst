@@ -10,6 +10,8 @@ Libera Util's Documentation
    :maxdepth: 2
    :caption: Contents:
 
+   readme
    dev-docs
+   autoapi/index
 
 
