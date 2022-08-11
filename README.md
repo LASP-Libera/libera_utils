@@ -3,14 +3,8 @@ Science data processing algorithms for the Libera mission.
 
 
 ## Further Documentation
-- [Development Environment Setup](doc/source/developer-setup/dev_environment_setup.md)
-- [Testing and Static Analysis](doc/source/developer-setup/testing.md)
-- [Release Process and Distribution](doc/source/developer-setup/build_release.md)
-- [Package Configuration](doc/source/developer-setup/configuration.md)
-- [SPICE Usage](doc/source/developer-setup/spice.md)
-- [Docker (Including Nexus)](doc/source/developer-setup/docker.md)
-- [Database Usage](doc/source/developer-setup/database.md)
-- [Logging Usage](doc/source/developer-setup/logging.md)
+See the published confluence developers documentation pages through LASP 
+located [here](https://lasp.colorado.edu/galaxy/display/LIBERASDPDOC/Developers+Documentation)
 
 
 ## Installation from LASP PyPI
