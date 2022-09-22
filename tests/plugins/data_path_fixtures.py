@@ -46,7 +46,7 @@ def test_txt_gz(test_data_path):
 @pytest.fixture
 def test_json_manifest(test_data_path):
     """Path to test manifest file"""
-    return test_data_path / 'PGE4_PCF_17_2019002423_01p00p06.sample.json'
+    return test_data_path / 'input_manifest_20220922t123456.json'
 
 
 # SPICE test data
