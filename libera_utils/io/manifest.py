@@ -25,22 +25,16 @@ class Manifest:
 
     __manifest_elements = (
         "manifest_type",
-        "inputs",
-        "outputs",
-        "tmp",
-        "logs",
+        "files",
         "configuration"
     )
 
     def __init__(self, manifest_type: ManifestType,
-                 inputs: list, outputs: list, tmp: dict, logs: dict, configuration: dict, filename: str = None):
+                 files: list, configuration: dict, filename: str = None):
         # TODO: Strive to implement structure on this Manifest object. Ideally we don't just want a bunch of
         #    dictionaries, though at least that is a lowest common denominator.
         self.manifest_type = manifest_type
-        self.inputs = inputs
-        self.outputs = outputs
-        self.tmp = tmp
-        self.logs = logs
+        self.files = files
         self.configuration = configuration
         self.filename = filename
 
@@ -66,10 +60,7 @@ class Manifest:
             if element not in contents:
                 raise ManifestError(f"{filepath} is not a valid manifest file. Missing required element {element}.")
         return cls(ManifestType(contents['manifest_type'].upper()),
-                   contents['inputs'],
-                   contents['outputs'],
-                   contents['tmp'],
-                   contents['logs'],
+                   contents['files'],
                    contents['configuration'],
                    filename=filepath)
 
@@ -87,10 +78,7 @@ class Manifest:
         """
         contents = {
             'manifest_type': self.manifest_type.value,
-            'inputs': self.inputs,
-            'outputs': self.outputs,
-            'tmp': self.tmp,
-            'logs': self.logs,
+            'files': self.files,
             'configuration': self.configuration
         }
         with smart_open(filepath, 'w') as manifest_file:
