@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 from pathlib import Path
 import shutil
-import subprocess  # nosec CWE-78
+import subprocess  # nosec B404
 import tempfile
 # Installed
 import numpy as np
@@ -66,7 +66,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     )
     packet_data = nprf.append_fields(packet_data, 'ET', ephemeris_time, dtypes=(np.float64,))
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec CWE-377
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
         tmp_path = Path(tmp_dir)
         spk_data_filepath = write_kernel_input_file(
             packet_data,
@@ -89,7 +89,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
         logger.info("Running MKSPK...")
         try:
-            result = subprocess.run(['mkspk',
+            result = subprocess.run(['mkspk',  # nosec B603 B607
                                      '-setup', str(spk_setup_filepath),
                                      '-input', str(spk_data_filepath),
                                      '-output', str(output_filepath)],
@@ -146,7 +146,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     attitude_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
     packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', attitude_sclk_string)
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec CWE-377
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
         tmp_path = Path(tmp_dir)
         ck_data_filepath = write_kernel_input_file(
             packet_data,
@@ -171,7 +171,8 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
         logger.info("Running MSOPCK...")
         try:
-            result = subprocess.run(['msopck', str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
+            result = subprocess.run(['msopck',  # nosec B603
+                                     str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
                                     capture_output=True, check=True)
         except subprocess.CalledProcessError as cpe:
             logger.info("Captured stdout: \n%s", cpe.stdout.decode())
