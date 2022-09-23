@@ -171,7 +171,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
         logger.info("Running MSOPCK...")
         try:
-            result = subprocess.run(['msopck',  # nosec B603
+            result = subprocess.run(['msopck',  # nosec B603 B607
                                      str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
                                     capture_output=True, check=True)
         except subprocess.CalledProcessError as cpe:
