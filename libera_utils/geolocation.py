@@ -290,12 +290,9 @@ def frame_transform(from_frame: spice_utils.SpiceFrame, to_frame: spice_utils.Sp
     : np.ndarray
         3d position vector(s) in reference frame `to_frame`
     """
-    if position.ndim == 1:
-        assert len(position) == 3
-        assert isinstance(et, float)
-    elif position.ndim == 2:
-        assert len(position) == len(et)
-        assert len(position[0]) == 3
+    if ((position.ndim == 1 and not (len(position) == 3 and isinstance(et, float))) or
+            (position.ndim == 2 and not (len(position) == len(et) and len(position[0]) == 3))):
+        raise ValueError("Incorrect dimensions.")
 
     rotate = vec_pxform(from_frame.value.strid, to_frame.value.strid, et)
 
