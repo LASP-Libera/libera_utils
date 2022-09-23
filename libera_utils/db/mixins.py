@@ -2,10 +2,8 @@
 Module containing Mixin classes for providing common functionality to ORM objects.
 """
 # Installed
-from sqlalchemy import inspect, func
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session, Query
-# Local
-from libera_utils.db import getdb
 
 
 class ReprMixin:

@@ -2,7 +2,7 @@
 # Installed
 from sqlalchemy import Column, SmallInteger, Integer, Text, DateTime, Boolean, FetchedValue, ForeignKey, LargeBinary
 from sqlalchemy.dialects.postgresql import BIT
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import relationship
 # Local
 from libera_utils.db import Base
 from libera_utils.db.mixins import ReprMixin, DataProductMixin

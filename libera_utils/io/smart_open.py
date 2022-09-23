@@ -24,8 +24,8 @@ def is_s3(path: str or Path or S3Path):
         return path.startswith('s3://')
     if isinstance(path, Path):
         if str(path).startswith('s3://'):
-            warnings.warn(f"Path object appears to contain an S3 path. "
-                          f"You should use S3Path to refer to S3 object urls.")
+            warnings.warn("Path object appears to contain an S3 path. "
+                          "You should use S3Path to refer to S3 object urls.")
         return False
     if isinstance(path, S3Path):
         return True
@@ -52,7 +52,7 @@ def is_gzip(path: str or Path or S3Path):
 def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool = True):
     """
     Open function that can handle local files or files in an S3 bucket. It also
-    correctly handles gzip files determined by a '\*.gz' extension.
+    correctly handles gzip files determined by a `*.gz` extension.
 
     Parameters
     ----------
@@ -63,8 +63,8 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
         Optional string specifying the mode in which the file is opened. Defaults
         to 'rb'.
     enable_gzip : bool, Optional
-        Flag to specify that \*.gz files should be opened as a `GzipFile` object.
-        Setting this to False is useful when creating the md5sum of a \*.gz file.
+        Flag to specify that `*.gz` files should be opened as a `GzipFile` object.
+        Setting this to False is useful when creating the md5sum of a `*.gz` file.
         Defaults to True.
 
     Returns
@@ -88,10 +88,10 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
             if 'b' not in mode:
                 raise IOError(f'Gzip files must be opened in binary (b) mode. Got {mode}.')
             return GzipFile(filename=path, fileobj=fileobj)
-        else:
-            return fileobj
+        return fileobj
 
     if isinstance(path, (Path, S3Path)):
         return _gzip_wrapper(path.open(mode=mode))
 
-    return _gzip_wrapper(AnyPath(path).open(mode=mode))
+    # AnyPath is polymorphic to Path and S3Path. Disable false pylint error
+    return _gzip_wrapper(AnyPath(path).open(mode=mode))  # pylint: disable=E1101
