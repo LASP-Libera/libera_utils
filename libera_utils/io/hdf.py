@@ -246,12 +246,14 @@ class SwathHdfEos5(h5.File):
         """
 
         for i in thisdict['swath_names']:
-            assert i in self['HDFEOS/SWATHS'].keys(), f"{i} is missing"
+            if i not in self['HDFEOS/SWATHS'].keys():
+                raise ValueError(f"{i} is missing")
 
         for i in thisdict['dataset_names']:
-            assert i in self[thisdict['dataset_path']].keys(), ('/'.join([f"{i} is missing from",
-                                                                          thisdict['dataset_path'][0]]))
+            if i not in self[thisdict['dataset_path']].keys():
+                raise ValueError(f"{i} is missing from /{thisdict['dataset_path'][0]}")
 
         for i in range(len(thisdict['dataset_names'])):
             unit_path = '/'.join([thisdict['dataset_path'], thisdict['dataset_names'][i]])
-            assert self[unit_path].attrs['units'] == thisdict['dataset_units'][i]
+            if self[unit_path].attrs['units'] != thisdict['dataset_units'][i]:
+                raise ValueError("Units do not match.")
