@@ -9,14 +9,6 @@ authors = [  # Alphabetical
     "Matt Watwood <matt.watwood@lasp.colorado.edu>"
 ]
 
-#[[tool.poetry.source]]
-#name = "lasp-pypi-internal"
-#url = "https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple"
-
-[[tool.poetry.source]]
-name = "lasp-pypi"
-url = "https://lasp.colorado.edu/repository/lasp-pypi/simple"
-
 [tool.poetry.dependencies]
 python = "^3.9"
 astropy = "^5.1"
@@ -37,7 +29,7 @@ pytest-cov = "^3.0"
 pylint = "^2.9.3"
 responses = "^0.21"
 pytest-randomly = "^3.10.2"
-moto = {extras = ["s3"], version = "^3.1"}
+moto = {extras = ["s3"], version = "^4.0"}
 bandit = "^1.7.4"
 Sphinx = { version = "^4.2.0"}
 sphinx-rtd-theme = { version = "^1.0.0"}
