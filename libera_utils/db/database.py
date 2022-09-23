@@ -46,11 +46,11 @@ class _DatabaseManager:
 
         self.database = dbname or config.get('LIBERA_DB_NAME')
         if not self.database:
-            raise DatabaseException(f"Missing database name.")
+            raise DatabaseException("Missing database name.")
 
         self.user = dbuser or config.get('LIBERA_DB_USER')
         if not self.user:
-            raise DatabaseException(f"Missing database user.")
+            raise DatabaseException("Missing database user.")
 
         if dbhost:  # If we were directly passed a truthy value
             self.host = dbhost
@@ -151,7 +151,7 @@ class _DatabaseManager:
         try:
             yield session
             session.commit()
-        except Exception as err:
+        except Exception:
             session.rollback()
             raise
         finally:

@@ -1,8 +1,9 @@
 """Utils for HDF5 file handling"""
+# Standard
+import json
 # Installed
 from datetime import date
 import h5py as h5
-import json
 import numpy as np
 # Local
 from libera_utils.io.smart_open import smart_open
@@ -34,7 +35,8 @@ def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = Fa
             s = f"Group:{obj.name} ({len(obj)} members, {len(obj.attrs) if obj.attrs else 0} attributes)"
             srep.append(s + '\n')
         elif isinstance(obj, h5.Dataset):
-            s = f"Dataset:{obj.name} (shape={obj.shape}, type={obj.dtype}, {len(obj.attrs) if obj.attrs else 0} attributes)"
+            s = (f"Dataset:{obj.name} "
+                 f"(shape={obj.shape}, type={obj.dtype}, {len(obj.attrs) if obj.attrs else 0} attributes)")
             srep.append(s + '\n')
         elif isinstance(obj, h5.Datatype):
             s = f"Datatype:{obj.name} {obj}"
@@ -121,10 +123,10 @@ class SwathHdfEos5(h5.File):
             Fill value
         """
 
-        for i in range(len(dataset_names)):
+        for i, dataset_name in enumerate(dataset_names):
 
             d1 = self[dataset_path].create_dataset(
-                dataset_names[i], datasets[i].shape, data=datasets[i], dtype=datasets[i].dtype)
+                dataset_name, datasets[i].shape, data=datasets[i], dtype=datasets[i].dtype)
 
             d1.attrs['_FillValue'] = fill_value
             d1.attrs['units'] = dataset_units[i]
@@ -213,8 +215,6 @@ class SwathHdfEos5(h5.File):
         string = self.create_metadata_struct(obj, swaths, string)
         self['HDFEOS INFORMATION'].create_dataset('StructMetadata.0', (1,), data=string)
 
-        return
-
     @classmethod
     def validate(cls, thisdict):
         """
@@ -235,8 +235,6 @@ class SwathHdfEos5(h5.File):
 
         val.validate_self(thisdict)
 
-        return
-
     def validate_self(self, thisdict):
         """Validates self.
 
@@ -248,12 +246,12 @@ class SwathHdfEos5(h5.File):
         """
 
         for i in thisdict['swath_names']:
-            assert(i in self['HDFEOS/SWATHS'].keys()), f"{i} is missing"
+            assert i in self['HDFEOS/SWATHS'].keys(), f"{i} is missing"
 
         for i in thisdict['dataset_names']:
-            assert(i in self[thisdict['dataset_path']].keys()), \
-                '/'.join([f"{i} is missing from", thisdict['dataset_path'][0]])
+            assert i in self[thisdict['dataset_path']].keys(), ('/'.join([f"{i} is missing from",
+                                                                          thisdict['dataset_path'][0]]))
 
         for i in range(len(thisdict['dataset_names'])):
             unit_path = '/'.join([thisdict['dataset_path'], thisdict['dataset_names'][i]])
-            assert(self[unit_path].attrs['units'] == thisdict['dataset_units'][i])
+            assert self[unit_path].attrs['units'] == thisdict['dataset_units'][i]

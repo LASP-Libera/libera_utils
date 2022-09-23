@@ -98,7 +98,7 @@ class _ConfigurationCache:
 
     def force_reload(self):
         """Force reloading of the JSON config"""
-        self.__init__()
+        self.__init__()  # pylint: disable=C2801
 
     def get(self, key):
         """Retrieves a configuration value from either the cached JSON or from the environment

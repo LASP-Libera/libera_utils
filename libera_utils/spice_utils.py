@@ -192,7 +192,7 @@ class KernelFileCache:
             # Else, treat as URL string
             if not local_filepath.parent.exists():
                 local_filepath.parent.mkdir(parents=True)
-            with requests.get(kernel_url, stream=True) as r:
+            with requests.get(kernel_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 with open(local_filepath, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
@@ -220,7 +220,7 @@ def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str) -> 
     """
     kernel_link_regex = re.compile(f'href="({kernel_file_regex})"')
 
-    resp = requests.get(naif_base_url)
+    resp = requests.get(naif_base_url, timeout=30)
     resp.raise_for_status()
 
     file_names = re.findall(kernel_link_regex, resp.text)
@@ -246,7 +246,7 @@ class KernelFileRecord(NamedTuple):
 
 
 def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
-    # FIXME: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't figured out
+    # TODO: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't figured out
     #  exactly how we want to use it for SPK and CK files.
     #  Perhaps this decorator should only be smart enough to check for generic kernels?
     """
@@ -365,7 +365,7 @@ def ls_kernels(verbose: bool = False, log: bool = False) -> list:
         print(f"SPICE ktotal reports {count} kernels loaded")
     result = []
     for i in range(count):
-        file, kernel_type, _, _ = spice.kdata(i, 'ALL')
+        file, kernel_type, _, _ = spice.kdata(i, 'ALL')  # pylint: disable=W0632
         kfr = KernelFileRecord(kernel_type=kernel_type, file_name=file)
         if verbose:
             print(kfr)
@@ -397,7 +397,7 @@ def ls_spice_constants(verbose: bool = False) -> dict:
 
     result = {}
     for kervar in sorted(kervars):
-        n, kernel_type = spice.dtpool(kervar)
+        n, kernel_type = spice.dtpool(kervar)  # pylint: disable=W0632
         if verbose:
             print(f"{kervar:<50} {kernel_type} {n}")
         if kernel_type == 'N':
@@ -435,7 +435,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
     result = {}
     count = spice.ktotal(kernel_type)
     for i in range(count):
-        file, _, _, _ = spice.kdata(i, kernel_type)
+        file, _, _, _ = spice.kdata(i, kernel_type)  # pylint: disable=W0632
         result[file] = []
         if kernel_type.upper() == 'CK':
             ids = spice.ckobj(file)
