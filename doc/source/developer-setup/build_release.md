@@ -13,7 +13,8 @@
 3. Open a PR to merge the release branch into master. This informs the rest of the team how the release 
    process is progressing as you polish the release branch.
 
-4. When you are satisfied that the release branch is ready, merge the PR into `master`. 
+4. When you are satisfied that the release branch is ready, merge the PR into `master`. This should be a purely 
+   "fast-forward" merge. Do not delete the release branch when merging as you will need it later.
 
 5. Check out the `master` branch, pull the merged changes, and tag the newly created merge commit with the 
    desired version `X.Y.Z` and push the tag upstream. 
@@ -28,8 +29,8 @@
    
 7. Optionally distribute the artifacts to PyPI/Nexus if desired (see below).
    
-8. Open a PR to merge `master` back into `dev` so that any changes made during the release process are also captured
-   in `dev`. 
+8. Open a PR to merge `release/X.Y.Z` back into `dev` so that any changes made during the release process are also captured
+   in `dev`. This should be a purely "fast-forward" merge.
 
 
 ## Building and Distribution
@@ -38,11 +39,5 @@
    
 2. To build the distribution archives, run `poetry build`.
    
-3. To upload the wheel to Nexus, run `poetry publish --repository lasp-pypi`. Note that the repository, which is 
-   named `lasp-pypi` in this example must first be configured according to the Poetry docs 
-   (here)[https://python-poetry.org/docs/repositories/#using-a-private-repository]. To configure the repo for 
-   publishing, run 
-   ```
-   poetry config repositories.lasp-pypi https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/
-   ```
-   Note that the trailing slash is required at the end of the URL.
+3. To upload the wheel to Nexus, run `poetry publish --username liberasdc --password redacted`. 
+   You will need the account information for the Libera SDC PyPI account.
