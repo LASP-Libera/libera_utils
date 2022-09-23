@@ -7,14 +7,10 @@ See the published confluence developers documentation pages through LASP
 located [here](https://lasp.colorado.edu/galaxy/display/LIBERASDPDOC/Developers+Documentation)
 
 
-## Installation from LASP PyPI
+## Installation PyPI
 Note: This only works for officially released versions.
 ```bash
-# Inside the LASP VPN only
-pip install libera-utils --extra-index-url https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/simple
-
-# From any whitelisted IP (including any IP inside the LASP VPN)
-pip install libera-utils --extra-index-url https://lasp.colorado.edu/repository/lasp-pypi/simple
+pip install libera-utils
 ```
 
 
