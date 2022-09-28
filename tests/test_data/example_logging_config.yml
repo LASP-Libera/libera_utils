@@ -21,21 +21,13 @@ handlers:
         class: logging.handlers.RotatingFileHandler
         formatter: plaintext
         level: DEBUG
-        filename:
+        filename: /tmp/libera_utils_test_log.log
         maxBytes: 1000000
         backupCount: 3
-    watchtower:
-        class: watchtower.CloudWatchLogHandler
-        formatter: json
-        level: DEBUG
-        log_group_name:
-        log_stream_name:
-        send_interval: 10
-        create_log_group: True
 root:
     level: INFO
     propagate: True
-    handlers:
+    handlers: [console, logfile]
 loggers:
     libera_utils:
         qualname: libera_utils

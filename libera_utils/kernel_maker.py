@@ -14,7 +14,7 @@ import numpy.lib.recfunctions as nprf
 from lasp_packets import parser, xtcedef
 # Local
 from libera_utils import spice_utils
-from libera_utils.logutil import setup_task_logger
+from libera_utils.logutil import configure_task_logging
 from libera_utils.config import config
 from libera_utils.io import filenaming
 from libera_utils import packets as libera_packets
@@ -41,10 +41,9 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
         stream_log_level = logging.NOTSET
 
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
-    log_filepath = setup_task_logger(f'spk_generator_{now}', stream_log_level=stream_log_level)
+    configure_task_logging(f'spk_generator_{now}')
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
-    logger.info("Logging to %s", log_filepath)
 
     output_dir = Path(parsed_args.outdir).expanduser().absolute()
     logger.info("Writing resulting SPK to %s", output_dir)
@@ -124,7 +123,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
         stream_log_level = logging.NOTSET
 
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
-    log_filepath = setup_task_logger(f'ck_generator_{now}', stream_log_level=stream_log_level)
+    log_filepath = configure_task_logging(f'ck_generator_{now}')
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
     logger.info("Logging to %s", log_filepath)

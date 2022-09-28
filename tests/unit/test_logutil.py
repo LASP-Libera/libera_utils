@@ -3,13 +3,42 @@
 import logging
 import logging.handlers
 # Installed
+import pytest
 import watchtower
+# Local
+from libera_utils import logutil
 
 
-def test_logging_behavior(configure_example_logging, caplog):
-    """Test that log messages appear (or don't appear) as desired"""
+@pytest.fixture
+def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path):
+    """Set up a test task logger and clear out all the handlers afterwards
 
+    Note: This fixes a problem with caplog that breaks caplog when loggers are instantiated
+    inside a test rather than a fixture. Solution is to just instantiate loggers in a fixture like this.
+    See: https://stackoverflow.com/questions/69295248
+    """
+    monkeypatch.setenv('LIBERA_CONSOLE_LOG_LEVEL', "info")
+    monkeypatch.setenv("LIBERA_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("LIBERA_LOG_GROUP", "")
+    logutil.configure_task_logging('test-task-1')
     root_log = logging.getLogger()  # root logger
+    yield
+    root_log.handlers = []
+
+
+def test_task_logging_behavior(setup_test_logger, caplog):
+    """Test that log messages appear (or don't appear) as desired"""
+    root_log = logging.getLogger()  # root logger
+    assert root_log.propagate is True
+
+    # Add the LogCaptureHandler to the root logger (the only logger with any handlers)
+    caplog.set_level(logging.DEBUG)
+
+    # BUT we caplog automatically changes the level of the logger, so we change it back to INFO
+    # leaving the caplog handler as DEBUG but the root logger at INFO
+    root_log.setLevel(logging.INFO)
+
+    print(root_log.handlers)
     assert root_log.level == logging.INFO
 
     libsdp_log = logging.getLogger('libera_utils')  # top level libera_utils logger
@@ -21,12 +50,6 @@ def test_logging_behavior(configure_example_logging, caplog):
     # Simulates an external library that does NOT inherit from the libera_utils logger
     external_library_log = logging.getLogger('foolib.child')
     assert external_library_log.level == logging.NOTSET
-
-    # Add the caplog handler to the root logger (the only logger with any handlers)
-    caplog.set_level(logging.DEBUG)
-    # BUT we caplog automatically changes the level of the logger, so we change it back to INFO
-    # leaving the caplog handler as DEBUG but the root logger at INFO
-    root_log.setLevel(logging.INFO)
 
     root_log.info("root info message")
     assert caplog.records[-1].message == 'root info message'
@@ -57,15 +80,11 @@ def test_logging_behavior(configure_example_logging, caplog):
         assert 'root debug message' not in record.message
 
 
-def test_configure_logging(configure_example_logging):
+def test_configure_static_logging(test_data_path, cleanup_loggers, tmp_path):
     """
-    Make sure that our example logging setup function behaves as expected and that created loggers work as we want.
-
-    The root logger should be the only logger with handlers
-    Loggers that inherit from libera_utils should be capable of logging to debug
-    Loggers that don't inherit from libera_utils should never log debug messages (to exclude external library debug logs)
-    The setup_test_logging feature ensures that the root logger handlers are removed after the test
+    Test ability to configure logging from static yaml file.
     """
+    logutil.configure_static_logging(test_data_path / 'example_logging_config.yml')
     libsdp_log = logging.getLogger('libera_utils')
     assert libsdp_log.level == logging.DEBUG
     assert len(libsdp_log.handlers) == 0
@@ -73,10 +92,11 @@ def test_configure_logging(configure_example_logging):
     root_log = logging.getLogger()
     assert root_log.level == logging.INFO
     print(root_log.handlers)
+    assert len(root_log.handlers) == 2
+
     filehandlers = [h for h in root_log.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
     assert len(filehandlers) == 1
-    cw_handlers = [h for h in root_log.handlers if isinstance(h, watchtower.CloudWatchLogHandler)]
-    assert len(cw_handlers) == 0  # didn't include this in the fixture
+    assert filehandlers[0].level == logging.DEBUG
 
     libsdp_child_log = logging.getLogger('libera_utils.child')
     assert libsdp_child_log.level == logging.NOTSET  # Inherits from parent
