@@ -24,17 +24,8 @@ def monkeypatch_session():
 
 
 @pytest.fixture
-def configure_example_logging(mock_cloudwatch_context, tmp_path, test_data_path):
-    """Sets up an example parameterized, configured logger and clear out all handlers afterwards"""
-    logging.getLogger().handlers = []
-    params = {
-        "handlers": {
-            "logfile": {"filename": f"{tmp_path / 'test.log'}"},
-            "watchtower": {"log_group_name": "test-log-group", "log_stream_name": "test-log-stream"}
-        },
-        "root": {"handlers": ["console", "logfile"]}
-    }
-    logutil.configure_logging(test_data_path / 'example_logging_config.yml', params)
+def cleanup_loggers():
+    """Ensures that root logging handlers are removed after a test"""
     yield
-    # Remove all handlers from root logger. No other loggers should ever have handlers attached.
-    logging.getLogger().handlers = []
+    root = logging.getLogger()
+    root.handlers = []

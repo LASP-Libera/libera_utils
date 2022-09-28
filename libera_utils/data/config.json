@@ -3,6 +3,10 @@
     "Ensure that any environment variable you might want to use has a default here, otherwise the config getter will issue a warning.",
     "TODO: All variables should be renamed from LIBSDP to either LIBERA or LIBERA_UTILS depending on their relevance."
   ],
+  "SPICE_KERNEL_LOG_CONFIG": "{LIBSDP_DATA_DIR}/spice_processing_logging_config.yml",
+  "LIBERA_CONSOLE_LOG_LEVEL": "INFO",
+  "LIBERA_LOG_DIR": null,
+  "LIBERA_LOG_GROUP": null,
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
   "LIBSDP_ATTR": "{LIBSDP_DATA_DIR}/hdf5/attributes.json",
   "LIBERA_DB_NAME": null,
