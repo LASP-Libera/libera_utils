@@ -1,6 +1,8 @@
 """Plugin module for mocking S3 buckets"""
+import string
 # Standard
 from pathlib import Path
+import random
 # Installed
 import boto3
 from cloudpathlib import S3Path, S3Client
@@ -48,11 +50,15 @@ def mock_s3_context():
 
 @pytest.fixture
 def create_mock_bucket(mock_s3_context):
-    """Returns a function that allows dynamic creation of s3 buckets
-    Note: if the bucket already exists, this doesn't overwrite it. Previous contents will remain."""
+    """Returns a function that allows dynamic creation of s3 buckets with option to specify the name.
+
+    Note: if the bucket already exists, this doesn't overwrite it. Previous contents will remain.
+    Caution: If you create multiple objects at the same location, you may get conflicts"""
     s3 = mock_s3_context
 
-    def _create_bucket(bucket_name: str):
+    def _create_bucket(bucket_name: str = None):
+        if not bucket_name:
+            bucket_name = ''.join(random.choice(string.ascii_letters) for i in range(16))
         bucket = s3.Bucket(bucket_name)
         if not bucket.creation_date:  # If bucket doesn't already exist
             bucket.create()
@@ -64,7 +70,7 @@ def create_mock_bucket(mock_s3_context):
 @pytest.fixture
 def write_file_to_s3(mock_s3_context, create_mock_bucket):
     """Write file contents to mocked s3 bucket. If the bucket doesn't exist, it is created."""
-    def _write(filepath: Path, uri: str):
+    def _write(filepath: Path, uri: str, exists_ok: bool = False):
         """Write the contents of the file at filepath to the (mocked) S3 URI.
 
         Parameters
@@ -73,6 +79,8 @@ def write_file_to_s3(mock_s3_context, create_mock_bucket):
             Path object pointing to the file to be put into the S3 bucket.
         uri : str
             Fully specified desired s3 object path (<bucket>/<key>)
+        exists_ok : bool, Optional
+            Whether it's ok to overwrite an existing object. Default is False.
 
         Returns
         -------
@@ -82,6 +90,8 @@ def write_file_to_s3(mock_s3_context, create_mock_bucket):
         content = filepath.read_bytes()
         s3_path = S3Path(uri)
         create_mock_bucket(s3_path.bucket)  # Ensure bucket exists
+        if not exists_ok and s3_path.exists():
+            raise ValueError(f"Object {uri} already exists in mock bucket.")
         s3_path.mkdir(parents=True)  # Make additional directories (key paths) if necessary
         s3_path.write_bytes(content)
         print(f"Wrote {filepath} contents to (mocked) S3 object {s3_path.as_uri()}")

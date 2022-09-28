@@ -1,6 +1,5 @@
 """Tests for manifest module"""
 # Standard
-from datetime import datetime
 import json
 # Installed
 from cloudpathlib import S3Path
@@ -19,8 +18,7 @@ def test_manifest_from_file(test_json_manifest):
 
 def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):
     """Test loading a file from S3"""
-    now_str = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
-    file_key = f"s3://test-bucket/test_manifest_{now_str}.json"
+    file_key = f"s3://test-manifest-from-file-s3-bucket/test_manifest.json"
     s3_path = write_file_to_s3(test_json_manifest, file_key)
     m = Manifest.from_file(s3_path)
     assert m.manifest_type == ManifestType.INPUT
@@ -44,14 +42,13 @@ def test_manifest_write(tmp_path):
 
 def test_manifest_write_s3(create_mock_bucket):
     """Test writing a manifest file from an object"""
-    bucket = create_mock_bucket('test-bucket')
+    bucket = create_mock_bucket()
     m = Manifest(
         manifest_type=ManifestType.INPUT,
         files=[],
         configuration={}
     )
-    now_str = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
-    file_key = f"s3://{bucket.name}/test_manifest_{now_str}.json"
+    file_key = f"s3://{bucket.name}/test_manifest.json"
     filepath = S3Path(file_key)
     m.write(filepath)
     with smart_open(filepath) as f:
