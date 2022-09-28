@@ -1,7 +1,8 @@
 {
-  "LIBSDP_LOG_DIR": null,
-  "LIBSDP_STREAM_LOG_LEVEL": "INFO",
-  "LIBSDP_CLOUDWATCH_GROUP": null,
+  "_COMMENTS": [
+    "Ensure that any environment variable you might want to use has a default here, otherwise the config getter will issue a warning.",
+    "TODO: All variables should be renamed from LIBSDP to either LIBERA or LIBERA_UTILS depending on their relevance."
+  ],
   "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
   "LIBSDP_ATTR": "{LIBSDP_DATA_DIR}/hdf5/attributes.json",
   "LIBERA_DB_NAME": null,
