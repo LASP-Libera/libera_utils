@@ -4,7 +4,7 @@ from enum import Enum
 import json
 from pathlib import Path
 # Installed
-from cloudpathlib import S3Path, AnyPath
+from cloudpathlib import S3Path
 # Local
 from libera_utils.io.smart_open import smart_open
 
@@ -36,12 +36,6 @@ class Manifest:
         self.manifest_type = manifest_type
         self.files = files
         self.configuration = configuration
-        # TODO: Make configuration optional
-        self.filename = filename
-
-    # TODO: Add a __dict__ interface that formats the manifest object as a dictionary suitable for printing literally
-    def __str__(self):
-        return f"""{self.__class__.__name__}({self.manifest_type.name}, '{AnyPath(self.filename).name}')"""
 
     def to_json_dict(self):
         """Create a dict representation suitable for writing out.

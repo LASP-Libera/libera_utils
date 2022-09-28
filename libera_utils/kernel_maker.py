@@ -35,13 +35,9 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     -------
     None
     """
-    if parsed_args.verbose:
-        stream_log_level = logging.DEBUG
-    else:
-        stream_log_level = logging.NOTSET
 
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
-    configure_task_logging(f'spk_generator_{now}')
+    configure_task_logging(f'spk_generator_{now}', console_log_level=logging.DEBUG if parsed_args.verbose else None)
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
 
@@ -117,16 +113,10 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     -------
     None
     """
-    if parsed_args.verbose:
-        stream_log_level = logging.DEBUG
-    else:
-        stream_log_level = logging.NOTSET
-
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
-    log_filepath = configure_task_logging(f'ck_generator_{now}')
+    configure_task_logging(f'ck_generator_{now}', logging.DEBUG if parsed_args.verbose else None)
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
-    logger.info("Logging to %s", log_filepath)
 
     output_dir = Path(parsed_args.outdir).expanduser().absolute()
     logger.info("Writing resulting CK to %s", output_dir)
