@@ -36,7 +36,7 @@ def configure_static_logging(config_file: AnyPath or str):
     logger.info(f"Logging configured statically according to {config_file}.")
 
 
-def configure_task_logging(task_id: str):
+def configure_task_logging(task_id: str, console_log_level: str or int = None):
     """Configure logging based on runtime environment variables.
 
     Variables that control logging are LIBERA_LOG_DIR, LIBERA_CONSOLE_LOG_LEVEL, and LIBERA_LOG_GROUP. If these
@@ -46,6 +46,8 @@ def configure_task_logging(task_id: str):
     ----------
     task_id : str
         Unique identifier by which to name the log file and cloudwatch log stream.
+    console_log_level : str or int, Optional
+        Override environment variable log level configuration.
 
     See Also
     --------
@@ -59,12 +61,15 @@ def configure_task_logging(task_id: str):
             return False
         return True
 
-    import json
     handlers = {}
     setup_messages = []
     try:  # Establish console log level from config
-        console_log_level = config.get("LIBERA_CONSOLE_LOG_LEVEL")
-        if _str_bool(console_log_level):
+        if not console_log_level:
+            console_log_level = config.get("LIBERA_CONSOLE_LOG_LEVEL")
+            if _str_bool(console_log_level):
+                console_log_level = console_log_level.upper()
+
+        if console_log_level:
             console_handler = {
                 "class": "logging.StreamHandler",
                 "formatter": "plaintext",
