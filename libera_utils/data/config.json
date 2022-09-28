@@ -1,30 +1,29 @@
 {
   "_COMMENTS": [
     "Ensure that any environment variable you might want to use has a default here, otherwise the config getter will issue a warning.",
-    "TODO: All variables should be renamed from LIBSDP to either LIBERA or LIBERA_UTILS depending on their relevance."
+    "TODO: The LIBSDP_ATTR variable should go away when the HDF-EOS handling stuff goes away."
   ],
-  "SPICE_KERNEL_LOG_CONFIG": "{LIBSDP_DATA_DIR}/spice_processing_logging_config.yml",
   "LIBERA_CONSOLE_LOG_LEVEL": "INFO",
   "LIBERA_LOG_DIR": null,
   "LIBERA_LOG_GROUP": null,
-  "LIBSDP_DATA_DIR": "{PKG_ROOT}/data",
-  "LIBSDP_ATTR": "{LIBSDP_DATA_DIR}/hdf5/attributes.json",
+  "LIBERA_UTILS_DATA_DIR": "{PKG_ROOT}/data",
+  "LIBSDP_ATTR": "{LIBERA_UTILS_DATA_DIR}/hdf5/attributes.json",
   "LIBERA_DB_NAME": null,
   "LIBERA_DB_USER": null,
   "LIBERA_DB_HOST": null,
-  "JPSS_SCLK": "{LIBSDP_DATA_DIR}/spice/jpss_sclk_v01.tsc",
-  "LIBERA_FK": "{LIBSDP_DATA_DIR}/spice/libera_fk_v01.tf",
-  "EARTH_ASSOC_ITRF93_FK": "{LIBSDP_DATA_DIR}/spice/earth_assoc_itrf93.tf",
+  "JPSS_SCLK": "{LIBERA_UTILS_DATA_DIR}/spice/jpss_sclk_v01.tsc",
+  "LIBERA_FK": "{LIBERA_UTILS_DATA_DIR}/spice/libera_fk_v01.tf",
+  "EARTH_ASSOC_ITRF93_FK": "{LIBERA_UTILS_DATA_DIR}/spice/earth_assoc_itrf93.tf",
   "JPSS_NORAD_ID": 43013,
   "JPSS_SC_ID": -143013,
-  "JPSS_GEOLOCATION_PACKET_DEFINITION": "{LIBSDP_DATA_DIR}/jpss1_geolocation_xtce_v1.xml",
+  "JPSS_GEOLOCATION_PACKET_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/jpss1_geolocation_xtce_v1.xml",
   "MKSPK_SETUPFILE_CONTENTS": {
     "INPUT_DATA_TYPE": "STATES",
     "OUTPUT_SPK_TYPE": 13,
     "OBJECT_ID": -143013,
     "CENTER_ID": 399,
     "REF_FRAME_NAME": "ITRF93",
-    "PRODUCER_ID": "Gavin Medley (for Libera SDC)",
+    "PRODUCER_ID": "Libera SDC",
     "DATA_ORDER": ["epoch", "x", "y", "z", "vx", "vy", "vz"],
     "DATA_DELIMITER": " ",
     "LEAPSECONDS_FILE": "auto-populated",
@@ -47,7 +46,7 @@
     "CK_TYPE": 3,
     "INSTRUMENT_ID": -143013000,
     "INCLUDE_INTERVAL_TABLE": "YES",
-    "PRODUCER_ID": "Gavin Medley (for Libera SDC)"
+    "PRODUCER_ID": "Libera SDC"
   },
   "TEST_KEY": -999
 }

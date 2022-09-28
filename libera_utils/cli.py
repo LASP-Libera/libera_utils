@@ -61,7 +61,7 @@ def parse_cli_args(cli_args: list):
     jpss_spk_parser.add_argument('--overwrite', action='store_true',
                                  help="force overwriting an existing kernel if it exists")
     jpss_spk_parser.add_argument('-v', '--verbose', action='store_true',
-                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
+                                 help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
 
     # make-kernel jpss-ck
     jpss_ck_parser = make_kernel_subparsers.add_parser('jpss-ck', help="generate JPSS CK kernel from telemetry")
