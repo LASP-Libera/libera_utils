@@ -120,7 +120,8 @@ def configure_task_logging(task_id: str, console_log_level: str or int = None):
         "disable_existing_loggers": False,
         "formatters": {
             "json": {
-                "format": '{"time": "%(asctime)s", level": "%(levelname)s", "module": "%(filename)s", "function": "%(funcName)s", "line": %(lineno)d, "message": "%(message)s"}',
+                "format": '{"time": "%(asctime)s", level": "%(levelname)s", "module": "%(filename)s", '
+                          '"function": "%(funcName)s", "line": %(lineno)d, "message": "%(message)s"}',
             },
             "plaintext": {
                 "format": "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)d in %(funcName)s()]: %(message)s"
