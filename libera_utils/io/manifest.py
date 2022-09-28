@@ -36,8 +36,10 @@ class Manifest:
         self.manifest_type = manifest_type
         self.files = files
         self.configuration = configuration
+        # TODO: Make configuration optional
         self.filename = filename
 
+    # TODO: Add a __dict__ interface that formats the manifest object as a dictionary suitable for printing literally
     def __str__(self):
         return f"""{self.__class__.__name__}({self.manifest_type.name}, '{Path(self.filename).name}')"""
 
@@ -81,6 +83,6 @@ class Manifest:
             'files': self.files,
             'configuration': self.configuration
         }
-        with smart_open(filepath, 'w') as manifest_file:
+        with smart_open(filepath, 'x') as manifest_file:
             json.dump(contents, manifest_file)
         return filepath

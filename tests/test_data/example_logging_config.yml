@@ -1,0 +1,43 @@
+# Example parameterized logging configuration
+version: 1
+disable_existing_loggers: False
+formatters:
+    json:
+        format: '{"time": "%(asctime)s", 
+                  "level": "%(levelname)s", 
+                  "module": "%(filename)s", 
+                  "function": "%(funcName)s", 
+                  "line": %(lineno)d, 
+                  "message": "%(message)s"}'
+    plaintext:
+        format: "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"
+handlers:
+    console:
+        class: logging.StreamHandler
+        formatter: plaintext
+        level: INFO
+        stream: ext://sys.stdout
+    logfile:
+        class: logging.handlers.RotatingFileHandler
+        formatter: plaintext
+        level: DEBUG
+        filename:
+        maxBytes: 1000000
+        backupCount: 3
+    watchtower:
+        class: watchtower.CloudWatchLogHandler
+        formatter: json
+        level: DEBUG
+        log_group_name:
+        log_stream_name:
+        send_interval: 10
+        create_log_group: True
+root:
+    level: INFO
+    propagate: True
+    handlers:
+loggers:
+    libera_utils:
+        qualname: libera_utils
+        level: DEBUG
+        handlers: []

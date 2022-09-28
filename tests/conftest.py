@@ -10,7 +10,7 @@ pytest_plugins = [
     "tests.plugins.data_path_fixtures",
     "tests.plugins.spice_fixtures",
     "tests.plugins.database_fixtures",
-    "tests.plugins.s3_fixtures"
+    "tests.plugins.aws_fixtures"
 ]
 
 
@@ -24,11 +24,17 @@ def monkeypatch_session():
 
 
 @pytest.fixture
-def setup_test_logging(tmp_path, monkeypatch):
-    """Sets up a task logger for a test"""
-    monkeypatch.setenv('LIBSDP_STREAM_LOG_LEVEL', 'DEBUG')
-    monkeypatch.setenv('LIBSDP_LOG_DIR', str(tmp_path))
-    log_filepath = logutil.setup_task_logger('test_log')
-    yield log_filepath
+def configure_example_logging(mock_cloudwatch_context, tmp_path, test_data_path):
+    """Sets up an example parameterized, configured logger and clear out all handlers afterwards"""
+    logging.getLogger().handlers = []
+    params = {
+        "handlers": {
+            "logfile": {"filename": f"{tmp_path / 'test.log'}"},
+            "watchtower": {"log_group_name": "test-log-group", "log_stream_name": "test-log-stream"}
+        },
+        "root": {"handlers": ["console", "logfile"]}
+    }
+    logutil.configure_logging(test_data_path / 'example_logging_config.yml', params)
+    yield
     # Remove all handlers from root logger. No other loggers should ever have handlers attached.
     logging.getLogger().handlers = []

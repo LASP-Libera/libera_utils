@@ -4,7 +4,7 @@ from pathlib import Path
 # Installed
 import boto3
 from cloudpathlib import S3Path, S3Client
-from moto import mock_s3
+from moto import mock_s3, mock_logs
 import pytest
 
 
@@ -18,6 +18,14 @@ def mock_aws_credentials(monkeypatch_session):
     monkeypatch_session.delenv('AWS_PROFILE', raising=False)
     monkeypatch_session.delenv('AWS_REGION', raising=False)
     monkeypatch_session.delenv('AWS_DEFAULT_REGION', raising=False)
+
+
+@pytest.fixture
+def mock_cloudwatch_context(monkeypatch):
+    """Everything under/inherited by this runs in the mock_logs context manager"""
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")  # CW requires region be set
+    with mock_logs():
+        yield boto3.resource('cloudwatch')
 
 
 @pytest.fixture(scope='session', autouse=True)

@@ -1,13 +1,13 @@
 """Tests for logutil module"""
 # Standard
 import logging
-# Local
-from libera_utils import logutil
+import logging.handlers
+# Installed
+import watchtower
 
 
-def test_logging_behavior(setup_test_logging, caplog, monkeypatch, tmp_path):
+def test_logging_behavior(configure_example_logging, caplog):
     """Test that log messages appear (or don't appear) as desired"""
-    monkeypatch.setenv('LIBSDP_LOG_DIR', str(tmp_path))
 
     root_log = logging.getLogger()  # root logger
     assert root_log.level == logging.INFO
@@ -57,30 +57,31 @@ def test_logging_behavior(setup_test_logging, caplog, monkeypatch, tmp_path):
         assert 'root debug message' not in record.message
 
 
-def test_setup_task_logger(setup_test_logging, tmpdir, monkeypatch):
+def test_configure_logging(configure_example_logging):
     """
-    Make sure that our logging setup function behaves as expected and that created loggers work as we want
+    Make sure that our example logging setup function behaves as expected and that created loggers work as we want.
 
     The root logger should be the only logger with handlers
     Loggers that inherit from libera_utils should be capable of logging to debug
     Loggers that don't inherit from libera_utils should never log debug messages (to exclude external library debug logs)
     The setup_test_logging feature ensures that the root logger handlers are removed after the test
     """
-    monkeypatch.setenv('LIBSDP_STREAM_LOG_LEVEL', 'DEBUG')
-    monkeypatch.setenv('LIBSDP_LOG_DIR', str(tmpdir))
-
-    old_log_filepath = logutil.setup_task_logger('test_log')  # run once
-    log_filepath = logutil.setup_task_logger('test_log')  # run twice
-    assert old_log_filepath == log_filepath
-
-    libsdp_log = logging.getLogger('libera_utils')  #
+    libsdp_log = logging.getLogger('libera_utils')
     assert libsdp_log.level == logging.DEBUG
     assert len(libsdp_log.handlers) == 0
 
     root_log = logging.getLogger()
     assert root_log.level == logging.INFO
-    assert len(root_log.handlers) == 2  # This will be 3 if LIBSDP_CLOUDWATCH_GROUP is truthy
+    print(root_log.handlers)
+    filehandlers = [h for h in root_log.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
+    assert len(filehandlers) == 1
+    cw_handlers = [h for h in root_log.handlers if isinstance(h, watchtower.CloudWatchLogHandler)]
+    assert len(cw_handlers) == 0  # didn't include this in the fixture
 
     libsdp_child_log = logging.getLogger('libera_utils.child')
     assert libsdp_child_log.level == logging.NOTSET  # Inherits from parent
     assert len(libsdp_child_log.handlers) == 0
+
+    library_log = logging.getLogger('somelibrary')
+    assert library_log.level == logging.NOTSET
+    assert len(library_log.handlers) == 0
