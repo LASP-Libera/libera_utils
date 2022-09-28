@@ -20,29 +20,41 @@ lasp-packets = {version = "^2.0"}
 requests = "^2.26"
 matplotlib = {version = "^3.4", optional = true}
 SQLAlchemy = "^1.4"
+setuptools = "^65"
 psycopg2 = "^2.9"
-cloudpathlib = {extras = ["s3"], version = "^0.9"}
+cloudpathlib = {extras = ["s3"], version = "^0"}
 watchtower = "^3.0"
 
 [tool.poetry.dev-dependencies]
-pytest-cov = "^3.0"
+pytest-cov = "^4"
 pylint = "^2.9.3"
 responses = "^0.21"
 pytest-randomly = "^3.10.2"
 moto = {extras = ["s3"], version = "^4.0"}
 bandit = "^1.7.4"
-Sphinx = { version = "^4.2.0"}
-sphinx-rtd-theme = { version = "^1.0.0"}
-sphinxcontrib-napoleon = { version = "^0.7"}
-sphinxcontrib-confluencebuilder = { version = "1.8.0"}
-sphinx-autoapi = { version = "^1.8.4"}
-myst-parser = {version = "^0.18.0"}
-numpydoc = {version = "^1.4.0"}
-furo = {version = "^2022.6.21"}
-m2r2 = "^0.3.0"
+Sphinx = {version = "^4.2.0", optional = true}
+sphinx-rtd-theme = { version = "^1.0.0", optional = true}
+sphinxcontrib-napoleon = {version = "^0.7", optional = true}
+sphinxcontrib-confluencebuilder = {version = "1.8.0", optional = true}
+sphinx-autoapi = { version = "^1.8.4", optional = true}
+myst-parser = {version = "^0.18.0", optional = true}
+numpydoc = {version = "^1.4.0", optional = true}
+furo = {version = "^2022.6.21", optional = true}
+m2r2 = {version = "^0.3.0", optional = true}
 
 [tool.poetry.extras]
 plotting = ["matplotlib"]
+docgen = [
+    "Sphinx",
+    "sphinx-rtd-theme",
+    "sphinxcontrib-confluencebuilder",
+    "sphinxcontrib-napoleon",
+    "sphinx-autoapi",
+    "myst-parser",
+    "numpydoc",
+    "furo",
+    "m2r2"
+]
 
 [tool.poetry.scripts]
 libera-utils = 'libera_utils.cli:main'
