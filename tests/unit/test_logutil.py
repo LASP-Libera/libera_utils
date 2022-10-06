@@ -8,6 +8,8 @@ import watchtower
 # Local
 from libera_utils import logutil
 
+TEST_APP_PACKAGE_NAME = 'my_test_app'
+
 
 @pytest.fixture
 def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path):
@@ -20,7 +22,7 @@ def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path):
     monkeypatch.setenv('LIBERA_CONSOLE_LOG_LEVEL', "info")
     monkeypatch.setenv("LIBERA_LOG_DIR", str(tmp_path))
     monkeypatch.setenv("LIBERA_LOG_GROUP", "")
-    logutil.configure_task_logging('test-task-1')
+    logutil.configure_task_logging('test-task-1', app_package_name=TEST_APP_PACKAGE_NAME)
     root_log = logging.getLogger()  # root logger
     yield
     root_log.handlers = []
@@ -41,10 +43,10 @@ def test_task_logging_behavior(setup_test_logger, caplog):
     print(root_log.handlers)
     assert root_log.level == logging.INFO
 
-    libsdp_log = logging.getLogger('libera_utils')  # top level libera_utils logger
+    libsdp_log = logging.getLogger(TEST_APP_PACKAGE_NAME)  # top level libera_utils logger
     assert libsdp_log.level == logging.DEBUG
 
-    libsdp_child_log = logging.getLogger('libera_utils.child')  # child libera_utils logger
+    libsdp_child_log = logging.getLogger(f'{TEST_APP_PACKAGE_NAME}.child')  # child libera_utils logger
     assert libsdp_child_log.level == logging.NOTSET
 
     # Simulates an external library that does NOT inherit from the libera_utils logger
@@ -54,8 +56,8 @@ def test_task_logging_behavior(setup_test_logger, caplog):
     root_log.info("root info message")
     assert caplog.records[-1].message == 'root info message'
 
-    libsdp_log.info("libsdp info message")
-    assert caplog.records[-1].message == 'libsdp info message'
+    libsdp_log.info("my app info message")
+    assert caplog.records[-1].message == 'my app info message'
 
     libsdp_child_log.info("child info message")
     assert caplog.records[-1].message == 'child info message'
@@ -67,8 +69,8 @@ def test_task_logging_behavior(setup_test_logger, caplog):
     libsdp_child_log.debug("child debug message")
     assert caplog.records[-1].message == 'child debug message'
 
-    libsdp_log.debug("libsdp debug message")
-    assert caplog.records[-1].message == 'libsdp debug message'
+    libsdp_log.debug("my app debug message")
+    assert caplog.records[-1].message == 'my app debug message'
 
     # We want to exclude anything below INFO that doesn't come from a libera_utils.* logger
     external_library_log.debug("external debug message")

@@ -36,7 +36,7 @@ def configure_static_logging(config_file: AnyPath or str):
     logger.info(f"Logging configured statically according to {config_file}.")
 
 
-def configure_task_logging(task_id: str, console_log_level: str or int = None):
+def configure_task_logging(task_id: str, app_package_name: str, console_log_level: str or int = None):
     """Configure logging based on runtime environment variables.
 
     Variables that control logging are LIBERA_LOG_DIR, LIBERA_CONSOLE_LOG_LEVEL, and LIBERA_LOG_GROUP. If these
@@ -46,6 +46,14 @@ def configure_task_logging(task_id: str, console_log_level: str or int = None):
     ----------
     task_id : str
         Unique identifier by which to name the log file and cloudwatch log stream.
+    app_package_name : str
+        This is the name of the top level package for which you want to instantiate logging. For example, if you are
+        working on an application package called `my_app` and using module level logging, all your loggers will be
+        named like `my_app.module_name.submodule_name`. We use this string to set the logging level of all loggers
+        that inherit from the `my_app` logger (logger inheritance in python is expressed in dot notation). So by
+        specifying `my_app` as the app_package_name, all your app logger handlers will log at your specified levels
+        but all library loggers (e.g. those not inheriting from `my_app` logger) will only log at INFO level.
+        This reduces debug spam from library loggers significantly, especially boto3.
     console_log_level : str or int, Optional
         Override environment variable log level configuration.
 
@@ -134,7 +142,7 @@ def configure_task_logging(task_id: str, console_log_level: str or int = None):
             "handlers": list(handlers.keys())
         },
         "loggers": {
-            "libera_utils": {
+            app_package_name: {
                 "level": "DEBUG",
                 "handlers": []
             }
