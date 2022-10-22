@@ -66,6 +66,20 @@ services:
       flyway-sdp-test:
         condition: service_completed_successfully
 
+  docs-confluence:
+    image: libera-utils-docs:latest
+    build:
+      context: .
+      target: libera-utils-docs
+    entrypoint: ["make", "confluence"]
+
+  docs-html:
+    image: libera-utils-docs:latest
+    build:
+      context: .
+      target: libera-utils-docs
+    entrypoint: [ "make", "html" ]
+
   linting:
     image: libera-utils-test:latest
     build:
