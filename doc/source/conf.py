@@ -12,8 +12,9 @@
 #
 import os
 import sys
+import pkg_resources
 
-sys.path.insert(0, os.path.abspath('../../libera_utils'))
+sys.path.insert(0, os.path.abspath('../../../libera_utils'))
 
 # -- Project information -----------------------------------------------------
 
@@ -21,8 +22,9 @@ project = 'libera_utils'
 copyright = '2022, Libera SDP'
 author = 'Libera SDP'
 
+libera_utils_ver = pkg_resources.get_distribution('libera_utils').version
 # The full version, including alpha/beta/rc tags
-release = '0.1.1'
+release = libera_utils_ver
 
 
 # -- General configuration ---------------------------------------------------
@@ -37,19 +39,23 @@ extensions = ["sphinx.ext.coverage",
 # Standard Confluence Settings
 confluence_publish = True
 confluence_space_key = 'LIBERASDPDOC'
-confluence_ask_password = True
+
 # (or, for Confluence Server)
-confluence_server_url = 'https://lasp.colorado.edu/galaxy'
-confluence_server_user = 'mwatwood'
+confluence_server_url = 'https://lasp.colorado.edu/galaxy/'
+
 # Optional Confluence Settings
 confluence_page_hierarchy = True
 # Optional Parent Page
 confluence_parent_page = 'Libera Science Data Processing Documentation Home'
+confluence_version_comment = f'Automatically generated from libera_utils version {libera_utils_ver}.'
+confluence_sourcelink = {
+    'url': 'https://lasp.colorado.edu/nucleus/projects/LIBSDC/repos/libera_utils/browse',
+}
 # Use when testing
 #confluence_publish_dryrun = True
 
 autoapi_type = "python"
-autoapi_dirs = ['../../libera_utils']
+autoapi_dirs = ['../../../libera_utils']
 
 source_suffix = {
     ".rst": "restructuredtext",

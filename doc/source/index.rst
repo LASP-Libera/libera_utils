@@ -4,7 +4,9 @@
    contain the root `toctree` directive.
 
 Libera Util's Documentation
-============================
+===========================
+
+libera_utils Version: |release|
 
 .. toctree::
    :maxdepth: 2
