@@ -34,19 +34,22 @@ RUN curl -sSL https://install.python-poetry.org | python -
 # Add poetry to path
 ENV PATH="$PATH:/root/.local/bin"
 
+# Copy pyproject.toml and lock dependency tree
+COPY pyproject.toml $LIBERA_UTILS_DIRECTORY
+RUN poetry lock
+
 # Copy necessary files over (except for dockerignore-d files)
 COPY libera_utils $LIBERA_UTILS_DIRECTORY/libera_utils
 COPY README.md $LIBERA_UTILS_DIRECTORY
 COPY doc $LIBERA_UTILS_DIRECTORY/doc
-COPY pyproject.toml $LIBERA_UTILS_DIRECTORY
 COPY LICENSE $LIBERA_UTILS_DIRECTORY
 
 # This is so stupid but it fixes known a bug in docker build
 # https://github.com/moby/moby/issues/37965
 RUN true
 
-# Install libera_utils and all its (non-dev) dependencies according to pyproject.toml
-RUN poetry install --no-dev
+# Install libera_utils and all its (non-dev) dependencies and extras according to pyproject.toml
+RUN poetry install --all-extras --only main
 
 # Define the entrypoint of the container. Passing arguments when running the
 # container will be passed as arguments to the function
@@ -57,8 +60,8 @@ ENTRYPOINT ["sdp"]
 # ---------------
 FROM libera-utils AS libera-utils-test
 
-# Install dev dependencies (not installed in libera-utils image)
-RUN poetry install
+# Install dev dependencies (not installed in libera-utils image). All extras are required for testing.
+RUN poetry install --all-extras --only dev
 
 # Copy tests over
 COPY tests $LIBERA_UTILS_DIRECTORY/tests
