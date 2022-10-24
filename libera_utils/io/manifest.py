@@ -1,23 +1,22 @@
 """Module for manifest file handling"""
 # Standard
-from enum import Enum
+from datetime import datetime
 import json
+import logging
 from pathlib import Path
+from hashlib import md5
 # Installed
-from cloudpathlib import S3Path
+from cloudpathlib import S3Path, AnyPath
 # Local
 from libera_utils.io.smart_open import smart_open
+from libera_utils.io.filenaming import ManifestFilename, ManifestType
+
+logger = logging.getLogger(__name__)
 
 
 class ManifestError(Exception):
     """Generic exception related to manifest file handling"""
     pass
-
-
-class ManifestType(Enum):
-    """Enumerated legal manifest type values"""
-    INPUT = 'INPUT'
-    OUTPUT = 'OUTPUT'
 
 
 class Manifest:
@@ -31,11 +30,18 @@ class Manifest:
 
     def __init__(self, manifest_type: ManifestType,
                  files: list, configuration: dict, filename: str = None):
-        # TODO: Strive to implement structure on this Manifest object. Ideally we don't just want a bunch of
-        #    dictionaries, though at least that is a lowest common denominator.
         self.manifest_type = manifest_type
         self.files = files
         self.configuration = configuration
+        self.filename = filename
+
+    def _generate_filename(self):
+        """Generate a valid manifest filename"""
+        mfn = ManifestFilename.from_filename_parts(
+            manifest_type=self.manifest_type,
+            created_time=datetime.utcnow()
+        )
+        return mfn
 
     def to_json_dict(self):
         """Create a dict representation suitable for writing out.
@@ -74,18 +80,44 @@ class Manifest:
                    contents['configuration'],
                    filename=filepath)
 
-    def write(self, filepath: str or Path or S3Path):
+    def write(self, outpath: str or Path or S3Path, filename: str = None):
         """Write a manifest file from a Manifest object (self).
 
         Parameters
         ----------
-        filepath : str or Path or S3Path
-            Filepath to write to.
+        outpath : str or Path or S3Path
+            Directory path to write to (directory being used loosely to refer also to an S3 bucket path).
+        filename : str, Optional
+            Optional filename. If not provided, the method uses the objects internal filename attribute. If that is
+            not set, then a filename is automatically generated.
 
         Returns
         -------
         : str or Path or S3Path
         """
+        if filename is None:
+            if self.filename is None:
+                filename = self._generate_filename()
+            else:
+                filename = self.filename
+
+        filepath = AnyPath(outpath) / filename
         with smart_open(filepath, 'x') as manifest_file:
             json.dump(self.to_json_dict(), manifest_file)
         return filepath
+
+    def validate_checksums(self):
+        """Validate checksums of listed files"""
+        failed_filenames = []
+        for record in self.files:
+            checksum_expected = record['checksum']
+            filename = record['filename']
+            # Validate checksums
+            with smart_open(filename, 'rb') as fh:
+                checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
+                if checksum_expected != checksum_calculated:
+                    logger.error(f"Checksum validation for {filename} failed. "
+                                 f"Expected {checksum_expected} but got {checksum_calculated}.")
+                    failed_filenames.append(str(filename))
+        if failed_filenames:
+            raise ValueError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
