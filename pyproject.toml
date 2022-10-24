@@ -9,6 +9,12 @@ authors = [  # Alphabetical
     "Matt Watwood <matt.watwood@lasp.colorado.edu>"
 ]
 
+# Include LASP Nexus as a possible package source
+# This allows us to install custom releases of LASP maintained packages hosted on Nexus if necessary.
+[[tool.poetry.source]]
+name = "lasp-pypi"
+url = "https://lasp.colorado.edu/repository/lasp-pypi/simple"
+
 [tool.poetry.dependencies]
 python = "^3.9"
 astropy = "^5.1"
