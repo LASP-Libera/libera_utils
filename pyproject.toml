@@ -18,11 +18,13 @@ numpy = "^1.21"
 spiceypy = "^5.0"
 lasp-packets = {version = "^2.0"}
 requests = "^2.26"
-SQLAlchemy = "^1.4"
 setuptools = "^65"
-psycopg2 = "^2.9"
 cloudpathlib = {extras = ["s3"], version = "^0"}
 watchtower = "^3.0"
+# Optional dependencies (for extras)
+matplotlib = {version = "^3.4", optional=true}
+psycopg2 = {version = "^2.9", optional=true}
+SQLAlchemy = {version = "^1.4", optional = true}
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "^4"
@@ -32,19 +34,24 @@ pytest-randomly = "^3.10.2"
 moto = {extras = ["s3"], version = "^4.0"}
 bandit = "^1.7.4"
 
-[tool.poetry.group.plotting.dependencies]
-matplotlib = {version = "^3.4", optional = true}
+[tool.poetry.group.docgen]
+optional = true
 
 [tool.poetry.group.docgen.dependencies]
 Sphinx = {version = "^4.2.0"}
-sphinx-rtd-theme = { version = "^1.0.0"}
+sphinx-rtd-theme = {version = "^1.0.0"}
 sphinxcontrib-napoleon = {version = "^0.7"}
 sphinxcontrib-confluencebuilder = {version = "1.8.0"}
-sphinx-autoapi = { version = "^1.8.4"}
+sphinx-autoapi = {version = "^1.8.4"}
 myst-parser = {version = "^0.18.0"}
 numpydoc = {version = "^1.4.0"}
 furo = {version = "^2022.6.21"}
 m2r2 = {version = "^0.3.0"}
+
+# Optional dependencies for additional functionality
+[tool.poetry.extras]
+plotting = ["matplotlib"]
+database = ["SQLAlchemy", "psycopg2"]
 
 [tool.poetry.scripts]
 libera-utils = 'libera_utils.cli:main'
