@@ -59,19 +59,22 @@ Once poetry is installed, check that it works by running `poetry --version`. You
     Valid:          True
     ```
 3. Run `poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the 
-   dependency tree and then installing dependencies. This also installs dev dependencies, as specified in 
+   dependency tree and then installing dependencies. This also installs dev group dependencies, as specified in 
    `pyproject.toml`. Lastly you should see it installing the local package.
-4. To install "extra" dependencies, which are strictly optional, run `poetry install -E <extra_name>`. e.g. to install 
-   libraries to support plotting, run `poetry install -E plotting`. 
-   These extra dependencies are specified in `pyproject.toml` under `[tool.poetry.extras]`.
-5. Verify that the `libera_sdp` package was installed correctly by running `sdp --version`. This runs the
+4. To install optional "extra" dependencies, run `poetry install -E "<extra_name1>,<extra_name2>"`. e.g. to install 
+   libraries to support database interactions, run `poetry install -E "database"`. 
+   These extra dependencies are specified in `pyproject.toml` under `[tool.poetry.extras]`. Note that any subsequent
+   `poetry install` command without `--extras` will implicitly uninstall any previously installed extras.
+5. To install dependency "groups" (think labels), which may or may not be optional, use the `--with` and `--without` 
+   flags for Poetry. e.g. `poetry install --with docgen` will install the dependencies for the optional group "docgen".
+6. Verify that the `libera_sdp` package was installed correctly by running `sdp --version`. This runs the
    `sdp` command line utility that is included in the package. You can also directly check that the `sdp` entrypoint
    exists in `venv/bin`. This can also be run with `poetry run sdp --version`.
-6. Next, go run the tests.
+7. Next, go run the tests (tests require all extras to be installed).
 
 
 ## Installing Postgres Client Drivers
-The `psycopg2` package interfaces with the low level system drivers provided in `libpq`. 
+The `psycopg2` package interfaces with the low level system drivers provided in `libpq` and or `libpq-dev`.
 
 To install those drivers on a Mac, simply install the [PostgreSQL application](https://postgresapp.com/), 
 which comes with the low level drivers, CLI tools,

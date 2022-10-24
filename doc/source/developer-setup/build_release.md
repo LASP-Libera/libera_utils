@@ -47,18 +47,36 @@
 
 ## Building and Distribution to Internal LASP Nexus PyPI
 
+### Adding a Poetry Repository for the Nexus PyPI
+
+This Poetry configuration allows Poetry to distribute to non-standard (private) package indexes.
+
+You will need the account information for your LASP Nexus account. Note that the repository, 
+which is named lasp-pypi in this example must first be configured according to the Poetry docs 
+[here](https://python-poetry.org/docs/repositories/#using-a-private-repository). 
+To configure the repo for publishing, run
+```
+poetry config repositories.lasp-pypi https://artifacts.pdmz.lasp.colorado.edu/repository/lasp-pypi/
+```
+Note that the trailing slash is required at the end of the URL.
+
+
+### Distributing an Internal Release to Nexus
+
 The intention is that we can have a bleeding edge local version on Nexus that is not available to the 
 general public. This Nexus release will be based on the `dev` branch and will generally be less stable
 than the version released to the public PyPI.
 
 1. Ensure that `poetry` is installed by running `poetry --version`.
 
-2. Checkout the `dev` branch
+2. Checkout the `dev` branch, or really whatever branch you want to release as the internal version.
 
 3. To build the distribution archives, run `poetry build`.
 
 4. Visit Nexus at https://artifacts.pdmz.lasp.colorado.edu/#browse/browse:lasp-pypi and remove the previous
    version of `libera_utils` (just delete it, this is an internal `dev` release).
 
-5. To upload the wheel to Nexus, run `poetry publish --username your-nexus-username --password redacted`. 
-   You will need the account information for your LASP Nexus account.
+5. To upload the wheel to Nexus, run 
+   ```
+   poetry publish --repository lasp-pypi --username your-nexus-username --password redacted
+   ```
