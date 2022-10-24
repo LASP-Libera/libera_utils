@@ -33,11 +33,32 @@
    in `dev`. This should be a purely "fast-forward" merge.
 
 
-## Building and Distribution
+## Building and Distribution to Public PyPI
 
 1. Ensure that `poetry` is installed by running `poetry --version`.
+
+2. Checkout the tag of the version you are releasing. 
    
-2. To build the distribution archives, run `poetry build`.
+3. To build the distribution archives, run `poetry build`.
    
-3. To upload the wheel to Nexus, run `poetry publish --username liberasdc --password redacted`. 
+4. To upload the wheel to PyPI, run `poetry publish --username liberasdc --password redacted`. 
    You will need the account information for the Libera SDC PyPI account.
+
+
+## Building and Distribution to Internal LASP Nexus PyPI
+
+The intention is that we can have a bleeding edge local version on Nexus that is not available to the 
+general public. This Nexus release will be based on the `dev` branch and will generally be less stable
+than the version released to the public PyPI.
+
+1. Ensure that `poetry` is installed by running `poetry --version`.
+
+2. Checkout the `dev` branch
+
+3. To build the distribution archives, run `poetry build`.
+
+4. Visit Nexus at https://artifacts.pdmz.lasp.colorado.edu/#browse/browse:lasp-pypi and remove the previous
+   version of `libera_utils` (just delete it, this is an internal `dev` release).
+
+5. To upload the wheel to Nexus, run `poetry publish --username your-nexus-username --password redacted`. 
+   You will need the account information for your LASP Nexus account.
