@@ -30,6 +30,24 @@ and runs the tests container service defined in the `docker-compose.yml` file. T
 docker to rebuild the testing container image before running (e.g. if things have changed).
 
 
+### Copying Test Report Artifacts from Docker
+
+When we run tests in Docker on Jenkins, we often want to copy and save Corbertura and JUnit test reports. Jenkins 
+has facility for doing this easily with
+```Groovy
+always {
+    junit '**/*junit.xml'
+    cobertura coberturaReportFile: '**/*coverage.xml'
+}
+```
+The challenge when running in Docker is to make these test artifacts available to Jenkins. By default these files 
+exist only inside the Docker container so we must copy them out. Do this with
+```shell
+docker-compose --exit-code-from tests up tests
+docker-compose cp tests:/path/to/report.xml .
+```
+
+
 ## Static Analysis
 NPR7150.2C requires that we perform static analysis of our codebase to check for common vulnerabilities and 
 statically detectable code weaknesses.
@@ -71,6 +89,4 @@ To run bandit inside Docker, run
 
 ```docker-compose up [--build] ast```
 
-This starts up the ast service described in `docker-compose.yml`, which runs bandit inside a testing docker container.
-
-NOTE: Bandit almost always produced non-zero exit codes. It's extremely strict to require bandit to exit 0.
+This starts up the `ast` service described in `docker-compose.yml`, which runs bandit inside a testing docker container.

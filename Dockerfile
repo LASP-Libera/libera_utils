@@ -68,4 +68,4 @@ COPY tests $LIBERA_UTILS_DIRECTORY/tests
 COPY pylintrc $LIBERA_UTILS_DIRECTORY
 
 # Set entrypoint
-ENTRYPOINT pytest
+ENTRYPOINT ["pytest", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]
