@@ -78,7 +78,8 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
         utc_start_str = time.et_2_datetime(ephemeris_time[0])
         utc_end_str = time.et_2_datetime(ephemeris_time[-1])
-        spk_filename = filenaming.EphemerisKernelFilename(utc_start=utc_start_str, utc_end=utc_end_str)
+        spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
+            spk_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
         output_filepath = Path(output_dir) / spk_filename.path.name  # pylint: disable=no-member
 
         if parsed_args.overwrite is True:
@@ -156,7 +157,8 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
         utc_start_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
         utc_end_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
-        ck_filename = filenaming.AttitudeKernelFilename(ck_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
+        ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
+            ck_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
         output_filepath = Path(output_dir) / ck_filename.path.name  # pylint: disable=no-member
 
         if parsed_args.overwrite is True:
