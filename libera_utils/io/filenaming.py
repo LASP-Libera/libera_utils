@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
-from importlib import metadata
 import re
 from types import SimpleNamespace
 from pathlib import Path
