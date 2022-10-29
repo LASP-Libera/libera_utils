@@ -166,7 +166,7 @@ class SwathHdfEos5(h5.File):
             Passes group information
 
         Returns
-        ----------
+        -------
         string : Metadata string
         """
 

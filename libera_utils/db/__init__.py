@@ -42,3 +42,4 @@ Base = declarative_base(cls=BaseAugmentation)
 
 # Convenience method for getting database managers
 getdb = _DatabaseManager.get
+"""Convenience alias for :meth:`libera_utils.db.database._DatabaseManager.get`"""
