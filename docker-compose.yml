@@ -1,4 +1,4 @@
-version: '3'
+version: '3.8'
 
 services:
   libera-dev-db:
@@ -63,7 +63,8 @@ services:
     environment:
       - LIBERA_DB_HOST=libera-dev-db
     depends_on:
-      - flyway-sdp-test
+      flyway-sdp-test:
+        condition: service_completed_successfully
 
   linting:
     image: libera-utils-test:latest
