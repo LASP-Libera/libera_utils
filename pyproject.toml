@@ -43,7 +43,6 @@ sphinxcontrib-confluencebuilder = {version = "^1.9.0"}
 sphinx-autoapi = { version = "^1.8.4"}
 myst-parser = {version = "^0.18.0"}
 numpydoc = {version = "^1.4.0"}
-furo = {version = "^2022.6.21"}
 m2r2 = {version = "^0.3.0"}
 
 [tool.poetry.scripts]
