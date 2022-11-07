@@ -78,7 +78,7 @@ services:
     build:
       context: .
       target: libera-utils-docs
-    entrypoint: [ "make", "html" ]
+    entrypoint: [ "make", "clean", "html" ]
 
   linting:
     image: libera-utils-test:latest
