@@ -14,7 +14,7 @@ import os
 import sys
 import pkg_resources
 
-sys.path.insert(0, os.path.abspath('../../../libera_utils'))
+sys.path.insert(0, os.path.abspath('../../libera_utils'))
 
 # -- Project information -----------------------------------------------------
 
@@ -55,7 +55,7 @@ confluence_sourcelink = {
 #confluence_publish_dryrun = True
 
 autoapi_type = "python"
-autoapi_dirs = ['../../../libera_utils']
+autoapi_dirs = ['../../libera_utils']
 
 source_suffix = {
     ".rst": "restructuredtext",

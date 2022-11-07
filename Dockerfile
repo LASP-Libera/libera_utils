@@ -77,5 +77,5 @@ RUN apt-get install -y build-essential
 RUN poetry install --with docgen
 
 # Copy file over and set the working directory
-COPY doc $LIBERA_UTILS_DIRECTORY/libera_utils/doc
-WORKDIR $LIBERA_UTILS_DIRECTORY/libera_utils/doc
+COPY doc $LIBERA_UTILS_DIRECTORY/doc
+WORKDIR $LIBERA_UTILS_DIRECTORY/doc
