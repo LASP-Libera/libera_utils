@@ -7,20 +7,20 @@ codebase in combination with other custom pages separate from the generated docu
 ### Compatible Comments and Docstrings
 Docstrings in this project are expected in the [Numpy dosctring format](https://numpydoc.readthedocs.io/en/latest/format.html).
 
-### Adding developer documentation and other custom pages
-If you wish to add pages that are not part of the generation from the code and are instead in the developer 
-documentation: 
-- Create your files and add them to the project folder _doc/source/developer-setup_ 
-
-If you wish to create files not part of the developer documentation, then create them and then edit 
-the _doc/source/index.rst_ file and add the file you have just created to the toctree (table of contents
+### Adding custom pages
+If you wish to add pages that are not part of the generation from the code such as reference pages use 
+the following steps.
+- Create your files and folders and add them to the project folder _doc/source/custom-pages_ 
+- edit the _doc/source/index.rst_ file to add the file you have just created to the toctree (table of contents
 tree)
+- If you added developer documentation, instead of editing the _index.rst_ edit the _doc/source/dev-env-docs.rst_ document
+or _doc/source/dev-ref-docs.rst_ to include your new file.
 
-**Note**: This project is configured to read and interpret both markdown *.md and reStructured Text *.rst documents.
+**Note**: This project is configured to read and interpret both markdown (.md) and reStructured Text (.rst) documents.
 The following are two basic guides to writing proper comments that will create well formatted outputs.
 
-* [reStructured Text](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html)
-* [Markdown](https://www.markdownguide.org/cheat-sheet/)
+- [reStructured Text](https://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html)
+- [Markdown](https://www.markdownguide.org/cheat-sheet/)
 
 
 ## Local Testing and Development

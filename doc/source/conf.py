@@ -12,7 +12,7 @@
 #
 import os
 import sys
-import pkg_resources
+import importlib_metadata
 
 sys.path.insert(0, os.path.abspath('../../libera_utils'))
 
@@ -22,7 +22,7 @@ project = 'libera_utils'
 copyright = '2022, Libera SDP'
 author = 'Libera SDP'
 
-libera_utils_ver = pkg_resources.get_distribution('libera_utils').version
+libera_utils_ver = importlib_metadata.version('libera_utils')
 # The full version, including alpha/beta/rc tags
 release = libera_utils_ver
 
