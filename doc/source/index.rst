@@ -13,7 +13,7 @@ libera_utils Version: |release|
    :caption: Contents:
 
    readme
-   dev-docs
    autoapi/index
+   dev-ref-docs
 
 

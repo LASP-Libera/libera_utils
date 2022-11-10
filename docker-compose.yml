@@ -71,14 +71,14 @@ services:
     build:
       context: .
       target: libera-utils-docs
-    entrypoint: ["make", "confluence"]
+    command: ["confluence"]
 
   docs-html:
     image: libera-utils-docs:latest
     build:
       context: .
       target: libera-utils-docs
-    entrypoint: [ "make", "clean", "html" ]
+    command: [ "clean", "html" ]
 
   linting:
     image: libera-utils-test:latest

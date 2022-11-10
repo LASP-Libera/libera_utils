@@ -79,3 +79,5 @@ RUN poetry install --with docgen
 # Copy file over and set the working directory
 COPY doc $LIBERA_UTILS_DIRECTORY/doc
 WORKDIR $LIBERA_UTILS_DIRECTORY/doc
+
+ENTRYPOINT ["make"]
