@@ -7,6 +7,8 @@ import bitstring
 from lasp_packets import parser
 import numpy as np
 import numpy.lib.recfunctions as nprf
+# Local
+from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +70,9 @@ def parse_packets(packet_parser: parser.PacketParser, packet_data_filepaths: lis
     """
     data_arrays = []
     for packet_data_filepath in packet_data_filepaths:
-        packet_data_filepath = Path(packet_data_filepath)
-        binary_packet_data = bitstring.ConstBitStream(filename=packet_data_filepath)
+        logger.info("Packet data filepath %s", packet_data_filepath)
+        with smart_open(packet_data_filepath) as packet_bytes:
+            binary_packet_data = bitstring.ConstBitStream(bytes=packet_bytes.read())
 
         packet_generator = packet_parser.generator(binary_packet_data)
         data_arrays.append(array_from_packets(list(packet_generator), apid=apid))

@@ -11,6 +11,7 @@ import tempfile
 # Installed
 import numpy as np
 import numpy.lib.recfunctions as nprf
+from cloudpathlib import S3Path, AnyPath
 from lasp_packets import parser, xtcedef
 # Local
 from libera_utils import spice_utils
@@ -19,6 +20,7 @@ from libera_utils.config import config
 from libera_utils.io import filenaming
 from libera_utils import packets as libera_packets
 from libera_utils import time
+from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +45,15 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
 
-    output_dir = Path(parsed_args.outdir).expanduser().absolute()
+    output_dir = AnyPath(parsed_args.outdir).expanduser().absolute()
     logger.info("Writing resulting SPK to %s", output_dir)
 
-    packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
-    logger.info("Using packet definition %s", packet_definition_filepath)
+    packet_definition_uri = config.get('JPSS_GEOLOCATION_PACKET_DEFINITION')
+    logger.info("Using packet definition %s", packet_definition_uri)
 
-    packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
+    with smart_open(packet_definition_uri) as packet_definition_filepath:
+        packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
+
     packet_parser = parser.PacketParser(packet_definition=packet_definition)
 
     logger.info("Parsing packets...")
@@ -126,7 +130,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     output_dir = Path(parsed_args.outdir).expanduser().absolute()
     logger.info("Writing resulting CK to %s", output_dir)
 
-    packet_definition_filepath = Path(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
+    packet_definition_filepath = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
     logger.info("Using packet definition %s", packet_definition_filepath)
 
     packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
@@ -197,7 +201,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):
     raise NotImplementedError("CK generation for the Az-El mechanism isn't implemented yet.")
 
 
-def write_kernel_input_file(data: np.ndarray, filepath: str or Path, fields: list = None, fmt: str or list = "%.16f"):
+def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path, fields: list = None, fmt: str or list = "%.16f"):
     """Write ephemeris and attitude data to MKSPK and MSOPCK input data files, respectively.
 
     See MSOPCK documentation here:
