@@ -256,7 +256,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
         Parameters
         ----------
         spk_object : str
-            Name of object whose attitude is represented in this CK.
+            Name of object whose ephemeris is represented in this SPK.
         utc_start : datetime
             Start time of data.
         utc_end : datetime
