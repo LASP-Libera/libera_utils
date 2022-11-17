@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   libera-dev-db:
+    platform: linux/amd64
     image: postgres:14
     restart: always
     ports:
@@ -14,6 +15,7 @@ services:
       - ./database/initdb:/docker-entrypoint-initdb.d
 
   flyway-sdp-dev:
+    platform: linux/amd64
     image: flyway/flyway:latest
     environment:
       - FLYWAY_PASSWORD=masterpass
@@ -26,6 +28,7 @@ services:
       - libera-dev-db
 
   flyway-sdp-test:
+    platform: linux/amd64
     image: flyway/flyway:latest
     environment:
       - FLYWAY_PASSWORD=masterpass
@@ -38,6 +41,7 @@ services:
       - libera-dev-db
 
   flyway-sdp-prod:
+    platform: linux/amd64
     image: flyway/flyway:latest
     environment:
       - FLYWAY_PASSWORD=masterpass
@@ -50,12 +54,14 @@ services:
       - libera-dev-db
 
   sdp:
+    platform: linux/amd64
     image: libera-utils:latest
     build:
       context: .
       target: libera-utils
 
   tests:
+    platform: linux/amd64
     image: libera-utils-test:latest
     build:
       context: .

@@ -127,13 +127,15 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
 
-    output_dir = Path(parsed_args.outdir).expanduser().absolute()
+    output_dir = AnyPath(parsed_args.outdir).expanduser().absolute()
     logger.info("Writing resulting CK to %s", output_dir)
 
-    packet_definition_filepath = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
-    logger.info("Using packet definition %s", packet_definition_filepath)
+    packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
+    logger.info("Using packet definition %s", packet_definition_uri)
 
-    packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
+    with smart_open(packet_definition_uri) as packet_definition_filepath:
+        packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
+
     packet_parser = parser.PacketParser(packet_definition=packet_definition)
 
     logger.info("Parsing packets...")
