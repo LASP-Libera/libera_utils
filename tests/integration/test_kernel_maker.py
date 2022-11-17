@@ -36,12 +36,12 @@ def test_make_jpss_spk_aws(test_data_path, short_tmp_path, create_mock_bucket, w
     kernel_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
     packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
     write_file_to_s3(packet_data_path, kernel_uri)
-    cache_s3_path = wrapper(f"{kernel_uri}")
+    packet_s3_path = wrapper(f"{kernel_uri}")
 
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         mock_parsed_args = argparse.Namespace(
-            packet_data_filepaths=[str(cache_s3_path)],
+            packet_data_filepaths=[str(packet_s3_path)],
             outdir=str(short_tmp_path),
             overwrite=False,
             verbose=False
@@ -57,6 +57,31 @@ def test_make_jpss_ck(test_data_path, short_tmp_path):
         packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
         mock_parsed_args = argparse.Namespace(
             packet_data_filepaths=[str(packet_data_path)],
+            outdir=str(short_tmp_path),
+            overwrite=False,
+            verbose=False
+        )
+        kernel_maker.make_jpss_ck(mock_parsed_args)
+        assert (short_tmp_path / 'libera_jpss_20210408t235850_20210409t015849.bc').exists()
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [AnyPath, S3Path, str]
+)
+def test_make_jpss_ck_aws(test_data_path, short_tmp_path, create_mock_bucket, write_file_to_s3, wrapper):
+    """Test creating a CK from packets"""
+    bucket = 'spk-bucket'
+    create_mock_bucket(bucket)
+    key = 'some_path'
+    kernel_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
+    packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
+    write_file_to_s3(packet_data_path, kernel_uri)
+    cache_s3_path = wrapper(f"{kernel_uri}")
+
+    with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
+                    new_callable=mock.PropertyMock, return_value=short_tmp_path):
+        mock_parsed_args = argparse.Namespace(
+            packet_data_filepaths=[str(cache_s3_path)],
             outdir=str(short_tmp_path),
             overwrite=False,
             verbose=False
