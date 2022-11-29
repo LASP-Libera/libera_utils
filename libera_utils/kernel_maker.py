@@ -20,7 +20,7 @@ from libera_utils.config import config
 from libera_utils.io import filenaming
 from libera_utils import packets as libera_packets
 from libera_utils import time
-from libera_utils.io.smart_open import smart_open
+from libera_utils.io.smart_open import smart_open, smart_copy_file
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
 
-    output_dir = AnyPath(parsed_args.outdir).expanduser().absolute()
+    output_dir = AnyPath(parsed_args.outdir)
     logger.info("Writing resulting SPK to %s", output_dir)
 
     packet_definition_uri = config.get('JPSS_GEOLOCATION_PACKET_DEFINITION')
@@ -84,7 +84,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
         utc_end_str = time.et_2_datetime(ephemeris_time[-1])
         spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
             spk_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
-        output_filepath = Path(output_dir) / spk_filename.path.name  # pylint: disable=no-member
+        output_filepath = tmp_path / spk_filename.path.name  # pylint: disable=no-member
 
         if parsed_args.overwrite is True:
             output_filepath.unlink(missing_ok=True)
@@ -107,6 +107,9 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
             logger.error(result.stderr.decode())
         logger.info("Finished! SPK written to %s", output_filepath)
 
+        smart_copy_file(output_filepath, output_dir)
+        logger.info("SPK copied to %s", output_dir)
+
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
     """Create a JPSS CK from APID 11 CCSDS packets.
@@ -127,7 +130,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
 
-    output_dir = AnyPath(parsed_args.outdir).expanduser().absolute()
+    output_dir = AnyPath(parsed_args.outdir)
     logger.info("Writing resulting CK to %s", output_dir)
 
     packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
@@ -165,7 +168,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
         utc_end_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
             ck_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
-        output_filepath = Path(output_dir) / ck_filename.path.name  # pylint: disable=no-member
+        output_filepath = tmp_path / ck_filename.path.name  # pylint: disable=no-member
 
         if parsed_args.overwrite is True:
             output_filepath.unlink(missing_ok=True)
@@ -186,6 +189,8 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
             logger.error(result.stderr.decode())
         logger.info("Finished! CK written to %s", output_filepath)
 
+        smart_copy_file(output_filepath, output_dir)
+        logger.info("CK copied to %s", output_dir)
 
 def make_azel_ck(parsed_args: argparse.Namespace):
     """Create a Libera Az-El CK from CCSDS packets
