@@ -116,41 +116,41 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
         -------
         : filelike object
         """
-    if is_s3(source_path) or is_s3(dest_path):
-        # Check if either source or destination is remote and allocate remote resources
-        s3 = boto3.resource("s3")
-        client = boto3.client("s3")
-        if is_s3(dest_path) and not is_s3(source_path):
-            # This is a local to remote copy and uses S3 upload
-            s3_dest_path = S3Path(dest_path)
-            local_source_path = Path(source_path)
-
-            # Ensure the destination path including a file name is used
-            if len(s3_dest_path.suffix) is 0:
-                s3_dest_path = s3_dest_path / local_source_path.name
-
-            return s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
-
-        elif is_s3(source_path) and not is_s3(dest_path):
-            # This is a remote to local copy and uses S3 download
-            s3_source_path = S3Path(source_path)
-            local_dest_path = Path(dest_path)
-
-            # Ensure a full destination path including file name is used
-            if local_dest_path.is_dir():
-                local_dest_path = local_dest_path / s3_source_path.name
-
-            return s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
-
-        else:
-            # This is a remote to remote copy and uses S3 copy
-            s3_source_path = S3Path(source_path)
-            s3_dest_path = S3Path(dest_path)
-            copy_source = {
-                'Bucket': s3_source_path.bucket,
-                'Key': s3_source_path.key
-            }
-            return client.copy(copy_source, s3_dest_path.bucket, s3_dest_path.key)
-    else:
+    if not is_s3(source_path) and not is_s3(dest_path):
         # This is a local copy and uses shutil copy
         return shutil.copy(source_path, dest_path)
+
+    # Check if either source or destination is remote and allocate remote resources
+    s3 = boto3.resource("s3")
+    client = boto3.client("s3")
+
+    if is_s3(dest_path) and not is_s3(source_path):
+        # This is a local to remote copy and uses S3 upload
+        s3_dest_path = S3Path(dest_path)
+        local_source_path = Path(source_path)
+
+        # Ensure the destination path including a file name is used
+        if len(s3_dest_path.suffix) == 0:
+            s3_dest_path = s3_dest_path / local_source_path.name
+
+        return s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
+
+    if is_s3(source_path) and not is_s3(dest_path):
+        # This is a remote to local copy and uses S3 download
+        s3_source_path = S3Path(source_path)
+        local_dest_path = Path(dest_path)
+
+        # Ensure a full destination path including file name is used
+        if local_dest_path.is_dir():
+            local_dest_path = local_dest_path / s3_source_path.name
+
+        return s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
+
+    # This is a remote to remote copy and uses S3 copy
+    s3_source_path = S3Path(source_path)
+    s3_dest_path = S3Path(dest_path)
+    copy_source = {
+        'Bucket': s3_source_path.bucket,
+        'Key': s3_source_path.key
+    }
+    return client.copy(copy_source, s3_dest_path.bucket, s3_dest_path.key)
