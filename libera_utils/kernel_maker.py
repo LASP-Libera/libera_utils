@@ -208,7 +208,8 @@ def make_azel_ck(parsed_args: argparse.Namespace):
     raise NotImplementedError("CK generation for the Az-El mechanism isn't implemented yet.")
 
 
-def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path, fields: list = None, fmt: str or list = "%.16f"):
+def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path,
+                            fields: list = None, fmt: str or list = "%.16f"):
     """Write ephemeris and attitude data to MKSPK and MSOPCK input data files, respectively.
 
     See MSOPCK documentation here:
