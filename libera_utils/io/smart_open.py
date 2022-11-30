@@ -141,7 +141,7 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
         local_dest_path = Path(dest_path)
 
         # Ensure a full destination path including file name is used
-        if local_dest_path.is_dir():
+        if len(local_dest_path.suffix) == 0:
             local_dest_path = local_dest_path / s3_source_path.name
 
         return s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
@@ -149,6 +149,10 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
     # This is a remote to remote copy and uses S3 copy
     s3_source_path = S3Path(source_path)
     s3_dest_path = S3Path(dest_path)
+
+    if len(s3_dest_path.suffix) == 0:
+        s3_dest_path = s3_dest_path / s3_source_path.name
+
     copy_source = {
         'Bucket': s3_source_path.bucket,
         'Key': s3_source_path.key
