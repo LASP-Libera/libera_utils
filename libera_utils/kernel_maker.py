@@ -107,8 +107,9 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
             logger.error(result.stderr.decode())
         logger.info("Finished! SPK written to %s", output_filepath)
 
-        smart_copy_file(output_filepath, output_dir)
-        logger.info("SPK copied to %s", output_dir)
+        output_full_path = output_dir / spk_filename.path.name  # pylint: disable=no-member
+        smart_copy_file(output_filepath, output_full_path)
+        logger.info("SPK copied to %s", output_full_path)
 
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
@@ -189,8 +190,9 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
             logger.error(result.stderr.decode())
         logger.info("Finished! CK written to %s", output_filepath)
 
-        smart_copy_file(output_filepath, output_dir)
-        logger.info("CK copied to %s", output_dir)
+        output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
+        smart_copy_file(output_filepath, output_full_path)
+        logger.info("CK copied to %s", output_full_path)
 
 def make_azel_ck(parsed_args: argparse.Namespace):
     """Create a Libera Az-El CK from CCSDS packets
