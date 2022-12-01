@@ -102,6 +102,7 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
 def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path):
     """
         Copy function that can handle local files or files in an S3 bucket.
+        When used to copy to
 
         Parameters
         ----------
@@ -137,7 +138,7 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
         local_dest_path = Path(dest_path)
 
         # Ensure a full destination path including file name is used
-        if len(local_dest_path.suffix) == 0:
+        if local_dest_path.is_dir():
             local_dest_path = local_dest_path / s3_source_path.name
 
         return s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
