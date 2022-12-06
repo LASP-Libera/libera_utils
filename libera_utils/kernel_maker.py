@@ -25,6 +25,11 @@ from libera_utils.io.smart_open import smart_open, smart_copy_file
 logger = logging.getLogger(__name__)
 
 
+def make_jpss_kernels_from_manifest(manifest_file: str):
+    """ First attempt at triggering from manifest file. """
+    return manifest_file
+
+
 def make_jpss_spk(parsed_args: argparse.Namespace):
     """Create a JPSS SPK from APID 11 CCSDS packets.
 
