@@ -1,6 +1,6 @@
 """Quality flag definitions"""
 
-from enum import Flag, EnumMeta, Enum, _high_bit
+from enum import Flag, EnumMeta, Enum
 from operator import or_ as _or_
 from functools import reduce
 
@@ -45,30 +45,30 @@ class FrozenFlagMeta(EnumMeta):
 
 class QualityFlag(Flag):
     """
-    Subclass of Flag that adds a method for decomposing a flag into its individual components
+    Subclass of Flag that add a method for decomposing a flag into its individual components
     and a property to return a list of all messages associated with a quality flag
     """
     # Overriding enum module implementation to incorporate patched _decompose method below
     # TODO: Remove this if we upgrade to python 3.9.0a2 or newer
-    # @classmethod
-    # def _create_pseudo_member_(cls, value):
-    #     """
-    #     Create a composite member iff value contains only members.
-    #     """
-    #     pseudo_member = cls._value2member_map_.get(value, None)
-    #     if pseudo_member is None:
-    #         # verify all bits are accounted for
-    #         _, extra_flags = _patched_enum_decompose(cls, value)
-    #         if extra_flags:
-    #             raise ValueError("%r is not a valid %s" % (value, cls.__name__))
-    #         # construct a singleton enum pseudo-member
-    #         pseudo_member = object.__new__(cls)
-    #         pseudo_member._name_ = None
-    #         pseudo_member._value_ = value
-    #         # use setdefault in case another thread already created a composite
-    #         # with this value
-    #         pseudo_member = cls._value2member_map_.setdefault(value, pseudo_member)
-    #     return pseudo_member
+    @classmethod
+    def _create_pseudo_member_(cls, value):
+        """
+        Create a composite member iff value contains only members.
+        """
+        pseudo_member = cls._value2member_map_.get(value, None)
+        if pseudo_member is None:
+            # verify all bits are accounted for
+            _, extra_flags = _patched_enum_decompose(cls, value)
+            if extra_flags:
+                raise ValueError("%r is not a valid %s" % (value, cls.__name__))
+            # construct a singleton enum pseudo-member
+            pseudo_member = object.__new__(cls)
+            pseudo_member._name_ = None
+            pseudo_member._value_ = value
+            # use setdefault in case another thread already created a composite
+            # with this value
+            pseudo_member = cls._value2member_map_.setdefault(value, pseudo_member)
+        return pseudo_member
 
     # Overriding enum module implementation to incorporate patched _decompose method below
     # TODO: Remove this if we upgrade to python 3.9.0a2 or newer
@@ -180,7 +180,8 @@ def _patched_enum_decompose(flag, value):
     if not negative:
         tmp = not_covered
         while tmp:
-            flag_value = 2 ** _high_bit(tmp)
+            high_bit = tmp.bit_length() - 1
+            flag_value = 2 ** high_bit
             if flag_value in flag._value2member_map_:
                 members.append(flag._value2member_map_[flag_value])
                 not_covered &= ~flag_value
@@ -199,105 +200,3 @@ def with_all_none(f):
     f._member_map_['NONE'] = f(FlagBit(0, message="No flags set."))
     f._member_map_['ALL'] = f(reduce(_or_, f))
     return f
-
-
-@with_all_none
-class L1QualityFlag(Flag, metaclass=FrozenFlagMeta):
-    """Quality flag for an L1 observation (stored in PRIMARY header)"""
-    INTEGRATION_QUALITY_FLAG_PRESENT_QF = FlagBit(
-        2**0,  # bit 0
-        message="At least one integration has a non-zero quality flag value.")
-    MISSING_IMAGE_SCIENCE_QF = FlagBit(
-        2**1,  # bit 1
-        message="All science packets are missing for one or more images in the observation.")
-    MISSING_IMAGE_STIM_QF = FlagBit(
-        2**2,  # bit 2
-        message="The STIM packet is missing for one or more images in the observation.")
-    MISSING_IMAGE_ALL_QF = FlagBit(
-        2**3,  # bit 3
-        message="All science and stim packets are missing for one or more images in the observation.")
-    UNEXPECTED_TELEM_VALUE_CHANGE_QF = FlagBit(
-        2**4,  # bit 4
-        message="A Science_Telem value changed within the observation that should not have.")
-
-
-@with_all_none
-class L1ImageQualityFlag(Flag, metaclass=FrozenFlagMeta):
-    """
-    Quality flag class for a single L1 image (stored in STIMS)
-    The first 16 bits (0-15) are reserved for flags related to the STIM packet(s) that comprise the image.
-    The last 16 bits (16-31) are reserved for flags related to the SCIENCE_TELEM packet(s) that comprise the image.
-    """
-
-    # STIM packet quality flags are positions 0-15
-    MISSING_STIM_PACKET_QF = FlagBit(
-        2**0,  # bit 0
-        message="No STIM packet was received for this image/integration.")
-    LOW_STIM_COUNTS_QF = FlagBit(
-        2**1,  # bit 1
-        message="One or both stims had low counts possibly resulting in poor location calculations.")
-    STIM_OVERFLOW_QF = FlagBit(
-        2**2,  # bit 2
-        message="One or both stims had mis-matched x and y histogram sums, indicating overflow of histogram values.")
-    # TODO: Define quality flags for bits 3-15
-
-    # SCIENCE_TELEM packet quality flags are positions 16-31
-    MISSING_SCIENCE_PACKETS_QF = FlagBit(
-        2**16,  # bit 16
-        message="There is at least 1 missing science packet in the image/integration.")
-    MISSING_ALL_SCIENCE_PACKETS_QF = FlagBit(
-        2**17,  # bit 17
-        message="All science packets are missing for the image/integration.")
-    UNEXPECTED_IMG_TELEM_VALUE_CHANGE_QF = FlagBit(
-        2**18,  # bit 18
-        message="A Science_Telem value changed within the integration that should not have.")
-    UNEXPECTED_OBS_TELEM_VALUE_CHANGE_QF = FlagBit(
-        2**19,  # bit 19
-        message="A Science_Telem value changed within the observation that should not have.")
-    INVALID_CONFIGURATION_QF = FlagBit(
-        2**20,  # bit 20
-        message="Invalid integration configuration.")
-    IMG_BINNED_Y_DIM_AND_BLK_SIZE_MISMATCH = FlagBit(
-        2**21,  # bit 21
-        message="Y dimension of binned image is not an integer multiple of the compression block size."
-    )
-    IMG_Y_DIM_AND_BINNING_MISMATCH = FlagBit(
-        2**22,  # bit 22
-        message="Y dimension of image is not an integer multiple of the Y binning size."
-    )
-    IMG_X_DIM_AND_BINNING_MISMATCH = FlagBit(
-        2**23,  # bit 23
-        message="X dimension of image is not an integer multiple of the X binning size."
-    )
-    BINNED_DATA_LOSS_UINT32_FLOAT32_CONVERSION = FlagBit(
-        2**24,  # bit 24
-        message="Found values >2^24 in BINNED image resulting in possible data loss "
-                "when converting uint32 (utilizing only 26b) values to float32. "
-                "See EMMEMUS-389 for further information."
-    )
-    BINNED_PH_DATA_LOSS_UINT32_FLOAT32_CONVERSION = FlagBit(
-        2**25,  # bit 25
-        message="Found values >2^24 in BINNED-PH image resulting in possible data loss "
-                "when converting uint32 (utilizing only 26b) values to float32. "
-                "See EMMEMUS-389 for further information."
-    )
-
-
-@with_all_none
-class WavelengthHduQualityFlag(Flag, metaclass=FrozenFlagMeta):
-    """Quality flag for the WAVELENGTH HDU in L2A/L2B products"""
-    PEAK_OUTSIDE_WINDOW_QF = FlagBit(
-        2**0,  # bit 0
-        message="Spectrum peak outside expected Lyman-alpha window.")
-    BAD_GOODNESS_OF_FIT_QF = FlagBit(
-        2**1,  # bit 1
-        message="Goodness of fit metric outside acceptable range.")
-    LARGE_UNCERTAINTY = FlagBit(
-        2**2,  # bit 2
-        message="Fit resulted in high parameter uncertainty")
-    FAILED_TO_CONVERGE_QF = FlagBit(
-        2**3,  # bit 3
-        message="Lyman-alpha fit failed to converge.")
-    UNDERDETERMINED_FIT_QF = FlagBit(
-        2**4,  # bit 4
-        message="Lyman-alpha fit was underdetermined.")
