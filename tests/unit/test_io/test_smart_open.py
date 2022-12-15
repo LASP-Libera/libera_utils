@@ -1,5 +1,7 @@
 """Tests for smart_open module"""
 # Standard
+import warnings
+
 import h5py as h5
 import numpy as np
 from pathlib import Path
@@ -161,7 +163,13 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
     wrapped_input = wrapper(test_txt)
     wrapped_output_dir = wrapper(tmp_folder_path)
 
-    smart_copy_file(wrapped_input, wrapped_output_dir)
+    # Ensure a warning is thrown
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        smart_copy_file(wrapped_input, wrapped_output_dir)
+        assert len(w) == 1
+        assert issubclass(w[-1].category, UserWarning)
+
     assert (tmp_folder_path / "testtextfile.txt").exists()
 
 
@@ -183,7 +191,13 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
     wrapped_remote_file_path = wrapper(f"{remote_file_uri}")
     wrapped_local_destination = wrapper(local_folder_path)
 
-    smart_copy_file(wrapped_remote_file_path, wrapped_local_destination)
+    # Ensure a warning is thrown
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        smart_copy_file(wrapped_remote_file_path, wrapped_local_destination)
+        assert len(w) == 1
+        assert issubclass(w[-1].category, UserWarning)
+
     assert (local_folder_path / "testtextfile.txt").exists()
 
 
@@ -249,7 +263,12 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
     wrapped_remote_file_path = wrapper(f"{remote_file_uri}")
     wrapped_local_file_path = wrapper(local_folder_path)
 
-    smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
+    # Ensure a warning is thrown
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
+        assert len(w) == 2
+        assert issubclass(w[-1].category, UserWarning)
     assert (local_folder_path / "testtextfile").exists()
 
 
@@ -266,7 +285,13 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
 
     remote_path = wrapper(f"{remote_file_uri}")
     local_file_path = wrapper(test_txt)
-    smart_copy_file(local_file_path, remote_path)
+
+    # Ensure a warning is thrown
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        smart_copy_file(local_file_path, remote_path)
+        assert len(w) == 1
+        assert issubclass(w[-1].category, UserWarning)
 
     remote_path = S3Path(remote_file_uri)
     assert remote_path.exists()
@@ -309,7 +334,13 @@ def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mo
 
     source_file_path = wrapper(f"{source_file_uri}")
     dest_path = wrapper(dest_file_uri)
-    smart_copy_file(source_file_path, dest_path)
+
+    # Ensure a warning is thrown
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        smart_copy_file(source_file_path, dest_path)
+        assert len(w) == 1
+        assert issubclass(w[-1].category, UserWarning)
 
     dest_path = S3Path(dest_file_uri)
     assert dest_path.exists()
