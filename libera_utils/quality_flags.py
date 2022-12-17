@@ -4,7 +4,7 @@ from enum import Flag, EnumMeta, Enum
 from operator import or_ as _or_
 from functools import reduce
 
-
+#pylint: disable-all
 class FrozenFlagMeta(EnumMeta):
     """
     Metaclass that freezes an enum entirely, preventing values from being updated, added, or deleted.
