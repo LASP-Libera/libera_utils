@@ -21,14 +21,62 @@ from libera_utils.io import filenaming
 from libera_utils import packets as libera_packets
 from libera_utils import time
 from libera_utils.io.smart_open import smart_open, smart_copy_file
+from libera_utils.io.manifest import Manifest
 
 logger = logging.getLogger(__name__)
 
 
-def make_jpss_kernels_from_manifest(manifest_file: str):
+def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
+                                    output_directory: str or AnyPath):
     """ First attempt at triggering from manifest file. """
-    return manifest_file
+    m = Manifest.from_file(manifest_file_path)
+    m.validate_checksums()
+    start_time_text = m.configuration["start_time"]
+    desired_start_time = datetime.strptime(start_time_text, '%Y-%m-%d:%H:%M:%S')
+    end_time_text = m.configuration["end_time"]
+    desired_end_time = datetime.strptime(end_time_text, '%Y-%m-%d:%H:%M:%S')
+    files_in_range = []
+    for file_entry in m.files:
+        file_path_from_list = file_entry["filename"]
+        packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
+        ephemeris_time = time.scs2e_wrapper(
+            [f"{d}:{ms}:{us}" for d, ms, us in
+             zip(packet_data['ADAET1DAY'], packet_data['ADAET1MS'], packet_data['ADAET1US'])]
+        )
+        utc_start_str = time.et_2_datetime(ephemeris_time[0])
+        utc_end_str = time.et_2_datetime(ephemeris_time[-1])
 
+        # Packet range starts before desired range - first packet or full data
+        if utc_start_str < desired_start_time < utc_end_str:
+            files_in_range.append(str(file_path_from_list))
+        # Desired range starts before packet range - middle or end packet
+        if desired_start_time < utc_start_str < desired_end_time:
+            files_in_range.append(str(file_path_from_list))
+
+    parsed_args = argparse.Namespace(
+        packet_data_filepaths=files_in_range,
+        outdir=str(output_directory),
+        overwrite=False,
+        verbose=False
+    )
+    make_jpss_spk(parsed_args)
+    make_jpss_ck(parsed_args)
+
+    return m
+
+
+def get_spice_packet_data_from_filepaths(packet_data_filepaths):
+    packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
+    logger.info("Using packet definition %s", packet_definition_uri)
+
+    with smart_open(packet_definition_uri) as packet_definition_filepath:
+        packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
+
+    packet_parser = parser.PacketParser(packet_definition=packet_definition)
+
+    packet_data = libera_packets.parse_packets(packet_parser, packet_data_filepaths)
+
+    return packet_data
 
 def make_jpss_spk(parsed_args: argparse.Namespace):
     """Create a JPSS SPK from APID 11 CCSDS packets.
@@ -53,16 +101,8 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     output_dir = AnyPath(parsed_args.outdir)
     logger.info("Writing resulting SPK to %s", output_dir)
 
-    packet_definition_uri = config.get('JPSS_GEOLOCATION_PACKET_DEFINITION')
-    logger.info("Using packet definition %s", packet_definition_uri)
-
-    with smart_open(packet_definition_uri) as packet_definition_filepath:
-        packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
-
-    packet_parser = parser.PacketParser(packet_definition=packet_definition)
-
     logger.info("Parsing packets...")
-    packet_data = libera_packets.parse_packets(packet_parser, parsed_args.packet_data_filepaths)
+    packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
     logger.info("Done.")
 
     # Calculate and append a ET representation of the epochs. MKSPK is picky about time formats.
@@ -141,16 +181,8 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     output_dir = AnyPath(parsed_args.outdir)
     logger.info("Writing resulting CK to %s", output_dir)
 
-    packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
-    logger.info("Using packet definition %s", packet_definition_uri)
-
-    with smart_open(packet_definition_uri) as packet_definition_filepath:
-        packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
-
-    packet_parser = parser.PacketParser(packet_definition=packet_definition)
-
     logger.info("Parsing packets...")
-    packet_data = libera_packets.parse_packets(packet_parser, parsed_args.packet_data_filepaths)
+    packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
     logger.info("Done.")
 
     # Add a column that is the SCLK string, formatted with delimiters, to the input data recarray

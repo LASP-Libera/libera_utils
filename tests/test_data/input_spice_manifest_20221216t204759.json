@@ -1,0 +1,10 @@
+{
+  "manifest_type": "INPUT",
+  "files":
+    [
+      {"filename": "/Users/mawa7160/dev/libera_utils/tests/test_data/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1", "checksum": "0d1260068e5b6407d8c25fbdd0856856"},
+      {"filename": "/Users/mawa7160/dev/libera_utils/tests/test_data/J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1", "checksum": "c74ed1f73fa5726379d99abc32ae7eac"},
+      {"filename": "/Users/mawa7160/dev/libera_utils/tests/test_data/J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1", "checksum": "f17c3de3defd09cd2eb59f89e7a0ba6b"}],
+  "configuration": {
+    "start_time": "2021-04-09:00:00:00",
+    "end_time": "2021-04-09:01:00:00"}}

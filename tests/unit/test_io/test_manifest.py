@@ -13,12 +13,26 @@ from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.smart_open import smart_open
 
 
+
 def test_manifest_from_file(test_json_manifest):
     """Test factory method for creating a manifest object from a filepath"""
     m = Manifest.from_file(test_json_manifest)
     assert m.manifest_type == ManifestType.INPUT
     assert isinstance(m.files, list)
     assert isinstance(m.configuration, dict)
+
+
+def test_manifest_add_file_to_manifest(test_json_manifest, test_txt, ):
+    """Test factory method for adding a file to a manifest with checksum"""
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[],
+        configuration={}
+    )
+    initial_list_len = len(m.files)
+    m.add_file_to_manifest(test_json_manifest)
+    m.validate_checksums()
+    assert len(m.files) == initial_list_len + 1
 
 
 def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):
