@@ -102,7 +102,7 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
 def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path):
     """
         Copy function that can handle local files or files in an S3 bucket.
-        When used to copy to
+        Returns the path to the newly created file.
 
         Parameters
         ----------
@@ -115,7 +115,8 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
 
         Returns
         -------
-        : filelike object
+        : Path or S3Path
+            The path to the newly created file
         """
     if not is_s3(source_path) and not is_s3(dest_path):
         # This is a local copy and uses shutil copy
@@ -128,6 +129,7 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
                           f'Source location: {local_source_path} to destination:'
                           f'{local_dest_path}.')
 
+        # Returns a PosixPath of the newly created file
         return shutil.copy(source_path, dest_path)
 
     # Check if either source or destination is remote and allocate remote resources
@@ -145,7 +147,9 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
                           f'Source location: {local_source_path} to S3 location:'
                           f'{s3_dest_path}.')
 
-        return s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
+        # Has no return, but will raise exceptions on problems
+        s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
+        return s3_dest_path
 
     if is_s3(source_path) and not is_s3(dest_path):
         # This is a remote to local copy and uses S3 download
@@ -165,7 +169,9 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
                           f'Source: {s3_source_path} to destination:'
                           f'{local_dest_path}.')
 
-        return s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
+        # Has no return, but will raise exceptions on problems
+        s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
+        return Path(local_dest_path)
 
     # This is a remote to remote copy and uses S3 copy
     s3_source_path = S3Path(source_path)
@@ -182,4 +188,6 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
                       f'Source location: {s3_source_path} to S3 location:'
                       f'{s3_dest_path}.')
 
-    return client.copy(copy_source, s3_dest_path.bucket, s3_dest_path.key)
+    # Has no return, but will raise exceptions
+    client.copy(copy_source, s3_dest_path.bucket, s3_dest_path.key)
+    return s3_dest_path
