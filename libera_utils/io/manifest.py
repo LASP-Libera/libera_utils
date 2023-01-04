@@ -123,10 +123,18 @@ class Manifest:
             raise ValueError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
 
     def add_file_to_manifest(self, file_path):
-        """Add a file to the manifest from filename"""
+        """Add a file to the manifest from filename
+          Parameters
+        ----------
+        file_path : str or Path or S3Path
+            Directory path to the file to add to the manifest.
+
+        Returns
+        -------
+        None
+        """
         with smart_open(file_path) as fh:
             checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
         file_structure = {"filename": str(file_path),
                           "checksum": str(checksum_calculated)}
         self.files.append(file_structure)
-        return
