@@ -97,7 +97,7 @@ class Manifest:
         """
         if filename is None:
             if self.filename is None:
-                filename = self._generate_filename()
+                filename = str(self._generate_filename())
             else:
                 filename = self.filename
 
@@ -121,3 +121,12 @@ class Manifest:
                     failed_filenames.append(str(filename))
         if failed_filenames:
             raise ValueError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
+
+    def add_file_to_manifest(self, file_path):
+        """Add a file to the manifest from filename"""
+        with smart_open(file_path) as fh:
+            checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
+        file_structure = {"filename": str(file_path),
+                          "checksum": str(checksum_calculated)}
+        self.files.append(file_structure)
+        return
