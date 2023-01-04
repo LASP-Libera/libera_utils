@@ -247,9 +247,9 @@ def test_make_jpss_kernels_from_manifest_aws_three_files(test_data_path, short_t
     write_file_to_s3(packet_data_path, packet_uri)
     m.add_file_to_manifest(packet_uri)
 
-    manifest_location = S3Path(f"s3://{bucket}/{key}/manifest/")
+    manifest_location = f"s3://{bucket}/{key}/manifest/"
     m.write(manifest_location, "input_spice_manifest_two_files.json")
-    manifest_path = manifest_location / "input_spice_manifest_two_files.json"
+    manifest_path = S3Path(manifest_location) / "input_spice_manifest_two_files.json"
 
     s3_output_directory = S3Path(f"s3://{bucket}/{key}/kernel_output/")
 
@@ -279,9 +279,9 @@ def test_make_jpss_kernels_from_manifest_aws_one_file(test_data_path, short_tmp_
     write_file_to_s3(packet_data_path, packet_uri)
     m.add_file_to_manifest(packet_uri)
 
-    manifest_location = S3Path(f"s3://{bucket}/{key}/manifest/")
+    manifest_location = f"s3://{bucket}/{key}/manifest/"
     m.write(manifest_location, "input_spice_manifest_two_files.json")
-    manifest_path = manifest_location / "input_spice_manifest_two_files.json"
+    manifest_path = S3Path(manifest_location) / "input_spice_manifest_two_files.json"
 
     s3_output_directory = S3Path(f"s3://{bucket}/{key}/kernel_output/")
 
