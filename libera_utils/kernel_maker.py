@@ -108,6 +108,8 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
         logger.info("Finished! SPK written to %s", output_filepath)
 
         output_full_path = output_dir / spk_filename.path.name  # pylint: disable=no-member
+        # Use smart copy here to avoiding using two nested smart_open calls
+        # one call would be to open the newly created file, and one to open the desired location
         smart_copy_file(output_filepath, output_full_path)
         logger.info("SPK copied to %s", output_full_path)
 
@@ -191,6 +193,8 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
         logger.info("Finished! CK written to %s", output_filepath)
 
         output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
+        # Use smart copy here to avoiding using two nested smart_open calls
+        # one call would be to open the newly created file, and one to open the desired location
         smart_copy_file(output_filepath, output_full_path)
         logger.info("CK copied to %s", output_full_path)
 
