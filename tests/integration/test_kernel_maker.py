@@ -138,6 +138,8 @@ def test_make_azel_ck_aws(test_data_path, short_tmp_path, create_mock_bucket, wr
 
 
 def test_make_jpss_kernels_from_manifest_local_one_file(test_data_path, short_tmp_path):
+    # Test that the kernels are generated when the desired range
+    # falls within only one local file as in the example manifest file
     manifest_path = test_data_path / "input_spice_manifest_20221216t204759.json"
     kernel_maker.make_jpss_kernels_from_manifest(manifest_path, short_tmp_path)
 
@@ -146,6 +148,9 @@ def test_make_jpss_kernels_from_manifest_local_one_file(test_data_path, short_tm
 
 
 def test_make_jpss_kernels_from_manifest_local_two_files(test_data_path, short_tmp_path):
+    # Test that the kernels are generated when the desired range
+    # falls within two local files. This includes changing the time range
+    # in the example manifest file and the expected output kernel names
     m = Manifest.from_file(test_data_path / "input_spice_manifest_20221216t204759.json")
     m.configuration["end_time"] = "2021-04-09:02:00:00"
     m.write(short_tmp_path, "input_spice_manifest_two_files.json")
@@ -157,6 +162,9 @@ def test_make_jpss_kernels_from_manifest_local_two_files(test_data_path, short_t
 
 
 def test_make_jpss_kernels_from_manifest_local_three_files(test_data_path, short_tmp_path):
+    # Test that the kernels are generated when the desired range
+    # falls within three local files. This includes changing the time range
+    # in the example manifest file and the expected output kernel names
     m = Manifest.from_file(test_data_path / "input_spice_manifest_20221216t204759.json")
     m.configuration["end_time"] = "2021-04-09:04:00:00"
     m.write(short_tmp_path, "input_spice_manifest_three_files.json")
@@ -169,6 +177,10 @@ def test_make_jpss_kernels_from_manifest_local_three_files(test_data_path, short
 
 def test_make_jpss_kernels_from_manifest_aws_three_files(test_data_path, short_tmp_path,
                                                         create_mock_bucket, write_file_to_s3):
+    # Test that the kernels are generated when the desired range
+    # falls within three remote files. This includes changing the time range
+    # in the example manifest file and the expected output kernel names and
+    # creating a mock bucket holding the data and the manifest file
     bucket = 'kernel-test-bucket'
     create_mock_bucket(bucket)
     key = 'some_path'
@@ -195,12 +207,44 @@ def test_make_jpss_kernels_from_manifest_aws_three_files(test_data_path, short_t
     write_file_to_s3(packet_data_path, packet_uri)
     m.add_file_to_manifest(packet_uri)
 
-    s3_output_directory = f"s3://{bucket}/{key}/kernel_output/"
+    manifest_location = S3Path(f"s3://{bucket}/{key}/manifest/")
+    m.write(manifest_location, "input_spice_manifest_two_files.json")
+    manifest_path = manifest_location / "input_spice_manifest_two_files.json"
 
-    m.write(s3_output_directory, "input_spice_manifest_two_files.json")
-    s3_output_directory = S3Path(s3_output_directory)
-    manifest_path = s3_output_directory / "input_spice_manifest_two_files.json"
+    s3_output_directory = S3Path(f"s3://{bucket}/{key}/kernel_output/")
 
     kernel_maker.make_jpss_kernels_from_manifest(manifest_path, s3_output_directory)
     assert (s3_output_directory / 'libera_jpss_20210408t235850_20210409t055849.bsp').exists()
     assert (s3_output_directory / 'libera_jpss_20210408t235850_20210409t055849.bc').exists()
+
+
+def test_make_jpss_kernels_from_manifest_aws_one_file(test_data_path, short_tmp_path,
+                                                             create_mock_bucket, write_file_to_s3):
+    # Test that the kernels are generated when the desired range
+    # falls within one remote file. This includes creating a mock bucket
+    # holding the data and the newly made manifest file also in the bucket
+    bucket = 'kernel-test-bucket'
+    create_mock_bucket(bucket)
+    key = 'some_path'
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[],
+        configuration={}
+    )
+    m.configuration["start_time"] = "2021-04-09:00:00:00"
+    m.configuration["end_time"] = "2021-04-09:01:00:00"
+
+    packet_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
+    packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
+    write_file_to_s3(packet_data_path, packet_uri)
+    m.add_file_to_manifest(packet_uri)
+
+    manifest_location = S3Path(f"s3://{bucket}/{key}/manifest/")
+    m.write(manifest_location, "input_spice_manifest_two_files.json")
+    manifest_path = manifest_location / "input_spice_manifest_two_files.json"
+
+    s3_output_directory = S3Path(f"s3://{bucket}/{key}/kernel_output/")
+
+    kernel_maker.make_jpss_kernels_from_manifest(manifest_path, s3_output_directory)
+    assert (s3_output_directory / 'libera_jpss_20210408t235850_20210409t015849.bsp').exists()
+    assert (s3_output_directory / 'libera_jpss_20210408t235850_20210409t015849.bc').exists()

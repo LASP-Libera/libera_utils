@@ -13,7 +13,6 @@ from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.smart_open import smart_open
 
 
-
 def test_manifest_from_file(test_json_manifest):
     """Test factory method for creating a manifest object from a filepath"""
     m = Manifest.from_file(test_json_manifest)
