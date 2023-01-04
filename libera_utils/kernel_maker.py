@@ -28,13 +28,31 @@ logger = logging.getLogger(__name__)
 
 def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
                                     output_directory: str or AnyPath):
-    """ First attempt at triggering from manifest file. """
+    """Alpha function triggering kernel generation from manifest file.
+
+    Parameters
+    ----------
+    manifest_file_path : str or AnyPath
+        Path to the manifest file that includes end_time and start_time
+        in the configuration section
+    output_directory :  str or AnyPath
+        Path to save the completed kernels
+    Returns
+    -------
+    output_directory : str or AnyPath
+        Path to the directory containing the completed kernels
+    """
     m = Manifest.from_file(manifest_file_path)
     m.validate_checksums()
+
+    # Load desired time range from the manifest configuration
     start_time_text = m.configuration["start_time"]
     desired_start_time = datetime.strptime(start_time_text, '%Y-%m-%d:%H:%M:%S')
     end_time_text = m.configuration["end_time"]
     desired_end_time = datetime.strptime(end_time_text, '%Y-%m-%d:%H:%M:%S')
+
+    # Load the packet files and check the time ranges against the manifest configuration
+    # TODO update this if possible to use the metadata files when those are more defined
     files_in_range = []
     for file_entry in m.files:
         file_path_from_list = file_entry["filename"]
@@ -53,6 +71,9 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
         if desired_start_time < utc_start_str < desired_end_time:
             files_in_range.append(str(file_path_from_list))
 
+    # TODO: Add a case to return/error if necessary when not enough data is in any packets
+
+    # Create the arguments to pass to the kernel generation
     parsed_args = argparse.Namespace(
         packet_data_filepaths=files_in_range,
         outdir=str(output_directory),
@@ -62,10 +83,22 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     make_jpss_spk(parsed_args)
     make_jpss_ck(parsed_args)
 
-    return m
+    return output_directory
 
 
 def get_spice_packet_data_from_filepaths(packet_data_filepaths):
+    """Utility function to return packet data from a list of file paths
+
+     Parameters
+    ----------
+    packet_data_filepaths : list
+        The list of file paths to the raw packet data
+
+    Returns
+    -------
+    packet_data : ndarray
+        The configured packet data. See packets.py for more details on structure
+     """
     packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
     logger.info("Using packet definition %s", packet_definition_uri)
 
