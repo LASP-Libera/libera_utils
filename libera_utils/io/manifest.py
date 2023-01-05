@@ -155,3 +155,4 @@ class Manifest:
         """
         self.configuration["start_time"] = start_datetime.strftime('%Y-%m-%d:%H:%M:%S')
         self.configuration["end_time"] = end_datetime.strftime('%Y-%m-%d:%H:%M:%S')
+        
