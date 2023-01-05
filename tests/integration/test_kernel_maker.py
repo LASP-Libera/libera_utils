@@ -137,6 +137,28 @@ def test_make_azel_ck_aws(test_data_path, short_tmp_path, create_mock_bucket, wr
     assert (s3_output_path / 'libera_azel_20210408t235850_20210409t015849.bc').exists()
 
 
+def test_make_jpss_kernels_from_manifest_no_time_range(test_data_path, short_tmp_path):
+    # Test that the kernels are generated when no desired range
+    # is given.
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[],
+        configuration={}
+    )
+    data_file_1 = test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
+    data_file_2 = test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1"
+    data_file_3 = test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
+    m.add_file_to_manifest(data_file_1)
+    m.add_file_to_manifest(data_file_2)
+    m.add_file_to_manifest(data_file_3)
+    manifest_path = short_tmp_path / "input_spice_manifest_test.json"
+    m.write(short_tmp_path, "input_spice_manifest_test.json")
+    kernel_maker.make_jpss_kernels_from_manifest(manifest_path, short_tmp_path)
+
+    assert (short_tmp_path / 'libera_jpss_20210408t235850_20210409t055849.bsp').exists()
+    assert (short_tmp_path / 'libera_jpss_20210408t235850_20210409t055849.bc').exists()
+
+
 def test_make_jpss_kernels_from_manifest_local_one_file(test_data_path, short_tmp_path):
     # Test that the kernels are generated when the desired range
     # falls within only one local file as in the example manifest file
