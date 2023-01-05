@@ -1,6 +1,6 @@
 """Tests for manifest module"""
 # Standard
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 from unittest import mock
 from hashlib import md5
@@ -21,7 +21,7 @@ def test_manifest_from_file(test_json_manifest):
     assert isinstance(m.configuration, dict)
 
 
-def test_manifest_add_file_to_manifest(test_json_manifest, test_txt, ):
+def test_manifest_add_file_to_manifest(test_json_manifest):
     """Test factory method for adding a file to a manifest with checksum"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
@@ -32,6 +32,17 @@ def test_manifest_add_file_to_manifest(test_json_manifest, test_txt, ):
     m.add_file_to_manifest(test_json_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 1
+
+
+def test_manifest_add_desired_time_range(test_json_manifest):
+    """Test factory method for adding a time range to a manifest file"""
+    m = Manifest.from_file(test_json_manifest)
+    start = datetime.now()
+    end = start + timedelta(hours=1)
+    m.add_desired_time_range(start, end)
+
+    assert "start_time" in m.configuration.keys()
+    assert "end_time" in m.configuration.keys()
 
 
 def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):

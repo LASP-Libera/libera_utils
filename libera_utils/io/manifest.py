@@ -138,3 +138,20 @@ class Manifest:
         file_structure = {"filename": str(file_path),
                           "checksum": str(checksum_calculated)}
         self.files.append(file_structure)
+
+    def add_desired_time_range(self, start_datetime: datetime, end_datetime: datetime):
+        """Add a file to the manifest from filename
+          Parameters
+        ----------
+        start_datetime : datetime
+            The desired start time for the range of data in this manifest
+
+        end_datetime : datetime
+            The desired end time for the range of data in this manifest
+
+        Returns
+        -------
+        None
+        """
+        self.configuration["start_time"] = start_datetime.strftime('%Y-%m-%d:%H:%M:%S')
+        self.configuration["end_time"] = end_datetime.strftime('%Y-%m-%d:%H:%M:%S')

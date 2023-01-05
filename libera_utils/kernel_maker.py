@@ -46,6 +46,8 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     output_directory : str or AnyPath
         Path to the directory containing the completed kernels
     """
+    # TODO: Consider cases to return/error if the entire range is not covered
+
     m = Manifest.from_file(manifest_file_path)
     m.validate_checksums()
     files_in_range = []
@@ -71,6 +73,11 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
                 [f"{d}:{ms}:{us}" for d, ms, us in
                  zip(packet_data['ADAET1DAY'], packet_data['ADAET1MS'], packet_data['ADAET1US'])]
             )
+            # Check if any of the packet data are in increasing order by comparing an array element to
+            # its right neighbor and ensuring that is always greater or equal. If this is not true
+            # throw an error
+            if not np.all(ephemeris_time[:-1] <= ephemeris_time[1:]):
+                raise ValueError(f"The data in {file_path_from_list} are not monotonic in time")
             packet_start_time = time.et_2_datetime(ephemeris_time[0])
             packet_end_time = time.et_2_datetime(ephemeris_time[-1])
 
@@ -84,7 +91,6 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
         if not files_in_range:
             raise ValueError(f"No files contained packets in timerange ({desired_start_time}, {desired_end_time})")
 
-    # TODO: Consider a case to return/error if there are gaps?
     # Create the arguments to pass to the kernel generation
     parsed_args = argparse.Namespace(
         packet_data_filepaths=files_in_range,
