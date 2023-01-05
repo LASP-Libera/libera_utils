@@ -30,6 +30,10 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
                                     output_directory: str or AnyPath):
     """Alpha function triggering kernel generation from manifest file.
 
+    If the manifest configuration field contains "start_time" and "end_time"
+    fields then this function will select only packet data that falls in that
+    range. If these are not given, then all packet data will be used.
+
     Parameters
     ----------
     manifest_file_path : str or AnyPath
@@ -44,35 +48,43 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     """
     m = Manifest.from_file(manifest_file_path)
     m.validate_checksums()
-
-    # Load desired time range from the manifest configuration
-    start_time_text = m.configuration["start_time"]
-    desired_start_time = datetime.strptime(start_time_text, '%Y-%m-%d:%H:%M:%S')
-    end_time_text = m.configuration["end_time"]
-    desired_end_time = datetime.strptime(end_time_text, '%Y-%m-%d:%H:%M:%S')
-
-    # Load the packet files and check the time ranges against the manifest configuration
-    # TODO update this if possible to use the metadata files when those are more defined
     files_in_range = []
-    for file_entry in m.files:
-        file_path_from_list = file_entry["filename"]
-        packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
-        ephemeris_time = time.scs2e_wrapper(
-            [f"{d}:{ms}:{us}" for d, ms, us in
-             zip(packet_data['ADAET1DAY'], packet_data['ADAET1MS'], packet_data['ADAET1US'])]
-        )
-        utc_start_str = time.et_2_datetime(ephemeris_time[0])
-        utc_end_str = time.et_2_datetime(ephemeris_time[-1])
 
-        # Packet range starts before desired range - first packet or full data
-        if utc_start_str < desired_start_time < utc_end_str:
-            files_in_range.append(str(file_path_from_list))
-        # Desired range starts before packet range - middle or end packet
-        if desired_start_time < utc_start_str < desired_end_time:
-            files_in_range.append(str(file_path_from_list))
+    if "start_time" not in m.configuration.keys():
+        # No time range information is provided. Process all files in the manifest
+        for file_entry in m.files:
+            files_in_range.append(str(file_entry["filename"]))
+    else:
+        # Load desired time range from the manifest configuration
+        start_time_text = m.configuration["start_time"]
+        desired_start_time = datetime.strptime(start_time_text, '%Y-%m-%d:%H:%M:%S')
+        end_time_text = m.configuration["end_time"]
+        desired_end_time = datetime.strptime(end_time_text, '%Y-%m-%d:%H:%M:%S')
 
-    # TODO: Add a case to return/error if necessary when not enough data is in any packets
+        # Load the packet files and check the time ranges against the manifest configuration
+        # TODO update this if possible to use the metadata files when those are more defined
 
+        for file_entry in m.files:
+            file_path_from_list = file_entry["filename"]
+            packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
+            ephemeris_time = time.scs2e_wrapper(
+                [f"{d}:{ms}:{us}" for d, ms, us in
+                 zip(packet_data['ADAET1DAY'], packet_data['ADAET1MS'], packet_data['ADAET1US'])]
+            )
+            packet_start_time = time.et_2_datetime(ephemeris_time[0])
+            packet_end_time = time.et_2_datetime(ephemeris_time[-1])
+
+            # Packet range starts before desired range - first packet or full data
+            if packet_start_time < desired_start_time < packet_end_time:
+                files_in_range.append(str(file_path_from_list))
+            # Desired range starts before packet range - middle or end packet
+            if desired_start_time < packet_start_time < desired_end_time:
+                files_in_range.append(str(file_path_from_list))
+
+        if not files_in_range:
+            raise ValueError(f"No files contained packets in timerange ({desired_start_time}, {desired_end_time})")
+
+    # TODO: Consider a case to return/error if there are gaps?
     # Create the arguments to pass to the kernel generation
     parsed_args = argparse.Namespace(
         packet_data_filepaths=files_in_range,
@@ -87,7 +99,8 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
 
 
 def get_spice_packet_data_from_filepaths(packet_data_filepaths):
-    """Utility function to return packet data from a list of file paths
+    """Utility function to return an array of packet data from a list of file paths of raw JPSS APID 11
+    geolocation packet data files.
 
      Parameters
     ----------
