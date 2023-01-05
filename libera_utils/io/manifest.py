@@ -93,7 +93,7 @@ class Manifest:
 
         Returns
         -------
-        : str or Path or S3Path
+        : Path or S3Path
         """
         if filename is None:
             if self.filename is None:
