@@ -1,82 +1,138 @@
 """ORM objects for SQLAlchemy"""
 # Installed
-from sqlalchemy import Column, SmallInteger, Integer, Text, DateTime, Boolean, FetchedValue, ForeignKey, LargeBinary
-from sqlalchemy.dialects.postgresql import BIT
+from sqlalchemy import Column, FetchedValue, ForeignKey
+from sqlalchemy.dialects.postgresql import SMALLINT, BIGINT, INTEGER, TEXT, TIMESTAMP, BOOLEAN, NUMERIC
 from sqlalchemy.orm import relationship
 # Local
 from libera_utils.db import Base
 from libera_utils.db.mixins import ReprMixin, DataProductMixin
 
 
-class APID(Base, ReprMixin):
+class Cr(Base, ReprMixin):
     """
-    Lookup table of APID descriptions
+    Construction record
     """
+    __repr_attrs__ = ["filename"]
 
-    # Table fields
-    apid = Column(Integer, primary_key=True)
-    description = Column(Text)
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    file_name = Column(TEXT)
+    ingested = Column(TIMESTAMP(timezone=True), server_default=FetchedValue())
+    archived = Column(TIMESTAMP(timezone=True))
+    edos_software_version = Column(INTEGER)
+    construction_record_type = Column(INTEGER)
+    test_flag = Column(BOOLEAN)
+    n_bytes_fill_data = Column(NUMERIC(20))
+    n_length_mismatches = Column(BIGINT)
+    first_packet_sc_time = Column(NUMERIC(20))
+    last_packet_sc_time = Column(NUMERIC(20))
+    first_packet_utc_time = Column(TIMESTAMP(timezone=True))
+    last_packet_utc_time = Column(TIMESTAMP(timezone=True))
+    first_packet_esh_time = Column(NUMERIC(20))
+    last_packet_esh_time = Column(NUMERIC(20))
+    n_rs_corrections = Column(BIGINT)
+    n_packets = Column(BIGINT)
+    size_bytes = Column(NUMERIC(20))
+    completion_time = Column(NUMERIC(20))
+    n_apids = Column(SMALLINT)
+    n_pds_files = Column(SMALLINT)
+
+    apids: list = relationship("CrApid", back_populates="construction_record")
+    pds_files: list = relationship("PdsFile", back_populates="construction_record")
 
 
-class Packet(Base, ReprMixin):
+class CrApid(Base, ReprMixin):  # I know...
     """
-    Packet contents
+    APID data record in a CR
     """
-    __repr_attrs__ = ['apid', 'sequence_count', 'data_length']
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    cr_id = Column(INTEGER, ForeignKey(Cr.id))
+    scid_apid = Column(BIGINT)
+    byte_offset = Column(NUMERIC(20))
+    n_vcids = Column(SMALLINT)
+    n_ssc_discontinuities = Column(BIGINT)
 
-    id = Column(Integer, primary_key=True, server_default=FetchedValue())
-    version_number = Column(SmallInteger)
-    type = Column(Boolean)
-    secondary_header_flag = Column(Boolean)
-    apid = Column(SmallInteger, ForeignKey(APID.apid))
-    sequence_flags = Column(BIT(2))
-    sequence_count = Column(SmallInteger)
-    data_length = Column(SmallInteger)
-    secondary_header = Column(LargeBinary)
-    user_data = Column(LargeBinary)
+    construction_record = relationship("Cr", back_populates="apids")
+    vcids: list = relationship("CrApidVcid", back_populates="apid")
+    ssc_gaps: list = relationship("CrApidSscGap", back_populates="apid")
 
 
-class L0(Base, DataProductMixin, ReprMixin):
+class CrApidVcid(Base, ReprMixin):
     """
-    L0 files containing packets.
+    VCID included in PDS for a single APID
     """
-    __repr_attrs__ = ['filename', 'version']
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    cr_apid_id = Column(INTEGER, ForeignKey(CrApid.id))
+    scid_vcid = Column(INTEGER)
 
-    # Table fields
-    id = Column(Integer, primary_key=True, server_default=FetchedValue())
-    filename = Column(Text)
-    version = Column(SmallInteger)
-    created = Column(DateTime, server_default=FetchedValue())
-    ingested = Column(DateTime)
-
-    packets = relationship(Packet, secondary='l0_pkt_jt')
+    apid = relationship("CrApid", back_populates="vcids")
 
 
-class L0PktJt(Base):
+class CrApidSscGap(Base, ReprMixin):
     """
-    Jointable between L0 and Packet for n:m relationship
+    SSC gap described per APID in a CR
     """
-    l0_id = Column(Integer, ForeignKey(L0.id), primary_key=True)
-    pkt_id = Column(Integer, ForeignKey(Packet.id), primary_key=True)
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    cr_apid_id = Column(INTEGER, ForeignKey(CrApid.id))
+    first_missing_ssc = Column(BIGINT)
+    gap_byte_offset = Column(NUMERIC(20))
+    n_missing_sscs = Column(BIGINT)
+    preceding_packet_sc_time = Column(NUMERIC(20))
+    following_packet_sc_time = Column(NUMERIC(20))
+    preceding_packet_utc_time = Column(TIMESTAMP(timezone=True))
+    following_packet_utc_time = Column(TIMESTAMP(timezone=True))
+    preceding_packet_esh_time = Column(NUMERIC(20))
+    following_packet_esh_time = Column(NUMERIC(20))
+
+    apid = relationship("CrApid", back_populates="ssc_gaps")
 
 
-class L1b(Base, ReprMixin, DataProductMixin):
+class PdsFile(Base, ReprMixin):
     """
-    L1b data products.
+    Record of a single file as part of a PDS
     """
-    __repr_attrs__ = ['filename']
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    cr_id = Column(INTEGER, ForeignKey(Cr.id))
+    file_name = Column(TEXT)
+    ingested = Column(TIMESTAMP(timezone=True))
+    archived = Column(TIMESTAMP(timezone=True))
 
-    id = Column(Integer, primary_key=True, server_default=FetchedValue())
-    filename = Column(Text)
-    version = Column(SmallInteger)
-    created = Column(DateTime, server_default=FetchedValue())
-
-    packets = relationship(Packet, secondary='l1b_pkt_jt')
+    construction_record = relationship("Cr", back_populates="pds_files")
+    apids: list = relationship("PdsFileApid", back_populates="pds_file")
 
 
-class L1bPktJt(Base):
+class PdsFileApid(Base, ReprMixin):
     """
-    Jointable between L1b and Packet for n:m relationship
+    APID information for a single PDS file
     """
-    l1b_id = Column(Integer, ForeignKey(L1b.id), primary_key=True)
-    pkt_id = Column(Integer, ForeignKey(Packet.id), primary_key=True)
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    pds_file_id = Column(INTEGER, ForeignKey(PdsFile.id))
+    scid_apid = Column(BIGINT)
+    first_packet_sc_time = Column(NUMERIC(20))
+    last_packet_sc_time = Column(NUMERIC(20))
+    first_packet_utc_time = Column(TIMESTAMP(timezone=True))
+    last_packet_utc_time = Column(TIMESTAMP(timezone=True))
+
+    pds_file = relationship("PdsFile", back_populates="apids")
+
+
+class SpkCkFile(Base, ReprMixin, DataProductMixin):
+    """
+    SPICE CK and SPK kernel file
+    """
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    file_name = Column(TEXT)
+    start_sc_time = Column(NUMERIC(20))
+    stop_sc_time = Column(NUMERIC(20))
+    start_utc_time = Column(TIMESTAMP(timezone=True))
+    stop_utc_time = Column(TIMESTAMP(timezone=True))
+    revision = Column(INTEGER)
+
+    pds_files: list = relationship("PdsFile", secondary='spk_ck_file_pds_file_jt')
+
+
+class SpkCkFilePdsFileJt(Base):
+    """
+    Join table between PdsFile and SpkCkFile for n:m relationship
+    """
+    pds_file_id = Column(INTEGER, ForeignKey(PdsFile.id), primary_key=True)
+    spk_ck_file_id = Column(INTEGER, ForeignKey(SpkCkFile.id), primary_key=True)

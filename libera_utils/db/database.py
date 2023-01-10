@@ -162,9 +162,9 @@ class _DatabaseManager:
         Truncates all product tables
         :return:
         """
-        if self.database != 'sdp_test':
-            raise ValueError(f"Refusing to truncate all tables for database database {self.database}. "
-                             f"We only permit this operation for the sdp_test database.")
+        if self.host != 'localhost':
+            raise ValueError(f"Refusing to truncate all tables for database on host {self.host}. "
+                             f"We only permit this operation for local dev databases.")
         meta = MetaData()
         meta.reflect(bind=self.engine)
         for table in reversed(meta.sorted_tables):

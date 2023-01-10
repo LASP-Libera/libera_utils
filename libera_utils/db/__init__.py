@@ -37,6 +37,7 @@ class BaseAugmentation:
         return camel_to_snake(cls.__name__)
 
 
+# TODO: This will need to change when upgrading to SQLAlchemy 2.0
 Base = declarative_base(cls=BaseAugmentation)
 
 
