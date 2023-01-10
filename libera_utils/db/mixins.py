@@ -92,7 +92,7 @@ class DataProductMixin:
     @classmethod
     def latest(cls, session: Session = None, **filters):
         """
-        Finds the latest products (highest version), filtered by **filters**
+        Finds the latest products (highest revision), filtered by **filters**
 
         Parameters
         ----------
@@ -105,7 +105,7 @@ class DataProductMixin:
         -------
         : list
         """
-        # TODO: Implement logic for finding the latest version of each "unique observation", whatever that ends up
+        # TODO: Implement logic for finding the latest revision of each "unique observation", whatever that ends up
         #    meaning. For BDS products, that could be a specific timerange or just a date.
         pass
 

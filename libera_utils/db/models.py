@@ -126,6 +126,7 @@ class SpkCkFile(Base, ReprMixin, DataProductMixin):
     start_utc_time = Column(TIMESTAMP(timezone=True))
     stop_utc_time = Column(TIMESTAMP(timezone=True))
     revision = Column(INTEGER)
+    quality_flag = Column(INTEGER)
 
     pds_files: list = relationship("PdsFile", secondary='spk_ck_file_pds_file_jt')
 
@@ -136,3 +137,23 @@ class SpkCkFilePdsFileJt(Base):
     """
     pds_file_id = Column(INTEGER, ForeignKey(PdsFile.id), primary_key=True)
     spk_ck_file_id = Column(INTEGER, ForeignKey(SpkCkFile.id), primary_key=True)
+
+
+class L1bCam(Base):
+    """
+    L1b Camera product files
+    """
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    file_name = Column(TEXT)
+    revision = Column(INTEGER)
+    quality_flag = Column(INTEGER)
+
+
+class L1bRad(Base):
+    """
+    L1b Radiometer product files
+    """
+    id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
+    file_name = Column(TEXT)
+    revision = Column(INTEGER)
+    quality_flag = Column(INTEGER)
