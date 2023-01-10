@@ -111,14 +111,14 @@ CREATE TABLE pds_file (
     cr_id INTEGER,  -- Nullable in case we get a PDS file but no construction record
     FOREIGN KEY (cr_id) REFERENCES cr(id),
     file_name TEXT UNIQUE NOT NULL,
-    ingested TIMESTAMP WITH TIME ZONE DEFAULT (now() AT TIME ZONE 'UTC'),
+    ingested TIMESTAMP WITH TIME ZONE DEFAULT NULL,  -- Nullable in case we get a CR for it but no the file itself.
     archived TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 COMMENT ON TABLE pds_file IS '(25) Records of individual PDS files.';
 COMMENT ON COLUMN pds_file.id IS 'Primary key.';
 COMMENT ON COLUMN pds_file.cr_id IS 'Foreign key to cr.id.';
 COMMENT ON COLUMN pds_file.file_name IS '(25-2) Name of Production Data Set file.';
-COMMENT ON COLUMN pds_file.ingested IS 'Timestamp when file was first ingested (when the record was created).';
+COMMENT ON COLUMN pds_file.ingested IS 'Timestamp when file was first ingested. If NULL, indicates we parsed a CR containing it but never received the PDS file itself.';
 COMMENT ON COLUMN pds_file.archived IS 'Timestamp when file was moved to the SDC archive bucket.';
 
 
