@@ -103,8 +103,15 @@ class TestL0Models:
             assert len(cr.apids[0].vcids) == 1
             assert len(cr.apids[0].ssc_gaps) == 1
 
+    def test_pds_file(self):
+        with getdb().session() as s:
+            all_pds = s.query(PdsFile).all()
+            assert len(all_pds) == 1
+            assert hasattr(all_pds[0], 'construction_record')
+            assert all_pds[0].construction_record is not None
 
 
+# TODO: Test ability to retrieve latest products
 # @pytest.mark.usefixtures('insert_dummy_data')  # Scoped to entire class
 # class TestDataProductMixin:
 #     """Test class that tests the methods provided by the DataProductMixin class"""
