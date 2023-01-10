@@ -162,9 +162,10 @@ class _DatabaseManager:
         Truncates all product tables
         :return:
         """
-        if self.host != 'localhost':
+        if self.host not in ('localhost', 'libera-dev-db'):
             raise ValueError(f"Refusing to truncate all tables for database on host {self.host}. "
-                             f"We only permit this operation for local dev databases.")
+                             "We only permit this operation for local dev databases on host "
+                             "'libera-dev-db' or 'localhost'.")
         meta = MetaData()
         meta.reflect(bind=self.engine)
         for table in reversed(meta.sorted_tables):
