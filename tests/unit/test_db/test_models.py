@@ -1,119 +1,114 @@
 """Tests for the models module"""
 # Standard
-from datetime import datetime, timedelta
-import pytz
+from datetime import datetime, timedelta, timezone
 # Installed
 import pytest
 # Local
 from libera_utils.db import getdb
-from libera_utils.db.models import APID, Packet, L0, L1b
+from libera_utils.db.models import *
 
 
 @pytest.fixture
-def insert_dummy_data(insert_test_data):
-    """Inserts a set of dummy data into the DB"""
-    records = []
+def insert_dummy_l0_relations(clean_local_db):
+    """
+    Insert test ORM objects for managing L0 data:
 
-    # Create test APID records
-    apid = APID(apid=1111, description='Dummy APID for testing.')
-    records.append(apid)
+    Cr
+    --> CrApid
+        --> CrApidVcid
+        --> CrApidSscGap
+    --> PdsFile
+        --> PdsFileApid
+    """
+    # Create some datetime objects with time zone info
+    # Absent this tzinfo, the DB will assume that "naive" datetime objects are in whatever time zone Postgres
+    # server/database/session is configured with (i.e. the output of `show timezone;`).
+    # It's a reasonable assumption that our DB will be in UTC time (anything else is pure madness).
+    t0 = datetime.fromisoformat("2023-01-01T11:22:33.123456").replace(tzinfo=timezone.utc)
+    t1 = datetime.fromisoformat("2023-01-01T11:25:33.123456").replace(tzinfo=timezone.utc)
+    pds_file_apid = PdsFileApid(
+        scid_apid=84739372,
+        first_packet_sc_time=0,
+        last_packet_sc_time=(2**64)-1,
+        first_packet_utc_time=t0,
+        last_packet_utc_time=t1
+    )
+    pds = PdsFile(
+        file_name='P2041834AAAAAAAAAAAAAA19218140452200.PDS',
+        apids=[pds_file_apid]
+    )
 
-    # Create test packet records
-    npkts = 5
-    packets = []
-    for seq_ctr in range(npkts):
-        if seq_ctr == 0:
-            seq_flgs = '01'
-        elif seq_ctr == npkts - 1:
-            seq_flgs = '10'
-        else:
-            seq_flgs = '00'
-        packets.append(
-            Packet(version_number=0, type=0, secondary_header_flag=False, apid=apid.apid,
-                   sequence_flags=seq_flgs, sequence_count=1, data_length=3,
-                   secondary_header=None, user_data=b'ABC123')
-        )
-    records += packets
+    vcid = CrApidVcid(
+        scid_vcid=(2**16)-1
+    )
+    gap = CrApidSscGap(
+        first_missing_ssc=(2**16)-1,
+        gap_byte_offset=(2**64)-1,
+        n_missing_sscs=3,
+        preceding_packet_sc_time=0,
+        following_packet_sc_time=(2**64)-1,
+        preceding_packet_utc_time=t0,
+        following_packet_utc_time=t1,
+        preceding_packet_esh_time=0,
+        following_packet_esh_time=(2**64)-1
+    )
+    cr_apid = CrApid(
+        scid_apid=9999999,
+        byte_offset=3,
+        n_vcids=1,
+        n_ssc_discontinuities=2,
+        vcids=[vcid],
+        ssc_gaps=[gap]
+    )
+    cr = Cr(
+        file_name="P2041834AAAAAAAAAAAAAA19218140452200.CONS",
+        edos_software_version=3,
+        construction_record_type=1,
+        test_flag=False,
+        n_bytes_fill_data=0,
+        n_length_mismatches=0,
+        first_packet_sc_time=0,
+        last_packet_sc_time=(2**64)-1,
+        first_packet_utc_time=t0,
+        last_packet_utc_time=t1,
+        first_packet_esh_time=1,
+        last_packet_esh_time=(2**64)-2,
+        n_rs_corrections=10,
+        n_packets=1000000,
+        size_bytes=42,
+        completion_time=(2**64)-1,
+        n_apids=1,
+        n_pds_files=1,
+        apids=[cr_apid],
+        pds_files=[pds]
+    )
+    with getdb().session() as s:
+        s.add(cr)
 
-    # Create test L0 records
-    l0_v0 = L0(filename='libera_test_l0_v0.pkts', version=0, packets=packets[0:3],
-               # Custom created time in UTC
-               created=pytz.utc.localize(datetime.fromisoformat('2020-01-01T12:01:01')),
-               # Custom ingested time in Mountain time
-               ingested=pytz.timezone('America/Denver').localize(datetime.fromisoformat('2021-01-01T05:01:01')))
-    l0_v1 = L0(filename='libera_test_l0_v1.pkts', version=1, packets=packets)
-    records += [l0_v0, l0_v1]
 
-    # Create test L1b records
-    l1b_1 = L1b(filename='libera_test_l1b_1_v0.h5', version=0, packets=packets[0:2])
-    l1b_2 = L1b(filename='libera_test_l1b_2_v0.h5', version=0, packets=packets[2:])
-    l1b_1_v1 = L1b(filename='libera_test_l1b_1_v1.h5', version=1, packets=packets[0:2])
-    l1b_2_v1 = L1b(filename='libera_test_l1b_2_v1.h5', version=1, packets=packets[2:])
-    records += [l1b_1, l1b_2, l1b_1_v1, l1b_2_v1]
-
-    insert_test_data(*records)
-
-
-@pytest.mark.usefixtures('insert_dummy_data')  # Scoped to entire class
-class TestModels:
+@pytest.mark.usefixtures('insert_dummy_l0_relations')  # Scoped to entire class
+class TestL0Models:
     """Test class that tests general functionality of all models.
     Uses a specific set of dummy test data provided by the insert_dummy_data fixture."""
 
-    def test_l0(self):
-        """Test that proves general functionality of the L0 object"""
+    def test_cr(self):
+        """Test that proves general functionality of the Cr object"""
         with getdb().session() as s:
-            all_l0 = s.query(L0).all()
-            assert len(all_l0) == 2
-
-            v0_l0 = s.query(L0).filter(L0.version == 0).all()
-            assert len(v0_l0) == 1
-            assert v0_l0[0].filename == 'libera_test_l0_v0.pkts'
-            assert v0_l0[0].created == pytz.utc.localize(datetime.fromisoformat('2020-01-01T12:01:01'))
-            assert v0_l0[0].ingested == pytz.utc.localize(datetime.fromisoformat('2021-01-01T12:01:01'))
-
-            v1_l0 = s.query(L0).filter(L0.version == 1).all()
-            assert len(v1_l0) == 1
-            assert v1_l0[0].filename == 'libera_test_l0_v1.pkts'
-            assert v1_l0[0].created - pytz.utc.localize(datetime.utcnow()) < timedelta(minutes=10)
-            assert v1_l0[0].ingested is None
-
-    def test_l1b(self):
-        """Test that proves general functionality of the L1b object"""
-        with getdb().session() as s:
-            all_l1b = s.query(L1b).all()
-            assert len(all_l1b) == 4
-
-            v1_l1b = s.query(L1b).filter(L1b.version == 1).all()
-            assert len(v1_l1b) == 2
-
-            specific_l1b = s.query(L1b).filter(L1b.filename == 'libera_test_l1b_1_v1.h5').all()
-            assert len(specific_l1b) == 1
-            assert specific_l1b[0].version == 1
-            assert specific_l1b[0].filename == 'libera_test_l1b_1_v1.h5'
-
-    def test_packet(self):
-        """Test that proves general functionality of the Packet object"""
-        with getdb().session() as s:
-            all_packets = s.query(Packet).all()
-            assert len(all_packets) == 5
-            for p in all_packets:
-                assert p.apid == 1111
-                assert p.user_data == b'ABC123'
-
-    def test_packet_joins(self):
-        """Test that proves joining functionality between ORM objects"""
-        with getdb().session() as s:
-            l0_v0 = s.query(L0).filter(L0.filename == 'libera_test_l0_v0.pkts').all()[0]
-            assert len(l0_v0.packets) == 3
-
-            l1b_1_v0 = s.query(L1b).filter(L1b.filename == 'libera_test_l1b_1_v0.h5').all()[0]
-            assert len(l1b_1_v0.packets) == 2
+            all_cr = s.query(Cr).all()
+            assert len(all_cr) == 1
+            cr = all_cr[0]
+            assert len(cr.pds_files) == 1
+            assert len(cr.pds_files[0].apids) == 1
+            assert len(cr.apids) == 1
+            assert len(cr.apids[0].vcids) == 1
+            assert len(cr.apids[0].ssc_gaps) == 1
 
 
-@pytest.mark.usefixtures('insert_dummy_data')  # Scoped to entire class
-class TestDataProductMixin:
-    """Test class that tests the methods provided by the DataProductMixin class"""
 
-    def test_latest(self):
-        """Test getting latest products"""
-        all_latest = L1b.latest()
+# @pytest.mark.usefixtures('insert_dummy_data')  # Scoped to entire class
+# class TestDataProductMixin:
+#     """Test class that tests the methods provided by the DataProductMixin class"""
+#
+#     def test_latest(self):
+#         """Test getting latest products"""
+#         all_latest = L1b.latest()
