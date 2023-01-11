@@ -21,7 +21,8 @@ def main(cli_args: list = None):
 
 def print_version_info(*args):
     """Print CLI version information"""
-    print(f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}\n\tCopyright 2022 University of Colorado\n\tReleased under BSD3 license")
+    print(f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}"
+          f"\n\tCopyright 2022 University of Colorado\n\tReleased under BSD3 license")
 
 
 def parse_cli_args(cli_args: list):
