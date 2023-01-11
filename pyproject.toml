@@ -8,6 +8,7 @@ authors = [  # Alphabetical
     "Laura Sandoval <laura.sandoval@lasp.colorado.edu>",
     "Matt Watwood <matt.watwood@lasp.colorado.edu>"
 ]
+license = "BSD3"
 
 [tool.poetry.dependencies]
 python = "^3.9"
