@@ -159,14 +159,14 @@ class _DatabaseManager:
 
     def truncate_product_tables(self):
         """
-        Truncates all product tables
+        Truncates all tables in sdp schema except for flyway_schema_history
         :return:
         """
-        if self.host not in ('localhost', 'libera-dev-db'):
+        if self.host not in ('localhost', 'local-db'):
             raise ValueError(f"Refusing to truncate all tables for database on host {self.host}. "
                              "We only permit this operation for local dev databases on host "
-                             "'libera-dev-db' or 'localhost'.")
-        meta = MetaData()
+                             "'local-db' or 'localhost'.")
+        meta = MetaData(schema='sdp')
         meta.reflect(bind=self.engine)
         for table in reversed(meta.sorted_tables):
             if table.name not in ('flyway_schema_history', ):

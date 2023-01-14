@@ -128,7 +128,7 @@ class SpkCkFile(Base, ReprMixin, DataProductMixin):
     revision = Column(INTEGER)
     quality_flag = Column(INTEGER)
 
-    pds_files: list = relationship("PdsFile", secondary='spk_ck_file_pds_file_jt')
+    pds_files: list = relationship("PdsFile", secondary='sdp.spk_ck_file_pds_file_jt')
 
 
 class SpkCkFilePdsFileJt(Base):

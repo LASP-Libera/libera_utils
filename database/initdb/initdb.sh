@@ -5,6 +5,9 @@
 export PGUSER=libera_master
 export PGPASSWORD=masterpass
 
+DBNAME=libera
+SDPSCHEMA=sdp
+
 cat << EOF | psql -d postgres
 CREATE ROLE reader_role;
 CREATE ROLE processor_role;  -- privileges for processing data
@@ -14,20 +17,22 @@ CREATE USER libera_unit_tester PASSWORD 'testerpass' IN ROLE tester_role;
 CREATE USER libera_processor PASSWORD 'processorpass' IN ROLE processor_role;
 CREATE USER libera_reader PASSWORD 'readerpass' IN ROLE reader_role;
 
-CREATE DATABASE libera_sdp_dev OWNER libera_master;
+CREATE DATABASE libera OWNER libera_master;
 EOF
 
 echo "Granting default permissions to libera_processor, libera_unit_tester, and libera_reader"
-cat << EOF | psql -d libera_sdp_dev
-GRANT USAGE ON SCHEMA public TO processor_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE ON TABLES TO processor_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO processor_role;
+cat << EOF | psql -d libera
+CREATE SCHEMA sdp AUTHORIZATION libera_master;
 
-GRANT USAGE ON SCHEMA public TO tester_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO tester_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO tester_role;
+GRANT USAGE ON SCHEMA sdp TO processor_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA sdp GRANT SELECT, INSERT, UPDATE ON TABLES TO processor_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA sdp GRANT USAGE, SELECT ON SEQUENCES TO processor_role;
 
-GRANT USAGE ON SCHEMA public TO reader_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO reader_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO reader_role;
+GRANT ALL ON SCHEMA sdp TO tester_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA sdp GRANT ALL PRIVILEGES ON TABLES TO tester_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA sdp GRANT USAGE, SELECT ON SEQUENCES TO tester_role;
+
+GRANT USAGE ON SCHEMA sdp TO reader_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA sdp GRANT SELECT ON TABLES TO reader_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA sdp GRANT USAGE, SELECT ON SEQUENCES TO reader_role;
 EOF

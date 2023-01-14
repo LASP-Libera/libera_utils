@@ -2,19 +2,18 @@
 
 
 ## Databases:
-- `sdp_prod` - Production processing database.
-- `sdp_dev` - Development database.
-- `sdp_test` - Testing database.
+- `libera` - Name given to the main database in all contexts.
 
+## Schemas:
+- `sdp` - Name given to the science data processing schema. 
 
-## Schemas
-We use the default `public` schema for all our databases.
+Using a named schema is postgres best practice and gives us the flexibility to add another schema later if we need to.
 
 
 ## Roles:
 - `libera_master:masterpass` - Master user on all databases. Full access. Do not 
     use except for schema management and other administrative tasks.
-- `libera_unit_tester:testerpass` - User for unit testing.
+- `libera_unit_tester:testerpass` - User for unit testing. Should only be created in the local dev DB.
 - `libera_processor:processorpass` - Data processing user.
 - `libera_reader:readerpass` - Read only on all databases.
 
@@ -54,11 +53,11 @@ In short, use the following pattern to create database connections:
 
 ```python
 from libera_utils.db import getdb
-from libera_utils.db.models import L0
+from libera_utils.db.models import PdsFile
 
 db = getdb()
 with db.session() as s:
-    records = s.query(L0).filter(L0.filename == 'foofile.txt').all()
+    records = s.query(PdsFile).filter(PdsFile.file_name == 'foofile.txt').all()
 ```
 
 

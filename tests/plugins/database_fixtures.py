@@ -9,7 +9,7 @@ from libera_utils.db import getdb
 @pytest.fixture(scope='session', autouse=True)
 def use_test_db(monkeypatch_session):
     """Automatically set environment variables to use the testing database"""
-    monkeypatch_session.setenv('LIBERA_DB_NAME', 'libera_sdp_dev')
+    monkeypatch_session.setenv('LIBERA_DB_NAME', 'libera')
     monkeypatch_session.setenv('LIBERA_DB_USER', 'libera_unit_tester')
     monkeypatch_session.setenv('PGPASSWORD', 'testerpass')
 

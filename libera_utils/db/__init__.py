@@ -30,6 +30,7 @@ class BaseAugmentation:
     """
     __name__ = None  # Gets overridden later. We just want our class declaration to know this exists.
     __abstract__ = True
+    __table_args__ = {"schema": "sdp"}
 
     @declared_attr
     def __tablename__(cls):  # pylint: disable=E0213
