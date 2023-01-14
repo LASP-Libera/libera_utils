@@ -68,5 +68,5 @@ dynamically generated based on the SQL migration scripts in the `database`
 directory. It can be deployed (and redeployed) locally by running 
 
 ```shell
-docker compose up flyway-sdp-dev flyway-sdp-test flyway-sdp-prod
+docker compose up flyway
 ```
