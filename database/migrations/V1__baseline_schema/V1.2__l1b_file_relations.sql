@@ -1,4 +1,4 @@
-CREATE TABLE l1b_cam (
+CREATE TABLE sdp.l1b_cam (
     id SERIAL PRIMARY KEY,
     file_name TEXT UNIQUE NOT NULL,
     revision INTEGER NOT NULL,
@@ -6,7 +6,7 @@ CREATE TABLE l1b_cam (
 );
 
 
-CREATE TABLE l1b_rad (
+CREATE TABLE sdp.l1b_rad (
     id SERIAL PRIMARY KEY,
     file_name TEXT UNIQUE NOT NULL,
     revision INTEGER NOT NULL,

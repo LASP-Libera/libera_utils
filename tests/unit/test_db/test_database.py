@@ -66,8 +66,8 @@ def test_db_manager_multiple_configs():
     """Test ability to create multiple database managers with different configs and get each predictably"""
     db1 = getdb()
     # Gets init values from env vars set by test DB fixture
-    assert db1.database == 'libera_sdp_dev'
-    assert db1.host == 'localhost' or db1.host == 'libera-dev-db'
+    assert db1.database == 'libera'
+    assert db1.host == 'localhost' or db1.host == 'local-db'
     assert db1.user == 'libera_unit_tester'
     db2 = getdb(dbname='foo_db_name')
     assert db1 is not db2
