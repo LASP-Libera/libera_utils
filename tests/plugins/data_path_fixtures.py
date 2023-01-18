@@ -49,6 +49,11 @@ def test_json_manifest(test_data_path):
     return test_data_path / 'input_manifest_20220922t123456.json'
 
 
+@pytest.fixture
+def text_construction_record(test_data_path):
+    """Path to test construction record"""
+    return test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"
+
 # SPICE test data
 # ---------------
 @pytest.fixture
