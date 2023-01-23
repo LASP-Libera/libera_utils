@@ -13,12 +13,12 @@ def test_construction_reader_from_file(text_construction_record):
     # into the correct locations.
     # TODO reevaluate this test when we have construction records of the type we will use
 
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.year == 2021
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.month == 4
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.day == 9
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.hour == 1
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.minute == 59
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.second == 59
-    assert cr.PDS_files_list[1].APID_this_file[0].APID_CCSDS_time_code_non_CR_datetime.microsecond == 5260
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.year == 2021
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.month == 4
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.day == 9
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.hour == 1
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.minute == 59
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.second == 59
+    assert cr.PDS_files_list[1].APID_this_file[0].APID_last_packet_utc.microsecond == 5260
 
 

@@ -13,8 +13,9 @@ from libera_utils.io.smart_open import smart_open
 logger = logging.getLogger(__name__)
 
 
-def convert_bytes_to_cds_time(byte_data: bytes):
+def convert_bytes_to_cds_time(satellite_time: int):
     reference_date = datetime(1958, 1, 1, 0, 0, 0, 0, pytz.UTC)
+    byte_data = satellite_time.to_bytes(8, 'big')
     byte_days = int.from_bytes([byte_data[0], byte_data[1]], byteorder="big")
     byte_millisec = int.from_bytes([byte_data[2], byte_data[3],
                                     byte_data[4], byte_data[5]],
@@ -29,13 +30,70 @@ def convert_bytes_to_cds_time(byte_data: bytes):
 
 
 class EDOSGeneratedFillDataFromAPID:
+    """
+    Object representation of the information pertaining to which data in a Production Data Set (PDS) are generated and
+    filled by EDOS. This corresponds to a database table and connects to a Construction Record (CR). This object is
+    created as part of reading in a CR and requires an open bitstream to read from.
+    """
     def __init__(self, cr_bitstream: ConstBitStream):
-        self.SSC_with_generated_data = cr_bitstream.read("uint:32")
-        self.generated_data_offset_list = cr_bitstream.read("uint:64")
-        self.index_to_fill_generated_list = cr_bitstream.read("uint:32")
+        self.ssc_with_generated_data = cr_bitstream.read("uint:32")
+        self.filled_byte_offset = cr_bitstream.read("uint:64")
+        self.index_to_fill_octet = cr_bitstream.read("uint:32")
+
+
+class SSCLengthDiscrepancy:
+    """
+    Object representation of the information of the length discrepancy in an SSC. This corresponds to a database table
+    and connects to a Construction Record (CR). This object is created as part of reading in a CR and thus requires an
+    open bitstream to read from.
+    """
+    def __init__(self, cr_bitstream: ConstBitStream):
+        self.ssc_length_discrepancy = cr_bitstream.read("uint:32")
+
+
+class SCSStartStopTimes:
+    """
+    Object representation of the information of Spacecraft Session (SCS) start and stop times of data. This
+    corresponds to a database table and connects to a Construction Record (CR). This object is created as part of
+    reading in a CR and thus requires an open bitstream to read from.
+    """
+    def __init__(self, cr_bitstream: ConstBitStream):
+        self.SCS_start_time_sc_time = cr_bitstream.read("uint:64")
+        self.SCS_start_time_utc = convert_bytes_to_cds_time(self.SCS_start_time_sc_time)
+        self.SCS_stop_time_sc_time = cr_bitstream.read("uint:64")
+        self.SCS_stop_time_utc = convert_bytes_to_cds_time(self.SCS_stop_time_sc_time)
+
+
+class APIDFromPDSFromConstructionRecord:
+    """
+    Object representation of the information of Application IDs (APID) from within a Production Data Set (PDS). This
+    corresponds to a database table and connects to a Construction Record (CR). This object is created as part of
+    reading in a CR and thus requires an open bitstream to read from.
+    """
+    def __init__(self, cr_bitstream: ConstBitStream):
+        fill_hold = [cr_bitstream.read("uint:8")]
+        self.SCID_APID = cr_bitstream.read("uint:24")
+        self.APID_first_packet_sc_time = cr_bitstream.read("uint:64")
+        self.APID_first_packet_utc = convert_bytes_to_cds_time(self.APID_first_packet_sc_time)
+        self.APID_last_packet_byte = cr_bitstream.read("uint:64")
+        self.APID_last_packet_utc = convert_bytes_to_cds_time(self.APID_last_packet_byte)
+        fill_hold.append(cr_bitstream.read("uint:32"))
+
+    def print_scid_apid(self):
+        bytes_scid = self.SCID_APID.to_bytes(3,'big')
+        scid_read = ConstBitStream(bytes_scid)
+        dataset_scid = scid_read.read("uint:8")
+        fill_data = scid_read.read("uint:5")
+        dataset_apid = scid_read.read("uint:11")
+        print(f"SCID: {dataset_scid} and APID: {dataset_apid}")
 
 
 class PDSFileFromConstructionRecord:
+    """
+    Object representation of the information directly related to a Production Data Set (PDS). This corresponds to a
+    database table and connects to a Construction Record (CR). This object is created as part of reading in a CR and
+    requires an open bitstream to read from.
+    """
     def __init__(self, cr_bitstream: ConstBitStream):
         self.PDS_filename = (cr_bitstream.read("bytes:40")).decode()
         fill_hold = cr_bitstream.read("uint:24")
@@ -50,60 +108,57 @@ class PDSFileFromConstructionRecord:
         return
 
 
-class APIDFromPDSFromConstructionRecord:
-    def __init__(self, cr_bitstream: ConstBitStream):
-        # Should be 0 for construction record
-        fill_hold = [cr_bitstream.read("uint:8")]
-        # Should be 0 for construction record
-        self.APID_SCID_non_CR = cr_bitstream.read("uint:24")
-        # Should be 0 for construction record
-        self.APID_CDS_time_code_non_CR = cr_bitstream.read("bytes:8")
-        self.APID_CDS_time_code_non_CR_datetime = convert_bytes_to_cds_time(self.APID_CDS_time_code_non_CR)
-        # Should be 0 for construction record
-        self.APID_CCSDS_time_code_non_CR = cr_bitstream.read("bytes:8")
-        self.APID_CCSDS_time_code_non_CR_datetime = convert_bytes_to_cds_time(self.APID_CCSDS_time_code_non_CR)
-        # Should be 0 for construction record
-        fill_hold.append(cr_bitstream.read("uint:32"))
-
-
 class SSCGapInformationFromConstructionRecord:
+    """
+    Object representation of the information of Spacecraft Contact Sessions (SCS). This corresponds to a database table
+    and connects to a Construction Record (CR). This object iscreated as part of reading in a CR and thus requires an
+    open bitstream to read from.
+    """
     def __init__(self, cr_bitstream: ConstBitStream):
-        self.APID_gap_first_missing_packet = cr_bitstream.read("uint:32")
-        self.APID_gap_offset = cr_bitstream.read("uint:64")
-        self.APID_packets_missed = cr_bitstream.read("uint:32")
-        self.APID_missed_headers_1 = cr_bitstream.read("uint:64")
-        self.APID_missed_headers_2 = cr_bitstream.read("uint:64")
-        packet_before_time = cr_bitstream.read("bytes:8")
-        packet_after_time = cr_bitstream.read("bytes:8")
-        self.APID_ESH_time_packet_before.append(packet_before_time)
-        self.APID_ESH_time_packet_after.append(packet_after_time)
-        self.APID_ESH_time_packet_before_date.append(convert_bytes_to_cds_time(packet_before_time))
-        self.APID_ESH_time_packet_after_date.append(convert_bytes_to_cds_time(packet_after_time))
+        self.APID_gap_first_missing_ssc_packet = cr_bitstream.read("uint:32")
+        self.APID_gap_byte_offset = cr_bitstream.read("uint:64")
+        self.APID_num_ssc_packets_missed = cr_bitstream.read("uint:32")
+
+        # These are not labeled in the ICD document and so this is a guess based on other patterns in the ICD
+        sc_packet_before_time = cr_bitstream.read("uint:64")
+        sc_packet_after_time = cr_bitstream.read("uint:64")
+        self.APID_sc_preceding_packet_esh.append(sc_packet_before_time)
+        self.APID_sc_following_packet_esh.append(sc_packet_after_time)
+        self.APID_preceding_packet_utc.append(convert_bytes_to_cds_time(sc_packet_before_time))
+        self.APID_following_packet_utc.append(convert_bytes_to_cds_time(sc_packet_after_time))
+
+        self.APID_ESH_preceding_packet_esh.append(cr_bitstream.read("uint:64"))
+        self.APID_ESH_following_packet_esh.append(cr_bitstream.read("uint:64"))
 
 
 class VCIDFromConstructionRecord:
+    """
+    Object representation of the information of Virtual Channel ID (VCID). This corresponds to a database table and
+    connects to a Construction Record (CR). This object is created as part of reading in a CR and thus requires an
+    open bitstream to read from.
+    """
     def __init__(self, cr_bitstream: ConstBitStream):
-        self.VCID_SCID_bits = cr_bitstream.read("bits:16")
-        fill_hold = self.VCID_SCID_bits.read("uint:2")
-        self.SCID = self.VCID_SCID_bits.read("uint:8")
-        self.VCID = self.VCID_SCID_bits.read("uint:6")
+        self.vcid_scid = cr_bitstream.read("uint:16")
 
-
-class PDSStartStopTimes:
-    def __init__(self, cr_bitstream: ConstBitStream):
-        self.SCS_start_time_original = cr_bitstream.read("bytes:8")
-        self.SCS_start_time = convert_bytes_to_cds_time(self.SCS_start_time_original)
-        self.SCS_stop_time_original = cr_bitstream.read("bytes:8")
-        self.SCS_stop_time = convert_bytes_to_cds_time(self.SCS_stop_time_original)
+    def print_scid_apid(self):
+        bytes_vcdu = self.vcid_scid.to_bytes(2, 'big')
+        vcdu_read = ConstBitStream(bytes_vcdu)
+        fill_hold = self.vcid_scid.read("uint:2")
+        scid = vcdu_read.read("uint:8")
+        vcid = vcdu_read.read("uint:6")
+        print(f"VCID: {vcid} and SCID: {scid}")
 
 
 class APIDFromConstructionRecord:
-    """Object representation of a JPSS Construction Record"""
-
+    """
+    Object representation of the information of Application IDs (APID) from within a Construction Record (CR). This
+    corresponds to a database table and connects to a CR. This object is created as part of reading in a CR and thus
+    requires an open bitstream to read from.
+    """
     def __init__(self, cr_bitstream: ConstBitStream):
         self.APID_fill_hold = []
         self.APID_fill_hold.append(cr_bitstream.read("uint:8"))
-        self.APID_SCID_bits = cr_bitstream.read("bits:24")
+        self.APID_SCID = cr_bitstream.read("uint:24")
 
         self.APID_byte_offset = cr_bitstream.read("uint:64")
         self.APID_fill_hold.append(cr_bitstream.read("uint:24"))
@@ -116,12 +171,11 @@ class APIDFromConstructionRecord:
             self.VCIDs_list.append(VCIDFromConstructionRecord(cr_bitstream))
 
         # List missing packets SSCs for the PDS
-        self.APID_SSC_discontinuity_count = cr_bitstream.read("uint:32")
-        self.APID_SSC_discontinuities_list = []
+        self.APID_SSC_gap_count = cr_bitstream.read("uint:32")
+        self.APID_SSC_gaps_list = []
         for count in range(self.APID_SSC_discontinuity_count):
-            self.APID_SSC_discontinuities_list.append(SSCGapInformationFromConstructionRecord(cr_bitstream))
+            self.APID_SSC_gaps_list.append(SSCGapInformationFromConstructionRecord(cr_bitstream))
 
-        # TODO this is not in DB? 24-7 -> 24-19
         # For this APID, list packets containing EDOS generated fill data
         self.EDOS_generated_fill_data_count = cr_bitstream.read("uint:32")
         self.EDOS_generated_fill_data_list = []
@@ -133,28 +187,30 @@ class APIDFromConstructionRecord:
         self.packets_with_discrepancy_count = cr_bitstream.read("uint:32")
         self.SSC_length_discrepancy_list = []
         for count in range(self.packets_with_discrepancy_count):
-            self.SSC_length_discrepancy_list.append("uint:32")
+            self.SSC_length_discrepancy_list.append(SSCLengthDiscrepancy(cr_bitstream))
 
-        self.CCSDS_CDS_timecode_bytes = cr_bitstream.read("bytes:8")
-        self.CCSDS_time_code_bytes = cr_bitstream.read("bytes:8")
-        self.ESH_date_time_first_packet_bytes = cr_bitstream.read("bytes:8")
-        self.ESH_date_time_last_packet_bytes = cr_bitstream.read("bytes:8")
+        self.first_packet_sc_time = cr_bitstream.read("uint:64")
+        self.last_packet_sc_time = cr_bitstream.read("uint:64")
+        self.ESH_first_packet_time = cr_bitstream.read("uint:64")
+        self.ESH_last_packet_time = cr_bitstream.read("uint:64")
 
-        self.CCSDS_CDS_timecode_datetime = convert_bytes_to_cds_time(self.CCSDS_CDS_timecode_bytes)
-        self.CCSDS_time_code_datetime = convert_bytes_to_cds_time(self.CCSDS_time_code_bytes)
-        self.ESH_date_time_first_packet_datetime = convert_bytes_to_cds_time(self.ESH_date_time_first_packet_bytes)
-        self.ESH_date_time_last_packet_datetime = convert_bytes_to_cds_time(self.ESH_date_time_last_packet_bytes)
+        self.first_packet_time_utc = convert_bytes_to_cds_time(self.first_packet_sc_time)
+        self.last_packet_time_utc = convert_bytes_to_cds_time(self.last_packet_sc_time)
 
         self.VCDU_error_packet_count = cr_bitstream.read("uint:32")
-        # Check this out.... 24-17
-        self.packet_count = cr_bitstream.read("uint:32")
+
+        # This is not well labeled in the ICD (24-17)
+        self.count_in_the_data_set = cr_bitstream.read("uint:32")
+
         self.APID_size_octets = cr_bitstream.read("uint:64")
         self.APID_fill_hold.append(cr_bitstream.read("uint:64"))
 
     def print_scid_apid(self):
-        dataset_scid = self.APID_SCID_bits.read("uint:8")
-        fill_data = self.APID_SCID_bits.read("uint:5")
-        dataset_apid = self.APID_SCID_bits.read("uint:11")
+        bytes_scid = self.APID_SCID.to_bytes(3, 'big')
+        scid_read = ConstBitStream(bytes_scid)
+        dataset_scid = scid_read.read("uint:8")
+        fill_data = scid_read.read("uint:5")
+        dataset_apid = scid_read.read("uint:11")
         print(f"SCID: {dataset_scid} and APID: {dataset_apid}")
 
 
@@ -164,50 +220,49 @@ class ConstructionRecordError(Exception):
 
 
 class ConstructionRecord:
-    """Object representation of a JPSS Construction Record"""
+    """
+    Object representation of a JPSS Construction Record (CR) including objects for all the other classes
+    in this file to be stored in a database.
+    """
 
     def __init__(self, filepath: str or Path or S3Path):
         self.filepath = filepath
         with smart_open(filepath) as const_record_file:
             cr_bitstream = ConstBitStream(const_record_file)
             self.EDOS_version_original = cr_bitstream.read("bytes:2")
+            self.EDOS_version_int = int.from_bytes(self.EDOS_version_original, "big")
             self.EDOS_version_major = self.EDOS_version_original[0]
             self.EDOS_version_release = self.EDOS_version_original[1]
             # Construction Record type 1 is for PDS
             self.Construction_Record_type = cr_bitstream.read("uint:8")
             self.fill_hold = []
             self.fill_hold.append(cr_bitstream.read("uint:8"))
-            self.PDS_ID = (cr_bitstream.read("bytes:36")).decode()
+            self.CR_ID = (cr_bitstream.read("bytes:36")).decode()
             self.fill_hold.append(cr_bitstream.read("uint:7"))
             self.test_flag = cr_bitstream.read("bool")
             self.fill_hold.append(cr_bitstream.read("uint:8"))
             self.fill_hold.append(cr_bitstream.read("uint:64"))
 
-            # TODO Not in the DB (8)
-            self.PDS_num_start_stop_times = cr_bitstream.read("uint:16")
-            self.PDS_start_stop_times_list = []
-            for count in range(self.PDS_num_start_stop_times):
-                self.PDS_start_stop_times_list.append(PDSStartStopTimes(cr_bitstream))
+            self.SCS_num_start_stop_times = cr_bitstream.read("uint:16")
+            self.SCS_start_stop_times_list = []
+            for count in range(self.SCS_num_start_stop_times):
+                self.SCS_start_stop_times_list.append(SCSStartStopTimes(cr_bitstream))
 
             self.PDS_num_bytes_fill_data = cr_bitstream.read("uint:64")
             self.PDS_packet_length_mismatch_count = cr_bitstream.read("uint:32")
-            self.PDS_CCSDS_timecode_first_bytes = cr_bitstream.read("bytes:8")
-            self.PDS_CCSDS_timecode_first_datetime = convert_bytes_to_cds_time(self.PDS_CCSDS_timecode_first_bytes)
-            self.PDS_CCSDS_timecode_last_bytes = cr_bitstream.read("bytes:8")
-            self.PDS_CCSDS_timecode_last_datetime = convert_bytes_to_cds_time(self.PDS_CCSDS_timecode_last_bytes)
-            self.PDS_EDOS_ESH_first_packet_bytes = cr_bitstream.read("bytes:8")
-            self.PDS_EDOS_ESH_first_packet_datetime = convert_bytes_to_cds_time(self.PDS_EDOS_ESH_first_packet_bytes)
-            self.PDS_EDOS_ESH_last_packet_bytes = cr_bitstream.read("bytes:8")
-            self.PDS_EDOS_ESH_last_packet_datetime = convert_bytes_to_cds_time(self.PDS_EDOS_ESH_last_packet_bytes)
+            self.PDS_first_packet_sc_time = cr_bitstream.read("uint:64")
+            self.PDS_first_packet_datetime = convert_bytes_to_cds_time(self.PDS_first_packet_sc_time)
+            self.PDS_last_packet_sc_time = cr_bitstream.read("uint:64")
+            self.PDS_last_packet_datetime = convert_bytes_to_cds_time(self.PDS_last_packet_sc_time)
+            self.PDS_ESH_first_packet_sc_time = cr_bitstream.read("uint:64")
+            self.PDS_ESH_first_packet_datetime = convert_bytes_to_cds_time(self.PDS_ESH_first_packet_sc_time)
+            self.PDS_ESH_last_packet_sc_time = cr_bitstream.read("uint:64")
+            self.PDS_ESH_last_packet_datetime = convert_bytes_to_cds_time(self.PDS_ESH_last_packet_sc_time)
             self.PDS_rs_corrected_count = cr_bitstream.read("uint:32")
             self.PDS_packet_count = cr_bitstream.read("uint:32")
             self.PDS_size = cr_bitstream.read("uint:64")
-
-            # TODO Missing in DB (20)
             self.PDS_discontinuities_count = cr_bitstream.read("uint:32")
-
-            self.PDS_completion_time_bytes = cr_bitstream.read("bytes:8")
-            self.PDS_completion_time_datetime = convert_bytes_to_cds_time(self.PDS_completion_time_bytes)
+            self.PDS_completion_time_bytes = cr_bitstream.read("uint:64")
             self.fill_hold.append(cr_bitstream.read("uint:56"))
 
             # For the PDS, identify the APIDs and their associated information.
