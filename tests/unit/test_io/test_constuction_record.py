@@ -1,9 +1,7 @@
 """Tests for manifest module"""
-# Standard
-from datetime import datetime, timedelta
-
 # Local
 from libera_utils.io.construction_record import ConstructionRecord
+from libera_utils.db import getdb
 
 
 def test_construction_reader_from_file(text_construction_record):
@@ -38,10 +36,15 @@ def test_construction_record_properties(text_construction_record):
     assert cr.pds_files_list[1].apid_this_file[0].scid == 159
 
 
-def test_construction_orm_creation(text_construction_record):
+def test_construction_orm_creation(text_construction_record, clean_local_db):
     cr = ConstructionRecord.from_file(text_construction_record)
     cr_orm = cr.to_orm()
 
+    # Test inserting this into the database
+    with getdb().session() as s:
+        s.add(cr_orm)
+
+    # Check that the ORM models have the correct values
     assert len(cr_orm.scs_start_stop_times) == 4
     assert len(cr_orm.pds_files) == 2
     assert len(cr_orm.pds_files[0].apids) == 1
