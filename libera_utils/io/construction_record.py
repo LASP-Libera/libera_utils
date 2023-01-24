@@ -6,9 +6,10 @@ from datetime import datetime, timedelta
 from bitstring import ConstBitStream
 import pytz
 # Installed
-from cloudpathlib import S3Path
+from cloudpathlib import S3Path, AnyPath
 # Local
 from libera_utils.io.smart_open import smart_open
+import libera_utils.db.models as libera_db_models
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,13 @@ class EDOSGeneratedFillDataFromAPID:
         self.filled_byte_offset = cr_bitstream.read("uint:64")
         self.index_to_fill_octet = cr_bitstream.read("uint:32")
 
+    def to_orm(self):
+        return libera_db_models.CrApidEdosGeneratedFillData(
+            ssc_with_generated_data=self.ssc_with_generated_data,
+            filled_byte_offset=self.filled_byte_offset,
+            index_to_fill_octet=self.index_to_fill_octet
+        )
+
 
 class SSCLengthDiscrepancy:
     """
@@ -62,6 +70,11 @@ class SSCLengthDiscrepancy:
     def __init__(self, cr_bitstream: ConstBitStream):
         self.ssc_length_discrepancy = cr_bitstream.read("uint:32")
 
+    def to_orm(self):
+        return libera_db_models.CrApidSscLenDiscrepancies(
+            ssc_length_discrepancy=self.ssc_length_discrepancy
+        )
+
 
 class SCSStartStopTimes:
     """
@@ -70,10 +83,18 @@ class SCSStartStopTimes:
     reading in a CR and thus requires an open bitstream to read from.
     """
     def __init__(self, cr_bitstream: ConstBitStream):
-        self.SCS_start_time_sc_time = cr_bitstream.read("uint:64")
-        self.SCS_start_time_utc = convert_bytes_to_cds_time(self.SCS_start_time_sc_time)
-        self.SCS_stop_time_sc_time = cr_bitstream.read("uint:64")
-        self.SCS_stop_time_utc = convert_bytes_to_cds_time(self.SCS_stop_time_sc_time)
+        self.scs_start_time_sc_time = cr_bitstream.read("uint:64")
+        self.scs_start_time_utc = convert_bytes_to_cds_time(self.scs_start_time_sc_time)
+        self.scs_stop_time_sc_time = cr_bitstream.read("uint:64")
+        self.scs_stop_time_utc = convert_bytes_to_cds_time(self.scs_stop_time_sc_time)
+
+    def to_orm(self):
+        return libera_db_models.CrScsStartStopTimes(
+            scs_start_sc_time=self.scs_start_time_sc_time,
+            scs_stop_sc_time=self.scs_stop_time_sc_time,
+            scs_start_utc_time=self.scs_start_time_utc,
+            scs_stop_utc_time=self.scs_stop_time_utc
+        )
 
 
 class APIDFromPDSFromConstructionRecord:
@@ -85,29 +106,38 @@ class APIDFromPDSFromConstructionRecord:
     def __init__(self, cr_bitstream: ConstBitStream):
         # Read unused data
         cr_bitstream.read("uint:8")
-        self.SCID_APID = cr_bitstream.read("uint:24")
-        self.APID_first_packet_sc_time = cr_bitstream.read("uint:64")
-        self.APID_first_packet_utc = convert_bytes_to_cds_time(self.APID_first_packet_sc_time)
-        self.APID_last_packet_byte = cr_bitstream.read("uint:64")
-        self.APID_last_packet_utc = convert_bytes_to_cds_time(self.APID_last_packet_byte)
+        self.scid_apid = cr_bitstream.read("uint:24")
+        self.apid_first_packet_sc_time = cr_bitstream.read("uint:64")
+        self.apid_first_packet_utc = convert_bytes_to_cds_time(self.apid_first_packet_sc_time)
+        self.apid_last_packet_sc_time = cr_bitstream.read("uint:64")
+        self.apid_last_packet_utc = convert_bytes_to_cds_time(self.apid_last_packet_sc_time)
         # Read unused data
         cr_bitstream.read("uint:32")
 
-    def print_scid_apid(self):
-        """A helper method to demonstrate the conversion of the byte data of SCID and APID into
-        separate values
-
-        Returns
-        -------
-        : None
-        """
-        bytes_scid = self.SCID_APID.to_bytes(3,'big')
+    @property
+    def scid(self):
+        """Property that contains the SCID alone"""
+        bytes_scid = self.scid_apid.to_bytes(3, 'big')
         scid_read = ConstBitStream(bytes_scid)
-        dataset_scid = scid_read.read("uint:8")
+        return scid_read.read("uint:8")
+
+    @property
+    def apid(self):
+        """Property that contains the APID alone"""
+        bytes_scid = self.scid_apid.to_bytes(3, 'big')
+        scid_read = ConstBitStream(bytes_scid)
         # Read unused data
-        scid_read.read("uint:5")
-        dataset_apid = scid_read.read("uint:11")
-        print(f"SCID: {dataset_scid} and APID: {dataset_apid}")
+        scid_read.read("uint:13")
+        return scid_read.read("uint:11")
+
+    def to_orm(self):
+        return libera_db_models.PdsFileApid(
+                scid_apid=self.scid_apid,
+                first_packet_sc_time=self.apid_first_packet_sc_time,
+                last_packet_sc_time=self.apid_last_packet_sc_time,
+                first_packet_utc_time=self.apid_first_packet_utc,
+                last_packet_utc_time=self.apid_last_packet_utc
+            )
 
 
 class PDSFileFromConstructionRecord:
@@ -117,17 +147,26 @@ class PDSFileFromConstructionRecord:
     requires an open bitstream to read from.
     """
     def __init__(self, cr_bitstream: ConstBitStream):
-        self.PDS_filename = (cr_bitstream.read("bytes:40")).decode()
+        self.pds_filename = (cr_bitstream.read("bytes:40")).decode()
         # Read unused data
         cr_bitstream.read("uint:24")
 
         # This is quoted in 25-4 as a "one-up" counter with values of 1 to 3. However, there is a situation when the
         # value can be 0, and then there is one entry with complete data as 0's throughout. To account for this take
         # the maximum of the value and 1 to ensure if a 0 is there at least one full entry of 0's is read.
-        self.APID_count_this_file = max(cr_bitstream.read("uint:8"), 1)
-        self.APID_this_file = []
-        for _ in range(self.APID_count_this_file):
-            self.APID_this_file.append(APIDFromPDSFromConstructionRecord(cr_bitstream))
+        self.apid_count_this_file = max(cr_bitstream.read("uint:8"), 1)
+        self.apid_this_file = []
+        for _ in range(self.apid_count_this_file):
+            self.apid_this_file.append(APIDFromPDSFromConstructionRecord(cr_bitstream))
+
+    def to_orm(self):
+        apids_list = []
+        for i in range(self.apid_count_this_file):
+            apids_list.append(self.apid_this_file[i].to_orm())
+        return libera_db_models.PdsFile(
+            file_name=self.pds_filename,
+            apids=apids_list
+        )
 
 
 class SSCGapInformationFromConstructionRecord:
@@ -137,20 +176,33 @@ class SSCGapInformationFromConstructionRecord:
     open bitstream to read from.
     """
     def __init__(self, cr_bitstream: ConstBitStream):
-        self.APID_gap_first_missing_ssc_packet = cr_bitstream.read("uint:32")
-        self.APID_gap_byte_offset = cr_bitstream.read("uint:64")
-        self.APID_num_ssc_packets_missed = cr_bitstream.read("uint:32")
+        self.apid_gap_first_missing_ssc_packet = cr_bitstream.read("uint:32")
+        self.apid_gap_byte_offset = cr_bitstream.read("uint:64")
+        self.apid_num_ssc_packets_missed = cr_bitstream.read("uint:32")
 
         # These are not labeled in the ICD document and so this is a guess based on other patterns in the ICD
         sc_packet_before_time = cr_bitstream.read("uint:64")
         sc_packet_after_time = cr_bitstream.read("uint:64")
-        self.APID_sc_preceding_packet_esh = sc_packet_before_time
-        self.APID_sc_following_packet_esh = sc_packet_after_time
-        self.APID_preceding_packet_utc = convert_bytes_to_cds_time(sc_packet_before_time)
-        self.APID_following_packet_utc = convert_bytes_to_cds_time(sc_packet_after_time)
+        self.apid_preceding_packet_sc_time = sc_packet_before_time
+        self.apid_following_packet_sc_time = sc_packet_after_time
+        self.apid_preceding_packet_utc = convert_bytes_to_cds_time(sc_packet_before_time)
+        self.apid_following_packet_utc = convert_bytes_to_cds_time(sc_packet_after_time)
 
-        self.APID_ESH_preceding_packet_esh = cr_bitstream.read("uint:64")
-        self.APID_ESH_following_packet_esh = cr_bitstream.read("uint:64")
+        self.apid_preceding_packet_esh_time = cr_bitstream.read("uint:64")
+        self.apid_following_packet_esh_time = cr_bitstream.read("uint:64")
+
+    def to_orm(self):
+        return libera_db_models.CrApidSscGap(
+            first_missing_ssc=self.apid_gap_first_missing_ssc_packet,
+            gap_byte_offset=self.apid_gap_byte_offset,
+            n_missing_sscs=self.apid_num_ssc_packets_missed,
+            preceding_packet_sc_time=self.apid_preceding_packet_sc_time,
+            following_packet_sc_time=self.apid_following_packet_sc_time,
+            preceding_packet_utc_time=self.apid_preceding_packet_utc,
+            following_packet_utc_time=self.apid_following_packet_utc,
+            preceding_packet_esh_time=self.apid_preceding_packet_esh_time,
+            following_packet_esh_time=self.apid_following_packet_esh_time
+        )
 
 
 class VCIDFromConstructionRecord:
@@ -162,22 +214,28 @@ class VCIDFromConstructionRecord:
     def __init__(self, cr_bitstream: ConstBitStream):
         self.vcid_scid = cr_bitstream.read("uint:16")
 
-    def print_scid_vcid(self):
-        """
-        A helper method to demonstrate the conversion of the byte data of SCID and VCID into
-        separate values
-
-        Returns
-        -------
-        : None
-        """
+    @property
+    def scid(self):
+        """Property that contains the SCID alone"""
         bytes_vcdu = self.vcid_scid.to_bytes(2, 'big')
         vcdu_read = ConstBitStream(bytes_vcdu)
         # Read unused data
         vcdu_read.read("uint:2")
-        scid = vcdu_read.read("uint:8")
-        vcid = vcdu_read.read("uint:6")
-        print(f"VCID: {vcid} and SCID: {scid}")
+        return vcdu_read.read("uint:8")
+
+    @property
+    def vcid(self):
+        """Property that contains the APID alone"""
+        bytes_vcdu = self.vcid_scid.to_bytes(2, 'big')
+        vcdu_read = ConstBitStream(bytes_vcdu)
+        # Read unused data
+        vcdu_read.read("uint:10")
+        return vcdu_read.read("uint:6")
+
+    def to_orm(self):
+        return libera_db_models.CrApidVcid(
+            scid_vcid=self.vcid_scid
+        )
 
 
 class APIDFromConstructionRecord:
@@ -189,72 +247,108 @@ class APIDFromConstructionRecord:
     def __init__(self, cr_bitstream: ConstBitStream):
         # Read unused data
         cr_bitstream.read("uint:8")
-        self.APID_SCID = cr_bitstream.read("uint:24")
+        self.apid_scid = cr_bitstream.read("uint:24")
 
-        self.APID_byte_offset = cr_bitstream.read("uint:64")
+        self.apid_byte_offset = cr_bitstream.read("uint:64")
         # Read unused data
         cr_bitstream.read("uint:24")
 
         # For this APID, identify the Virtual Channel Identification (VCID(s))
-        self.APID_VCID_count = cr_bitstream.read("uint:8")
-        self.VCIDs_list = []
-        for _ in range(self.APID_VCID_count):
+        self.apid_vcid_count = cr_bitstream.read("uint:8")
+        self.vcids_list = []
+        for _ in range(self.apid_vcid_count):
             # Read unused data
             cr_bitstream.read("uint:16")
-            self.VCIDs_list.append(VCIDFromConstructionRecord(cr_bitstream))
+            self.vcids_list.append(VCIDFromConstructionRecord(cr_bitstream))
 
         # List missing packets SSCs for the PDS
-        self.APID_SSC_gap_count = cr_bitstream.read("uint:32")
-        self.APID_SSC_gaps_list = []
-        for _ in range(self.APID_SSC_gap_count):
-            self.APID_SSC_gaps_list.append(SSCGapInformationFromConstructionRecord(cr_bitstream))
+        self.apid_ssc_gap_count = cr_bitstream.read("uint:32")
+        self.apid_ssc_gaps_list = []
+        for _ in range(self.apid_ssc_gap_count):
+            self.apid_ssc_gaps_list.append(SSCGapInformationFromConstructionRecord(cr_bitstream))
 
         # For this APID, list packets containing EDOS generated fill data
-        self.EDOS_generated_fill_data_count = cr_bitstream.read("uint:32")
-        self.EDOS_generated_fill_data_list = []
-        for _ in range(self.EDOS_generated_fill_data_count):
-            self.EDOS_generated_fill_data_list.append(EDOSGeneratedFillDataFromAPID(cr_bitstream))
+        self.edos_generated_fill_data_count = cr_bitstream.read("uint:32")
+        self.edos_generated_fill_data_list = []
+        for _ in range(self.edos_generated_fill_data_count):
+            self.edos_generated_fill_data_list.append(EDOSGeneratedFillDataFromAPID(cr_bitstream))
 
-        self.EDOS_generated_octet_count = cr_bitstream.read("uint:64")
+        self.edos_generated_octet_count = cr_bitstream.read("uint:64")
         # For the packets with length discrepancy
-        self.packets_with_discrepancy_count = cr_bitstream.read("uint:32")
-        self.SSC_length_discrepancy_list = []
-        for _ in range(self.packets_with_discrepancy_count):
-            self.SSC_length_discrepancy_list.append(SSCLengthDiscrepancy(cr_bitstream))
+        self.ssc_length_discrepancy_count = cr_bitstream.read("uint:32")
+        self.ssc_length_discrepancy_list = []
+        for _ in range(self.ssc_length_discrepancy_count):
+            self.ssc_length_discrepancy_list.append(SSCLengthDiscrepancy(cr_bitstream))
 
         self.first_packet_sc_time = cr_bitstream.read("uint:64")
         self.last_packet_sc_time = cr_bitstream.read("uint:64")
-        self.ESH_first_packet_time = cr_bitstream.read("uint:64")
-        self.ESH_last_packet_time = cr_bitstream.read("uint:64")
+        self.first_packet_esh_time = cr_bitstream.read("uint:64")
+        self.last_packet_esh_time = cr_bitstream.read("uint:64")
 
         self.first_packet_time_utc = convert_bytes_to_cds_time(self.first_packet_sc_time)
         self.last_packet_time_utc = convert_bytes_to_cds_time(self.last_packet_sc_time)
 
-        self.VCDU_error_packet_count = cr_bitstream.read("uint:32")
+        self.vcdu_error_packet_count = cr_bitstream.read("uint:32")
 
         # This is not well labeled in the ICD (24-17)
         self.count_in_the_data_set = cr_bitstream.read("uint:32")
 
-        self.APID_size_octets = cr_bitstream.read("uint:64")
+        self.apid_size_octets = cr_bitstream.read("uint:64")
         # Read unused data
         cr_bitstream.read("uint:64")
 
-    def print_scid_apid(self):
-        """
-        A helper method to demonstrate the conversion of the byte data of SCID and APID into
-        separate values
-
-        Returns
-        -------
-        : None
-        """
-        bytes_scid = self.APID_SCID.to_bytes(3, 'big')
+    @property
+    def scid(self):
+        """Property that contains the SCID alone"""
+        bytes_scid = self.apid_scid.to_bytes(3, 'big')
         scid_read = ConstBitStream(bytes_scid)
-        dataset_scid = scid_read.read("uint:8")
+        return scid_read.read("uint:8")
+
+    @property
+    def apid(self):
+        """Property that contains the APID alone"""
+        bytes_scid = self.apid_scid.to_bytes(3, 'big')
+        scid_read = ConstBitStream(bytes_scid)
         # Read unused data
-        scid_read.read("uint:5")
-        dataset_apid = scid_read.read("uint:11")
-        print(f"SCID: {dataset_scid} and APID: {dataset_apid}")
+        scid_read.read("uint:13")
+        return scid_read.read("uint:11")
+
+    def to_orm(self):
+        vcids = []
+        for i in range(self.apid_vcid_count):
+            vcids.append(self.vcids_list[i].to_orm())
+        ssc_gaps = []
+        for i in range(self.apid_ssc_gap_count):
+            ssc_gaps.append(self.apid_ssc_gaps_list[i].to_orm())
+        edos_fill_data = []
+        for i in range(self.edos_generated_fill_data_count):
+            edos_fill_data.append(self.edos_generated_fill_data_list[i].to_orm())
+        ssc_length_discrep = []
+        for i in range(self.ssc_length_discrepancy_count):
+            ssc_length_discrep.append(self.ssc_length_discrepancy_list[i].to_orm())
+
+        return libera_db_models.CrApid(
+            scid_apid=self.apid_scid,
+            byte_offset=self.apid_byte_offset,
+            n_vcids=self.apid_vcid_count,
+            vcids=vcids,
+            n_ssc_gaps=self.apid_ssc_gap_count,
+            ssc_gaps=ssc_gaps,
+            n_edos_generated_fill_data=self.edos_generated_fill_data_count,
+            edos_fill_data=edos_fill_data,
+            count_edos_generated_octets=self.edos_generated_octet_count,
+            n_length_discrepancy_packets=self.ssc_length_discrepancy_count,
+            ssc_length_discrepancies=ssc_length_discrep,
+            first_packet_sc_time=self.first_packet_sc_time,
+            last_packet_sc_time=self.last_packet_sc_time,
+            esh_first_packet_time=self.first_packet_esh_time,
+            esh_last_packet_time=self.last_packet_esh_time,
+            first_packet_utc_time=self.first_packet_time_utc,
+            last_packet_utc_time=self.last_packet_time_utc,
+            n_vcdu_corrected_packets=self.vcdu_error_packet_count,
+            n_in_the_data_set=self.count_in_the_data_set,
+            n_octect_in_apid=self.apid_size_octets
+        )
 
 
 class ConstructionRecordError(Exception):
@@ -267,60 +361,120 @@ class ConstructionRecord:
     Object representation of a JPSS Construction Record (CR) including objects for all the other classes
     in this file to be stored in a database.
     """
+    @classmethod
+    def from_file(cls, filepath: str or Path or S3Path):
+        """Read a construction record file and return a ConstructionRecord object (factory method).
 
-    def __init__(self, filepath: str or Path or S3Path):
-        self.filepath = filepath
+            Parameters
+            ----------
+            filepath : str or Path or S3Path
+                Location of construction record file to read.
+
+            Returns
+            -------
+            : ConstructionRecord
+        """
         with smart_open(filepath) as const_record_file:
             cr_bitstream = ConstBitStream(const_record_file)
-            self.EDOS_version_original = cr_bitstream.read("bytes:2")
-            self.EDOS_version_int = int.from_bytes(self.EDOS_version_original, "big")
-            self.EDOS_version_major = self.EDOS_version_original[0]
-            self.EDOS_version_release = self.EDOS_version_original[1]
-            # Construction Record type 1 is for PDS
-            self.Construction_Record_type = cr_bitstream.read("uint:8")
-            # Read unused data
-            cr_bitstream.read("uint:8")
-            self.CR_ID = (cr_bitstream.read("bytes:36")).decode()
-            # Read unused data
-            cr_bitstream.read("uint:7")
-            self.test_flag = cr_bitstream.read("bool")
-            # Read unused data
-            cr_bitstream.read("uint:8")
-            cr_bitstream.read("uint:64")
+            return cls(filepath, cr_bitstream)
 
-            self.SCS_num_start_stop_times = cr_bitstream.read("uint:16")
-            self.SCS_start_stop_times_list = []
-            for _ in range(self.SCS_num_start_stop_times):
-                self.SCS_start_stop_times_list.append(SCSStartStopTimes(cr_bitstream))
+    def __init__(self, filepath: str or Path or S3Path, cr_bitstream: ConstBitStream):
+        path_object = AnyPath(filepath)
+        self.file_name = path_object.name
+        self.edos_version = cr_bitstream.read("uint:16")
 
-            self.PDS_num_bytes_fill_data = cr_bitstream.read("uint:64")
-            self.PDS_packet_length_mismatch_count = cr_bitstream.read("uint:32")
-            self.PDS_first_packet_sc_time = cr_bitstream.read("uint:64")
-            self.PDS_first_packet_datetime = convert_bytes_to_cds_time(self.PDS_first_packet_sc_time)
-            self.PDS_last_packet_sc_time = cr_bitstream.read("uint:64")
-            self.PDS_last_packet_datetime = convert_bytes_to_cds_time(self.PDS_last_packet_sc_time)
-            self.PDS_ESH_first_packet_sc_time = cr_bitstream.read("uint:64")
-            self.PDS_ESH_first_packet_datetime = convert_bytes_to_cds_time(self.PDS_ESH_first_packet_sc_time)
-            self.PDS_ESH_last_packet_sc_time = cr_bitstream.read("uint:64")
-            self.PDS_ESH_last_packet_datetime = convert_bytes_to_cds_time(self.PDS_ESH_last_packet_sc_time)
-            self.PDS_rs_corrected_count = cr_bitstream.read("uint:32")
-            self.PDS_packet_count = cr_bitstream.read("uint:32")
-            self.PDS_size = cr_bitstream.read("uint:64")
-            self.PDS_discontinuities_count = cr_bitstream.read("uint:32")
-            self.PDS_completion_time_bytes = cr_bitstream.read("uint:64")
-            # Read unused data
-            cr_bitstream.read("uint:56")
+        # Construction Record type 1 is for PDS
+        self.construction_record_type = cr_bitstream.read("uint:8")
+        # Read unused data
+        cr_bitstream.read("uint:8")
+        self.cr_id = (cr_bitstream.read("bytes:36")).decode()
+        # Read unused data
+        cr_bitstream.read("uint:7")
+        self.test_flag = cr_bitstream.read("bool")
+        # Read unused data
+        cr_bitstream.read("uint:8")
+        cr_bitstream.read("uint:64")
 
-            # For the PDS, identify the APIDs and their associated information.
-            self.APID_count = cr_bitstream.read("uint:8")
-            self.APID_data_list = []
-            for _ in range(self.APID_count):
-                self.APID_data_list.append(APIDFromConstructionRecord(cr_bitstream))
+        self.scs_num_start_stop_times = cr_bitstream.read("uint:16")
+        self.scs_start_stop_times_list = []
+        for _ in range(self.scs_num_start_stop_times):
+            self.scs_start_stop_times_list.append(SCSStartStopTimes(cr_bitstream))
 
-            # Read unused data
-            cr_bitstream.read("uint:24")
-            # Identify files that store this PDS
-            self.PDS_file_count = cr_bitstream.read("uint:8")
-            self.PDS_files_list = []
-            for _ in range(self.PDS_file_count):
-                self.PDS_files_list.append(PDSFileFromConstructionRecord(cr_bitstream))
+        self.pds_num_bytes_fill_data = cr_bitstream.read("uint:64")
+        self.pds_packet_length_mismatch_count = cr_bitstream.read("uint:32")
+        self.pds_first_packet_sc_time = cr_bitstream.read("uint:64")
+        self.pds_first_packet_utc_time = convert_bytes_to_cds_time(self.pds_first_packet_sc_time)
+        self.pds_last_packet_sc_time = cr_bitstream.read("uint:64")
+        self.pds_last_packet_utc_time = convert_bytes_to_cds_time(self.pds_last_packet_sc_time)
+        self.pds_first_packet_esh_time = cr_bitstream.read("uint:64")
+        self.pds_last_packet_esh_time = cr_bitstream.read("uint:64")
+        self.pds_rs_corrected_count = cr_bitstream.read("uint:32")
+        self.pds_packet_count = cr_bitstream.read("uint:32")
+        self.pds_size = cr_bitstream.read("uint:64")
+        self.pds_discontinuities_count = cr_bitstream.read("uint:32")
+        self.pds_completion_time_bytes = cr_bitstream.read("uint:64")
+        # Read unused data
+        cr_bitstream.read("uint:56")
+
+        # For the PDS, identify the APIDs and their associated information.
+        self.apid_count = cr_bitstream.read("uint:8")
+        self.apid_data_list = []
+        for _ in range(self.apid_count):
+            self.apid_data_list.append(APIDFromConstructionRecord(cr_bitstream))
+
+        # Read unused data
+        cr_bitstream.read("uint:24")
+        # Identify files that store this PDS
+        self.pds_file_count = cr_bitstream.read("uint:8")
+        self.pds_files_list = []
+        for _ in range(self.pds_file_count):
+            self.pds_files_list.append(PDSFileFromConstructionRecord(cr_bitstream))
+
+    @property
+    def edos_version_major(self):
+        edos_bytes = self.edos_version.to_bytes(2, 'big')
+        edos_read = ConstBitStream(edos_bytes)
+        return edos_read.read("uint:8")
+
+    @property
+    def edos_version_release(self):
+        edos_bytes = self.edos_version.to_bytes(2, 'big')
+        edos_read = ConstBitStream(edos_bytes)
+        edos_read.read("uint:8")
+        return edos_read.read("uint:8")
+
+    def to_orm(self):
+        scs_start_stops = []
+        for i in range(self.scs_num_start_stop_times):
+            scs_start_stops.append(self.scs_start_stop_times_list[i].to_orm())
+        apids = []
+        for i in range(self.apid_count):
+            apids.append(self.apid_data_list[i].to_orm())
+        pds_files = []
+        for i in range(self.pds_file_count):
+            pds_files.append(self.pds_files_list[i].to_orm())
+        return libera_db_models.Cr(
+            file_name=self.file_name,
+            edos_software_version=self.edos_version,
+            construction_record_type=self.construction_record_type,
+            test_flag=self.test_flag,
+            n_scs_start_stops=self.scs_num_start_stop_times,
+            scs_start_stop_times=scs_start_stops,
+            n_bytes_fill_data=self.pds_num_bytes_fill_data,
+            n_length_mismatches=self.pds_packet_length_mismatch_count,
+            first_packet_sc_time=self.pds_first_packet_sc_time,
+            last_packet_sc_time=self.pds_last_packet_sc_time,
+            first_packet_utc_time=self.pds_first_packet_utc_time,
+            last_packet_utc_time=self.pds_last_packet_utc_time,
+            first_packet_esh_time=self.pds_first_packet_esh_time,
+            last_packet_esh_time=self.pds_last_packet_esh_time,
+            n_rs_corrections=self.pds_rs_corrected_count,
+            n_packets=self.pds_packet_count,
+            size_bytes=self.pds_size,
+            n_ssc_discontinuities=self.pds_discontinuities_count,
+            completion_time=self.pds_completion_time_bytes,
+            n_apids=self.apid_count,
+            apids=apids,
+            n_pds_files=self.pds_file_count,
+            pds_files=pds_files
+        )
