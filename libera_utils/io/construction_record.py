@@ -2,44 +2,15 @@
 # Standard
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
 from bitstring import ConstBitStream
-import pytz
 # Installed
 from cloudpathlib import S3Path, AnyPath
 # Local
 from libera_utils.io.smart_open import smart_open
 import libera_utils.db.models as libera_db_models
+from libera_utils.time import convert_cds_integer_to_datetime
 
 logger = logging.getLogger(__name__)
-
-
-def convert_bytes_to_cds_time(satellite_time: int):
-    """Helper function to convert a satellite time given in CCSDS Day Segmented Time Code (CDS) form as 8 bytes to
-    timezone aware datetime object
-
-     Parameters
-    ----------
-    satellite_time : int
-        A 64-bit unsigned integer that represents CDS time
-
-     Returns
-    -------
-    cds_time : datetime
-     """
-    reference_date = datetime(1958, 1, 1, 0, 0, 0, 0, pytz.UTC)
-    byte_data = satellite_time.to_bytes(8, 'big')
-    byte_days = int.from_bytes([byte_data[0], byte_data[1]], byteorder="big")
-    byte_millisec = int.from_bytes([byte_data[2], byte_data[3],
-                                    byte_data[4], byte_data[5]],
-                                   byteorder="big")
-    byte_microsec = int.from_bytes([byte_data[6], byte_data[7]], byteorder="big")
-
-    cds_time = (reference_date +
-                timedelta(days=byte_days) +
-                timedelta(milliseconds=byte_millisec) +
-                timedelta(microseconds=byte_microsec))
-    return cds_time
 
 
 class EDOSGeneratedFillDataFromAPID:
@@ -86,9 +57,9 @@ class SCSStartStopTimes:
     """
     def __init__(self, cr_bitstream: ConstBitStream):
         self.scs_start_time_sc_time = cr_bitstream.read("uint:64")
-        self.scs_start_time_utc = convert_bytes_to_cds_time(self.scs_start_time_sc_time)
+        self.scs_start_time_utc = convert_cds_integer_to_datetime(self.scs_start_time_sc_time)
         self.scs_stop_time_sc_time = cr_bitstream.read("uint:64")
-        self.scs_stop_time_utc = convert_bytes_to_cds_time(self.scs_stop_time_sc_time)
+        self.scs_stop_time_utc = convert_cds_integer_to_datetime(self.scs_stop_time_sc_time)
 
     def to_orm(self):
         """Convert this class instance to a corresponding ORM object for entry into the database"""
@@ -111,9 +82,9 @@ class APIDFromPDSFromConstructionRecord:
         cr_bitstream.read("uint:8")
         self.scid_apid = cr_bitstream.read("uint:24")
         self.apid_first_packet_sc_time = cr_bitstream.read("uint:64")
-        self.apid_first_packet_utc = convert_bytes_to_cds_time(self.apid_first_packet_sc_time)
+        self.apid_first_packet_utc = convert_cds_integer_to_datetime(self.apid_first_packet_sc_time)
         self.apid_last_packet_sc_time = cr_bitstream.read("uint:64")
-        self.apid_last_packet_utc = convert_bytes_to_cds_time(self.apid_last_packet_sc_time)
+        self.apid_last_packet_utc = convert_cds_integer_to_datetime(self.apid_last_packet_sc_time)
         # Read unused data
         cr_bitstream.read("uint:32")
 
@@ -190,8 +161,8 @@ class SSCGapInformationFromConstructionRecord:
         sc_packet_after_time = cr_bitstream.read("uint:64")
         self.apid_preceding_packet_sc_time = sc_packet_before_time
         self.apid_following_packet_sc_time = sc_packet_after_time
-        self.apid_preceding_packet_utc = convert_bytes_to_cds_time(sc_packet_before_time)
-        self.apid_following_packet_utc = convert_bytes_to_cds_time(sc_packet_after_time)
+        self.apid_preceding_packet_utc = convert_cds_integer_to_datetime(sc_packet_before_time)
+        self.apid_following_packet_utc = convert_cds_integer_to_datetime(sc_packet_after_time)
 
         self.apid_preceding_packet_esh_time = cr_bitstream.read("uint:64")
         self.apid_following_packet_esh_time = cr_bitstream.read("uint:64")
@@ -292,8 +263,8 @@ class APIDFromConstructionRecord:
         self.first_packet_esh_time = cr_bitstream.read("uint:64")
         self.last_packet_esh_time = cr_bitstream.read("uint:64")
 
-        self.first_packet_time_utc = convert_bytes_to_cds_time(self.first_packet_sc_time)
-        self.last_packet_time_utc = convert_bytes_to_cds_time(self.last_packet_sc_time)
+        self.first_packet_time_utc = convert_cds_integer_to_datetime(self.first_packet_sc_time)
+        self.last_packet_time_utc = convert_cds_integer_to_datetime(self.last_packet_sc_time)
 
         self.vcdu_error_packet_count = cr_bitstream.read("uint:32")
 
@@ -412,9 +383,9 @@ class ConstructionRecord:
         self.pds_num_bytes_fill_data = cr_bitstream.read("uint:64")
         self.pds_packet_length_mismatch_count = cr_bitstream.read("uint:32")
         self.pds_first_packet_sc_time = cr_bitstream.read("uint:64")
-        self.pds_first_packet_utc_time = convert_bytes_to_cds_time(self.pds_first_packet_sc_time)
+        self.pds_first_packet_utc_time = convert_cds_integer_to_datetime(self.pds_first_packet_sc_time)
         self.pds_last_packet_sc_time = cr_bitstream.read("uint:64")
-        self.pds_last_packet_utc_time = convert_bytes_to_cds_time(self.pds_last_packet_sc_time)
+        self.pds_last_packet_utc_time = convert_cds_integer_to_datetime(self.pds_last_packet_sc_time)
         self.pds_first_packet_esh_time = cr_bitstream.read("uint:64")
         self.pds_last_packet_esh_time = cr_bitstream.read("uint:64")
         self.pds_rs_corrected_count = cr_bitstream.read("uint:32")

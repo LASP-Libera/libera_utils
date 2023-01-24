@@ -12,8 +12,9 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 """
 # Standard
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Union, Collection
+import pytz
 # Installed
 import numpy as np
 import spiceypy as spice
@@ -181,3 +182,38 @@ def sce2s_wrapper(et: Union[float, Collection[float], np.ndarray]) -> Union[str,
         return np.array([spice.sce2s(sc_id, t) for t in et])
 
     return spice.sce2s(sc_id, et)
+
+
+def convert_cds_integer_to_datetime(satellite_time: int):
+    """Helper function to convert a satellite time given as an CCSDS Day Segmented Time Code (CDS) form as 8 byte
+    integer to a timezone aware datetime object
+
+     Parameters
+    ----------
+    satellite_time : int
+        A 64-bit unsigned integer that represents CDS time
+
+     Returns
+    -------
+    cds_time : datetime
+     """
+    byte_data = satellite_time.to_bytes(8, 'big')
+    int_days = int.from_bytes([byte_data[0], byte_data[1]], byteorder="big")
+    int_millisec = int.from_bytes([byte_data[2], byte_data[3],
+                                    byte_data[4], byte_data[5]],
+                                   byteorder="big")
+    int_microsec = int.from_bytes([byte_data[6], byte_data[7]], byteorder="big")
+
+    reference_date = datetime(1958, 1, 1, 0, 0, 0, 0, pytz.UTC)
+    cds_time = (reference_date +
+                timedelta(days=int_days) +
+                timedelta(milliseconds=int_millisec) +
+                timedelta(microseconds=int_microsec))
+
+    # TODO: Check with EDOS on this time conversion. The commented out below gives approximately a 70 second difference
+    # TODO: to the method above.
+    # TODO: satellite_time_string = f"{int_days}:{int_millisec}:{int_microsec}"
+    # TODO: non_tz_datetime = et_2_datetime(scs2e_wrapper(satellite_time_string))
+    # TODO: cds_time = timezone("UTC").localize(non_tz_datetime)
+
+    return cds_time
