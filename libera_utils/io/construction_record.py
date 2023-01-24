@@ -54,6 +54,7 @@ class EDOSGeneratedFillDataFromAPID:
         self.index_to_fill_octet = cr_bitstream.read("uint:32")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.CrApidEdosGeneratedFillData(
             ssc_with_generated_data=self.ssc_with_generated_data,
             filled_byte_offset=self.filled_byte_offset,
@@ -71,6 +72,7 @@ class SSCLengthDiscrepancy:
         self.ssc_length_discrepancy = cr_bitstream.read("uint:32")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.CrApidSscLenDiscrepancies(
             ssc_length_discrepancy=self.ssc_length_discrepancy
         )
@@ -89,6 +91,7 @@ class SCSStartStopTimes:
         self.scs_stop_time_utc = convert_bytes_to_cds_time(self.scs_stop_time_sc_time)
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.CrScsStartStopTimes(
             scs_start_sc_time=self.scs_start_time_sc_time,
             scs_stop_sc_time=self.scs_stop_time_sc_time,
@@ -131,6 +134,7 @@ class APIDFromPDSFromConstructionRecord:
         return scid_read.read("uint:11")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.PdsFileApid(
                 scid_apid=self.scid_apid,
                 first_packet_sc_time=self.apid_first_packet_sc_time,
@@ -160,6 +164,7 @@ class PDSFileFromConstructionRecord:
             self.apid_this_file.append(APIDFromPDSFromConstructionRecord(cr_bitstream))
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         apids_list = []
         for i in range(self.apid_count_this_file):
             apids_list.append(self.apid_this_file[i].to_orm())
@@ -192,6 +197,7 @@ class SSCGapInformationFromConstructionRecord:
         self.apid_following_packet_esh_time = cr_bitstream.read("uint:64")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.CrApidSscGap(
             first_missing_ssc=self.apid_gap_first_missing_ssc_packet,
             gap_byte_offset=self.apid_gap_byte_offset,
@@ -233,6 +239,7 @@ class VCIDFromConstructionRecord:
         return vcdu_read.read("uint:6")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.CrApidVcid(
             scid_vcid=self.vcid_scid
         )
@@ -314,6 +321,7 @@ class APIDFromConstructionRecord:
         return scid_read.read("uint:11")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         vcids = []
         for i in range(self.apid_vcid_count):
             vcids.append(self.vcids_list[i].to_orm())
@@ -380,7 +388,8 @@ class ConstructionRecord:
 
     def __init__(self, filepath: str or Path or S3Path, cr_bitstream: ConstBitStream):
         path_object = AnyPath(filepath)
-        self.file_name = path_object.name
+        # Any Posix Path will have the member 'name' so disable pylint on this line
+        self.file_name = path_object.name  # pylint: disable=no-member
         self.edos_version = cr_bitstream.read("uint:16")
 
         # Construction Record type 1 is for PDS
@@ -432,18 +441,21 @@ class ConstructionRecord:
 
     @property
     def edos_version_major(self):
+        """Property that contains the major version number of the EDOS software alone"""
         edos_bytes = self.edos_version.to_bytes(2, 'big')
         edos_read = ConstBitStream(edos_bytes)
         return edos_read.read("uint:8")
 
     @property
     def edos_version_release(self):
+        """Property that contains the major version release number of the EDOS software alone"""
         edos_bytes = self.edos_version.to_bytes(2, 'big')
         edos_read = ConstBitStream(edos_bytes)
         edos_read.read("uint:8")
         return edos_read.read("uint:8")
 
     def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
         scs_start_stops = []
         for i in range(self.scs_num_start_stop_times):
             scs_start_stops.append(self.scs_start_stop_times_list[i].to_orm())
