@@ -1,7 +1,18 @@
 # Version Changes
 
+# 2.0.0 (released)
+- Add filenaming classes
+- Add manifest file class
+- Add construction record parser
+- Update DB schema to store construction records
+- Update kernel generation CLI to use manifest file pattern
+- Shift database and spice related libraries to extras (not installed by default)
+- Add smart_copy_file function that can copy files to and from S3 and filesystem locations transparently
+- Remove HDF-EOS5 filehandling code
+- Add quality flag classes
+- Change license to BSD3
 
-# 0.1 (unreleased)
+# 1.0.0 (released)
 - Stub out project structure
 - Add build and release processes to readme
 - Switch to Poetry for project dependency configuration and build management
