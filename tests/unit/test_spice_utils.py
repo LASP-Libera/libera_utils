@@ -53,8 +53,7 @@ def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
             responses.GET, full_file_url,
             body=fh.read(), status=200,
             content_type='application/octet-stream',
-            adding_headers={'Transfer-Encoding': 'chunked'},
-            stream=True
+            adding_headers={'Transfer-Encoding': 'chunked'}
         )
 
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',

@@ -1,29 +1,31 @@
 [tool.poetry]
 name = "libera_utils"
-version = "1.0.0"
-description = "Utility package for Libera Science Data Processing and the Libera Science Data Center."
+version = "2.0.0"
+description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
     "Gavin Medley <gavin.medley@lasp.colorado.edu>",
     "Laura Sandoval <laura.sandoval@lasp.colorado.edu>",
     "Matt Watwood <matt.watwood@lasp.colorado.edu>"
 ]
-license = "BSD3"
+license = "BSD-3-Clause"
+include = ["CHANGES.md", "LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
 python = "^3.9"
 astropy = "^5.1"
-bitstring = "^3.1"
+h5netcdf = "^1.1.0"
 h5py = "^3.3"
 numpy = "^1.21"
 spiceypy = {version = "^5.0", optional = true}
 lasp-packets = {version = "^2.0", optional = true}
 requests = "^2.26"
 SQLAlchemy = {version = "^1.4", optional = true}
-setuptools = "^65"
+setuptools = ">=65"
 psycopg2 = {version = "^2.9", optional = true}
 cloudpathlib = {extras = ["s3"], version = "^0"}
 watchtower = "^3.0"
+xarray = "^2023.1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest-cov = "^4"
