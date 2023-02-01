@@ -24,7 +24,8 @@
    git push origin X.Y.Z
    ```
    
-6. Checkout the tag you just created (ensures proper behavior of setuptools_scm) and build the package (see below).
+6. Checkout the tag you just created (ensures the correct version is recorded in the build artifacts) and build the 
+   package (see below). 
    Check that the version of the built artifacts is as you expect (should match the version git tag).
    
 7. Optionally distribute the artifacts to PyPI/Nexus if desired (see below).
@@ -41,8 +42,13 @@
    
 3. To build the distribution archives, run `poetry build`.
    
-4. To upload the wheel to PyPI, run `poetry publish --username liberasdc --password redacted`. 
-   You will need the account information for the Libera SDC PyPI account.
+4. To upload the wheel to PyPI, first set your environment variables with the API token for the correct PyPI account:
+   ```shell
+   export PYPI_USERNAME=__token__
+   export PYPI_TOKEN=<Your API Token>
+   ```
+   Then run `poetry publish --username $PYPI_USERNAME --password $PYPI_TOKEN`. 
+   You will need the account information for the `liberasdc` PyPI account.
 
 
 ## Building and Distribution to Internal LASP Nexus PyPI
@@ -78,5 +84,5 @@ than the version released to the public PyPI.
 
 5. To upload the wheel to Nexus, run 
    ```
-   poetry publish --repository lasp-pypi --username your-nexus-username --password redacted
+   poetry publish --repository lasp-pypi --username your-nexus-username --password *********
    ```
