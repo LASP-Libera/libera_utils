@@ -34,3 +34,4 @@
 *.rst filter=lfs diff=lfs merge=lfs -text
 *.CONS filter=lfs diff=lfs merge=lfs -text
 *.PDS filter=lfs diff=lfs merge=lfs -text
+*.ti filter=lfs diff=lfs merge=lfs -text
