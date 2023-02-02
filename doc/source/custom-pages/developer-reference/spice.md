@@ -20,11 +20,9 @@ e.g. `jpss_sclk_v01.tsc`
 Contains specification of the spacecraft clock on JPSS. 
 
 ### Instrument Kernel (IK)
-e.g. `libera_ik_v01.ti`
+e.g. `libera_cam_ik_v01.ti`, `libera_rad_ik_v01.ti`
 
-Contains specification data of the Libera instruments.
-
-Note: These parameters have not yet been specified.
+Contains geometry specification data of the Libera instruments.
 
 
 ## Dynamic Kernels Generated at Libera SDC
@@ -33,24 +31,24 @@ as part of pipeline processing.
 
 
 ### JPSS Ephemeris Kernel (SPK)
-e.g. `libera_jpss_20210408t235850_20210409t015849.bsp`
+e.g. `libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25365125959.bsp`
 
 Contains ephemeris data -- coordinates in ITRF93 frame -- for the JPSS spacecraft body.
 
 ### JPSS Attitude Kernel (CK)
-e.g. `libera_jpss_20210408t235850_20210409t015849.bc`
+e.g. `libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25365125959.bc`
 
 Contains attitude data -- quaternion rotations from J2000 -- for the JPSS spacecraft body.
 
 ### Azimuth Rotation Mechanism Attitude Kernel (CK)
-e.g. `libera_azrot_20210408t235850_20210409t015849.bc`
+e.g. `libera_azrot_20210408t235850_20210409t015849_vM3m14p159_r25365125959.bc`
 
 Contains attitude data for the Libera Azimuth Rotation mechanism.
 
 Note: there is currently no mechanism for creating this kernel because no telemetry data exists.
 
 ### Elevation Scan Mechanism Attitude Kernel (CK)
-e.g. `libera_elscan_20210408t235850_20210409t015849.bc`
+e.g. `libera_elscan_20210408t235850_20210409t015849_vM3m14p159_r25365125959.bc`
 
 Contains attitude data for the Libera Elevation Scan mechanism.
 
@@ -61,7 +59,8 @@ Note: there is currently no mechanism for creating this kernel because no teleme
 These kernels are generated at NAIF. We download them as needed using the `KernelFileCache` class,
 which is configured with a NAIF index page URL and a regex string that finds the proper download URL
 on the index page. The downloaded file is put in a cache so the download only occurs after the cached
-data is of a specified age.
+data is of a specified age. If we want to effectively cache some kernels indefinitely, we can put 
+them in an S3 bucket and retrieve them from there instead of from the NAIF website.
 
 
 ### Leapseconds Kernel (LSK)
@@ -77,8 +76,16 @@ Contains ephemeris data for planetary bodies.
 ### High Precision Earth Binary Planetary Constants Kernel (PCK)
 e.g. `earth_000101_211220_210926.bpc`
 
-Contains high precision orientation data for Earth in the ECEF ITRF93 reference frame. 
-ITRF93 is a more precise version of the standard IAU_EARTH reference frame provided in the text PCK.
+Contains high precision orientation data for Earth in the ECEF ITRF93 reference frame.
+
+ITRF93 is a more precise version of the standard IAU_EARTH reference frame provided in the text PCK below.
+
+This kernel is regenerated several times per week so we should retrieve this from NAIF for every processing run.
+
+### ITFR93 Reference Frame Kernel for Earth
+e.g. `earth_assoc_itrf93.tf`
+
+Used to designate ITRF93 as the default body-fixed frame associated with the Earth.
 
 ### Standard Text Planetary Constants Kernel (PCK)
 e.g. `pck00010.tpc`
