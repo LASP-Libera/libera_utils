@@ -1,0 +1,208 @@
+KPL/IK
+
+
+Libera WFOV Camera Instrument properties
+========================================================================
+
+   This instrument kernel (I-kernel) contains references to the mounting
+   alignment, internal and FOV geometry for the Libera Camera.
+ 
+Version and Date
+----------------------------------------------------------
+
+   The TEXT_KERNEL_ID stores version information of loaded project text
+   kernels. Each entry associated with the keyword is a string that consists
+   of four parts: the kernel name, version, entry date, and type. For example,
+   the ISS I-kernel might have an entry as follows:
+ 
+           TEXT_KERNEL_ID += 'LIBERA CAM V0.0 13-OCTOBER-2022 IK'
+                                  |       |         |          |
+                                  |       |         |          |
+              KERNEL NAME <-------+       |         |          |
+                                          |         |          V
+                             VERSION <----+         |     KERNEL TYPE
+                                                    |
+                                                    V
+                                               ENTRY DATE
+ 
+   ISS I-Kernel Version:
+ 
+           \begindata
+ 
+           TEXT_KERNEL_ID += 'LIBERA CAM V0.0 13-OCTOBER-2022 IK'
+ 
+           \begintext
+
+   Version 0.0 -- Oct. 13, 2022 -- Stephane Beland
+ 
+            --   Initial Prototype Release for Review.
+
+References
+----------------------------------------------------------
+ 
+ 
+ 
+Contact Information
+----------------------------------------------------------
+ 
+   Direct questions, comments or concerns about the contents of this kernel
+   to:
+ 
+          someone@somewhere
+ 
+ 
+Implementation Notes
+----------------------------------------------------------
+ 
+   This file is used by the SPICE system as follows: programs that make use of
+   this instrument kernel must ``load'' the kernel, normally during program
+   initialization. Loading the kernel associates data items with their names
+   in a data structure called the ``kernel pool''. The SPICELIB routine FURNSH
+   and CSPICE routine furnsh_c load SPICE kernels as shown below:
+ 
+   FORTRAN (SPICELIB)
+ 
+           CALL FURNSH ( 'kernel_name' )
+ 
+   C (CSPICE)
+ 
+           furnsh_c ( "kernel_name" )
+ 
+   In order for a program or subroutine to extract data from the pool, the
+   SPICELIB routines GDPOOL and GIPOOL are used. 
+ 
+ 
+Naming Conventions
+----------------------------------------------------------
+ 
+   All names referencing values in this I-kernel start with the characters
+   `INS' followed by the spacecraft ID number followed by a three digit ID code 
+   for the Libera WFOV Camera instrument. (WFOV = 010)
+   
+   For spacecraft without a NAIF ID, we assign one based on the NORAD assigned number.
+
+       NAIF ID = -100000 - NORAD ID code
+
+   Until launch and a NORAD spacecraft ID number, lets use JPSS1 (NOAA-20) id for
+   SPICE processing.
+
+   The remainder of the name is an underscore character followed by the unique
+   name of the data item. For example, the CAMERA boresight direction in the
+   WFOV optics frame (``LIBERA_CAM'') is specified by:
+ 
+           INS-143013_BORESIGHT
+ 
+   The upper bound on the length of the name of any data item is 32
+   characters.
+ 
+   If the same item is included in more than one file, or if the same item
+   appears more than once within a single file, the latest value supersedes
+   any earlier values.
+ 
+ 
+WFOV description
+----------------------------------------------------------
+
+   The FOVs of the WFOV camera detector have the following angular sizes (from PDR pptx):
+ 
+           ------------  ----------------  ----------------
+             Detector       Horizontal         Vertical
+           ------------  ----------------  ----------------
+               WFOV        123 degrees      123 degrees
+ 
+   The CMOS detector geometry parameters are provided below:
+ 
+           ------------------------------  -----------
+                     parameter                 WFOV   
+           ------------------------------  -----------
+            Detector Array Size             2048x2048 
+            Pixel Size, microns              5.5x5.5 
+            FOV Angular Size, degrees        123x123
+            IFOV, microradian/pixel          1048.22      
+           ------------------------------  -----------
+
+   The camera lens distortion is provided by Ball Aerospace from ground characterization.
+   The distortion solution was initially provided at PDR (Feb. 8, 2022) as:
+
+   Intercept_height (mm) = a0 + a1*x + a2*x^2 + a3*x^3
+
+   where: 
+       x is the angle from the boresight in degrees
+       Intercept_height is the radial location on detector from the camera boresight in mm
+       a = [0.0, 0.11907230, -0.00011004950, -5.6702660E-06]
+
+   To get the angle at each pixel location, we calculate the Intercept_height for the full
+   Field-Of-View range and then interpolate the angle for each pixel distance from the boresight.
+
+   Using and inverse polynomial fit (even a 9th order) doesn't get us within the 25 arc-second pointing
+   requirement for all camera pixels.
+ 
+   With the keywords and their values:
+
+           \begindata
+ 
+           INS-143013010_FOCAL_LENGTH      = (   6.355   )
+           INS-143013010_FL_UNCERTAINTY    = (   0.001   )
+           INS-143013010_WAVELENGTH_RANGE  = ( 545, 565  )
+           INS-143013010_F/NUMBER          = (   0.706   )
+ 
+           \begintext
+
+           \begindata
+ 
+           INS-143013010_PIXEL_SAMPLES     =  (  2048  )
+           INS-143013010_PIXEL_LINES       =  (  2048  )
+           INS-143013010_PIXEL_SIZE        =  (  0.0055  )
+           INS-143013010_CCD_CENTER        =  (1024.5, 1024.5 )
+           INS-143013010_IFOV              =  (  1048  )
+ 
+           \begintext
+
+           \begindata
+ 
+           INS-143013010_FOV_FRAME         = 'LIBERA_WFOV_CAMERA'
+           INS-143013010_FOV_SHAPE         = 'CIRCLE'
+           INS-143013010_FOV_CLASS_SPEC    = 'ANGLES'
+           INS-143013010_BORESIGHT         = ( 0.00,  0.00, +1.00)
+           INS-143013010_FOV_REF_VECTOR    = ( +1.00, 0.00, 0.00)
+           INS-143013010_FOV_REF_ANGLE     = ( 61.5 )
+           INS-143013010_FOV_ANGLE_UNITS   = 'DEGREES'
+ 
+           \begintext
+ 
+           \begindata
+ 
+           INS-143013010_FOV_CENTER_PIXEL  = ( 1023.5, 1023.5 )
+           INS-143013010_FOV_DISTORTION  = ( 0.00, 0.11907230, -0.00011004950, -5.6702660E-06 )
+ 
+           \begintext
+
+
+NAIF ID Code to Name Mapping
+----------------------------------------------------------
+ 
+   The following keywords define names for the corresponding ID Codes. 
+ 
+           \begindata
+ 
+           NAIF_BODY_NAME += ( 'LIBERA_WFOV_CAMERA' )
+           NAIF_BODY_CODE += ( -143013010 )
+ 
+           \begintext
+ 
+ 
+Platform ID
+----------------------------------------------------------
+ 
+   The WFOV camera instrument is mounted on the Libera Azimuth platform, which is
+   connected to the JPSS Spacecraft body. Therefore the value in the keywords below 
+   is -143013000.
+ 
+           \begindata
+ 
+           INS-143013010_PLATFORM_ID = ( -143013000 )
+ 
+           \begintext
+ 
+
+End of the IK file.
