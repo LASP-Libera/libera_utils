@@ -45,7 +45,7 @@ COPY LICENSE $LIBERA_UTILS_DIRECTORY
 RUN true
 
 # Install libera_utils and all its (non-dev) dependencies according to pyproject.toml
-RUN poetry install --no-dev --all-extras
+RUN poetry install --no-dev
 
 # Define the entrypoint of the container. Passing arguments when running the
 # container will be passed as arguments to the function
@@ -57,7 +57,7 @@ ENTRYPOINT ["sdp"]
 FROM libera-utils AS libera-utils-test
 
 # Install dev dependencies (not installed in libera-utils image)
-RUN poetry install --all-extras
+RUN poetry install
 
 # Copy tests over
 COPY tests $LIBERA_UTILS_DIRECTORY/tests
@@ -74,7 +74,7 @@ FROM libera-utils AS libera-utils-docs
 RUN apt-get install -y build-essential
 
 # Install dev dependencies (not installed in libera-utils image)
-RUN poetry install --all-extras --with docgen
+RUN poetry install --with docgen
 
 # Copy file over and set the working directory
 COPY doc $LIBERA_UTILS_DIRECTORY/doc
