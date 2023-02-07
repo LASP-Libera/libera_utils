@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "libera_utils"
-version = "2.0.0"
+version = "2.0.1"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
@@ -14,42 +14,37 @@ include = ["CHANGES.md", "LICENSE", "README.md"]
 [tool.poetry.dependencies]
 python = "^3.9"
 astropy = "^5.1"
+cloudpathlib = {extras = ["s3"], version = "^0"}
 h5netcdf = "^1.1.0"
 h5py = "^3.3"
+lasp-packets = "^2.0"
 numpy = "^1.21"
-spiceypy = {version = "^5.0", optional = true}
-lasp-packets = {version = "^2.0", optional = true}
+psycopg2 = "^2.9"
 requests = "^2.26"
-SQLAlchemy = {version = "^1.4", optional = true}
 setuptools = ">=65"
-psycopg2 = {version = "^2.9", optional = true}
-cloudpathlib = {extras = ["s3"], version = "^0"}
+spiceypy = "^5.0"
+SQLAlchemy = "^1.4, <2.0"
 watchtower = "^3.0"
 xarray = "^2023.1.0"
 
 [tool.poetry.group.dev.dependencies]
+bandit = "^1.7.4"
+moto = {extras = ["s3"], version = "^4.0"}
 pytest-cov = "^4"
 pylint = "^2.9.3"
-responses = "^0.21"
 pytest-randomly = "^3.10.2"
-moto = {extras = ["s3"], version = "^4.0"}
-bandit = "^1.7.4"
+responses = "^0.21"
 
 # These are listed as a group rather than an extra because no end user will need them
 [tool.poetry.group.docgen.dependencies]
-Sphinx = {version = "^4.2.0"}
-sphinx-rtd-theme = { version = "^1.0.0"}
-sphinxcontrib-napoleon = {version = "^0.7"}
-sphinxcontrib-confluencebuilder = {version = "^1.9.0"}
-sphinx-autoapi = { version = "^1.8.4"}
-myst-parser = {version = "^0.18.0"}
-numpydoc = {version = "^1.4.0"}
-m2r2 = {version = "^0.3.0"}
-
-# These extras are sets of dependencies not typically needed by an end user
-[tool.poetry.extras]
-db = ["SQLAlchemy", "psycopg2"]  # Dependencies for DB interaction
-spice = ["spiceypy", "lasp-packets"]  # Dependencies for spice kernel generation
+myst-parser = "^0.18.0"
+m2r2 = "^0.3.0"
+numpydoc = "^1.4.0"
+Sphinx = "^4.2.0"
+sphinx-rtd-theme = "^1.0.0"
+sphinxcontrib-napoleon = "^0.7"
+sphinxcontrib-confluencebuilder = "^1.9.0"
+sphinx-autoapi = "^1.8.4"
 
 [tool.poetry.scripts]
 libera-utils = 'libera_utils.cli:main'
