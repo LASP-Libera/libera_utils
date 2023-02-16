@@ -1,0 +1,10 @@
+{
+    "manifest_type": "INPUT",
+    "files": [
+        {"filename": "../../test_data/J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS", "checksum": "5f530edcdf4a6b4233d6f8d332a7e3cc"},
+        {"filename": "../../test_data/J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS", "checksum": "085eb8241354dee8fadfe0eb29e56745"},
+        {"filename": "../../test_data/P1590011AAAAAAAAAAAAAT21099051420500.PDS", "checksum": "f17c3de3defd09cd2eb59f89e7a0ba6b"},
+        {"filename": "../../test_data/P1590011AAAAAAAAAAAAAT21099051420501.PDS", "checksum": "74f0b406f9c2f0b9f0668b02186eae48"}
+    ],
+    "configuration": {}
+}
