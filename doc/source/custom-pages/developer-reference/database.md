@@ -25,7 +25,7 @@ migrations._
 
 We use a tool called Flyway to modify database schema using pure SQL migrations. This allows us full control
 over the schema (as opposed to using an ORM framework like Alembic to manage the DB). And separates the
-concerns of the datbase from the concerns of the pipeline code. 
+concerns of the database from the concerns of the pipeline code. 
 
 To create a schema change, create a new migration .sql script in `database/migrations`, named as 
 `V<major>[.<minor>[.<patch>]]__<imperative_description>.sql` and add your SQL script that will change
