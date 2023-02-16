@@ -4,11 +4,18 @@ import argparse
 import pytest
 # Local
 from libera_utils import cli, kernel_maker
+from libera_utils.io import packet_ingest
 
 
 @pytest.mark.parametrize(
     ("cli_args", "parsed"),
     [
+        (['packet-ingest', 'fakedir.json', '-ofakedir'],
+         argparse.Namespace(
+             func=packet_ingest.ingest,
+             manifest_filepath='fakedir.json',
+             outdir='fakedir',
+             verbose=False)),
         (['make-kernel', 'jpss-spk', '-ofakedir', 'file1.pkts', 'file2.pkts'],
          argparse.Namespace(
              func=kernel_maker.make_jpss_spk,
@@ -30,4 +37,4 @@ from libera_utils import cli, kernel_maker
     ]
 )
 def test_parse_cli_args(cli_args, parsed):
-    assert dict(vars(cli.parse_cli_args(cli_args))) == dict(vars(parsed))
+    assert cli.parse_cli_args(cli_args) == parsed
