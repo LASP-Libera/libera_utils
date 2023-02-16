@@ -48,15 +48,15 @@ def parse_cli_args(cli_args: list):
 
     # packet-ingest
     packet_ingest_parser = subparsers.add_parser('packet-ingest',
-                                               help='write construction record data to database')
+                                                 help='write construction record data to database')
     packet_ingest_parser.set_defaults(func=packet_ingest.ingest)
     packet_ingest_parser.add_argument('manifest_filepath', type=str,
-                                 help="path to L0 manifest file")
+                                      help="path to L0 manifest file")
     packet_ingest_parser.add_argument('--outdir', '-o', type=str,
-                                 required=True,
-                                 help="output directory for generated manifest")
+                                      required=True,
+                                      help="output directory for generated manifest")
     packet_ingest_parser.add_argument('-v', '--verbose', action='store_true',
-                                 help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
+                                      help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
     # make-kernel
     make_kernel_parser = subparsers.add_parser('make-kernel',
                                                help='generate SPICE kernel from telemetry data')
@@ -104,6 +104,7 @@ def parse_cli_args(cli_args: list):
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args
+
 
 if __name__ == "__main__":
     main()
