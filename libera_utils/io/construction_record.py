@@ -1,5 +1,6 @@
 """Module for manifest file handling"""
 # Standard
+import datetime
 import logging
 from pathlib import Path
 from bitstring import ConstBitStream
@@ -115,6 +116,22 @@ class APIDFromPDSFromConstructionRecord:
             )
 
 
+class PDSFiles:
+    """
+    Object representation of a Production Data Set (PDS). This object is created as part of
+    reading in a PDS filename and storing that filename and ingest time in a database.
+    """
+    def __init__(self, pds_filename: str):
+        self.pds_filename = pds_filename
+
+    def to_orm(self):
+        """Convert this class instance to a corresponding ORM object for entry into the database"""
+        return libera_db_models.PdsFile(
+            file_name=self.pds_filename,
+            ingested=datetime.datetime.utcnow()
+        )
+
+
 class PDSFileFromConstructionRecord:
     """
     Object representation of the information directly related to a Production Data Set (PDS). This corresponds to a
@@ -148,7 +165,7 @@ class PDSFileFromConstructionRecord:
 class SSCGapInformationFromConstructionRecord:
     """
     Object representation of the information of Spacecraft Contact Sessions (SCS). This corresponds to a database table
-    and connects to a Construction Record (CR). This object iscreated as part of reading in a CR and thus requires an
+    and connects to a Construction Record (CR). This object is created as part of reading in a CR and thus requires an
     open bitstream to read from.
     """
     def __init__(self, cr_bitstream: ConstBitStream):
@@ -341,13 +358,15 @@ class ConstructionRecord:
     in this file to be stored in a database.
     """
     @classmethod
-    def from_file(cls, filepath: str or Path or S3Path):
+    def from_file(cls, filepath: str or Path or S3Path, pds_excluded=None):
         """Read a construction record file and return a ConstructionRecord object (factory method).
 
             Parameters
             ----------
             filepath : str or Path or S3Path
                 Location of construction record file to read.
+            pds_excluded : list
+                List of pds from cr that are already in the db
 
             Returns
             -------
@@ -355,13 +374,15 @@ class ConstructionRecord:
         """
         with smart_open(filepath) as const_record_file:
             cr_bitstream = ConstBitStream(const_record_file)
-            return cls(filepath, cr_bitstream)
+            return cls(filepath, cr_bitstream, pds_excluded)
 
-    def __init__(self, filepath: str or Path or S3Path, cr_bitstream: ConstBitStream):
+    def __init__(self, filepath: str or Path or S3Path, cr_bitstream: ConstBitStream, pds_excluded):
         path_object = AnyPath(filepath)
         # Any Posix Path will have the member 'name' so disable pylint on this line
         self.file_name = path_object.name  # pylint: disable=no-member
         self.edos_version = cr_bitstream.read("uint:16")
+
+        self.pds_excluded = pds_excluded
 
         # Construction Record type 1 is for PDS
         self.construction_record_type = cr_bitstream.read("uint:8")
@@ -408,7 +429,12 @@ class ConstructionRecord:
         self.pds_file_count = cr_bitstream.read("uint:8")
         self.pds_files_list = []
         for _ in range(self.pds_file_count):
-            self.pds_files_list.append(PDSFileFromConstructionRecord(cr_bitstream))
+            pds_class = PDSFileFromConstructionRecord(cr_bitstream)
+            if self.pds_excluded is None:
+                self.pds_files_list.append(pds_class)
+            elif pds_class.pds_filename not in self.pds_excluded:
+                self.pds_files_list.append(pds_class)
+        self.pds_file_count = len(self.pds_files_list)
 
     @property
     def edos_version_major(self):
