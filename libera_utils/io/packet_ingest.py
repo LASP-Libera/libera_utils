@@ -36,14 +36,14 @@ def ingest(parsed_args: argparse.Namespace):
         manifest_type=ManifestType.OUTPUT,
         created_time=datetime.datetime.utcnow())
 
-    db_pds_dict={}
-    output_files=[]
+    db_pds_dict = {}
+    output_files = []
 
     for file in m.files:
 
         # is there a next cr in the manifest
         if 'CONS' in file['filename']:
-            dicts,con_ingested_dict = cr_ingest(file)
+            dicts, con_ingested_dict = cr_ingest(file)
             db_pds_dict.update(dicts)
             output_files.append(con_ingested_dict)
 
@@ -78,6 +78,8 @@ def ingest(parsed_args: argparse.Namespace):
                                configuration={})
     output_manifest.write(output_manifest_path)
     logger.info("Algorithm complete. Exiting.")
+
+    return
 
 
 def cr_ingest(file: str):
@@ -165,7 +167,7 @@ def pds_ingest(file: str):
             pds_orm = pds.to_orm()
             s.add(pds_orm)
 
-            #create ingested dictionary
+            # create ingested dictionary
             ingested_dict = {"filename": file['filename'],
                              "checksum": file['checksum']}
         # if pds is in db but does not have ingest time, update the ingest time
