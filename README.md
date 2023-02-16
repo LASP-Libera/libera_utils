@@ -44,3 +44,9 @@ Not yet implemented
 ```shell
 libera-utils make-kernel azel-ck [-h]
 ```
+
+
+#### Sub-Command `packet-ingest input-manifest.json`
+```shell
+libera-utils packet-ingest [-h] [packet_data_filepath] [--outdir OUTDIR] 
+```
