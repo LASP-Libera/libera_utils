@@ -26,12 +26,12 @@ The Github for `pyenv` can be found here:
 Now that you have access to whatever version of python you need, set your pyenv-provided
 Python version to something recent (3.9.9 is a good option at time of writing).
 
-1. Create a virtual environment in the `libera_sdp` directory with `python -m venv venv`. This will create
+1. Create a virtual environment in the `libera_utils` directory with `python -m venv venv`. This will create
    a virtual environment named `venv`, which is included in our `.gitignore`. 
 2. Activate the virtual environment by running `source venv/bin/activate`. Note: if you are running csh, you must
    run `source venv/bin/activate.csh`
 3. Configure your IDE to use the virtual environment's interpreter for the project. In PyCharm, this setting is in 
-   `Pycharm -> Preferences -> Project: libera_sdp -> Python Interpreter`.
+   `Pycharm -> Preferences -> Project: libera_utils -> Python Interpreter`.
 4. Check that when you open a Terminal in your IDE, `which python` points to your local virtual environment, indicating
    that your virtual environment is being automatically activated. 
 5. Update pip to the latest version with `pip install --upgrade pip`.
@@ -49,13 +49,13 @@ Once poetry is installed, check that it works by running `poetry --version`. You
 
 ## Installing Package Dependencies
 1. Ensure your virtual environment is activated by running `which python` and checking that it points to 
-   the virtual environment in your repo directory (probably `libera_sdp`).
+   the virtual environment in your repo directory (probably `libera_utils`).
 2. Run `poetry env info` and verify that Poetry is recognizing your virtual environment properly:
     ```
     Virtualenv
     Python:         3.9.9
     Implementation: CPython
-    Path:           /Users/myuser/path/to/libera_sdp/venv
+    Path:           /Users/myuser/path/to/libera_utils/venv
     Valid:          True
     ```
 3. Run `poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the 
@@ -67,7 +67,7 @@ Once poetry is installed, check that it works by running `poetry --version`. You
    `poetry install` command without `--extras` will implicitly uninstall any previously installed extras.
 5. To install dependency "groups" (think labels), which may or may not be optional, use the `--with` and `--without` 
    flags for Poetry. e.g. `poetry install --with docgen` will install the dependencies for the optional group "docgen".
-6. Verify that the `libera_sdp` package was installed correctly by running `sdp --version`. This runs the
+6. Verify that the `libera_utils` package was installed correctly by running `sdp --version`. This runs the
    `sdp` command line utility that is included in the package. You can also directly check that the `sdp` entrypoint
    exists in `venv/bin`. This can also be run with `poetry run sdp --version`.
 7. Next, go run the tests (tests require all extras to be installed).
