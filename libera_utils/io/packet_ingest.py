@@ -93,7 +93,10 @@ def cr_ingest(file: str):
 
     Returns
     -------
-    None
+    dicts : Dictionary
+        Dictionary that associates the pds file in the db with the current cr
+    ingested_dict : Dictionary
+        Dictionary of records that have been ingested
     """
     filename = os.path.basename(file['filename'])
     pds_filename = []
@@ -151,7 +154,8 @@ def pds_ingest(file: str):
 
     Returns
     -------
-    None
+    ingested_dict : Dictionary
+        Dictionary of records that have been ingested
     """
     filename = os.path.basename(file['filename'])
 
