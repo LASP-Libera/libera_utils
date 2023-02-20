@@ -26,7 +26,8 @@ def ingest(parsed_args: argparse.Namespace):
 
     Returns
     -------
-    None
+    output_manifest_path : str
+        Path of output manifest
     """
 
     # read json information
@@ -50,7 +51,8 @@ def ingest(parsed_args: argparse.Namespace):
         # is there a next pds in the manifest
         if 'PDS' in file['filename']:
             pds_ingested_dict = pds_ingest(file)
-            output_files.append(pds_ingested_dict)
+            if pds_ingested_dict:
+                output_files.append(pds_ingested_dict)
 
     # insert cr_id for pds files in the db associated with the current cr
     if db_pds_dict:
@@ -79,7 +81,7 @@ def ingest(parsed_args: argparse.Namespace):
     output_manifest.write(output_manifest_path)
     logger.info("Algorithm complete. Exiting.")
 
-    return
+    return output_manifest_path
 
 
 def cr_ingest(file: str):
@@ -94,6 +96,7 @@ def cr_ingest(file: str):
     None
     """
     filename = os.path.basename(file['filename'])
+    pds_filename = []
     dicts = {}
 
     with getdb().session() as s:
@@ -103,7 +106,6 @@ def cr_ingest(file: str):
 
         # check if cr is in the db
         if not cr_query:
-            pds_filename = []
 
             # parse cr into nested orm objects
             cr = ConstructionRecord.from_file(file['filename'])
@@ -159,7 +161,7 @@ def pds_ingest(file: str):
         pds_query = s.query(PdsFile).filter(
             PdsFile.file_name == filename).all()
 
-        # if pds is not in db insert then insert the pds file into the db
+        # if pds is not in db then insert the pds file into the db
         # without associating it with a cr; set the ingest time
         if not pds_query:
             # parse pds into nested orm objects
