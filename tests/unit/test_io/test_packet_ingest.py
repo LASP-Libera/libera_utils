@@ -104,7 +104,15 @@ def test_output_manifest_all(clean_local_db, test_input_manifest, short_tmp_path
     output_manifest_path = ingest(parsed_args)
     m_output = Manifest.from_file(output_manifest_path)
 
-    assert m.files == m_output.files
+    input_files = []
+    output_files = []
+
+    for file in m.files:
+        input_files.append(os.path.basename(file['filename']))
+    for file in m_output.files:
+        output_files.append(os.path.basename(file['filename']))
+
+    assert input_files == output_files
 
 
 @pytest.mark.usefixtures('insert_pds')

@@ -44,13 +44,13 @@ def ingest(parsed_args: argparse.Namespace):
 
         # is there a next cr in the manifest
         if 'CONS' in file['filename']:
-            dicts, con_ingested_dict = cr_ingest(file)
+            dicts, con_ingested_dict = cr_ingest(file, parsed_args.outdir)
             db_pds_dict.update(dicts)
             output_files.append(con_ingested_dict)
 
         # is there a next pds in the manifest
         if 'PDS' in file['filename']:
-            pds_ingested_dict = pds_ingest(file)
+            pds_ingested_dict = pds_ingest(file, parsed_args.outdir)
             if pds_ingested_dict:
                 output_files.append(pds_ingested_dict)
 
@@ -84,12 +84,14 @@ def ingest(parsed_args: argparse.Namespace):
     return output_manifest_path
 
 
-def cr_ingest(file: str):
+def cr_ingest(file: dict, output_dir: str):
     """Ingest cr records into database using manifest
     Parameters
     ----------
     file : Dictionary
         Dictionary containing path and checksum of cr
+    output_dir : str
+        Directory for output data
 
     Returns
     -------
@@ -130,8 +132,11 @@ def cr_ingest(file: str):
             cr_orm = cr.to_orm()
             s.merge(cr_orm)
 
+            # output filename
+            output_dir = os.path.join(output_dir, filename)
+
             # create ingested dictionary
-            ingested_dict = {"filename": file['filename'],
+            ingested_dict = {"filename": output_dir,
                              "checksum": file['checksum']}
         else:
             logger.info("Duplicate cr: %s", filename)
@@ -145,12 +150,14 @@ def cr_ingest(file: str):
     return dicts, ingested_dict
 
 
-def pds_ingest(file: str):
+def pds_ingest(file: dict, output_dir : str):
     """Ingest pd records into database using manifest
     Parameters
     ----------
     file : Dictionary
         Dictionary containing path and checksum of pd
+    output_dir : str
+        Directory for output data
 
     Returns
     -------
@@ -173,15 +180,21 @@ def pds_ingest(file: str):
             pds_orm = pds.to_orm()
             s.add(pds_orm)
 
+            # output filename
+            output_dir = os.path.join(output_dir, filename)
+
             # create ingested dictionary
-            ingested_dict = {"filename": file['filename'],
+            ingested_dict = {"filename": output_dir,
                              "checksum": file['checksum']}
         # if pds is in db but does not have ingest time, update the ingest time
         elif pds_query[0].ingested is None:
             pds_query[0].ingested = datetime.datetime.utcnow()
 
+            # output filename
+            output_dir = os.path.join(output_dir, filename)
+
             # create ingested dictionary
-            ingested_dict = {"filename": file['filename'],
+            ingested_dict = {"filename": output_dir,
                              "checksum": file['checksum']}
         else:
             logger.info("Duplicate pd: %s", filename)
