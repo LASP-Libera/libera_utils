@@ -56,13 +56,13 @@ def test_input_manifest(test_data_path):
 
 
 @pytest.fixture
-def text_construction_record_09T00(test_data_path):
+def text_construction_record_09t00(test_data_path):
     """Path to test construction record"""
     return test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"
 
 
 @pytest.fixture
-def text_construction_record_09T02(test_data_path):
+def text_construction_record_09t02(test_data_path):
     """Path to test construction record"""
     return test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS"
 
