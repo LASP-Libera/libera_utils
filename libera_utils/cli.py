@@ -104,7 +104,3 @@ def parse_cli_args(cli_args: list):
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args
-
-
-if __name__ == "__main__":
-    main()
