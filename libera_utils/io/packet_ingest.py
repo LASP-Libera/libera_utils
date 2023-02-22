@@ -32,6 +32,7 @@ def ingest(parsed_args: argparse.Namespace):
 
     # read json information
     m = Manifest.from_file(parsed_args.manifest_filepath)
+    m.validate_checksums()
 
     mfn = ManifestFilename.from_filename_parts(
         manifest_type=ManifestType.OUTPUT,
@@ -150,7 +151,7 @@ def cr_ingest(file: dict, output_dir: str):
     return dicts, ingested_dict
 
 
-def pds_ingest(file: dict, output_dir : str):
+def pds_ingest(file: dict, output_dir: str):
     """Ingest pd records into database using manifest
     Parameters
     ----------
@@ -201,3 +202,32 @@ def pds_ingest(file: dict, output_dir : str):
             ingested_dict = {}
 
     return ingested_dict
+
+
+def packet_archive(parsed_args: argparse.Namespace):
+    """Using output manifest file, create archive information for records.
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Namespace of parsed CLI arguments
+
+    Returns
+    -------
+    """
+    m = Manifest.from_file(parsed_args.manifest_filepath)
+    m.validate_checksums()
+
+    with getdb().session() as s:
+        for file in m.files:
+
+            filename = os.path.basename(file['filename'])
+
+            #TODO: put in logic here in order to use other file types for L1b and L2
+            if 'CONS' in file['filename']:
+                query = s.query(Cr).filter(Cr.file_name == filename).all()
+            elif 'PDS' in file['filename']:
+                query = s.query(PdsFile).filter(PdsFile.file_name == filename).all()
+
+            #Check for duplicates
+            if query[0].archived is None:
+                query[0].archived = datetime.datetime.utcnow()
