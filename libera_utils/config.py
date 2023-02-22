@@ -1,4 +1,4 @@
-"""Configuration reader. To modify the configuration, see file: emus_config.json"""
+"""Configuration reader. To modify the configuration, see file: config.json"""
 # Standard
 import json
 import logging
