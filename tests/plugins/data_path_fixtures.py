@@ -51,8 +51,14 @@ def test_json_manifest(test_data_path):
 
 @pytest.fixture
 def test_input_manifest(test_data_path):
-    """Path to test (rename) complicated manifest file"""
-    return test_data_path / 'libera_input_manifest_2023-01-25t192539.json'
+    """Path to test input manifest file"""
+    return test_data_path / 'libera_input_manifest_20230125t192539.json'
+
+
+@pytest.fixture
+def test_output_manifest(test_data_path):
+    """Path to test output manifest file"""
+    return test_data_path / 'libera_output_manifest_20230220t220427.json'
 
 
 @pytest.fixture
