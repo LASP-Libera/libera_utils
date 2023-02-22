@@ -6,7 +6,7 @@ import os
 from libera_utils.db import getdb
 from libera_utils.db.models import *
 from libera_utils.io.manifest import Manifest
-from libera_utils.io.packet_ingest import ingest
+from libera_utils.io.packet_ingest import ingest, packet_archive
 from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
 
 
@@ -39,6 +39,27 @@ def insert_pds(clean_local_db, test_input_manifest,
     with getdb().session() as s:
         s.add(pds_0_orm)
         s.add(pds_1_orm)
+
+
+@pytest.fixture
+def insert_output(clean_local_db, text_construction_record_09t00,
+                  text_construction_record_09t02):
+    """
+    Insert output records
+    """
+    cr_0 = ConstructionRecord.from_file(text_construction_record_09t00)
+    cr_1 = ConstructionRecord.from_file(text_construction_record_09t02)
+
+    cr_orm_0 = cr_0.to_orm()
+    cr_orm_1 = cr_1.to_orm()
+
+    # insert P1590011AAAAAAAAAAAAAT21099051420501.PDS
+    #pds = PDSFiles(cr.pds_files_list[1].pds_filename)
+    #pds_orm = pds.to_orm()
+
+    with getdb().session() as s:
+        s.add(cr_orm_0)
+        s.add(cr_orm_1)
 
 
 @pytest.mark.usefixtures('insert_pds')
@@ -130,3 +151,24 @@ def test_output_manifest_partial(clean_local_db, test_input_manifest, short_tmp_
         file_list.append(os.path.basename(file['filename']))
 
     assert 'P1590011AAAAAAAAAAAAAT21099051420500.PDS' not in file_list
+
+
+@pytest.mark.usefixtures('insert_output')
+def test_archive(clean_local_db, test_output_manifest, short_tmp_path):
+    """Test that archive information is successfully added.
+    """
+    parsed_args = DummyParser(test_output_manifest, short_tmp_path)
+    packet_archive(parsed_args)
+    m = Manifest.from_file(parsed_args.manifest_filepath)
+
+    with getdb().session() as s:
+        for file in m.files:
+            filename = os.path.basename(file['filename'])
+
+            if 'CONS' in file['filename']:
+                query = s.query(Cr).filter(Cr.file_name == filename).all()
+            elif 'PDS' in file['filename']:
+                query = s.query(PdsFile).filter(PdsFile.file_name == filename).all()
+
+            assert query != []
+            assert query[0].archived is not None
