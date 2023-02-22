@@ -53,10 +53,6 @@ def insert_output(clean_local_db, text_construction_record_09t00,
     cr_orm_0 = cr_0.to_orm()
     cr_orm_1 = cr_1.to_orm()
 
-    # insert P1590011AAAAAAAAAAAAAT21099051420501.PDS
-    #pds = PDSFiles(cr.pds_files_list[1].pds_filename)
-    #pds_orm = pds.to_orm()
-
     with getdb().session() as s:
         s.add(cr_orm_0)
         s.add(cr_orm_1)
