@@ -12,7 +12,7 @@ license = "BSD-3-Clause"
 include = ["CHANGES.md", "LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.8,<3.12"
 astropy = "^5.1"
 cloudpathlib = {extras = ["s3"], version = "^0"}
 h5netcdf = "^1.1.0"
