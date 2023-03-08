@@ -47,7 +47,7 @@ def test_txt_gz(test_data_path):
 @pytest.fixture
 def test_json_manifest(test_data_path):
     """Path to test manifest file"""
-    return test_data_path / 'input_manifest_20220922t123456.json'
+    return test_data_path / 'libera_input_manifest_20220922t123456.json'
 
 
 @pytest.fixture

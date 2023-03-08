@@ -1,5 +1,12 @@
 # Version Changes
 
+# 2.1.0 (unreleased)
+- Improve API to Manifest and Manifest.add_files
+- Add manifest filename enforcement to Manifest class
+
+# 2.0.1 (released)
+- Remove the extras dependency spec because of the way SQLAlchemy imports models
+
 # 2.0.0 (released)
 - Add filenaming classes
 - Add manifest file class

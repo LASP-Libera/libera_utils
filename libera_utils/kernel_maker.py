@@ -52,7 +52,7 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     m.validate_checksums()
     files_in_range = []
 
-    if "start_time" not in m.configuration.keys():
+    if "start_time" not in m.configuration:
         # No time range information is provided. Process all files in the manifest
         for file_entry in m.files:
             files_in_range.append(str(file_entry["filename"]))

@@ -145,12 +145,12 @@ def test_make_jpss_kernels_from_manifest_no_time_range(test_data_path, short_tmp
         files=[],
         configuration={}
     )
-    data_file_1 = test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
-    data_file_2 = test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1"
-    data_file_3 = test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
-    m.add_file_to_manifest(data_file_1)
-    m.add_file_to_manifest(data_file_2)
-    m.add_file_to_manifest(data_file_3)
+    data_files = [
+        test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
+    ]
+    m.add_files(*data_files)
     manifest_path = short_tmp_path / "input_spice_manifest_test.json"
     m.write(short_tmp_path, "input_spice_manifest_test.json")
     kernel_maker.make_jpss_kernels_from_manifest(manifest_path, short_tmp_path)
@@ -170,12 +170,12 @@ def test_make_jpss_kernels_from_manifest_local_one_file(test_data_path, short_tm
             "end_time": "2021-04-09:01:00:00"
                        }
     )
-    data_file_1 = test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
-    data_file_2 = test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1"
-    data_file_3 = test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
-    m.add_file_to_manifest(data_file_1)
-    m.add_file_to_manifest(data_file_2)
-    m.add_file_to_manifest(data_file_3)
+    data_files = [
+        test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
+    ]
+    m.add_files(*data_files)
     manifest_path = short_tmp_path / "input_spice_manifest_test.json"
     m.write(short_tmp_path, "input_spice_manifest_test.json")
     kernel_maker.make_jpss_kernels_from_manifest(manifest_path, short_tmp_path)
@@ -196,12 +196,12 @@ def test_make_jpss_kernels_from_manifest_local_two_files(test_data_path, short_t
             "end_time": "2021-04-09:02:00:00"
                        }
     )
-    data_file_1 = test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
-    data_file_2 = test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1"
-    data_file_3 = test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
-    m.add_file_to_manifest(data_file_1)
-    m.add_file_to_manifest(data_file_2)
-    m.add_file_to_manifest(data_file_3)
+    data_files = [
+        test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
+    ]
+    m.add_files(*data_files)
     manifest_path = short_tmp_path / "input_spice_manifest_two_files.json"
     m.write(short_tmp_path, "input_spice_manifest_two_files.json")
 
@@ -223,12 +223,12 @@ def test_make_jpss_kernels_from_manifest_local_three_files(test_data_path, short
             "end_time": "2021-04-09:04:00:00"
                        }
     )
-    data_file_1 = test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
-    data_file_2 = test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1"
-    data_file_3 = test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
-    m.add_file_to_manifest(data_file_1)
-    m.add_file_to_manifest(data_file_2)
-    m.add_file_to_manifest(data_file_3)
+    data_files = [
+        test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1",
+        test_data_path / "J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
+    ]
+    m.add_files(*data_files)
     m.write(short_tmp_path, "input_spice_manifest_three_files.json")
     manifest_path = short_tmp_path / "input_spice_manifest_three_files.json"
     kernel_maker.make_jpss_kernels_from_manifest(manifest_path, short_tmp_path)
@@ -257,17 +257,17 @@ def test_make_jpss_kernels_from_manifest_aws_three_files(test_data_path, short_t
     packet_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
     packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
     write_file_to_s3(packet_data_path, packet_uri)
-    m.add_file_to_manifest(packet_uri)
+    m.add_files(packet_uri)
 
     packet_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1"
     packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T02-00-00Z_V01.DAT1'
     write_file_to_s3(packet_data_path, packet_uri)
-    m.add_file_to_manifest(packet_uri)
+    m.add_files(packet_uri)
 
     packet_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1"
     packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T04-00-00Z_V01.DAT1'
     write_file_to_s3(packet_data_path, packet_uri)
-    m.add_file_to_manifest(packet_uri)
+    m.add_files(packet_uri)
 
     manifest_location = f"s3://{bucket}/{key}/manifest/"
     m.write(manifest_location, "input_spice_manifest_remote_three_files.json")
@@ -299,7 +299,7 @@ def test_make_jpss_kernels_from_manifest_aws_one_file(test_data_path, short_tmp_
     packet_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
     packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
     write_file_to_s3(packet_data_path, packet_uri)
-    m.add_file_to_manifest(packet_uri)
+    m.add_files(packet_uri)
 
     manifest_location = f"s3://{bucket}/{key}/manifest/"
     m.write(manifest_location, "input_spice_manifest_remote_test.json")
