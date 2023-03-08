@@ -10,11 +10,10 @@ from libera_utils.io import packet_ingest
 @pytest.mark.parametrize(
     ("cli_args", "parsed"),
     [
-        (['packet-ingest', 'fakedir.json', '-ofakedir'],
+        (['packet-ingest', 'fakedir.json'],
          argparse.Namespace(
              func=packet_ingest.ingest,
              manifest_filepath='fakedir.json',
-             outdir='fakedir',
              verbose=False)),
         (['make-kernel', 'jpss-spk', '-ofakedir', 'file1.pkts', 'file2.pkts'],
          argparse.Namespace(

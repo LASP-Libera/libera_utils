@@ -358,15 +358,13 @@ class ConstructionRecord:
     in this file to be stored in a database.
     """
     @classmethod
-    def from_file(cls, filepath: str or Path or S3Path, pds_excluded=None):
+    def from_file(cls, filepath: str or Path or S3Path):
         """Read a construction record file and return a ConstructionRecord object (factory method).
 
             Parameters
             ----------
             filepath : str or Path or S3Path
                 Location of construction record file to read.
-            pds_excluded : list
-                List of pds from cr that are already in the db
 
             Returns
             -------
@@ -374,15 +372,13 @@ class ConstructionRecord:
         """
         with smart_open(filepath) as const_record_file:
             cr_bitstream = ConstBitStream(const_record_file)
-            return cls(filepath, cr_bitstream, pds_excluded)
+            return cls(filepath, cr_bitstream)
 
-    def __init__(self, filepath: str or Path or S3Path, cr_bitstream: ConstBitStream, pds_excluded):
+    def __init__(self, filepath: str or Path or S3Path, cr_bitstream: ConstBitStream):
         path_object = AnyPath(filepath)
         # Any Posix Path will have the member 'name' so disable pylint on this line
         self.file_name = path_object.name  # pylint: disable=no-member
         self.edos_version = cr_bitstream.read("uint:16")
-
-        self.pds_excluded = pds_excluded
 
         # Construction Record type 1 is for PDS
         self.construction_record_type = cr_bitstream.read("uint:8")
@@ -429,12 +425,7 @@ class ConstructionRecord:
         self.pds_file_count = cr_bitstream.read("uint:8")
         self.pds_files_list = []
         for _ in range(self.pds_file_count):
-            pds_class = PDSFileFromConstructionRecord(cr_bitstream)
-            if self.pds_excluded is None:
-                self.pds_files_list.append(pds_class)
-            elif pds_class.pds_filename not in self.pds_excluded:
-                self.pds_files_list.append(pds_class)
-        self.pds_file_count = len(self.pds_files_list)
+            self.pds_files_list.append(PDSFileFromConstructionRecord(cr_bitstream))
 
     @property
     def edos_version_major(self):
@@ -460,7 +451,7 @@ class ConstructionRecord:
         for i in range(self.apid_count):
             apids.append(self.apid_data_list[i].to_orm())
         pds_files = []
-        for i in range(self.pds_file_count):
+        for i in range(len(self.pds_files_list)):
             pds_files.append(self.pds_files_list[i].to_orm())
         return libera_db_models.Cr(
             file_name=self.file_name,
