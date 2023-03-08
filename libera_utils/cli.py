@@ -52,9 +52,6 @@ def parse_cli_args(cli_args: list):
     packet_ingest_parser.set_defaults(func=packet_ingest.ingest)
     packet_ingest_parser.add_argument('manifest_filepath', type=str,
                                       help="path to L0 manifest file")
-    packet_ingest_parser.add_argument('--outdir', '-o', type=str,
-                                      required=True,
-                                      help="output directory for generated manifest")
     packet_ingest_parser.add_argument('-v', '--verbose', action='store_true',
                                       help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
     # make-kernel

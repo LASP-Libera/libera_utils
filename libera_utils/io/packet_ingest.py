@@ -30,6 +30,8 @@ def ingest(parsed_args: argparse.Namespace):
         Path of output manifest
     """
 
+    processing_dropbox = os.environ['PROCESSING_DROPBOX']
+
     # read json information
     m = Manifest.from_file(parsed_args.manifest_filepath)
     m.validate_checksums()
@@ -38,39 +40,39 @@ def ingest(parsed_args: argparse.Namespace):
         manifest_type=ManifestType.OUTPUT,
         created_time=datetime.datetime.utcnow())
 
-    db_pds_dict = {}
+    db_pds_dict_all = {}
     output_files = []
 
     for file in m.files:
-
         # is there a next cr in the manifest
         if 'CONS' in file['filename']:
-            dicts, con_ingested_dict = cr_ingest(file, parsed_args.outdir)
-            db_pds_dict.update(dicts)
+            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_dropbox)
+            db_pds_dict_all.update(db_pds_dict)
             output_files.append(con_ingested_dict)
 
+    for file in m.files:
         # is there a next pds in the manifest
         if 'PDS' in file['filename']:
-            pds_ingested_dict = pds_ingest(file, parsed_args.outdir)
+            pds_ingested_dict = pds_ingest(file, processing_dropbox)
             if pds_ingested_dict:
                 output_files.append(pds_ingested_dict)
 
     # insert cr_id for pds files in the db associated with the current cr
-    if db_pds_dict:
+    if db_pds_dict_all:
         with getdb().session() as s:
-            for cr_filename in db_pds_dict.keys():
+            for cr_filename in db_pds_dict_all.keys():
                 # query cr_id that has been inserted
                 cr_query = s.query(Cr).filter(Cr.file_name == cr_filename).all()
                 # query all pds associated with cr
                 pds_query = s.query(PdsFile).filter(
                     PdsFile.file_name == func.any(
-                        db_pds_dict[cr_filename])).all()
+                        db_pds_dict_all[cr_filename])).all()
                 # assign cr_id
                 for pds in pds_query:
                     pds.cr_id = cr_query[0].id
 
     # write output manifest to L0 ingest dropbox
-    output_dir = AnyPath(parsed_args.outdir)
+    output_dir = AnyPath(processing_dropbox)
     logger.info("Writing resulting output manifest to %s", output_dir)
 
     # Write output manifest file containing a list of the product files that the processing created
@@ -86,7 +88,7 @@ def ingest(parsed_args: argparse.Namespace):
 
 
 def cr_ingest(file: dict, output_dir: str):
-    """Ingest cr records into database using manifest
+    """Ingest cr records into database
     Parameters
     ----------
     file : Dictionary
@@ -96,14 +98,15 @@ def cr_ingest(file: dict, output_dir: str):
 
     Returns
     -------
-    dicts : Dictionary
+    db_pds_dict : Dictionary
         Dictionary that associates the pds file in the db with the current cr
     ingested_dict : Dictionary
         Dictionary of records that have been ingested
     """
     filename = os.path.basename(file['filename'])
-    pds_filename = []
-    dicts = {}
+    db_pds = []
+    db_pds_dict = {}
+    all_pds_dict = {}
 
     with getdb().session() as s:
 
@@ -116,20 +119,24 @@ def cr_ingest(file: dict, output_dir: str):
             # parse cr into nested orm objects
             cr = ConstructionRecord.from_file(file['filename'])
 
-            # search db for next pds record contained in cr
+            # create a dict of all pds in cr
             for pds_file in cr.pds_files_list:
-                pds_query = s.query(PdsFile).filter(
-                    PdsFile.file_name == pds_file.pds_filename).all()
+                all_pds_dict[pds_file.pds_filename] = pds_file
 
-                # pds records missing from the db
-                if pds_query:
-                    pds_filename.append(pds_file.pds_filename)
+            pds_query = s.query(PdsFile).filter(
+                PdsFile.file_name == func.any(list(all_pds_dict.keys()))).all()
 
             # if there are some pds records from the current cr in the db
-            # create all pds file records and associate them with current cr,
-            # but do not set pds ingest time
-            cr = ConstructionRecord.from_file(
-                file['filename'], pds_excluded=pds_filename)
+            # associate them with current cr, but do not set pds ingest time
+            if pds_query:
+
+                for pds_object in range(len(pds_query)):
+                    db_pds.append(pds_query[pds_object].file_name)
+
+                    if pds_query[pds_object].file_name in list(all_pds_dict.keys()):
+                        cr.pds_files_list.remove(
+                            all_pds_dict[pds_query[pds_object].file_name])
+
             cr_orm = cr.to_orm()
             s.merge(cr_orm)
 
@@ -145,14 +152,14 @@ def cr_ingest(file: dict, output_dir: str):
 
     # for the pds files that were already in the db,
     # associate the pds file in the db with the current cr
-    if pds_filename:
-        dicts[filename] = pds_filename
+    if db_pds:
+        db_pds_dict[filename] = db_pds
 
-    return dicts, ingested_dict
+    return db_pds_dict, ingested_dict
 
 
 def pds_ingest(file: dict, output_dir: str):
-    """Ingest pd records into database using manifest
+    """Ingest pd records into database that do not have an associated cr
     Parameters
     ----------
     file : Dictionary
@@ -202,32 +209,3 @@ def pds_ingest(file: dict, output_dir: str):
             ingested_dict = {}
 
     return ingested_dict
-
-
-def packet_archive(parsed_args: argparse.Namespace):
-    """Using output manifest file, create archive information for records.
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Namespace of parsed CLI arguments
-
-    Returns
-    -------
-    """
-    m = Manifest.from_file(parsed_args.manifest_filepath)
-    m.validate_checksums()
-
-    with getdb().session() as s:
-        for file in m.files:
-
-            filename = os.path.basename(file['filename'])
-
-            #TODO: put in logic here in order to use other file types for L1b and L2
-            if 'CONS' in file['filename']:
-                query = s.query(Cr).filter(Cr.file_name == filename).all()
-            elif 'PDS' in file['filename']:
-                query = s.query(PdsFile).filter(PdsFile.file_name == filename).all()
-
-            #Check for duplicates
-            if query[0].archived is None:
-                query[0].archived = datetime.datetime.utcnow()

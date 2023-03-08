@@ -6,27 +6,27 @@ import os
 from libera_utils.db import getdb
 from libera_utils.db.models import *
 from libera_utils.io.manifest import Manifest
-from libera_utils.io.packet_ingest import ingest, packet_archive
+from libera_utils.io.packet_ingest import ingest, cr_ingest
 from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
 
 
 class DummyParser:
     """ Generates dummy parser """
-    def __init__(self, manifest_filepath, short_tmp_path):
+    def __init__(self, manifest_filepath, short_tmp_path=None):
         self.manifest_filepath = str(manifest_filepath)
         self.outdir = str(short_tmp_path)
 
 
 @pytest.fixture
-def insert_pds(clean_local_db, test_input_manifest,
-               text_construction_record_09t00,
-               text_construction_record_09t02, short_tmp_path):
+def insert_single_pds_from_each_cr(clean_local_db,
+                                   test_construction_record_09t00,
+                                   test_construction_record_09t02):
     """
-    Insert pds
+    insert single pds from each cr
     """
 
-    cr_0 = ConstructionRecord.from_file(text_construction_record_09t00)
-    cr_1 = ConstructionRecord.from_file(text_construction_record_09t02)
+    cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
+    cr_1 = ConstructionRecord.from_file(test_construction_record_09t02)
 
     # insert P1590011AAAAAAAAAAAAAT21099051420500.PDS
     pds_0 = PDSFiles(cr_0.pds_files_list[0].pds_filename)
@@ -42,13 +42,35 @@ def insert_pds(clean_local_db, test_input_manifest,
 
 
 @pytest.fixture
-def insert_output(clean_local_db, text_construction_record_09t00,
-                  text_construction_record_09t02):
+def insert_multiple_pds_from_single_cr(clean_local_db,
+                                       test_construction_record_09t00):
+    """
+    Insert multiple pds from a single cr
+    """
+
+    cr = ConstructionRecord.from_file(test_construction_record_09t00)
+
+    # insert P1590011AAAAAAAAAAAAAT21099051420500.PDS
+    pds = PDSFiles(cr.pds_files_list[0].pds_filename)
+    pds_0_orm = pds.to_orm()
+
+    # insert P1590011AAAAAAAAAAAAAT21099051420501.PDS
+    pds = PDSFiles(cr.pds_files_list[1].pds_filename)
+    pds_1_orm = pds.to_orm()
+
+    with getdb().session() as s:
+        s.add(pds_0_orm)
+        s.add(pds_1_orm)
+
+
+@pytest.fixture
+def insert_output(clean_local_db, test_construction_record_09t00,
+                  test_construction_record_09t02):
     """
     Insert output records
     """
-    cr_0 = ConstructionRecord.from_file(text_construction_record_09t00)
-    cr_1 = ConstructionRecord.from_file(text_construction_record_09t02)
+    cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
+    cr_1 = ConstructionRecord.from_file(test_construction_record_09t02)
 
     cr_orm_0 = cr_0.to_orm()
     cr_orm_1 = cr_1.to_orm()
@@ -58,19 +80,19 @@ def insert_output(clean_local_db, text_construction_record_09t00,
         s.add(cr_orm_1)
 
 
-@pytest.mark.usefixtures('insert_pds')
-def test_pds_assigned(clean_local_db, test_input_manifest, short_tmp_path,
-                      text_construction_record_09t00,
-                      text_construction_record_09t02):
+@pytest.mark.usefixtures('insert_single_pds_from_each_cr')
+def test_pds_assigned_single(clean_local_db, test_input_manifest,
+                             test_construction_record_09t00,
+                             test_construction_record_09t02):
     """Test that cr_id was assigned properly to pds records and pds ingest
     time was assigned for records ingested separately"""
 
     # insert
-    parsed_args = DummyParser(test_input_manifest, short_tmp_path)
+    parsed_args = DummyParser(test_input_manifest)
     ingest(parsed_args)
 
-    cr_0 = ConstructionRecord.from_file(text_construction_record_09t00)
-    cr_1 = ConstructionRecord.from_file(text_construction_record_09t02)
+    cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
+    cr_1 = ConstructionRecord.from_file(test_construction_record_09t02)
 
     with getdb().session() as s:
         cr_query_0 = s.query(Cr).filter(Cr.file_name == cr_0.file_name).all()
@@ -90,11 +112,29 @@ def test_pds_assigned(clean_local_db, test_input_manifest, short_tmp_path,
     assert pds_query_1[0].ingested is not None
 
 
-@pytest.mark.usefixtures('insert_pds')
-def test_manifest_assigned(clean_local_db, test_input_manifest, short_tmp_path):
+@pytest.mark.usefixtures('insert_multiple_pds_from_single_cr')
+def test_pds_assigned_mult(clean_local_db, test_input_manifest,
+                           test_construction_record_09t00):
+    """Test that cr_ingest returns expected values when multiple pds records
+    from a single cr are already present in the database"""
+
+    # read json information
+    parsed_args = DummyParser(test_input_manifest)
+    m = Manifest.from_file(parsed_args.manifest_filepath)
+    db_pds_dict, con_ingested_dict = cr_ingest(
+        m.files[0], parsed_args.outdir)
+
+    cr = ConstructionRecord.from_file(test_construction_record_09t00)
+
+    assert [cr.pds_files_list[0].pds_filename, cr.pds_files_list[1].pds_filename] \
+           in db_pds_dict.values()
+
+
+@pytest.mark.usefixtures('insert_single_pds_from_each_cr')
+def test_manifest_assigned(clean_local_db, test_input_manifest):
     """Test that pds ingest time is listed for records listed in manifest
     """
-    parsed_args = DummyParser(test_input_manifest, short_tmp_path)
+    parsed_args = DummyParser(test_input_manifest)
     ingest(parsed_args)
 
     m = Manifest.from_file(test_input_manifest)
@@ -110,11 +150,11 @@ def test_manifest_assigned(clean_local_db, test_input_manifest, short_tmp_path):
             assert pds_query[0].ingested is not None
 
 
-def test_output_manifest_all(clean_local_db, test_input_manifest, short_tmp_path):
+def test_output_manifest_all(clean_local_db, test_input_manifest):
     """Test output manifest file created contains a list of the
     product files that the processing created
     """
-    parsed_args = DummyParser(test_input_manifest, short_tmp_path)
+    parsed_args = DummyParser(test_input_manifest)
 
     m = Manifest.from_file(test_input_manifest)
 
@@ -132,11 +172,11 @@ def test_output_manifest_all(clean_local_db, test_input_manifest, short_tmp_path
     assert input_files == output_files
 
 
-@pytest.mark.usefixtures('insert_pds')
-def test_output_manifest_partial(clean_local_db, test_input_manifest, short_tmp_path):
+@pytest.mark.usefixtures('insert_single_pds_from_each_cr')
+def test_output_manifest_partial(clean_local_db, test_input_manifest):
     """Test output manifest file created does not contain pds records already inserted
     """
-    parsed_args = DummyParser(test_input_manifest, short_tmp_path)
+    parsed_args = DummyParser(test_input_manifest)
 
     file_list = []
 
@@ -147,24 +187,3 @@ def test_output_manifest_partial(clean_local_db, test_input_manifest, short_tmp_
         file_list.append(os.path.basename(file['filename']))
 
     assert 'P1590011AAAAAAAAAAAAAT21099051420500.PDS' not in file_list
-
-
-@pytest.mark.usefixtures('insert_output')
-def test_archive(clean_local_db, test_output_manifest, short_tmp_path):
-    """Test that archive information is successfully added.
-    """
-    parsed_args = DummyParser(test_output_manifest, short_tmp_path)
-    packet_archive(parsed_args)
-    m = Manifest.from_file(parsed_args.manifest_filepath)
-
-    with getdb().session() as s:
-        for file in m.files:
-            filename = os.path.basename(file['filename'])
-
-            if 'CONS' in file['filename']:
-                query = s.query(Cr).filter(Cr.file_name == filename).all()
-            elif 'PDS' in file['filename']:
-                query = s.query(PdsFile).filter(PdsFile.file_name == filename).all()
-
-            assert query != []
-            assert query[0].archived is not None
