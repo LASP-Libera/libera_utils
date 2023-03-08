@@ -4,8 +4,8 @@ from libera_utils.io.construction_record import ConstructionRecord
 from libera_utils.db import getdb
 
 
-def test_construction_reader_from_file(text_construction_record_09t00):
-    cr = ConstructionRecord.from_file(text_construction_record_09t00)
+def test_construction_reader_from_file(test_construction_record_09t00):
+    cr = ConstructionRecord.from_file(test_construction_record_09t00)
 
     # For an initial test, check that the final entry date is correct. This will at least show all the data was read
     # into the correct locations.
@@ -20,8 +20,8 @@ def test_construction_reader_from_file(text_construction_record_09t00):
     assert cr.pds_files_list[1].apid_this_file[0].apid_last_packet_utc.microsecond == 5260
 
 
-def test_construction_record_properties(text_construction_record_09t00):
-    cr = ConstructionRecord.from_file(text_construction_record_09t00)
+def test_construction_record_properties(test_construction_record_09t00):
+    cr = ConstructionRecord.from_file(test_construction_record_09t00)
 
     assert cr.edos_version_major == 8
     assert cr.edos_version_release == 1
@@ -36,8 +36,8 @@ def test_construction_record_properties(text_construction_record_09t00):
     assert cr.pds_files_list[1].apid_this_file[0].scid == 159
 
 
-def test_construction_orm_creation(text_construction_record_09t00, clean_local_db):
-    cr = ConstructionRecord.from_file(text_construction_record_09t00)
+def test_construction_orm_creation(test_construction_record_09t00, clean_local_db):
+    cr = ConstructionRecord.from_file(test_construction_record_09t00)
     cr_orm = cr.to_orm()
 
     # Test inserting this into the database
