@@ -29,7 +29,7 @@ def test_manifest_add_file_to_manifest(test_json_manifest):
         configuration={}
     )
     initial_list_len = len(m.files)
-    m.add_file_to_manifest(test_json_manifest)
+    m.add_files(test_json_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 1
 
@@ -47,7 +47,7 @@ def test_manifest_add_desired_time_range(test_json_manifest):
 
 def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):
     """Test loading a file from S3"""
-    file_key = f"s3://test-manifest-from-file-s3-bucket/test_manifest.json"
+    file_key = f"s3://test-manifest-from-file-s3-bucket/libera_input_manifest_20220101t112233.json"
     s3_path = write_file_to_s3(test_json_manifest, file_key)
     m = Manifest.from_file(s3_path)
     assert m.manifest_type == ManifestType.INPUT
@@ -62,8 +62,8 @@ def test_manifest_write(tmp_path):
         files=[],
         configuration={}
     )
-    m.write(tmp_path, 'test_manifest.json')
-    with open(tmp_path / 'test_manifest.json') as f:
+    m.write(tmp_path, 'libera_input_manifest_20220101t112233.json')
+    with open(tmp_path / 'libera_input_manifest_20220101t112233.json') as f:
         manifest_dict = json.load(f)
         for element in ("manifest_type", "files", "configuration"):
             assert element in manifest_dict
@@ -92,7 +92,7 @@ def test_manifest_write_s3(create_mock_bucket):
         configuration={}
     )
     outpath = S3Path(f"s3://{bucket.name}")
-    filename = "test_manifest.json"
+    filename = "libera_input_manifest_20220101t112233.json"
     m.write(outpath, filename)
     with smart_open(outpath / filename) as f:
         manifest_dict = json.load(f)

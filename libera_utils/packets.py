@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def array_from_packets(packets: list, apid: int = None):
-    """Create an array from a packet generator, as returned from a lasp_packets PacketParser. This function assumes
+    """Create an array from a list of packets. This function assumes
     that the fields and format for every packet is identical for a given APID.
 
     Parameters
