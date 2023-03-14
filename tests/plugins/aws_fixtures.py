@@ -23,6 +23,7 @@ def mock_aws_credentials(monkeypatch_session):
 
 
 @pytest.fixture
+# TODO: Change this fixture scope to the entire test session
 def mock_cloudwatch_context(monkeypatch):
     """Everything under/inherited by this runs in the mock_logs context manager"""
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")  # CW requires region be set
@@ -31,9 +32,15 @@ def mock_cloudwatch_context(monkeypatch):
 
 
 @pytest.fixture(scope='session', autouse=True)
-def set_up_cloudpathlib_s3client(mock_aws_credentials):
-    """This sets the default client used for S3Path objects. Make sure this code runs before any code that tries to
-    instantiate an S3Path object without an explicit client."""
+def set_up_cloudpathlib_s3client(mock_aws_credentials, monkeypatch_session):
+    """This sets the default client used for S3Path objects as a mocked S3 context.
+    Make sure this code runs before any code that tries to instantiate an S3Path object without an explicit client.
+
+    This fixture is session scoped so that we don't have to call it every time we use cloudpathlib
+    """
+    # Tell cloudpathlib to clear its local file cache whenever a file operation is completed.
+    # https://cloudpathlib.drivendata.org/stable/caching/#file-cache-mode-close_file
+    monkeypatch_session.setenv("CLOUPATHLIB_FILE_CACHE_MODE", "close_file")
     with mock_s3():
         client = S3Client()
         client.set_as_default_client()
@@ -41,7 +48,10 @@ def set_up_cloudpathlib_s3client(mock_aws_credentials):
 
 @pytest.fixture
 def mock_s3_context():
-    """Everything under/inherited by this runs in the mock_s3 context manager"""
+    """Everything under/inherited by this runs in the mock_s3 context manager
+
+    This fixture is function scoped so that S3 buckets get cleared between tests.
+    """
     with mock_s3():
         # Yield the (mocked) s3 Resource object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
@@ -56,21 +66,34 @@ def create_mock_bucket(mock_s3_context):
     Caution: If you create multiple objects at the same location, you may get conflicts"""
     s3 = mock_s3_context
 
-    def _create_bucket(bucket_name: str = None):
+    # The following call to Random() creates a locally seeded random generator. This prevents the pytest-randomly
+    # seeded global PRN generator from creating the same "random" bucket names for every test.
+    local_random = random.Random()
+
+    def _create_bucket(bucket_name: str = None) -> s3.Bucket:
+        """Creates a mock bucket, optionally with a custom name.
+
+        Returns
+        -------
+        : s3.Bucket
+        """
         if not bucket_name:
-            bucket_name = ''.join(random.choice(string.ascii_letters) for i in range(16))
+            bucket_name = ''.join(local_random.choice(string.ascii_letters) for _ in range(16))
         bucket = s3.Bucket(bucket_name)
         if not bucket.creation_date:  # If bucket doesn't already exist
             bucket.create()
             print(f"Created mock S3 bucket {bucket}.")
+        else:
+            print(f"Using existing mock S3 bucket {bucket}. You may see FileExistsErrors if you are writing the same"
+                  f" file as a previous test due to the behavior of cloudpathlib S3Path objects.")
         return bucket
-    return _create_bucket
+    yield _create_bucket
 
 
 @pytest.fixture
 def write_file_to_s3(mock_s3_context, create_mock_bucket):
     """Write file contents to mocked s3 bucket. If the bucket doesn't exist, it is created."""
-    def _write(filepath: Path, uri: str, exists_ok: bool = False):
+    def _write(filepath: Path, uri: str, exists_ok: bool = False) -> S3Path:
         """Write the contents of the file at filepath to the (mocked) S3 URI.
 
         Parameters
