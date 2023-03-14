@@ -199,7 +199,7 @@ ignored-modules = numpy
 
 # List of classes names for which member attributes should not be checked
 # (useful for classes with attributes dynamically set).
-ignored-classes =
+ignored-classes = AnyPath
 
 # List of members which are set dynamically and missed by pylint inference
 # system, and so shouldn't trigger E0201 when accessed. Python regular
@@ -253,7 +253,7 @@ valid-metaclass-classmethod-first-arg = mcs
 
 # List of member names, which should be excluded from the protected access
 # warning.
-exclude-protected = _asdict,_fields,_replace,_source,_make
+exclude-protected =
 
 
 [DESIGN]
