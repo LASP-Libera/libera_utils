@@ -451,8 +451,8 @@ class ConstructionRecord:
         for i in range(self.apid_count):
             apids.append(self.apid_data_list[i].to_orm())
         pds_files = []
-        for i in range(len(self.pds_files_list)):
-            pds_files.append(self.pds_files_list[i].to_orm())
+        for i, pds_file in enumerate(self.pds_files_list):
+            pds_files.append(pds_file.to_orm())
         return libera_db_models.Cr(
             file_name=self.file_name,
             edos_software_version=self.edos_version,

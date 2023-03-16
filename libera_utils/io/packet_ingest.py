@@ -61,13 +61,12 @@ def ingest(parsed_args: argparse.Namespace):
     # insert cr_id for pds files in the db associated with the current cr
     if db_pds_dict_all:
         with getdb().session() as s:
-            for cr_filename in db_pds_dict_all.keys():
+            for cr_filename in db_pds_dict_all.items():
                 # query cr_id that has been inserted
-                cr_query = s.query(Cr).filter(Cr.file_name == cr_filename).all()
+                cr_query = s.query(Cr).filter(Cr.file_name == cr_filename[0]).all()
                 # query all pds associated with cr
                 pds_query = s.query(PdsFile).filter(
-                    PdsFile.file_name == func.any(
-                        db_pds_dict_all[cr_filename])).all()
+                    PdsFile.file_name == func.any(cr_filename[1])).all()
                 # assign cr_id
                 for pds in pds_query:
                     pds.cr_id = cr_query[0].id
@@ -138,12 +137,13 @@ def cr_ingest(file: dict, output_dir: str):
             # associate them with current cr, but do not set pds ingest time
             if pds_query:
 
-                for pds_object in range(len(pds_query)):
-                    db_pds.append(pds_query[pds_object].file_name)
+                for i, pds_object in enumerate(pds_query):
+                    db_pds.append(pds_query[i].file_name)
+                    logger.info("In database: %s", pds_object.file_name)
 
-                    if pds_query[pds_object].file_name in list(all_pds_dict.keys()):
+                    if pds_query[i].file_name in list(all_pds_dict):
                         cr.pds_files_list.remove(
-                            all_pds_dict[pds_query[pds_object].file_name])
+                            all_pds_dict[pds_query[i].file_name])
 
             cr_orm = cr.to_orm()
             s.merge(cr_orm)
