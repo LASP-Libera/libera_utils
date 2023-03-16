@@ -12,6 +12,7 @@ from libera_utils.db import getdb
 from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
 from libera_utils.io.manifest import Manifest, ManifestType, ManifestFilename
 from libera_utils.db.models import *
+from libera_utils.io.smart_open import smart_copy_file
 
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,13 @@ def ingest(parsed_args: argparse.Namespace):
                                filename=output_manifest_path,
                                files=output_files,
                                configuration={})
+
+    # move files over
+    for file in output_files:
+        input_dir = os.path.join(os.path.dirname(parsed_args.manifest_filepath),
+                                 os.path.basename(file['filename']))
+        smart_copy_file(input_dir, output_dir, delete=parsed_args.delete)
+
     output_manifest.write(output_manifest_path)
     logger.info("Algorithm complete. Exiting.")
 

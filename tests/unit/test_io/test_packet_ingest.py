@@ -15,6 +15,7 @@ class DummyParser:
     def __init__(self, manifest_filepath, short_tmp_path=None):
         self.manifest_filepath = str(manifest_filepath)
         self.outdir = str(short_tmp_path)
+        self.delete = False
 
 
 @pytest.fixture
@@ -83,12 +84,14 @@ def insert_output(clean_local_db, test_construction_record_09t00,
 @pytest.mark.usefixtures('insert_single_pds_from_each_cr')
 def test_pds_assigned_single(clean_local_db, test_input_manifest,
                              test_construction_record_09t00,
-                             test_construction_record_09t02):
+                             test_construction_record_09t02,
+                             tmp_path):
     """Test that cr_id was assigned properly to pds records and pds ingest
     time was assigned for records ingested separately"""
 
     # insert
     parsed_args = DummyParser(test_input_manifest)
+    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
     ingest(parsed_args)
 
     cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
@@ -131,10 +134,11 @@ def test_pds_assigned_mult(clean_local_db, test_input_manifest,
 
 
 @pytest.mark.usefixtures('insert_single_pds_from_each_cr')
-def test_manifest_assigned(clean_local_db, test_input_manifest):
+def test_manifest_assigned(clean_local_db, test_input_manifest, tmp_path):
     """Test that pds ingest time is listed for records listed in manifest
     """
     parsed_args = DummyParser(test_input_manifest)
+    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
     ingest(parsed_args)
 
     m = Manifest.from_file(test_input_manifest)
@@ -150,11 +154,12 @@ def test_manifest_assigned(clean_local_db, test_input_manifest):
             assert pds_query[0].ingested is not None
 
 
-def test_output_manifest_all(clean_local_db, test_input_manifest):
+def test_output_manifest_all(clean_local_db, test_input_manifest, tmp_path):
     """Test output manifest file created contains a list of the
     product files that the processing created
     """
     parsed_args = DummyParser(test_input_manifest)
+    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
 
     m = Manifest.from_file(test_input_manifest)
 
@@ -173,10 +178,11 @@ def test_output_manifest_all(clean_local_db, test_input_manifest):
 
 
 @pytest.mark.usefixtures('insert_single_pds_from_each_cr')
-def test_output_manifest_partial(clean_local_db, test_input_manifest):
+def test_output_manifest_partial(clean_local_db, test_input_manifest, tmp_path):
     """Test output manifest file created does not contain pds records already inserted
     """
     parsed_args = DummyParser(test_input_manifest)
+    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
 
     file_list = []
 

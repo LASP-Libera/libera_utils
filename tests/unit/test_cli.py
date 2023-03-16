@@ -14,6 +14,7 @@ from libera_utils.io import packet_ingest
          argparse.Namespace(
              func=packet_ingest.ingest,
              manifest_filepath='fakedir.json',
+             delete=True,
              verbose=False)),
         (['make-kernel', 'jpss-spk', '-ofakedir', 'file1.pkts', 'file2.pkts'],
          argparse.Namespace(

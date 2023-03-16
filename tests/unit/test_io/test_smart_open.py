@@ -4,6 +4,7 @@ import warnings
 
 import h5py as h5
 import numpy as np
+import os
 from pathlib import Path
 # Installed
 import pytest
@@ -133,6 +134,7 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
         compressed_contents = fh_compressed.readlines()
     assert uncompressed_contents == compressed_contents
 
+
 @pytest.mark.parametrize(
     "wrapper",
     [AnyPath, str]
@@ -145,9 +147,14 @@ def test_smart_copy_file_local_to_local_file(tmp_path, test_txt, wrapper):
 
     wrapped_input_file = wrapper(test_txt)
     wrapped_output_file = wrapper(tmp_folder_path / "newfilename.txt")
+    wrapped_tmp_output_file = wrapper(tmp_folder_path / "tmpoutputfilename.txt")
 
     smart_copy_file(wrapped_input_file, wrapped_output_file)
     assert (tmp_folder_path / "newfilename.txt").exists()
+
+    # confirm file is deleted if optional parameter delete is set to True
+    smart_copy_file(wrapped_output_file, wrapped_tmp_output_file, delete=True)
+    assert not os.path.isfile(wrapped_output_file)
 
 
 @pytest.mark.parametrize(
@@ -162,6 +169,7 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
 
     wrapped_input = wrapper(test_txt)
     wrapped_output_dir = wrapper(tmp_folder_path)
+    wrapped_tmp_output_file = wrapper(tmp_folder_path / "tmpoutputfilename.txt")
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
@@ -171,6 +179,11 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
         assert issubclass(w[-1].category, UserWarning)
 
     assert (tmp_folder_path / "testtextfile.txt").exists()
+
+    # confirm file is deleted if optional parameter delete is set to True
+    smart_copy_file((tmp_folder_path / "testtextfile.txt"),
+                    wrapped_tmp_output_file, delete=True)
+    assert not os.path.isfile((tmp_folder_path / "testtextfile.txt"))
 
 
 @pytest.mark.parametrize(
@@ -200,13 +213,18 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
 
     assert (local_folder_path / "testtextfile.txt").exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    source_path = S3Path(remote_file_uri)
+    smart_copy_file(wrapped_remote_file_path, wrapped_local_destination, delete=True)
+    assert not source_path.exists()
+
 
 @pytest.mark.parametrize(
     "wrapper",
     [AnyPath, str]
 )
 def test_smart_copy_file_remote_to_local_file(tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3):
-    """Test smart_copy for a remote file to ta local file path"""
+    """Test smart_copy for a remote file to a local file path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
@@ -222,13 +240,18 @@ def test_smart_copy_file_remote_to_local_file(tmp_path, test_txt, wrapper, creat
     smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
     assert (local_folder_path / "newfilename.txt").exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    source_path = S3Path(remote_file_uri)
+    smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path, delete=True)
+    assert not source_path.exists()
+
 
 @pytest.mark.parametrize(
     "wrapper",
     [AnyPath, str]
 )
 def test_smart_copy_file_remote_no_ext_to_local_file(tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3):
-    """Test smart_copy for a remote file to ta local file path"""
+    """Test smart_copy for a remote file with no extension to a local file path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
@@ -244,12 +267,18 @@ def test_smart_copy_file_remote_no_ext_to_local_file(tmp_path, test_txt, wrapper
     smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
     assert (local_folder_path / "newfilename.txt").exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    source_path = S3Path(remote_file_uri)
+    smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path, delete=True)
+    assert not source_path.exists()
+
 
 @pytest.mark.parametrize(
     "wrapper",
     [AnyPath, str]
 )
-def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3):
+def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wrapper, create_mock_bucket,
+                                                          write_file_to_s3):
     """Test smart_copy for a remote file to ta local file path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
@@ -271,12 +300,17 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
         assert issubclass(w[-1].category, UserWarning)
     assert (local_folder_path / "testtextfile").exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    source_path = S3Path(remote_file_uri)
+    smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path, delete=True)
+    assert not source_path.exists()
+
 
 @pytest.mark.parametrize(
     "wrapper",
     [AnyPath, str]
 )
-def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_mock_bucket):
+def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_mock_bucket, tmp_path):
     """Test smart_copy for a local file to a remote destination"""
     bucket = 'tmp-bucket'
     create_mock_bucket(bucket)
@@ -285,6 +319,9 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
 
     remote_path = wrapper(f"{remote_file_uri}")
     local_file_path = wrapper(test_txt)
+
+    # Make the local destination
+    tmp_file_path = tmp_path / 'testtextfile.txt'
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
@@ -296,16 +333,25 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
     remote_path = S3Path(remote_file_uri)
     assert remote_path.exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    smart_copy_file(local_file_path, tmp_file_path)
+    smart_copy_file(tmp_file_path, remote_path, delete=True)
+    assert not os.path.isfile(tmp_file_path)
+
+
 @pytest.mark.parametrize(
     "wrapper",
     [AnyPath, str]
 )
-def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_bucket):
+def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_bucket, tmp_path):
     """Test smart_copy for a local file to a remote file location"""
     bucket = 'tmp-bucket'
     create_mock_bucket(bucket)
     key = 'some_path'
     remote_file_uri = f"s3://{bucket}/{key}/internal/newfilename.txt"
+
+    # Make the local destination
+    tmp_file_path = tmp_path / 'testtextfile.txt'
 
     remote_file_path = wrapper(f"{remote_file_uri}")
     local_file_path = wrapper(test_txt)
@@ -313,6 +359,11 @@ def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_buc
 
     remote_path = S3Path(remote_file_uri)
     assert remote_path.exists()
+
+    # confirm file is deleted if optional parameter delete is set to True
+    smart_copy_file(local_file_path, tmp_file_path)
+    smart_copy_file(tmp_file_path, remote_file_path, delete=True)
+    assert not os.path.isfile((tmp_file_path / "testtextfile.txt"))
 
 
 @pytest.mark.parametrize(
@@ -345,6 +396,11 @@ def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mo
     dest_path = S3Path(dest_file_uri)
     assert dest_path.exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    source_path = S3Path(source_file_uri)
+    smart_copy_file(source_file_path, dest_path, delete=True)
+    assert not source_path.exists()
+
 
 @pytest.mark.parametrize(
     "wrapper",
@@ -370,3 +426,7 @@ def test_smart_copy_file_remote_to_remote_file(test_txt, wrapper, create_mock_bu
     dest_path = S3Path(dest_file_uri)
     assert dest_path.exists()
 
+    # confirm file is deleted if optional parameter delete is set to True
+    source_path = S3Path(source_file_uri)
+    smart_copy_file(source_file_path, dest_file_path, delete=True)
+    assert not source_path.exists()
