@@ -99,7 +99,7 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
     return _gzip_wrapper(AnyPath(path).open(mode=mode))  # pylint: disable=E1101
 
 
-def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path):
+def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path, delete=False):
     """
         Copy function that can handle local files or files in an S3 bucket.
         Returns the path to the newly created file.
@@ -109,9 +109,11 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
         source_path : str or Path or S3Path
             Path to the source file to be copied. Files residing in an s3 bucket must begin
             with "s3://".
-        dest_path: str or Path or S3Path
+        dest_path : str or Path or S3Path
             Path to the Destination file to be copied to. Files residing in an s3 bucket
             must begin with "s3://".
+        delete : bool
+            If true, deletes files copied from source (default = False)
 
         Returns
         -------
@@ -130,7 +132,10 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
                           f'{local_dest_path}.')
 
         # Returns a PosixPath of the newly created file
-        return shutil.copy(source_path, dest_path)
+        if delete:
+            return shutil.move(source_path, dest_path)
+        else:
+            return shutil.copy(source_path, dest_path)
 
     # Check if either source or destination is remote and allocate remote resources
     s3 = boto3.resource("s3")
@@ -149,6 +154,8 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
 
         # Has no return, but will raise exceptions on problems
         s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
+        if delete:
+            local_source_path.unlink()
         return s3_dest_path
 
     if is_s3(source_path) and not is_s3(dest_path):
@@ -171,6 +178,8 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
 
         # Has no return, but will raise exceptions on problems
         s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
+        if delete:
+            s3.Object(s3_source_path.bucket, s3_source_path.key).delete()
         return Path(local_dest_path)
 
     # This is a remote to remote copy and uses S3 copy
@@ -190,4 +199,7 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
 
     # Has no return, but will raise exceptions
     client.copy(copy_source, s3_dest_path.bucket, s3_dest_path.key)
+
+    if delete:
+        s3.Object(copy_source['Bucket'], copy_source['Key']).delete()
     return s3_dest_path
