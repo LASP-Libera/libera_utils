@@ -14,7 +14,7 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 import re
 from datetime import datetime, timedelta
 from typing import Union, Collection
-import pytz
+from zoneinfo import ZoneInfo
 # Installed
 import numpy as np
 import spiceypy as spice
@@ -204,7 +204,7 @@ def convert_cds_integer_to_datetime(satellite_time: int):
                                    byteorder="big")
     int_microsec = int.from_bytes([byte_data[6], byte_data[7]], byteorder="big")
 
-    reference_date = datetime(1958, 1, 1, 0, 0, 0, 0, pytz.UTC)
+    reference_date = datetime(1958, 1, 1, 0, 0, 0, 0, ZoneInfo("UTC"))
     cds_time = (reference_date +
                 timedelta(days=int_days) +
                 timedelta(milliseconds=int_millisec) +
