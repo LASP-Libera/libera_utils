@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import json
 from unittest import mock
 from hashlib import md5
-import pytz
+from zoneinfo import ZoneInfo
 # Installed
 from cloudpathlib import S3Path
 import pytest
@@ -72,7 +72,7 @@ def test_manifest_write(tmp_path):
 @mock.patch("libera_utils.io.manifest.datetime")
 def test_manifest_generate_filename(mock_pendulum_now):
     """Test generating a filename for a manifest file"""
-    mock_pendulum_now.utcnow.return_value = pytz.timezone('UTC').localize(datetime.fromisoformat("2022-01-01T12:34:56"))
+    mock_pendulum_now.utcnow.return_value = datetime(2022, 1, 1, 12, 34, 56, tzinfo=ZoneInfo("UTC"))
     m = Manifest(
         manifest_type=ManifestType.INPUT,
         files=[],
