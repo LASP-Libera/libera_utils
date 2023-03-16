@@ -1,10 +1,10 @@
 """Tests for the packet_ingest module"""
 # Installed
-import pytest
 import os
+import pytest
 # Local
 from libera_utils.db import getdb
-from libera_utils.db.models import *
+from libera_utils.db.models import Cr, PdsFile
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.packet_ingest import ingest, cr_ingest
 from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
@@ -124,7 +124,7 @@ def test_pds_assigned_mult(clean_local_db, test_input_manifest,
     # read json information
     parsed_args = DummyParser(test_input_manifest)
     m = Manifest.from_file(parsed_args.manifest_filepath)
-    db_pds_dict, con_ingested_dict = cr_ingest(
+    db_pds_dict, _ = cr_ingest(
         m.files[0], parsed_args.outdir)
 
     cr = ConstructionRecord.from_file(test_construction_record_09t00)

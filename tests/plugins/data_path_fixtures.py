@@ -8,6 +8,7 @@ import pytest
 
 # Paths to test data directories
 # ------------------------------
+# pylint: disable-all
 @pytest.fixture
 def test_data_path():
     """Returns the Path to the test_data directory"""

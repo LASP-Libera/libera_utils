@@ -2,10 +2,10 @@
 # Standard
 import warnings
 
-import h5py as h5
-import numpy as np
 import os
 from pathlib import Path
+import h5py as h5
+import numpy as np
 # Installed
 import pytest
 from cloudpathlib import S3Path, AnyPath
@@ -26,6 +26,7 @@ from libera_utils.io.smart_open import smart_open, is_gzip, is_s3, smart_copy_fi
     ]
 )
 def test_is_s3(path, expectation):
+    """Test if it is s3"""
     assert is_s3(path) == expectation
 
 
@@ -47,6 +48,7 @@ def test_is_s3(path, expectation):
     ]
 )
 def test_is_gzip(path, expectation):
+    """Test if it is gzip"""
     assert is_gzip(path) == expectation
 
 
