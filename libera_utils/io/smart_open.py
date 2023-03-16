@@ -134,8 +134,8 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
         # Returns a PosixPath of the newly created file
         if delete:
             return shutil.move(source_path, dest_path)
-        else:
-            return shutil.copy(source_path, dest_path)
+
+        return shutil.copy(source_path, dest_path)
 
     # Check if either source or destination is remote and allocate remote resources
     s3 = boto3.resource("s3")
