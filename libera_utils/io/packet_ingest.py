@@ -11,7 +11,7 @@ from sqlalchemy import func
 from libera_utils.db import getdb
 from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
 from libera_utils.io.manifest import Manifest, ManifestType, ManifestFilename
-from libera_utils.db.models import *
+from libera_utils.db.models import Cr, PdsFile
 from libera_utils.io.smart_open import smart_copy_file
 
 

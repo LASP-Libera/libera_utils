@@ -5,6 +5,9 @@ from libera_utils.db import getdb
 
 
 def test_construction_reader_from_file(test_construction_record_09t00):
+    """
+    Test construction reader from file
+    """
     cr = ConstructionRecord.from_file(test_construction_record_09t00)
 
     # For an initial test, check that the final entry date is correct. This will at least show all the data was read
@@ -21,6 +24,9 @@ def test_construction_reader_from_file(test_construction_record_09t00):
 
 
 def test_construction_record_properties(test_construction_record_09t00):
+    """
+    Test construction record properties
+    """
     cr = ConstructionRecord.from_file(test_construction_record_09t00)
 
     assert cr.edos_version_major == 8
@@ -37,6 +43,9 @@ def test_construction_record_properties(test_construction_record_09t00):
 
 
 def test_construction_orm_creation(test_construction_record_09t00, clean_local_db):
+    """
+    Test construction orm creation
+    """
     cr = ConstructionRecord.from_file(test_construction_record_09t00)
     cr_orm = cr.to_orm()
 
@@ -57,4 +66,3 @@ def test_construction_orm_creation(test_construction_record_09t00, clean_local_d
     assert cr_orm.pds_files[1].apids[0].last_packet_utc_time.year == 2021
     assert cr_orm.pds_files[1].apids[0].last_packet_utc_time.hour == 1
     assert cr_orm.pds_files[1].apids[0].last_packet_utc_time.second == 59
-

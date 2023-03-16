@@ -37,4 +37,7 @@ from libera_utils.io import packet_ingest
     ]
 )
 def test_parse_cli_args(cli_args, parsed):
+    """
+    Test that cli args are parsed properly
+    """
     assert cli.parse_cli_args(cli_args) == parsed
