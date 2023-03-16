@@ -5,7 +5,7 @@ import pytest
 # Local
 from libera_utils.db import getdb
 from libera_utils.db.models import Cr, PdsFile
-from libera_utils.io.manifest import Manifest
+from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.packet_ingest import ingest, cr_ingest
 from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
 
@@ -16,6 +16,28 @@ class DummyParser:
         self.manifest_filepath = str(manifest_filepath)
         self.outdir = str(short_tmp_path)
         self.delete = False
+
+
+
+@pytest.fixture
+def generate_input_manifest(tmp_path, test_data_path):
+    """Generating test manifest from the data in test_data"""
+
+    filenames = (test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS",
+                 test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS",
+                 test_data_path / "P1590011AAAAAAAAAAAAAT21099051420500.PDS",
+                 test_data_path / "P1590011AAAAAAAAAAAAAT21099051420501.PDS")
+
+    input_manifest = Manifest(ManifestType.INPUT, files=[], configuration={})
+
+    input_manifest.add_file_to_manifest(filenames[0])
+    input_manifest.add_file_to_manifest(filenames[1])
+    input_manifest.add_file_to_manifest(filenames[2])
+    input_manifest.add_file_to_manifest(filenames[3])
+
+    input_manifest_file_path = input_manifest.write(outpath=tmp_path)
+
+    return input_manifest_file_path
 
 
 @pytest.fixture
@@ -82,16 +104,14 @@ def insert_output(clean_local_db, test_construction_record_09t00,
 
 
 @pytest.mark.usefixtures('insert_single_pds_from_each_cr')
-def test_pds_assigned_single(clean_local_db, test_input_manifest,
-                             test_construction_record_09t00,
-                             test_construction_record_09t02,
-                             tmp_path):
+def test_pds_assigned_single(clean_local_db, test_construction_record_09t00, test_construction_record_09t02,
+                             tmp_path, monkeypatch, generate_input_manifest):
     """Test that cr_id was assigned properly to pds records and pds ingest
     time was assigned for records ingested separately"""
 
     # insert
-    parsed_args = DummyParser(test_input_manifest)
-    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
+    parsed_args = DummyParser(str(generate_input_manifest))
+    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
     ingest(parsed_args)
 
     cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
@@ -116,13 +136,13 @@ def test_pds_assigned_single(clean_local_db, test_input_manifest,
 
 
 @pytest.mark.usefixtures('insert_multiple_pds_from_single_cr')
-def test_pds_assigned_mult(clean_local_db, test_input_manifest,
-                           test_construction_record_09t00):
+def test_pds_assigned_mult(clean_local_db, test_construction_record_09t00,
+                           monkeypatch, generate_input_manifest):
     """Test that cr_ingest returns expected values when multiple pds records
     from a single cr are already present in the database"""
 
     # read json information
-    parsed_args = DummyParser(test_input_manifest)
+    parsed_args = DummyParser(str(generate_input_manifest))
     m = Manifest.from_file(parsed_args.manifest_filepath)
     db_pds_dict, _ = cr_ingest(
         m.files[0], parsed_args.outdir)
@@ -134,14 +154,15 @@ def test_pds_assigned_mult(clean_local_db, test_input_manifest,
 
 
 @pytest.mark.usefixtures('insert_single_pds_from_each_cr')
-def test_manifest_assigned(clean_local_db, test_input_manifest, tmp_path):
+def test_manifest_assigned(clean_local_db, tmp_path, monkeypatch,
+                           generate_input_manifest):
     """Test that pds ingest time is listed for records listed in manifest
     """
-    parsed_args = DummyParser(test_input_manifest)
-    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
+    parsed_args = DummyParser(str(generate_input_manifest))
+    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
     ingest(parsed_args)
 
-    m = Manifest.from_file(test_input_manifest)
+    m = Manifest.from_file(str(generate_input_manifest))
 
     for file in m.files:
         if 'PDS' in file['filename']:
@@ -154,14 +175,15 @@ def test_manifest_assigned(clean_local_db, test_input_manifest, tmp_path):
             assert pds_query[0].ingested is not None
 
 
-def test_output_manifest_all(clean_local_db, test_input_manifest, tmp_path):
+def test_output_manifest_all(clean_local_db, tmp_path, monkeypatch,
+                             generate_input_manifest):
     """Test output manifest file created contains a list of the
     product files that the processing created
     """
-    parsed_args = DummyParser(test_input_manifest)
-    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
+    parsed_args = DummyParser(str(generate_input_manifest))
+    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
 
-    m = Manifest.from_file(test_input_manifest)
+    m = Manifest.from_file(str(generate_input_manifest))
 
     output_manifest_path = ingest(parsed_args)
     m_output = Manifest.from_file(output_manifest_path)
@@ -178,11 +200,12 @@ def test_output_manifest_all(clean_local_db, test_input_manifest, tmp_path):
 
 
 @pytest.mark.usefixtures('insert_single_pds_from_each_cr')
-def test_output_manifest_partial(clean_local_db, test_input_manifest, tmp_path):
+def test_output_manifest_partial(clean_local_db, tmp_path, monkeypatch,
+                                 generate_input_manifest):
     """Test output manifest file created does not contain pds records already inserted
     """
-    parsed_args = DummyParser(test_input_manifest)
-    os.environ["PROCESSING_DROPBOX"] = str(tmp_path)
+    parsed_args = DummyParser(str(generate_input_manifest))
+    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
 
     file_list = []
 
