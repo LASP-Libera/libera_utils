@@ -51,12 +51,6 @@ def test_json_manifest(test_data_path):
 
 
 @pytest.fixture
-def test_input_manifest(test_data_path):
-    """Path to test input manifest file"""
-    return test_data_path / 'libera_input_manifest_20230125t192539.json'
-
-
-@pytest.fixture
 def test_construction_record_09t00(test_data_path):
     """Path to test construction record"""
     return test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"

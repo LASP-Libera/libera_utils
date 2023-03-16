@@ -84,7 +84,7 @@ def ingest(parsed_args: argparse.Namespace):
 
     # move files over
     for file in output_files:
-        input_dir = os.path.join(os.path.dirname(parsed_args.manifest_filepath),
+        input_dir = os.path.join(os.path.dirname(m.files[0]['filename']),
                                  os.path.basename(file['filename']))
         smart_copy_file(input_dir, output_dir, delete=parsed_args.delete)
 
