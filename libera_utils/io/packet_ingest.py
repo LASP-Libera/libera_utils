@@ -9,7 +9,7 @@ from cloudpathlib import AnyPath
 from sqlalchemy import func
 # Local
 from libera_utils.db import getdb
-from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
+from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
 from libera_utils.io.manifest import Manifest, ManifestType, ManifestFilename
 from libera_utils.db.models import Cr, PdsFile
 from libera_utils.io.smart_open import smart_copy_file
@@ -112,8 +112,6 @@ def cr_ingest(file: dict, output_dir: str):
     """
     filename = os.path.basename(file['filename'])
     db_pds = []
-    db_pds_dict = {}
-    all_pds_dict = {}
 
     with getdb().session() as s:
 
@@ -126,9 +124,10 @@ def cr_ingest(file: dict, output_dir: str):
             # parse cr into nested orm objects
             cr = ConstructionRecord.from_file(file['filename'])
 
-            # create a dict of all pds in cr
-            for pds_file in cr.pds_files_list:
-                all_pds_dict[pds_file.pds_filename] = pds_file
+            if not cr.pds_files_list:
+                all_pds_dict = {}
+            else:
+                all_pds_dict = {f.pds_filename: f for f in cr.pds_files_list}
 
             pds_query = s.query(PdsFile).filter(
                 PdsFile.file_name == func.any(list(all_pds_dict.keys()))).all()
@@ -161,7 +160,9 @@ def cr_ingest(file: dict, output_dir: str):
     # for the pds files that were already in the db,
     # associate the pds file in the db with the current cr
     if db_pds:
-        db_pds_dict[filename] = db_pds
+        db_pds_dict = {filename: db_pds}
+    else:
+        db_pds_dict = {}
 
     return db_pds_dict, ingested_dict
 
@@ -192,7 +193,7 @@ def pds_ingest(file: dict, output_dir: str):
         # without associating it with a cr; set the ingest time
         if not pds_query:
             # parse pds into nested orm objects
-            pds = PDSFiles(filename)
+            pds = PDSRecord(filename)
             pds_orm = pds.to_orm()
             s.add(pds_orm)
 

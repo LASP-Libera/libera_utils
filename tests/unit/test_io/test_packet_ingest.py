@@ -7,7 +7,7 @@ from libera_utils.db import getdb
 from libera_utils.db.models import Cr, PdsFile
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.packet_ingest import ingest, cr_ingest
-from libera_utils.io.construction_record import ConstructionRecord, PDSFiles
+from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
 
 
 class DummyParser:
@@ -16,7 +16,6 @@ class DummyParser:
         self.manifest_filepath = str(manifest_filepath)
         self.outdir = str(short_tmp_path)
         self.delete = False
-
 
 
 @pytest.fixture
@@ -52,11 +51,11 @@ def insert_single_pds_from_each_cr(clean_local_db,
     cr_1 = ConstructionRecord.from_file(test_construction_record_09t02)
 
     # insert P1590011AAAAAAAAAAAAAT21099051420500.PDS
-    pds_0 = PDSFiles(cr_0.pds_files_list[0].pds_filename)
+    pds_0 = PDSRecord(cr_0.pds_files_list[0].pds_filename)
     pds_0_orm = pds_0.to_orm()
 
     # insert P1590011AAAAAAAAAAAAAT21099065436900.PDS
-    pds_1 = PDSFiles(cr_1.pds_files_list[0].pds_filename)
+    pds_1 = PDSRecord(cr_1.pds_files_list[0].pds_filename)
     pds_1_orm = pds_1.to_orm()
 
     with getdb().session() as s:
@@ -74,11 +73,11 @@ def insert_multiple_pds_from_single_cr(clean_local_db,
     cr = ConstructionRecord.from_file(test_construction_record_09t00)
 
     # insert P1590011AAAAAAAAAAAAAT21099051420500.PDS
-    pds = PDSFiles(cr.pds_files_list[0].pds_filename)
+    pds = PDSRecord(cr.pds_files_list[0].pds_filename)
     pds_0_orm = pds.to_orm()
 
     # insert P1590011AAAAAAAAAAAAAT21099051420501.PDS
-    pds = PDSFiles(cr.pds_files_list[1].pds_filename)
+    pds = PDSRecord(cr.pds_files_list[1].pds_filename)
     pds_1_orm = pds.to_orm()
 
     with getdb().session() as s:
@@ -103,9 +102,9 @@ def insert_output(clean_local_db, test_construction_record_09t00,
         s.add(cr_orm_1)
 
 
-@pytest.mark.usefixtures('insert_single_pds_from_each_cr')
-def test_pds_assigned_single(clean_local_db, test_construction_record_09t00, test_construction_record_09t02,
-                             tmp_path, monkeypatch, generate_input_manifest):
+def test_pds_assigned_single(clean_local_db, test_construction_record_09t00,
+                             test_construction_record_09t02, tmp_path, monkeypatch,
+                             generate_input_manifest, insert_single_pds_from_each_cr):
     """Test that cr_id was assigned properly to pds records and pds ingest
     time was assigned for records ingested separately"""
 
@@ -135,9 +134,9 @@ def test_pds_assigned_single(clean_local_db, test_construction_record_09t00, tes
     assert pds_query_1[0].ingested is not None
 
 
-@pytest.mark.usefixtures('insert_multiple_pds_from_single_cr')
 def test_pds_assigned_mult(clean_local_db, test_construction_record_09t00,
-                           monkeypatch, generate_input_manifest):
+                           monkeypatch, generate_input_manifest,
+                           insert_multiple_pds_from_single_cr):
     """Test that cr_ingest returns expected values when multiple pds records
     from a single cr are already present in the database"""
 
@@ -153,9 +152,8 @@ def test_pds_assigned_mult(clean_local_db, test_construction_record_09t00,
            in db_pds_dict.values()
 
 
-@pytest.mark.usefixtures('insert_single_pds_from_each_cr')
 def test_manifest_assigned(clean_local_db, tmp_path, monkeypatch,
-                           generate_input_manifest):
+                           generate_input_manifest, insert_single_pds_from_each_cr):
     """Test that pds ingest time is listed for records listed in manifest
     """
     parsed_args = DummyParser(str(generate_input_manifest))
@@ -199,9 +197,8 @@ def test_output_manifest_all(clean_local_db, tmp_path, monkeypatch,
     assert input_files == output_files
 
 
-@pytest.mark.usefixtures('insert_single_pds_from_each_cr')
 def test_output_manifest_partial(clean_local_db, tmp_path, monkeypatch,
-                                 generate_input_manifest):
+                                 generate_input_manifest, insert_single_pds_from_each_cr):
     """Test output manifest file created does not contain pds records already inserted
     """
     parsed_args = DummyParser(str(generate_input_manifest))

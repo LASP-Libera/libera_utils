@@ -116,7 +116,7 @@ class APIDFromPDSFromConstructionRecord:
             )
 
 
-class PDSFiles:
+class PDSRecord:
     """
     Object representation of a Production Data Set (PDS). This object is created as part of
     reading in a PDS filename and storing that filename and ingest time in a database.
