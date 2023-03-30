@@ -1,18 +1,10 @@
 """Tests for smart_open module"""
 # Standard
-<<<<<<< HEAD
-import warnings
-
 import os
-from pathlib import Path
-import h5py as h5
-import numpy as np
-=======
 import h5py as h5
 import numpy as np
 from pathlib import Path
 import warnings
->>>>>>> cc5c5ca (Fix bug in S3 fixtures that was causing a FileExistsError when writing the same manifest in different tests (involved pytest-randomly and cloudpathlib))
 # Installed
 from cloudpathlib import S3Path, AnyPath
 import pytest
