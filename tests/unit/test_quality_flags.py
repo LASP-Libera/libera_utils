@@ -1,6 +1,7 @@
 """Test coverage for the libera_utils.quality_flags module"""
-
+# Installed
 import pytest
+# Local
 import libera_utils.quality_flags as qf
 
 
@@ -56,3 +57,22 @@ def test_quality_flag():
 
     all = TestFlag.ALL
     assert set(all.summary[1]) == {"Bit 0 - A", "Bit 1 - B", "Bit 2 - C", "D"}
+
+
+def test_strict_quality_flags():
+    """Test that quality flags are STRICT and raise errors for invalid values"""
+    class TestFlag(qf.QualityFlag, metaclass=qf.FrozenFlagMeta):
+        BIT_0 = 0b001
+        BIT_2 = 0b100
+        # Note: there is no way to represent the number 2 or 3 with this quality flag since it is missing bit 1
+
+    TestFlag(1)  # bit 0
+    TestFlag(4)  # bit 2
+    TestFlag(5)  # bit 0 and 2
+    with pytest.raises(ValueError):
+        TestFlag(2)
+    with pytest.raises(ValueError):
+        TestFlag(3)
+    with pytest.raises(ValueError):
+        TestFlag(6)
+

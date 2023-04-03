@@ -1,10 +1,12 @@
 """Quality flag definitions"""
-
-from enum import Flag, EnumMeta, Enum
+# Standard
 from operator import or_ as _or_
 from functools import reduce
+# Local
+from libera_utils.backports.enum_3_11 import Flag, EnumMeta, Enum, STRICT
 
-#pylint: disable-all
+
+# pylint: disable-all
 class FrozenFlagMeta(EnumMeta):
     """
     Metaclass that freezes an enum entirely, preventing values from being updated, added, or deleted.
@@ -43,70 +45,11 @@ class FrozenFlagMeta(EnumMeta):
         raise AttributeError(msg.format(cls.__name__, name))
 
 
-class QualityFlag(Flag):
+class QualityFlag(Flag, boundary=STRICT):
     """
     Subclass of Flag that add a method for decomposing a flag into its individual components
     and a property to return a list of all messages associated with a quality flag
     """
-    # Overriding enum module implementation to incorporate patched _decompose method below
-    # TODO: Remove this if we upgrade to python 3.9.0a2 or newer
-    @classmethod
-    def _create_pseudo_member_(cls, value):
-        """
-        Create a composite member iff value contains only members.
-        """
-        pseudo_member = cls._value2member_map_.get(value, None)
-        if pseudo_member is None:
-            # verify all bits are accounted for
-            _, extra_flags = _patched_enum_decompose(cls, value)
-            if extra_flags:
-                raise ValueError("%r is not a valid %s" % (value, cls.__name__))
-            # construct a singleton enum pseudo-member
-            pseudo_member = object.__new__(cls)
-            pseudo_member._name_ = None
-            pseudo_member._value_ = value
-            # use setdefault in case another thread already created a composite
-            # with this value
-            pseudo_member = cls._value2member_map_.setdefault(value, pseudo_member)
-        return pseudo_member
-
-    # Overriding enum module implementation to incorporate patched _decompose method below
-    # TODO: Remove this if we upgrade to python 3.9.0a2 or newer
-    def __repr__(self):
-        cls = self.__class__
-        if self._name_ is not None:
-            return '<%s.%s: %r>' % (cls.__name__, self._name_, self._value_)
-        members, uncovered = _patched_enum_decompose(cls, self._value_)
-        return '<%s.%s: %r>' % (
-                cls.__name__,
-                '|'.join([str(m._name_ or m._value_) for m in members]),
-                self._value_,
-                )
-
-    # Overriding enum module implementation to incorporate patched _decompose method below
-    # TODO: Remove this if we upgrade to python 3.9.0a2 or newer
-    def __str__(self):
-        cls = self.__class__
-        if self._name_ is not None:
-            return '%s.%s' % (cls.__name__, self._name_)
-        members, uncovered = _patched_enum_decompose(cls, self._value_)
-        if len(members) == 1 and members[0]._name_ is None:
-            return '%s.%r' % (cls.__name__, members[0]._value_)
-        else:
-            return '%s.%s' % (
-                    cls.__name__,
-                    '|'.join([str(m._name_ or m._value_) for m in members]),
-                    )
-
-    # Overriding enum module implementation to incorporate patched _decompose method below
-    # TODO: Remove this if we upgrade to python 3.9.0a2 or newer
-    def __invert__(self):
-        members, uncovered = _patched_enum_decompose(self.__class__, self._value_)
-        inverted = self.__class__(0)
-        for m in self.__class__:
-            if m not in members and not (m._value_ & self._value_):
-                inverted = inverted | m
-        return self.__class__(inverted)
 
     def decompose(self):
         """
@@ -121,10 +64,10 @@ class QualityFlag(Flag):
         """
         value = self.value
         not_covered = value
-        flags_to_check = [
+        flags_to_check = [  # Creates the "basis" for the quality flag
             (m, v)
             for v, m in list(self.__class__._value2member_map_.items())
-            if m.name is not None
+            if m.name in (x.name for x in self)
         ]
         members = []
         for member, member_value in flags_to_check:
@@ -138,8 +81,9 @@ class QualityFlag(Flag):
 
     @property
     def summary(self):
+        """Summarize quality flag value"""
         members, not_covered = self.decompose()
-
+        print(members)
         if not_covered:
             raise ValueError(f"{self.__name__} has value {self.value} but that value cannot be created by elements "
                              f"of {self.__class__}. This should never happen unless a quality flag was declared "
@@ -161,38 +105,6 @@ class FlagBit(int):
 
     def __str__(self):
         return f"{super().__str__()}: {self.message}"
-
-
-# This is a patched version of enum._decompose method that was fixed in Python 3.9.0a2
-# See: https://bugs.python.org/issue38045
-# TODO: Remove this if we upgrade to python 3.9.0a2 or newer
-def _patched_enum_decompose(flag, value):
-    """Extract all members from the value."""
-    # _decompose is only called if the value is not named
-    not_covered = value
-    negative = value < 0
-    members = []
-    for member in flag:
-        member_value = member.value
-        if member_value and member_value & value == member_value:
-            members.append(member)
-            not_covered &= ~member_value
-    if not negative:
-        tmp = not_covered
-        while tmp:
-            high_bit = tmp.bit_length() - 1
-            flag_value = 2 ** high_bit
-            if flag_value in flag._value2member_map_:
-                members.append(flag._value2member_map_[flag_value])
-                not_covered &= ~flag_value
-            tmp &= ~flag_value
-    if not members and value in flag._value2member_map_:
-        members.append(flag._value2member_map_[value])
-    members.sort(key=lambda m: m._value_, reverse=True)
-    if len(members) > 1 and members[0].value == value:
-        # we have the breakdown, don't need the value member itself
-        members.pop(0)
-    return members, not_covered
 
 
 def with_all_none(f):
