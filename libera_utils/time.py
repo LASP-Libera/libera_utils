@@ -33,6 +33,8 @@ PRINTABLE_TS_REGEX = re.compile(r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>
 
 PRINTABLE_TS_FORMAT = "%Y%m%dt%H%M%S"
 
+EDOS_TS_FORMAT = "%y%j%H%M%S"
+
 
 def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],
                    fmt: str = '%Y%m%dt%H%M%S.%f') -> Union[str, Collection[str]]:
@@ -188,12 +190,12 @@ def convert_cds_integer_to_datetime(satellite_time: int):
     """Helper function to convert a satellite time given as an CCSDS Day Segmented Time Code (CDS) form as 8 byte
     integer to a timezone aware datetime object
 
-     Parameters
+    Parameters
     ----------
     satellite_time : int
         A 64-bit unsigned integer that represents CDS time
 
-     Returns
+    Returns
     -------
     cds_time : datetime
      """

@@ -14,61 +14,187 @@ from libera_utils.io import filenaming
 @pytest.mark.parametrize(
     "filename",
     [
-        '/some/fake/path/libera_cam_l2_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5',
-        Path('/fake-path/libera_cam_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'),
-        's3://fake-bucket/libera_cam_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5',
-        S3Path('s3://fake-bucket/libera_cam_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'),
-        '~/libera_cam_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5',
-        'libera_rad_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'
+        '/some/fake/path/P1590006SOMESCIENCEAAA99030231459001.PDS',
+        Path('/fake-path/P1590006SOMESCIENCEAAA99030231459001.PDS'),
+        's3://fake-bucket/P1590006SOMESCIENCEAAA99030231459001.PDS',
+        S3Path('s3://fake-bucket/P1590006SOMESCIENCEAAA99030231459001.PDS'),
+        '~/X1590006SOMESCIENCEAAA99030231459001.PDR',
+        'P1590006SOMESCIENCEAAA99030231459001.PDS.XFR'
     ]
 )
-def test_product_filename(filename):
-    """Test object"""
-    filenaming.ProductFilename(filename)
+def test_l0_filename(filename):
+    """Test L0Filename class"""
+    filenaming.L0Filename(filename)
 
 
 @pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
-        ('libera_cam_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5',
+        ('P1590006SOMESCIENCEAAA99030231459001.PDS',
+         None,
+         dict(
+             id_char='P',
+             scid=159,
+             first_apid=6,
+             fill="SOMESCIENCEAAA",
+             created_time=dt.datetime(1999, 1, 30, 23, 14, 59),
+             numeric_id=0,
+             file_number=1,
+             extension='PDS',
+             signal=None
+         )),
+        ('/tmp/foo/X1590006SOMESCIENCEAAA99030231459001.PDR',
+         "/tmp/foo",
+         dict(
+             id_char='X',
+             scid=159,
+             first_apid=6,
+             fill="SOMESCIENCEAAA",
+             created_time=dt.datetime(1999, 1, 30, 23, 14, 59),
+             numeric_id=0,
+             file_number=1,
+             extension='PDR',
+             signal=None
+         )),
+        ('s3://bucket/P1590006SOMESCIENCEAAA99030231459001.PDS.XFR',
+         None,
+         dict(
+             id_char='P',
+             scid=159,
+             first_apid=6,
+             fill="SOMESCIENCEAAA",
+             created_time=dt.datetime(1999, 1, 30, 23, 14, 59),
+             numeric_id=0,
+             file_number=1,
+             extension='PDS',
+             signal=".XFR"
+         )),
+    ]
+)
+def test_l0_filename_parts(filename, basepath, parts):
+    """Test creating an L0 filename from parts"""
+    fn = filenaming.L0Filename(filename)
+    assert fn.filename_parts == SimpleNamespace(**parts)
+    fn_from_parts = filenaming.L0Filename.from_filename_parts(**parts)
+    assert fn_from_parts.path.name == fn.path.name
+    assert fn_from_parts.filename_parts == fn.filename_parts
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        '/some/fake/path/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        Path('/fake-path/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
+        's3://fake-bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        S3Path('s3://fake-bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
+        '~/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        'libera_l1b_rad_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'
+    ]
+)
+def test_l1b_filename(filename):
+    """Test L1bFilename class"""
+    filenaming.L1bFilename(filename)
+
+
+@pytest.mark.parametrize(
+    ("filename", "basepath", "parts"),
+    [
+        ('libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
          None,
          dict(
              instrument='cam',
-             level=filenaming.DataLevel.L1B,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version='vM1m2p3',
              revision='r27002112233',
-             extension='h5'
+             extension="nc"
          )),
-        ('/tmp/foo/libera_rad_l2_20250102t112233_20250102t122233_vM1m2p3_r27002112233.h5',
+        ('/tmp/foo/libera_l1b_rad_20250102t112233_20250102t122233_vM1m2p3_r27002112233.nc',
          "/tmp/foo",
          dict(
              instrument='rad',
-             level=filenaming.DataLevel.L2,
              utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
              version='vM1m2p3',
              revision='r27002112233',
-             extension='h5'
+             extension="nc"
          )),
-        ('s3://bucket/libera_cam_l1b_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5',
+        ('s3://bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
          None,
          dict(
              instrument='cam',
-             level=filenaming.DataLevel.L1B,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version='vM1m2p3',
              revision='r27002112233',
-             extension='h5'
+             extension="nc"
          )),
     ]
 )
-def test_product_filename_parts(filename, basepath, parts):
-    fn = filenaming.ProductFilename(filename)
+def test_l1b_filename_parts(filename, basepath, parts):
+    """Test creating an L1b filename from parts"""
+    fn = filenaming.L1bFilename(filename)
     assert fn.filename_parts == SimpleNamespace(**parts)
-    fn_from_parts = filenaming.ProductFilename.from_filename_parts(**parts)
+    fn_from_parts = filenaming.L1bFilename.from_filename_parts(**parts)
+    assert fn_from_parts.path.name == fn.path.name
+    assert fn_from_parts.filename_parts == fn.filename_parts
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        '/some/fake/path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        Path('/fake-path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
+        's3://fake-bucket/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        S3Path('s3://fake-bucket/libera_l2_unfiltered-radiance_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
+        '~/libera_l2_toa-flux_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        'libera_l2_sfc-flux_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'
+    ]
+)
+def test_l2_filename(filename):
+    """Test L2Filename class"""
+    filenaming.L2Filename(filename)
+
+
+@pytest.mark.parametrize(
+    ("filename", "basepath", "parts"),
+    [
+        ('libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+         None,
+         dict(
+             product_name='cloud-fraction',
+             utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
+             utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+             version='vM1m2p3',
+             revision='r27002112233',
+             extension="nc"
+         )),
+        ('/tmp/foo/libera_l2_toa-flux_20250102t112233_20250102t122233_vM1m2p3_r27002112233.nc',
+         "/tmp/foo",
+         dict(
+             product_name='toa-flux',
+             utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
+             utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
+             version='vM1m2p3',
+             revision='r27002112233',
+             extension="nc"
+         )),
+        ('s3://bucket/libera_l2_abcd-EFGH-1234_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+         None,
+         dict(
+             product_name='abcd-EFGH-1234',
+             utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
+             utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+             version='vM1m2p3',
+             revision='r27002112233',
+             extension="nc"
+         )),
+    ]
+)
+def test_l2_filename_parts(filename, basepath, parts):
+    fn = filenaming.L2Filename(filename)
+    assert fn.filename_parts == SimpleNamespace(**parts)
+    fn_from_parts = filenaming.L2Filename.from_filename_parts(**parts)
     assert fn_from_parts.path.name == fn.path.name
     assert fn_from_parts.filename_parts == fn.filename_parts
 
@@ -157,7 +283,7 @@ def test_attitude_kernel_filename():
 
 def test_changing_path():
     """Test ability to mess with a filename object's path"""
-    p = filenaming.ProductFilename('libera_cam_l2_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5')
+    p = filenaming.L1bFilename('libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5')
     # Add an S3 prefix
     p.path = S3Path('s3://bucket') / p.path
     assert isinstance(p.path, S3Path)
@@ -170,7 +296,7 @@ def test_changing_path():
     # Check that providing a bad value for a basepath doesn't pollute the instance's valid path
     with pytest.raises(ValueError):
         p.path = '/bad/prefix' + p.path.name  # The missing / will make this fail regex validation
-    assert p.path.name == 'libera_cam_l2_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'
+    assert p.path.name == 'libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'
 
 
 @mock.patch("libera_utils.io.filenaming.datetime")
