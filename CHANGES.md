@@ -3,6 +3,8 @@
 # 2.1.0 (unreleased)
 - Improve API to Manifest and Manifest.add_files
 - Add manifest filename enforcement to Manifest class
+- Update filenaming conventions for product filenames and SPICE kernels
+- Allow adding an s3 bucket/prefix as a basepath for filenames
 
 # 2.0.1 (released)
 - Remove the extras dependency spec because of the way SQLAlchemy imports models

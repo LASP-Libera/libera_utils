@@ -177,10 +177,11 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
             filepath=tmp_path / 'mkspk_setup.txt')
         logger.info("MKSPK setup file written to %s", spk_setup_filepath)
 
-        utc_start_str = time.et_2_datetime(ephemeris_time[0])
-        utc_end_str = time.et_2_datetime(ephemeris_time[-1])
+        utc_start = time.et_2_datetime(ephemeris_time[0])
+        utc_end = time.et_2_datetime(ephemeris_time[-1])
+        revision_time = datetime.utcnow()
         spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
-            spk_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
+            spk_object='jpss', utc_start=utc_start, utc_end=utc_end, revision=revision_time)
         output_filepath = tmp_path / spk_filename.path.name  # pylint: disable=no-member
 
         if parsed_args.overwrite is True:
@@ -256,10 +257,11 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
             filepath=tmp_path / 'msopck_setup.txt')
         logger.info("MSOPCK setup file written to %s", ck_setup_filepath)
 
-        utc_start_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
-        utc_end_str = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
+        utc_start = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
+        utc_end = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
+        revision_time = datetime.utcnow()
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object='jpss', utc_start=utc_start_str, utc_end=utc_end_str)
+            ck_object='jpss', utc_start=utc_start, utc_end=utc_end, revision=revision_time)
         output_filepath = tmp_path / ck_filename.path.name  # pylint: disable=no-member
 
         if parsed_args.overwrite is True:
@@ -286,6 +288,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
         # one call would be to open the newly created file, and one to open the desired location
         smart_copy_file(output_filepath, output_full_path)
         logger.info("CK copied to %s", output_full_path)
+
 
 def make_azel_ck(parsed_args: argparse.Namespace):
     """Create a Libera Az-El CK from CCSDS packets
