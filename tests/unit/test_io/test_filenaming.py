@@ -106,7 +106,7 @@ def test_l1b_filename(filename):
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version='vM1m2p3',
-             revision='r27002112233',
+             revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
         ('/tmp/foo/libera_l1b_rad_20250102t112233_20250102t122233_vM1m2p3_r27002112233.nc',
@@ -116,7 +116,7 @@ def test_l1b_filename(filename):
              utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
              version='vM1m2p3',
-             revision='r27002112233',
+             revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
         ('s3://bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
@@ -126,7 +126,7 @@ def test_l1b_filename(filename):
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version='vM1m2p3',
-             revision='r27002112233',
+             revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
     ]
@@ -166,7 +166,7 @@ def test_l2_filename(filename):
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version='vM1m2p3',
-             revision='r27002112233',
+             revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
         ('/tmp/foo/libera_l2_toa-flux_20250102t112233_20250102t122233_vM1m2p3_r27002112233.nc',
@@ -176,7 +176,7 @@ def test_l2_filename(filename):
              utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
              version='vM1m2p3',
-             revision='r27002112233',
+             revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
         ('s3://bucket/libera_l2_abcd-EFGH-1234_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
@@ -186,7 +186,7 @@ def test_l2_filename(filename):
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version='vM1m2p3',
-             revision='r27002112233',
+             revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
     ]
@@ -250,16 +250,18 @@ def test_ephemeris_kernel_filename():
     parts = dict(
         spk_object='jpss',
         utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
-        utc_end=dt.datetime(2027, 1, 2, 12, 22, 33)
+        utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+        revision=dt.datetime(2028, 1, 2, 11, 22, 33)
     )
     basepath = '/some/foobar/path'
     fn = filenaming.EphemerisKernelFilename(
-        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233.bsp')
-    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233.bsp'
+        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_r28002112233.bsp')
+    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233_r28002112233.bsp'
     assert fn.filename_parts.spk_object == 'jpss'
     assert fn.filename_parts.utc_start == dt.datetime(2027, 1, 2, 11, 22, 33)
     assert fn.filename_parts.utc_end == dt.datetime(2027, 1, 2, 12, 22, 33)
-    fn_from_parts = filenaming.EphemerisKernelFilename.from_filename_parts(**parts, basepath=basepath)
+    assert fn.filename_parts.revision == dt.datetime(2028, 1, 2, 11, 22, 33)
+    fn_from_parts = filenaming.EphemerisKernelFilename.from_filename_parts(basepath=basepath, **parts)
     assert fn_from_parts == fn
 
 
@@ -268,16 +270,18 @@ def test_attitude_kernel_filename():
     parts = dict(
         ck_object='jpss',
         utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
-        utc_end=dt.datetime(2027, 1, 2, 12, 22, 33)
+        utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+        revision=dt.datetime(2028, 1, 2, 11, 22, 33)
     )
     basepath = '/some/foobar/path'
     fn = filenaming.AttitudeKernelFilename(
-        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233.bc')
-    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233.bc'
+        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_r28002112233.bc')
+    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233_r28002112233.bc'
     assert fn.filename_parts.ck_object == 'jpss'
     assert fn.filename_parts.utc_start == dt.datetime(2027, 1, 2, 11, 22, 33)
     assert fn.filename_parts.utc_end == dt.datetime(2027, 1, 2, 12, 22, 33)
-    fn_from_parts = filenaming.AttitudeKernelFilename.from_filename_parts(**parts, basepath=basepath)
+    assert fn.filename_parts.revision == dt.datetime(2028, 1, 2, 11, 22, 33)
+    fn_from_parts = filenaming.AttitudeKernelFilename.from_filename_parts(basepath=basepath, **parts)
     assert fn_from_parts == fn
 
 
@@ -300,12 +304,18 @@ def test_changing_path():
 
 
 @mock.patch("libera_utils.io.filenaming.datetime")
-def test_get_current_revision(mock_datetime):
-    """Test getting the current revision for writing a new file"""
+def test_get_current_revision_str(mock_datetime):
+    """Test getting the current revision string for writing a new filename"""
     mock_datetime.utcnow.return_value = dt.datetime(2027, 1, 2, 11, 22, 33)
-    assert filenaming.get_current_revision() == 'r27002112233'
+    assert filenaming.get_current_revision_str() == 'r27002112233'
 
 
-def test_format_semantic_version():
-    """Test formatting a semantic version string in a way that is friendly to file naming."""
-    assert filenaming.format_version('3.14.159') == 'vM3m14p159'
+@mock.patch("libera_utils.io.filenaming.metadata")
+def test_get_current_version_str(mock_metadata):
+    """Test getting the current version string for writing a new filename"""
+    mock_metadata.version.return_value = "3.1.4"
+    assert filenaming.get_current_version_str('irrelevant_since_metadata_is_mocked') == "vM3m1p4"
+
+    mock_metadata.version.return_value = "1.0"  # Not a full semantic version string
+    with pytest.raises(ValueError):
+        filenaming.get_current_version_str('irrelevant_since_metadata_is_mocked')
