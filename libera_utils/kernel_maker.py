@@ -130,6 +130,7 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths):
 
     return packet_data
 
+
 def make_jpss_spk(parsed_args: argparse.Namespace):
     """Create a JPSS SPK from APID 11 CCSDS packets.
 
