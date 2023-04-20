@@ -8,6 +8,7 @@ authors = [  # Alphabetical
     "Laura Sandoval <laura.sandoval@lasp.colorado.edu>",
     "Matt Watwood <matt.watwood@lasp.colorado.edu>"
 ]
+maintainers = ["Gavin Medley <gavin.medley@lasp.colorado.edu>"]
 license = "BSD-3-Clause"
 include = ["CHANGES.md", "LICENSE", "README.md"]
 
