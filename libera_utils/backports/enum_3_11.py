@@ -1,5 +1,9 @@
 """Backported enum module from Python 3.11.1
-Supports advanced quality flagging functionality from recent Python development
+This code is directly pulled from the Python 3.11.1 source code, located on GitHub at
+https://github.com/python/cpython/tree/v3.11.1
+Once 3.11 is the oldest supported Python version (~Oct 2026), this can probably be removed.
+
+Supports advanced quality flagging functionality from recent Python development.
 """
 # pylint: disable-all
 import sys
