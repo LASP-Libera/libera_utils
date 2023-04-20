@@ -73,13 +73,13 @@ def test_lsk(spice_test_data_path):
 @pytest.fixture
 def test_jpss_ck(spice_test_data_path):
     """Path to the testing JPSS CK stored in the test_data directory to provide a single configuration for all tests"""
-    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849.bc'
+    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849_vM2m1p0_r23110123456.bc'
 
 
 @pytest.fixture
 def test_jpss_spk(spice_test_data_path):
     """Path to the testing JPSS SPK stored in the test_data directory to provide a single configuration for all tests"""
-    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849.bsp'
+    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849_vM2m1p0_r23110123456.bsp'
 
 
 @pytest.fixture
