@@ -18,12 +18,14 @@ REVISION_TS_FORMAT = "r%y%j%H%M%S"
 SPK_REGEX = re.compile(r"^libera_(?P<spk_object>jpss)"
                        r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
                        r"_(?P<utc_end>[0-9]{8}t[0-9]{6})"
+                       r"_(?P<version>vM[0-9]*m[0-9]*p[0-9]*)"
                        r"_(?P<revision>r[0-9]{11})"
                        r"\.bsp$")
 
 CK_REGEX = re.compile(r"^libera_(?P<ck_object>jpss|azrot|elscan)"
                       r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
                       r"_(?P<utc_end>[0-9]{8}t[0-9]{6})"
+                      r"_(?P<version>vM[0-9]*m[0-9]*p[0-9]*)"
                       r"_(?P<revision>r[0-9]{11})"
                       r"\.bc$")
 
@@ -608,8 +610,8 @@ class EphemerisKernelFilename(AbstractValidFilename):
     """Class to construct, store, and manipulate an SPK filename"""
 
     _regex = SPK_REGEX
-    _fmt = "libera_{spk_object}_{utc_start}_{utc_end}_{revision}.bsp"
-    _required_parts = ('spk_object', 'utc_start', 'utc_end', 'revision')
+    _fmt = "libera_{spk_object}_{utc_start}_{utc_end}_{version}_{revision}.bsp"
+    _required_parts = ('spk_object', 'utc_start', 'utc_end', 'version', 'revision')
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
@@ -617,6 +619,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
                             spk_object: str = None,
                             utc_start: datetime = None,
                             utc_end: datetime = None,
+                            version: str = None,
                             revision: datetime = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
@@ -632,6 +635,9 @@ class EphemerisKernelFilename(AbstractValidFilename):
             Start time of data.
         utc_end : datetime
             End time of data.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         revision: datetime
             When the file was last revised.
 
@@ -644,6 +650,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
                                         spk_object=spk_object,
                                         utc_start=utc_start,
                                         utc_end=utc_end,
+                                        version=version,
                                         revision=revision)
 
     @classmethod
@@ -651,6 +658,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
                                spk_object: str,
                                utc_start: datetime,
                                utc_end: datetime,
+                               version: str,
                                revision: datetime):
         """Create an instance from a given path
 
@@ -662,6 +670,9 @@ class EphemerisKernelFilename(AbstractValidFilename):
             Start time of data.
         utc_end : datetime
             End time of data.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         revision: datetime
             Time when the file was last revised
 
@@ -672,6 +683,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
         return cls._fmt.format(spk_object=spk_object,
                                utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
                                utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
+                               version=version,
                                revision=revision.strftime(REVISION_TS_FORMAT))
 
     def _parse_filename_parts(self):
@@ -693,8 +705,8 @@ class AttitudeKernelFilename(AbstractValidFilename):
     """Class to construct, store, and manipulate an SPK filename"""
 
     _regex = CK_REGEX
-    _fmt = "libera_{ck_object}_{utc_start}_{utc_end}_{revision}.bc"
-    _required_parts = ('ck_object', 'utc_start', 'utc_end', 'revision')
+    _fmt = "libera_{ck_object}_{utc_start}_{utc_end}_{version}_{revision}.bc"
+    _required_parts = ('ck_object', 'utc_start', 'utc_end', 'version', 'revision')
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
@@ -702,6 +714,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
                             ck_object: str = None,
                             utc_start: datetime = None,
                             utc_end: datetime = None,
+                            version: str = None,
                             revision: datetime = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
@@ -717,6 +730,9 @@ class AttitudeKernelFilename(AbstractValidFilename):
             Start time of data.
         utc_end : datetime
             End time of data.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         revision: datetime
             When the file was last revised.
 
@@ -729,6 +745,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
                                         ck_object=ck_object,
                                         utc_start=utc_start,
                                         utc_end=utc_end,
+                                        version=version,
                                         revision=revision)
 
     @classmethod
@@ -736,6 +753,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
                                ck_object: str,
                                utc_start: datetime,
                                utc_end: datetime,
+                               version: str,
                                revision: datetime):
         """Create an instance from a given path
 
@@ -747,6 +765,9 @@ class AttitudeKernelFilename(AbstractValidFilename):
             Start time of data.
         utc_end : datetime
             End time of data.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         revision: datetime
             When the file was last revised.
 
@@ -757,6 +778,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
         return cls._fmt.format(ck_object=ck_object,
                                utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
                                utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
+                               version=version,
                                revision=revision.strftime(REVISION_TS_FORMAT))
 
     def _parse_filename_parts(self):
