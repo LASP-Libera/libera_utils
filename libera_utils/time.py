@@ -33,7 +33,7 @@ PRINTABLE_TS_REGEX = re.compile(r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>
 
 PRINTABLE_TS_FORMAT = "%Y%m%dt%H%M%S"
 
-EDOS_TS_FORMAT = "%y%j%H%M%S"
+NUMERIC_DOY_TS_FORMAT = "%y%j%H%M%S"
 
 
 def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],

@@ -11,9 +11,9 @@ from pathlib import Path
 # Installed
 from cloudpathlib import AnyPath, CloudPath
 # Local
-from libera_utils.time import PRINTABLE_TS_FORMAT, EDOS_TS_FORMAT
+from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
 
-REVISION_TS_FORMAT = "r%y%j%H%M%S"
+REVISION_TS_FORMAT = f"r{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
 SPK_REGEX = re.compile(r"^libera_(?P<spk_object>jpss)"
                        r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
@@ -307,7 +307,7 @@ class L0Filename(AbstractValidFilename):
                                scid=scid,
                                first_apid=first_apid,
                                fill=fill,
-                               created_time=created_time.strftime(EDOS_TS_FORMAT),
+                               created_time=created_time.strftime(NUMERIC_DOY_TS_FORMAT),
                                numeric_id=numeric_id,
                                file_number=file_number,
                                extension=extension,
@@ -326,7 +326,7 @@ class L0Filename(AbstractValidFilename):
         d['first_apid'] = int(d['first_apid'])
         d['numeric_id'] = int(d['numeric_id'])
         d['file_number'] = int(d['file_number'])
-        d['created_time'] = datetime.strptime(d['created_time'], EDOS_TS_FORMAT)
+        d['created_time'] = datetime.strptime(d['created_time'], NUMERIC_DOY_TS_FORMAT)
         return SimpleNamespace(**d)
 
 
