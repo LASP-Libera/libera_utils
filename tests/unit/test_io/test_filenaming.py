@@ -83,12 +83,12 @@ def test_l0_filename_parts(filename, basepath, parts):
 @pytest.mark.parametrize(
     "filename",
     [
-        '/some/fake/path/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
-        Path('/fake-path/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
-        's3://fake-bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
-        S3Path('s3://fake-bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
-        '~/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
-        'libera_l1b_rad_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'
+        '/some/fake/path/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
+        Path('/fake-path/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc'),
+        's3://fake-bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
+        S3Path('s3://fake-bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc'),
+        '~/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
+        'libera_l1b_rad_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc'
     ]
 )
 def test_l1b_filename(filename):
@@ -99,33 +99,33 @@ def test_l1b_filename(filename):
 @pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
-        ('libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        ('libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
          None,
          dict(
              instrument='cam',
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
-             version='vM1m2p3',
+             version='vM3m14p159',
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
-        ('/tmp/foo/libera_l1b_rad_20250102t112233_20250102t122233_vM1m2p3_r27002112233.nc',
+        ('/tmp/foo/libera_l1b_rad_20250102t112233_20250102t122233_vM3m14p159_r27002112233.nc',
          "/tmp/foo",
          dict(
              instrument='rad',
              utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
-             version='vM1m2p3',
+             version='vM3m14p159',
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
-        ('s3://bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        ('s3://bucket/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
          None,
          dict(
              instrument='cam',
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
-             version='vM1m2p3',
+             version='vM3m14p159',
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
@@ -143,12 +143,12 @@ def test_l1b_filename_parts(filename, basepath, parts):
 @pytest.mark.parametrize(
     "filename",
     [
-        '/some/fake/path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
-        Path('/fake-path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
-        's3://fake-bucket/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
-        S3Path('s3://fake-bucket/libera_l2_unfiltered-radiance_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'),
-        '~/libera_l2_toa-flux_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
-        'libera_l2_sfc-flux_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc'
+        '/some/fake/path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
+        Path('/fake-path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc'),
+        's3://fake-bucket/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
+        S3Path('s3://fake-bucket/libera_l2_unfiltered-radiance_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc'),
+        '~/libera_l2_toa-flux_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
+        'libera_l2_sfc-flux_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc'
     ]
 )
 def test_l2_filename(filename):
@@ -159,33 +159,33 @@ def test_l2_filename(filename):
 @pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
-        ('libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        ('libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
          None,
          dict(
              product_name='cloud-fraction',
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
-             version='vM1m2p3',
+             version='vM3m14p159',
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
-        ('/tmp/foo/libera_l2_toa-flux_20250102t112233_20250102t122233_vM1m2p3_r27002112233.nc',
+        ('/tmp/foo/libera_l2_toa-flux_20250102t112233_20250102t122233_vM3m14p159_r27002112233.nc',
          "/tmp/foo",
          dict(
              product_name='toa-flux',
              utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
-             version='vM1m2p3',
+             version='vM3m14p159',
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
-        ('s3://bucket/libera_l2_abcd-EFGH-1234_20270102t112233_20270102t122233_vM1m2p3_r27002112233.nc',
+        ('s3://bucket/libera_l2_abcd-EFGH-1234_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc',
          None,
          dict(
              product_name='abcd-EFGH-1234',
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
-             version='vM1m2p3',
+             version='vM3m14p159',
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
@@ -251,15 +251,17 @@ def test_ephemeris_kernel_filename():
         spk_object='jpss',
         utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
         utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+        version="vM3m14p159",
         revision=dt.datetime(2028, 1, 2, 11, 22, 33)
     )
     basepath = '/some/foobar/path'
     fn = filenaming.EphemerisKernelFilename(
-        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_r28002112233.bsp')
-    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233_r28002112233.bsp'
+        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bsp')
+    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bsp'
     assert fn.filename_parts.spk_object == 'jpss'
     assert fn.filename_parts.utc_start == dt.datetime(2027, 1, 2, 11, 22, 33)
     assert fn.filename_parts.utc_end == dt.datetime(2027, 1, 2, 12, 22, 33)
+    assert fn.filename_parts.version == "vM3m14p159"
     assert fn.filename_parts.revision == dt.datetime(2028, 1, 2, 11, 22, 33)
     fn_from_parts = filenaming.EphemerisKernelFilename.from_filename_parts(basepath=basepath, **parts)
     assert fn_from_parts == fn
@@ -271,12 +273,13 @@ def test_attitude_kernel_filename():
         ck_object='jpss',
         utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
         utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+        version="vM3m14p159",
         revision=dt.datetime(2028, 1, 2, 11, 22, 33)
     )
     basepath = '/some/foobar/path'
     fn = filenaming.AttitudeKernelFilename(
-        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_r28002112233.bc')
-    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233_r28002112233.bc'
+        '/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bc')
+    assert fn.path.name == 'libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bc'
     assert fn.filename_parts.ck_object == 'jpss'
     assert fn.filename_parts.utc_start == dt.datetime(2027, 1, 2, 11, 22, 33)
     assert fn.filename_parts.utc_end == dt.datetime(2027, 1, 2, 12, 22, 33)
@@ -287,7 +290,7 @@ def test_attitude_kernel_filename():
 
 def test_changing_path():
     """Test ability to mess with a filename object's path"""
-    p = filenaming.L1bFilename('libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5')
+    p = filenaming.L1bFilename('libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.h5')
     # Add an S3 prefix
     p.path = S3Path('s3://bucket') / p.path
     assert isinstance(p.path, S3Path)
@@ -300,7 +303,7 @@ def test_changing_path():
     # Check that providing a bad value for a basepath doesn't pollute the instance's valid path
     with pytest.raises(ValueError):
         p.path = '/bad/prefix' + p.path.name  # The missing / will make this fail regex validation
-    assert p.path.name == 'libera_l1b_cam_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'
+    assert p.path.name == 'libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.h5'
 
 
 @mock.patch("libera_utils.io.filenaming.datetime")
