@@ -2,8 +2,7 @@
 # Standard
 import logging
 # Installed
-import bitstring
-from lasp_packets import parser
+from space_packet_parser import parser
 import numpy as np
 import numpy.lib.recfunctions as nprf
 # Local
@@ -71,10 +70,8 @@ def parse_packets(packet_parser: parser.PacketParser, packet_data_filepaths: lis
     for packet_data_filepath in packet_data_filepaths:
         logger.info("Packet data filepath %s", packet_data_filepath)
         with smart_open(packet_data_filepath) as packet_bytes:
-            binary_packet_data = bitstring.ConstBitStream(bytes=packet_bytes.read())
-
-        packet_generator = packet_parser.generator(binary_packet_data)
-        data_arrays.append(array_from_packets(list(packet_generator), apid=apid))
+            packet_generator = packet_parser.generator(packet_bytes, parse_bad_pkts=False)
+            data_arrays.append(array_from_packets(list(packet_generator), apid=apid))
 
     packet_data = nprf.stack_arrays(data_arrays, asrecarray=True, usemask=False)  # Stack recarrays
     # Remove any duplicates in case we got the same packet twice in different files
