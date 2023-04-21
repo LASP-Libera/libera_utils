@@ -12,7 +12,7 @@ import tempfile
 import numpy as np
 import numpy.lib.recfunctions as nprf
 from cloudpathlib import S3Path, AnyPath
-from lasp_packets import parser, xtcedef
+from space_packet_parser import parser, xtcedef
 # Local
 from libera_utils import spice_utils
 from libera_utils.logutil import configure_task_logging
