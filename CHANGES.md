@@ -1,6 +1,6 @@
 # Version Changes
 
-# 2.1.0 (unreleased)
+# 2.1.0 (released)
 - Improve API to Manifest and Manifest.add_files
 - Add manifest filename enforcement to Manifest class
 - Update filenaming conventions for product filenames and SPICE kernels
