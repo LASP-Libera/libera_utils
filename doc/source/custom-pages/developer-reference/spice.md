@@ -69,9 +69,10 @@ e.g. `naif0012.tls`
 Contains leapsecond data used by time conversion routines.
 
 ### Development Ephemeris Kernel (SPK)
-e.g. `de440.bsp`
+e.g. `de440s.bsp`
 
-Contains ephemeris data for planetary bodies.
+Contains ephemeris data for planetary bodies. The version with "s" appended to the filename covers only more recent time
+(starts in the 1500s) to reduce filesize.
 
 ### High Precision Earth Binary Planetary Constants Kernel (PCK)
 e.g. `earth_000101_211220_210926.bpc`
