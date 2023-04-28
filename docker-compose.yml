@@ -18,7 +18,7 @@ services:
     platform: linux/amd64
     image: flyway/flyway:latest
     environment:
-      - FLYWAY_TARGET=${FLYWAY_TARGET}  # If not set, migrates to latest
+      - FLYWAY_TARGET=${FLYWAY_TARGET:-latest}
       - FLYWAY_PASSWORD=masterpass
       - FLYWAY_CONNECT_RETRIES=60
     command: -url=jdbc:postgresql://local-db:5432/libera migrate
@@ -32,7 +32,7 @@ services:
     platform: linux/amd64
     image: flyway/flyway:latest
     environment:
-      - FLYWAY_TARGET=${FLYWAY_TARGET}  # If not set, migrates to latest
+      - FLYWAY_TARGET=${FLYWAY_TARGET:-latest}
       - FLYWAY_PASSWORD=${FLYWAY_PASSWORD}
       - FLYWAY_CONNECT_RETRIES=60
     command: -url=jdbc:postgresql://${RDS_DBHOST}/libera migrate
