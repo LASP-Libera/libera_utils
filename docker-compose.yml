@@ -10,7 +10,7 @@ services:
     environment:
       - POSTGRES_USER=libera_master
       - POSTGRES_PASSWORD=masterpass
-      - POSTGRES_DB=postgres
+      - POSTGRES_DB=libera
     volumes:
       - ./database/initdb:/docker-entrypoint-initdb.d
 
@@ -18,6 +18,7 @@ services:
     platform: linux/amd64
     image: flyway/flyway:latest
     environment:
+      - FLYWAY_TARGET=${FLYWAY_TARGET}  # If not set, migrates to latest
       - FLYWAY_PASSWORD=masterpass
       - FLYWAY_CONNECT_RETRIES=60
     command: -url=jdbc:postgresql://local-db:5432/libera migrate
@@ -26,6 +27,18 @@ services:
       - ./database/flyway.conf:/flyway/conf/flyway.conf
     depends_on:
       - local-db
+
+  rds-flyway:
+    platform: linux/amd64
+    image: flyway/flyway:latest
+    environment:
+      - FLYWAY_TARGET=${FLYWAY_TARGET}  # If not set, migrates to latest
+      - FLYWAY_PASSWORD=${FLYWAY_PASSWORD}
+      - FLYWAY_CONNECT_RETRIES=60
+    command: -url=jdbc:postgresql://${RDS_DBHOST}/libera migrate
+    volumes:
+      - ./database/migrations:/flyway/sql
+      - ./database/flyway.conf:/flyway/conf/flyway.conf
 
   sdp:
     platform: linux/amd64

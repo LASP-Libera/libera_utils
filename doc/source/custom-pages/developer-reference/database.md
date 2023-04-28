@@ -69,3 +69,16 @@ directory. It can be deployed (and redeployed) locally by running
 ```shell
 docker compose up flyway
 ```
+
+# Migrating RDS Database Instance
+
+We have a separate docker-compose service for migrating our RDS instance in AWS. It can be used as follows, provided
+the database init custom resource in the CDK code has successfully created the 
+libera_master, libera_processor, and libera_reader users/roles.
+
+```shell
+export FLYWAY_PASSWORD=*********
+export FLYWAY_TARGET=latest  # or whatever migration version you need. If unset, migrates to latest.
+export RDS_DBHOST=<db-host-findable-in-console>
+docker compose up rds-flyway
+```
