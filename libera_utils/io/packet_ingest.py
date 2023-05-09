@@ -5,6 +5,7 @@ import datetime
 import logging
 import os
 # Installed
+from os import environ
 from cloudpathlib import AnyPath
 from sqlalchemy import func
 # Local
@@ -33,6 +34,19 @@ def ingest(parsed_args: argparse.Namespace):
 
     processing_dropbox = os.environ['PROCESSING_DROPBOX']
 
+    # Used cloud or local environment variables
+    if environ.get('dbhost') is not None:
+        dbhost = os.environ['dbhost']
+        dbname = os.environ['dbname']
+        dbuser = os.environ['dbuser']
+        pgpass = os.environ['dbpass']
+    else:
+        db1 = getdb()
+        dbhost = db1.host
+        dbname = db1.database
+        dbuser = db1.user
+        pgpass = db1.password
+
     # read json information
     m = Manifest.from_file(parsed_args.manifest_filepath)
     m.validate_checksums()
@@ -47,20 +61,26 @@ def ingest(parsed_args: argparse.Namespace):
     for file in m.files:
         # is there a next cr in the manifest
         if 'CONS' in file['filename']:
-            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_dropbox)
+            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_dropbox,
+                                                       dbhost, dbuser, pgpass, dbname)
             db_pds_dict_all.update(db_pds_dict)
-            output_files.append(con_ingested_dict)
+            if con_ingested_dict:
+                output_files.append(con_ingested_dict)
 
     for file in m.files:
         # is there a next pds in the manifest
         if 'PDS' in file['filename']:
-            pds_ingested_dict = pds_ingest(file, processing_dropbox)
+            pds_ingested_dict = pds_ingest(file, processing_dropbox,
+                                           dbhost, dbuser, pgpass, dbname)
             if pds_ingested_dict:
                 output_files.append(pds_ingested_dict)
 
     # insert cr_id for pds files in the db associated with the current cr
     if db_pds_dict_all:
-        with getdb().session() as s:
+        with getdb(dbhost=dbhost,
+                   dbuser=dbuser,
+                   dbpass=pgpass,
+                   dbname=dbname).session() as s:
             for cr_filename in db_pds_dict_all.items():
                 # query cr_id that has been inserted
                 cr_query = s.query(Cr).filter(Cr.file_name == cr_filename[0]).all()
@@ -76,7 +96,7 @@ def ingest(parsed_args: argparse.Namespace):
     logger.info("Writing resulting output manifest to %s", output_dir)
 
     # Write output manifest file containing a list of the product files that the processing created
-    output_manifest_path = os.path.join(output_dir, str(mfn))
+    output_manifest_path = "/".join([processing_dropbox, str(mfn)])
     output_manifest = Manifest(manifest_type=ManifestType.OUTPUT,
                                filename=output_manifest_path,
                                files=output_files,
@@ -84,17 +104,23 @@ def ingest(parsed_args: argparse.Namespace):
 
     # move files over
     for file in output_files:
-        input_dir = os.path.join(os.path.dirname(m.files[0]['filename']),
-                                 os.path.basename(file['filename']))
-        smart_copy_file(input_dir, output_dir, delete=parsed_args.delete)
 
-    output_manifest.write(output_manifest_path)
+        # TODO: figure out what to do with duplicate files (delete, rename, etc)
+        if not file:
+            logger.info("Duplicate files.")
+        else:
+            input_dir = "/".join([os.path.dirname(m.files[0]['filename']),
+                                  os.path.basename(file['filename'])])
+            smart_copy_file(input_dir, "/".join([processing_dropbox, os.path.basename(file['filename'])]),
+                            delete=parsed_args.delete)
+
+    output_manifest.write(processing_dropbox, filename=str(mfn))
     logger.info("Algorithm complete. Exiting.")
 
     return output_manifest_path
 
 
-def cr_ingest(file: dict, output_dir: str):
+def cr_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str, dbname: str):
     """Ingest cr records into database
     Parameters
     ----------
@@ -102,6 +128,14 @@ def cr_ingest(file: dict, output_dir: str):
         Dictionary containing path and checksum of cr
     output_dir : str
         Directory for output data
+    dbhost : str
+        Database host
+    dbuser : str
+        Database user
+    pgpass : str
+        Database password
+    dbname : str
+        Database name
 
     Returns
     -------
@@ -113,7 +147,10 @@ def cr_ingest(file: dict, output_dir: str):
     filename = os.path.basename(file['filename'])
     db_pds = []
 
-    with getdb().session() as s:
+    with getdb(dbhost=dbhost,
+               dbuser=dbuser,
+               dbpass=pgpass,
+               dbname=dbname).session() as s:
 
         cr_query = s.query(Cr).filter(
             Cr.file_name == filename).all()
@@ -147,11 +184,8 @@ def cr_ingest(file: dict, output_dir: str):
             cr_orm = cr.to_orm()
             s.merge(cr_orm)
 
-            # output filename
-            output_dir = os.path.join(output_dir, filename)
-
             # create ingested dictionary
-            ingested_dict = {"filename": output_dir,
+            ingested_dict = {"filename": "/".join([output_dir, filename]),
                              "checksum": file['checksum']}
         else:
             logger.info("Duplicate cr: %s", filename)
@@ -167,7 +201,7 @@ def cr_ingest(file: dict, output_dir: str):
     return db_pds_dict, ingested_dict
 
 
-def pds_ingest(file: dict, output_dir: str):
+def pds_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str, dbname: str):
     """Ingest pd records into database that do not have an associated cr
     Parameters
     ----------
@@ -175,6 +209,14 @@ def pds_ingest(file: dict, output_dir: str):
         Dictionary containing path and checksum of pd
     output_dir : str
         Directory for output data
+    dbhost : str
+        Database host
+    dbuser : str
+        Database user
+    pgpass : str
+        Database password
+    dbname : str
+        Database name
 
     Returns
     -------
@@ -183,7 +225,10 @@ def pds_ingest(file: dict, output_dir: str):
     """
     filename = os.path.basename(file['filename'])
 
-    with getdb().session() as s:
+    with getdb(dbhost=dbhost,
+               dbuser=dbuser,
+               dbpass=pgpass,
+               dbname=dbname).session() as s:
 
         # check to see if pds is in db
         pds_query = s.query(PdsFile).filter(
@@ -197,21 +242,15 @@ def pds_ingest(file: dict, output_dir: str):
             pds_orm = pds.to_orm()
             s.add(pds_orm)
 
-            # output filename
-            output_dir = os.path.join(output_dir, filename)
-
             # create ingested dictionary
-            ingested_dict = {"filename": output_dir,
+            ingested_dict = {"filename": "/".join([output_dir, filename]),
                              "checksum": file['checksum']}
         # if pds is in db but does not have ingest time, update the ingest time
         elif pds_query[0].ingested is None:
             pds_query[0].ingested = datetime.datetime.utcnow()
 
-            # output filename
-            output_dir = os.path.join(output_dir, filename)
-
             # create ingested dictionary
-            ingested_dict = {"filename": output_dir,
+            ingested_dict = {"filename": "/".join([output_dir, filename]),
                              "checksum": file['checksum']}
         else:
             logger.info("Duplicate pd: %s", filename)

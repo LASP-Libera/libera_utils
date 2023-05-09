@@ -143,8 +143,15 @@ def test_pds_assigned_mult(clean_local_db, test_construction_record_09t00,
     # read json information
     parsed_args = DummyParser(str(generate_input_manifest))
     m = Manifest.from_file(parsed_args.manifest_filepath)
-    db_pds_dict, _ = cr_ingest(
-        m.files[0], parsed_args.outdir)
+
+    db1 = getdb()
+    dbhost = db1.host
+    dbname = db1.database
+    dbuser = db1.user
+    pgpass = db1.password
+
+    db_pds_dict, _ = cr_ingest(m.files[0], parsed_args.outdir,
+                               dbhost, dbuser, pgpass, dbname)
 
     cr = ConstructionRecord.from_file(test_construction_record_09t00)
 
