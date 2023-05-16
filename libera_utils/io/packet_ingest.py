@@ -5,7 +5,6 @@ import datetime
 import logging
 import os
 # Installed
-from os import environ
 from cloudpathlib import AnyPath
 from sqlalchemy import func
 # Local
@@ -34,19 +33,6 @@ def ingest(parsed_args: argparse.Namespace):
 
     processing_dropbox = os.environ['PROCESSING_DROPBOX']
 
-    # Used cloud or local environment variables
-    if environ.get('dbhost') is not None:
-        dbhost = os.environ['dbhost']
-        dbname = os.environ['dbname']
-        dbuser = os.environ['dbuser']
-        pgpass = os.environ['dbpass']
-    else:
-        db1 = getdb()
-        dbhost = db1.host
-        dbname = db1.database
-        dbuser = db1.user
-        pgpass = db1.password
-
     # read json information
     m = Manifest.from_file(parsed_args.manifest_filepath)
     m.validate_checksums()
@@ -61,8 +47,7 @@ def ingest(parsed_args: argparse.Namespace):
     for file in m.files:
         # is there a next cr in the manifest
         if 'CONS' in file['filename']:
-            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_dropbox,
-                                                       dbhost, dbuser, pgpass, dbname)
+            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_dropbox)
             db_pds_dict_all.update(db_pds_dict)
             if con_ingested_dict:
                 output_files.append(con_ingested_dict)
@@ -70,17 +55,13 @@ def ingest(parsed_args: argparse.Namespace):
     for file in m.files:
         # is there a next pds in the manifest
         if 'PDS' in file['filename']:
-            pds_ingested_dict = pds_ingest(file, processing_dropbox,
-                                           dbhost, dbuser, pgpass, dbname)
+            pds_ingested_dict = pds_ingest(file, processing_dropbox)
             if pds_ingested_dict:
                 output_files.append(pds_ingested_dict)
 
     # insert cr_id for pds files in the db associated with the current cr
     if db_pds_dict_all:
-        with getdb(dbhost=dbhost,
-                   dbuser=dbuser,
-                   dbpass=pgpass,
-                   dbname=dbname).session() as s:
+        with getdb().session() as s:
             for cr_filename in db_pds_dict_all.items():
                 # query cr_id that has been inserted
                 cr_query = s.query(Cr).filter(Cr.file_name == cr_filename[0]).all()
@@ -120,7 +101,7 @@ def ingest(parsed_args: argparse.Namespace):
     return output_manifest_path
 
 
-def cr_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str, dbname: str):
+def cr_ingest(file: dict, output_dir: str):
     """Ingest cr records into database
     Parameters
     ----------
@@ -128,14 +109,6 @@ def cr_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str
         Dictionary containing path and checksum of cr
     output_dir : str
         Directory for output data
-    dbhost : str
-        Database host
-    dbuser : str
-        Database user
-    pgpass : str
-        Database password
-    dbname : str
-        Database name
 
     Returns
     -------
@@ -147,10 +120,7 @@ def cr_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str
     filename = os.path.basename(file['filename'])
     db_pds = []
 
-    with getdb(dbhost=dbhost,
-               dbuser=dbuser,
-               dbpass=pgpass,
-               dbname=dbname).session() as s:
+    with getdb().session() as s:
 
         cr_query = s.query(Cr).filter(
             Cr.file_name == filename).all()
@@ -201,7 +171,7 @@ def cr_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str
     return db_pds_dict, ingested_dict
 
 
-def pds_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: str, dbname: str):
+def pds_ingest(file: dict, output_dir: str):
     """Ingest pd records into database that do not have an associated cr
     Parameters
     ----------
@@ -209,14 +179,6 @@ def pds_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: st
         Dictionary containing path and checksum of pd
     output_dir : str
         Directory for output data
-    dbhost : str
-        Database host
-    dbuser : str
-        Database user
-    pgpass : str
-        Database password
-    dbname : str
-        Database name
 
     Returns
     -------
@@ -225,10 +187,7 @@ def pds_ingest(file: dict, output_dir: str, dbhost: str, dbuser: str, pgpass: st
     """
     filename = os.path.basename(file['filename'])
 
-    with getdb(dbhost=dbhost,
-               dbuser=dbuser,
-               dbpass=pgpass,
-               dbname=dbname).session() as s:
+    with getdb().session() as s:
 
         # check to see if pds is in db
         pds_query = s.query(PdsFile).filter(

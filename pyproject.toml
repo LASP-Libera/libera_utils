@@ -12,29 +12,36 @@ maintainers = ["Gavin Medley <gavin.medley@lasp.colorado.edu>"]
 license = "BSD-3-Clause"
 include = ["CHANGES.md", "LICENSE", "README.md"]
 
+# Reference for dependency specifications:
+# https://python-poetry.org/docs/dependency-specification/
+# Note on caret notation: ^1.2.3 is equivalent to >=1.2.3,<2.0.0 (prevents major version updates)
+
 [tool.poetry.dependencies]
+# Keep these "as loose as practical" to allow maximum compatibility with others' environments
 python = ">=3.8,<3.12"
 astropy = "^5.1"
-cloudpathlib = {extras = ["s3"], version = "^0"}
-h5netcdf = "^1.1.0"
+cloudpathlib = {extras = ["s3"], version = "^0.14.0"}
+h5netcdf = "^1.0.0"
 h5py = "^3.3"
 numpy = "^1.21"
-psycopg2 = "^2.9"
-requests = "^2.26"
-setuptools = ">=65"
+psycopg2 = "^2.9.3"
+requests = "^2.27.0"
+setuptools = "^67.0.0"
 space-packet-parser = "^4.0"
-spiceypy = "^5.0"
-SQLAlchemy = "^1.4, <2.0"
-watchtower = "^3.0"
+spiceypy = "^5.0.0"
+SQLAlchemy = "^1.4.31"
+watchtower = "^3.0.0"
 xarray = "^2023.1.0"
 
 [tool.poetry.group.dev.dependencies]
-bandit = "^1.7.4"
-moto = {extras = ["s3"], version = "^4.0"}
-pytest-cov = "^4"
-pylint = "^2.9.3"
-pytest-randomly = "^3.10.2"
-responses = "^0.21"
+# We are strict on these dependencies because they are not typically requirements of other packages
+bandit = "^1.7.5"
+boto3 = "^1.26.134"
+moto = {extras = ["s3"], version = "4.1.9"}
+pytest-cov = "^4.0.0"
+pylint = "^2.15.10"
+pytest-randomly = "^3.12.0"
+responses = "^0.23.0"
 
 # These are listed as a group rather than an extra because no end user will need them
 [tool.poetry.group.docgen.dependencies]
