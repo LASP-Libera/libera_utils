@@ -1,5 +1,11 @@
 # Version Changes
 
+# 2.1.1 (released)
+- Update dependency specification to speed up dependency resolution wrt botocore/urllib3
+- Improve database initialization to work with libera_cdk changes
+- Fix bug in Dockerfile that incorrectly set the default entrypoint
+- Add preliminary instrument kernel
+
 # 2.1.0 (released)
 - Improve API to Manifest and Manifest.add_files
 - Add manifest filename enforcement to Manifest class
