@@ -45,7 +45,7 @@ COPY LICENSE $LIBERA_UTILS_DIRECTORY
 RUN true
 
 # Install libera_utils and all its (non-dev) dependencies according to pyproject.toml
-RUN poetry install --no-dev
+RUN poetry install --only main
 
 # Define the entrypoint of the container. Passing arguments when running the
 # container will be passed as arguments to the function
