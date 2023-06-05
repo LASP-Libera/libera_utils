@@ -213,3 +213,20 @@ def test_output_manifest_partial(clean_local_db, tmp_path, monkeypatch,
         file_list.append(os.path.basename(file['filename']))
 
     assert 'P1590011AAAAAAAAAAAAAT21099051420500.PDS' not in file_list
+
+
+def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tmp_path, monkeypatch,
+                              generate_input_manifest, insert_single_pds_from_each_cr):
+    """Test that after calling ingest a query result prints as a representative of the entry."""
+
+    # insert
+    parsed_args = DummyParser(str(generate_input_manifest))
+    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
+    ingest(parsed_args)
+
+    cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
+
+    with getdb().session() as s:
+        cr_query_0 = s.query(Cr).filter(Cr.file_name == cr_0.file_name).all()
+        print(cr_query_0)
+        assert str(cr_query_0).__contains__("J01_G011_LZ_2021-04-09T00-00-00Z_V01")

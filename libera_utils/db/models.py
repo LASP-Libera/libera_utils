@@ -12,7 +12,7 @@ class Cr(Base, ReprMixin):
     """
     Construction record
     """
-    __repr_attrs__ = ["filename"]
+    __repr_attrs__ = ["file_name"]
 
     id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
     file_name = Column(TEXT)
