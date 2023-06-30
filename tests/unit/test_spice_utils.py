@@ -1,11 +1,14 @@
 """Tests for kernels module"""
 # Standard
 import logging
+import unittest
+from unittest import mock, TestCase
+from unittest.mock import patch
 import pytest
-from unittest import mock
 # Installed
 import numpy as np
 import responses
+import requests
 # Local
 import libera_utils.kernel_maker
 from libera_utils import spice_utils
@@ -58,7 +61,6 @@ def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
 
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=tmp_path):
-
         # Prove that the download logic works for putting a file in the cache
         cache.download_kernel(full_file_url)
         assert cache.is_cached() is True
@@ -162,3 +164,99 @@ def test_write_kernel_setup_file(tmp_path):
         "SOME_FILEPATH": "myfile"
     }
     libera_utils.kernel_maker.write_kernel_setup_file(defaults, filepath)
+
+
+@pytest.mark.parametrize(
+    ["mock_responses", "expectation"],
+    [
+        ([
+             responses.Response(method="GET", url="https://fake-naif-page/",
+                                body=requests.exceptions.ConnectionError("Connection error")),
+             responses.Response(method="GET", url="https://fake-naif-page/",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/",
+                                body=requests.exceptions.HTTPError("HTTP error"))
+         ],
+         requests.exceptions.HTTPError()),
+        ([
+             responses.Response(method="GET", url="https://fake-naif-page/",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/", status=200,
+                                body='href="earth_000101_211220_210926.bpc"')
+         ],
+         "https://fake-naif-page/earth_000101_211220_210926.bpc"),
+        ([
+             responses.Response(method="GET", url="https://fake-naif-page/",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/", status=200,
+                                body='href="earth_000101_211220_210926.bpc"')
+         ],
+         "https://fake-naif-page/earth_000101_211220_210926.bpc")
+    ]
+)
+@responses.activate(registry=responses.registries.OrderedRegistry)
+def test_find_most_recent_naif_kernel_timeout_loop(mock_responses, expectation, test_data_path, spice_test_data_path):
+    """Testing error handling for connectionHTTP, and timeout errors"""
+    for mock_response in mock_responses:
+        responses.add(mock_response)
+
+    if isinstance(expectation, Exception):
+        with pytest.raises(requests.RequestException):
+            recent_kernel = spice_utils.find_most_recent_naif_kernel("https://fake-naif-page",
+                                                                     "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc")
+    else:
+        success = spice_utils.find_most_recent_naif_kernel("https://fake-naif-page",
+                                                           "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc")
+        assert success == expectation
+
+
+@pytest.mark.parametrize(
+    ["mock_responses", "expectation"],
+    [
+        ([
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
+                                body=requests.exceptions.ConnectionError("Connection error")),
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
+                                body=requests.exceptions.HTTPError("HTTP error"))
+         ],
+         requests.exceptions.HTTPError()),
+        ([
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
+                                body=requests.exceptions.ConnectionError("Connection error")),
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc", status=200)
+         ],
+         None),
+        ([
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
+                                body=requests.exceptions.Timeout("Timeout error")),
+             responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc", status=200)
+         ],
+         None)
+    ]
+)
+@responses.activate(registry=responses.registries.OrderedRegistry)
+def test_download_failure(mock_responses, expectation, spice_test_data_path, test_data_path, tmp_path):
+    """Testing retry loop for downloading naif kernel"""
+    for mock_response in mock_responses:
+        responses.add(mock_response)
+
+    test_kernel_filename = 'earth_000101_211220_210926.bpc'
+    full_file_url = f"https://fake-naif-page/{test_kernel_filename}"
+
+    cache = spice_utils.KernelFileCache(full_file_url,
+                                        fallback_kernel=spice_test_data_path / test_kernel_filename)
+
+    if isinstance(expectation, Exception):
+        with pytest.raises(expectation.__class__):
+            cache.download_kernel(full_file_url, allowed_attempts=3)
+    else:
+        success = cache.download_kernel(full_file_url, allowed_attempts=3)
+
+    for mock_response in mock_responses:
+        assert mock_response.call_count == 1
