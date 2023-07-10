@@ -77,7 +77,7 @@ def ingest(parsed_args: argparse.Namespace):
     logger.info("Writing resulting output manifest to %s", output_dir)
 
     # Write output manifest file containing a list of the product files that the processing created
-    output_manifest_path = "/".join([processing_dropbox, str(mfn)])
+    output_manifest_path = os.path.join(processing_dropbox, str(mfn))
     output_manifest = Manifest(manifest_type=ManifestType.OUTPUT,
                                filename=output_manifest_path,
                                files=output_files,
@@ -90,9 +90,9 @@ def ingest(parsed_args: argparse.Namespace):
         if not file:
             logger.info("Duplicate files.")
         else:
-            input_dir = "/".join([os.path.dirname(m.files[0]['filename']),
-                                  os.path.basename(file['filename'])])
-            smart_copy_file(input_dir, "/".join([processing_dropbox, os.path.basename(file['filename'])]),
+            input_dir = os.path.join(os.path.dirname(m.files[0]['filename']),
+                                     os.path.basename(file['filename']))
+            smart_copy_file(input_dir, os.path.join(processing_dropbox, os.path.basename(file['filename'])),
                             delete=parsed_args.delete)
 
     output_manifest.write(processing_dropbox, filename=str(mfn))
@@ -155,7 +155,7 @@ def cr_ingest(file: dict, output_dir: str):
             s.merge(cr_orm)
 
             # create ingested dictionary
-            ingested_dict = {"filename": "/".join([output_dir, filename]),
+            ingested_dict = {"filename": os.path.join(output_dir, filename),
                              "checksum": file['checksum']}
         else:
             logger.info("Duplicate cr: %s", filename)
@@ -202,14 +202,14 @@ def pds_ingest(file: dict, output_dir: str):
             s.add(pds_orm)
 
             # create ingested dictionary
-            ingested_dict = {"filename": "/".join([output_dir, filename]),
+            ingested_dict = {"filename": os.path.join(output_dir, filename),
                              "checksum": file['checksum']}
         # if pds is in db but does not have ingest time, update the ingest time
         elif pds_query[0].ingested is None:
             pds_query[0].ingested = datetime.datetime.utcnow()
 
             # create ingested dictionary
-            ingested_dict = {"filename": "/".join([output_dir, filename]),
+            ingested_dict = {"filename": os.path.join(output_dir, filename),
                              "checksum": file['checksum']}
         else:
             logger.info("Duplicate pd: %s", filename)

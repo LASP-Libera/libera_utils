@@ -110,7 +110,7 @@ def test_pds_assigned_single(clean_local_db, test_construction_record_09t00,
 
     # insert
     parsed_args = DummyParser(str(generate_input_manifest))
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
     ingest(parsed_args)
 
     cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
@@ -157,7 +157,7 @@ def test_manifest_assigned(clean_local_db, tmp_path, monkeypatch,
     """Test that pds ingest time is listed for records listed in manifest
     """
     parsed_args = DummyParser(str(generate_input_manifest))
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
     ingest(parsed_args)
 
     m = Manifest.from_file(str(generate_input_manifest))
@@ -179,7 +179,7 @@ def test_output_manifest_all(clean_local_db, tmp_path, monkeypatch,
     product files that the processing created
     """
     parsed_args = DummyParser(str(generate_input_manifest))
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
 
     m = Manifest.from_file(str(generate_input_manifest))
 
@@ -202,7 +202,7 @@ def test_output_manifest_partial(clean_local_db, tmp_path, monkeypatch,
     """Test output manifest file created does not contain pds records already inserted
     """
     parsed_args = DummyParser(str(generate_input_manifest))
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
 
     file_list = []
 
@@ -221,7 +221,7 @@ def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tm
 
     # insert
     parsed_args = DummyParser(str(generate_input_manifest))
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
     ingest(parsed_args)
 
     cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
