@@ -212,4 +212,32 @@ class Manifest:
         """
         self.configuration["start_time"] = start_datetime.strftime('%Y-%m-%d:%H:%M:%S')
         self.configuration["end_time"] = end_datetime.strftime('%Y-%m-%d:%H:%M:%S')
-        
+
+    @classmethod
+    def output_manifest_from_input_manifest(cls, input_manifest: Path or S3Path or 'Manifest') -> 'Manifest':
+        """ Create Output manifest from input manifest file path, adds input files to output manifest configuration
+            Parameters
+        ----------
+        input_manifest: Path or S3Path or Manifest
+            An S3 or regular path to an input_manifest object, or the input manifest object itself
+
+        Returns
+        ----------
+        output_manifest
+            The newly created output manifest
+        """
+
+        if not isinstance(input_manifest, cls):
+            input_manifest = Manifest.from_file(input_manifest)
+
+        input_manifest_created_time = input_manifest.filename.filename_parts.created_time
+        manifest_filename = ManifestFilename.from_filename_parts(manifest_type=ManifestType.OUTPUT,
+                                                                 created_time=input_manifest_created_time)
+
+        input_manifest_files = input_manifest.files
+
+        output_manifest = Manifest(manifest_type=ManifestType.OUTPUT,
+                                   filename=manifest_filename,
+                                   configuration={'input_manifest_files': input_manifest_files})
+
+        return output_manifest

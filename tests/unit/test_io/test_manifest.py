@@ -2,6 +2,9 @@
 # Standard
 from datetime import datetime, timedelta
 import json
+from pathlib import Path
+import re
+import sys
 from unittest import mock
 from hashlib import md5
 from zoneinfo import ZoneInfo
@@ -115,3 +118,35 @@ def test_validate_checksums(test_json_manifest, caplog):
         checksum = md5(fh.read()).hexdigest()
     m.files = [{"filename": test_json_manifest.absolute(), "checksum": checksum}]
     m.validate_checksums()
+
+
+@pytest.mark.parametrize(
+    'input_manifest',
+    [
+        (S3Path("s3://test-manifest-from-file-s3-bucket/libera_input_manifest_20220101t112233.json")),
+        (Path(sys.modules[__name__.split('.')[0]].__file__).parent / 'test_data'
+         / 'libera_input_manifest_20220922t123456.json'),
+        (Manifest.from_file(filepath=Path(sys.modules[__name__.split('.')[0]].__file__).parent
+                                  / 'test_data' / 'libera_input_manifest_20220922t123456.json')),
+        (S3Path("s3://l0-ingest-dropbox-liberasdplcs-dev/processing//libera_output_manifest_20230613t143309.json"))
+    ]
+)
+def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest, write_file_to_s3):
+    """Test method that creates output manifest from input manifest filename or object"""
+    if isinstance(input_manifest, S3Path):
+        s3_path = write_file_to_s3(test_json_manifest, str(input_manifest))
+        input_manifest_object = Manifest.from_file(filepath=s3_path)
+
+    elif isinstance(input_manifest, Path):
+        input_manifest_object = Manifest.from_file(filepath=input_manifest)
+
+    elif isinstance(input_manifest, Manifest):
+        input_manifest_object = input_manifest
+
+    output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest=input_manifest_object)
+
+    input_time = str(re.search(r'\d{8}t\d+', str(input_manifest_object.filename)).group(0))
+    output_time = str(re.search(r'\d{8}t\d+', str(output_manifest.filename)).group(0))
+    assert output_manifest.manifest_type == ManifestType.OUTPUT
+    assert input_time == output_time
+    assert len(output_manifest.configuration) != 0

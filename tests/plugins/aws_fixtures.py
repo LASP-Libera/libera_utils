@@ -93,7 +93,7 @@ def create_mock_bucket(mock_s3_context):
 @pytest.fixture
 def write_file_to_s3(mock_s3_context, create_mock_bucket):
     """Write file contents to mocked s3 bucket. If the bucket doesn't exist, it is created."""
-    def _write(filepath: Path, uri: str, exists_ok: bool = False) -> S3Path:
+    def _write(filepath: Path, uri: str or S3Path, exists_ok: bool = False) -> S3Path:
         """Write the contents of the file at filepath to the (mocked) S3 URI.
 
         Parameters
