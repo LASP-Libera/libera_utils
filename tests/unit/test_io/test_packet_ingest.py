@@ -1,5 +1,6 @@
 """Tests for the packet_ingest module"""
 # Installed
+from argparse import Namespace
 import os
 import pytest
 # Local
@@ -10,12 +11,14 @@ from libera_utils.io.packet_ingest import ingest, cr_ingest
 from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
 
 
-class DummyParser:
+class MockParsedArgsNamespace(Namespace):
     """ Generates dummy parser """
     def __init__(self, manifest_filepath, short_tmp_path=None):
+        super().__init__()
         self.manifest_filepath = str(manifest_filepath)
         self.outdir = str(short_tmp_path)
         self.delete = False
+        self.verbose = False
 
 
 @pytest.fixture
@@ -34,7 +37,8 @@ def generate_input_manifest(tmp_path, test_data_path):
     input_manifest.add_file_to_manifest(filenames[2])
     input_manifest.add_file_to_manifest(filenames[3])
 
-    input_manifest_file_path = input_manifest.write(outpath=tmp_path)
+    input_manifest_file_path = input_manifest.write(outpath=tmp_path,
+                                                    filename='libera_input_manifest_20230102t112233.json')
 
     return input_manifest_file_path
 
@@ -109,7 +113,7 @@ def test_pds_assigned_single(clean_local_db, test_construction_record_09t00,
     time was assigned for records ingested separately"""
 
     # insert
-    parsed_args = DummyParser(str(generate_input_manifest))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest))
     monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
     ingest(parsed_args)
 
@@ -141,7 +145,7 @@ def test_pds_assigned_mult(clean_local_db, test_construction_record_09t00,
     from a single cr are already present in the database"""
 
     # read json information
-    parsed_args = DummyParser(str(generate_input_manifest))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest))
     m = Manifest.from_file(parsed_args.manifest_filepath)
     db_pds_dict, _ = cr_ingest(
         m.files[0], parsed_args.outdir)
@@ -156,7 +160,7 @@ def test_manifest_assigned(clean_local_db, tmp_path, monkeypatch,
                            generate_input_manifest, insert_single_pds_from_each_cr):
     """Test that pds ingest time is listed for records listed in manifest
     """
-    parsed_args = DummyParser(str(generate_input_manifest))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest))
     monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
     ingest(parsed_args)
 
@@ -178,13 +182,19 @@ def test_output_manifest_all(clean_local_db, tmp_path, monkeypatch,
     """Test output manifest file created contains a list of the
     product files that the processing created
     """
-    parsed_args = DummyParser(str(generate_input_manifest))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest))
     monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
 
     m = Manifest.from_file(str(generate_input_manifest))
 
     output_manifest_path = ingest(parsed_args)
     m_output = Manifest.from_file(output_manifest_path)
+
+    # Check that the output manifest path exists
+    assert m_output.filename.path.exists()
+
+    # Check that the output manifest has the same created time as the input manifest
+    assert m_output.filename.filename_parts.created_time == m.filename.filename_parts.created_time
 
     input_files = []
     output_files = []
@@ -201,7 +211,7 @@ def test_output_manifest_partial(clean_local_db, tmp_path, monkeypatch,
                                  generate_input_manifest, insert_single_pds_from_each_cr):
     """Test output manifest file created does not contain pds records already inserted
     """
-    parsed_args = DummyParser(str(generate_input_manifest))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest))
     monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
 
     file_list = []
@@ -220,7 +230,7 @@ def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tm
     """Test that after calling ingest a query result prints as a representative of the entry."""
 
     # insert
-    parsed_args = DummyParser(str(generate_input_manifest))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest))
     monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
     ingest(parsed_args)
 

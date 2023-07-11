@@ -78,10 +78,12 @@ def configure_task_logging(task_id: str, app_package_name: str, console_log_leve
                 console_log_level = console_log_level.upper()
 
         if console_log_level:
+            if isinstance(console_log_level, str):
+                console_log_level = console_log_level.upper()
             console_handler = {
                 "class": "logging.StreamHandler",
                 "formatter": "plaintext",
-                "level": console_log_level.upper(),
+                "level": console_log_level,
                 "stream": "ext://sys.stdout"
             }
             handlers.update(console=console_handler)
