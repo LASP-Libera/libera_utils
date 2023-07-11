@@ -52,7 +52,7 @@ def parse_cli_args(cli_args: list):
     packet_ingest_parser.set_defaults(func=packet_ingest.ingest)
     packet_ingest_parser.add_argument('manifest_filepath', type=str,
                                       help="path to L0 manifest file")
-    packet_ingest_parser.add_argument('-d', '--delete', action='store_false',
+    packet_ingest_parser.add_argument('-d', '--delete', action='store_true',
                                       help='Deletes data files from s3 bucket once they are moved.')
     packet_ingest_parser.add_argument('-v', '--verbose', action='store_true',
                                       help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")

@@ -12,6 +12,43 @@ from libera_utils.io import filenaming
 
 
 @pytest.mark.parametrize(
+    ("filename", "filename_type"),
+    [
+        ('/some/fake/path/P1590006SOMESCIENCEAAA99030231459001.PDS', filenaming.L0Filename),
+        (Path('/fake-path/P1590006SOMESCIENCEAAA99030231459001.PDS'), filenaming.L0Filename),
+        ('s3://fake-bucket/P1590006SOMESCIENCEAAA99030231459001.PDS', filenaming.L0Filename),
+        ('/some/fake/path/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc', filenaming.L1bFilename),
+        ('/some/fake/path/libera_l2_cloud-fraction_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc', filenaming.L2Filename),
+        ('/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bsp', filenaming.EphemerisKernelFilename),
+        ('/some/foobar/path/libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bc', filenaming.AttitudeKernelFilename)
+    ]
+)
+def test_any_filename(filename, filename_type):
+    """Test polymorphic class that automatically figures out what type of filename it was passed"""
+    assert isinstance(filenaming.AnyFilename(filename), filename_type)
+
+
+@pytest.mark.parametrize(
+    ("filename", "parent_path", "expected_path"),
+    [
+        ('/ignore/this/P1590006SOMESCIENCEAAA99030231459001.PDS', 's3://my-bucket',
+         S3Path('s3://my-bucket/PDS/0006/P1590006SOMESCIENCEAAA99030231459001.PDS')),
+        ('/ignore/this/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc', '/absolute/local',
+         Path('/absolute/local/cam/2027/01/02/libera_l1b_cam_20270102t112233_20270102t122233_vM3m14p159_r27002112233.nc')),
+        ('libera_l2_cloud-fraction_20270102t000000_20270103t000000_vM3m14p159_r27002112233.nc', '/absolute/local',
+         Path('/absolute/local/cloud-fraction/2027/01/02/libera_l2_cloud-fraction_20270102t000000_20270103t000000_vM3m14p159_r27002112233.nc')),
+        ('ignore/relative/libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bsp', '/absolute/local',
+         Path('/absolute/local/jpss/2027/01/02/libera_jpss_20270102t112233_20270102t122233_vM3m14p159_r28002112233.bsp')),
+        ('libera_azrot_20270101t010203_20270130t010203_vM3m14p159_r28002112233.bc', '/absolute/local',
+         Path('/absolute/local/azrot/2027/01/15/libera_azrot_20270101t010203_20270130t010203_vM3m14p159_r28002112233.bc'))
+    ]
+)
+def test_generate_prefixed_path(filename, parent_path, expected_path):
+    """Test generating archive prefixes for filenames"""
+    assert filenaming.AnyFilename(filename).generate_prefixed_path(parent_path) == expected_path
+
+
+@pytest.mark.parametrize(
     "filename",
     [
         '/some/fake/path/P1590006SOMESCIENCEAAA99030231459001.PDS',

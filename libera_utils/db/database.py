@@ -63,7 +63,6 @@ class _DatabaseManager:
         self.password = dbpass
 
         self.engine = create_engine(self.url)
-        logger.info(f"Initialized {self}")
 
     def __str__(self):
         return f"_DatabaseManager(user={self.user}, host={self.host}, db={self.database})"
@@ -109,9 +108,12 @@ class _DatabaseManager:
         # Create a new candidate _DatabaseManager to compare hash-wise to the existing cache
         new_db_manager = cls(dbhost, dbuser, dbpass, dbname)
         try:
-            return cls._db_manager_cache[hash(new_db_manager)]
+            cached_db_manager = cls._db_manager_cache[hash(new_db_manager)]
+            logger.info(f"Found cached {cached_db_manager}")
+            return cached_db_manager
         except KeyError:
             cls._db_manager_cache[hash(new_db_manager)] = new_db_manager
+            logger.info(f"Initialized {new_db_manager}")
             return new_db_manager
 
     @staticmethod

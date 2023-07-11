@@ -1,5 +1,10 @@
 # Version Changes
 
+# 2.2.0 (unreleased)
+- Add AnyFilename polymorphic class
+- Improve API for manifest module
+- Add prefixing to Filename classes for predictable archive paths
+
 # 2.1.1 (released)
 - Update dependency specification to speed up dependency resolution wrt botocore/urllib3
 - Improve database initialization to work with libera_cdk changes
