@@ -166,7 +166,7 @@ class Manifest:
             raise ValueError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
 
     def add_files(self, *files):
-        """Add a file to the manifest from filename
+        """Add files to the manifest from filename
         Parameters
         ----------
         files : str or Path or S3Path

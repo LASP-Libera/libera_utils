@@ -10,7 +10,7 @@ from sqlalchemy import func
 # Local
 from libera_utils.db import getdb
 from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
-from libera_utils.io.manifest import Manifest, ManifestType, ManifestFilename
+from libera_utils.io.manifest import Manifest
 from libera_utils.db.models import Cr, PdsFile
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.logutil import configure_task_logging
@@ -39,8 +39,8 @@ def ingest(parsed_args: argparse.Namespace):
     logger.info("Starting L0 packet ingester...")
     logger.debug(f"CLI args: {parsed_args}")
 
-    processing_dropbox = os.environ['PROCESSING_DROPBOX']
-    logger.debug(f"Processing dropbox: {processing_dropbox}")
+    processing_path = AnyPath(os.environ['PROCESSING_DROPBOX'])
+    logger.debug(f"Processing dropbox: {processing_path}")
 
     # read json information
     m = Manifest.from_file(parsed_args.manifest_filepath)
@@ -53,7 +53,7 @@ def ingest(parsed_args: argparse.Namespace):
         # TODO: Use our filenaming.L0Filename to find valid CRs and PDS files.
         # is there a next cr in the manifest
         if 'CONS' in file['filename']:
-            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_dropbox)
+            db_pds_dict, con_ingested_dict = cr_ingest(file, processing_path)
             db_pds_dict_all.update(db_pds_dict)
             if con_ingested_dict:
                 output_files.append(con_ingested_dict)
@@ -61,7 +61,7 @@ def ingest(parsed_args: argparse.Namespace):
     for file in m.files:
         # is there a next pds in the manifest
         if 'PDS' in file['filename']:
-            pds_ingested_dict = pds_ingest(file, processing_dropbox)
+            pds_ingested_dict = pds_ingest(file, processing_path)
             if pds_ingested_dict:
                 output_files.append(pds_ingested_dict)
 
@@ -73,7 +73,7 @@ def ingest(parsed_args: argparse.Namespace):
         with getdb().session() as s:
             for cr_filename in db_pds_dict_all.items():
                 # query cr_id that has been inserted
-                cr_query = s.query(Cr).filter(Cr.file_name == cr_filename[0]).all()
+                cr_query = s.query(Cr).filter(Cr.file_name == str(cr_filename[0])).all()
                 # query all pds associated with cr
                 pds_query = s.query(PdsFile).filter(
                     PdsFile.file_name == func.any(cr_filename[1])).all()
@@ -81,34 +81,33 @@ def ingest(parsed_args: argparse.Namespace):
                 for pds in pds_query:
                     pds.cr_id = cr_query[0].id
 
+    # Create output manifest file containing a list of the product files that the processing created
+    output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest=parsed_args.manifest_filepath)
+
     logger.info("Moving files from receiver bucket to dropbox in preparation for archiving")
     # move files over
+    incoming_path = AnyPath(os.path.dirname(m.files[0]["filename"]))
     for file in output_files:
-
         # TODO: figure out what to do with duplicate files (delete, rename, etc)
         # TODO: Gavin wonders how file could ever be falsy?
         if not file:
             logger.info("Duplicate files.")
         else:
-            input_dir = os.path.join(os.path.dirname(m.files[0]['filename']),
-                                     os.path.basename(file['filename']))
-            smart_copy_file(input_dir, os.path.join(processing_dropbox, os.path.basename(file['filename'])),
+            current_file_location = incoming_path / os.path.basename(file['filename'])
+            destination_location = processing_path / os.path.basename(file['filename'])
+            smart_copy_file(current_file_location, destination_location,
                             delete=parsed_args.delete)
 
+        output_manifest.add_files(file["filename"])
+
     # write output manifest to L0 ingest dropbox
-    output_manifest_filename = ManifestFilename.from_filename_parts(
-        manifest_type=ManifestType.OUTPUT,
-        created_time=m.filename.filename_parts.created_time)
+    output_dir = processing_path
+    logger.info(f"Writing resulting output manifest to {output_dir}")
 
-    # Write output manifest file containing a list of the product files that the processing created
-    output_manifest = Manifest(manifest_type=ManifestType.OUTPUT,
-                               filename=output_manifest_filename,
-                               files=output_files,
-                               configuration={})
-    output_manifest_path = output_manifest.write(outpath=AnyPath(processing_dropbox))
+    output_manifest.write(output_dir)
+
     logger.info("L0 ingest algorithm complete. Exiting.")
-
-    return str(output_manifest_path)
+    return str(output_manifest.filename.path)
 
 
 def cr_ingest(file: dict, output_dir: str):
@@ -127,14 +126,15 @@ def cr_ingest(file: dict, output_dir: str):
     ingested_dict : Dictionary
         Dictionary of records that have been ingested
     """
+    filename = AnyPath(os.path.basename(file['filename']))
     logger.info(f"Ingesting construction record {file}")
-    filename = os.path.basename(file['filename'])
+    filename = AnyPath(os.path.basename(file['filename']))
     db_pds = []
 
     with getdb().session() as s:
 
         cr_query = s.query(Cr).filter(
-            Cr.file_name == filename).all()
+            Cr.file_name == str(filename)).all()
 
         # check if cr is in the db
         if not cr_query:
@@ -166,7 +166,7 @@ def cr_ingest(file: dict, output_dir: str):
             s.merge(cr_orm)
 
             # create ingested dictionary
-            ingested_dict = {"filename": os.path.join(output_dir, filename),
+            ingested_dict = {"filename": output_dir / filename,
                              "checksum": file['checksum']}
         else:
             logger.info(f"Duplicate CR {filename} (in DB and has ingest time). Skipping insert.")
@@ -182,7 +182,7 @@ def cr_ingest(file: dict, output_dir: str):
     return db_pds_dict, ingested_dict
 
 
-def pds_ingest(file: dict, output_dir: str):
+def pds_ingest(file: dict, output_dir: AnyPath):
     """Ingest pd records into database that do not have an associated cr
     Parameters
     ----------
@@ -213,18 +213,12 @@ def pds_ingest(file: dict, output_dir: str):
             pds = PDSRecord(filename)
             pds_orm = pds.to_orm()
             s.add(pds_orm)
-
-            # create ingested dictionary
-            ingested_dict = {"filename": os.path.join(output_dir, filename),
+            ingested_dict = {"filename": output_dir / filename,
                              "checksum": file['checksum']}
         # if pds is in db but does not have ingest time, update the ingest time
         elif pds_query[0].ingested is None:
-            logger.debug(f"{filename} found in the DB but it is lacking an ingest time. This is likely because "
-                         "it was listed in a previous CR file.")
             pds_query[0].ingested = datetime.utcnow()
-
-            # create ingested dictionary
-            ingested_dict = {"filename": os.path.join(output_dir, filename),
+            ingested_dict = {"filename": output_dir / filename,
                              "checksum": file['checksum']}
         else:
             logger.info(f"Duplicate PDS file {filename} (in the DB and has an ingest time). Skipping DB insert.")
