@@ -24,8 +24,8 @@ def test_manifest_from_file(test_json_manifest):
     assert isinstance(m.configuration, dict)
 
 
-def test_manifest_add_file_to_manifest(test_json_manifest):
-    """Test factory method for adding a file to a manifest with checksum"""
+def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test_txt_gz):
+    """Test factory method for adding files to a manifest with checksum and local paths"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
         files=[],
@@ -35,6 +35,54 @@ def test_manifest_add_file_to_manifest(test_json_manifest):
     m.add_files(test_json_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 1
+
+    more_files = (test_txt, test_txt_gz)
+    m.add_files(*more_files)
+    m.validate_checksums()
+    assert len(m.files) == initial_list_len + 3
+
+
+def test_manifest_add_files_to_manifest_s3(test_json_manifest, test_txt, test_txt_gz,
+                                           create_mock_bucket, write_file_to_s3):
+    """Test factory method for adding files to a manifest with checksum with S3 paths.
+        Ensures functionality for single and multiple file additions."""
+    bucket = create_mock_bucket()
+    manifest_path = f"s3://{bucket.name}/test_file1.json"
+    text_paths = (f"s3://{bucket.name}/test_file2.txt",
+                  f"s3://{bucket.name}/test_file2.txt.gz")
+    write_file_to_s3(test_json_manifest, manifest_path)
+    write_file_to_s3(test_txt, text_paths[0])
+    write_file_to_s3(test_txt_gz, text_paths[1])
+
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[],
+        configuration={}
+    )
+    initial_list_len = len(m.files)
+    m.add_files(manifest_path)
+    m.validate_checksums()
+    assert len(m.files) == initial_list_len + 1
+
+    m.add_files(*text_paths)
+    m.validate_checksums()
+    assert len(m.files) == initial_list_len + 3
+
+
+def test_manifest_add_duplicate_file_to_manifest(test_json_manifest):
+    """Test factory method for adding a duplicate file to a manifest"""
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[],
+        configuration={}
+    )
+    m.add_files(test_json_manifest)
+    initial_length = len(m.files)
+
+    # Add the same file
+    m.add_files(test_json_manifest)
+    m.validate_checksums()
+    assert len(m.files) == initial_length
 
 
 def test_manifest_add_desired_time_range(test_json_manifest):
