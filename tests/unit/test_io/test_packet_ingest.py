@@ -3,68 +3,24 @@
 from argparse import Namespace
 from cloudpathlib import S3Path, AnyPath
 import os
-import sys
 import pytest
 # Local
 from libera_utils.db import getdb
 from libera_utils.db.models import Cr, PdsFile
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import Manifest
 from libera_utils.io.packet_ingest import ingest, cr_ingest
 from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
 
 
 class MockParsedArgsNamespace(Namespace):
     """ Generates dummy parser """
+
     def __init__(self, manifest_filepath, short_tmp_path=None):
         super().__init__()
         self.manifest_filepath = str(manifest_filepath)
         self.outdir = str(short_tmp_path)
         self.delete = False
         self.verbose = False
-
-
-@pytest.fixture
-def generate_input_manifest_local(tmp_path, test_data_path):
-    """Generating test manifest from the data in test_data"""
-
-    filenames = (test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS",
-                 test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS",
-                 test_data_path / "P1590011AAAAAAAAAAAAAT21099051420500.PDS",
-                 test_data_path / "P1590011AAAAAAAAAAAAAT21099051420501.PDS")
-
-    input_manifest = Manifest(ManifestType.INPUT, files=[], configuration={})
-
-    input_manifest.add_files(*filenames)
-
-    os.mkdir(tmp_path / "processing")
-    input_manifest_file_path = input_manifest.write(outpath=tmp_path / "processing",
-                                                    filename='libera_input_manifest_20230102t112233.json')
-
-    return input_manifest_file_path
-
-
-@pytest.fixture
-def generate_input_manifest_s3(test_data_path, create_mock_bucket, write_file_to_s3):
-    """Generating test manifest from the data in test_data"""
-    r_bucket = create_mock_bucket()
-
-    input_manifest = Manifest(ManifestType.INPUT, files=[], configuration={})
-
-    filenames = ("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS",
-                 "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS",
-                 "P1590011AAAAAAAAAAAAAT21099051420500.PDS",
-                 "P1590011AAAAAAAAAAAAAT21099051420501.PDS")
-
-    for filename in filenames:
-        s3_file_path = f"s3://{r_bucket.name}/{filename}"
-        local_path = test_data_path / filename
-        write_file_to_s3(local_path, s3_file_path)
-        input_manifest.add_files(s3_file_path)
-
-    d_bucket = create_mock_bucket()
-    input_manifest_file_path = input_manifest.write(outpath=f"s3://{d_bucket.name}/processing")
-
-    return input_manifest_file_path
 
 
 @pytest.fixture
@@ -141,9 +97,9 @@ def test_pds_ingest(clean_local_db, test_construction_record_09t00,
     time was assigned for records ingested separately"""
 
     if test_type == "S3":
-        input_manifest_path = generate_input_manifest_s3
+        input_manifest_path = generate_input_manifest_s3()
     else:
-        input_manifest_path = generate_input_manifest_local
+        input_manifest_path = generate_input_manifest_local()
 
     parsed_args = MockParsedArgsNamespace(str(input_manifest_path))
     processing_path = input_manifest_path.parent
@@ -180,7 +136,7 @@ def test_cr_ingest_pds_values(clean_local_db, test_construction_record_09t00,
     from a single cr are already present in the database"""
 
     # read json information
-    parsed_args = MockParsedArgsNamespace(AnyPath(generate_input_manifest_local))
+    parsed_args = MockParsedArgsNamespace(AnyPath(generate_input_manifest_local()))
     m = Manifest.from_file(parsed_args.manifest_filepath)
     db_pds_dict, _ = cr_ingest(
         m.files[0], parsed_args.outdir)
@@ -190,9 +146,8 @@ def test_cr_ingest_pds_values(clean_local_db, test_construction_record_09t00,
     with getdb().session() as s:
         cr_query_0 = s.query(Cr).filter(Cr.file_name == cr.file_name).all()
         assert str(cr_query_0).__contains__("J01_G011_LZ_2021-04-09T00-00-00Z_V01")
-        assert [cr.pds_files_list[0].pds_filename, cr.pds_files_list[1].pds_filename] \
-               in db_pds_dict.values()
-
+        assert cr.pds_files_list[0].pds_filename in db_pds_dict.get(AnyPath("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"))
+        assert cr.pds_files_list[1].pds_filename in db_pds_dict.get(AnyPath("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"))
 
 
 @pytest.mark.parametrize(
@@ -202,11 +157,12 @@ def test_pds_ingest_time(clean_local_db, tmp_path, monkeypatch, generate_input_m
                          generate_input_manifest_local, insert_single_pds_from_each_cr, test_type):
     """Test that pds ingest time is listed for records listed in manifest
     """
-
+    filenames = ("P1590011AAAAAAAAAAAAAT21099051420500.PDS",
+                 "P1590011AAAAAAAAAAAAAT21099051420501.PDS")
     if test_type == "S3":
-        input_manifest_path = generate_input_manifest_s3
+        input_manifest_path = generate_input_manifest_s3(*filenames)
     else:
-        input_manifest_path = generate_input_manifest_local
+        input_manifest_path = generate_input_manifest_local(*filenames)
 
     parsed_args = MockParsedArgsNamespace(str(input_manifest_path))
     processing_path = input_manifest_path.parent
@@ -216,14 +172,13 @@ def test_pds_ingest_time(clean_local_db, tmp_path, monkeypatch, generate_input_m
     m = Manifest.from_file(input_manifest_path)
 
     for file in m.files:
-        if 'PDS' in file['filename']:
-            filename = os.path.basename(file['filename'])
+        filename = os.path.basename(file['filename'])
 
-            with getdb().session() as s:
-                pds_query = s.query(PdsFile).filter(
-                    PdsFile.file_name == filename).all()
+        with getdb().session() as s:
+            pds_query = s.query(PdsFile).filter(
+                PdsFile.file_name == filename).all()
 
-            assert pds_query[0].ingested is not None
+        assert pds_query[0].ingested is not None
 
 
 @pytest.mark.parametrize(
@@ -235,9 +190,9 @@ def test_output_manifest_to_input_manifest(clean_local_db, tmp_path, monkeypatch
     product files that the processing created
     """
     if test_type == "S3":
-        input_manifest_path = generate_input_manifest_s3
+        input_manifest_path = generate_input_manifest_s3()
     else:
-        input_manifest_path = generate_input_manifest_local
+        input_manifest_path = generate_input_manifest_local()
 
     parsed_args = MockParsedArgsNamespace(str(input_manifest_path))
     processing_path = input_manifest_path.parent
@@ -275,9 +230,9 @@ def test_output_manifest_correct_pds(clean_local_db, tmp_path, monkeypatch, gene
     monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
 
     if test_type == "S3":
-        input_manifest_path = generate_input_manifest_s3
+        input_manifest_path = generate_input_manifest_s3()
     else:
-        input_manifest_path = generate_input_manifest_local
+        input_manifest_path = generate_input_manifest_local()
 
     parsed_args = MockParsedArgsNamespace(str(input_manifest_path))
     processing_path = input_manifest_path.parent
@@ -300,8 +255,8 @@ def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tm
     """Test that after calling ingest a query result prints as a representative of the entry."""
 
     # insert
-    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest_local))
-    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path),'']))
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest_local()))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path), '']))
     ingest(parsed_args)
 
     cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)
