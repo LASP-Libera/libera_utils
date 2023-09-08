@@ -175,6 +175,7 @@ def cr_ingest(file: dict, output_dir: str):
     # for the pds files that were already in the db,
     # associate the pds file in the db with the current cr
     if db_pds:
+        # TODO: This filename is a PosixPath. Should it be a string?
         db_pds_dict = {filename: db_pds}
     else:
         db_pds_dict = {}

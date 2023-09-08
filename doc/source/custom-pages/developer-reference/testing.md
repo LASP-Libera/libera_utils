@@ -23,7 +23,7 @@ pytest --cov-report=xml:coverage.xml --cov=libera_utils
 
 To run the unit tests in docker, run
 ```shell
-docker-compose up [--build] --exit-code-from=tests tests
+docker-compose up [--build] --exit-code-from=tests tests --attach=tests
 ```
 This ensures the dev database server is up, runs the latest flyway migrations against it, 
 and runs the tests container service defined in the `docker-compose.yml` file. The `--build` option forces
