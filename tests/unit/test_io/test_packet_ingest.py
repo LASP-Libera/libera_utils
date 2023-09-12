@@ -91,7 +91,7 @@ def insert_output(clean_local_db, test_construction_record_09t00,
 )
 def test_pds_ingest(clean_local_db, test_construction_record_09t00,
                     test_construction_record_09t02, tmp_path, monkeypatch,
-                    insert_single_pds_from_each_cr, generate_input_manifest_s3,
+                    create_mock_secret_manager, insert_single_pds_from_each_cr, generate_input_manifest_s3,
                     generate_input_manifest_local, test_type):
     """Test that cr_id was assigned properly to pds records and pds ingest
     time was assigned for records ingested separately"""
@@ -105,6 +105,8 @@ def test_pds_ingest(clean_local_db, test_construction_record_09t00,
     processing_path = input_manifest_path.parent
     monkeypatch.setenv("PROCESSING_DROPBOX", processing_path)
 
+    monkeypatch.setenv("SECRET_NAME", "test-secret")
+    create_mock_secret_manager("test-secret")
     # insert
     ingest(parsed_args)
 
@@ -138,6 +140,7 @@ def test_cr_ingest_pds_values(clean_local_db, test_construction_record_09t00,
     # read json information
     parsed_args = MockParsedArgsNamespace(AnyPath(generate_input_manifest_local()))
     m = Manifest.from_file(parsed_args.manifest_filepath)
+
     db_pds_dict, _ = cr_ingest(
         m.files[0], parsed_args.outdir)
 
@@ -153,7 +156,7 @@ def test_cr_ingest_pds_values(clean_local_db, test_construction_record_09t00,
 @pytest.mark.parametrize(
     "test_type", ["S3", "Local"]
 )
-def test_pds_ingest_time(clean_local_db, tmp_path, monkeypatch, generate_input_manifest_s3,
+def test_pds_ingest_time(clean_local_db, tmp_path, monkeypatch, generate_input_manifest_s3, create_mock_secret_manager,
                          generate_input_manifest_local, insert_single_pds_from_each_cr, test_type):
     """Test that pds ingest time is listed for records listed in manifest
     """
@@ -167,6 +170,9 @@ def test_pds_ingest_time(clean_local_db, tmp_path, monkeypatch, generate_input_m
     parsed_args = MockParsedArgsNamespace(str(input_manifest_path))
     processing_path = input_manifest_path.parent
     monkeypatch.setenv("PROCESSING_DROPBOX", processing_path)
+
+    monkeypatch.setenv("SECRET_NAME", "test-secret")
+    create_mock_secret_manager("test-secret")
 
     ingest(parsed_args)
     m = Manifest.from_file(input_manifest_path)
@@ -184,7 +190,7 @@ def test_pds_ingest_time(clean_local_db, tmp_path, monkeypatch, generate_input_m
 @pytest.mark.parametrize(
     "test_type", ["S3", "Local"]
 )
-def test_output_manifest_to_input_manifest(clean_local_db, tmp_path, monkeypatch,
+def test_output_manifest_to_input_manifest(clean_local_db, tmp_path, monkeypatch, create_mock_secret_manager,
                                            generate_input_manifest_local, generate_input_manifest_s3, test_type):
     """Test output manifest file created contains a list of the
     product files that the processing created
@@ -198,6 +204,9 @@ def test_output_manifest_to_input_manifest(clean_local_db, tmp_path, monkeypatch
     processing_path = input_manifest_path.parent
     monkeypatch.setenv("PROCESSING_DROPBOX", processing_path)
     m = Manifest.from_file(input_manifest_path)
+
+    monkeypatch.setenv("SECRET_NAME", "test-secret")
+    create_mock_secret_manager("test-secret")
 
     output_manifest_path = ingest(parsed_args)
     m_output = Manifest.from_file(output_manifest_path)
@@ -223,12 +232,10 @@ def test_output_manifest_to_input_manifest(clean_local_db, tmp_path, monkeypatch
     "test_type", ["S3", "Local"]
 )
 def test_output_manifest_correct_pds(clean_local_db, tmp_path, monkeypatch, generate_input_manifest_s3,
-                                     generate_input_manifest_local, insert_single_pds_from_each_cr, test_type):
+                                     generate_input_manifest_local, insert_single_pds_from_each_cr, test_type,
+                                     create_mock_secret_manager):
     """Test output manifest file created does not contain pds records already inserted
     """
-    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest_local))
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(tmp_path))
-
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3()
     else:
@@ -238,6 +245,9 @@ def test_output_manifest_correct_pds(clean_local_db, tmp_path, monkeypatch, gene
     processing_path = input_manifest_path.parent
     monkeypatch.setenv("PROCESSING_DROPBOX", processing_path)
     m = Manifest.from_file(input_manifest_path)
+
+    monkeypatch.setenv("SECRET_NAME", "test-secret")
+    create_mock_secret_manager("test-secret")
 
     output_manifest_path = ingest(parsed_args)
     m_output = Manifest.from_file(output_manifest_path)
@@ -251,12 +261,16 @@ def test_output_manifest_correct_pds(clean_local_db, tmp_path, monkeypatch, gene
 
 
 def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tmp_path, monkeypatch,
-                              generate_input_manifest_local, insert_single_pds_from_each_cr):
+                              generate_input_manifest_local, insert_single_pds_from_each_cr, create_mock_secret_manager):
     """Test that after calling ingest a query result prints as a representative of the entry."""
 
     # insert
     parsed_args = MockParsedArgsNamespace(str(generate_input_manifest_local()))
     monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path), '']))
+
+    monkeypatch.setenv("SECRET_NAME", "test-secret")
+    create_mock_secret_manager("test-secret")
+
     ingest(parsed_args)
 
     cr_0 = ConstructionRecord.from_file(test_construction_record_09t00)

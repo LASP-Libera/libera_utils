@@ -4,9 +4,11 @@ import argparse
 from datetime import datetime
 import logging
 import os
+import json
 # Installed
 from cloudpathlib import AnyPath
 from sqlalchemy import func
+import boto3
 # Local
 from libera_utils.db import getdb
 from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
@@ -36,19 +38,24 @@ def ingest(parsed_args: argparse.Namespace):
                            app_package_name='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
 
-    logger.info("Starting L0 packet ingester...")
-    logger.debug(f"CLI args: {parsed_args}")
-
     processing_path = AnyPath(os.environ['PROCESSING_DROPBOX'])
-    logger.debug(f"Processing dropbox: {processing_path}")
+    logger.debug(f"Processing dropbox set to {processing_path}")
+
+    # Retrieves secrets to allow DB access
+    secret_name = str(os.environ['SECRET_NAME'])
+    logger.debug(f"Secret Name: {secret_name}")
+    set_db_credentials_from_secret_manager(secret_name)
 
     # read json information
+    logger.debug("Reading Manifest file")
     m = Manifest.from_file(parsed_args.manifest_filepath)
     m.validate_checksums()
 
+    logger.info("Starting L0 packet ingester...")
+    logger.debug(f"CLI args: {parsed_args}")
+
     db_pds_dict_all = {}
     output_files = []
-
     for file in m.files:
         # TODO: Use our filenaming.L0Filename to find valid CRs and PDS files.
         # is there a next cr in the manifest
@@ -226,3 +233,26 @@ def pds_ingest(file: dict, output_dir: AnyPath):
             ingested_dict = {}
 
     return ingested_dict
+
+
+def set_db_credentials_from_secret_manager(secret_name: str):
+    """Set Environment Variables for RDS access
+    Parameters
+    ----------
+    secret_name : str
+        The name of the secret in the Secrets Manager to access.
+    """
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name="us-west-2")
+    secret_value_response = client.get_secret_value(
+        SecretId=secret_name
+    )
+    secret_object = json.loads(secret_value_response['SecretString'])
+
+    os.environ["LIBERA_DB_HOST"] = secret_object["host"]
+    os.environ["LIBERA_DB_USER"] = secret_object["username"]
+    os.environ["LIBERA_DB_NAME"] = secret_object["dbname"]
+    os.environ["PGPASSWORD"] = secret_object["password"]
+    logger.debug("Secret loaded and stored as environment variables.")
