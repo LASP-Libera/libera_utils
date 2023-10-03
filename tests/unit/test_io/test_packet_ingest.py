@@ -1,14 +1,17 @@
 """Tests for the packet_ingest module"""
 # Installed
 from argparse import Namespace
-from cloudpathlib import S3Path, AnyPath
 import os
+from cloudpathlib import AnyPath
 import pytest
+from sqlalchemy.exc import OperationalError
+from bitstring import ReadError
 # Local
 from libera_utils.db import getdb
+from libera_utils.db.database import DatabaseException
 from libera_utils.db.models import Cr, PdsFile
 from libera_utils.io.manifest import Manifest
-from libera_utils.io.packet_ingest import ingest, cr_ingest
+from libera_utils.io.packet_ingest import ingest, cr_ingest, pds_ingest, IngestDuplicateError
 from libera_utils.io.construction_record import ConstructionRecord, PDSRecord
 
 
@@ -148,9 +151,11 @@ def test_cr_ingest_pds_values(clean_local_db, test_construction_record_09t00,
 
     with getdb().session() as s:
         cr_query_0 = s.query(Cr).filter(Cr.file_name == cr.file_name).all()
-        assert str(cr_query_0).__contains__("J01_G011_LZ_2021-04-09T00-00-00Z_V01")
-        assert cr.pds_files_list[0].pds_filename in db_pds_dict.get(AnyPath("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"))
-        assert cr.pds_files_list[1].pds_filename in db_pds_dict.get(AnyPath("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"))
+        assert "J01_G011_LZ_2021-04-09T00-00-00Z_V01" in str(cr_query_0)
+        assert cr.pds_files_list[0].pds_filename in db_pds_dict.get \
+            (AnyPath("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"))
+        assert cr.pds_files_list[1].pds_filename in db_pds_dict.get \
+            (AnyPath("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"))
 
 
 @pytest.mark.parametrize(
@@ -244,7 +249,6 @@ def test_output_manifest_correct_pds(clean_local_db, tmp_path, monkeypatch, gene
     parsed_args = MockParsedArgsNamespace(str(input_manifest_path))
     processing_path = input_manifest_path.parent
     monkeypatch.setenv("PROCESSING_DROPBOX", processing_path)
-    m = Manifest.from_file(input_manifest_path)
 
     monkeypatch.setenv("SECRET_NAME", "test-secret")
     create_mock_secret_manager("test-secret")
@@ -261,7 +265,8 @@ def test_output_manifest_correct_pds(clean_local_db, tmp_path, monkeypatch, gene
 
 
 def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tmp_path, monkeypatch,
-                              generate_input_manifest_local, insert_single_pds_from_each_cr, create_mock_secret_manager):
+                              generate_input_manifest_local, insert_single_pds_from_each_cr,
+                              create_mock_secret_manager):
     """Test that after calling ingest a query result prints as a representative of the entry."""
 
     # insert
@@ -278,4 +283,67 @@ def test_print_ingest_results(clean_local_db, test_construction_record_09t00, tm
     with getdb().session() as s:
         cr_query_0 = s.query(Cr).filter(Cr.file_name == cr_0.file_name).all()
         print(cr_query_0)
-        assert str(cr_query_0).__contains__("J01_G011_LZ_2021-04-09T00-00-00Z_V01")
+        assert "J01_G011_LZ_2021-04-09T00-00-00Z_V01" in str(cr_query_0)
+
+# TODO Matt to fix the mock secret manager
+@pytest.mark.xfail
+def test_wrong_credentials(clean_local_db, tmp_path, monkeypatch_session, test_data_path,
+                           generate_input_manifest_local, monkeypatch, create_mock_secret_manager):
+    """Test that if connecting to db with wrong credentials, ingest will  throw errors"""
+
+    # If this runs then all the subsequent calls to secret manager get this secret not the good one
+    # That's weird and bad, but beyond the scope of this ticket and the secret manager makes this test
+    # need to be different anyways.
+    #monkeypatch.setenv("SECRET_NAME", "bad-test-secret")
+    #create_mock_secret_manager("bad-test-secret", bad_login=True)
+
+    parsed_args = MockParsedArgsNamespace(str(generate_input_manifest_local()))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path), '']))
+    processing_dropbox = os.environ['PROCESSING_DROPBOX']
+    corrupt_cns = test_data_path / 'bad_record.CONS'
+    corrupt = {'filename': corrupt_cns,
+               'checksum': 12345678910}
+
+    with pytest.raises((DatabaseException, OperationalError)):
+        ingest(parsed_args)
+    with pytest.raises((DatabaseException, OperationalError)):
+        cr_ingest(corrupt, processing_dropbox)
+    with pytest.raises((DatabaseException, OperationalError)):
+        pds_ingest(corrupt, processing_dropbox)
+
+
+def test_duplicate_file(clean_local_db, tmp_path, monkeypatch,
+                        generate_input_manifest_local, create_mock_secret_manager):
+    """Test that duplicate files are handled correctly"""
+
+    m = Manifest.from_file(generate_input_manifest_local())
+    parsed_args = MockParsedArgsNamespace(str(m.filename))
+    monkeypatch.setenv("PROCESSING_DROPBOX", "/".join([str(tmp_path), '']))
+    processing_dropbox = os.environ['PROCESSING_DROPBOX']
+
+    monkeypatch.setenv("SECRET_NAME", "test-secret")
+    create_mock_secret_manager("test-secret")
+
+    ingest(parsed_args)
+
+    for file in m.files:
+        if 'CONS' in file['filename']:
+            with pytest.raises(IngestDuplicateError):
+                cr_ingest(file, processing_dropbox)
+
+    for file in m.files:
+        # is there a next pds in the manifest
+        if 'PDS' in file['filename']:
+            with pytest.raises(IngestDuplicateError):
+                pds_ingest(file, processing_dropbox)
+
+
+def test_corrupt_cons(clean_local_db, test_data_path, tmp_path):
+    """Test that corrupt construction records will not be ingested"""
+
+    corrupt_cons = test_data_path / 'bad_record.CONS'
+    corrupt = {'filename': corrupt_cons,
+               'checksum': 12345678910}
+
+    with pytest.raises(ReadError):
+        cr_ingest(file=corrupt, output_dir=tmp_path)
