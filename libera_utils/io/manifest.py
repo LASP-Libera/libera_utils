@@ -29,8 +29,9 @@ class Manifest:
         "configuration"
     )
 
+    # TODO should use the validate method in constructor or from_filename or both
     def __init__(self, manifest_type: ManifestType,
-                 files: list = None, configuration: dict = None, filename: str or ManifestFilename = None):
+                 files: list or dict = None, configuration: dict = None, filename: str or ManifestFilename = None):
         """Constructor
 
         Parameters
@@ -45,12 +46,18 @@ class Manifest:
             Preset filename. Must be a ManifestFilename object or a str representing a valid manifest file path.
         """
         self.manifest_type = manifest_type if isinstance(manifest_type, ManifestType) else ManifestType(manifest_type)
-        self.files = files if files else []
         self.configuration = configuration if configuration else {}
         if filename:
             self.filename = filename if isinstance(filename, ManifestFilename) else ManifestFilename(filename)
         else:
             self.filename = None
+
+        self.files = []
+        if files:
+            if isinstance(files[0], dict):
+                self.files = files
+            elif isinstance(files, list):
+                self.add_files(*files)
 
     def __str__(self):
         return f"<Manifest:{self.filename if self.filename else '(unnamed)'} " \
@@ -135,6 +142,7 @@ class Manifest:
         return self.filename.path
 
     def validate(self):
+        # TODO add a check for absolute file paths here
         """Validate the contents of this manifest object"""
         if not isinstance(self.files, list):
             raise ValueError("The files attribute must be a dictionary.")
@@ -151,6 +159,8 @@ class Manifest:
 
     def validate_checksums(self):
         """Validate checksums of listed files"""
+        # Note any gzipped file will be opened and read by smart_open so the checksum reflects the data in the zipped
+        # file not the zipped file itself.
         failed_filenames = []
         for record in self.files:
             checksum_expected = record['checksum']
@@ -178,6 +188,9 @@ class Manifest:
         """
 
         for file in files:
+            # S3 paths are always absolute so this is always valid for them
+            if not AnyPath(file).is_absolute():
+                raise ValueError(f"The file path for {AnyPath(file)} must be an absolute path.")
             if AnyPath(file).name in (AnyPath(fs['filename']).name for fs in self.files):
                 warnings.warn(f"Attempting to add {file} to manifest {self} but it is already included.")
                 continue

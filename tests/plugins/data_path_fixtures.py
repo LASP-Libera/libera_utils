@@ -51,15 +51,39 @@ def test_json_manifest(test_data_path):
 
 
 @pytest.fixture
-def test_construction_record_09t00(test_data_path):
+def test_construction_record_1(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099051420500.PDS"
 
 
 @pytest.fixture
-def test_construction_record_09t02(test_data_path):
+def test_pds_file_1(test_data_path):
+    """Path to the test PDS file associated with construction record 1"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099051420501.PDS"
+
+
+@pytest.fixture
+def test_construction_record_2(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS"
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099065436900.PDS"
+
+
+@pytest.fixture
+def test_pds_file_2(test_data_path):
+    """Path to the test PDS file associated with construction record 2"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099065436901.PDS"
+
+
+@pytest.fixture
+def test_construction_record_3(test_data_path):
+    """Path to test construction record"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099091211400.PDS"
+
+
+@pytest.fixture
+def test_pds_file_3(test_data_path):
+    """Path to the test PDS file associated with construction record 3"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099091211401.PDS"
 
 
 # SPICE test data

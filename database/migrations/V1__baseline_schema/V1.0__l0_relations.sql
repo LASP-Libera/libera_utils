@@ -27,7 +27,7 @@ CREATE TABLE sdp.cr (
     n_pds_files SMALLINT NOT NULL
 );
 COMMENT ON TABLE sdp.cr IS 'Records of all ingested L0 data products and associated construction records from ASDC.';
-COMMENT ON COLUMN sdp.cr.id IS 'PDS file ID (primary key).';
+COMMENT ON COLUMN sdp.cr.id IS 'PDS DB Record ID (primary key).';
 COMMENT ON COLUMN sdp.cr.file_name IS '(4) Name of the associated PDS construction record.';
 COMMENT ON COLUMN sdp.cr.ingested IS 'Timestamp when file was ingested.';
 COMMENT ON COLUMN sdp.cr.archived IS 'Timestamp when file was moved to the archive bucket.';

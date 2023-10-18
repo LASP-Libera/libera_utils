@@ -8,15 +8,17 @@ import pytest
 from libera_utils.io.manifest import Manifest, ManifestType
 
 @pytest.fixture
-def generate_input_manifest_local(tmp_path, test_data_path):
+def generate_input_manifest_local(tmp_path, test_data_path,
+                                  test_construction_record_1, test_construction_record_2,
+                                  test_pds_file_1, test_pds_file_2):
     """Generating test manifest from the data in test_data"""
-    def generate_input_manifest_local_with_files(*filenames):
+    def _generate_input_manifest_local_with_files(*filenames):
 
         if len(filenames) == 0:
-            files = (test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS",
-                     test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS",
-                     test_data_path / "P1590011AAAAAAAAAAAAAT21099051420500.PDS",
-                     test_data_path / "P1590011AAAAAAAAAAAAAT21099051420501.PDS")
+            files = (test_construction_record_1,
+                     test_pds_file_1,
+                     test_construction_record_2,
+                     test_pds_file_2)
         else:
             files =[]
             for filename in filenames:
@@ -26,27 +28,29 @@ def generate_input_manifest_local(tmp_path, test_data_path):
         input_manifest.add_files(*files)
 
         os.mkdir(tmp_path / "processing")
-        input_manifest_file_path = input_manifest.write(outpath=tmp_path / "processing",
-                                                        filename='libera_input_manifest_20230102t112233.json')
+        input_manifest_file_path = input_manifest.write(outpath=tmp_path / "processing")
 
         return input_manifest_file_path
 
-    return generate_input_manifest_local_with_files
+    return _generate_input_manifest_local_with_files
+
 
 @pytest.fixture
-def generate_input_manifest_s3(test_data_path, create_mock_bucket, write_file_to_s3):
+def generate_input_manifest_s3(test_data_path, create_mock_bucket, write_file_to_s3,
+                               test_construction_record_1, test_construction_record_2,
+                               test_pds_file_1, test_pds_file_2):
     """Generating test manifest from the data in test_data"""
 
-    def generate_input_manifest_s3_with_files(*filenames):
+    def _generate_input_manifest_s3_with_files(*filenames):
         r_bucket = create_mock_bucket()
 
         input_manifest = Manifest(ManifestType.INPUT, files=[], configuration={})
 
         if len(filenames) == 0:
-            filenames = ("J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS",
-                         "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS",
-                         "P1590011AAAAAAAAAAAAAT21099051420500.PDS",
-                         "P1590011AAAAAAAAAAAAAT21099051420501.PDS")
+            filenames = (test_construction_record_1.name,
+                         test_pds_file_1.name,
+                         test_construction_record_2.name,
+                         test_pds_file_2.name)
 
         for filename in filenames:
             s3_file_path = f"s3://{r_bucket.name}/{filename}"
@@ -59,4 +63,6 @@ def generate_input_manifest_s3(test_data_path, create_mock_bucket, write_file_to
 
         return input_manifest_file_path
 
-    return generate_input_manifest_s3_with_files
+    return _generate_input_manifest_s3_with_files
+
+
