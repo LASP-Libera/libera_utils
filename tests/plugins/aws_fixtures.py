@@ -136,20 +136,16 @@ def create_mock_secret_manager(mock_secret_manager):
     """Returns a function that allows dynamic creation of secret manager client with option to specify the name."""
     client = mock_secret_manager
 
-    def _create_mock_secret_manager(secret_name: str, bad_login: bool = False):
+    def _create_mock_secret_manager(secret_name: str, username="libera_unit_tester"):
         """Creates a mocked secret manager that works with the unit testing database"""
         try:
             # Set by docker compose
             host_name = str(os.environ["LIBERA_DB_HOST"])
         except KeyError:
             host_name = "localhost"
-        if bad_login:
-            secret_json_string = f'{{\n "host":"{host_name}",\n  "password":"fail",\n ' \
-                                 f'"dbname":"libera",\n "username":"fail"}}\n'
-        else:
-            secret_json_string = f'{{\n "host":"{host_name}",\n  "password":"testerpass",\n ' \
-                                 f'"dbname":"libera",\n "username":"libera_unit_tester"}}\n'
+        secret_json_string = f'{{\n "host":"{host_name}",\n  "password":"testerpass",\n ' \
+                             f'"dbname":"libera",\n "username":"{username}" }}\n'
         client.create_secret(Name=secret_name, SecretString=secret_json_string)
         return
 
-    yield _create_mock_secret_manager
+    return _create_mock_secret_manager

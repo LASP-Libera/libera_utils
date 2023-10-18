@@ -24,7 +24,27 @@ def test_manifest_from_file(test_json_manifest):
     assert isinstance(m.configuration, dict)
 
 
-def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test_txt_gz):
+def test_manifest_constructor_with_file_list(test_txt, test_construction_record_1):
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[test_txt, test_construction_record_1],
+        configuration={}
+    )
+    m.validate_checksums()
+    assert len(m.files) == 2
+
+
+def test_manifest_add_relative_path_file_error():
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+        files=[],
+        configuration={}
+    )
+    with pytest.raises(ValueError):
+        m.add_files(Path("relative/a_file.txt"))
+
+
+def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test_construction_record_1):
     """Test factory method for adding files to a manifest with checksum and local paths"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
@@ -36,23 +56,23 @@ def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 1
 
-    more_files = (test_txt, test_txt_gz)
+    more_files = (test_txt, test_construction_record_1)
     m.add_files(*more_files)
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 3
 
 
-def test_manifest_add_files_to_manifest_s3(test_json_manifest, test_txt, test_txt_gz,
+def test_manifest_add_files_to_manifest_s3(test_json_manifest, test_txt, test_construction_record_1,
                                            create_mock_bucket, write_file_to_s3):
     """Test factory method for adding files to a manifest with checksum with S3 paths.
         Ensures functionality for single and multiple file additions."""
     bucket = create_mock_bucket()
     manifest_path = f"s3://{bucket.name}/test_file1.json"
     text_paths = (f"s3://{bucket.name}/test_file2.txt",
-                  f"s3://{bucket.name}/test_file2.txt.gz")
+                  f"s3://{bucket.name}/test_construction_record.PDS")
     write_file_to_s3(test_json_manifest, manifest_path)
     write_file_to_s3(test_txt, text_paths[0])
-    write_file_to_s3(test_txt_gz, text_paths[1])
+    write_file_to_s3(test_construction_record_1, text_paths[1])
 
     m = Manifest(
         manifest_type=ManifestType.INPUT,
@@ -80,9 +100,11 @@ def test_manifest_add_duplicate_file_to_manifest(test_json_manifest):
     initial_length = len(m.files)
 
     # Add the same file
-    m.add_files(test_json_manifest)
+    with pytest.warns(UserWarning) as record:
+        m.add_files(test_json_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_length
+    assert len(record) == 1
 
 
 def test_manifest_add_desired_time_range(test_json_manifest):
@@ -153,7 +175,7 @@ def test_manifest_write_s3(create_mock_bucket):
 
 def test_validate_checksums(test_json_manifest, caplog):
     """Test the method that validates checksums in a manifest file"""
-    # We test by referencing the manifest file itself so we're only dependent on one test file
+    # We test by referencing the manifest file itself, so we're only dependent on one test file
     m = Manifest.from_file(test_json_manifest)
     m.files[0]['filename'] = test_json_manifest.absolute()
     m.files[1]['filename'] = test_json_manifest.absolute()
@@ -176,7 +198,7 @@ def test_validate_checksums(test_json_manifest, caplog):
          / 'libera_input_manifest_20220922t123456.json'),
         (Manifest.from_file(filepath=Path(sys.modules[__name__.split('.')[0]].__file__).parent
                                   / 'test_data' / 'libera_input_manifest_20220922t123456.json')),
-        (S3Path("s3://l0-ingest-dropbox-liberasdplcs-dev/processing//libera_output_manifest_20230613t143309.json"))
+        (S3Path("s3://l0-ingest-dropbox/processing//libera_output_manifest_20230613t143309.json"))
     ]
 )
 def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest, write_file_to_s3):
