@@ -29,7 +29,7 @@ def add_start_end_time_to_manifest():
     return _add_start_end_time_to_manifest
 
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tmp_path):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
@@ -42,7 +42,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
             verbose=False
         )
         kernel_maker.make_jpss_spk(mock_parsed_args)
-        assert (short_tmp_path / 'libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bsp').exists()
+        assert (short_tmp_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T015849_R25056154513.bsp').exists()
 
 
 @pytest.mark.parametrize(
@@ -50,7 +50,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
     [AnyPath, S3Path, str]
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_spk_aws(mocked_get_current_version_str, test_pds_file_1, short_tmp_path, create_mock_bucket,
                            write_file_to_s3, wrapper):
     """Test creating a SPK from packets stored in AWS S3"""
@@ -72,11 +72,11 @@ def test_make_jpss_spk_aws(mocked_get_current_version_str, test_pds_file_1, shor
     kernel_maker.make_jpss_spk(mock_parsed_args)
 
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / 'libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bsp').exists()
+    assert (s3_output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T015849_R25056154513.bsp').exists()
 
 
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp_path):
     """Test creating a CK from packets"""
     kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
@@ -89,7 +89,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
             verbose=False
         )
         kernel_maker.make_jpss_ck(mock_parsed_args)
-        assert (short_tmp_path / 'libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bc').exists()
+        assert (short_tmp_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T015849_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
@@ -97,7 +97,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
     [AnyPath, S3Path, str]
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_ck_aws(mocked_get_current_version_str, test_pds_file_1, short_tmp_path, create_mock_bucket,
                           write_file_to_s3, wrapper):
     """Test creating a CK from packets"""
@@ -120,12 +120,12 @@ def test_make_jpss_ck_aws(mocked_get_current_version_str, test_pds_file_1, short
     kernel_maker.make_jpss_ck(mock_parsed_args)
 
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / 'libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bc').exists()
+    assert (s3_output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T015849_R25056154513.bc').exists()
 
 
 @pytest.mark.xfail
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_path):
     """Test creating a CK from packets"""
     kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
@@ -139,7 +139,7 @@ def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_
             verbose=False
         )
         kernel_maker.make_azel_ck(mock_parsed_args)
-        assert (short_tmp_path / 'libera_azel_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bc').exists()
+        assert (short_tmp_path / 'LIBERA_AZEL_V3-14-159_20210408T235850_20210409T015849_R25056154513.bc').exists()
 
 
 @pytest.mark.xfail
@@ -148,17 +148,17 @@ def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_
     [AnyPath, S3Path, str]
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_azel_ck_aws(mocked_get_current_version_str, test_data_path, short_tmp_path, create_mock_bucket,
-                          write_file_to_s3, wrapper):
+                          write_file_to_s3, wrapper, test_pds_file_1):
     """Test creating a CK from packets"""
     kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = 'some_path'
-    kernel_uri = f"s3://{bucket}/{key}/test_kernel/J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1"
-    packet_data_path = test_data_path / 'J01_G011_LZ_2021-04-09T00-00-00Z_V01.DAT1'
+    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_pds_file_1.name}"
+    packet_data_path = test_data_path / test_pds_file_1.name
     write_file_to_s3(packet_data_path, kernel_uri)
     kernel_s3_path = wrapper(f"{kernel_uri}")
     s3_output_directory = f"s3://{bucket}/{key}/kernel_output/"
@@ -172,14 +172,14 @@ def test_make_azel_ck_aws(mocked_get_current_version_str, test_data_path, short_
     kernel_maker.make_azel_ck(mock_parsed_args)
 
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / 'libera_azel_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bc').exists()
+    assert (s3_output_path / 'LIBERA_AZEL_V3-14-159_20210408T235850_20210409T015849_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
     "test_type", ["S3", "Local"], indirect=True
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_kernels_from_manifest_no_time_range(mocked_get_current_version_str,
                                                        setup_kernel_maker_environment_with_manifest):
     # Test that the kernels are generated when no desired range
@@ -190,15 +190,15 @@ def test_make_jpss_kernels_from_manifest_no_time_range(mocked_get_current_versio
 
     kernel_maker.make_jpss_kernels_from_manifest(input_manifest_path, output_path)
 
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t055849_vM3m14p159_r25056154513.bsp').exists()
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t055849_vM3m14p159_r25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T055849_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T055849_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
     "test_type", ["S3", "Local"], indirect=True
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_kernels_from_manifest_one_file(mocked_get_current_version_str,
                                                   setup_kernel_maker_environment_with_manifest,
                                                   add_start_end_time_to_manifest):
@@ -211,15 +211,15 @@ def test_make_jpss_kernels_from_manifest_one_file(mocked_get_current_version_str
 
     kernel_maker.make_jpss_kernels_from_manifest(updated_manifest_path, output_path)
 
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bsp').exists()
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t015849_vM3m14p159_r25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T015849_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T015849_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
     "test_type", ["S3", "Local"], indirect=True
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_kernels_from_manifest_two_files(mocked_get_current_version_str,
                                                    setup_kernel_maker_environment_with_manifest,
                                                    add_start_end_time_to_manifest):
@@ -233,15 +233,15 @@ def test_make_jpss_kernels_from_manifest_two_files(mocked_get_current_version_st
 
     kernel_maker.make_jpss_kernels_from_manifest(updated_manifest_path, output_path)
 
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t035849_vM3m14p159_r25056154513.bsp').exists()
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t035849_vM3m14p159_r25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T035849_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T035849_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
     "test_type", ["S3", "Local"], indirect=True
 )
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="vM3m14p159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_kernels_from_manifest_three_files(mocked_get_current_version_str,
                                                    setup_kernel_maker_environment_with_manifest,
                                                    add_start_end_time_to_manifest):
@@ -255,5 +255,5 @@ def test_make_jpss_kernels_from_manifest_three_files(mocked_get_current_version_
 
     kernel_maker.make_jpss_kernels_from_manifest(updated_manifest_path, output_path)
 
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t055849_vM3m14p159_r25056154513.bsp').exists()
-    assert (output_path / 'libera_jpss_20210408t235850_20210409t055849_vM3m14p159_r25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T055849_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235850_20210409T055849_R25056154513.bc').exists()

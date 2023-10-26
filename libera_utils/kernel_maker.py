@@ -144,7 +144,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     None
     """
 
-    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    now = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
     configure_task_logging(f'spk_generator_{now}',
                            app_package_name='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
