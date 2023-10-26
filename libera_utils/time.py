@@ -31,13 +31,13 @@ PRINTABLE_TS_REGEX = re.compile(r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>
                                 r"[T|t]"
                                 r"(?P<hour>[0-9]{2})(?P<minute>[0-9]{2})(?P<second>[0-9]{2})$")
 
-PRINTABLE_TS_FORMAT = "%Y%m%dt%H%M%S"
+PRINTABLE_TS_FORMAT = "%Y%m%dT%H%M%S"
 
 NUMERIC_DOY_TS_FORMAT = "%y%j%H%M%S"
 
 
 def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],
-                   fmt: str = '%Y%m%dt%H%M%S.%f') -> Union[str, Collection[str]]:
+                   fmt: str = '%Y%m%dT%H%M%S.%f') -> Union[str, Collection[str]]:
     """
     Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
 

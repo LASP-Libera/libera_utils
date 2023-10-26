@@ -120,7 +120,7 @@ def test_manifest_add_desired_time_range(test_json_manifest):
 
 def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):
     """Test loading a file from S3"""
-    file_key = f"s3://test-manifest-from-file-s3-bucket/libera_input_manifest_20220101t112233.json"
+    file_key = f"s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_20220101T112233.json"
     s3_path = write_file_to_s3(test_json_manifest, file_key)
     m = Manifest.from_file(s3_path)
     assert m.manifest_type == ManifestType.INPUT
@@ -135,8 +135,8 @@ def test_manifest_write(tmp_path):
         files=[],
         configuration={}
     )
-    m.write(tmp_path, 'libera_input_manifest_20220101t112233.json')
-    with open(tmp_path / 'libera_input_manifest_20220101t112233.json') as f:
+    m.write(tmp_path, 'LIBERA_INPUT_MANIFEST_20220101T112233.json')
+    with open(tmp_path / 'LIBERA_INPUT_MANIFEST_20220101T112233.json') as f:
         manifest_dict = json.load(f)
         for element in ("manifest_type", "files", "configuration"):
             assert element in manifest_dict
@@ -151,9 +151,9 @@ def test_manifest_generate_filename(mock_manifest_datetime):
         files=[],
         configuration={}
     )
-    assert m._generate_filename().path.name == "libera_input_manifest_20220101t123456.json"
+    assert m._generate_filename().path.name == "LIBERA_INPUT_MANIFEST_20220101T123456.json"
     m.manifest_type = ManifestType.OUTPUT
-    assert m._generate_filename().path.name == "libera_output_manifest_20220101t123456.json"
+    assert m._generate_filename().path.name == "LIBERA_OUTPUT_MANIFEST_20220101T123456.json"
 
 
 def test_manifest_write_s3(create_mock_bucket):
@@ -165,7 +165,7 @@ def test_manifest_write_s3(create_mock_bucket):
         configuration={}
     )
     outpath = S3Path(f"s3://{bucket.name}")
-    filename = "libera_input_manifest_20220101t112233.json"
+    filename = "LIBERA_INPUT_MANIFEST_20220101T112233.json"
     m.write(outpath, filename)
     with smart_open(outpath / filename) as f:
         manifest_dict = json.load(f)
@@ -193,12 +193,12 @@ def test_validate_checksums(test_json_manifest, caplog):
 @pytest.mark.parametrize(
     'input_manifest',
     [
-        (S3Path("s3://test-manifest-from-file-s3-bucket/libera_input_manifest_20220101t112233.json")),
+        (S3Path("s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_20220101T112233.json")),
         (Path(sys.modules[__name__.split('.')[0]].__file__).parent / 'test_data'
-         / 'libera_input_manifest_20220922t123456.json'),
+         / 'LIBERA_INPUT_MANIFEST_20220922T123456.json'),
         (Manifest.from_file(filepath=Path(sys.modules[__name__.split('.')[0]].__file__).parent
-                                  / 'test_data' / 'libera_input_manifest_20220922t123456.json')),
-        (S3Path("s3://l0-ingest-dropbox/processing//libera_output_manifest_20230613t143309.json"))
+                                  / 'test_data' / 'LIBERA_INPUT_MANIFEST_20220922T123456.json')),
+        (S3Path("s3://l0-ingest-dropbox/processing//LIBERA_OUTPUT_MANIFEST_20230613T143309.json"))
     ]
 )
 def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest, write_file_to_s3):
@@ -215,8 +215,8 @@ def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest,
 
     output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest=input_manifest_object)
 
-    input_time = str(re.search(r'\d{8}t\d+', str(input_manifest_object.filename)).group(0))
-    output_time = str(re.search(r'\d{8}t\d+', str(output_manifest.filename)).group(0))
+    input_time = str(re.search(r'\d{8}T\d+', str(input_manifest_object.filename)).group(0))
+    output_time = str(re.search(r'\d{8}T\d+', str(output_manifest.filename)).group(0))
     assert output_manifest.manifest_type == ManifestType.OUTPUT
     assert input_time == output_time
     assert len(output_manifest.configuration) != 0
