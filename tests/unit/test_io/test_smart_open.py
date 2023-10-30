@@ -171,7 +171,7 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(wrapped_input, wrapped_output_dir)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -203,7 +203,7 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(wrapped_remote_file_path, wrapped_local_destination)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -288,7 +288,7 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
         assert len(w) == 2
         assert issubclass(w[-1].category, UserWarning)
@@ -318,7 +318,7 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(local_file_path, remote_path)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -378,7 +378,7 @@ def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mo
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(source_file_path, dest_path)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
