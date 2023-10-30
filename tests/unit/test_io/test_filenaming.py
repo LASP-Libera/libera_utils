@@ -40,7 +40,10 @@ def test_any_filename(filename, filename_type):
         ('ignore/relative/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp', '/absolute/local',
          Path('/absolute/local/JPSS/2027/01/02/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp')),
         ('LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc', '/absolute/local',
-         Path('/absolute/local/AZROT/2027/01/15/LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc'))
+         Path('/absolute/local/AZROT/2027/01/15/LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc')),
+        ('/ignore/this/LIBERA_INPUT_MANIFEST_20270102T122233.json', 's3://my-dropbox-bucket',
+         S3Path('s3://my-dropbox-bucket/INPUT/2027/01/02/LIBERA_INPUT_MANIFEST_20270102T122233.json')),
+
     ]
 )
 def test_generate_prefixed_path(filename, parent_path, expected_path):

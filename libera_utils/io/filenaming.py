@@ -77,7 +77,9 @@ class AnyFilename:
     """Polymorphic class for creating a Filename object"""
 
     def __new__(cls, *args, **kwargs) -> 'AbstractValidFilename':
-        for CandidateClass in (L0Filename, AttitudeKernelFilename, EphemerisKernelFilename, LiberaDataProductFilename):
+        for CandidateClass in (L0Filename, AttitudeKernelFilename,
+                               EphemerisKernelFilename, LiberaDataProductFilename,
+                               ManifestFilename):
             try:
                 filename = CandidateClass(*args, **kwargs)
                 return filename
@@ -535,11 +537,18 @@ class ManifestFilename(AbstractValidFilename):
 
     @property
     def archive_prefix(self):
-        """Since manifests are not archived, we don't prefix them with anything
-
-        Note: This method must be defined to satisfy the AbstractValidFilename interface class
+        """Manifests are not archived like data products, but for convenience and ease of debugging they will be kept
+        in the dropbox bucket by input/output and day they were made. This is used by the step function clean up
+        function in the CDK.
+        # Generate prefix structure
+        # <manifest_type>/<year>/<month>/<day>
         """
-        return ""
+        manifest_type = self.filename_parts.manifest_type.value
+
+        # This is taking the average of the same time which is the same time
+        applicable_date = self.filename_parts.created_time
+
+        return f"{manifest_type}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
