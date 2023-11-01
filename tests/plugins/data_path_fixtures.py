@@ -110,7 +110,7 @@ def test_jpss_spk(spice_test_data_path):
 def test_de_spk(spice_test_data_path):
     """Path to the testing default ephemeris kernel stored in the test_data directory
     to provide a single configuration for all tests"""
-    return spice_test_data_path / 'de440.bsp'
+    return spice_test_data_path / 'de440s.bsp'
 
 
 @pytest.fixture
