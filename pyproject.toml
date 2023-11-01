@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "libera_utils"
-version = "2.2.0rc3"
+version = "2.2.0rc4"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",

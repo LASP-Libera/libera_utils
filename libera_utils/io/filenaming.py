@@ -17,14 +17,14 @@ from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
 SPK_REGEX = re.compile(r"^LIBERA_(?P<spk_object>JPSS)"
-                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*)"
+                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
                        r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
                        r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
                        r"_(?P<revision>R[0-9]{11})"
                        r"\.bsp$")
 
 CK_REGEX = re.compile(r"^LIBERA_(?P<ck_object>JPSS|AZROT|ELSCAN)"
-                      r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*)"
+                      r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
                       r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
                       r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
                       r"_(?P<revision>R[0-9]{11})"
@@ -45,7 +45,7 @@ LIBERA_L0_REGEX = re.compile(r"^(?P<id_char>P|X)"
 
 LIBERA_DATA_PRODUCT_REGEX = re.compile(r"^LIBERA_(?P<data_level>L1B|L2)"
                                   r"_(?P<product_name>[^_]*)"
-                                  r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*)"
+                                  r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
                                   r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
                                   r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
                                   r"_(?P<revision>R[0-9]{11})"
@@ -836,8 +836,12 @@ def get_current_revision_str():
 
 
 def format_semantic_version(semantic_version: str):
-    """Formats a semantic version string X.Y.Z into a filename-compatible string like VX-Y--Z, for X = Major version,
-    Y= minor version, Z = patch.
+    """Formats a semantic version string X.Y.Z into a filename-compatible string like VX-Y-Z, for X = major version,
+    Y = minor version, Z = patch.
+
+    Result is uppercase.
+    Release candidate suffixes are allowed as no strict checking is done on the contents of X, Y, or Z.
+    e.g. 1.2.3rc1 becomes V1-2-3RC1
 
     Parameters
     ----------
@@ -849,7 +853,7 @@ def format_semantic_version(semantic_version: str):
     : str
     """
     major, minor, patch = semantic_version.split('.')
-    return f"V{major}-{minor}-{patch}"
+    return f"V{major}-{minor}-{patch}".upper()
 
 
 def get_current_version_str(package_name: str):
