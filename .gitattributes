@@ -1,3 +1,21 @@
+# Match all files in any test_data directory with the following extensions
+# This should cover all "big" (> ~1MB) files in the test_data directory
+
+# netCDF files
+**/test_data/**/*.nc filter=lfs diff=lfs merge=lfs -text
+# HDF5 files
+**/test_data/**/*.h5 filter=lfs diff=lfs merge=lfs -text
+# EOS5 files
+**/test_data/**/*.he5 filter=lfs diff=lfs merge=lfs -text
+# Ephemeris kernels
+**/test_data/**/*.bsp filter=lfs diff=lfs merge=lfs -text
+# Attitude kernels
+**/test_data/**/*.bc filter=lfs diff=lfs merge=lfs -text
+# Planetary Constants kernels
+**/test_data/**/*.bpc filter=lfs diff=lfs merge=lfs -text
+# PDS files
+**/test_data/**/*.PDS filter=lfs diff=lfs merge=lfs -text
+# Do not store package data (libera_utils/data) in LFS or it will break our PyPI package!
 **/de440.bsp filter=lfs diff=lfs merge=lfs -text
 tests/test_data/testtextfile.txt.gz filter=lfs diff=lfs merge=lfs -text
 tests/test_data/tier0_geo/CER_BDS_NOAA20-FM6_Edition1_100111.20210409.lonlat.2min.csv filter=lfs diff=lfs merge=lfs -text

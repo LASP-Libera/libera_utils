@@ -72,8 +72,6 @@ To run pylint inside Docker, run
 This starts up the linting service described in `docker-compose.yml`, which runs pylint inside a 
 testing docker container.
 
-NOTE: Pylint almost always produces non-zero exit codes. It's extremely strict to require pylint to exit 0.
-
 
 ### Bandit for Automated Security Testing (AST)
 [Bandit](https://github.com/PyCQA/bandit) is a security vulnerability tester that analyzes Python code for common 
@@ -90,3 +88,55 @@ To run bandit inside Docker, run
 ```docker-compose up [--build] ast```
 
 This starts up the `ast` service described in `docker-compose.yml`, which runs bandit inside a testing docker container.
+
+
+### Static Analysis pre-commit Git Hook
+
+The static analysis checking can be annoying when you only catch it after you have committed, rebased, and put up a PR.
+To alleviate that suffering, here is a pre-commit git hook that will execute before every commit and refuse to 
+continue until you have fixed your static analysis problems.
+
+```shell
+#!/bin/sh
+
+# .git/hooks/pre-commit
+
+# Redirect output to stderr.
+exec 1>&2
+
+# Run pylint.
+echo "Running pylint..."
+files_to_check=$(git diff --name-only --cached --diff-filter=AM libera_utils | grep '.py$')
+if [ -n "$files_to_check" ]; then
+  pylint $files_to_check
+else
+  echo "No .py file changes to lint"
+fi
+
+# Capture the output of pylint.
+pylint_exit_code=$?
+
+# If pylint returns a non-zero exit code, cancel the commit.
+if [ $pylint_exit_code -ne 0 ]; then
+  echo "Pylint check failed, aborting commit..."
+  exit 1
+fi
+
+# Otherwise, proceed with the commit.
+echo "Pylint check passed, proceeding with commit..."
+
+echo "Running bandit..."
+bandit -r --quiet libera_utils
+bandit_exit_code=$?
+
+# If Bandit returned a non-zero exit code, cancel the commit.
+if [ $bandit_exit_code -ne 0 ]; then
+    echo "Bandit check failed, aborting commit..."
+    exit 1
+fi
+
+# Otherwise, proceed
+echo "Bandit AST passed, proceeding with commit..."
+
+exit 0
+```

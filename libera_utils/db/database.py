@@ -198,7 +198,7 @@ class _DatabaseManager:
             return new_db_manager
 
     @staticmethod
-    def _format_url(dbhost: str, dbuser: str, dbpass: str, dbname: str,  # nosec B107 # CWE-259
+    def _format_url(dbhost: str, dbuser: str, dbpass: str, dbname: str,
                     dbport: int = 5432):
         """
         Returns a postgres database connection url given database parameters

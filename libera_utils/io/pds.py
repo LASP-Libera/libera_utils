@@ -590,8 +590,8 @@ class ConstructionRecord:
 
             cr_id = (cr_bitstream.read("bytes:36")).decode()
             if f"{cr_id}.PDS" != l0_filename:
-                return ConstructionRecordError(f"The filename read, {l0_filename}, does not match the cr_id in "
-                                               f"side the file, {cr_id}")
+                raise ConstructionRecordError(f"The filename read, {l0_filename}, does not match the cr_id in "
+                                              f"side the file, {cr_id}")
             # Read unused data
             cr_bitstream.read("uint:7")
             test_flag = cr_bitstream.read("bool")
