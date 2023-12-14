@@ -2,7 +2,9 @@
 
 # libera-utils
 # ----------
-FROM public.ecr.aws/docker/library/python:3.9-slim AS libera-utils
+ARG BASE_IMAGE_PYTHON_VERSION=3.11
+
+FROM public.ecr.aws/docker/library/python:${BASE_IMAGE_PYTHON_VERSION}-slim AS libera-utils
 USER root
 
 # Location for Core package installation location. This can be used later by images that inherit from this one
