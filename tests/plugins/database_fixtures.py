@@ -6,7 +6,7 @@ import pytest
 from libera_utils.db import getdb
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(autouse=True)
 def use_test_db(monkeypatch_session):
     """Automatically set environment variables to use the testing database"""
     monkeypatch_session.setenv('LIBERA_DB_NAME', 'libera')

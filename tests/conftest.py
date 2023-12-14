@@ -10,7 +10,9 @@ pytest_plugins = [
     "tests.plugins.data_path_fixtures",
     "tests.plugins.spice_fixtures",
     "tests.plugins.database_fixtures",
-    "tests.plugins.aws_fixtures"
+    "tests.plugins.aws_fixtures",
+    "tests.plugins.manifest_fixtures",
+    "tests.plugins.integration_test_fixtures"
 ]
 
 

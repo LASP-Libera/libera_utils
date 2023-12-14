@@ -99,89 +99,138 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
     return _gzip_wrapper(AnyPath(path).open(mode=mode))  # pylint: disable=E1101
 
 
-def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path, delete=False):
+def _copy_local_to_local(source_path: str or Path, dest_path: str or Path, delete: bool):
+    """Copy a local source file to a local destination.
+
+    Parameters
+    ----------
+    source_path : str or Path
+        Path to the source file to be copied.
+    dest_path : str or Path
+        Path to the destination for the copied file.
+    delete : bool
+        If true, deletes files copied from source (default = False)
+
+    Returns
+    -------
+    : Path
+        The path to the newly created file
     """
-        Copy function that can handle local files or files in an S3 bucket.
-        Returns the path to the newly created file.
+    # This is a local copy and uses shutil copy
+    local_source_path = Path(source_path)
+    local_dest_path = Path(dest_path)
 
-        Parameters
-        ----------
-        source_path : str or Path or S3Path
-            Path to the source file to be copied. Files residing in an s3 bucket must begin
-            with "s3://".
-        dest_path : str or Path or S3Path
-            Path to the Destination file to be copied to. Files residing in an s3 bucket
-            must begin with "s3://".
-        delete : bool
-            If true, deletes files copied from source (default = False)
+    # Warning if no suffix is used in destination.
+    if len(local_dest_path.suffix) == 0:
+        warnings.warn(f'You have copied to a location without a file extension.'
+                      f'Source location: {local_source_path} to destination:'
+                      f'{local_dest_path}.')
 
-        Returns
-        -------
-        : Path or S3Path
-            The path to the newly created file
-        """
-    if not is_s3(source_path) and not is_s3(dest_path):
-        # This is a local copy and uses shutil copy
-        local_source_path = Path(source_path)
-        local_dest_path = Path(dest_path)
+    # Returns a PosixPath of the newly created file
+    if delete:
+        return shutil.move(source_path, dest_path)
 
-        # Warning if no suffix is used in destination.
-        if len(local_dest_path.suffix) == 0:
-            warnings.warn(f'You have copied to a location without a file extension.'
-                          f'Source location: {local_source_path} to destination:'
-                          f'{local_dest_path}.')
+    return shutil.copy(source_path, dest_path)
 
-        # Returns a PosixPath of the newly created file
-        if delete:
-            return shutil.move(source_path, dest_path)
 
-        return shutil.copy(source_path, dest_path)
+def _copy_local_to_s3(source_path: str or Path, dest_path: str or S3Path, delete: bool):
+    """Copy a local file to an S3 object.
 
-    # Check if either source or destination is remote and allocate remote resources
+    Parameters
+    ----------
+    source_path : str or Path
+        Path to the source file to be copied.
+    dest_path : str or S3Path
+        Path to the destination for the copied file. Files residing in an s3 bucket
+        must begin with "s3://".
+    delete : bool
+        If true, deletes files copied from source (default = False)
+
+    Returns
+    -------
+    : S3Path
+        The path to the newly created file
+    """
+    # This is a local to remote copy and uses S3 upload
+    s3_dest_path = S3Path(dest_path)
+    local_source_path = Path(source_path)
+
+    # Warning if no suffix is used.
+    if len(s3_dest_path.suffix) == 0:
+        warnings.warn(f'You have copied a file to S3 without a file extension.'
+                      f'Source location: {local_source_path} to S3 location:'
+                      f'{s3_dest_path}.')
+
     s3 = boto3.resource("s3")
-    client = boto3.client("s3")
+    # Has no return, but will raise exceptions on problems
+    s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
+    if delete:
+        local_source_path.unlink()
+    return s3_dest_path
 
-    if is_s3(dest_path) and not is_s3(source_path):
-        # This is a local to remote copy and uses S3 upload
-        s3_dest_path = S3Path(dest_path)
-        local_source_path = Path(source_path)
 
-        # Warning if no suffix is used.
-        if len(s3_dest_path.suffix) == 0:
-            warnings.warn(f'You have copied a file to S3 without a file extension.'
-                          f'Source location: {local_source_path} to S3 location:'
-                          f'{s3_dest_path}.')
+def _copy_s3_to_local(source_path: str or Path, dest_path: str or S3Path, delete: bool):
+    """Copy an S3 object to a local file.
 
-        # Has no return, but will raise exceptions on problems
-        s3.Bucket(s3_dest_path.bucket).upload_file(str(local_source_path), s3_dest_path.key)
-        if delete:
-            local_source_path.unlink()
-        return s3_dest_path
+    Parameters
+    ----------
+    source_path : str or S3Path
+        Path to the source file to be copied. Files residing in an s3 bucket must begin
+        with "s3://".
+    dest_path : str or Path
+        Path to the destination for the copied file.
+    delete : bool
+        If true, deletes files copied from source (default = False)
 
-    if is_s3(source_path) and not is_s3(dest_path):
-        # This is a remote to local copy and uses S3 download
-        s3_source_path = S3Path(source_path)
-        local_dest_path = Path(dest_path)
+    Returns
+    -------
+    : Path
+        The path to the newly created file
+    """
+    # This is a remote to local copy and uses S3 download
+    s3_source_path = S3Path(source_path)
+    local_dest_path = Path(dest_path)
 
-        # Ensure a full destination path including file name is used
-        if local_dest_path.is_dir():
-            local_dest_path = local_dest_path / s3_source_path.name
-            warnings.warn(f'A directory was given as the destination for the smart file '
-                          f'copy. This was modified to include a name as follows.'
-                          f'Copy from {s3_source_path} to {local_dest_path}.')
+    # Ensure a full destination path including file name is used
+    if local_dest_path.is_dir():
+        local_dest_path = local_dest_path / s3_source_path.name
+        warnings.warn(f'A directory was given as the destination for the smart file '
+                      f'copy. This was modified to include a name as follows.'
+                      f'Copy from {s3_source_path} to {local_dest_path}.')
 
-        # Warning if no suffix is used.
-        if len(local_dest_path.suffix) == 0:
-            warnings.warn(f'You have copied a file without a file extension.'
-                          f'Source: {s3_source_path} to destination:'
-                          f'{local_dest_path}.')
+    # Warning if no suffix is used.
+    if len(local_dest_path.suffix) == 0:
+        warnings.warn(f'You have copied a file without a file extension.'
+                      f'Source: {s3_source_path} to destination:'
+                      f'{local_dest_path}.')
 
-        # Has no return, but will raise exceptions on problems
-        s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
-        if delete:
-            s3.Object(s3_source_path.bucket, s3_source_path.key).delete()
-        return Path(local_dest_path)
+    s3 = boto3.resource("s3")
+    # Has no return, but will raise exceptions on problems
+    s3.Bucket(s3_source_path.bucket).download_file(s3_source_path.key, str(local_dest_path))
+    if delete:
+        s3.Object(s3_source_path.bucket, s3_source_path.key).delete()
+    return Path(local_dest_path)
 
+
+def _copy_s3_to_s3(source_path: str or Path, dest_path: str or S3Path, delete: bool):
+    """Copy an S3 object to a different S3 object.
+
+    Parameters
+    ----------
+    source_path : str or S3Path
+        Path to the source file to be copied. Files residing in an s3 bucket must begin
+        with "s3://".
+    dest_path : str or S3Path
+        Path to the Destination file to be copied to. Files residing in an s3 bucket
+        must begin with "s3://".
+    delete : bool
+        If true, deletes files copied from source (default = False)
+
+    Returns
+    -------
+    : S3Path
+        The path to the newly created file
+    """
     # This is a remote to remote copy and uses S3 copy
     s3_source_path = S3Path(source_path)
     s3_dest_path = S3Path(dest_path)
@@ -197,9 +246,43 @@ def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path o
                       f'Source location: {s3_source_path} to S3 location:'
                       f'{s3_dest_path}.')
 
+    client = boto3.client("s3")
     # Has no return, but will raise exceptions
     client.copy(copy_source, s3_dest_path.bucket, s3_dest_path.key)
 
     if delete:
+        s3 = boto3.resource("s3")
         s3.Object(copy_source['Bucket'], copy_source['Key']).delete()
     return s3_dest_path
+
+
+def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path, delete=False):
+    """Copy function that can handle local files or files in an S3 bucket.
+    Returns the path to the newly created file as a Path or an S3Path, depending on the destination.
+
+    Parameters
+    ----------
+    source_path : str or Path or S3Path
+        Path to the source file to be copied. Files residing in an s3 bucket must begin
+        with "s3://".
+    dest_path : str or Path or S3Path
+        Path to the Destination file to be copied to. Files residing in an s3 bucket
+        must begin with "s3://".
+    delete : bool
+        If true, deletes files copied from source (default = False)
+
+    Returns
+    -------
+    : Path or S3Path
+        The path to the newly created file
+    """
+    if not is_s3(source_path) and not is_s3(dest_path):
+        return _copy_local_to_local(source_path, dest_path, delete)
+
+    if is_s3(dest_path) and not is_s3(source_path):
+        return _copy_local_to_s3(source_path, dest_path, delete)
+
+    if is_s3(source_path) and not is_s3(dest_path):
+        return _copy_s3_to_local(source_path, dest_path, delete)
+
+    return _copy_s3_to_s3(source_path, dest_path, delete)

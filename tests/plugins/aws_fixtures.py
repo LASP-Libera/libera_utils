@@ -1,12 +1,13 @@
 """Plugin module for mocking S3 buckets"""
 import string
+import os
 # Standard
 from pathlib import Path
 import random
 # Installed
 import boto3
 from cloudpathlib import S3Path, S3Client
-from moto import mock_s3, mock_logs
+from moto import mock_s3, mock_logs, mock_secretsmanager
 import pytest
 
 
@@ -93,7 +94,7 @@ def create_mock_bucket(mock_s3_context):
 @pytest.fixture
 def write_file_to_s3(mock_s3_context, create_mock_bucket):
     """Write file contents to mocked s3 bucket. If the bucket doesn't exist, it is created."""
-    def _write(filepath: Path, uri: str, exists_ok: bool = False) -> S3Path:
+    def _write(filepath: Path, uri: str or S3Path, exists_ok: bool = False) -> S3Path:
         """Write the contents of the file at filepath to the (mocked) S3 URI.
 
         Parameters
@@ -120,3 +121,31 @@ def write_file_to_s3(mock_s3_context, create_mock_bucket):
         print(f"Wrote {filepath} contents to (mocked) S3 object {s3_path.as_uri()}")
         return s3_path
     return _write
+
+@pytest.fixture
+def mock_secret_manager():
+    """Everything under/inherited by this runs in the mock_secretmanager context manager"""
+    with mock_secretsmanager():
+        # Yield the (mocked) secretmanager client object
+        # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/clients.html)
+        yield boto3.client("secretsmanager", region_name="us-west-2")
+
+
+@pytest.fixture
+def create_mock_secret_manager(mock_secret_manager):
+    """Returns a function that allows dynamic creation of secret manager client with option to specify the name."""
+    client = mock_secret_manager
+
+    def _create_mock_secret_manager(secret_name: str, username="libera_unit_tester"):
+        """Creates a mocked secret manager that works with the unit testing database"""
+        try:
+            # Set by docker compose
+            host_name = str(os.environ["LIBERA_DB_HOST"])
+        except KeyError:
+            host_name = "localhost"
+        secret_json_string = f'{{\n "host":"{host_name}",\n  "password":"testerpass",\n ' \
+                             f'"dbname":"libera",\n "username":"{username}" }}\n'
+        client.create_secret(Name=secret_name, SecretString=secret_json_string)
+        return
+
+    return _create_mock_secret_manager

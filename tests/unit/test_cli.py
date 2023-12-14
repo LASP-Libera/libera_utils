@@ -4,15 +4,15 @@ import argparse
 import pytest
 # Local
 from libera_utils import cli, kernel_maker
-from libera_utils.io import packet_ingest
+from libera_utils.io import pds_ingest
 
 
 @pytest.mark.parametrize(
     ("cli_args", "parsed"),
     [
-        (['packet-ingest', 'fakedir.json'],
+        (['pds-ingest', '--delete', 'fakedir.json'],
          argparse.Namespace(
-             func=packet_ingest.ingest,
+             func=pds_ingest.ingest,
              manifest_filepath='fakedir.json',
              delete=True,
              verbose=False)),

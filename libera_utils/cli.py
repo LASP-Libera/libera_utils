@@ -10,7 +10,7 @@ libera-utils
 import argparse
 # Local
 from libera_utils import kernel_maker
-from libera_utils.io import packet_ingest
+from libera_utils.io import pds_ingest
 from libera_utils.version import version as libera_utils_version
 
 
@@ -47,12 +47,12 @@ def parse_cli_args(cli_args: list):
     subparsers = parser.add_subparsers(description="sub-commands for libera-utils CLI")
 
     # packet-ingest
-    packet_ingest_parser = subparsers.add_parser('packet-ingest',
+    packet_ingest_parser = subparsers.add_parser('pds-ingest',
                                                  help='write construction record data to database')
-    packet_ingest_parser.set_defaults(func=packet_ingest.ingest)
+    packet_ingest_parser.set_defaults(func=pds_ingest.ingest)
     packet_ingest_parser.add_argument('manifest_filepath', type=str,
                                       help="path to L0 manifest file")
-    packet_ingest_parser.add_argument('-d', '--delete', action='store_false',
+    packet_ingest_parser.add_argument('-d', '--delete', action='store_true',
                                       help='Deletes data files from s3 bucket once they are moved.')
     packet_ingest_parser.add_argument('-v', '--verbose', action='store_true',
                                       help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
