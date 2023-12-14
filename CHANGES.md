@@ -1,9 +1,24 @@
 # Version Changes
 
-# 2.2.0 (unreleased)
+# 2.3.0 (unreleased)
+
+# 2.2.0 (released)
 - Add AnyFilename polymorphic class
+- Change filename of all products to a LiberaDataProductFilename that inherits from AnyFilename
+- Update filenaming convention to be all capital letters
 - Improve API for manifest module
 - Add prefixing to Filename classes for predictable archive paths
+- Add prefixing for manifest files for predictable and navigable paths in s3 buckets
+- Update git to include lfs and move test data to lfs
+- Improve database manager including caching improvements
+- Improve smart_copy_file and bug fixes to smart_open testing
+- Refactoring and improving pds ingest for database entries and integration testing in CDK
+- Added handling of construction records and pds files appropriately when ingesting
+  - This includes reading a construction record and removing the pds file entry for the construction record itself
+- Improved testing of pds ingest and pds file orm models to more accurately reflect use cases
+- Added output manifest creation from input manifest to match timestamps in filenames of input and output manifests
+- Refactored pds ingest to use AnyPath objects for handling file locations
+- Added error handling to pds ingest
 
 # 2.1.1 (released)
 - Update dependency specification to speed up dependency resolution wrt botocore/urllib3
