@@ -1,6 +1,7 @@
 """Tests for database module"""
 # Standard
 import datetime as dt
+import logging
 import multiprocessing
 import os
 # Installed
@@ -13,8 +14,10 @@ from libera_utils.db.models import *
 
 def db_testfunc(filename: str = None, archived: int = None):
     """DB test function that retrieves some dummy data"""
+    logging.basicConfig(level='DEBUG')
     db = getdb()
     print(f"Hello from pid {os.getpid()}. db.pid={db.pid}. db.url={db.url}")
+    print(f"The database manager cache contains the following items: {db._db_manager_cache}")
     with db.session() as s:
         records = s.query(PdsFile)
         if filename is not None:
@@ -65,10 +68,13 @@ def test_db_manager_multiprocessing(insert_test_data, clean_local_db):
 def test_db_manager_multiple_configs():
     """Test ability to create multiple database managers with different configs and get each predictably"""
     db1 = getdb()
-    # Gets init values from env vars set by test DB fixture
+    # ^ Gets init values from env vars set by test DB fixture
     assert db1.database == 'libera'
     assert db1.host == 'localhost' or db1.host == 'local-db'
     assert db1.user == 'libera_unit_tester'
+    # Check that manually creating a new instance with the same parameters results in the same object
+    # Host is a bit dynamic as its value depends whether we're running in Docker (local-db) or not (localhost)
+    assert getdb(db1.host, 'libera_unit_tester', '', 'libera') is db1
     db2 = getdb(dbname='foo_db_name')
     assert db1 is not db2
     assert getdb() is db1

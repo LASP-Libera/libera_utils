@@ -37,7 +37,7 @@ def insert_dummy_l0_relations(clean_local_db):
         last_packet_utc_time=t1
     )
     pds = PdsFile(
-        file_name='P2041834AAAAAAAAAAAAAA19218140452200.PDS',
+        file_name='P2041834AAAAAAAAAAAAAA19218140452201.PDS',
         apids=[pds_file_apid]
     )
 
@@ -92,7 +92,7 @@ def insert_dummy_l0_relations(clean_local_db):
         n_octect_in_apid=2
     )
     cr = Cr(
-        file_name="P2041834AAAAAAAAAAAAAA19218140452200.CONS",
+        file_name="P2041834AAAAAAAAAAAAAA19218140452200.PDS",
         edos_software_version=3,
         construction_record_type=1,
         test_flag=False,

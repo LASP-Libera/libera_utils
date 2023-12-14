@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "libera_utils"
-version = "2.1.1"
+version = "2.2.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
@@ -27,7 +27,7 @@ numpy = "^1.21"
 psycopg2 = "^2.9.3"
 requests = "^2.27.0"
 setuptools = "^67.0.0"
-space-packet-parser = "^4.0"
+space-packet-parser = "^4.1"
 spiceypy = "^5.0.0"
 SQLAlchemy = "^1.4.31"
 watchtower = "^3.0.0"

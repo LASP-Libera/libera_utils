@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 from typing import NamedTuple
+import time
 # Installed
 from cloudpathlib import S3Path
 import requests
@@ -167,13 +168,15 @@ class KernelFileCache:
             return False
         return False
 
-    def download_kernel(self, kernel_url: str or S3Path) -> Path:
+    def download_kernel(self, kernel_url: str or S3Path, allowed_attempts: int = 3) -> Path:
         """Downloads a kernel from a URL or an S3 location to the system cache location.
 
         Parameters
         ----------
         kernel_url : str
             Filename of kernel on NAIF site, as discovered by find_most_recent_naif_kernel
+        allowed_attempts : int, Optional
+            Number of allowed download times for naif kernel default = 3
 
         Returns
         -------
@@ -192,18 +195,34 @@ class KernelFileCache:
             # Else, treat as URL string
             if not local_filepath.parent.exists():
                 local_filepath.parent.mkdir(parents=True)
-            with requests.get(kernel_url, stream=True, timeout=30) as r:
-                r.raise_for_status()
-                with open(local_filepath, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+
+            attempt_number = 1
+            while attempt_number <= allowed_attempts:
+                try:
+                    with requests.get(kernel_url, stream=True, timeout=30) as r:
+                        r.raise_for_status()
+                        with open(local_filepath, 'wb') as f:
+                            for chunk in r.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                    break
+                except requests.exceptions.RequestException as error:
+                    logger.info(f"Request failed. {error}")
+                    if attempt_number < allowed_attempts:
+                        logger.info(f"Trying again, retries left {allowed_attempts - attempt_number}, "
+                                    f"Exception: {error}")
+                        time.sleep(1)
+                    else:
+                        logger.error(f"Failed to download file after {allowed_attempts} attempts, Final Error: {error}")
+                        raise
+                attempt_number += 1
+
             logger.info("Cached kernel file to %s", local_filepath)
         else:
             raise ValueError(f"Kernel URL must be of type S3Path or str (for URL). Got {type(kernel_url)}")
         return local_filepath
 
 
-def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str) -> str:
+def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str, allowed_attempts: int = 3) -> str:
     """Retrieves the name of the most recent kernel at NAIF.
 
     Parameters
@@ -212,6 +231,8 @@ def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str) -> 
         URL to search for filenames matching kernel_file_regex
     kernel_file_regex : str
         Regular expression to match filenames on the naif website
+    allowed_attempts : int, Optional
+        Number of allowed download times for naif page default = 3
 
     Returns
     -------
@@ -220,8 +241,20 @@ def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str) -> 
     """
     kernel_link_regex = re.compile(f'href="({kernel_file_regex})"')
 
-    resp = requests.get(naif_base_url, timeout=30)
-    resp.raise_for_status()
+    attempt_number = 1
+    while attempt_number <= allowed_attempts:
+        try:
+            resp = requests.get(naif_base_url, timeout=30)
+            resp.raise_for_status()
+            break
+        except requests.exceptions.RequestException as error:
+            if attempt_number < allowed_attempts:
+                logger.info(f"{error} occurred trying again, retries left {allowed_attempts - attempt_number}")
+                time.sleep(1)
+            else:
+                logger.error(f"Failed to download file after {allowed_attempts} attempts, Final Error: {error}")
+                raise
+        attempt_number += 1
 
     file_names = re.findall(kernel_link_regex, resp.text)
     if len(file_names) == 0:
@@ -340,7 +373,9 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
                                           "SPICE_METAKERNEL is not set, and time_kernels_only is not set to True"
                                           ) from spcy_err
                 return func(*args, **kwargs)
+
         return wrapper_ensure_spice
+
     return _decorator(f_py) if callable(f_py) else _decorator
 
 

@@ -57,11 +57,10 @@ def test_is_gzip(path, expectation):
 )
 def test_smart_open_s3(test_txt, test_txt_gz, create_mock_bucket, write_file_to_s3, wrapper):
     """Test smart_open on mocked S3 objects"""
-    bucket = 'silly-bucket'
-    create_mock_bucket(bucket)  # We could also let write_file_to_s3 do this automatically for us
+    bucket = create_mock_bucket()  # We could also let write_file_to_s3 do this automatically for us
     key = 'somepath'
-    plain_uri = f"s3://{bucket}/{key}/test.txt"
-    gz_uri = f"s3://{bucket}/{key}/test.txt.gz"
+    plain_uri = f"s3://{bucket.name}/{key}/test.txt"
+    gz_uri = f"s3://{bucket.name}/{key}/test.txt.gz"
     write_file_to_s3(test_txt, plain_uri)
     write_file_to_s3(test_txt_gz, gz_uri)
 
@@ -81,10 +80,9 @@ def test_smart_open_s3(test_txt, test_txt_gz, create_mock_bucket, write_file_to_
 )
 def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrapper):
     """Test smart_open on mocked S3 objects and locally"""
-    bucket = 'silly-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'somepath'
-    hdf5_uri = f"s3://{bucket}/{key}/test_hdf5"
+    hdf5_uri = f"s3://{bucket.name}/{key}/test_hdf5"
     write_file_to_s3(test_hdf5, hdf5_uri)
 
     hdf5_wrapped = wrapper(hdf5_uri)
@@ -104,10 +102,9 @@ def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, test_hdf
     """
     Test smart_open can read in and write to hdf5.
     """
-    bucket = 'silly-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'somepath'
-    hdf5_uri = f"s3://{bucket}/{key}/path"
+    hdf5_uri = f"s3://{bucket.name}/{key}/path"
     write_file_to_s3(test_hdf5, hdf5_uri)
 
     hdf5_wrapped = wrapper(hdf5_uri)
@@ -174,7 +171,7 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(wrapped_input, wrapped_output_dir)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -196,10 +193,9 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
-    bucket = 'tmp-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'some_path'
-    remote_file_uri = f"s3://{bucket}/{key}/internal/testtextfile.txt"
+    remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile.txt"
     write_file_to_s3(test_txt, remote_file_uri)
 
     wrapped_remote_file_path = wrapper(f"{remote_file_uri}")
@@ -207,7 +203,7 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(wrapped_remote_file_path, wrapped_local_destination)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -229,10 +225,9 @@ def test_smart_copy_file_remote_to_local_file(tmp_path, test_txt, wrapper, creat
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
-    bucket = 'tmp-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'some_path'
-    remote_file_uri = f"s3://{bucket}/{key}/internal/testtextfile.txt"
+    remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile.txt"
     write_file_to_s3(test_txt, remote_file_uri)
 
     wrapped_remote_file_path = wrapper(f"{remote_file_uri}")
@@ -256,10 +251,9 @@ def test_smart_copy_file_remote_no_ext_to_local_file(tmp_path, test_txt, wrapper
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
-    bucket = 'tmp-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'some_path'
-    remote_file_uri = f"s3://{bucket}/{key}/internal/testtextfile"
+    remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile"
     write_file_to_s3(test_txt, remote_file_uri)
 
     wrapped_remote_file_path = wrapper(f"{remote_file_uri}")
@@ -284,10 +278,9 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
-    bucket = 'tmp-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'some_path'
-    remote_file_uri = f"s3://{bucket}/{key}/internal/testtextfile"
+    remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile"
     write_file_to_s3(test_txt, remote_file_uri)
 
     wrapped_remote_file_path = wrapper(f"{remote_file_uri}")
@@ -295,7 +288,7 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
         assert len(w) == 2
         assert issubclass(w[-1].category, UserWarning)
@@ -313,10 +306,9 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
 )
 def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_mock_bucket, tmp_path):
     """Test smart_copy for a local file to a remote destination"""
-    bucket = 'tmp-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'some_path'
-    remote_file_uri = f"s3://{bucket}/{key}/internal/data"
+    remote_file_uri = f"s3://{bucket.name}/{key}/internal/data"
 
     remote_path = wrapper(f"{remote_file_uri}")
     local_file_path = wrapper(test_txt)
@@ -326,7 +318,7 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(local_file_path, remote_path)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -346,10 +338,9 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
 )
 def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_bucket, tmp_path):
     """Test smart_copy for a local file to a remote file location"""
-    bucket = 'tmp-bucket'
-    create_mock_bucket(bucket)
+    bucket = create_mock_bucket()
     key = 'some_path'
-    remote_file_uri = f"s3://{bucket}/{key}/internal/newfilename.txt"
+    remote_file_uri = f"s3://{bucket.name}/{key}/internal/newfilename.txt"
 
     # Make the local destination
     tmp_file_path = tmp_path / 'testtextfile.txt'
@@ -373,23 +364,21 @@ def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_buc
 )
 def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file to a different remote directory location"""
-    source_bucket = 'tmp-source-bucket'
-    create_mock_bucket(source_bucket)
+    source_bucket = create_mock_bucket()
     source_key = 'source_path'
-    source_file_uri = f"s3://{source_bucket}/{source_key}/internal/sourcedata"
+    source_file_uri = f"s3://{source_bucket.name}/{source_key}/internal/sourcedata"
     write_file_to_s3(test_txt, source_file_uri)
 
-    dest_bucket = 'tmp-dest-bucket'
-    create_mock_bucket(dest_bucket)
+    dest_bucket = create_mock_bucket()
     dest_key = 'dest_path'
-    dest_file_uri = f"s3://{dest_bucket}/{dest_key}/internal/destdata"
+    dest_file_uri = f"s3://{dest_bucket.name}/{dest_key}/internal/destdata"
 
     source_file_path = wrapper(f"{source_file_uri}")
     dest_path = wrapper(dest_file_uri)
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
         smart_copy_file(source_file_path, dest_path)
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -409,16 +398,14 @@ def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mo
 )
 def test_smart_copy_file_remote_to_remote_file(test_txt, wrapper, create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file to a different remote file location"""
-    source_bucket = 'tmp-source-bucket'
-    create_mock_bucket(source_bucket)
+    source_bucket = create_mock_bucket()
     source_key = 'source_path'
-    source_file_uri = f"s3://{source_bucket}/{source_key}/internal/testtextfile.txt"
+    source_file_uri = f"s3://{source_bucket.name}/{source_key}/internal/testtextfile.txt"
     write_file_to_s3(test_txt, source_file_uri)
 
-    dest_bucket = 'tmp-dest-bucket'
-    create_mock_bucket(dest_bucket)
+    dest_bucket = create_mock_bucket()
     dest_key = 'dest_path'
-    dest_file_uri = f"s3://{dest_bucket}/{dest_key}/internal/newfilename.txt"
+    dest_file_uri = f"s3://{dest_bucket.name}/{dest_key}/internal/newfilename.txt"
 
     source_file_path = wrapper(f"{source_file_uri}")
     dest_file_path = wrapper(dest_file_uri)

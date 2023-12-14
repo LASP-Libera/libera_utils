@@ -47,19 +47,43 @@ def test_txt_gz(test_data_path):
 @pytest.fixture
 def test_json_manifest(test_data_path):
     """Path to test manifest file"""
-    return test_data_path / 'libera_input_manifest_20220922t123456.json'
+    return test_data_path / 'LIBERA_INPUT_MANIFEST_20220922T123456.json'
 
 
 @pytest.fixture
-def test_construction_record_09t00(test_data_path):
+def test_construction_record_1(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "J01_G011_LZ_2021-04-09T00-00-00Z_V01.CONS"
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099051420500.PDS"
 
 
 @pytest.fixture
-def test_construction_record_09t02(test_data_path):
+def test_pds_file_1(test_data_path):
+    """Path to the test PDS file associated with construction record 1"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099051420501.PDS"
+
+
+@pytest.fixture
+def test_construction_record_2(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "J01_G011_LZ_2021-04-09T02-00-00Z_V01.CONS"
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099065436900.PDS"
+
+
+@pytest.fixture
+def test_pds_file_2(test_data_path):
+    """Path to the test PDS file associated with construction record 2"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099065436901.PDS"
+
+
+@pytest.fixture
+def test_construction_record_3(test_data_path):
+    """Path to test construction record"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099091211400.PDS"
+
+
+@pytest.fixture
+def test_pds_file_3(test_data_path):
+    """Path to the test PDS file associated with construction record 3"""
+    return test_data_path / "P1590011AAAAAAAAAAAAAT21099091211401.PDS"
 
 
 # SPICE test data
@@ -73,20 +97,20 @@ def test_lsk(spice_test_data_path):
 @pytest.fixture
 def test_jpss_ck(spice_test_data_path):
     """Path to the testing JPSS CK stored in the test_data directory to provide a single configuration for all tests"""
-    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849_vM2m1p0_r23110123456.bc'
+    return spice_test_data_path / 'LIBERA_JPSS_V2-1-0_20210408T235850_20210409T015849_R23110123456.bc'
 
 
 @pytest.fixture
 def test_jpss_spk(spice_test_data_path):
     """Path to the testing JPSS SPK stored in the test_data directory to provide a single configuration for all tests"""
-    return spice_test_data_path / 'libera_jpss_20210408t235850_20210409t015849_vM2m1p0_r23110123456.bsp'
+    return spice_test_data_path / 'LIBERA_JPSS_V2-1-0_20210408T235850_20210409T015849_R23110123456.bsp'
 
 
 @pytest.fixture
 def test_de_spk(spice_test_data_path):
     """Path to the testing default ephemeris kernel stored in the test_data directory
     to provide a single configuration for all tests"""
-    return spice_test_data_path / 'de440.bsp'
+    return spice_test_data_path / 'de440s.bsp'
 
 
 @pytest.fixture

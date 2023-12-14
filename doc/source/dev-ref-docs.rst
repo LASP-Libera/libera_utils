@@ -11,6 +11,7 @@ This page contains links to documentation written for any developer contributing
     markdown-pages/developer-reference/build_release
     markdown-pages/developer-reference/database
     markdown-pages/developer-reference/docker
+    markdown-pages/developer-reference/git
     markdown-pages/developer-reference/logging
     markdown-pages/developer-reference/spice
     markdown-pages/developer-reference/testing

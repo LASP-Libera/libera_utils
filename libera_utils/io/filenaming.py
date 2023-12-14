@@ -7,26 +7,27 @@ from importlib import metadata
 import os
 import re
 from types import SimpleNamespace
+from typing import Union
 from pathlib import Path
 # Installed
-from cloudpathlib import AnyPath, CloudPath
+from cloudpathlib import AnyPath, CloudPath, S3Path
 # Local
 from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
 
-REVISION_TS_FORMAT = f"r{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
+REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
-SPK_REGEX = re.compile(r"^libera_(?P<spk_object>jpss)"
-                       r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
-                       r"_(?P<utc_end>[0-9]{8}t[0-9]{6})"
-                       r"_(?P<version>vM[0-9]*m[0-9]*p[0-9]*)"
-                       r"_(?P<revision>r[0-9]{11})"
+SPK_REGEX = re.compile(r"^LIBERA_(?P<spk_object>JPSS)"
+                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+                       r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+                       r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+                       r"_(?P<revision>R[0-9]{11})"
                        r"\.bsp$")
 
-CK_REGEX = re.compile(r"^libera_(?P<ck_object>jpss|azrot|elscan)"
-                      r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
-                      r"_(?P<utc_end>[0-9]{8}t[0-9]{6})"
-                      r"_(?P<version>vM[0-9]*m[0-9]*p[0-9]*)"
-                      r"_(?P<revision>r[0-9]{11})"
+CK_REGEX = re.compile(r"^LIBERA_(?P<ck_object>JPSS|AZROT|ELSCAN)"
+                      r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+                      r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+                      r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+                      r"_(?P<revision>R[0-9]{11})"
                       r"\.bc$")
 
 # L0 filename format determined by EDOS Production Data Set and Construction Record filenaming conventions
@@ -42,34 +43,26 @@ LIBERA_L0_REGEX = re.compile(r"^(?P<id_char>P|X)"
                              r".(?P<extension>PDR|PDS)"
                              r"(?P<signal>.XFR)?$")
 
-LIBERA_L1B_REGEX = re.compile(r"^libera_l1b"
-                              r"_(?P<instrument>cam|rad)"
-                              r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
-                              r"_(?P<utc_end>[0-9]{8}t[0-9]{6})"
-                              r"_(?P<version>vM[0-9]*m[0-9]*p[0-9]*)"
-                              r"_(?P<revision>r[0-9]{11})"
-                              r"\.(?P<extension>nc|h5)$")
+LIBERA_DATA_PRODUCT_REGEX = re.compile(r"^LIBERA_(?P<data_level>L1B|L2)"
+                                  r"_(?P<product_name>[^_]*)"
+                                  r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+                                  r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+                                  r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+                                  r"_(?P<revision>R[0-9]{11})"
+                                  r"\.(?P<extension>nc|h5)$")
 
-LIBERA_L2_REGEX = re.compile(r"^libera_l2"
-                             r"_(?P<product_name>[^_]*)"
-                             r"_(?P<utc_start>[0-9]{8}t[0-9]{6})"
-                             r"_(?P<utc_end>[0-9]{8}t[0-9]{6})"
-                             r"_(?P<version>vM[0-9]*m[0-9]*p[0-9]*)"
-                             r"_(?P<revision>r[0-9]{11})"
-                             r"\.(?P<extension>nc|h5)$")
-
-MANIFEST_FILE_REGEX = re.compile(r"^libera"
-                                 r"_(?P<manifest_type>input|output)"
-                                 r"_manifest"
-                                 r"_(?P<created_time>[0-9]{8}t[0-9]{6})"
+MANIFEST_FILE_REGEX = re.compile(r"^LIBERA"
+                                 r"_(?P<manifest_type>INPUT|OUTPUT)"
+                                 r"_MANIFEST"
+                                 r"_(?P<created_time>[0-9]{8}T[0-9]{6})"
                                  r"\.json")
 
 
 class DataLevel(Enum):
     """Data product level"""
-    L0 = "l0"
-    L1B = 'l1b'
-    L2 = 'l2'
+    L0 = "L0"
+    L1B = 'L1B'
+    L2 = 'L2'
 
 
 class ManifestType(Enum):
@@ -78,6 +71,23 @@ class ManifestType(Enum):
     input = INPUT
     OUTPUT = 'OUTPUT'
     output = OUTPUT
+
+
+class AnyFilename:
+    """Polymorphic class for creating a Filename object"""
+
+    def __new__(cls, *args, **kwargs) -> 'AbstractValidFilename':
+        for CandidateClass in (L0Filename, AttitudeKernelFilename,
+                               EphemerisKernelFilename, LiberaDataProductFilename,
+                               ManifestFilename):
+            try:
+                filename = CandidateClass(*args, **kwargs)
+                return filename
+            except ValueError:
+                continue
+
+        raise ValueError(f"Unable to create a valid filename from {args}. "
+                         "Are you sure this is a valid Libera file name?")
 
 
 class AbstractValidFilename(ABC):
@@ -115,6 +125,12 @@ class AbstractValidFilename(ABC):
     def filename_parts(self):
         """Property that contains a namespace of filename parts"""
         return self._parse_filename_parts()
+
+    @property
+    @abstractmethod
+    def archive_prefix(self):
+        """Property that contains the generated prefix used for archiving, when applicable"""
+        raise NotImplementedError()
 
     @classmethod
     def _check_required_parts(cls, local_vars: dict):
@@ -185,18 +201,66 @@ class AbstractValidFilename(ABC):
         # Do stuff to parse the elements of d into a SimpleNamespace
         raise NotImplementedError()
 
+    @staticmethod
+    def _calculate_applicable_time(start: datetime, end: datetime):
+        """Based on the start time and end time of a file, returns the applicable time (date)
+
+        Parameters
+        ----------
+        start : datetime
+            Start of the applicable time range
+        end : datetime
+            End of the applicable time range
+
+        Returns
+        -------
+        : date
+            The date of the mean time between start and end
+        """
+        # In all production processing cases, utc_start and utc_end should be midnight on consecutive days
+        # The applicable date is considered to be the mean between the two, ignoring hours, minutes, seconds
+        t_0 = start
+        t_1 = end
+        t_mean = t_0 + 0.5 * (t_1 - t_0)
+        applicable_date = datetime.date(t_mean)
+        return applicable_date
+
     def regex_match(self, path: str or Path or CloudPath):
         """Parse and validate a given path against class-attribute defined regex
 
         Returns
         -------
         : dict
+            Match group dict of filename parts
         """
         # AnyPath is polymorphic but self.path will always be a CloudPath or Path object with a name attribute.
         match = self._regex.match(path.name)  # pylint: disable=no-member
         if not match:
             raise ValueError(f"Proposed path {path} failed validation against regex pattern {self._regex}")
         return match.groupdict()
+
+    def generate_prefixed_path(self, parent_path: Union[str, Path, S3Path]) -> Union[Path, S3Path]:
+        """Generates an absolute path of the form {parent_path}/{prefix_structure}/{file_basename}
+        The parent_path can be an S3 bucket or an absolute local filepath (must start with /)
+
+        Parameters
+        ----------
+        parent_path : str or Path or S3Path
+            Absolute path to the parent directory or S3 bucket prefix. The generated path prefix is appended to the
+            parent path and followed by the file basename.
+
+        Returns
+        -------
+        : Path or S3Path
+        """
+        if isinstance(parent_path, str):
+            parent_path = AnyPath(parent_path)
+
+        if not parent_path.is_absolute():
+            raise ValueError(f"Detected relative parent_path {parent_path} passed to generate_prefixed_path. "
+                             "The parent_path must be an absolute path. e.g. s3://my-bucket or /starts/with/root.")
+
+        return parent_path / self.archive_prefix / self.path.name
 
 
 class L0Filename(AbstractValidFilename):
@@ -206,6 +270,16 @@ class L0Filename(AbstractValidFilename):
     _fmt = "{id_char}{scid:03}{first_apid:04}{fill:A<14}{created_time}{numeric_id}{file_number:02}.{extension}{signal}"
     _required_parts = (
         'id_char', 'scid', 'first_apid', 'fill', 'created_time', 'numeric_id', 'file_number', 'extension')
+
+    @property
+    def archive_prefix(self):
+        """Property that contains the generated prefix for L0 archiving"""
+        # Generate prefix structure
+        l0_file_type = "CR" if self.filename_parts.file_number == 0 else "PDS"  # CR is always PDS file_number 0
+        apid = self.filename_parts.first_apid
+
+        # 2023-07-14: This prefix might become too large over the course of the Libera mission
+        return f"{l0_file_type}/{apid:0>4}"
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
@@ -330,123 +404,32 @@ class L0Filename(AbstractValidFilename):
         return SimpleNamespace(**d)
 
 
-class L1bFilename(AbstractValidFilename):
-    """Filename validation class for L1b products"""
+class LiberaDataProductFilename(AbstractValidFilename):
+    """Filename validation class for L1B and L2 science products"""
 
-    _regex = LIBERA_L1B_REGEX
-    _fmt = "libera_l1b_{instrument}_{utc_start}_{utc_end}_{version}_{revision}.{extension}"
-    _required_parts = ('instrument', 'utc_start', 'utc_end', 'version', 'revision', 'extension')
+    _regex = LIBERA_DATA_PRODUCT_REGEX
+    _fmt = "LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}"
+    _required_parts = ('data_level', 'product_name', 'version', 'utc_start', 'utc_end', 'revision', 'extension')
 
-    @classmethod
-    def from_filename_parts(cls,  # pylint: disable=arguments-differ
-                            basepath: str or Path = None,
-                            instrument: str = None,
-                            utc_start: datetime = None,
-                            utc_end: datetime = None,
-                            version: str = None,
-                            revision: datetime = None,
-                            extension: str = 'nc'):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+    @property
+    def archive_prefix(self):
+        """Property that contains the generated prefix for L1B and L2 archiving"""
+        # Generate prefix structure
+        # <product_type>/<year>/<month>/<day>
+        product_name = self.filename_parts.product_name
 
-        The part names are named according to the regex for the file type.
+        applicable_date = self._calculate_applicable_time(self.filename_parts.utc_start, self.filename_parts.utc_end)
 
-        Parameters
-        ----------
-        basepath : str or Path, Optional
-            Allows prepending a basepath or prefix.
-        instrument : str
-            L2 product type. e.g. cloud-fraction. May contain anything except for underscores.
-        utc_start : datetime
-            First timestamp in the SPK
-        utc_end : datetime
-            Last timestamp in the SPK
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
-        revision: datetime
-            Time when the file was created.
-        extension : str
-            File extension (.nc or .h5)
-
-        Returns
-        -------
-        : cls
-        """
-        cls._check_required_parts(locals())
-        return cls._from_filename_parts(basepath=basepath,
-                                        instrument=instrument,
-                                        utc_start=utc_start,
-                                        utc_end=utc_end,
-                                        version=version,
-                                        revision=revision,
-                                        extension=extension)
-
-    @classmethod
-    def _format_filename_parts(cls,  # pylint: disable=arguments-differ
-                               instrument: str,
-                               utc_start: datetime,
-                               utc_end: datetime,
-                               version: str,
-                               revision: datetime,
-                               extension: str):
-        """Construct a path from filename parts
-
-        Parameters
-        ----------
-        instrument : str
-            Libera instrument, cam or rad
-        utc_start : datetime
-            First timestamp in the SPK
-        utc_end : datetime
-            Last timestamp in the SPK
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
-        revision: datetime
-            Time when the file was created.
-        extension : str
-            File extension (.nc or .h5)
-
-        Returns
-        -------
-        : str
-            Formatted filename
-        """
-        return cls._fmt.format(instrument=instrument,
-                               utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
-                               utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               version=version,
-                               revision=revision.strftime(REVISION_TS_FORMAT),
-                               extension=extension)
-
-    def _parse_filename_parts(self):
-        """Parse the filename parts into objects from regex matched strings
-
-        Returns
-        -------
-        : SimpleNamespace
-            namespace object containing filename parts as parsed objects
-        """
-        d = self.regex_match(self.path)
-        d['utc_start'] = datetime.strptime(d['utc_start'], PRINTABLE_TS_FORMAT)
-        d['utc_end'] = datetime.strptime(d['utc_end'], PRINTABLE_TS_FORMAT)
-        d['revision'] = datetime.strptime(d['revision'], REVISION_TS_FORMAT)
-        return SimpleNamespace(**d)
-
-
-class L2Filename(AbstractValidFilename):
-    """Filename validation class for L2 data products."""
-    _regex = LIBERA_L2_REGEX
-    _fmt = "libera_l2_{product_name}_{utc_start}_{utc_end}_{version}_{revision}.{extension}"
-    _required_parts = ('product_name', 'utc_start', 'utc_end', 'version', 'revision', 'extension')
+        return f"{product_name}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
                             basepath: str or Path = None,
+                            data_level: str = None,
                             product_name: str = None,
+                            version: str = None,
                             utc_start: datetime = None,
                             utc_end: datetime = None,
-                            version: str = None,
                             revision: datetime = None,
                             extension: str = 'nc'):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
@@ -457,15 +440,17 @@ class L2Filename(AbstractValidFilename):
         ----------
         basepath : str or Path, Optional
             Allows prepending a basepath or prefix.
+        data_level : str
+            L1B or L2 identifying the level of the data product
         product_name : str
-            L2 product type. e.g. cloud-fraction. May contain anything except for underscores.
+            Product type. e.g. cloud-fraction for L2 or cam for L1B. May contain anything except for underscores.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         utc_start : datetime
             First timestamp in the SPK
         utc_end : datetime
             Last timestamp in the SPK
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
         revision: datetime
             Time when the file was created.
         extension : str
@@ -477,34 +462,39 @@ class L2Filename(AbstractValidFilename):
         """
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
+                                        data_level=data_level,
                                         product_name=product_name,
+                                        version=version,
                                         utc_start=utc_start,
                                         utc_end=utc_end,
-                                        version=version,
                                         revision=revision,
                                         extension=extension)
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
+                               data_level: str,
                                product_name: str,
+                               version: str,
                                utc_start: datetime,
                                utc_end: datetime,
-                               version: str,
                                revision: datetime,
                                extension: str):
         """Construct a path from filename parts
 
         Parameters
         ----------
+        data_level : str
+            L1B or L2
         product_name : str
-            L2 product type. e.g. cloud-fraction. May contain anything except for underscores.
+            Libera instrument, cam or rad for L1B and cloud-fraction etc. for L2. May contain anything except
+            for underscores.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         utc_start : datetime
             First timestamp in the SPK
         utc_end : datetime
             Last timestamp in the SPK
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
         revision: datetime
             Time when the file was created.
         extension : str
@@ -515,10 +505,11 @@ class L2Filename(AbstractValidFilename):
         : str
             Formatted filename
         """
-        return cls._fmt.format(product_name=product_name,
+        return cls._fmt.format(data_level=data_level.upper(),
+                               product_name=product_name.upper(),
+                               version=version.upper(),
                                utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
                                utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               version=version,
                                revision=revision.strftime(REVISION_TS_FORMAT),
                                extension=extension)
 
@@ -541,8 +532,23 @@ class ManifestFilename(AbstractValidFilename):
     """Class for naming manifest files"""
 
     _regex = MANIFEST_FILE_REGEX
-    _fmt = "libera_{manifest_type}_manifest_{created_time}.json"
+    _fmt = "LIBERA_{manifest_type}_MANIFEST_{created_time}.json"
     _required_parts = ('manifest_type', 'created_time')
+
+    @property
+    def archive_prefix(self):
+        """Manifests are not archived like data products, but for convenience and ease of debugging they will be kept
+        in the dropbox bucket by input/output and day they were made. This is used by the step function clean up
+        function in the CDK.
+        # Generate prefix structure
+        # <manifest_type>/<year>/<month>/<day>
+        """
+        manifest_type = self.filename_parts.manifest_type.value
+
+        # This is taking the average of the same time which is the same time
+        applicable_date = self.filename_parts.created_time
+
+        return f"{manifest_type}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
@@ -589,7 +595,7 @@ class ManifestFilename(AbstractValidFilename):
         : str
             Formatted filename
         """
-        return cls._fmt.format(manifest_type=manifest_type.value.lower(),
+        return cls._fmt.format(manifest_type=manifest_type.value.upper(),
                                created_time=created_time.strftime(PRINTABLE_TS_FORMAT))
 
     def _parse_filename_parts(self):
@@ -610,16 +616,27 @@ class EphemerisKernelFilename(AbstractValidFilename):
     """Class to construct, store, and manipulate an SPK filename"""
 
     _regex = SPK_REGEX
-    _fmt = "libera_{spk_object}_{utc_start}_{utc_end}_{version}_{revision}.bsp"
-    _required_parts = ('spk_object', 'utc_start', 'utc_end', 'version', 'revision')
+    _fmt = "LIBERA_{spk_object}_{version}_{utc_start}_{utc_end}_{revision}.bsp"
+    _required_parts = ('spk_object', 'version', 'utc_start', 'utc_end', 'revision')
+
+    @property
+    def archive_prefix(self):
+        """Property that contains the generated prefix for SPICE archiving"""
+        # Generate prefix structure
+        # <type>/<year>/<month>/<day>
+        spk_object = self.filename_parts.spk_object
+
+        applicable_date = self._calculate_applicable_time(self.filename_parts.utc_start, self.filename_parts.utc_end)
+
+        return f"{spk_object}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
                             basepath: str or Path = None,
                             spk_object: str = None,
+                            version: str = None,
                             utc_start: datetime = None,
                             utc_end: datetime = None,
-                            version: str = None,
                             revision: datetime = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
@@ -631,13 +648,13 @@ class EphemerisKernelFilename(AbstractValidFilename):
             Allows prepending a basepath or prefix.
         spk_object : str
             Name of object whose attitude is represented in this SPK.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         utc_start : datetime
             Start time of data.
         utc_end : datetime
             End time of data.
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
         revision: datetime
             When the file was last revised.
 
@@ -648,17 +665,17 @@ class EphemerisKernelFilename(AbstractValidFilename):
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         spk_object=spk_object,
+                                        version=version,
                                         utc_start=utc_start,
                                         utc_end=utc_end,
-                                        version=version,
                                         revision=revision)
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
                                spk_object: str,
+                               version: str,
                                utc_start: datetime,
                                utc_end: datetime,
-                               version: str,
                                revision: datetime):
         """Create an instance from a given path
 
@@ -666,13 +683,13 @@ class EphemerisKernelFilename(AbstractValidFilename):
         ----------
         spk_object : str
             Name of object whose ephemeris is represented in this SPK.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         utc_start : datetime
             Start time of data.
         utc_end : datetime
             End time of data.
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
         revision: datetime
             Time when the file was last revised
 
@@ -680,10 +697,10 @@ class EphemerisKernelFilename(AbstractValidFilename):
         -------
         : cls
         """
-        return cls._fmt.format(spk_object=spk_object,
+        return cls._fmt.format(spk_object=spk_object.upper(),
+                               version=version.upper(),
                                utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
                                utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               version=version,
                                revision=revision.strftime(REVISION_TS_FORMAT))
 
     def _parse_filename_parts(self):
@@ -705,16 +722,27 @@ class AttitudeKernelFilename(AbstractValidFilename):
     """Class to construct, store, and manipulate an SPK filename"""
 
     _regex = CK_REGEX
-    _fmt = "libera_{ck_object}_{utc_start}_{utc_end}_{version}_{revision}.bc"
-    _required_parts = ('ck_object', 'utc_start', 'utc_end', 'version', 'revision')
+    _fmt = "LIBERA_{ck_object}_{version}_{utc_start}_{utc_end}_{revision}.bc"
+    _required_parts = ('ck_object', 'version', 'utc_start', 'utc_end', 'revision')
+
+    @property
+    def archive_prefix(self):
+        """Property that contains the generated prefix for SPICE archiving"""
+        # Generate prefix structure
+        # <type>/<year>/<month>/<day>
+        ck_object = self.filename_parts.ck_object
+
+        applicable_date = self._calculate_applicable_time(self.filename_parts.utc_start, self.filename_parts.utc_end)
+
+        return f"{ck_object}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
                             basepath: str or Path = None,
                             ck_object: str = None,
+                            version: str = None,
                             utc_start: datetime = None,
                             utc_end: datetime = None,
-                            version: str = None,
                             revision: datetime = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
@@ -726,13 +754,13 @@ class AttitudeKernelFilename(AbstractValidFilename):
             Allows prepending a basepath or prefix.
         ck_object : str
             Name of object whose attitude is represented in this CK.
+        version : str
+            Software version that the file was created with. Corresponds to the algorithm version as determined
+            by the algorithm software.
         utc_start : datetime
             Start time of data.
         utc_end : datetime
             End time of data.
-        version : str
-            Software version that the file was created with. Corresponds to the algorithm version as determined
-            by the algorithm software.
         revision: datetime
             When the file was last revised.
 
@@ -743,17 +771,17 @@ class AttitudeKernelFilename(AbstractValidFilename):
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         ck_object=ck_object,
+                                        version=version,
                                         utc_start=utc_start,
                                         utc_end=utc_end,
-                                        version=version,
                                         revision=revision)
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
                                ck_object: str,
+                               version: str,
                                utc_start: datetime,
                                utc_end: datetime,
-                               version: str,
                                revision: datetime):
         """Create an instance from a given path
 
@@ -775,10 +803,10 @@ class AttitudeKernelFilename(AbstractValidFilename):
         -------
         : cls
         """
-        return cls._fmt.format(ck_object=ck_object,
+        return cls._fmt.format(ck_object=ck_object.upper(),
+                               version=version.upper(),
                                utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
                                utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               version=version,
                                revision=revision.strftime(REVISION_TS_FORMAT))
 
     def _parse_filename_parts(self):
@@ -808,7 +836,12 @@ def get_current_revision_str():
 
 
 def format_semantic_version(semantic_version: str):
-    """Formats a semantic version string X.Y.Z into a filename-compatible string like vMXmYpZ, for Major, minor, patch.
+    """Formats a semantic version string X.Y.Z into a filename-compatible string like VX-Y-Z, for X = major version,
+    Y = minor version, Z = patch.
+
+    Result is uppercase.
+    Release candidate suffixes are allowed as no strict checking is done on the contents of X, Y, or Z.
+    e.g. 1.2.3rc1 becomes V1-2-3RC1
 
     Parameters
     ----------
@@ -820,7 +853,7 @@ def format_semantic_version(semantic_version: str):
     : str
     """
     major, minor, patch = semantic_version.split('.')
-    return f"vM{major}m{minor}p{patch}"
+    return f"V{major}-{minor}-{patch}".upper()
 
 
 def get_current_version_str(package_name: str):
