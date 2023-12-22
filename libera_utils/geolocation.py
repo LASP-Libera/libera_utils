@@ -147,7 +147,7 @@ def target_position(target: spice_utils.SpiceBody, et: float or np.ndarray,
     ----------
     target : spice_utils.SpiceBody
         Target body for which to calculate position and velocity relative to observer
-    et : float or numpy array
+    et : float or numpy.ndarray
         Ephemeris time(s)
     frame : spice_utils.SpiceFrame
         Reference frame (unit vectors)
@@ -162,7 +162,7 @@ def target_position(target: spice_utils.SpiceBody, et: float or np.ndarray,
     Returns
     -------
     : tuple
-        (x: np.ndarray, v: np.ndarray, lt: np.ndarray) or (x: float, v: float, lt: float)
+        (x: numpy.ndarray, v: numpy.ndarray, lt: numpy.ndarray) or (x: float, v: float, lt: float)
         Rectangular position and velocity vectors (x, y, z), (v_x, v_y, v_z) where position
         points from the planet center of mass location at ``et`` to the aberration-corrected location of the target.
         Light time (lt) between planetary body and target.
@@ -197,7 +197,7 @@ def sub_observer_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
     ----------
     target : spice_utils.SpiceBody
         Body on which the sub point will be calculated (usually a planetary body).
-    et : float or np.ndarray
+    et : float or numpy.ndarray
         Ephemeris time of observation.
     frame : spice_utils.SpiceFrame
         Reference frame for returned vectors.
@@ -213,7 +213,7 @@ def sub_observer_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
 
     Returns
     -------
-    : np.ndarray, float
+    : numpy.ndarray, float
         Cartesian point on the target body surface in the specified reference frame
         and also the euclidean distance between the observer and the sub point in order: [x, y, z], obs_alt
     """
@@ -237,7 +237,7 @@ def sub_solar_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
     ----------
     target : spice_utils.SpiceBody
         Body on which the sub point will be calculated (usually a planetary body).
-    et : float or np.ndarray
+    et : float or numpy.ndarray
         Ephemeris time of observation.
     frame : spice_utils.SpiceFrame
         Reference frame for returned vectors.
@@ -253,7 +253,7 @@ def sub_solar_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
 
     Returns
     -------
-    : np.ndarray, np.ndarray, np.ndarray
+    : numpy.ndarray, numpy.ndarray, numpy.ndarray
         Subsolar point on the ellipsoid surface in the specified reference frame, apparent epoch at that point
         (depending on specified light time correction), and vector from observer to subsolar point.
     """
@@ -277,17 +277,17 @@ def frame_transform(from_frame: spice_utils.SpiceFrame, to_frame: spice_utils.Sp
         Reference frame of position
     to_frame : spice_utils.SpiceFrame
         Reference frame of output
-    et : np.float64 or np.ndarray with dtype np.float64
+    et : numpy.float64 or numpy.ndarray
         Ephemeris time(s) corresponding to position(s).
         For time-independent transformations, this can by any valid ephemeris time.
-    position : np.ndarray
+    position : numpy.ndarray
         <x, y, z> vector or array of vectors in reference frame `from_frame`
     normalize : bool, Optional
         Optionally normalize the output vector
 
     Returns
     -------
-    : np.ndarray
+    : numpy.ndarray
         3d position vector(s) in reference frame `to_frame`
     """
     if ((position.ndim == 1 and not (len(position) == 3 and isinstance(et, float))) or
@@ -316,16 +316,16 @@ def angle_between(v1: np.ndarray, v2: np.ndarray, degrees: bool = False):
 
     Parameters
     ----------
-    v1 : np.ndarray
+    v1 : numpy.ndarray
         Vector(s) 1. May be shape (D,) or (N, D).
-    v2 : nd.ndarray
+    v2 : numpy.ndarray
         Vector(s) 2. May be shape (D,) or (N, D).
     degrees : bool
         Specify True to return result in degrees. Default is False (returns radians).
 
     Returns
     -------
-    : float or np.ndarray
+    : float or numpy.ndarray
         Angle between v1 and v2 in radians (optionally in degrees)
     """
     if v1.ndim == 1 and v2.ndim == 1:
@@ -357,14 +357,14 @@ def cartesian_to_planetographic(cartesian_coords: np.ndarray, degrees: bool = Tr
 
     Parameters
     ----------
-    cartesian_coords : np.ndarray
+    cartesian_coords : numpy.ndarray
         Rectangular coordinates in ITRF93 frame.
     degrees : bool
         Default true. If False, returns angles in radians.
 
     Returns
     -------
-    : np.ndarray
+    : numpy.ndarray
         Each coordinate is returned as (longitude, latitude, altitude).
     """
     re, _, flat = get_earth_radii()
@@ -412,19 +412,19 @@ def surface_intercept_point(sc_location: np.ndarray, look_vector: np.ndarray,
 
     Parameters
     ----------
-    sc_location : np.ndarray
+    sc_location : numpy.ndarray
         The location of the observing body (i.e. the spacecraft body) with respect to Earth
-    look_vector : np.ndarray
+    look_vector : numpy.ndarray
         Look direction unit vector (e.g. an instrument look direction)
     look_frame : spice_utils.SpiceFrame
         Reference frame of `look_vector`
-    et : float or np.ndarray or None, Optional
+    et : float or numpy.ndarray or None, Optional
         Ephemeris time (at spacecraft at photon detection time). Only required if look_frame is not ITRF93.
 
     Returns
     -------
-    : tuple (pnear, alt)
-        Rectangular coordinates of nearest point to reference surface ellipsoid and distance
+    : tuple
+        (pnear, alt) Rectangular coordinates of nearest point to reference surface ellipsoid and distance
         between the line and the near point.
     """
     # Transform look unit vector(s) from instrument frame into the ITRF93 frame

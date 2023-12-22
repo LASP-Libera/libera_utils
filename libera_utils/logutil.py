@@ -22,7 +22,7 @@ def configure_static_logging(config_file: AnyPath or str):
 
     Parameters
     ----------
-    config_file : AnyPath or str
+    config_file : cloudpathlib.anypath.AnyPath or str
         Location of config file.
 
     See Also
@@ -100,7 +100,7 @@ def configure_task_logging(task_id: str, app_package_name: str, console_log_leve
                 "formatter": "plaintext",
                 "level": "DEBUG",
                 "filename": str(log_filepath),
-                "maxBytes": 1000000,
+                "maxBytes": 10000000,  # 10MB
                 "backupCount": 3
             }
             handlers.update(logfile=logfile_handler)

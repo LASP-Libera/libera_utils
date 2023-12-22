@@ -55,12 +55,15 @@ class QualityFlag(Flag, boundary=STRICT):
         """
         Return the set of all set flags that form a subset of the queried flag value. Note that this is not the
         minimum set of quality flags but rather a full set of all flags such that when they are ORed together, they
-        produce self.value
+        produce `self.value`
 
-        :return: members, not_covered
+        Returns
+        -------
+        : tuple
+            A tuple containing (members, not_covered)
             `members` is a list of flag values that are subsets of `value`
             `not_covered` is zero if the OR of members recreates `value`. Non-zero otherwise if bits are set in `value`
-                that do not exist as named values in cls.
+            that do not exist as named values in cls.
         """
         value = self.value
         not_covered = value
@@ -81,7 +84,14 @@ class QualityFlag(Flag, boundary=STRICT):
 
     @property
     def summary(self):
-        """Summarize quality flag value"""
+        """Summarize quality flag value
+
+        Returns
+        -------
+        : tuple
+            (value, message_list) where value is the integer value of the quality flag and message list is a list of
+            strings describing the quality flag bits which are set.
+        """
         members, not_covered = self.decompose()
         print(members)
         if not_covered:
@@ -108,7 +118,19 @@ class FlagBit(int):
 
 
 def with_all_none(f):
-    """Add NONE and ALL psuedo-members to f"""
+    """Decorator that adds `NONE` and `ALL` psuedo-members to a QualityFlag `f`
+
+    For example:
+
+    .. code-block:: python
+
+        @with_all_none
+        class MyQualityFlag(QualityFlag, metaclass=FrozenFlagMeta):
+            MISSING_DATA = FlagBit(0b1, message="Data is missing!")
+            VOLTAGE_TOO_HIGH = FlagBit(0b10, message="Voltage is too high!")
+        qf = MyQualityFlag.ALL  # Equivalent to MyQualityFlag(0b11)
+        qf.summary
+    """
     f._member_map_['NONE'] = f(FlagBit(0, message="No flags set."))
     f._member_map_['ALL'] = f(reduce(_or_, f))
     return f

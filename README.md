@@ -1,52 +1,19 @@
-# Libera Science Data Processing
-Science data processing algorithms for the Libera mission.
-
+# Libera Science Data Processing Utilities
+This package contains utilities and common code for the Libera Science Data Center and 
+algorithm developers.
 
 ## Further Documentation
-See the published confluence developers documentation pages through LASP 
-located [here](https://lasp.colorado.edu/galaxy/display/LIBERASDPDOC/Developers+Documentation)
+Documentation, including full API documentation, is automatically 
+published through ReadTheDocs at https://libera-utils.readthedocs.io
 
+Additional documentation helpful for Level 2 Algorithm Developers is also available in the Libera SDC Developer Guide. 
+Please contact the Libera SDC Team at LASP for access to the Developer Guide.
 
 ## Installation PyPI
-Note: This only works for officially released versions.
+
 ```bash
 pip install libera-utils
 ```
 
-
-## Basic Usage
-
-
-### Command Line Interface
-Depending on how you have installed `libera_utils`, your CLI runner may vary. The commands below assume that your 
-virtual environment's `bin` directory is in your `PATH`. If you are developing the package, you may
-want to use `poetry run` to run CLI commands.
-
-#### Top Level Command `libera-utils`
-```shell
-libera-utils [--version] [-h]
-```
-
-#### Sub-Command `libera-utils make-kernel jpss-spk`
-```shell
-libera-utils make-kernel jpss-spk [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
-```
-
-
-#### Sub-Command `libera-utils make-kernel jpss-ck`
-```shell
-libera-utils make-kernel jpss-ck [-h] [--outdir OUTDIR] [--overwrite] packet_data_filepaths [packet_data_filepaths ...]
-```
-
-
-#### Sub-Command `libera-utils make-kernel azel-ck`
-Not yet implemented
-```shell
-libera-utils make-kernel azel-ck [-h]
-```
-
-
-#### Sub-Command `packet-ingest input-manifest.json`
-```shell
-libera-utils packet-ingest [-h] [packet_data_filepath]
-```
+Release candidate versions (version strings suffixed with `rc` followed by the candidate number, e.g. `1.2.3rc2`) 
+may also be available but are likely to contain bugs.

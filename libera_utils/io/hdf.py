@@ -8,7 +8,7 @@ def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = Fa
 
     Parameters
     ----------
-    f: h5.File or h5.Group
+    f: h5py.File or h5py.Group
         File, Group object from which to start inspecting.
     include_attrs: bool, Optional
         Default True.

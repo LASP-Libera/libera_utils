@@ -11,6 +11,10 @@ from libera_utils.db.mixins import ReprMixin, DataProductMixin
 class Cr(Base, ReprMixin):
     """
     Construction record
+
+    Parameters
+    ----------
+
     """
     __repr_attrs__ = ["file_name"]
 

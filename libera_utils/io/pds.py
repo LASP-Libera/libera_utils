@@ -571,7 +571,7 @@ class ConstructionRecord:
 
             Parameters
             ----------
-            filepath : str or Path or S3Path
+            filepath : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
                 Location of construction record file to read.
 
             Returns

@@ -96,7 +96,7 @@ class DataProductMixin:
 
         Parameters
         ----------
-        session: Session, Optional
+        session: sqlalchemy.orm.Session, Optional
             If None, creates a new session
         filters: dict
             Optional filters to narrow down results
@@ -116,7 +116,7 @@ class DataProductMixin:
 
         Parameters
         ----------
-        session: Session, Optional
+        session: sqlalchemy.orm.Session, Optional
             If None, creates a new session
         filters: dict
             Optional filters to narrow results

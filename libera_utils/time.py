@@ -43,9 +43,9 @@ def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],
 
     Parameters
     ----------
-    et: Union[float, Collection[float], np.ndarray]
+    et: Union[float, Collection[float], numpy.ndarray]
         Ephemeris Time to be converted.
-    fmt: str, optional
+    fmt: str, Optional
         Format string as defined by the datetime.strftime() function.
 
     Returns
@@ -69,12 +69,12 @@ def et_2_datetime(et: Union[float, Collection[float], np.ndarray]) -> Union[date
 
     Parameters
     ----------
-    et: Union[float, Collection[float], np.ndarray]
+    et: float or Collection or numpy.ndarray
         Ephemeris times to be converted.
 
     Returns
     -------
-    : Union[datetime, np.ndarray]
+    : datetime.datetime or numpy.ndarray
         Object representation of ephemeris times.
     """
     isoc_fmt = '%Y-%m-%dT%H:%M:%S.%f'
@@ -97,7 +97,7 @@ def et2utc_wrapper(et: Union[float, Collection[float], np.ndarray], fmt: str, pr
 
     Parameters
     ----------
-    et: Union[float, Collection[float], np.ndarray]
+    et: Union[float, Collection[float], numpy.ndarray]
         The ephemeris time value to be converted to UTC.
     fmt: str
         Format string defines the format of the output time string. See CSPICE docs.
@@ -106,7 +106,7 @@ def et2utc_wrapper(et: Union[float, Collection[float], np.ndarray], fmt: str, pr
 
     Returns
     -------
-    : Union[np.ndarray, str]
+    : Union[numpy.ndarray, str]
         UTC time string(s)
     """
     return spice.et2utc(et, fmt, prec)
@@ -127,7 +127,7 @@ def utc2et_wrapper(iso_str: Union[str, Collection[str]]) -> Union[float, np.ndar
 
     Returns
     -------
-    : Union[float, np.ndarray]
+    : float or numpy.ndarray
         Ephemeris time
     """
     if isinstance(iso_str, str):
@@ -151,7 +151,7 @@ def scs2e_wrapper(sclk_str: Union[str, Collection[str]]) -> Union[float, np.ndar
 
     Returns
     -------
-    : Union[float, np.ndarray]
+    : Union[float, numpy.ndarray]
         Ephemeris time
     """
     sc_id = config.get("JPSS_SC_ID")
@@ -171,7 +171,7 @@ def sce2s_wrapper(et: Union[float, Collection[float], np.ndarray]) -> Union[str,
 
     Parameters
     ----------
-    et: Union[float, Collection[float], np.ndarray]
+    et: Union[float, Collection[float], numpy.ndarray]
         Ephemeris time
 
     Returns
@@ -197,7 +197,7 @@ def convert_cds_integer_to_datetime(satellite_time: int):
 
     Returns
     -------
-    cds_time : datetime
+    cds_time : datetime.datetime
      """
     byte_data = satellite_time.to_bytes(8, 'big')
     int_days = int.from_bytes([byte_data[0], byte_data[1]], byteorder="big")

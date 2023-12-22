@@ -137,4 +137,4 @@ class _ConfigurationCache:
 
 
 config = _ConfigurationCache()
-"""Convenience alias for :meth:`libera_utils.config._ConfigurationCache`"""
+"""Singleton (one per process) accessor for :meth:`libera_utils.config._ConfigurationCache`"""

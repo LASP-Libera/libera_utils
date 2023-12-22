@@ -67,19 +67,3 @@ COPY pylintrc $LIBERA_UTILS_DIRECTORY
 
 # Set entrypoint
 ENTRYPOINT ["pytest", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]
-
-# libera-utils-docs
-# -------------
-FROM libera-utils AS libera-utils-docs
-
-# Install make and related tools
-RUN apt-get install -y build-essential
-
-# Install dev dependencies (not installed in libera-utils image)
-RUN poetry install --with docgen
-
-# Copy file over and set the working directory
-COPY doc $LIBERA_UTILS_DIRECTORY/doc
-WORKDIR $LIBERA_UTILS_DIRECTORY/doc
-
-ENTRYPOINT ["make"]

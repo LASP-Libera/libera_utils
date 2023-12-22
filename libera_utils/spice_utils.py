@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import NamedTuple
+from typing import NamedTuple, Callable
 import time
 # Installed
 from cloudpathlib import S3Path
@@ -80,11 +80,11 @@ class KernelFileCache:
         cached. Fallback occurs only after failing to download.
         Parameters
         ----------
-        kernel_url : str or S3Path
+        kernel_url : str or cloudpathlib.S3Path
             Location of kernel file as a URL or an S3Path
         max_cache_age : datetime.timedelta
             Length of time to tolerate stale kernels in the cache without forcing a redownload.
-        fallback_kernel : Path
+        fallback_kernel : pathlib.Path
             Path pointing to a fallback kernel location. May be None, which disallows a fallback.
         """
         # Remove any trailing slash from naif_base_url (we assume no trailing slash in methods)
@@ -101,7 +101,7 @@ class KernelFileCache:
 
         Returns
         -------
-        : str
+        str
         """
         if isinstance(self.kernel_url, S3Path):
             return self.kernel_url.name
@@ -113,7 +113,7 @@ class KernelFileCache:
 
         Returns
         -------
-        Path
+        pathlib.Path
             Path to the proper local cache for the system.
         """
         return caching.get_local_cache_dir()
@@ -157,7 +157,7 @@ class KernelFileCache:
 
         Returns
         -------
-        : bool
+        bool
             Returns True if kernel is present locally and within the age limit.
         """
         presumptive_local_file = self.cache_dir / self.kernel_basename
@@ -180,7 +180,7 @@ class KernelFileCache:
 
         Returns
         -------
-        Path
+        pathlib.Path
             Location of downloaded file
         """
         kernel_name = kernel_url.name if isinstance(kernel_url, S3Path) else os.path.basename(kernel_url)
@@ -278,7 +278,7 @@ class KernelFileRecord(NamedTuple):
         return f"KernelFileRecord({self.kernel_type}, {self.file_name})"
 
 
-def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
+def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
     # TODO: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't figured out
     #  exactly how we want to use it for SPK and CK files.
     #  Perhaps this decorator should only be smart enough to check for generic kernels?
@@ -328,17 +328,17 @@ def ensure_spice(f_py: callable = None, time_kernels_only: bool = False):
 
     Parameters
     ----------
-    f_py: callable
+    f_py: Callable
         The function requiring SPICE that we are going to wrap if being used explicitly,
         Otherwise None, in which case ensure_spice is being used, not as a function wrapper (see l2a_processing.py) but
         as a true decorator without an explicit function argument.
-    time_kernels_only: bool, optional
+    time_kernels_only: bool, Optional
         Specify that we only need to furnish time kernels
         (if SPICE_METAKERNEL is set, we still just furnish that metakernel and assume the time kernels are included.
 
     Returns
     -------
-    : callable
+    Callable
         Decorated function, with spice error handling
     """
     if f_py and not callable(f_py):
@@ -392,7 +392,7 @@ def ls_kernels(verbose: bool = False, log: bool = False) -> list:
 
     Returns
     -------
-    : list
+    list
         A list of KernelFileRecord named tuples.
     """
     count = spice.ktotal('ALL')
@@ -422,7 +422,7 @@ def ls_spice_constants(verbose: bool = False) -> dict:
 
     Returns
     -------
-    : dict
+    dict
         Dictionary of kernel constants
     """
     try:
@@ -461,7 +461,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
 
     Returns
     -------
-    : dict
+    dict
         Key is filename, value is a list of tuples giving the start and end times in ET.
     """
     if kernel_type not in ('CK', 'SPK'):
