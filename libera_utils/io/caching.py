@@ -11,7 +11,7 @@ def get_local_cache_dir():
 
     Returns
     -------
-    : Path
+    : pathlib.Path
         Path to the cache directory for this version of this package on the current system
     """
     system = sys.platform

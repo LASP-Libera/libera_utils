@@ -165,14 +165,14 @@ class AbstractValidFilename(ABC):
 
         Parameters
         ----------
-        basepath : str or Path, Optional
+        basepath : str or pathlib.Path, Optional
             Allows prepending a basepath or prefix.
-        parts :
+        parts : dict
             Passed directly to _format_filename_parts
 
         Returns
         -------
-        : cls
+        : AbstractValidFilename
         """
         filename = cls._format_filename_parts(**parts)
         if basepath is not None:
@@ -194,7 +194,7 @@ class AbstractValidFilename(ABC):
 
         Returns
         -------
-        : SimpleNamespace
+        : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
@@ -207,14 +207,14 @@ class AbstractValidFilename(ABC):
 
         Parameters
         ----------
-        start : datetime
+        start : datetime.datetime
             Start of the applicable time range
-        end : datetime
+        end : datetime.datetime
             End of the applicable time range
 
         Returns
         -------
-        : date
+        : datetime.date
             The date of the mean time between start and end
         """
         # In all production processing cases, utc_start and utc_end should be midnight on consecutive days
@@ -245,13 +245,13 @@ class AbstractValidFilename(ABC):
 
         Parameters
         ----------
-        parent_path : str or Path or S3Path
+        parent_path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
             Absolute path to the parent directory or S3 bucket prefix. The generated path prefix is appended to the
             parent path and followed by the file basename.
 
         Returns
         -------
-        : Path or S3Path
+        : pathlib.Path or cloudpathlib.s3.s3path.S3Path
         """
         if isinstance(parent_path, str):
             parent_path = AnyPath(parent_path)
@@ -299,7 +299,7 @@ class L0Filename(AbstractValidFilename):
 
         Parameters
         ----------
-        basepath : str or Path, Optional
+        basepath : str or pathlib.Path, Optional
             Allows prepending a basepath or prefix.
         id_char : str
             Either P (for PDS files, Construction Records) or X (for Delivery Records)
@@ -309,7 +309,7 @@ class L0Filename(AbstractValidFilename):
             First APID in the file
         fill : str
             Custom string up to 14 characters long
-        created_time : datetime
+        created_time : datetime.datetime
             Creation time of the file
         numeric_id : int
             Data set ID, 0-9, one digit
@@ -322,7 +322,7 @@ class L0Filename(AbstractValidFilename):
 
         Returns
         -------
-        : cls
+        : L0Filename
         """
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
@@ -359,7 +359,7 @@ class L0Filename(AbstractValidFilename):
             First APID in the file
         fill : str
             Custom string up to 14 characters long
-        created_time : datetime
+        created_time : datetime.datetime
             Creation time of the file
         numeric_id : int
             Data set ID, 0-9, one digit
@@ -392,7 +392,7 @@ class L0Filename(AbstractValidFilename):
 
         Returns
         -------
-        : SimpleNamespace
+        : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
@@ -438,7 +438,7 @@ class LiberaDataProductFilename(AbstractValidFilename):
 
         Parameters
         ----------
-        basepath : str or Path, Optional
+        basepath : str or pathlib.Path, Optional
             Allows prepending a basepath or prefix.
         data_level : str
             L1B or L2 identifying the level of the data product
@@ -447,18 +447,18 @@ class LiberaDataProductFilename(AbstractValidFilename):
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
-        utc_start : datetime
+        utc_start : datetime.datetime
             First timestamp in the SPK
-        utc_end : datetime
+        utc_end : datetime.datetime
             Last timestamp in the SPK
-        revision: datetime
+        revision: datetime.datetime
             Time when the file was created.
         extension : str
             File extension (.nc or .h5)
 
         Returns
         -------
-        : cls
+        : LiberaDataProductFilename
         """
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
@@ -491,11 +491,11 @@ class LiberaDataProductFilename(AbstractValidFilename):
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
-        utc_start : datetime
+        utc_start : datetime.datetime
             First timestamp in the SPK
-        utc_end : datetime
+        utc_end : datetime.datetime
             Last timestamp in the SPK
-        revision: datetime
+        revision: datetime.datetime
             Time when the file was created.
         extension : str
             File extension (.nc or .h5)
@@ -518,7 +518,7 @@ class LiberaDataProductFilename(AbstractValidFilename):
 
         Returns
         -------
-        : SimpleNamespace
+        : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
@@ -561,16 +561,16 @@ class ManifestFilename(AbstractValidFilename):
 
         Parameters
         ----------
-        basepath : str or Path, Optional
+        basepath : str or pathlib.Path, Optional
             Allows prepending a basepath or prefix.
         manifest_type : ManifestType
             Input or output
-        created_time : datetime
+        created_time : datetime.datetime
             Time of manifest creation (writing).
 
         Returns
         -------
-        : cls
+        : ManifestFilename
         """
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
@@ -587,7 +587,7 @@ class ManifestFilename(AbstractValidFilename):
         ----------
         manifest_type : ManifestType
             Input or output
-        created_time : datetime
+        created_time : datetime.datetime
             Time of manifest creation (writing).
 
         Returns
@@ -603,7 +603,7 @@ class ManifestFilename(AbstractValidFilename):
 
         Returns
         -------
-        : SimpleNamespace
+        : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
@@ -644,23 +644,23 @@ class EphemerisKernelFilename(AbstractValidFilename):
 
         Parameters
         ----------
-        basepath : str or Path, Optional
+        basepath : str or pathlib.Path, Optional
             Allows prepending a basepath or prefix.
         spk_object : str
             Name of object whose attitude is represented in this SPK.
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
-        utc_start : datetime
+        utc_start : datetime.datetime
             Start time of data.
-        utc_end : datetime
+        utc_end : datetime.datetime
             End time of data.
-        revision: datetime
+        revision: datetime.datetime
             When the file was last revised.
 
         Returns
         -------
-        : cls
+        : EphemerisKernelFilename
         """
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
@@ -677,7 +677,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
                                utc_start: datetime,
                                utc_end: datetime,
                                revision: datetime):
-        """Create an instance from a given path
+        """Format filename parts as a string
 
         Parameters
         ----------
@@ -686,16 +686,16 @@ class EphemerisKernelFilename(AbstractValidFilename):
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
-        utc_start : datetime
+        utc_start : datetime.datetime
             Start time of data.
-        utc_end : datetime
+        utc_end : datetime.datetime
             End time of data.
-        revision: datetime
+        revision: datetime.datetime
             Time when the file was last revised
 
         Returns
         -------
-        : cls
+        : str
         """
         return cls._fmt.format(spk_object=spk_object.upper(),
                                version=version.upper(),
@@ -708,7 +708,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
 
         Returns
         -------
-        : SimpleNamespace
+        : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
@@ -750,23 +750,23 @@ class AttitudeKernelFilename(AbstractValidFilename):
 
         Parameters
         ----------
-        basepath : str or Path, Optional
+        basepath : str or pathlib.Path, Optional
             Allows prepending a basepath or prefix.
         ck_object : str
             Name of object whose attitude is represented in this CK.
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
-        utc_start : datetime
+        utc_start : datetime.datetime
             Start time of data.
-        utc_end : datetime
+        utc_end : datetime.datetime
             End time of data.
-        revision: datetime
+        revision: datetime.datetime
             When the file was last revised.
 
         Returns
         -------
-        : cls
+        : AttitudeKernelFilename
         """
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
@@ -783,25 +783,25 @@ class AttitudeKernelFilename(AbstractValidFilename):
                                utc_start: datetime,
                                utc_end: datetime,
                                revision: datetime):
-        """Create an instance from a given path
+        """Format filename parts as a string
 
         Parameters
         ----------
         ck_object : str
             Name of object whose attitude is represented in this CK.
-        utc_start : datetime
+        utc_start : datetime.datetime
             Start time of data.
-        utc_end : datetime
+        utc_end : datetime.datetime
             End time of data.
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
-        revision: datetime
+        revision: datetime.datetime
             When the file was last revised.
 
         Returns
         -------
-        : cls
+        : str
         """
         return cls._fmt.format(ck_object=ck_object.upper(),
                                version=version.upper(),
@@ -814,7 +814,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
 
         Returns
         -------
-        : SimpleNamespace
+        : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)

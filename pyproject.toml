@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "libera_utils"
-version = "2.2.0"
+version = "2.2.1rc1"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
@@ -18,41 +18,39 @@ include = ["CHANGES.md", "LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
 # Keep these "as loose as practical" to allow maximum compatibility with others' environments
-python = ">=3.8,<3.12"
-astropy = "^5.1"
-cloudpathlib = {extras = ["s3"], version = "^0.14.0"}
-h5netcdf = "^1.0.0"
-h5py = "^3.3"
-numpy = "^1.21"
-psycopg2 = "^2.9.3"
-requests = "^2.27.0"
-setuptools = "^67.0.0"
-space-packet-parser = "^4.1"
-spiceypy = "^5.0.0"
-SQLAlchemy = "^1.4.31"
-watchtower = "^3.0.0"
-xarray = "^2023.1.0"
+python = ">=3.9,<3.12"
+astropy = ">=5.0"
+cloudpathlib = {extras = ["s3"], version = ">=0.14.0,<1.0"}
+h5netcdf = ">=1.0.0"
+h5py = ">=3.3"
+numpy = ">=1.21"  # Numpy 2.0 is up for release very soon
+psycopg2 = ">=2.9.3,<3.0"
+requests = ">=2.27.0,<3.0"
+setuptools = ">=67.0.0"
+space-packet-parser = "4.1.1"
+spiceypy = ">=5.0.0"
+SQLAlchemy = ">=1.4.31,<2.0" # TODO: Upgrade and test with 2.0
+urllib3 = "<2.0"  # This pin speeds up solving boto dependencies, which require urllib3<2.0
+watchtower = ">=3.0.0,<4.0"
+xarray = ">=2023.1.0"
 
 [tool.poetry.group.dev.dependencies]
-# We are strict on these dependencies because they are not typically requirements of other packages
-bandit = "^1.7.5"
-botocore = "^1.29.100"
-moto = {extras = ["s3"], version = "4.1.9"}
-pytest-cov = "^4.0.0"
-pylint = "^2.15.10"
-pytest-randomly = "^3.12.0"
-responses = "^0.23.0"
+# These specs are totally open because they are only needed for developers
+bandit = "*"
+botocore = "*"
+moto = {extras = ["s3"], version = "*"}
+pytest-cov = "*"
+pylint = "*"
+pytest-randomly = "*"
+responses = "*"
 
-# These are listed as a group rather than an extra because no end user will need them
 [tool.poetry.group.docgen.dependencies]
-myst-parser = "^0.18.0"
-m2r2 = "^0.3.0"
-numpydoc = "^1.4.0"
-Sphinx = "^4.2.0"
-sphinx-rtd-theme = "^1.0.0"
-sphinxcontrib-napoleon = "^0.7"
-sphinxcontrib-confluencebuilder = "^1.9.0"
-sphinx-autoapi = "^1.8.4"
+# These are listed as a group rather than an extra because no end user will need them
+# The specs are totally open because no user will need them
+myst-parser = "*"  # Parses markdown for sphinx
+numpydoc = "*"  # Parses Numpy style docstrings
+sphinx = "*"
+pydata-sphinx-theme = "*"
 
 [tool.poetry.scripts]
 libera-utils = 'libera_utils.cli:main'

@@ -36,14 +36,14 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
 
     Parameters
     ----------
-    manifest_file_path : str or AnyPath
+    manifest_file_path : str or cloudpathlib.anypath.AnyPath
         Path to the manifest file that includes end_time and start_time
         in the configuration section
-    output_directory :  str or AnyPath
+    output_directory :  str or cloudpathlib.anypath.AnyPath
         Path to save the completed kernels
     Returns
     -------
-    output_directory : str or AnyPath
+    output_directory : str or cloudpathlib.anypath.AnyPath
         Path to the directory containing the completed kernels
     """
     # TODO: Consider cases to return/error if the entire range is not covered
@@ -115,7 +115,7 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths):
 
     Returns
     -------
-    packet_data : ndarray
+    packet_data : numpy.ndarray
         The configured packet data. See packets.py for more details on structure
      """
     packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
@@ -326,9 +326,9 @@ def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path,
 
     Parameters
     ----------
-    data : np.ndarray
+    data : numpy.ndarray
         Structured array (named, with data types) of attitude or ephemeris data.
-    filepath : str or Path
+    filepath : str or pathlib.Path
         Filepath to write to.
     fields : list
         Optional. List of field names to write out to the data file. If not specified, assume fields are already
@@ -339,7 +339,7 @@ def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path,
 
     Returns
     -------
-    : Path
+    : pathlib.Path
         Absolute path to written file.
     """
     if fields:
@@ -357,12 +357,12 @@ def write_kernel_setup_file(data: dict, filepath: Path):
     ----------
     data : dict
         Dictionary of key-value pairs to write to the setup file.
-    filepath : Path
+    filepath : pathlib.Path
         Filepath to write to.
 
     Returns
     -------
-    : Path
+    : pathlib.Path
         Absolute path to written file.
     """
     with open(filepath, 'x+', encoding='utf_8') as fh:

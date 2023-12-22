@@ -36,7 +36,7 @@ def parse_cli_args(cli_args: list):
 
     Returns
     -------
-    Namespace
+    : argparse.Namespace
         Parsed arguments in a Namespace object
     """
     parser = argparse.ArgumentParser(prog="libera-utils", description="Libera SDC utilities CLI")
@@ -47,21 +47,24 @@ def parse_cli_args(cli_args: list):
     subparsers = parser.add_subparsers(description="sub-commands for libera-utils CLI")
 
     # packet-ingest
-    packet_ingest_parser = subparsers.add_parser('pds-ingest',
-                                                 help='write construction record data to database')
-    packet_ingest_parser.set_defaults(func=pds_ingest.ingest)
-    packet_ingest_parser.add_argument('manifest_filepath', type=str,
-                                      help="path to L0 manifest file")
-    packet_ingest_parser.add_argument('-d', '--delete', action='store_true',
-                                      help='Deletes data files from s3 bucket once they are moved.')
-    packet_ingest_parser.add_argument('-v', '--verbose', action='store_true',
-                                      help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
+    pds_ingest_parser = subparsers.add_parser('pds-ingest',
+                                              help='write construction record data to database')
+    pds_ingest_parser.set_defaults(func=pds_ingest.ingest)
+    pds_ingest_parser.add_argument('manifest_filepath', type=str,
+                                   help="path to L0 manifest file")
+    pds_ingest_parser.add_argument('-d', '--delete', action='store_true',
+                                   help='delete data files from s3 bucket once they are moved')
+    pds_ingest_parser.add_argument('-v', '--verbose', action='store_true',
+                                   help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
+
     # make-kernel
     make_kernel_parser = subparsers.add_parser('make-kernel',
                                                help='generate SPICE kernel from telemetry data')
 
     make_kernel_subparsers = make_kernel_parser.add_subparsers(description="sub-commands for make-kernel sub-command")
 
+    # TODO: the interfaces to these spice kernel makers need to be changed to accept a manifest file path, which
+    #   points to the PDS files from which to generate the kernels.
     # make-kernel jpss-spk
     jpss_spk_parser = make_kernel_subparsers.add_parser('jpss-spk', help="generate JPSS SPK kernel from telemetry")
     jpss_spk_parser.set_defaults(func=kernel_maker.make_jpss_spk)

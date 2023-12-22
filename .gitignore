@@ -29,6 +29,10 @@ dist
 libera_utils/_version.py
 poetry.lock
 
+# Auto-generated Documentation #
+################################
+doc/source/api-doc/generated
+
 # Packages #
 ############
 # it's better to unpack these files and commit the raw source
@@ -61,6 +65,7 @@ Thumbs.db
 #######################
 .idea
 .project
+.run
 
 # Virtual environment #
 #######################

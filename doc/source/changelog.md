@@ -1,8 +1,8 @@
 # Version Changes
 
-# 2.3.0 (unreleased)
+## 2.3.0 (unreleased)
 
-# 2.2.0 (released)
+## 2.2.0 (released)
 - Add AnyFilename polymorphic class
 - Change filename of all products to a LiberaDataProductFilename that inherits from AnyFilename
 - Update filenaming convention to be all capital letters
@@ -20,22 +20,22 @@
 - Refactored pds ingest to use AnyPath objects for handling file locations
 - Added error handling to pds ingest
 
-# 2.1.1 (released)
+## 2.1.1 (released)
 - Update dependency specification to speed up dependency resolution wrt botocore/urllib3
 - Improve database initialization to work with libera_cdk changes
 - Fix bug in Dockerfile that incorrectly set the default entrypoint
 - Add preliminary instrument kernel
 
-# 2.1.0 (released)
+## 2.1.0 (released)
 - Improve API to Manifest and Manifest.add_files
 - Add manifest filename enforcement to Manifest class
 - Update filenaming conventions for product filenames and SPICE kernels
 - Allow adding an s3 bucket/prefix as a basepath for filenames
 
-# 2.0.1 (released)
+## 2.0.1 (released)
 - Remove the extras dependency spec because of the way SQLAlchemy imports models
 
-# 2.0.0 (released)
+## 2.0.0 (released)
 - Add filenaming classes
 - Add manifest file class
 - Add construction record parser
@@ -47,7 +47,7 @@
 - Add quality flag classes
 - Change license to BSD3
 
-# 1.0.0 (released)
+## 1.0.0 (released)
 - Stub out project structure
 - Add build and release processes to readme
 - Switch to Poetry for project dependency configuration and build management

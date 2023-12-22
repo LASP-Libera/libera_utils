@@ -25,7 +25,7 @@ def array_from_packets(packets: list, apid: int = None):
 
     Returns
     -------
-    : np.recarray
+    numpy.recarray
         Record array with one column per field name in the packet type. Values are derived if a derived value exists,
         otherwise, the values are the raw values.
     """
@@ -52,7 +52,7 @@ def parse_packets(packet_parser: parser.PacketParser, packet_data_filepaths: lis
 
     Parameters
     ----------
-    packet_parser : parser.PacketParser
+    packet_parser : space_packet_parser.parser.PacketParser
         Parser, already initialized with the anticipated definition.
     packet_data_filepaths : list
         List of filepaths to packets files.
@@ -63,7 +63,7 @@ def parse_packets(packet_parser: parser.PacketParser, packet_data_filepaths: lis
 
     Returns
     -------
-    : np.recarray
+    numpy.recarray
         Concatenated arrays of packet data.
     """
     data_arrays = []

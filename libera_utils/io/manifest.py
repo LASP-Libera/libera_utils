@@ -91,7 +91,7 @@ class Manifest:
 
         Parameters
         ----------
-        filepath : str or Path or S3Path
+        filepath : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
             Location of manifest file to read.
 
         Returns
@@ -115,7 +115,7 @@ class Manifest:
 
         Parameters
         ----------
-        outpath : str or Path or S3Path
+        outpath : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
             Directory path to write to (directory being used loosely to refer also to an S3 bucket path).
         filename : str, Optional
             Optional filename, must be a valid manifest filename.
@@ -124,7 +124,7 @@ class Manifest:
 
         Returns
         -------
-        : Path or S3Path
+        : pathlib.Path or cloudpathlib.s3.s3path.S3Path
         """
         if filename is None:
             if self.filename is None:
@@ -177,9 +177,10 @@ class Manifest:
 
     def add_files(self, *files):
         """Add files to the manifest from filename
+
         Parameters
         ----------
-        files : str or Path or S3Path
+        files : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
             Path to the file to add to the manifest.
 
         Returns
@@ -211,12 +212,13 @@ class Manifest:
 
     def add_desired_time_range(self, start_datetime: datetime, end_datetime: datetime):
         """Add a file to the manifest from filename
-          Parameters
+
+        Parameters
         ----------
-        start_datetime : datetime
+        start_datetime : datetime.datetime
             The desired start time for the range of data in this manifest
 
-        end_datetime : datetime
+        end_datetime : datetime.datetime
             The desired end time for the range of data in this manifest
 
         Returns
@@ -229,14 +231,15 @@ class Manifest:
     @classmethod
     def output_manifest_from_input_manifest(cls, input_manifest: Path or S3Path or 'Manifest') -> 'Manifest':
         """ Create Output manifest from input manifest file path, adds input files to output manifest configuration
-            Parameters
+
+        Parameters
         ----------
-        input_manifest: Path or S3Path or Manifest
+        input_manifest : pathlib.Path or cloudpathlib.s3.s3path.S3Path or Manifest
             An S3 or regular path to an input_manifest object, or the input manifest object itself
 
         Returns
-        ----------
-        output_manifest
+        -------
+        output_manifest : Manifest
             The newly created output manifest
         """
 

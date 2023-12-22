@@ -89,20 +89,6 @@ services:
       flyway:
         condition: service_completed_successfully
 
-  docs-confluence:
-    image: libera-utils-docs:latest
-    build:
-      context: .
-      target: libera-utils-docs
-    command: ["confluence"]
-
-  docs-html:
-    image: libera-utils-docs:latest
-    build:
-      context: .
-      target: libera-utils-docs
-    command: [ "clean", "html" ]
-
   linting:
     image: libera-utils-test:latest
     build:

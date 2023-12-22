@@ -1,4 +1,4 @@
-# Build Release
+# Build and Release
 
 ## Release Process
 [Atlassian Git Workflow Reference:](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow)
