@@ -1,56 +1,99 @@
 # Setting Up a Development Environment
 
 
-## Managing Multiple System Python Versions with `pyenv`
-Pyenv is one solution that allows you to maintain many versions 
-of Python that are kept entirely siloed from the core 
-system version of Python, and even from Python versions installed by other means such as Homebrew.
+If you have access to the internal LASP confluence space, please refer to the following resources:
+- [Python Development Environment Management](https://confluence.lasp.colorado.edu/x/kyY4B)
 
-The Github for `pyenv` can be found here:  
+## Managing Multiple Base Python Versions
 
-1. Install pyenv with `brew update && brew install pyenv`.
-2. Follow the instructions on the Github page to set up your shell's rc files or profile files 
-   (every user tends to manage these differently).
-3. Check that pyenv works by running `pyenv versions` to see a list of currently installed versions.
-4. Install the latest patch of Python 3.9 by running `pyenv install 3.9.9`.
-5. You can check the current version by running `pyenv global` and set the current version by running `pyenv global 3.9.9`.
-6. To see a full list of all available python distributions, run `pyenv install --list`.
-7. To set the python version only for the current directory, run `pyenv local 3.9.9`. This will create a file in that
-   directory called `.python-version` that is used by pyenv. Inside that directory, running `python` will always resolve
-   to the specified version. 
-8. To set the global python back to the default system python, run `pyenv global system`. This will remove any shims
-   currently in place.
+In order to develop with multiple different versions of Python and create virtual environments associated with 
+different versions of Python, you will need multiple base Python interpreters.
+There are several ways to manage this including Conda, PyEnv, and building Python from source. 
+We recommended using Conda and outline the steps below for using Conda to manage multiple base Python installations.
 
-
-## Creating a Virtual Environment
-Now that you have access to whatever version of python you need, set your pyenv-provided
-Python version to something recent (3.9.9 is a good option at time of writing).
-
-1. Create a virtual environment in the `libera_utils` directory with `python -m venv venv`. This will create
-   a virtual environment named `venv`, which is included in our `.gitignore`. 
-2. Activate the virtual environment by running `source venv/bin/activate`. Note: if you are running csh, you must
-   run `source venv/bin/activate.csh`
-3. Configure your IDE to use the virtual environment's interpreter for the project. In PyCharm, this setting is in 
-   `Pycharm -> Preferences -> Project: libera_utils -> Python Interpreter`.
-4. Check that when you open a Terminal in your IDE, `which python` points to your local virtual environment, indicating
-   that your virtual environment is being automatically activated. 
-5. Update pip to the latest version with `pip install --upgrade pip`.
-
+1. Install miniconda according to the [official documentation](https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html).
+   If you already have miniconda or anaconda installed, you can skip this step.
+2. Optionally run `conda config --set auto_activate_base false` to add a configuration to your `.condarc` file to 
+   disable auto-activation of the `base` conda environment on shell startup.
+3. Create a conda environment with your preferred version of python: `conda create -n conda-python3.11 python=3.11`
+   - Note: Name this environment with a convention that makes sense to you for a base interpreter. 
+     *Do not delete this conda environment!* Deleting it will break all subsequent virtual environments based on it.
+4. The Python interpreter provided by your new conda environment is a full base interpreter and you can use it to
+   create virtual environments. You can find the full path to the base interpreter by running something similar 
+   to the following (run `conda env list` to see why this works):
+   ```shell
+   PATH_TO_PYTHON=$(conda env list | grep "conda-python3.11" | awk '{print $2}')/bin/python
+   $PATH_TO_PYTHON -m venv path/to/new/venv
+   ```
 
 ## Installing Poetry
 Poetry is a command line tool that helps manage a python development environment, 
 including package management, virtual environment management, and package building.
 
-Poetry installation instructions can be found here: https://python-poetry.org/docs/#installation
+Poetry official installation instructions can be found here: https://python-poetry.org/docs/#installation
+
+To ensure that Poetry is always available and in the PATH 
+it is recommended to install Poetry with your pre-installed system python interpreter rather than as a package in a 
+conda environment or in a virtual environment. The specific version of python with which you install Poetry 
+is inconsequential (as long as it is currently supported by Poetry). If your system python is not supported by Poetry, 
+you can install Poetry in your conda base environment. Just remember that Poetry will only be available when that 
+environment is activated. Things can get a bit confusing when you have a conda environment active and a derived
+virtual environment activated on top of it.
 
 Once poetry is installed, check that it works by running `poetry --version`. You should get something like 
-`Poetry version 1.1.11`.
+```
+Poetry version 1.4.0
+```
 
+### Installing Poetry with System Python
 
-## Installing Package Dependencies
-1. Ensure your virtual environment is activated by running `which python` and checking that it points to 
-   the virtual environment in your repo directory (probably `libera_utils`).
-2. Run `poetry env info` and verify that Poetry is recognizing your virtual environment properly:
+Ensure that all your virtual environments and conda environments are deactivated and that `which python3` refers to your 
+system python interpreter (usually `/usr/bin/python3`).
+
+```
+curl -sSL https://install.python-poetry.org | python3 -
+```
+
+### Installing Poetry in the Conda `base` Environment
+
+```
+conda activate
+conda install -y poetry
+poetry --version
+conda deactivate
+poetry --version  # This should fail to find Poetry
+```
+
+## Configuring Poetry
+
+We recommend configuring Poetry to create virtual environments in project directories by default.
+
+```shell
+poetry config virtualenvs.in-project true
+```
+
+This command will write a value to a config file for your global poetry installation. On Mac this is in 
+`~/Library/Application\ Support/pypoetry/config.toml`.
+
+## Setting Up Development Virtual Environment(s)
+
+Poetry manages virtual environments for you on a per-package and per-python-version basis. However, Poetry will
+dynamically detect the presence of an activated virtual environment and use that if present.
+
+1. Deactivate all Conda environments and virtual environments 
+   (except for the conda environment which contains Poetry, if applicable).
+2. Save the path to the version of Python you want to use for development
+   ```shell
+   PATH_TO_PYTHON=$(conda env list | grep "conda-python3.11" | awk '{print $2}')/bin/python
+   ```
+3. Instruct Poetry to create a managed virtual environment
+   ```shell
+   poetry env use $PATH_TO_PYTHON
+   ```
+   This will create a virtual environment. If you have enabled `virtualenvs.in-project` as described above, it will be created 
+   in your project directory in `.venv`.
+4. Configure your IDE to recognize the correct poetry-managed virtual environment for the version you wish to develop with.
+5. Run `poetry env info` and verify that Poetry is recognizing your virtual environment properly:
     ```
     Virtualenv
     Python:         3.9.9
@@ -58,20 +101,31 @@ Once poetry is installed, check that it works by running `poetry --version`. You
     Path:           /Users/myuser/path/to/libera_utils/venv
     Valid:          True
     ```
-3. Run `poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the 
+
+### Changing Python Versions
+It is common to recreate your virtual environment on a regular basis in order to use different python versions.
+You can do this with 
+
+```shell
+poetry env use /full/path/to/python
+```
+
+Poetry will recreate your virtual environment in the `.venv` directory if `virtualenvs.in-project` is set. Otherwise it will 
+create a virtual environment in `~/Library/Caches/pypoetry/virtualenvs`.
+
+### Installing Dependencies
+1. Run `poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the 
    dependency tree and then installing dependencies. This also installs dev group dependencies, as specified in 
    `pyproject.toml`. Lastly you should see it installing the local package.
-4. To install optional "extra" dependencies, run `poetry install -E "<extra_name1>,<extra_name2>"`. e.g. to install 
-   libraries to support database interactions, run `poetry install -E "database"`. 
+2. To install optional "extra" dependencies, run `poetry install -E extra_name1 -E extra_name2`.
    These extra dependencies are specified in `pyproject.toml` under `[tool.poetry.extras]`. Note that any subsequent
    `poetry install` command without `--extras` will implicitly uninstall any previously installed extras.
-5. To install dependency "groups" (think labels), which may or may not be optional, use the `--with` and `--without` 
+3. To install dependency "groups" (think labels), which may or may not be optional, use the `--with` and `--without` 
    flags for Poetry. e.g. `poetry install --with docgen` will install the dependencies for the optional group "docgen".
-6. Verify that the `libera_utils` package was installed correctly by running `sdp --version`. This runs the
-   `sdp` command line utility that is included in the package. You can also directly check that the `sdp` entrypoint
-   exists in `venv/bin`. This can also be run with `poetry run sdp --version`.
-7. Next, go run the tests (tests require all extras to be installed).
-
+4. Verify that the `libera_utils` package was installed correctly by running `libera-utils --version`. This runs the
+   `libera-utils` command line utility that is included in the package. 
+   This can also be run with `poetry run libera-utils --version`.
+5. Next, [go run the tests](testing.md).
 
 ## Installing Postgres Client Drivers
 The `psycopg2` package interfaces with the low level system drivers provided in `libpq` and or `libpq-dev`.
