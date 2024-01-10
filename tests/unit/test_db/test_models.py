@@ -30,7 +30,8 @@ def insert_dummy_l0_relations(clean_local_db):
     t0 = datetime.fromisoformat("2023-01-01T11:22:33.123456").replace(tzinfo=timezone.utc)
     t1 = datetime.fromisoformat("2023-01-01T11:25:33.123456").replace(tzinfo=timezone.utc)
     pds_file_apid = PdsFileApid(
-        scid_apid=84739372,
+        scid=8473,
+        apid=9372,
         first_packet_sc_time=0,
         last_packet_sc_time=(2**64)-1,
         first_packet_utc_time=t0,
@@ -70,7 +71,8 @@ def insert_dummy_l0_relations(clean_local_db):
         following_packet_esh_time=(2**64)-1
     )
     cr_apid = CrApid(
-        scid_apid=9999999,
+        scid=999,
+        apid=999,
         byte_offset=3,
         n_vcids=1,
         vcids=[vcid],
@@ -140,6 +142,8 @@ class TestL0Models:
             assert len(cr.apids[0].ssc_gaps) == 1
             assert len(cr.apids[0].ssc_length_discrepancies) == 1
             assert len(cr.apids[0].edos_fill_data) == 1
+            assert cr.apids[0].scid == 999
+            assert cr.apids[0].apid == 999
 
     def test_pds_file(self):
         with getdb().session() as s:
@@ -147,6 +151,9 @@ class TestL0Models:
             assert len(all_pds) == 1
             assert hasattr(all_pds[0], 'construction_record')
             assert all_pds[0].construction_record is not None
+            assert all_pds[0].apids[0].apid == 9372
+            assert all_pds[0].apids[0].scid == 8473
+
 
 
 # TODO: Test ability to retrieve latest products

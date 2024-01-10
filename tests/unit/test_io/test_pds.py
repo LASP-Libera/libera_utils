@@ -66,4 +66,5 @@ def test_construction_orm_creation(test_construction_record_1, clean_local_db):
     assert cr_orm.pds_files[0].apids[0].last_packet_utc_time.year == 2021
     assert cr_orm.pds_files[0].apids[0].last_packet_utc_time.hour == 1
     assert cr_orm.pds_files[0].apids[0].last_packet_utc_time.second == 59
-
+    assert cr_orm.pds_files[0].apids[0].apid == 11
+    assert cr_orm.pds_files[0].apids[0].scid == 159

@@ -150,7 +150,8 @@ class APIDFromPDSFromConstructionRecord:
     def to_orm(self):
         """Convert this class instance to a corresponding ORM object for entry into the database"""
         return libera_db_models.PdsFileApid(
-                scid_apid=self.scid_apid,
+                scid=self.scid,
+                apid=self.apid,
                 first_packet_sc_time=self.apid_first_packet_sc_time,
                 last_packet_sc_time=self.apid_last_packet_sc_time,
                 first_packet_utc_time=self.apid_first_packet_utc,
@@ -477,7 +478,8 @@ class APIDFromConstructionRecord:
             ssc_length_discrep.append(self.ssc_length_discrepancy_list[i].to_orm())
 
         return libera_db_models.CrApid(
-            scid_apid=self.apid_scid,
+            scid=self.scid,
+            apid=self.apid,
             byte_offset=self.apid_byte_offset,
             n_vcids=self.apid_vcid_count,
             vcids=vcids,

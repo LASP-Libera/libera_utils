@@ -49,7 +49,8 @@ class CrApid(Base, ReprMixin):  # I know...
     """
     id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
     cr_id = Column(INTEGER, ForeignKey(Cr.id))
-    scid_apid = Column(BIGINT)
+    scid= Column(BIGINT)
+    apid = Column(BIGINT)
     byte_offset = Column(NUMERIC(20))
     n_vcids = Column(SMALLINT)
     n_ssc_gaps = Column(BIGINT)
@@ -123,7 +124,8 @@ class PdsFileApid(Base, ReprMixin):
     """
     id = Column(INTEGER, primary_key=True, server_default=FetchedValue())
     pds_file_id = Column(INTEGER, ForeignKey(PdsFile.id))
-    scid_apid = Column(BIGINT)
+    scid = Column(BIGINT)
+    apid = Column(BIGINT)
     first_packet_sc_time = Column(NUMERIC(20))
     last_packet_sc_time = Column(NUMERIC(20))
     first_packet_utc_time = Column(TIMESTAMP(timezone=True))
