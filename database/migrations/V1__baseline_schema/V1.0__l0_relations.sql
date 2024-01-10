@@ -57,7 +57,8 @@ CREATE TABLE sdp.cr_apid (
     id SERIAL PRIMARY KEY,
     cr_id INTEGER NOT NULL,
     FOREIGN KEY (cr_id) REFERENCES sdp.cr(id),
-    scid_apid BIGINT NOT NULL, --uint24
+    scid BIGINT NOT NULL, --uint24
+    apid BIGINT NOT NULL, --uint24
     byte_offset NUMERIC(20) NOT NULL, --uint64
     n_vcids SMALLINT NOT NULL, --uint8
     n_ssc_gaps BIGINT NOT NULL, --uint32
@@ -77,7 +78,8 @@ CREATE TABLE sdp.cr_apid (
 COMMENT ON TABLE sdp.cr_apid IS '(24) Records about individual APIDs described in a construction record.';
 COMMENT ON COLUMN sdp.cr_apid.id IS 'Primary key.';
 COMMENT ON COLUMN sdp.cr_apid.cr_id IS 'Foreign key to cr.id.';
-COMMENT ON COLUMN sdp.cr_apid.scid_apid IS '(24-2) SCID and APID contained in the PDS as (SCID:uint8, fill:5b, apid:uint11).';
+COMMENT ON COLUMN sdp.cr_apid.scid IS '(24-2) SCID contained in the PDS as (SCID:uint8, fill:5b, apid:uint11).';
+COMMENT ON COLUMN sdp.cr_apid.apid IS '(24-2) APID contained in the PDS as (SCID:uint8, fill:5b, apid:uint11).';
 COMMENT ON COLUMN sdp.cr_apid.byte_offset IS '(24-3) Byte offset to first packet of APID within the dataset (possibly spanning multiple PDS files).';
 COMMENT ON COLUMN sdp.cr_apid.n_vcids IS '(24-5) Number of VCIDs for this APID in this PDS.';
 COMMENT ON COLUMN sdp.cr_apid.n_ssc_gaps IS '(24-6) Number of SSC discontinuities for this APID.';
@@ -153,13 +155,13 @@ COMMENT ON COLUMN sdp.pds_file.file_name IS '(25-2) Name of Production Data Set 
 COMMENT ON COLUMN sdp.pds_file.ingested IS 'Timestamp when file was first ingested. If NULL, indicates we parsed a CR containing it but never received the PDS file itself.';
 COMMENT ON COLUMN sdp.pds_file.archived IS 'Timestamp when file was moved to the SDC archive bucket.';
 
-
 -- Information about the APIDs contained in a single PDS file
 CREATE TABLE sdp.pds_file_apid (
     id SERIAL PRIMARY KEY,
     pds_file_id INTEGER NOT NULL,
     FOREIGN KEY (pds_file_id) REFERENCES sdp.pds_file(id),
-    scid_apid BIGINT NOT NULL,
+    scid BIGINT NOT NULL,
+    apid BIGINT NOT NULL,
     first_packet_sc_time NUMERIC(20) NOT NULL, --64b integer
     last_packet_sc_time NUMERIC(20) NOT NULL, --64b integer
     first_packet_utc_time TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -168,7 +170,8 @@ CREATE TABLE sdp.pds_file_apid (
 COMMENT ON TABLE sdp.pds_file_apid IS '(25-4) APID information in a specific PDS file.';
 COMMENT ON COLUMN sdp.pds_file_apid.id IS 'Primary key.';
 COMMENT ON COLUMN sdp.pds_file_apid.pds_file_id IS 'Foreign key to pds_file.id.';
-COMMENT ON COLUMN sdp.pds_file_apid.scid_apid IS '(25-4.2) SCID and APID in PDS file.';
+COMMENT ON COLUMN sdp.pds_file_apid.scid IS '(25-4.2) SCID  in PDS file.';
+COMMENT ON COLUMN sdp.pds_file_apid.apid IS '(25-4.2) APID in PDS file.';
 COMMENT ON COLUMN sdp.pds_file_apid.first_packet_sc_time IS '(25-4.3) Spacecraft CDS time code out of first packet secondary header.';
 COMMENT ON COLUMN sdp.pds_file_apid.last_packet_sc_time IS '(25-4.4) Spacecraft CDS time code out of last packet secondary header.';
 COMMENT ON COLUMN sdp.pds_file_apid.first_packet_utc_time IS 'First packet UTC time.';
