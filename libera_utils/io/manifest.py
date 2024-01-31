@@ -29,7 +29,6 @@ class Manifest:
         "configuration"
     )
 
-    # TODO should use the validate method in constructor or from_filename or both
     def __init__(self, manifest_type: ManifestType,
                  files: list or dict = None, configuration: dict = None, filename: str or ManifestFilename = None):
         """Constructor
@@ -58,6 +57,8 @@ class Manifest:
                 self.files = files
             elif isinstance(files, list):
                 self.add_files(*files)
+
+        self.validate()
 
     def __str__(self):
         return f"<Manifest:{self.filename if self.filename else '(unnamed)'} " \
@@ -142,7 +143,6 @@ class Manifest:
         return self.filename.path
 
     def validate(self):
-        # TODO add a check for absolute file paths here
         """Validate the contents of this manifest object"""
         if not isinstance(self.files, list):
             raise ValueError("The files attribute must be a dictionary.")
@@ -150,12 +150,15 @@ class Manifest:
             raise ValueError("The configuration attribute must be a dictionary.")
         if not isinstance(self.manifest_type, ManifestType):
             raise ValueError("The manifest_type attribute must be a ManifestType object.")
-        if not isinstance(self.filename, ManifestFilename):
-            raise ValueError("The filename attribute must be a ManifestFilename object.")
+        if self.filename:
+            if not isinstance(self.filename, ManifestFilename):
+                raise ValueError("The filename attribute must be a ManifestFilename object.")
         for filedict in self.files:
             if tuple(filedict.keys()) != ('filename', 'checksum'):
                 raise ValueError("Each entry of the files attribute must be a dictionary containing the keys "
                                  f"`filename` and `checksum`. Got {tuple(filedict.keys())}.")
+            if not AnyPath(filedict['filename']).is_absolute():
+                raise ValueError(f"Each file path must be a absolute path, instead got: {filedict['filename']}")
 
     def validate_checksums(self):
         """Validate checksums of listed files"""
@@ -255,5 +258,6 @@ class Manifest:
         output_manifest = Manifest(manifest_type=ManifestType.OUTPUT,
                                    filename=manifest_filename,
                                    configuration={'input_manifest_files': input_manifest_files})
+        output_manifest.validate()
 
         return output_manifest
