@@ -86,6 +86,7 @@ def test_manifest_add_files_to_manifest_s3(test_json_manifest, test_txt, test_co
 
     m.add_files(*text_paths)
     m.validate_checksums()
+    m.validate()
     assert len(m.files) == initial_list_len + 3
 
 
@@ -197,7 +198,7 @@ def test_validate_checksums(test_json_manifest, caplog):
         (Path(sys.modules[__name__.split('.')[0]].__file__).parent / 'test_data'
          / 'LIBERA_INPUT_MANIFEST_20220922T123456.json'),
         (Manifest.from_file(filepath=Path(sys.modules[__name__.split('.')[0]].__file__).parent
-                                  / 'test_data' / 'LIBERA_INPUT_MANIFEST_20220922T123456.json')),
+                                     / 'test_data' / 'LIBERA_INPUT_MANIFEST_20220922T123456.json')),
         (S3Path("s3://l0-ingest-dropbox/processing//LIBERA_OUTPUT_MANIFEST_20230613T143309.json"))
     ]
 )
@@ -220,3 +221,37 @@ def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest,
     assert output_manifest.manifest_type == ManifestType.OUTPUT
     assert input_time == output_time
     assert len(output_manifest.configuration) != 0
+
+
+@pytest.mark.parametrize(
+    'man_path, man_files, man_type, man_config',
+    [('subfolder/LIBERA_INPUT_MANIFEST_20220922T123456.json',
+      [{"filename": "relative/file.txt", "checksum": "fakesum"}], ManifestType.OUTPUT, None),
+     ('subfolder/LIBERA_INPUT_MANIFEST_20220922T123456.json', None, ManifestType.OUTPUT, ["config"])
+     ]
+)
+def test_manifest_validation_failure(man_path, man_files, man_type, man_config):
+    """Test manifest validation method for correct failure cases"""
+    with pytest.raises(ValueError):
+        m = Manifest(
+            manifest_type=man_type,
+            files=man_files,
+            configuration=man_config,
+            filename=man_path
+        )
+
+
+@pytest.mark.parametrize(
+    'man_path, man_files, man_type, man_config',
+    [(None, [{"filename": "s3://abs/file.txt", "checksum": "fakesum"}], ManifestType.OUTPUT, {"data": "description"}),
+    ('subfolder/LIBERA_INPUT_MANIFEST_20220922T123456.json', None, ManifestType.OUTPUT, {"data": "description"}),
+    (None, None, ManifestType.OUTPUT, {"data": "description"})]
+)
+def test_manifest_validation_success(man_path, man_files, man_type, man_config):
+    """Test manifest validation method for correct success cases"""
+    m = Manifest(
+        manifest_type=man_type,
+        files=man_files,
+        configuration=man_config,
+        filename=man_path
+    )
