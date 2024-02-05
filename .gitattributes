@@ -55,3 +55,5 @@
 *.ti filter=lfs diff=lfs merge=lfs -text
 *.yaml filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
+/jenkins_scripts/JenkinsFile-PRTester filter=lfs diff=lfs merge=lfs -text
+/jenkins_scripts/JenkinsFile-UnitTester filter=lfs diff=lfs merge=lfs -text
