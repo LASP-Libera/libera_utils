@@ -7,7 +7,7 @@ import random
 # Installed
 import boto3
 from cloudpathlib import S3Path, S3Client
-from moto import mock_s3, mock_logs, mock_secretsmanager
+from moto import mock_aws
 import pytest
 
 
@@ -28,7 +28,7 @@ def mock_aws_credentials(monkeypatch_session):
 def mock_cloudwatch_context(monkeypatch):
     """Everything under/inherited by this runs in the mock_logs context manager"""
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")  # CW requires region be set
-    with mock_logs():
+    with mock_aws():
         yield boto3.resource('cloudwatch')
 
 
@@ -42,7 +42,7 @@ def set_up_cloudpathlib_s3client(mock_aws_credentials, monkeypatch_session):
     # Tell cloudpathlib to clear its local file cache whenever a file operation is completed.
     # https://cloudpathlib.drivendata.org/stable/caching/#file-cache-mode-close_file
     monkeypatch_session.setenv("CLOUPATHLIB_FILE_CACHE_MODE", "close_file")
-    with mock_s3():
+    with mock_aws():
         client = S3Client()
         client.set_as_default_client()
 
@@ -53,7 +53,7 @@ def mock_s3_context():
 
     This fixture is function scoped so that S3 buckets get cleared between tests.
     """
-    with mock_s3():
+    with mock_aws():
         # Yield the (mocked) s3 Resource object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
         yield boto3.resource('s3')
@@ -125,7 +125,7 @@ def write_file_to_s3(mock_s3_context, create_mock_bucket):
 @pytest.fixture
 def mock_secret_manager():
     """Everything under/inherited by this runs in the mock_secretmanager context manager"""
-    with mock_secretsmanager():
+    with mock_aws():
         # Yield the (mocked) secretmanager client object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/clients.html)
         yield boto3.client("secretsmanager", region_name="us-west-2")
