@@ -10,5 +10,6 @@ are in the right place.
     user-docs/usage
     user-docs/file_handling
     user-docs/file_naming
+    user-docs/netcdf
     user-docs/manifest_files
     user-docs/logging

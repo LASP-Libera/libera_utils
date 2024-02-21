@@ -12,7 +12,8 @@ from pathlib import Path
 from cloudpathlib import S3Path
 from libera_utils.io import filenaming
 
-p = filenaming.LiberaDataProductFilename('libera_cam_l2_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5')
+p = filenaming.LiberaDataProductFilename(
+    'LIBERA_L2_CLOUD-FRACTION_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc')
 # Add an S3 prefix
 p.path = S3Path('s3://bucket') / p.path
 assert isinstance(p.path, S3Path)
@@ -23,7 +24,10 @@ assert isinstance(p.path, Path)
 p.path = p.path.name
 assert isinstance(p.path, Path)
 # Check that providing a bad value for a basepath doesn't pollute the instance's valid path
-p.path = '/bad/prefix' + p.path.name  # The missing / will make this fail regex validation
-assert p.path.name == 'libera_cam_l2_20270102t112233_20270102t122233_vM1m2p3_r27002112233.h5'
+try:
+    p.path = '/bad/prefix' + p.path.name  # The missing / will make this fail regex validation
+    raise Exception('The previous line should have raised a ValueError')
+except ValueError as e:
+    assert "failed validation against regex pattern" in str(e)
+assert p.path.name == 'LIBERA_L2_CLOUD-FRACTION_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc'
 ```
-

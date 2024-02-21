@@ -1,6 +1,7 @@
 # File Handling
 
 [See the smart_open API documentation here](../api-doc/generated/libera_utils.io.smart_open.rst)
+Also see [Working with NetCDF4 Files](netcdf.md)
 
 The libera-utils smart_open function has the capability to read and write files to/from a local directory or S3 bucket
 transparently. It supports a context manager pattern and the usual modes for reading/writing/binary provided by most
