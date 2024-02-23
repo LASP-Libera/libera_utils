@@ -129,7 +129,7 @@ def test_L0Filename_parts(filename, basepath, parts):
         's3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
         S3Path('s3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc'),
         '~/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
-        'LIBERA_L1B_RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
+        'LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
         '/some/fake/path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
         Path('/fake-path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc'),
         's3://fake-bucket/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
@@ -159,11 +159,11 @@ def test_LiberaDataProductFilename(filename):
              revision=dt.datetime(2027, 1, 2, 11, 22, 33),
              extension="nc"
          )),
-        ('/tmp/foo/LIBERA_L1B_RAD_V3-14-159_20250102T112233_20250102T122233_R27002112233.nc',
+        ('/tmp/foo/LIBERA_L1B_RAD-4CH_V3-14-159_20250102T112233_20250102T122233_R27002112233.nc',
          "/tmp/foo",
          dict(
              data_level='L1B',
-             product_name='RAD',
+             product_name='RAD-4CH',
              utc_start=dt.datetime(2025, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2025, 1, 2, 12, 22, 33),
              version='V3-14-159',
