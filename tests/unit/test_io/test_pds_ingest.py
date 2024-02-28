@@ -4,6 +4,7 @@ import os
 import pytest
 from bitstring import ReadError
 from sqlalchemy.exc import OperationalError
+from boto3.dynamodb.conditions import Key
 # Local
 from libera_utils.db import getdb
 from libera_utils.db.database import DatabaseException
@@ -188,7 +189,6 @@ def test_corrupt_cons(clean_local_db, test_data_path):
         cr_ingest(corrupt_cons)
 
 
-
 def test_wrong_credentials(clean_local_db, test_data_path, monkeypatch):
     """Test that if connecting to db with wrong credentials, ingest will  throw errors"""
     corrupt_cns = test_data_path / 'bad_record.PDS'
@@ -221,3 +221,30 @@ def test_two_different_db_secret_credentials(monkeypatch, create_mock_secret_man
     set_db_credentials_from_secret_manager("test_secret_1")
 
     assert os.environ["LIBERA_DB_USER"] == "another_tester"
+
+
+def test_cr_ingest_ddb(make_dynamodb_metadata_table, test_construction_record_1):
+    table = make_dynamodb_metadata_table
+    cr_ingest(test_construction_record_1, use_dynamo=True)
+    # A reference object made from the same file
+    cr = ConstructionRecord.from_file(test_construction_record_1)
+
+    ddb_item = table.get_item(Key={"PK": cr.file_name, "SK": "#L0#APID11"})
+    assert ddb_item["Item"]["gap_count"] == "0"
+    assert ddb_item["Item"]["applicable-date"] == "2021-04-09"
+
+    gsi_item = table.query(IndexName='applicable-date-index',
+                KeyConditionExpression=Key('applicable-date').eq("2021-04-09"))
+    assert gsi_item["Items"][0]["PK"] == cr.file_name
+
+
+def test_pds_ingest_ddb(make_dynamodb_metadata_table, test_pds_file_1):
+    table = make_dynamodb_metadata_table
+    pds_ingest(test_pds_file_1, use_dynamo=True)
+
+    ddb_item = table.get_item(Key={"PK": test_pds_file_1.name, "SK": "#"})
+    assert ddb_item["Item"]["algorithm-version"] == "1.0.0"
+    assert ddb_item["Item"]["ingested"] is not None
+    with pytest.raises(KeyError):
+        ddb_item["Item"]["archived"]
+
