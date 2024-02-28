@@ -17,6 +17,7 @@ from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.logutil import configure_task_logging
 from libera_utils.io.filenaming import L0Filename
 from libera_utils.db.database_utils import set_db_credentials_from_secret_manager
+from libera_utils.db.dynamodb_utils import get_dynamodb_table
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def ingest(parsed_args: argparse.Namespace):
     return str(output_manifest.filename.path.absolute())
 
 
-def cr_ingest(filename: str or AnyPath):
+def cr_ingest(filename: str or AnyPath, use_dynamo: bool = False):
     """Ingest cr records into Postgres database
     Parameters
     ----------
@@ -115,6 +116,20 @@ def cr_ingest(filename: str or AnyPath):
     """
     filename_only = AnyPath(filename).name
     logger.info(f"Ingesting construction record with filename: {filename_only}")
+    if use_dynamo:
+        # Save to DynamoDB rather than rds
+        dynamo_table = get_dynamodb_table()
+        # Check if the file is already in the database
+        response = dynamo_table.get_item(Key={'PK': filename_only, 'SK': '#'})
+        if 'Item' in response:
+            raise IngestDuplicateError(f"Duplicate Construction record: {filename_only}", filename_only)
+        logger.debug(f"Detected a new CR file {filename_only}. Parsing and inserting data.")
+        # parse cr into nested orm objects
+        cr = ConstructionRecord.from_file(filename)
+        cr_ddb = cr.to_ddb_items()
+        for item in cr_ddb:
+            dynamo_table.put_item(Item=item)
+        return
     try:
         with getdb().session() as s:
             cr_query = s.query(Cr).filter(
@@ -153,7 +168,7 @@ def cr_ingest(filename: str or AnyPath):
         raise error
 
 
-def pds_ingest(filename: str or AnyPath):
+def pds_ingest(filename: str or AnyPath, use_dynamo: bool = False):
     """Ingest pd records into database that do not have an associated cr
     Parameters
     ----------
@@ -162,6 +177,19 @@ def pds_ingest(filename: str or AnyPath):
     """
     logger.info(f"Ingesting PDS file {filename}")
     filename_only = AnyPath(filename).name
+
+    if use_dynamo:
+        dynamo_table = get_dynamodb_table()
+        # Check if the file is already in the database
+        response = dynamo_table.get_item(Key={'PK': filename_only, 'SK': '#'})
+        if 'Item' in response:
+            raise IngestDuplicateError(f"Duplicate PDS file: {filename_only}", filename_only)
+        logger.debug(f"{filename} not found in DB. Inserting new record")
+        # parse pds into nested orm objects
+        pds = PDSRecord.from_filename(filename_only)
+        pds_ddb_item = pds.to_ddb_pds_file_item()
+        dynamo_table.put_item(Item=pds_ddb_item)
+        return
 
     try:
         with getdb().session() as s:

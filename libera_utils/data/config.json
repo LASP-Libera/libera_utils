@@ -10,6 +10,7 @@
   "LIBERA_DB_USER": null,
   "LIBERA_DB_HOST": null,
   "LIBERA_DB_PORT": null,
+  "LIBERA_DDB_TABLE": "libera-metadata-ddb-table",
   "JPSS_SCLK": "{LIBERA_UTILS_DATA_DIR}/spice/jpss_sclk_v01.tsc",
   "LIBERA_FK": "{LIBERA_UTILS_DATA_DIR}/spice/libera_fk_v01.tf",
   "EARTH_ASSOC_ITRF93_FK": "{LIBERA_UTILS_DATA_DIR}/spice/earth_assoc_itrf93.tf",

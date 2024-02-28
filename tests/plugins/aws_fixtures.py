@@ -149,3 +149,87 @@ def create_mock_secret_manager(mock_secret_manager):
         return
 
     return _create_mock_secret_manager
+
+
+@pytest.fixture
+def mock_dynamodb(mock_aws_credentials):
+    """Everything under/inherited by this runs in the mock_dynamodb context manager"""
+    with mock_aws():
+        # Yield the (mocked) dynamodb resource object
+        # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
+        yield boto3.resource("dynamodb", region_name="us-west-2")
+
+
+@pytest.fixture
+def make_dynamodb_metadata_table(mock_dynamodb, monkeypatch_session):
+    dynamodb = mock_dynamodb
+    monkeypatch_session.setenv("LIBERA_DDB_TABLE", "libera-metadata-ddb-testing-table")
+    table = dynamodb.create_table(
+        TableName='libera-metadata-ddb-testing-table',
+        KeySchema=[
+            {
+                'AttributeName': 'PK',
+                'KeyType': 'HASH'
+            },
+            {
+                'AttributeName': 'SK',
+                'KeyType': 'RANGE'
+            }
+        ],
+        AttributeDefinitions=[
+            {
+                'AttributeName': 'PK',
+                'AttributeType': 'S'
+            },
+            {
+                'AttributeName': 'SK',
+                'AttributeType': 'S'
+            },
+            {
+                'AttributeName': 'applicable-date',
+                'AttributeType': 'S'
+            }
+        ],
+        ProvisionedThroughput={
+            'ReadCapacityUnits': 5,
+            'WriteCapacityUnits': 5
+        },
+        GlobalSecondaryIndexes=[
+            {
+                'IndexName': 'applicable-date-index',
+                'KeySchema': [
+                    {
+                        'AttributeName': 'applicable-date',
+                        'KeyType': 'HASH'
+                    },
+                    {
+                        'AttributeName': 'SK',
+                        'KeyType': 'RANGE'
+                    }
+                ],
+                'Projection': {
+                    'ProjectionType': 'INCLUDE',
+                    'NonKeyAttributes': ['first-packet-time', 'last-packet-time']
+                },
+                'ProvisionedThroughput': {
+                    'ReadCapacityUnits': 5,
+                    'WriteCapacityUnits': 5
+                }
+            }
+        ]
+    )
+
+    # Wait until the table exists.
+    table.meta.client.get_waiter('table_exists').wait(TableName='libera-metadata-ddb-testing-table')
+    assert table.table_status == 'ACTIVE'
+
+    return table
+
+
+@pytest.fixture
+def destroy_dynamodb_metadata_table(mock_dynamodb):
+    dynamodb = mock_dynamodb
+    table = dynamodb.Table('libera-metadata-ddb-table')
+    table.delete()
+    table.meta.client.get_waiter('table_not_exists').wait(TableName='libera-metadata-ddb-table')
+    return

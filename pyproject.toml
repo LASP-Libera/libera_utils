@@ -33,11 +33,11 @@ SQLAlchemy = ">=1.4.31,<2.0" # TODO: Upgrade and test with 2.0
 urllib3 = "<2.0"  # This pin speeds up solving boto dependencies, which require urllib3<2.0
 watchtower = ">=3.0.0,<4.0"
 xarray = ">=2023.1.0"
+botocore = "*"
 
 [tool.poetry.group.dev.dependencies]
 # These specs are totally open because they are only needed for developers
 bandit = "*"
-botocore = "*"
 moto = {extras = ["s3"], version = "*"}
 pytest-cov = "*"
 pylint = "*"

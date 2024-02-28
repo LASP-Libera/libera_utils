@@ -1,7 +1,6 @@
 """Tests for manifest module"""
 # Local
-from libera_utils.io.pds import ConstructionRecord
-from libera_utils.db import getdb
+from libera_utils.io.pds import ConstructionRecord, PDSRecord
 
 
 def test_construction_reader_from_file(test_construction_record_1):
@@ -68,3 +67,49 @@ def test_construction_orm_creation(test_construction_record_1, clean_local_db):
     assert cr_orm.pds_files[0].apids[0].last_packet_utc_time.second == 59
     assert cr_orm.pds_files[0].apids[0].apid == 11
     assert cr_orm.pds_files[0].apids[0].scid == 159
+
+
+def test_pds_reader_from_file(test_pds_file_1):
+    """
+    Test pds reader from file
+    """
+    pds = PDSRecord.from_filename(test_pds_file_1)
+    pds_orm = pds.to_orm()
+    # TODO reevaluate this test when we have construction records of the type we will use
+
+    assert pds_orm.file_name is not None
+    assert pds_orm.ingested is not None
+    assert len(pds_orm.apids) == 0
+
+
+def test_construction_ddb_items(test_construction_record_1):
+    """
+    Test construction ddb items
+    """
+    cr = ConstructionRecord.from_file(test_construction_record_1)
+    cr_ddb_items = cr.to_ddb_items()
+
+    for item in cr_ddb_items:
+        assert item["PK"] == str(test_construction_record_1.name)
+        if item["SK"] == "#L0#APID11":
+            assert item["applicable-date"] == "2021-04-09"
+        if item["SK"] == "#CR":
+            assert item["last_packet_utc_time"] == "2021-04-09 01:59:59.005260+00:00"
+            # This is the number of PDS files associated with the construction record making sure the
+            # construction record is not included in the PDS file count
+            assert cr.pds_file_count == 2
+            assert item["n_pds_files"] == 1
+
+def test_pds_ddb_items(test_pds_file_1):
+    """
+    Test pds ddb items
+    """
+    pds = PDSRecord.from_filename(test_pds_file_1)
+    pds_ddb_item = pds.to_ddb_pds_file_item()
+
+    assert pds_ddb_item["PK"] == str(test_pds_file_1.name)
+    assert pds_ddb_item["SK"] == "#"
+    assert pds_ddb_item["ingested"] is not None
+    #TODO have this check the libera_utils version (does Gavin know how?)
+    assert pds_ddb_item["algorithm-version"] == "1.0.0"
+
