@@ -146,7 +146,7 @@ def test_manifest_write(tmp_path):
 @mock.patch("libera_utils.io.manifest.datetime")
 def test_manifest_generate_filename(mock_manifest_datetime):
     """Test generating a filename for a manifest file"""
-    mock_manifest_datetime.utcnow.return_value = datetime(2022, 1, 1, 12, 34, 56, tzinfo=ZoneInfo("UTC"))
+    mock_manifest_datetime.now.return_value = datetime(2022, 1, 1, 12, 34, 56, tzinfo=ZoneInfo("UTC"))
     m = Manifest(
         manifest_type=ManifestType.INPUT,
         files=[],

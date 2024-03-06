@@ -2,7 +2,7 @@
 
 # libera-utils
 # ----------
-ARG BASE_IMAGE_PYTHON_VERSION=3.11
+ARG BASE_IMAGE_PYTHON_VERSION=3.12
 
 FROM public.ecr.aws/docker/library/python:${BASE_IMAGE_PYTHON_VERSION}-slim AS libera-utils
 USER root

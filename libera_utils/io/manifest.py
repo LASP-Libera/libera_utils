@@ -1,7 +1,7 @@
 """Module for manifest file handling"""
 import warnings
 # Standard
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
@@ -68,7 +68,7 @@ class Manifest:
         """Generate a valid manifest filename"""
         mfn = ManifestFilename.from_filename_parts(
             manifest_type=self.manifest_type,
-            created_time=datetime.utcnow()
+            created_time=datetime.now(timezone.utc)
         )
         return mfn
 

@@ -1,6 +1,6 @@
 """Module for manifest file handling"""
 # Standard
-import datetime
+from datetime import datetime, timezone
 import logging
 from pathlib import Path
 from bitstring import ConstBitStream
@@ -255,7 +255,7 @@ class PDSRecord:
             # When the PDS file is not the CR
             return libera_db_models.PdsFile(
                 file_name=self.filename,
-                ingested=datetime.datetime.utcnow()
+                ingested=datetime.now(timezone.utc)
             )
         # When PDSRecord is part of a CR reading
         orm_apids_list = []
@@ -274,7 +274,9 @@ class PDSRecord:
             # TODO: Update the version to match the library version when this is pulled out of libera-utils
             return create_ddb_metadata_file_item(filename=self.filename,
                                                  algorithm_version="1.0.0",
-                                                 additional_metadata={"ingested": str(datetime.datetime.utcnow())})
+                                                 additional_metadata={
+                                                     "ingested": str(datetime.now(timezone.utc))
+                                                 })
         # Happens only if the above condition is not satisfied.
         raise ValueError("This method is only for PDS files not part of a CR reading")
 
@@ -964,7 +966,9 @@ class ConstructionRecord:
         # TODO: Update the version to match the library version when this is pulled out of libera-utils
         cr_item = create_ddb_metadata_file_item(self.file_name,
                                                 algorithm_version="1.0.0",
-                                                additional_metadata={"edos_version": f"{self.edos_version_major}",
-                                                                     "ingested": str(datetime.datetime.utcnow())})
+                                                additional_metadata={
+                                                    "edos_version": f"{self.edos_version_major}",
+                                                    "ingested": str(datetime.now(timezone.utc))
+                                                })
         ddb_items.append(cr_item)
         return ddb_items

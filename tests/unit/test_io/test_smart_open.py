@@ -171,10 +171,11 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
+        warnings.simplefilter("ignore")
+        warnings.simplefilter("always", UserWarning)  # Catch only UserWarnings
         smart_copy_file(wrapped_input, wrapped_output_dir)
         assert len(w) == 1
-        assert issubclass(w[-1].category, UserWarning)
+        assert "You have copied to a location without a file extension" in str(w[0].message)
 
     assert (tmp_folder_path / "testtextfile.txt").exists()
 
@@ -203,10 +204,11 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
+        warnings.simplefilter("ignore")
+        warnings.simplefilter("always", UserWarning)  # Catch only UserWarnings
         smart_copy_file(wrapped_remote_file_path, wrapped_local_destination)
         assert len(w) == 1
-        assert issubclass(w[-1].category, UserWarning)
+        assert "A directory was given as the destination for the smart file copy" in str(w[0].message)
 
     assert (local_folder_path / "testtextfile.txt").exists()
 
@@ -288,10 +290,14 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
+        warnings.simplefilter("ignore")
+        warnings.simplefilter("always", UserWarning)  # Catch only UserWarnings
         smart_copy_file(wrapped_remote_file_path, wrapped_local_file_path)
         assert len(w) == 2
-        assert issubclass(w[-1].category, UserWarning)
+        for x in w:
+            print(x)
+        assert "A directory was given as the destination for the smart file copy" in str(w[0].message)
+        assert "You have copied a file without a file extension" in str(w[1].message)
     assert (local_folder_path / "testtextfile").exists()
 
     # confirm file is deleted if optional parameter delete is set to True
@@ -318,10 +324,11 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
+        warnings.simplefilter("ignore")
+        warnings.simplefilter("always", UserWarning)  # Catch only UserWarnings
         smart_copy_file(local_file_path, remote_path)
         assert len(w) == 1
-        assert issubclass(w[-1].category, UserWarning)
+        assert "You have copied a file to S3 without a file extension" in str(w[0].message)
 
     remote_path = S3Path(remote_file_uri)
     assert remote_path.exists()
@@ -378,10 +385,11 @@ def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mo
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("ignore", ResourceWarning)  # Disable ResourceWarnings as they throw off our count
+        warnings.simplefilter("ignore")
+        warnings.simplefilter("always", UserWarning)  # Catch only UserWarnings
         smart_copy_file(source_file_path, dest_path)
         assert len(w) == 1
-        assert issubclass(w[-1].category, UserWarning)
+        assert "You have copied a file to S3 without a file extension" in str(w[0].message)
 
     dest_path = S3Path(dest_file_uri)
     assert dest_path.exists()

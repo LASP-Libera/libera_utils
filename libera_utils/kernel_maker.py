@@ -2,7 +2,7 @@
 # Standard
 import argparse
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 from pathlib import Path
 import shutil
@@ -144,7 +144,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     None
     """
 
-    now = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     configure_task_logging(f'spk_generator_{now}',
                            app_package_name='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
@@ -180,7 +180,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
         utc_start = time.et_2_datetime(ephemeris_time[0])
         utc_end = time.et_2_datetime(ephemeris_time[-1])
-        revision_time = datetime.utcnow()
+        revision_time = datetime.now(timezone.utc)
         spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
             spk_object='jpss',
             utc_start=utc_start,
@@ -229,7 +229,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     -------
     None
     """
-    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    now = datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%S")
     configure_task_logging(f'ck_generator_{now}',
                            app_package_name='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
@@ -264,7 +264,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
         utc_start = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
         utc_end = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
-        revision_time = datetime.utcnow()
+        revision_time = datetime.now(timezone.utc)
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
             ck_object='jpss',
             utc_start=utc_start,

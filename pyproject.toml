@@ -18,7 +18,7 @@ include = ["CHANGES.md", "LICENSE", "README.md"]
 
 [tool.poetry.dependencies]
 # Keep these "as loose as practical" to allow maximum compatibility with others' environments
-python = ">=3.9,<3.12"
+python = ">=3.9,<4"
 astropy = ">=5.0"
 cloudpathlib = {extras = ["s3"], version = ">=0.14.0,<1.0"}
 h5netcdf = ">=1.0.0"
