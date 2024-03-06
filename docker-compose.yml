@@ -47,7 +47,21 @@ services:
       context: .
       target: libera-utils
 
+  # Tests against the default version of python in the Dockerfile
   tests:
+    platform: linux/amd64
+    image: libera-utils-test:latest
+    build:
+      context: .
+      target: libera-utils-test
+    environment:
+      - LIBERA_DB_HOST=local-db
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+
+  # Tests against Python 3.11 (EOL 2027-10)
+  3.11-tests:
     platform: linux/amd64
     image: libera-utils-test:latest
     build:
@@ -61,20 +75,7 @@ services:
       flyway:
         condition: service_completed_successfully
 
-  3.9-tests:
-    platform: linux/amd64
-    image: 3.9-tests:latest
-    build:
-      context: .
-      target: libera-utils-test
-      args:
-        - BASE_IMAGE_PYTHON_VERSION=3.9
-    environment:
-      - LIBERA_DB_HOST=local-db
-    depends_on:
-      flyway:
-        condition: service_completed_successfully
-
+  # Tests against Python 3.10 (EOL 2026-10)
   3.10-tests:
     platform: linux/amd64
     image: 3.10-test:latest
@@ -83,6 +84,21 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.10
+    environment:
+      - LIBERA_DB_HOST=local-db
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+
+  # Tests against Python 3.9 (EOL 2025-10)
+  3.9-tests:
+    platform: linux/amd64
+    image: 3.9-tests:latest
+    build:
+      context: .
+      target: libera-utils-test
+      args:
+        - BASE_IMAGE_PYTHON_VERSION=3.9
     environment:
       - LIBERA_DB_HOST=local-db
     depends_on:

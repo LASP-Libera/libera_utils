@@ -76,9 +76,14 @@ pipeline {
                 sh 'docker-compose up --build --exit-code-from ast ast'
             }
         }
-        stage('Run Standard Tests Against Python 3.11') {
+        stage('Run Tests Against Python 3.12') {
             steps {
                 sh 'docker-compose up --build --exit-code-from tests tests'
+            }
+        }
+        stage('Run Tests Against Python 3.11') {
+            steps {
+                sh 'docker-compose up --build --exit-code-from 3.11-tests 3.11-tests'
             }
         }
         stage('Run Tests Against Python 3.10') {

@@ -2,7 +2,7 @@
 # Standard
 import logging
 # Installed
-from datetime import datetime
+from datetime import datetime, timezone
 from boto3 import resource as boto3_resource
 # Local
 from libera_utils.config import config
@@ -41,7 +41,7 @@ def create_ddb_metadata_file_item(filename: str,
 
 def add_archive_time_to_ddb_item(ddb_item: dict):
     """Add archive time to DynamoDB item"""
-    ddb_item.update({'archive-time': datetime.utcnow().isoformat()})
+    ddb_item.update({'archive-time': datetime.now(timezone.utc).isoformat()})
     return ddb_item
 
 

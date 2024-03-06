@@ -1,7 +1,7 @@
 """Module for L0 file ingest"""
 # Standard
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import os
 # Installed
@@ -42,7 +42,7 @@ def ingest(parsed_args: argparse.Namespace):
     output_manifest_path : str
         Path of output manifest
     """
-    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    now = datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%S")
     configure_task_logging(f'l0_ingest_{now}',
                            app_package_name='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
@@ -210,7 +210,7 @@ def pds_ingest(filename: str or AnyPath, use_dynamo: bool = False):
             elif pds_query[0].ingested is None:
                 logger.debug(f"{filename} found in the DB but it is lacking an ingest time. This is because "
                              "it was listed in a previous CR file.")
-                pds_query[0].ingested = datetime.utcnow()
+                pds_query[0].ingested = datetime.now(timezone.utc)
             # TODO this doesn't work with our unit test framework. Think more about this and testing it.
             #elif pds_query[0].ingested and not pds_query[0].archived:
             #    logger.debug(f"{filename} found in DB with an ingest time and no archive time."

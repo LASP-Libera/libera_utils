@@ -370,7 +370,7 @@ def test_changing_path():
 @mock.patch("libera_utils.io.filenaming.datetime")
 def test_get_current_revision_str(mock_datetime):
     """Test getting the current revision string for writing a new filename"""
-    mock_datetime.utcnow.return_value = dt.datetime(2027, 1, 2, 11, 22, 33)
+    mock_datetime.now.return_value = dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.timezone.utc)
     assert filenaming.get_current_revision_str() == 'R27002112233'
 
 

@@ -32,7 +32,7 @@ def add_start_end_time_to_manifest():
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tmp_path):
     """Test creating a SPK from packets"""
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         mock_parsed_args = argparse.Namespace(
@@ -54,7 +54,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
 def test_make_jpss_spk_aws(mocked_get_current_version_str, test_pds_file_1, short_tmp_path, create_mock_bucket,
                            write_file_to_s3, wrapper):
     """Test creating a SPK from packets stored in AWS S3"""
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = 'some_path'
@@ -79,7 +79,7 @@ def test_make_jpss_spk_aws(mocked_get_current_version_str, test_pds_file_1, shor
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp_path):
     """Test creating a CK from packets"""
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         mock_parsed_args = argparse.Namespace(
@@ -101,7 +101,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
 def test_make_jpss_ck_aws(mocked_get_current_version_str, test_pds_file_1, short_tmp_path, create_mock_bucket,
                           write_file_to_s3, wrapper):
     """Test creating a CK from packets"""
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     bucket = create_mock_bucket()
     bucket = bucket.name
@@ -128,7 +128,7 @@ def test_make_jpss_ck_aws(mocked_get_current_version_str, test_pds_file_1, short
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_path):
     """Test creating a CK from packets"""
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
         packet_data_path = test_data_path / 'add-a-test-data-file.pkts'
@@ -152,7 +152,7 @@ def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_
 def test_make_azel_ck_aws(mocked_get_current_version_str, test_data_path, short_tmp_path, create_mock_bucket,
                           write_file_to_s3, wrapper, test_pds_file_1):
     """Test creating a CK from packets"""
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     bucket = create_mock_bucket()
     bucket = bucket.name
@@ -184,7 +184,7 @@ def test_make_jpss_kernels_from_manifest_no_time_range(mocked_get_current_versio
                                                        setup_kernel_maker_environment_with_manifest):
     # Test that the kernels are generated when no desired range
     # is given.
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     input_manifest_path, output_path = setup_kernel_maker_environment_with_manifest
 
@@ -204,7 +204,7 @@ def test_make_jpss_kernels_from_manifest_one_file(mocked_get_current_version_str
                                                   add_start_end_time_to_manifest):
     # Test that the kernels are generated when the desired range
     # falls within only one local file as in the example manifest file
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     input_manifest_path, output_path = setup_kernel_maker_environment_with_manifest
     updated_manifest_path = add_start_end_time_to_manifest(input_manifest_path, offset_hours=1)
@@ -226,7 +226,7 @@ def test_make_jpss_kernels_from_manifest_two_files(mocked_get_current_version_st
     # Test that the kernels are generated when the desired range
     # falls within two local files. This includes changing the time range
     # in the example manifest file and the expected output kernel names
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     input_manifest_path, output_path = setup_kernel_maker_environment_with_manifest
     updated_manifest_path = add_start_end_time_to_manifest(input_manifest_path, offset_hours=2)
@@ -248,7 +248,7 @@ def test_make_jpss_kernels_from_manifest_three_files(mocked_get_current_version_
     # Test that the kernels are generated when the desired range
     # falls within three local files. This includes changing the time range
     # in the example manifest file and the expected output kernel names
-    kernel_maker.datetime.utcnow.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     input_manifest_path, output_path = setup_kernel_maker_environment_with_manifest
     updated_manifest_path = add_start_end_time_to_manifest(input_manifest_path, offset_hours=4)

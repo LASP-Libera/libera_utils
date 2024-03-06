@@ -1,7 +1,7 @@
 """Module for file naming utilities"""
 # Standard
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from importlib import metadata
 import os
@@ -832,7 +832,7 @@ def get_current_revision_str():
     : str
         Current (now) revision string.
     """
-    return datetime.utcnow().strftime(REVISION_TS_FORMAT)
+    return datetime.now(timezone.utc).strftime(REVISION_TS_FORMAT)
 
 
 def format_semantic_version(semantic_version: str):
