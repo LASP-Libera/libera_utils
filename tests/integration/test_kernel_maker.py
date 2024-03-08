@@ -128,6 +128,7 @@ def test_make_jpss_ck_aws(mocked_get_current_version_str, test_pds_file_1, short
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_path):
     """Test creating a CK from packets"""
+    """
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
                     new_callable=mock.PropertyMock, return_value=short_tmp_path):
@@ -140,6 +141,41 @@ def test_make_azel_ck(mocked_get_current_version_str, test_data_path, short_tmp_
         )
         kernel_maker.make_azel_ck(mock_parsed_args)
         assert (short_tmp_path / 'LIBERA_AZEL_V3-14-159_20210408T235850_20210409T015849_R25056154513.bc').exists()
+        """
+
+    """Test creating a n Elevation CK from csv"""
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
+                    new_callable=mock.PropertyMock, return_value=short_tmp_path):
+        packet_data_path = test_data_path / 'spice/Elevation_angle_20210409_10m.csv'
+        mock_parsed_args = argparse.Namespace(
+            packet_data_filepaths=[str(packet_data_path)],
+            outdir=str(short_tmp_path),
+            csv=True,
+            elevation=True,
+            azimuth=False,
+            overwrite=False,
+            verbose=False
+        )
+        kernel_maker.make_azel_ck(mock_parsed_args)
+        assert (short_tmp_path / 'LIBERA_ELSCAN_V3-14-159_20210409T000000_20210409T000959_R25056154513.bc').exists()
+
+    """Test creating a n Azimuth CK from csv"""
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    with mock.patch('libera_utils.spice_utils.KernelFileCache.cache_dir',
+                    new_callable=mock.PropertyMock, return_value=short_tmp_path):
+        packet_data_path = test_data_path / 'spice/Azimuth_angle_20210409_10m.csv'
+        mock_parsed_args = argparse.Namespace(
+            packet_data_filepaths=[str(packet_data_path)],
+            outdir=str(short_tmp_path),
+            csv=True,
+            elevation=False,
+            azimuth=True,
+            overwrite=False,
+            verbose=False
+        )
+        kernel_maker.make_azel_ck(mock_parsed_args)
+        assert (short_tmp_path / 'LIBERA_AZROT_V3-14-159_20210409T000000_20210409T000958_R25056154513.bc').exists()
 
 
 @pytest.mark.xfail

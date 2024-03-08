@@ -92,15 +92,22 @@ def parse_cli_args(cli_args: list):
                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
 
     # make-kernel azel-ck
-    azel_ck_parser = make_kernel_subparsers.add_parser('azel-ck', help="generate Libera Az-El CK kernel from telemetry")
+    azel_ck_parser = make_kernel_subparsers.add_parser('azel-ck',
+                                                       help="generate Libera Az-El CK kernel from telemetry")
     azel_ck_parser.set_defaults(func=kernel_maker.make_azel_ck)
     azel_ck_parser.add_argument('packet_data_filepaths', nargs='+', type=str,
                                 help="paths to L0 packet files")
-    azel_ck_parser.add_argument('--outdir', '-o', type=str,
-                                required=True,
+    azel_ck_parser.add_argument('--azimuth', action='store_true',
+                                help="generate ck for Azimuth")
+    azel_ck_parser.add_argument('--elevation', action='store_true',
+                                help="generate ck for Elevation")
+    azel_ck_parser.add_argument('--outdir', '-o', type=str, required=True,
                                 help="output directory for generated CK")
     azel_ck_parser.add_argument('--overwrite', action='store_true',
                                 help="force overwriting an existing kernel if it exists")
+    azel_ck_parser.add_argument('--csv', action='store_true',
+                                help="the provided Az and El packet_data_filepaths are ASCII csv files instead of "
+                                     "binary CCSDS")
     azel_ck_parser.add_argument('-v', '--verbose', action='store_true',
                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
 

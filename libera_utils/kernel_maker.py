@@ -133,6 +133,7 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths):
 
 def make_jpss_spk(parsed_args: argparse.Namespace):
     """Create a JPSS SPK from APID 11 CCSDS packets.
+    The SPK system is the component of SPICE concerned with ephemeris data (position/velocity).
 
     Parameters
     ----------
@@ -219,6 +220,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
     """Create a JPSS CK from APID 11 CCSDS packets.
+    The C-kernel (CK) is the component of SPICE concerned with attitude of spacecraft structures or instruments.
 
     Parameters
     ----------
@@ -234,12 +236,10 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
                            app_package_name='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
 
-    logger.info("Starting CK maker. This CLI tool creates a CK from a list of geolocation packet files.")
+    logger.info("Starting CK maker. This CLI tool creates a CK from a list of JPSS attitue/quaternion packet files.")
 
     output_dir = AnyPath(parsed_args.outdir)
     logger.info("Writing resulting CK to %s", output_dir)
-
-    logger.info("Parsing packets...")
     packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
     logger.info("Done.")
 
@@ -299,8 +299,9 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
         logger.info("CK copied to %s", output_full_path)
 
 
-def make_azel_ck(parsed_args: argparse.Namespace):
-    """Create a Libera Az-El CK from CCSDS packets
+def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-statements
+    """Create a Libera Az-El CK from CCSDS packets or ASCII input files
+    The C-kernel (CK) is the component of SPICE concerned with attitude of spacecraft structures or instruments.
 
     Parameters
     ----------
@@ -312,7 +313,111 @@ def make_azel_ck(parsed_args: argparse.Namespace):
     None
     """
     print(parsed_args)
-    raise NotImplementedError("CK generation for the Az-El mechanism isn't implemented yet.")
+
+    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    configure_task_logging(f'ck_generator_{now}',
+                           app_package_name='libera_utils',
+                           console_log_level=logging.DEBUG if parsed_args.verbose else None)
+
+    logger.info("Starting CK maker. This CLI tool creates a CK from a list of Azimuth or Elevation files.")
+
+    output_dir = AnyPath(parsed_args.outdir)
+    logger.info("Writing resulting CK to %s", output_dir)
+
+    if not parsed_args.csv:
+        logger.info("Parsing packets...")
+        packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
+        # Add a column that is the SCLK string, formatted with delimiters, to the input data recarray
+        # TODO: the timing for the Az and El will most likely be labelled differently in the XTCE xml file for Libera
+        # TODO: get the config depending on AZ or El
+        # TODO: the MSOPCK expects ET time stamps: for packets this will need to be convert to ET
+        azel_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
+        packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', azel_sclk_string)
+        utc_start = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[0]))
+        utc_end = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[-1]))
+    else:
+        logger.info("Parsing CSV file...")
+        # get the data from the ASCII file
+        packet_data=np.genfromtxt(parsed_args.packet_data_filepaths[0], delimiter=',', dtype='double')
+        # make sure we have all 3 axis defined: X is RAM, Y is Elev when Az is at 0.0, Z is nadir
+        if (parsed_args.azimuth is True) and (parsed_args.elevation is True):
+            try:
+                raise ValueError("Expecting only one: --azimuth or --elevation. Got both\n")
+            except ValueError as error:
+                logger.exception(error)
+
+        if parsed_args.azimuth:
+            packet_data=packet_data.view([('ET_TIME', 'double'), ('AZIMUTH', 'double')])
+            packet_data = nprf.append_fields(packet_data, 'ELEVATION', np.zeros(packet_data.size,dtype='double'))
+            this_config = config.get("MSOPCK_AZ_SETUPFILE_CONTENTS")
+            ck_object = 'azrot'
+        elif parsed_args.elevation:
+            packet_data=packet_data.view([('ET_TIME', 'double'), ('ELEVATION', 'double')])
+            packet_data = nprf.append_fields(packet_data, 'AZIMUTH', np.zeros(packet_data.size, dtype='double'))
+            this_config = config.get("MSOPCK_EL_SETUPFILE_CONTENTS")
+            ck_object = 'elscan'
+        else:
+            try:
+                raise ValueError("Expecting at least one: --azimuth or --elevation. None provided.\n")
+            except ValueError as error:
+                logger.exception(error)
+
+        packet_data = nprf.append_fields(packet_data, 'AZEL_Z', np.zeros(packet_data.size, dtype='double'))
+        azel_sclk_string = [f"{d}" for d in packet_data['ET_TIME']]
+        packet_data = nprf.append_fields(packet_data, 'AZELSCLKSTR', azel_sclk_string)
+        utc_start = time.et_2_datetime(packet_data['ET_TIME'][0])
+        utc_end = time.et_2_datetime(packet_data['ET_TIME'][-1])
+
+    logger.info("Done.")
+
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
+        tmp_path = Path(tmp_dir)
+        ck_data_filepath = write_kernel_input_file(
+            packet_data,
+            filepath=tmp_path / 'msopck_data.txt',
+            fields=['AZELSCLKSTR', 'AZIMUTH', 'ELEVATION', 'AZEL_Z'],
+            fmt=['%s', '%.16f', '%.16f', '%.16f']
+        )  # produces  X, Y, Z angles for the specific mechanism
+        logger.info("MSOPCK input data written to %s", ck_data_filepath)
+
+        ck_setup_filepath = write_kernel_setup_file(
+            this_config,
+            filepath=tmp_path / 'msopck_setup.txt')
+        logger.info("MSOPCK setup file written to %s", ck_setup_filepath)
+
+        revision_time = datetime.utcnow()
+        ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
+            ck_object=ck_object,
+            utc_start=utc_start,
+            utc_end=utc_end,
+            version=filenaming.get_current_version_str('libera_utils'),
+            revision=revision_time)
+        output_filepath = tmp_path / ck_filename.path.name  # pylint: disable=no-member
+
+        if parsed_args.overwrite is True:
+            output_filepath.unlink(missing_ok=True)
+
+        logger.info("Running MSOPCK...")
+        try:
+            result = subprocess.run(['msopck',  # nosec B603 B607
+                                     str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
+                                    capture_output=True, check=True)
+        except subprocess.CalledProcessError as cpe:
+            logger.info("Captured stdout: \n%s", cpe.stdout.decode())
+            if cpe.stderr:
+                logger.error("Captured stderr: \n%s", cpe.stderr.decode())
+            raise
+
+        logger.info("Captured stdout:\n%s", result.stdout.decode())
+        if result.stderr:
+            logger.error(result.stderr.decode())
+        logger.info("Finished! CK written to %s", output_filepath)
+
+        output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
+        # Use smart copy here to avoiding using two nested smart_open calls
+        # one call would be to open the newly created file, and one to open the desired location
+        smart_copy_file(output_filepath, output_full_path)
+        logger.info("CK copied to %s", output_full_path)
 
 
 def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path,
@@ -387,6 +492,8 @@ def write_kernel_setup_file(data: dict, filepath: Path):
                 # same directory where we are writing this setup file
                 copied_sclk = shutil.copy(value, filepath.parent)
                 value_str = f"'{copied_sclk}'"
+            elif key == 'EULER_ROTATIONS_ORDER':
+                value_str = f"{value}"
             elif isinstance(value, str):
                 value_str = f"'{value}'"
             elif isinstance(value, list):
