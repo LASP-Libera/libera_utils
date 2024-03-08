@@ -15,6 +15,8 @@
 **/test_data/**/*.bpc filter=lfs diff=lfs merge=lfs -text
 # PDS files
 **/test_data/**/*.PDS filter=lfs diff=lfs merge=lfs -text
+# csv files
+**/test_data/spice/*.csv filter=lfs diff=lfs merge=lfs -text
 # Do not store package data (libera_utils/data) in LFS or it will break our PyPI package!
 /README filter=lfs diff=lfs merge=lfs -text
 *.gitignore filter=lfs diff=lfs merge=lfs -text
@@ -57,3 +59,4 @@
 *.png filter=lfs diff=lfs merge=lfs -text
 /jenkins_scripts/JenkinsFile-PRTester filter=lfs diff=lfs merge=lfs -text
 /jenkins_scripts/JenkinsFile-UnitTester filter=lfs diff=lfs merge=lfs -text
+*.csv filter=lfs diff=lfs merge=lfs -text
