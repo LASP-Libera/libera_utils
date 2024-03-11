@@ -10,13 +10,13 @@
    or by running `poetry version X.Y.Z` or bumping according to a valid bump rule like `poetry version patch`
    (see poetry docs).
    
-3. Open a PR to merge the release branch into master. This informs the rest of the team how the release 
+3. Open a PR to merge the release branch into main. This informs the rest of the team how the release 
    process is progressing as you polish the release branch.
 
-4. When you are satisfied that the release branch is ready, merge the PR into `master`. This should be a purely 
+4. When you are satisfied that the release branch is ready, merge the PR into `main`. This should be a purely 
    "fast-forward" merge. Do not delete the release branch when merging as you will need it later.
 
-5. Check out the `master` branch, pull the merged changes, and tag the newly created merge commit with the 
+5. Check out the `main` branch, pull the merged changes, and tag the newly created merge commit with the 
    desired version `X.Y.Z` and push the tag upstream. 
    
    ```bash
