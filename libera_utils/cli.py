@@ -1,16 +1,11 @@
 """Module for the Libera SDC utilities CLI
-
-libera-utils
-    make-kernel
-        jpss-spk
-        jpss-ck
-        azel-ck
 """
 # Standard
 import argparse
 # Local
 from libera_utils import kernel_maker
-from libera_utils.io import pds_ingest
+from libera_utils.aws import ecr_upload, constants
+from libera_utils.aws import processing_step_function_trigger as psfn
 from libera_utils.version import version as libera_utils_version
 
 
@@ -46,17 +41,6 @@ def parse_cli_args(cli_args: list):
 
     subparsers = parser.add_subparsers(description="sub-commands for libera-utils CLI")
 
-    # packet-ingest
-    pds_ingest_parser = subparsers.add_parser('pds-ingest',
-                                              help='write construction record data to database')
-    pds_ingest_parser.set_defaults(func=pds_ingest.ingest)
-    pds_ingest_parser.add_argument('manifest_filepath', type=str,
-                                   help="path to L0 manifest file")
-    pds_ingest_parser.add_argument('-d', '--delete', action='store_true',
-                                   help='delete data files from s3 bucket once they are moved')
-    pds_ingest_parser.add_argument('-v', '--verbose', action='store_true',
-                                   help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
-
     # make-kernel
     make_kernel_parser = subparsers.add_parser('make-kernel',
                                                help='generate SPICE kernel from telemetry data')
@@ -76,7 +60,7 @@ def parse_cli_args(cli_args: list):
     jpss_spk_parser.add_argument('--overwrite', action='store_true',
                                  help="force overwriting an existing kernel if it exists")
     jpss_spk_parser.add_argument('-v', '--verbose', action='store_true',
-                                 help="set DEBUG level logging output (otherwise set by LIBERA_CONSOLE_LOG_LEVEL)")
+                                 help="set DEBUG level logging output")
 
     # make-kernel jpss-ck
     jpss_ck_parser = make_kernel_subparsers.add_parser('jpss-ck', help="generate JPSS CK kernel from telemetry")
@@ -89,7 +73,7 @@ def parse_cli_args(cli_args: list):
     jpss_ck_parser.add_argument('--overwrite', action='store_true',
                                 help="force overwriting an existing kernel if it exists")
     jpss_ck_parser.add_argument('-v', '--verbose', action='store_true',
-                                help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
+                                help="set DEBUG level logging output")
 
     # make-kernel azel-ck
     azel_ck_parser = make_kernel_subparsers.add_parser('azel-ck',
@@ -110,6 +94,28 @@ def parse_cli_args(cli_args: list):
                                      "binary CCSDS")
     azel_ck_parser.add_argument('-v', '--verbose', action='store_true',
                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
+
+    algorithm_names = [name.value for name in constants.ProcessingStepIdentifier]
+    ecr_upload_parser = subparsers.add_parser('ecr-upload', help="Upload docker image to matching ECR repository")
+    ecr_upload_parser.set_defaults(func=ecr_upload.upload_image_to_ecr)
+    ecr_upload_parser.add_argument('image_name', type=str, help="Image name of image to upload (image-name:image-tag)")
+    ecr_upload_parser.add_argument('image_tag', type=str, help="Image tag of image to upload (image-name:image-tag)")
+    ecr_upload_parser.add_argument('algorithm_name', type=str,
+                                   help=f"Algorithm name that matches an ECR repo name, "
+                                        f"inputs to names:\n {algorithm_names}")
+    ecr_upload_parser.add_argument('-v', '--verbose', action='store_true',
+                                   help="Prints out the result of the ecr push")
+
+    sfn_trigger_parser = subparsers.add_parser('step-function-trigger',
+                                               help="Manually trigger a specific step function")
+    sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger)
+    sfn_trigger_parser.add_argument('algorithm_name', type=str, help="Algorithm name you want to run")
+    sfn_trigger_parser.add_argument('day_of_interest', type=str,
+                                    help="Day of data you want to rerun. Format of date: YYYY-MM-DD")
+    sfn_trigger_parser.add_argument('-w', '--wait_for_finish', action='store_true',
+                                    help="Block command line until step function completes (may be a long time)")
+    sfn_trigger_parser.add_argument('-v', '--verbose', action='store_true',
+                                    help="Prints out the result of the step_function_trigger run")
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args

@@ -127,14 +127,3 @@ create a virtual environment in `~/Library/Caches/pypoetry/virtualenvs`.
    This can also be run with `poetry run libera-utils --version`.
 5. Next, [go run the tests](testing.md).
 
-## Installing Postgres Client Drivers
-The `psycopg2` package interfaces with the low level system drivers provided in `libpq` and or `libpq-dev`.
-
-To install those drivers on a Mac, simply install the [PostgreSQL application](https://postgresapp.com/), 
-which comes with the low level drivers, CLI tools,
-and a PostgreSQL Server "App" that is frankly not very useful now that we have Docker.
-
-On Linux, use your package manager to install your Linux flavor's equivalent package of `libpq` and `libpq-dev` (the
-package naming varies slightly between SUSE, Debian, and Redhat flavors).
-
-For details on starting the local dev database and loading test schema, see the [database documentation](database.md).

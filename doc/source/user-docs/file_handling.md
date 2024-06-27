@@ -4,7 +4,7 @@
 Also see [Working with NetCDF4 Files](netcdf.md)
 
 The libera-utils smart_open function has the capability to read and write files to/from a local directory or S3 bucket
-transparently. It supports a context manager pattern and the usual modes for reading/writing/binary provided by most
+transparently. It supports a context manager pattern [HQC: "context manager pattern" may be confusing to our L2 dev users] and the usual modes for reading/writing/binary provided by most
 Python filelike objects:
 
 ```python

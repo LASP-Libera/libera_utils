@@ -1,7 +1,7 @@
-"""Plugin module for mocking S3 buckets"""
-import string
-import os
+"""Plugin module for mocking AWS resources"""
 # Standard
+import string
+import json
 from pathlib import Path
 import random
 # Installed
@@ -9,6 +9,8 @@ import boto3
 from cloudpathlib import S3Path, S3Client
 from moto import mock_aws
 import pytest
+# Local
+from libera_utils.config import config
 
 
 @pytest.fixture(scope='session', autouse=True)
@@ -88,12 +90,14 @@ def create_mock_bucket(mock_s3_context):
             print(f"Using existing mock S3 bucket {bucket}. You may see FileExistsErrors if you are writing the same"
                   f" file as a previous test due to the behavior of cloudpathlib S3Path objects.")
         return bucket
+
     yield _create_bucket
 
 
 @pytest.fixture
 def write_file_to_s3(mock_s3_context, create_mock_bucket):
     """Write file contents to mocked s3 bucket. If the bucket doesn't exist, it is created."""
+
     def _write(filepath: Path, uri: str or S3Path, exists_ok: bool = False) -> S3Path:
         """Write the contents of the file at filepath to the (mocked) S3 URI.
 
@@ -120,7 +124,9 @@ def write_file_to_s3(mock_s3_context, create_mock_bucket):
         s3_path.write_bytes(content)
         print(f"Wrote {filepath} contents to (mocked) S3 object {s3_path.as_uri()}")
         return s3_path
+
     return _write
+
 
 @pytest.fixture
 def mock_secret_manager():
@@ -138,98 +144,52 @@ def create_mock_secret_manager(mock_secret_manager):
 
     def _create_mock_secret_manager(secret_name: str, username="libera_unit_tester"):
         """Creates a mocked secret manager that works with the unit testing database"""
-        try:
-            # Set by docker compose
-            host_name = str(os.environ["LIBERA_DB_HOST"])
-        except KeyError:
+        host_name = config.get("LIBERA_DB_HOST")
+        if not host_name:
             host_name = "localhost"
         secret_json_string = f'{{\n "host":"{host_name}",\n  "password":"testerpass",\n ' \
                              f'"dbname":"libera",\n "username":"{username}" }}\n'
-        client.create_secret(Name=secret_name, SecretString=secret_json_string)
+        try:
+            client.create_secret(Name=secret_name, SecretString=secret_json_string)
+        except client.exceptions.ResourceExistsException:
+            print(f"Mock secret {secret_name} already exists. Using existing secret.")
+
         return
 
     return _create_mock_secret_manager
 
 
 @pytest.fixture
-def mock_dynamodb(mock_aws_credentials):
-    """Everything under/inherited by this runs in the mock_dynamodb context manager"""
-    with mock_aws():
-        # Yield the (mocked) dynamodb resource object
-        # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
-        yield boto3.resource("dynamodb", region_name="us-west-2")
+def mock_step_function():
+    """Everything under/inherited by this runs in the mock_step_function context manager"""
+    with mock_aws(config={'stepfunctions': {"execute_state_machine": True}}):
+        # Yield the (mocked) stepfunction client object
+        # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/clients.html)
+        yield boto3.client("stepfunctions", 'us-west-2')
 
 
 @pytest.fixture
-def make_dynamodb_metadata_table(mock_dynamodb, monkeypatch_session):
-    dynamodb = mock_dynamodb
-    monkeypatch_session.setenv("LIBERA_DDB_TABLE", "libera-metadata-ddb-testing-table")
-    table = dynamodb.create_table(
-        TableName='libera-metadata-ddb-testing-table',
-        KeySchema=[
-            {
-                'AttributeName': 'PK',
-                'KeyType': 'HASH'
-            },
-            {
-                'AttributeName': 'SK',
-                'KeyType': 'RANGE'
-            }
-        ],
-        AttributeDefinitions=[
-            {
-                'AttributeName': 'PK',
-                'AttributeType': 'S'
-            },
-            {
-                'AttributeName': 'SK',
-                'AttributeType': 'S'
-            },
-            {
-                'AttributeName': 'applicable-date',
-                'AttributeType': 'S'
-            }
-        ],
-        ProvisionedThroughput={
-            'ReadCapacityUnits': 5,
-            'WriteCapacityUnits': 5
-        },
-        GlobalSecondaryIndexes=[
-            {
-                'IndexName': 'applicable-date-index',
-                'KeySchema': [
-                    {
-                        'AttributeName': 'applicable-date',
-                        'KeyType': 'HASH'
-                    },
-                    {
-                        'AttributeName': 'SK',
-                        'KeyType': 'RANGE'
+def make_step_function(mock_step_function, monkeypatch_session):
+    """Creates a fake AWS step function"""
+    client = mock_step_function
+
+    def _make_step_function(sfn_name: str, status: str = "FAILED"):
+        """Creates a fake AWS step function with the given name"""
+        monkeypatch_session.setenv("SF_EXECUTION_HISTORY_TYPE", status)
+        state_machine = client.create_state_machine(
+            name=sfn_name,
+            definition=json.dumps({
+                "Comment": "A description of my state machine",
+                "StartAt": "Pass",
+                "States": {
+                    "Pass": {
+                        "Type": "Pass",
+                        "End": True
                     }
-                ],
-                'Projection': {
-                    'ProjectionType': 'INCLUDE',
-                    'NonKeyAttributes': ['first-packet-time', 'last-packet-time']
-                },
-                'ProvisionedThroughput': {
-                    'ReadCapacityUnits': 5,
-                    'WriteCapacityUnits': 5
                 }
-            }
-        ]
-    )
+            }),
+            roleArn='arn:aws:iam::123456789012:role/role-name',
+        )
+        return state_machine
 
-    # Wait until the table exists.
-    table.meta.client.get_waiter('table_exists').wait(TableName='libera-metadata-ddb-testing-table')
-    assert table.table_status == 'ACTIVE'
-
-    return table
-
-
-@pytest.fixture
-def destroy_dynamodb_metadata_table(mock_dynamodb):
-    dynamodb = mock_dynamodb
-    table = dynamodb.Table('libera-metadata-ddb-table')
-    table.delete()
-    table.meta.client.get_waiter('table_not_exists').wait(TableName='libera-metadata-ddb-table')
-    return
+    yield _make_step_function

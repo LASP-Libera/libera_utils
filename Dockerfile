@@ -15,7 +15,7 @@ WORKDIR $LIBERA_UTILS_DIRECTORY
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install libpq so we can install psycopg2 later and curl so we can install poetry
-RUN apt-get update && apt-get install -y libpq-dev curl gcc
+RUN apt-get update && apt-get install -y curl gcc
 
 # Install spice utilities directly from NAIF (precompiled for Linux)
 ADD https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z /tmp/cspice.tar.Z

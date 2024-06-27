@@ -11,6 +11,7 @@ from typing import Union
 from pathlib import Path
 # Installed
 from cloudpathlib import AnyPath, CloudPath, S3Path
+import ulid
 # Local
 from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
 
@@ -44,23 +45,25 @@ LIBERA_L0_REGEX = re.compile(r"^(?P<id_char>P|X)"
                              r"(?P<signal>.XFR)?$")
 
 LIBERA_DATA_PRODUCT_REGEX = re.compile(r"^LIBERA_(?P<data_level>L1B|L2)"
-                                  r"_(?P<product_name>[^_]*)"
-                                  r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
-                                  r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
-                                  r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-                                  r"_(?P<revision>R[0-9]{11})"
-                                  r"\.(?P<extension>nc|h5)$")
+                                       r"_(?P<product_name>[^_]*)"
+                                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+                                       r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+                                       r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+                                       r"_(?P<revision>R[0-9]{11})"
+                                       r"\.(?P<extension>nc|h5)$")
 
 MANIFEST_FILE_REGEX = re.compile(r"^LIBERA"
                                  r"_(?P<manifest_type>INPUT|OUTPUT)"
                                  r"_MANIFEST"
-                                 r"_(?P<created_time>[0-9]{8}T[0-9]{6})"
+                                 r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
                                  r"\.json")
 
 
 class DataLevel(Enum):
     """Data product level"""
     L0 = "L0"
+    SPICE = "SPICE"
+    CAL = "CAL"
     L1B = 'L1B'
     L2 = 'L2'
 
@@ -532,8 +535,8 @@ class ManifestFilename(AbstractValidFilename):
     """Class for naming manifest files"""
 
     _regex = MANIFEST_FILE_REGEX
-    _fmt = "LIBERA_{manifest_type}_MANIFEST_{created_time}.json"
-    _required_parts = ('manifest_type', 'created_time')
+    _fmt = "LIBERA_{manifest_type}_MANIFEST_{ulid_code}.json"
+    _required_parts = ('manifest_type', 'ulid_code')
 
     @property
     def archive_prefix(self):
@@ -545,8 +548,7 @@ class ManifestFilename(AbstractValidFilename):
         """
         manifest_type = self.filename_parts.manifest_type.value
 
-        # This is taking the average of the same time which is the same time
-        applicable_date = self.filename_parts.created_time
+        applicable_date = self.filename_parts.ulid_code.datetime
 
         return f"{manifest_type}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
@@ -554,7 +556,7 @@ class ManifestFilename(AbstractValidFilename):
     def from_filename_parts(cls,  # pylint: disable=arguments-differ
                             basepath: str or Path = None,
                             manifest_type: ManifestType = None,
-                            created_time: datetime = None):
+                            ulid_code: ulid.ULID = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
         The part names are named according to the regex for the file type.
@@ -565,8 +567,8 @@ class ManifestFilename(AbstractValidFilename):
             Allows prepending a basepath or prefix.
         manifest_type : ManifestType
             Input or output
-        created_time : datetime.datetime
-            Time of manifest creation (writing).
+        ulid_code : ulid.ULID
+            ULID code for use in filename parts
 
         Returns
         -------
@@ -575,20 +577,20 @@ class ManifestFilename(AbstractValidFilename):
         cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         manifest_type=manifest_type,
-                                        created_time=created_time)
+                                        ulid_code=ulid_code)
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
                                manifest_type: ManifestType,
-                               created_time: datetime):
+                               ulid_code: ulid.ULID):
         """Construct a path from filename parts
 
         Parameters
         ----------
         manifest_type : ManifestType
             Input or output
-        created_time : datetime.datetime
-            Time of manifest creation (writing).
+        ulid_code : ulid.ULID
+            ULID code for use in filename parts
 
         Returns
         -------
@@ -596,7 +598,7 @@ class ManifestFilename(AbstractValidFilename):
             Formatted filename
         """
         return cls._fmt.format(manifest_type=manifest_type.value.upper(),
-                               created_time=created_time.strftime(PRINTABLE_TS_FORMAT))
+                               ulid_code=ulid_code)
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings
@@ -608,7 +610,7 @@ class ManifestFilename(AbstractValidFilename):
         """
         d = self.regex_match(self.path)
         d['manifest_type'] = ManifestType(d['manifest_type'].upper())
-        d['created_time'] = datetime.strptime(d['created_time'], PRINTABLE_TS_FORMAT)
+        d['ulid_code'] = ulid.ULID.from_str(d['ulid_code'])
         return SimpleNamespace(**d)
 
 

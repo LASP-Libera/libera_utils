@@ -8,11 +8,6 @@ Libera Utils Documentation
 
 Version: |release|
 
-This is the documentation space for the Libera Utils Python package. Libera Utils is a package containing modules that
-are commonly used throughout the Libera Science Data Center codebase and processing algorithms. This package is
-published on PyPI to support our L2 algorithm developers with standardized code for interacting with our AWS resources
-and a consistent API for common tasks required of all developers.
-
 .. toctree::
    :maxdepth: 1
    :caption: Contents:
@@ -21,6 +16,9 @@ and a consistent API for common tasks required of all developers.
    developer-docs
    api-doc/libera-utils
    changelog
+
+.. include:: ../../README.md
+   :parser: myst_parser.sphinx_
 
 Developing Libera Utils
 -----------------------

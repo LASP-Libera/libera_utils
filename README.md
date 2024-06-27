@@ -1,15 +1,18 @@
 # Libera Science Data Processing Utilities
-This package contains utilities and common code for the Libera Science Data Center and 
-algorithm developers.
 
-## Further Documentation
-Documentation, including full API documentation, is automatically 
-published through ReadTheDocs at https://libera-utils.readthedocs.io
+Libera Utils is a package containing modules that
+are commonly used throughout the Libera Science Data Center codebase and processing algorithms. This package is
+published on PyPI to support our L2 algorithm developers with standardized code for interacting with our AWS resources
+and a consistent API for common tasks required of all developers.
+
+## Documentation
+
+Documentation site, including full API listing: [https://libera-utils.readthedocs.io](https://libera-utils.readthedocs.io)
 
 Additional documentation helpful for Level 2 Algorithm Developers is also available in the Libera SDC Developer Guide. 
 Please contact the Libera SDC Team at LASP for access to the Developer Guide.
 
-## Installation PyPI
+## Installation
 
 ```bash
 pip install libera-utils

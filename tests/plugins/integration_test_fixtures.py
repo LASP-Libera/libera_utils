@@ -1,11 +1,9 @@
-import time
+"""Fixtures for integration testing libera_utils"""
 # Installed
 import pytest
 from argparse import Namespace
-from cloudpathlib import S3Path, AnyPath
-import datetime
+from cloudpathlib import S3Path
 # Local
-from libera_utils.io.manifest import Manifest
 
 
 class L0MockParsedArgsNamespace(Namespace):
@@ -18,30 +16,12 @@ class L0MockParsedArgsNamespace(Namespace):
         self.delete = False
         self.verbose = False
 
+
 @pytest.fixture
 def test_type(request):
     """Used for the indirect parameterization passthrough for the setup fixture below"""
     return request.param
 
-
-@pytest.fixture
-def setup_l0_ingest_environment_with_manifest(test_type, generate_input_manifest_local, generate_input_manifest_s3,
-                                              monkeypatch, create_mock_secret_manager):
-    """A fixture that sets up the correct environment variables and arguments to call the ingest method
-    for ingesting l0 files from an input manifest file"""
-    if test_type == "S3":
-        input_manifest_path = generate_input_manifest_s3()
-    else:
-        input_manifest_path = generate_input_manifest_local()
-
-    parsed_args = L0MockParsedArgsNamespace(str(input_manifest_path))
-    processing_path = input_manifest_path.parent
-    monkeypatch.setenv("PROCESSING_DROPBOX", str(processing_path))
-
-    monkeypatch.setenv("DB_SECRET_NAME", "test-secret")
-    create_mock_secret_manager("test-secret")
-
-    return parsed_args
 
 @pytest.fixture
 def setup_kernel_maker_environment_with_manifest(test_type, generate_input_manifest_local, generate_input_manifest_s3,

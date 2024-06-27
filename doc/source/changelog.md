@@ -1,6 +1,13 @@
 # Version Changes
 
 ## 2.3.0 (unreleased)
+- Create CLI tools for AWS ECR image upload and Step Function triggering
+- Update manifest filenames to use ULID instead of timestamp for unique identifiers
+- Change logutil configure_task_logging to optionally log JSON to console
+- Allow configure_task_logging to optionally propagate DEBUG messages from specific loggers
+- Update documentation for how the database is used in the Libera project in DynamoDB
+- Create tools for DynamoDB in AWS for .pds files (CONS and PDS)
+- Replace the use of PostgreSQL with DynamoDB for the Libera project
 
 ## 2.2.0 (released)
 - Add AnyFilename polymorphic class

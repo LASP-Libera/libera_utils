@@ -7,6 +7,7 @@ from unittest import mock
 # Installed
 from cloudpathlib import S3Path
 import pytest
+from ulid import ULID
 # Local
 from libera_utils.io import filenaming
 
@@ -41,8 +42,8 @@ def test_AnyFilename(filename, filename_type):
          Path('/absolute/local/JPSS/2027/01/02/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp')),
         ('LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc', '/absolute/local',
          Path('/absolute/local/AZROT/2027/01/15/LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc')),
-        ('/ignore/this/LIBERA_INPUT_MANIFEST_20270102T122233.json', 's3://my-dropbox-bucket',
-         S3Path('s3://my-dropbox-bucket/INPUT/2027/01/02/LIBERA_INPUT_MANIFEST_20270102T122233.json')),
+        ('/ignore/this/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json', 's3://my-dropbox-bucket',
+         S3Path('s3://my-dropbox-bucket/INPUT/2027/01/02/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json')),
 
     ]
 )
@@ -229,11 +230,11 @@ def test_LiberaDataProductFilename_parts(filename, basepath, parts):
 @pytest.mark.parametrize(
     "filename",
     [
-        '/some/fake/path/LIBERA_INPUT_MANIFEST_20270102T122233.json',
-        Path('/fake-path/LIBERA_INPUT_MANIFEST_20270102T122233.json'),
-        's3://fake-bucket/LIBERA_INPUT_MANIFEST_20270102T122233.json',
-        S3Path('s3://fake-bucket/LIBERA_INPUT_MANIFEST_20270102T122233.json'),
-        '~/LIBERA_INPUT_MANIFEST_20270102T122233.json',
+        '/some/fake/path/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json',
+        Path('/fake-path/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json'),
+        's3://fake-bucket/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json',
+        S3Path('s3://fake-bucket/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json'),
+        '~/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json',
     ]
 )
 def test_ManifestFilename(filename):
@@ -244,23 +245,23 @@ def test_ManifestFilename(filename):
 @pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
-        ('/some/fake/path/LIBERA_INPUT_MANIFEST_20270102T122233.json',
+        ('/some/fake/path/LIBERA_INPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json',
          '/some/fake/path',
          dict(
              manifest_type=filenaming.ManifestType.INPUT,
-             created_time=dt.datetime(2027, 1, 2, 12, 22, 33)
+             ulid_code=ULID.from_str("01MBBXN2589RSGT2NZKDS6QM3F")
          )),
-        ('s3://some/fake/path/LIBERA_OUTPUT_MANIFEST_20270102T122233.json',
+        ('s3://some/fake/path/LIBERA_OUTPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json',
          "s3://some/fake/path",
          dict(
              manifest_type=filenaming.ManifestType.OUTPUT,
-             created_time=dt.datetime(2027, 1, 2, 12, 22, 33)
+             ulid_code=ULID.from_str("01MBBXN2589RSGT2NZKDS6QM3F")
          )),
-        ('LIBERA_INPUT_MANIFEST_20240102T122233.json',
+        ('LIBERA_INPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json',
          None,
          dict(
              manifest_type=filenaming.ManifestType.INPUT,
-             created_time=dt.datetime(2024, 1, 2, 12, 22, 33)
+             ulid_code=ULID.from_str("01MBBXN2589RSGT2NZKDS6QM3F")
          )),
     ]
 )
