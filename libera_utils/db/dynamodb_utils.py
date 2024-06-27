@@ -4,18 +4,13 @@ import logging
 # Installed
 from datetime import datetime, timezone
 from boto3 import resource as boto3_resource
-# Local
-from libera_utils.config import config
 
 logger = logging.getLogger(__name__)
 
 
-def get_dynamodb_table(ddb_name: str = None):
+def get_dynamodb_table(dynamo_table_name: str):
     """Get the DynamoDB table"""
-    if ddb_name:
-        dynamo_table_name = ddb_name
-    else:
-        dynamo_table_name = config.get('LIBERA_DDB_TABLE')
+    logger.debug(f"Getting DynamoDB table: {dynamo_table_name}")
     dynamo_resource = boto3_resource('dynamodb', region_name="us-west-2")
     dynamo_table = dynamo_resource.Table(dynamo_table_name)
     return dynamo_table

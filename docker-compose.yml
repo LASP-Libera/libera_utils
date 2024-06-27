@@ -1,45 +1,6 @@
 version: '3.8'
 
 services:
-  local-db:
-    platform: linux/amd64
-    image: postgres:14
-    restart: always
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=libera_master
-      - POSTGRES_PASSWORD=masterpass
-      - POSTGRES_DB=libera
-    volumes:
-      - ./database/initdb:/docker-entrypoint-initdb.d
-
-  flyway:
-    platform: linux/amd64
-    image: flyway/flyway:latest
-    environment:
-      - FLYWAY_TARGET=${FLYWAY_TARGET:-latest}
-      - FLYWAY_PASSWORD=masterpass
-      - FLYWAY_CONNECT_RETRIES=60
-    command: -url=jdbc:postgresql://local-db:5432/libera migrate
-    volumes:
-      - ./database/migrations:/flyway/sql
-      - ./database/flyway.conf:/flyway/conf/flyway.conf
-    depends_on:
-      - local-db
-
-  rds-flyway:
-    platform: linux/amd64
-    image: flyway/flyway:latest
-    environment:
-      - FLYWAY_TARGET=${FLYWAY_TARGET:-latest}
-      - FLYWAY_PASSWORD=${FLYWAY_PASSWORD}
-      - FLYWAY_CONNECT_RETRIES=60
-    command: -url=jdbc:postgresql://${RDS_DBHOST}/libera migrate
-    volumes:
-      - ./database/migrations:/flyway/sql
-      - ./database/flyway.conf:/flyway/conf/flyway.conf
-
   sdp:
     platform: linux/amd64
     image: libera-utils:latest
@@ -54,11 +15,6 @@ services:
     build:
       context: .
       target: libera-utils-test
-    environment:
-      - LIBERA_DB_HOST=local-db
-    depends_on:
-      flyway:
-        condition: service_completed_successfully
 
   # Tests against Python 3.11 (EOL 2027-10)
   3.11-tests:
@@ -69,11 +25,6 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.11
-    environment:
-      - LIBERA_DB_HOST=local-db
-    depends_on:
-      flyway:
-        condition: service_completed_successfully
 
   # Tests against Python 3.10 (EOL 2026-10)
   3.10-tests:
@@ -84,11 +35,6 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.10
-    environment:
-      - LIBERA_DB_HOST=local-db
-    depends_on:
-      flyway:
-        condition: service_completed_successfully
 
   # Tests against Python 3.9 (EOL 2025-10)
   3.9-tests:
@@ -99,11 +45,6 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.9
-    environment:
-      - LIBERA_DB_HOST=local-db
-    depends_on:
-      flyway:
-        condition: service_completed_successfully
 
   linting:
     image: libera-utils-test:latest

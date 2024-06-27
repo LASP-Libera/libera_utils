@@ -1,5 +1,14 @@
 # Build and Release
 
+## Local package building for CLI testing
+
+To build the package locally for testing especially for the cli interface, use the following steps:
+
+1. Ensure that you have activated a virtual environment where you would like libera-utils to be installed.
+2. run `python -m pip install .` from the root of the repository.
+3. You should now be able to run the `libera-utils --version` command from the command line as see that the version 
+number matches the one in _pyproject.toml_.
+
 ## Release Process
 [Atlassian Git Workflow Reference:](https://www.atlassian.com/git/tutorials/comparing-workflows/gitflow-workflow)
 

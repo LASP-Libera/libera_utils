@@ -147,7 +147,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
     now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     configure_task_logging(f'spk_generator_{now}',
-                           app_package_name='libera_utils',
+                           limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
@@ -233,7 +233,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     """
     now = datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%S")
     configure_task_logging(f'ck_generator_{now}',
-                           app_package_name='libera_utils',
+                           limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of JPSS attitue/quaternion packet files.")
@@ -316,7 +316,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
 
     now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
     configure_task_logging(f'ck_generator_{now}',
-                           app_package_name='libera_utils',
+                           limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of Azimuth or Elevation files.")
@@ -331,6 +331,12 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
         # TODO: the timing for the Az and El will most likely be labelled differently in the XTCE xml file for Libera
         # TODO: get the config depending on AZ or El
         # TODO: the MSOPCK expects ET time stamps: for packets this will need to be convert to ET
+
+        # TODO: identify which APID we're reading AZ or EL
+        # TODO: assign this_config and ck_object below based on the APID of the packet decoded
+        this_config = config.get("MSOPCK_AZ_SETUPFILE_CONTENTS")
+        ck_object = 'azrot'
+
         azel_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
         packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', azel_sclk_string)
         utc_start = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[0]))

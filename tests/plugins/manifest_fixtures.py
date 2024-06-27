@@ -7,6 +7,7 @@ import pytest
 # Local
 from libera_utils.io.manifest import Manifest, ManifestType
 
+
 @pytest.fixture
 def generate_input_manifest_local(tmp_path, test_data_path,
                                   test_construction_record_1, test_construction_record_2,
@@ -64,5 +65,3 @@ def generate_input_manifest_s3(test_data_path, create_mock_bucket, write_file_to
         return input_manifest_file_path
 
     return _generate_input_manifest_s3_with_files
-
-

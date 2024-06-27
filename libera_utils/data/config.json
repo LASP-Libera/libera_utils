@@ -2,15 +2,9 @@
   "_COMMENTS": [
     "Ensure that any environment variable you might want to use has a default here, otherwise the config getter will issue a warning."
   ],
-  "LIBERA_CONSOLE_LOG_LEVEL": "INFO",
-  "LIBERA_LOG_DIR": null,
-  "LIBERA_LOG_GROUP": null,
   "LIBERA_UTILS_DATA_DIR": "{PKG_ROOT}/data",
-  "LIBERA_DB_NAME": null,
-  "LIBERA_DB_USER": null,
-  "LIBERA_DB_HOST": null,
-  "LIBERA_DB_PORT": null,
-  "LIBERA_DDB_TABLE": "libera-metadata-ddb-table",
+  "DROPBOX_PATH": null,
+  "METADATA_DDB_TABLE_NAME": null,
   "JPSS_SCLK": "{LIBERA_UTILS_DATA_DIR}/spice/jpss_sclk_v01.tsc",
   "LIBERA_FK": "{LIBERA_UTILS_DATA_DIR}/spice/libera_fk_v01.tf",
   "EARTH_ASSOC_ITRF93_FK": "{LIBERA_UTILS_DATA_DIR}/spice/earth_assoc_itrf93.tf",

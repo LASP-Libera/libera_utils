@@ -8,6 +8,7 @@ from pathlib import Path
 from hashlib import md5
 # Installed
 from cloudpathlib import S3Path, AnyPath
+from ulid import ULID
 # Local
 from libera_utils.io.smart_open import smart_open
 from libera_utils.io.filenaming import ManifestFilename, ManifestType
@@ -48,8 +49,10 @@ class Manifest:
         self.configuration = configuration if configuration else {}
         if filename:
             self.filename = filename if isinstance(filename, ManifestFilename) else ManifestFilename(filename)
+            self.ulid_code = self.filename.filename_parts.ulid_code
         else:
             self.filename = None
+            self.ulid_code = None
 
         self.files = []
         if files:
@@ -68,7 +71,7 @@ class Manifest:
         """Generate a valid manifest filename"""
         mfn = ManifestFilename.from_filename_parts(
             manifest_type=self.manifest_type,
-            created_time=datetime.now(timezone.utc)
+            ulid_code=ULID.from_datetime(datetime.now(timezone.utc))
         )
         return mfn
 
@@ -249,9 +252,9 @@ class Manifest:
         if not isinstance(input_manifest, cls):
             input_manifest = Manifest.from_file(input_manifest)
 
-        input_manifest_created_time = input_manifest.filename.filename_parts.created_time
+        input_manifest_ulid_code = input_manifest.filename.filename_parts.ulid_code
         manifest_filename = ManifestFilename.from_filename_parts(manifest_type=ManifestType.OUTPUT,
-                                                                 created_time=input_manifest_created_time)
+                                                                 ulid_code=input_manifest_ulid_code)
 
         input_manifest_files = input_manifest.files
 

@@ -2,7 +2,8 @@
 
 
 ## Testing Locally
-Testing is run with `pytest`. To run all tests, make sure the dev dependencies are installed and run:
+Testing is run with `pytest`. To run all tests, make sure the dev dependencies are installed and navigate to the _tests_
+folder in the repository and run:
 ```bash
 pytest
 ```
