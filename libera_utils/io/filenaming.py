@@ -4,13 +4,12 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from enum import Enum
 from importlib import metadata
-import os
 import re
 from types import SimpleNamespace
-from typing import Union
+from typing import Union, Optional, Any
 from pathlib import Path
 # Installed
-from cloudpathlib import AnyPath, CloudPath, S3Path
+from cloudpathlib import AnyPath, S3Path
 import ulid
 # Local
 from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
@@ -32,7 +31,7 @@ CK_REGEX = re.compile(r"^LIBERA_(?P<ck_object>JPSS|AZROT|ELSCAN)"
                       r"\.bc$")
 
 # L0 filename format determined by EDOS Production Data Set and Construction Record filenaming conventions
-LIBERA_L0_REGEX = re.compile(r"^(?P<id_char>P|X)"
+LIBERA_L0_REGEX = re.compile(r"^(?P<id_char>[PX])"
                              r"(?P<scid>[0-9]{3})"
                              r"(?P<first_apid>[0-9]{4})"
                              # In some cases at least, the last character of the fill field specifies a time (T)
@@ -113,16 +112,16 @@ class AbstractValidFilename(ABC):
         return False
 
     @property
-    def path(self):
+    def path(self) -> Union[Path, S3Path]:
         """Property containing the file path"""
         return self._path
 
     @path.setter
-    def path(self, new_path: str or Path or CloudPath):
+    def path(self, new_path: Union[str, Path, S3Path]):
         if isinstance(new_path, str):
             new_path = AnyPath(new_path)
         self.regex_match(new_path)  # validates against regex pattern
-        self._path: CloudPath or Path = AnyPath(new_path)
+        self._path: Union[Path, S3Path] = AnyPath(new_path)
 
     @property
     def filename_parts(self):
@@ -136,42 +135,31 @@ class AbstractValidFilename(ABC):
         raise NotImplementedError()
 
     @classmethod
-    def _check_required_parts(cls, local_vars: dict):
-        """Checks for the presence of required filename parts
-
-        Parameters
-        ----------
-        local_vars : dict
-            Dictionary of variables passed, created by a call to locals()
-        """
-        print(local_vars)
-        missing = [req for req in cls._required_parts if local_vars[req] is None]
-        if missing:
-            raise ValueError(
-                f"Missing required keyword argument(s) to {cls.__name__}.from_filename_parts: {', '.join(missing)}.")
-
-    @classmethod
     @abstractmethod
     def from_filename_parts(cls,
-                            *args,
-                            basepath: str or Path = None):
+                            *args: Any,  # Required filename parts as defined by child class
+                            basepath: Union[str, Path, S3Path] = None,
+                            **kwargs: Any  # Optional filename parts or options as defined by child class
+                            ):
         """Abstract method that must be implemented to provide hinting for required parts"""
         raise NotImplementedError()
 
     @classmethod
     def _from_filename_parts(cls,
-                             basepath: str or Path = None,
-                             **parts):
+                             *,  # No positional arguments
+                             basepath: Union[str, Path, S3Path] = None,
+                             **parts: Any):
         """Create instance from filename parts.
 
-        The part arg names are named according to the regex for the file type.
+        The part kwarg names are named according to the regex for the file type.
 
         Parameters
         ----------
-        basepath : str or pathlib.Path, Optional
+        basepath : Union[str, Path, S3Path], Optional
             Allows prepending a basepath or prefix.
-        parts : dict
-            Passed directly to _format_filename_parts
+        parts : Any
+            Passed directly to _format_filename_parts. This is a dict of variable kwargs that will differ in each
+            filename class based on the required parts for that particular filename type.
 
         Returns
         -------
@@ -179,7 +167,7 @@ class AbstractValidFilename(ABC):
         """
         filename = cls._format_filename_parts(**parts)
         if basepath is not None:
-            return cls(os.path.join(basepath, filename))
+            return cls(AnyPath(basepath) / filename)
         return cls(filename)
 
     @classmethod
@@ -228,7 +216,7 @@ class AbstractValidFilename(ABC):
         applicable_date = datetime.date(t_mean)
         return applicable_date
 
-    def regex_match(self, path: str or Path or CloudPath):
+    def regex_match(self, path: Union[str, Path, S3Path]):
         """Parse and validate a given path against class-attribute defined regex
 
         Returns
@@ -248,7 +236,7 @@ class AbstractValidFilename(ABC):
 
         Parameters
         ----------
-        parent_path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
+        parent_path : Union[str, Path, S3Path]
             Absolute path to the parent directory or S3 bucket prefix. The generated path prefix is appended to the
             parent path and followed by the file basename.
 
@@ -271,8 +259,6 @@ class L0Filename(AbstractValidFilename):
 
     _regex = LIBERA_L0_REGEX
     _fmt = "{id_char}{scid:03}{first_apid:04}{fill:A<14}{created_time}{numeric_id}{file_number:02}.{extension}{signal}"
-    _required_parts = (
-        'id_char', 'scid', 'first_apid', 'fill', 'created_time', 'numeric_id', 'file_number', 'extension')
 
     @property
     def archive_prefix(self):
@@ -285,25 +271,24 @@ class L0Filename(AbstractValidFilename):
         return f"{l0_file_type}/{apid:0>4}"
 
     @classmethod
-    def from_filename_parts(cls,  # pylint: disable=arguments-differ
-                            basepath: str or Path = None,
-                            id_char: str = None,
-                            scid: int = None,
-                            first_apid: int = None,
-                            fill: str = None,
-                            created_time: datetime = None,
-                            numeric_id: int = None,
-                            file_number: int = None,
-                            extension: str = None,
-                            signal: str = None):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            id_char: str,
+                            scid: int,
+                            first_apid: int,
+                            fill: str,
+                            created_time: datetime,
+                            numeric_id: int,
+                            file_number: int,
+                            extension: str,
+                            signal: Optional[str] = None,
+                            basepath: Optional[Union[str, Path, S3Path]] = None):
+        """Create instance from filename parts
 
+        This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part names are named according to the regex for the file type.
 
         Parameters
         ----------
-        basepath : str or pathlib.Path, Optional
-            Allows prepending a basepath or prefix.
         id_char : str
             Either P (for PDS files, Construction Records) or X (for Delivery Records)
         scid : int
@@ -320,14 +305,15 @@ class L0Filename(AbstractValidFilename):
             File number within the data set. Construction records are always file number zero.
         extension : str
             File name extension. Either PDR or PDS
-        signal : str or None, Optional
+        signal : Optional[str]
             Optional signal suffix. Always '.XFR'
+        basepath : Optional[Union[str, Path, S3Path]]
+            Allows prepending a basepath or prefix.
 
         Returns
         -------
         : L0Filename
         """
-        cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         id_char=id_char,
                                         scid=scid,
@@ -349,7 +335,7 @@ class L0Filename(AbstractValidFilename):
                                numeric_id: int,
                                file_number: int,
                                extension: str,
-                               signal: str = None):
+                               signal: Optional[str] = None):
         """Construct a path from filename parts
 
         Parameters
@@ -370,7 +356,7 @@ class L0Filename(AbstractValidFilename):
             File number within the data set. Construction records are always file number zero.
         extension : str
             File name extension. Either PDR or PDS
-        signal : str or None, Optional
+        signal : Optional[str], Optional
             Optional signal suffix. Always '.XFR'
 
         Returns
@@ -412,7 +398,6 @@ class LiberaDataProductFilename(AbstractValidFilename):
 
     _regex = LIBERA_DATA_PRODUCT_REGEX
     _fmt = "LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}"
-    _required_parts = ('data_level', 'product_name', 'version', 'utc_start', 'utc_end', 'revision', 'extension')
 
     @property
     def archive_prefix(self):
@@ -426,23 +411,22 @@ class LiberaDataProductFilename(AbstractValidFilename):
         return f"{product_name}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # pylint: disable=arguments-differ
-                            basepath: str or Path = None,
-                            data_level: str = None,
-                            product_name: str = None,
-                            version: str = None,
-                            utc_start: datetime = None,
-                            utc_end: datetime = None,
-                            revision: datetime = None,
-                            extension: str = 'nc'):
+    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            data_level: str,
+                            product_name: str,
+                            version: str,
+                            utc_start: datetime,
+                            utc_end: datetime,
+                            revision: datetime,
+                            extension: str = 'nc',
+                            basepath: Optional[Union[str, Path, S3Path]] = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
+        This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part names are named according to the regex for the file type.
 
         Parameters
         ----------
-        basepath : str or pathlib.Path, Optional
-            Allows prepending a basepath or prefix.
         data_level : str
             L1B or L2 identifying the level of the data product
         product_name : str
@@ -458,12 +442,13 @@ class LiberaDataProductFilename(AbstractValidFilename):
             Time when the file was created.
         extension : str
             File extension (.nc or .h5)
+        basepath : Optional[Union[str, Path, S3Path]]
+            Allows prepending a basepath or prefix.
 
         Returns
         -------
         : LiberaDataProductFilename
         """
-        cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         data_level=data_level,
                                         product_name=product_name,
@@ -536,7 +521,6 @@ class ManifestFilename(AbstractValidFilename):
 
     _regex = MANIFEST_FILE_REGEX
     _fmt = "LIBERA_{manifest_type}_MANIFEST_{ulid_code}.json"
-    _required_parts = ('manifest_type', 'ulid_code')
 
     @property
     def archive_prefix(self):
@@ -553,28 +537,28 @@ class ManifestFilename(AbstractValidFilename):
         return f"{manifest_type}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # pylint: disable=arguments-differ
-                            basepath: str or Path = None,
-                            manifest_type: ManifestType = None,
-                            ulid_code: ulid.ULID = None):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            manifest_type: ManifestType,
+                            ulid_code: ulid.ULID,
+                            basepath: Union[str, Path, S3Path] = None):
+        """Create instance from filename parts.
 
+        This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part names are named according to the regex for the file type.
 
         Parameters
         ----------
-        basepath : str or pathlib.Path, Optional
-            Allows prepending a basepath or prefix.
         manifest_type : ManifestType
             Input or output
         ulid_code : ulid.ULID
             ULID code for use in filename parts
+        basepath : Optional[Union[str, Path, S3Path]]
+            Allows prepending a basepath or prefix.
 
         Returns
         -------
         : ManifestFilename
         """
-        cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         manifest_type=manifest_type,
                                         ulid_code=ulid_code)
@@ -619,7 +603,6 @@ class EphemerisKernelFilename(AbstractValidFilename):
 
     _regex = SPK_REGEX
     _fmt = "LIBERA_{spk_object}_{version}_{utc_start}_{utc_end}_{revision}.bsp"
-    _required_parts = ('spk_object', 'version', 'utc_start', 'utc_end', 'revision')
 
     @property
     def archive_prefix(self):
@@ -633,21 +616,20 @@ class EphemerisKernelFilename(AbstractValidFilename):
         return f"{spk_object}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # pylint: disable=arguments-differ
-                            basepath: str or Path = None,
-                            spk_object: str = None,
-                            version: str = None,
-                            utc_start: datetime = None,
-                            utc_end: datetime = None,
-                            revision: datetime = None):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            spk_object: str,
+                            version: str,
+                            utc_start: datetime,
+                            utc_end: datetime,
+                            revision: datetime,
+                            basepath: Optional[Union[str, Path, S3Path]] = None):
+        """Create instance from filename parts.
 
+        This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part arg names are named according to the regex for the file type.
 
         Parameters
         ----------
-        basepath : str or pathlib.Path, Optional
-            Allows prepending a basepath or prefix.
         spk_object : str
             Name of object whose attitude is represented in this SPK.
         version : str
@@ -659,12 +641,13 @@ class EphemerisKernelFilename(AbstractValidFilename):
             End time of data.
         revision: datetime.datetime
             When the file was last revised.
+        basepath : Optional[Union[str, Path, S3Path]]
+            Allows prepending a basepath or prefix.
 
         Returns
         -------
         : EphemerisKernelFilename
         """
-        cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         spk_object=spk_object,
                                         version=version,
@@ -725,7 +708,6 @@ class AttitudeKernelFilename(AbstractValidFilename):
 
     _regex = CK_REGEX
     _fmt = "LIBERA_{ck_object}_{version}_{utc_start}_{utc_end}_{revision}.bc"
-    _required_parts = ('ck_object', 'version', 'utc_start', 'utc_end', 'revision')
 
     @property
     def archive_prefix(self):
@@ -739,21 +721,20 @@ class AttitudeKernelFilename(AbstractValidFilename):
         return f"{ck_object}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # pylint: disable=arguments-differ
-                            basepath: str or Path = None,
-                            ck_object: str = None,
-                            version: str = None,
-                            utc_start: datetime = None,
-                            utc_end: datetime = None,
-                            revision: datetime = None):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            ck_object: str,
+                            version: str,
+                            utc_start: datetime,
+                            utc_end: datetime,
+                            revision: datetime,
+                            basepath: Optional[Union[str, Path, S3Path]] = None):
+        """Create instance from filename parts.
 
+        This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part arg names are named according to the regex for the file type.
 
         Parameters
         ----------
-        basepath : str or pathlib.Path, Optional
-            Allows prepending a basepath or prefix.
         ck_object : str
             Name of object whose attitude is represented in this CK.
         version : str
@@ -765,12 +746,13 @@ class AttitudeKernelFilename(AbstractValidFilename):
             End time of data.
         revision: datetime.datetime
             When the file was last revised.
+        basepath : Optional[Union[str, Path, S3Path]]
+            Allows prepending a basepath or prefix.
 
         Returns
         -------
         : AttitudeKernelFilename
         """
-        cls._check_required_parts(locals())
         return cls._from_filename_parts(basepath=basepath,
                                         ck_object=ck_object,
                                         version=version,

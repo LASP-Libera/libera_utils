@@ -350,6 +350,12 @@ def test_AttitudeKernelFilename(filename, basepath, parts):
     assert fn_from_parts.filename_parts == fn.filename_parts
 
 
+def test_missing_required_parts_argument():
+    """Test that we get a TypeError when passing incomplete set of parts to from_filename_parts"""
+    with pytest.raises(TypeError):
+        filenaming.ManifestFilename.from_filename_parts(manifest_type=filenaming.ManifestType.INPUT)
+
+
 def test_changing_path():
     """Test ability to mess with a filename object's path"""
     p = filenaming.LiberaDataProductFilename('LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.h5')
@@ -392,3 +398,21 @@ def test_get_current_version_str(mock_metadata, mock_version, version_string):
             filenaming.get_current_version_str('irrelevant_since_metadata_is_mocked')
     else:
         assert filenaming.get_current_version_str('irrelevant_since_metadata_is_mocked') == version_string
+
+
+def test_working_with_mocked_s3_paths(create_mock_bucket):
+    """Test using our filenaming classes with mocked S3 objects"""
+    bucket = create_mock_bucket()
+    basepath = S3Path(f"s3://{bucket.name}/test-path")
+    fn = filenaming.L0Filename.from_filename_parts(
+        basepath=basepath,
+        id_char="P",
+        scid=987,
+        first_apid=11,
+        fill="FAKE",
+        created_time=dt.datetime.now(dt.timezone.utc),
+        numeric_id=1,
+        file_number=1,
+        extension="PDS"
+    )
+    assert isinstance(fn.path, S3Path)
