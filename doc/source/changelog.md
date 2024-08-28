@@ -1,6 +1,6 @@
 # Version Changes
 
-## 2.3.1 (unreleased)
+## 2.3.1 (released)
 - Fix os.path.join bug in filenaming module that broke mocked S3 paths and also fix typehinting
 
 ## 2.3.0 (released)
