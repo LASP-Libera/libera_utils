@@ -41,7 +41,7 @@ from libera_utils.aws import processing_step_function_trigger as psfn
          argparse.Namespace(
              func=psfn.step_function_trigger,
              algorithm_name='fake_algorithm',
-             day_of_interest='2000-01-01',
+             applicable_day='2000-01-01',
              wait_for_finish=True,
              verbose=True)
          )

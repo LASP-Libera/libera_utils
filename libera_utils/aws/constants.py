@@ -6,7 +6,7 @@ class DataProductIdentifier(Enum):
     """Enumeration of data product canonical IDs used in AWS resource naming
     These IDs refer to the data products (files) themselves, NOT the processing steps (since processing steps
     may produce multiple products).
-    
+
     In general these names are of the form <level>-<source>-<type>
     # TODO: This enum is duplicated in libera_cdk in libera_lambda_runtime.constants
         When that code is stable, it should be moved here and libera_lambda_runtime should import it from here.
@@ -46,11 +46,11 @@ class DataProductIdentifier(Enum):
 
 class ProcessingStepIdentifier(Enum):
     """Enumeration of processing step IDs used in AWS resource naming and processing orchestration
-    
-    In orchestration code, these are used as "NodeID" values to identify processing steps
-    # TODO: this enum is duplicated in libera_cdk in the libera_lambda_runtime.constants module for ease of development
-        When that is working well, independent of libera_utils, this enum should be replaced with that code and the
-        Lambda runtime package should import it from here. 2024-04-30
+
+    In orchestration code, these are used as "NodeID" values to identify processing steps:
+        The processing_step_node_id values used in libera_cdk deployment stackbuilder module
+        and the node names in processing_system_dag.json must match these.
+    They must also be passed to the ecr_upload module called by some libera_cdk integration tests.
     """
     l2cf = 'l2-cloud-fraction'
     l2_stf = 'l2-ssw-toa'
@@ -58,8 +58,7 @@ class ProcessingStepIdentifier(Enum):
     l2_surface_flux = 'l2-ssw-surface-flux'
     l2_firf = 'l2-far-ir-toa-flux'
     unfilt = 'l1c-unfiltered'
-    spice_az = 'libera-spice-az'
-    spice_el = 'libera-spice-el'
-    spice_jpss = 'jpss-spice'
-    pds_ingest = 'l0-ingest-docker-repo'
+    spice_azel = 'spice-azel'
+    spice_jpss = 'spice-jpss'
     l1b_rad = 'l1b-rad'
+    l1b_cam = 'l1b-cam'

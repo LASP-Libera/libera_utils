@@ -9,7 +9,7 @@ from libera_utils.aws import constants
     'algorithm_name',
     [
         'l2cf', 'l2_stf', 'adms', 'l2_surface_flux', 'l2_firf',
-        'unfilt', 'spice_az', 'spice_el', 'spice_jpss', 'pds_ingest'
+        'unfilt', 'spice_azel', 'spice_jpss', 'l1b_cam', 'l1b_rad'
     ]
 )
 def test_algorithm_names(algorithm_name):

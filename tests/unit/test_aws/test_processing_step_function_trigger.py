@@ -14,6 +14,7 @@ def test_processing_step_function_trigger(make_step_function):
         algorithm_name="fake_algorithm",
         day_of_interest="fake_day",
         wait_for_finish=False,
+        applicable_day="2025-01-01",
         verbose=False
     )
     make_step_function("fake_algorithm")
