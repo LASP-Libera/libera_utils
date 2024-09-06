@@ -110,7 +110,7 @@ def parse_cli_args(cli_args: list):
                                                help="Manually trigger a specific step function")
     sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger)
     sfn_trigger_parser.add_argument('algorithm_name', type=str, help="Algorithm name you want to run")
-    sfn_trigger_parser.add_argument('day_of_interest', type=str,
+    sfn_trigger_parser.add_argument('applicable_day', type=str,
                                     help="Day of data you want to rerun. Format of date: YYYY-MM-DD")
     sfn_trigger_parser.add_argument('-w', '--wait_for_finish', action='store_true',
                                     help="Block command line until step function completes (may be a long time)")

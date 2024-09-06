@@ -46,10 +46,10 @@ def step_function_trigger(parsed_args: argparse.Namespace):
 
     step_function_client = boto3.client("stepfunctions", region_name)
     input_object = json.dumps({
-        "TriggerSource": "Manual",
-        "RetryCount": 1,
-        "RetryHistory": "NA",
-        "DayOfInterest": parsed_args.day_of_interest})
+        "TRIGGER_SOURCE": "Manual",
+        "RETRY_COUNT": 1,
+        "RETRY_HISTORY": "NA",
+        "APPLICABLE_DAY": parsed_args.applicable_day})
     logger.debug(f"Input object to the state machine is : {input_object}")
 
     try:

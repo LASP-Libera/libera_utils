@@ -35,7 +35,7 @@ def test_docker_client_push(mock_tag_function, mock_push_function, mock_from_env
     args = argparse.Namespace(
         image_name="fake_image",
         image_tag="fake_tag",
-        algorithm_name="pds_ingest",
+        algorithm_name="spice_azel",
         verbose=False
     )
     ecr_login_command = ('aws ecr get-login-password --region us-west-2 | docker login --username AWS '
