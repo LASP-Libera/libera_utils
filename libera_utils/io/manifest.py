@@ -1,17 +1,18 @@
 """Module for manifest file handling"""
-import warnings
 # Standard
 from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
 from hashlib import md5
+import warnings
 # Installed
 from cloudpathlib import S3Path, AnyPath
 from ulid import ULID
 # Local
 from libera_utils.io.smart_open import smart_open
-from libera_utils.io.filenaming import ManifestFilename, ManifestType
+from libera_utils.io.filenaming import ManifestFilename
+from libera_utils.aws.constants import ManifestType
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +211,7 @@ class Manifest:
                               "checksum": str(checksum_calculated)}
             self.files.append(file_structure)
 
+    # DEPRECATED! Use add_files instead
     def add_file_to_manifest(self, file):
         """Deprecated legacy method replaced by add_files"""
         warnings.warn("add_file_to_manifest(file) is deprecated. Use add_files(*files) instead",
