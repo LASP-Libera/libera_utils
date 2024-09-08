@@ -6,6 +6,7 @@ from unittest import mock
 from moto import mock_aws
 # Local
 from libera_utils.aws.ecr_upload import upload_image_to_ecr, login_to_ecr
+from libera_utils.aws.constants import ProcessingStepIdentifier
 
 
 def test_ecr_login_success(fake_process):
@@ -35,7 +36,7 @@ def test_docker_client_push(mock_tag_function, mock_push_function, mock_from_env
     args = argparse.Namespace(
         image_name="fake_image",
         image_tag="fake_tag",
-        algorithm_name="spice_azel",
+        algorithm_name=ProcessingStepIdentifier.spice_azel.value,
         verbose=False
     )
     ecr_login_command = ('aws ecr get-login-password --region us-west-2 | docker login --username AWS '

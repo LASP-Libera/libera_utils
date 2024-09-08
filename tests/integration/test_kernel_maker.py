@@ -9,7 +9,8 @@ import pytest
 from cloudpathlib import S3Path, AnyPath
 # Local
 from libera_utils import kernel_maker
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import Manifest
+from libera_utils.aws.constants import ManifestType
 
 
 @pytest.fixture

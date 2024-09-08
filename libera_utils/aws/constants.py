@@ -2,20 +2,28 @@
 from enum import Enum
 
 
+class ManifestType(Enum):
+    """Enumerated legal manifest type values"""
+    INPUT = 'INPUT'
+    input = INPUT
+    OUTPUT = 'OUTPUT'
+    output = OUTPUT
+
+
 class DataProductIdentifier(Enum):
     """Enumeration of data product canonical IDs used in AWS resource naming
     These IDs refer to the data products (files) themselves, NOT the processing steps (since processing steps
     may produce multiple products).
 
     In general these names are of the form <level>-<source>-<type>
-    # TODO: This enum is duplicated in libera_cdk in libera_lambda_runtime.constants
-        When that code is stable, it should be moved here and libera_lambda_runtime should import it from here.
     """
+    # L0 construction record
+    l0_cr = "l0-cr"
+
     # L0 PDS files
     l0_rad_pds = "l0-rad-pds"
     l0_cam_pds = "l0-cam-pds"
-    l0_az_pds = "l0-az-pds"
-    l0_el_pds = "l0-el-pds"
+    l0_azel_pds = "l0-azel-pds"
     l0_jpss_pds = "l0-jpss-pds"
 
     # SPICE kernels
@@ -62,3 +70,61 @@ class ProcessingStepIdentifier(Enum):
     spice_jpss = 'spice-jpss'
     l1b_rad = 'l1b-rad'
     l1b_cam = 'l1b-cam'
+    l0_jpss_pds = 'l0-jpss'
+    l0_azel_pds = 'l0-azel'
+    l0_rad_pds = 'l0-rad'
+    l0_cam_pds = 'l0-cam'
+    l0_cr = 'l0-cr'
+
+
+class CkObject(Enum):
+    """Enum of valid CK objects"""
+    JPSS = "JPSS"
+    AZROT = "AZROT"
+    ELSCAN = "ELSCAN"
+
+    @property
+    def data_product_id(self):
+        """DataProductIdentifier for CKs associated with this CK object"""
+        _product_id_map = {
+            CkObject.JPSS: DataProductIdentifier.spice_jpss_ck,
+            CkObject.AZROT: DataProductIdentifier.spice_az_ck,
+            CkObject.ELSCAN: DataProductIdentifier.spice_el_ck
+        }
+        return _product_id_map[self]
+
+    @property
+    def processing_step_id(self):
+        """ProcessingStepIdentifier for the processing step that produces CKs for this CK object"""
+        _processing_step_id_map = {
+            CkObject.JPSS: ProcessingStepIdentifier.spice_jpss,
+            CkObject.AZROT: ProcessingStepIdentifier.spice_azel,
+            CkObject.ELSCAN: ProcessingStepIdentifier.spice_azel
+        }
+        return _processing_step_id_map[self]
+
+
+class SpkObject(Enum):
+    """Enum of valid SPK objects"""
+    JPSS = "JPSS"
+
+    @property
+    def data_product_id(self):
+        """DataProductIdentifier for SPKs associated with this SPK object"""
+        # Only one data product for SPKs
+        return DataProductIdentifier.spice_jpss_spk
+
+    @property
+    def processing_step_id(self):
+        """ProcessingStepIdentifier for the processing step that produces SPKs for this SPK object"""
+        # Only one processing step that produces an SPK
+        return ProcessingStepIdentifier.spice_jpss
+
+
+class DataLevel(Enum):
+    """Data product level"""
+    L0 = "L0"
+    SPICE = "SPICE"
+    CAL = "CAL"
+    L1B = 'L1B'
+    L2 = 'L2'

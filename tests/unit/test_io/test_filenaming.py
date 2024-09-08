@@ -8,6 +8,8 @@ from unittest import mock
 from cloudpathlib import S3Path
 import pytest
 from ulid import ULID
+
+import libera_utils.aws.constants
 # Local
 from libera_utils.io import filenaming
 
@@ -248,19 +250,19 @@ def test_ManifestFilename(filename):
         ('/some/fake/path/LIBERA_INPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json',
          '/some/fake/path',
          dict(
-             manifest_type=filenaming.ManifestType.INPUT,
+             manifest_type=libera_utils.aws.constants.ManifestType.INPUT,
              ulid_code=ULID.from_str("01MBBXN2589RSGT2NZKDS6QM3F")
          )),
         ('s3://some/fake/path/LIBERA_OUTPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json',
          "s3://some/fake/path",
          dict(
-             manifest_type=filenaming.ManifestType.OUTPUT,
+             manifest_type=libera_utils.aws.constants.ManifestType.OUTPUT,
              ulid_code=ULID.from_str("01MBBXN2589RSGT2NZKDS6QM3F")
          )),
         ('LIBERA_INPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json',
          None,
          dict(
-             manifest_type=filenaming.ManifestType.INPUT,
+             manifest_type=libera_utils.aws.constants.ManifestType.INPUT,
              ulid_code=ULID.from_str("01MBBXN2589RSGT2NZKDS6QM3F")
          )),
     ]
@@ -353,7 +355,7 @@ def test_AttitudeKernelFilename(filename, basepath, parts):
 def test_missing_required_parts_argument():
     """Test that we get a TypeError when passing incomplete set of parts to from_filename_parts"""
     with pytest.raises(TypeError):
-        filenaming.ManifestFilename.from_filename_parts(manifest_type=filenaming.ManifestType.INPUT)
+        filenaming.ManifestFilename.from_filename_parts(manifest_type=libera_utils.aws.constants.ManifestType.INPUT)
 
 
 def test_changing_path():

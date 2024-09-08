@@ -12,6 +12,13 @@ from pathlib import Path
 from cloudpathlib import AnyPath, S3Path
 import ulid
 # Local
+from libera_utils.aws.constants import (
+    ManifestType,
+    ProcessingStepIdentifier,
+    DataProductIdentifier,
+    CkObject,
+    SpkObject
+)
 from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
@@ -58,21 +65,29 @@ MANIFEST_FILE_REGEX = re.compile(r"^LIBERA"
                                  r"\.json")
 
 
-class DataLevel(Enum):
-    """Data product level"""
-    L0 = "L0"
-    SPICE = "SPICE"
-    CAL = "CAL"
-    L1B = 'L1B'
-    L2 = 'L2'
+class ProductName(Enum):
+    """Enum of valid product names as used in filenames, defined and sourced from the LASP-ASDC ICD"""
+    RAD = "RAD"
+    CAM = "CAM"
+    # TODO: Add the additional product names from the ICD
 
+    @property
+    def processing_step_id(self):
+        """ProcessingStepIdentifier for this product name"""
+        _product_name_to_processing_step_id = {
+            ProductName.RAD.value: ProcessingStepIdentifier.l1b_rad,
+            ProductName.CAM.value: ProcessingStepIdentifier.l1b_cam
+        }
+        return _product_name_to_processing_step_id[self.value]
 
-class ManifestType(Enum):
-    """Enumerated legal manifest type values"""
-    INPUT = 'INPUT'
-    input = INPUT
-    OUTPUT = 'OUTPUT'
-    output = OUTPUT
+    @property
+    def data_product_id(self):
+        """DataProductIdentifier for this product name"""
+        _product_name_to_data_product_id = {
+            ProductName.RAD.value: DataProductIdentifier.l1b_rad,
+            ProductName.CAM.value: DataProductIdentifier.l1b_cam
+        }
+        return _product_name_to_data_product_id[self.value]
 
 
 class AnyFilename:
@@ -127,6 +142,18 @@ class AbstractValidFilename(ABC):
     def filename_parts(self):
         """Property that contains a namespace of filename parts"""
         return self._parse_filename_parts()
+
+    @property
+    @abstractmethod
+    def processing_step_id(self):
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def data_product_id(self):
+        """Property that contains the DataProductIdentifier for this file type"""
+        raise NotImplementedError()
 
     @property
     @abstractmethod
@@ -259,6 +286,32 @@ class L0Filename(AbstractValidFilename):
 
     _regex = LIBERA_L0_REGEX
     _fmt = "{id_char}{scid:03}{first_apid:04}{fill:A<14}{created_time}{numeric_id}{file_number:02}.{extension}{signal}"
+    _apid_to_l0_ingest_processing_step_id = {
+        11: ProcessingStepIdentifier.l0_jpss_pds,
+        1036: ProcessingStepIdentifier.l0_rad_pds,
+        1048: ProcessingStepIdentifier.l0_azel_pds,
+        9999: ProcessingStepIdentifier.l0_cam_pds
+    }
+    _apid_to_data_product_id = {
+        11: DataProductIdentifier.l0_jpss_pds,
+        1036: DataProductIdentifier.l0_rad_pds,
+        1048: DataProductIdentifier.l0_azel_pds,
+        9999: DataProductIdentifier.l0_cam_pds
+    }
+
+    @property
+    def processing_step_id(self):
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        if self.filename_parts.file_number == 0:
+            return ProcessingStepIdentifier.l0_cr
+        return self._apid_to_l0_ingest_processing_step_id[self.filename_parts.first_apid]
+
+    @property
+    def data_product_id(self):
+        """Property that contains the DataProductIdentifier for this file type"""
+        if self.filename_parts.file_number == 0:
+            return DataProductIdentifier.l0_cr
+        return self._apid_to_data_product_id[self.filename_parts.first_apid]
 
     @property
     def archive_prefix(self):
@@ -400,6 +453,16 @@ class LiberaDataProductFilename(AbstractValidFilename):
     _fmt = "LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}"
 
     @property
+    def processing_step_id(self):
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        return ProductName[self.filename_parts.product_name].processing_step_id
+
+    @property
+    def data_product_id(self):
+        """Property that contains the DataProductIdentifier for this file type"""
+        return ProductName[self.filename_parts.product_name].data_product_id
+
+    @property
     def archive_prefix(self):
         """Property that contains the generated prefix for L1B and L2 archiving"""
         # Generate prefix structure
@@ -523,6 +586,16 @@ class ManifestFilename(AbstractValidFilename):
     _fmt = "LIBERA_{manifest_type}_MANIFEST_{ulid_code}.json"
 
     @property
+    def processing_step_id(self):
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        return None  # There is no processing step that produces manifest files
+
+    @property
+    def data_product_id(self):
+        """Property that contains the DataProductIdentifier for this file type"""
+        return None  # There is no data product ID for manifest files
+
+    @property
     def archive_prefix(self):
         """Manifests are not archived like data products, but for convenience and ease of debugging they will be kept
         in the dropbox bucket by input/output and day they were made. This is used by the step function clean up
@@ -603,6 +676,16 @@ class EphemerisKernelFilename(AbstractValidFilename):
 
     _regex = SPK_REGEX
     _fmt = "LIBERA_{spk_object}_{version}_{utc_start}_{utc_end}_{revision}.bsp"
+
+    @property
+    def processing_step_id(self):
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        return SpkObject[self.filename_parts.spk_object].processing_step_id
+
+    @property
+    def data_product_id(self):
+        """Property that contains the DataProductIdentifier for this file type"""
+        return SpkObject[self.filename_parts.spk_object].data_product_id
 
     @property
     def archive_prefix(self):
@@ -708,6 +791,16 @@ class AttitudeKernelFilename(AbstractValidFilename):
 
     _regex = CK_REGEX
     _fmt = "LIBERA_{ck_object}_{version}_{utc_start}_{utc_end}_{revision}.bc"
+
+    @property
+    def processing_step_id(self):
+        """Property that contains the ProcessingStepIdentifier that generates this file"""
+        return CkObject[self.filename_parts.ck_object].processing_step_id
+
+    @property
+    def data_product_id(self):
+        """Property that contains the DataProductIdentifier for this file type"""
+        return CkObject[self.filename_parts.ck_object].data_product_id
 
     @property
     def archive_prefix(self):

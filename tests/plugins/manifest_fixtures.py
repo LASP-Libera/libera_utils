@@ -5,7 +5,8 @@ import os
 # Installed
 import pytest
 # Local
-from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.io.manifest import Manifest
+from libera_utils.aws.constants import ManifestType
 
 
 @pytest.fixture
