@@ -1,5 +1,9 @@
 # Version Changes
 
+## 2.4.0 (released)
+- Add properties to filenaming classes to retrieve `data_product_id` and `processing_step_id`
+- Add ProcessingStepIdentifier and DataProductIdentifier standardization to be used by downstream repos
+
 ## 2.3.1 (released)
 - Fix os.path.join bug in filenaming module that broke mocked S3 paths and also fix typehinting
 
