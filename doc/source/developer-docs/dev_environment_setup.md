@@ -32,7 +32,7 @@ including package management, virtual environment management, and package buildi
 
 Poetry official installation instructions can be found here: https://python-poetry.org/docs/#installation
 
-To ensure that Poetry is always available and in the PATH 
+To ensure that Poetry is always available and in the `PATH` 
 it is recommended to install Poetry with your pre-installed system python interpreter rather than as a package in a 
 conda environment or in a virtual environment. The specific version of python with which you install Poetry 
 is inconsequential (as long as it is currently supported by Poetry). If your system python is not supported by Poetry, 
