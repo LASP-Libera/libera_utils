@@ -76,6 +76,15 @@ class ProcessingStepIdentifier(Enum):
     l0_cam_pds = 'l0-cam'
     l0_cr = 'l0-cr'
 
+    @property
+    def ecr_name(self) -> str:
+        """Get the manually-configured ECR name for this processing step
+
+        We name our ECRs in CDK because they are one of the few resources that humans will need to interact
+        with on a regular basis.
+        """
+        return f"{self.value}-docker-repo"
+
 
 class CkObject(Enum):
     """Enum of valid CK objects"""
@@ -84,7 +93,7 @@ class CkObject(Enum):
     ELSCAN = "ELSCAN"
 
     @property
-    def data_product_id(self):
+    def data_product_id(self) -> DataProductIdentifier:
         """DataProductIdentifier for CKs associated with this CK object"""
         _product_id_map = {
             CkObject.JPSS: DataProductIdentifier.spice_jpss_ck,
@@ -94,7 +103,7 @@ class CkObject(Enum):
         return _product_id_map[self]
 
     @property
-    def processing_step_id(self):
+    def processing_step_id(self) -> ProcessingStepIdentifier:
         """ProcessingStepIdentifier for the processing step that produces CKs for this CK object"""
         _processing_step_id_map = {
             CkObject.JPSS: ProcessingStepIdentifier.spice_jpss,
@@ -109,13 +118,13 @@ class SpkObject(Enum):
     JPSS = "JPSS"
 
     @property
-    def data_product_id(self):
+    def data_product_id(self) -> DataProductIdentifier:
         """DataProductIdentifier for SPKs associated with this SPK object"""
         # Only one data product for SPKs
         return DataProductIdentifier.spice_jpss_spk
 
     @property
-    def processing_step_id(self):
+    def processing_step_id(self) -> ProcessingStepIdentifier:
         """ProcessingStepIdentifier for the processing step that produces SPKs for this SPK object"""
         # Only one processing step that produces an SPK
         return ProcessingStepIdentifier.spice_jpss
@@ -128,3 +137,11 @@ class DataLevel(Enum):
     CAL = "CAL"
     L1B = 'L1B'
     L2 = 'L2'
+
+
+class LiberaApid(Enum):
+    """APIDs for L0 packets"""
+    JPSS_ATTITUDE_EPHEMERIS = 11
+    FILTERED_RADIOMETER = 1036
+    FILTERED_AZEL = 1048
+    CAMERA = 9999

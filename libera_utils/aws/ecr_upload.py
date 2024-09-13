@@ -75,8 +75,8 @@ def upload_image_to_ecr(parsed_args: argparse.Namespace):
     account_id = utils.get_aws_account_number()
     logger.debug(f'Account ID is {account_id}')
 
-    algorithm_name = constants.ProcessingStepIdentifier(parsed_args.algorithm_name).value
-    ecr_name = f"{algorithm_name}-docker-repo"
+    algorithm_identifier = constants.ProcessingStepIdentifier(parsed_args.algorithm_name)
+    ecr_name = algorithm_identifier.ecr_name
     logger.debug(f'Algorithm name is {ecr_name}')
 
     # ECR path
