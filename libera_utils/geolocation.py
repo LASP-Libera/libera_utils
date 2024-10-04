@@ -138,6 +138,7 @@ def get_earth_radii():
 @spice_utils.ensure_spice
 def target_position(target: spice_utils.SpiceBody, et: float or np.ndarray,
                     frame: spice_utils.SpiceFrame, observer: spice_utils.SpiceBody,
+                    *,  # Only keyword arguments after this point
                     abcorr: str = 'NONE', normalize: bool = False):
     """Calculates the position and velocity of the `target` at ephemeris time `et` relative to `observer` in
     reference frame `frame`.
@@ -189,6 +190,7 @@ def target_position(target: spice_utils.SpiceBody, et: float or np.ndarray,
 @spice_utils.ensure_spice
 def sub_observer_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
                        frame: spice_utils.SpiceFrame, observer: spice_utils.SpiceBody,
+                       *,  # Only keyword arguments after this point
                        abcorr: str = 'NONE', method: str = 'NEAR POINT/ELLIPSOID'):
     """Computes the cartesian coordinates of the sub-observer point at time `et` and the observer altitude
     above the point. Units in km.
@@ -230,6 +232,7 @@ def sub_observer_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
 @spice_utils.ensure_spice
 def sub_solar_point(target: spice_utils.SpiceBody, et: float or np.ndarray,
                     frame: spice_utils.SpiceFrame, observer: spice_utils.SpiceBody,
+                    *,  # Only keyword arguments after this point
                     abcorr='LT+S', method='NEAR POINT/ELLIPSOID'):
     """Computes the cartesian coordinates of the subsolar point at ephemeris time et.
 

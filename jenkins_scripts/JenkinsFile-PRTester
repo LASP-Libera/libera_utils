@@ -34,9 +34,6 @@ def COMMIT_HASH
 
 pipeline {
     agent any
-    options {
-        lock('testdb')
-    }
     stages {
         stage('Checkout') {
             steps {
@@ -49,13 +46,6 @@ pipeline {
                         gitTool: 'Default',
                         extensions: [
                             [$class: 'GitLFSPull'],
-                            // [$class: 'CheckoutOption', timeout: 20],
-                            // [$class: 'CloneOption',
-                            //         depth: 0,
-                            //         noTags: false,
-                            //         reference: '/other/optional/local/reference/clone',
-                            //         shallow: false,
-                            //         timeout: 120]
                         ],
                         submoduleCfg: [],
                         userRemoteConfigs: [[credentialsId: '2ba9f035-20ea-4b6d-b541-7378271b199a',
@@ -68,32 +58,44 @@ pipeline {
         }
         stage('Run Pylint') {
             steps {
-                sh 'docker-compose up --build --exit-code-from linting linting'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker-compose up --build --exit-code-from linting linting'
+                }
             }
         }
         stage('Run Bandit') {
             steps {
-                sh 'docker-compose up --build --exit-code-from ast ast'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker-compose up --build --exit-code-from ast ast'
+                }
             }
         }
         stage('Run Tests Against Python 3.12') {
             steps {
-                sh 'docker-compose up --build --exit-code-from tests tests'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker-compose up --build --exit-code-from tests tests'
+                }
             }
         }
         stage('Run Tests Against Python 3.11') {
             steps {
-                sh 'docker-compose up --build --exit-code-from 3.11-tests 3.11-tests'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker-compose up --build --exit-code-from 3.11-tests 3.11-tests'
+                }
             }
         }
         stage('Run Tests Against Python 3.10') {
             steps {
-                sh 'docker-compose up --build --exit-code-from 3.10-tests 3.10-tests'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker-compose up --build --exit-code-from 3.10-tests 3.10-tests'
+                }
             }
         }
         stage('Run Tests Against Python 3.9') {
             steps {
-                sh 'docker-compose up --build --exit-code-from 3.9-tests 3.9-tests'
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    sh 'docker-compose up --build --exit-code-from 3.9-tests 3.9-tests'
+                }
             }
         }
     }
