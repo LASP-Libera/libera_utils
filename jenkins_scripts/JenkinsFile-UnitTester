@@ -17,10 +17,6 @@
 
 pipeline {
     agent any
-    // This lock ensures that the test database is only in use by 1 job at a time.
-    options {
-        lock('testdb')
-    }
     stages {
         stage('Check out Repo') {
             steps {
@@ -32,13 +28,6 @@ pipeline {
                     gitTool: 'Default',
                     extensions: [
                             [$class: 'GitLFSPull'],
-                            // [$class: 'CheckoutOption', timeout: 20],
-                            // [$class: 'CloneOption',
-                            //         depth: 0,
-                            //         noTags: false,
-                            //         reference: '/other/optional/local/reference/clone',
-                            //         shallow: false,
-                            //         timeout: 120]
                         ],
                     submoduleCfg: [],
                     userRemoteConfigs: [[
@@ -48,16 +37,6 @@ pipeline {
                 ])
             }
         }
-        // stage('Setup Dev DB') {
-        //     steps {
-        //         sh 'docker-compose up -d flyway-sdp-test'
-        //     }
-        // }
-        // stage('Build Testing Image') {
-        //     steps {
-        //         sh 'docker-compose build tests'
-        //     }
-        // }
         stage('Run Tests') {
             steps {
                 sh 'docker-compose up --build --exit-code-from tests tests'
@@ -82,7 +61,7 @@ pipeline {
             emailext attachLog: true,
             body: 'Log is attached',
             subject: 'Libera Utils (libera_utils) Tests Failed',
-            to: 'gavin.medley@lasp.colorado.edu,matt.watwood@lasp.colorado.edu,caleb.kumar@lasp.colorado.edu'
+            to: 'gavin.medley@lasp.colorado.edu,matt.watwood@lasp.colorado.edu,Kim.Kokkonen@lasp.colorado.edu'
 
             slackSend color: "bad", message: "Periodic libera_utils unit tests FAILED: ${env.BUILD_URL}"
         }

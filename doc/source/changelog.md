@@ -1,5 +1,10 @@
 # Version Changes
 
+## 2.4.1 (released)
+- Updating requirements of methods to use keyword arguments rather than positional arguments
+- Adding ProcessingStepIdentifier and DataProductIdentifier to the filenaming classes
+- Updating ecr names to work with the completion checker testing in libera_cdk
+
 ## 2.4.0 (released)
 - Add properties to filenaming classes to retrieve `data_product_id` and `processing_step_id`
 - Add ProcessingStepIdentifier and DataProductIdentifier standardization to be used by downstream repos

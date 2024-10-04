@@ -326,6 +326,7 @@ class L0Filename(AbstractValidFilename):
 
     @classmethod
     def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            *,  # No positional arguments
                             id_char: str,
                             scid: int,
                             first_apid: int,
@@ -381,6 +382,7 @@ class L0Filename(AbstractValidFilename):
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
+                               *, # No positional arguments
                                id_char: str,
                                scid: int,
                                first_apid: int,
@@ -476,6 +478,7 @@ class LiberaDataProductFilename(AbstractValidFilename):
 
     @classmethod
     def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            *, # No positional arguments
                             data_level: str,
                             product_name: str,
                             version: str,
@@ -524,6 +527,7 @@ class LiberaDataProductFilename(AbstractValidFilename):
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
+                               *,  # No positional arguments
                                data_level: str,
                                product_name: str,
                                version: str,
@@ -701,6 +705,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
 
     @classmethod
     def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            *,  # No positional arguments
                             spk_object: str,
                             version: str,
                             utc_start: datetime,
@@ -741,6 +746,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
+                               *,  # No positional arguments
                                spk_object: str,
                                version: str,
                                utc_start: datetime,
@@ -816,6 +822,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
 
     @classmethod
     def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
+                            *,  # No positional arguments
                             ck_object: str,
                             version: str,
                             utc_start: datetime,
@@ -856,6 +863,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
 
     @classmethod
     def _format_filename_parts(cls,  # pylint: disable=arguments-differ
+                               *,  # No positional arguments
                                ck_object: str,
                                version: str,
                                utc_start: datetime,

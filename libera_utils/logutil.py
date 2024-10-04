@@ -118,7 +118,7 @@ def configure_static_logging(config_file: Union[str, Path, S3Path]):
     logger.info(f"Logging configured statically according to {config_file}.")
 
 
-def configure_task_logging(task_id: str,
+def configure_task_logging(task_id: str, *,  # Only keyword arguments after this point
                            limit_debug_loggers: Optional[Union[Iterable[str], str]] = None,
                            console_log_level: Union[str, int] = logging.INFO,
                            console_log_json: bool = False,

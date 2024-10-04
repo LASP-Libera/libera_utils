@@ -40,7 +40,8 @@ def add_archive_time_to_ddb_item(ddb_item: dict):
     return ddb_item
 
 
-def create_ddb_metadata_applicable_date_item(filename: str,
+def create_ddb_metadata_applicable_date_item(*,  # Require keyword arguments
+                                             filename: str,
                                              data_level: str,
                                              data_type: str,
                                              applicable_date: str,
