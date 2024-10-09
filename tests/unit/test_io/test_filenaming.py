@@ -26,9 +26,9 @@ from libera_utils.io import filenaming
         ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc', filenaming.AttitudeKernelFilename)
     ]
 )
-def test_AnyFilename(filename, filename_type):
-    """Test polymorphic class that automatically figures out what type of filename it was passed"""
-    assert isinstance(filenaming.AnyFilename(filename), filename_type)
+def test_from_filename(filename, filename_type):
+    """Test factory method that automatically figures out what type of filename it was passed"""
+    assert isinstance(filenaming.AbstractValidFilename.from_file_path(filename), filename_type)
 
 
 @pytest.mark.parametrize(
@@ -51,7 +51,8 @@ def test_AnyFilename(filename, filename_type):
 )
 def test_generate_prefixed_path(filename, parent_path, expected_path):
     """Test generating archive prefixes for filenames"""
-    assert filenaming.AnyFilename(filename).generate_prefixed_path(parent_path) == expected_path
+    assert filenaming.AbstractValidFilename.from_file_path(
+        filename).generate_prefixed_path(parent_path) == expected_path
 
 
 @pytest.mark.parametrize(
