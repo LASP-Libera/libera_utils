@@ -6,7 +6,7 @@ from enum import Enum
 from importlib import metadata
 import re
 from types import SimpleNamespace
-from typing import Union, Optional, Any
+from typing import Union, Optional, Any, TypeVar
 from pathlib import Path
 # Installed
 from cloudpathlib import AnyPath, S3Path
@@ -91,22 +91,8 @@ class ProductName(Enum):
         return _product_name_to_data_product_id[self.value]
 
 
-class AnyFilename:
-    """Polymorphic class for creating a Filename object"""
-
-    def __new__(cls, *args, **kwargs) -> 'AbstractValidFilename':
-        for CandidateClass in (L0Filename, AttitudeKernelFilename,
-                               EphemerisKernelFilename, LiberaDataProductFilename,
-                               ManifestFilename):
-            try:
-                filename = CandidateClass(*args, **kwargs)
-                return filename
-            except ValueError:
-                continue
-
-        raise ValueError(f"Unable to create a valid filename from {args}. "
-                         "Are you sure this is a valid Libera file name?")
-
+# used by from_file_path result typehint
+AVF = TypeVar('AVF', bound='AbstractValidFilename')
 
 class AbstractValidFilename(ABC):
     """Composition of a CloudPath/Path instance with some methods to perform
@@ -126,6 +112,21 @@ class AbstractValidFilename(ABC):
         if self.path == other.path and self.filename_parts == other.filename_parts:
             return True
         return False
+
+    @classmethod
+    def from_file_path(cls, *args, **kwargs) -> AVF:
+        """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)"""
+        for CandidateClass in (L0Filename, AttitudeKernelFilename,
+                               EphemerisKernelFilename, LiberaDataProductFilename,
+                               ManifestFilename):
+            try:
+                filename = CandidateClass(*args, **kwargs)
+                return filename
+            except ValueError:
+                continue
+
+        raise ValueError(f"Unable to create a valid filename from {args}. "
+                         "Are you sure this is a valid Libera file name?")
 
     @property
     def path(self) -> Union[Path, S3Path]:
