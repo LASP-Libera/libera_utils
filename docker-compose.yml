@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   sdp:
     platform: linux/amd64
@@ -15,6 +13,8 @@ services:
     build:
       context: .
       target: libera-utils-test
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Tests against Python 3.11 (EOL 2027-10)
   3.11-tests:
@@ -25,6 +25,8 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.11
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Tests against Python 3.10 (EOL 2026-10)
   3.10-tests:
@@ -35,6 +37,8 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.10
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   # Tests against Python 3.9 (EOL 2025-10)
   3.9-tests:
@@ -45,6 +49,8 @@ services:
       target: libera-utils-test
       args:
         - BASE_IMAGE_PYTHON_VERSION=3.9
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
   linting:
     image: libera-utils-test:latest

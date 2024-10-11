@@ -1,5 +1,12 @@
 # Version Changes
 
+## 2.4.3 (released)
+- Changes to ecr_upload to support programmatic building and pushing of Docker images
+- Remove DynamoDB docs (moved to `libera_cdk`)
+
+## 2.4.2 (released)
+- BREAKING: Remove the `AnyFilename` polymorphic class. Please use `AbstractValidFilename.from_file_path()`
+
 ## 2.4.1 (released)
 - Updating requirements of methods to use keyword arguments rather than positional arguments
 - Adding ProcessingStepIdentifier and DataProductIdentifier to the filenaming classes

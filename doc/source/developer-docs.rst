@@ -15,5 +15,4 @@ the tools used for development and how to use them (e.g. git and Docker).
     developer-docs/git
     developer-docs/docker
     developer-docs/spice
-    developer-docs/database_data_models
-    developer-docs/dynamodb_basics
+
