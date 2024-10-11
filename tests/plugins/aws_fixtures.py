@@ -43,7 +43,7 @@ def set_up_cloudpathlib_s3client(mock_aws_credentials, monkeypatch_session):
     """
     # Tell cloudpathlib to clear its local file cache whenever a file operation is completed.
     # https://cloudpathlib.drivendata.org/stable/caching/#file-cache-mode-close_file
-    monkeypatch_session.setenv("CLOUPATHLIB_FILE_CACHE_MODE", "close_file")
+    monkeypatch_session.setenv("CLOUDPATHLIB_FILE_CACHE_MODE", "close_file")
     with mock_aws():
         client = S3Client()
         client.set_as_default_client()

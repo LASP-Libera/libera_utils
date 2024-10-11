@@ -31,7 +31,7 @@ from libera_utils.aws import processing_step_function_trigger as psfn
          ),
         (['ecr-upload', 'fake_image', 'fake_tag', 'fake_algo', '--verbose'],
          argparse.Namespace(
-             func=ecr_upload.upload_image_to_ecr,
+             func=ecr_upload.ecr_upload_cli_func,
              image_name='fake_image',
              image_tag='fake_tag',
              algorithm_name='fake_algo',

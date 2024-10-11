@@ -1,46 +1,32 @@
 """File for testing ECR upload module"""
-# Standard
-import argparse
 # Installed
+import docker
 from unittest import mock
 from moto import mock_aws
 # Local
-from libera_utils.aws.ecr_upload import upload_image_to_ecr, login_to_ecr
-from libera_utils.aws.constants import ProcessingStepIdentifier
-
-
-def test_ecr_login_success(fake_process):
-    """Test that running the subprocess command is successful"""
-    ecr_login_command = ('aws ecr get-login-password --region us-west-2 | docker login --username '
-                         'AWS --password-stdin 123456789012.dkr.ecr.us-west-2.amazonaws.com')
-    fake_process.register(ecr_login_command, stdout='Login Succeeded')
-    result = login_to_ecr(account_id=123456789012, region_name='us-west-2')
-    assert result.stdout == "Login Succeeded"
-
-
-def test_ecr_login_failure(fake_process):
-    """Test that running the subprocess command is successful"""
-    ecr_login_command = ('aws ecr get-login-password --region us-west-2 | docker login --username AWS '
-                         '--password-stdin 1111111111.dkr.ecr.us-west-2.amazonaws.com')
-    fake_process.register(ecr_login_command, stderr="Login Failed")
-    result = login_to_ecr(account_id=1111111111, region_name='us-west-2')
-    assert result.stderr == "Login Failed"
+from libera_utils.aws.ecr_upload import get_ecr_docker_client, build_docker_image
 
 
 @mock_aws
-@mock.patch('docker.from_env.images.get.tag')
-@mock.patch('docker.from_env.images.push')
-@mock.patch('docker.from_env')
-def test_docker_client_push(mock_tag_function, mock_push_function, mock_from_env_function, fake_process):
-    """Test that the docker client pushes correctly to the ECR"""
-    args = argparse.Namespace(
-        image_name="fake_image",
-        image_tag="fake_tag",
-        algorithm_name=ProcessingStepIdentifier.spice_azel.value,
-        verbose=False
+@mock.patch("libera_utils.aws.ecr_upload.docker.DockerClient.login", return_value="Mock login succeeded!")
+def test_ecr_login_success(mock_docker_client_login):
+    """Test getting an auth token from a boto3 ECR client. We can't actually test using that token to log in
+    to a registry because that registry may not actually exist and the Docker API does the logging in so we can't
+    mock it.
+    We just mock out the DockerClient.login method to always return success for this test.
+    """
+    result = get_ecr_docker_client(region_name='us-west-2')
+    assert isinstance(result, docker.DockerClient)
+
+
+def test_build_docker_image(test_data_path):
+    """Test building a docker image programmatically.
+    This actually builds the image locally so Docker must be running."""
+    build_docker_image(
+        context_dir=test_data_path / "docker_test",
+        image_name="test-image",
+        target="test-target"
     )
-    ecr_login_command = ('aws ecr get-login-password --region us-west-2 | docker login --username AWS '
-                         '--password-stdin 123456789012.dkr.ecr.us-west-2.amazonaws.com')
-    fake_process.register(ecr_login_command, stdout="Login Succeeded", returncode=0)
-    resp = upload_image_to_ecr(args)
-    assert resp is None
+
+
+

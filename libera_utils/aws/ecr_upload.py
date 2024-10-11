@@ -1,12 +1,15 @@
 """Module for uploading docker images to the ECR"""
 # Standard
 import argparse
+import base64
 from datetime import datetime, timezone
-import subprocess  # nosec
 import logging
-import json
+from pathlib import Path
+from typing import Union, Optional
 # Installed
+import boto3
 import docker
+from docker import errors as docker_errors
 # Local
 from libera_utils.logutil import configure_task_logging
 from libera_utils.aws import constants, utils
@@ -14,37 +17,96 @@ from libera_utils.aws import constants, utils
 logger = logging.getLogger(__name__)
 
 
-def login_to_ecr(account_id, region_name):
-    """Login to the AWS ECR using commands
+def get_ecr_docker_client(region_name: Optional[str] = None) -> docker.DockerClient:
+    """Perform programmatic docker login to the default ECR for the current AWS credential account (e.g. AWS_PROFILE)
+    and return a DockerClient object for interacting with the ECR.
+
     Parameters
     ----------
-    account_id : int
-        Users AWS account ID
-
-    region_name : string
-        String of the region that the users AWS account is in
+    region_name : Optional[str]
+        AWS region name. Each region has a separate default ECR. If region_name is None, boto3 uses the default
+        region for the configured credentials.
 
     Returns
     -------
-    result : CompletedProcess
-        subproccess object that holds the details of the completed CLI command
+    : docker.DockerClient
+        Logged in docker client.
     """
-    ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
-    logger.debug(f'ECR path is {ecr_path}')
-
-    # Login to ECR using subprocess
-    ecr_login_command = f"aws ecr get-login-password --region {region_name} | docker login --username AWS " \
-                        f"--password-stdin {ecr_path}"
-    result = subprocess.run(ecr_login_command,  # nosec
-                            shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True, check=False)
-    return result
+    logger.info("Creating a docker client for ECR")
+    docker_client = docker.from_env()
+    ecr_client = boto3.client('ecr', region_name=region_name)
+    token = ecr_client.get_authorization_token()
+    username, password = base64.b64decode(token['authorizationData'][0]['authorizationToken']).decode().split(':')
+    registry = token['authorizationData'][0]['proxyEndpoint']
+    docker_client.login(username, password, registry=registry)
+    logger.info(f"Docker login successful. ECR registry: {registry}")
+    return docker_client
 
 
-def upload_image_to_ecr(parsed_args: argparse.Namespace):
-    """Upload docker image to the correct ECR repository
+def build_docker_image(
+        context_dir: Union[str, Path],
+        image_name: str,
+        tag: str = "latest",
+        target: Optional[str]=None,
+        platform: str = "linux/amd64"
+) -> None:
+    """
+    Build a Docker image from a specified directory and tag it with a custom name.
+
+    Parameters
+    ----------
+    context_dir : Union[str, Path]
+        The path to the directory containing the Dockerfile and other build context.
+    image_name : str
+        The name to give the Docker image.
+    tag : str, optional
+        The tag to apply to the image (default is 'latest').
+    target : Optional[str]
+        Name of the target to build.
+    platform : str
+        Default "linux/amd64".
+
+    Raises
+    ------
+    ValueError
+        If the specified directory does not exist or the build fails.
+    """
+    context_dir = Path(context_dir)
+    # Check if the directory exists
+    if not context_dir.is_dir():
+        raise ValueError(f"Directory {context_dir} does not exist.")
+
+    # Initialize the Docker client
+    client = docker.from_env()
+
+    # Build the Docker image
+    logger.info(f"Building docker target {target} in context directory {context_dir}")
+    try:
+        _, logs = client.images.build(
+            path=str(context_dir.absolute()),
+            target=target,
+            tag=f"{image_name}:{tag}",
+            platform=platform
+        )
+        # We process this output as print statements rather than logging messages because it's the direct
+        # output from `docker build`
+        for log in logs:
+            if 'stream' in log:
+                print(log['stream'].strip())  # Print build output to console
+        print(f"Image {image_name}:{tag} built successfully.")
+    except docker_errors.BuildError as e:
+        logger.error("Failed to build docker image.")
+        logger.exception(e)
+        raise
+    except docker_errors.APIError as e:
+        logger.error("Docker API error.")
+        logger.exception(e)
+        raise
+    logger.info(f"Image built successfully and tagged as {image_name}:{tag}")
+
+
+def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
+    """CLI handler function for ecr-upload CLI subcommand.
 
     Parameters
     ----------
@@ -59,52 +121,77 @@ def upload_image_to_ecr(parsed_args: argparse.Namespace):
     configure_task_logging(f'ecr_upload_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)
-    # if parsed_args.verbose else None
-    docker_client = docker.from_env()
     logger.debug(f"CLI args: {parsed_args}")
-    image_name = parsed_args.image_name
-    if parsed_args.image_tag:
-        image_tag = parsed_args.image_tag
-    else:
-        docker_image = docker_client.images.get(image_name)
-        image_tag = docker_image.tags
+    verbose: bool = parsed_args.verbose
+    image_name: str = parsed_args.image_name
+    image_tag = parsed_args.image_tag
+    algorithm_name = parsed_args.algorithm_name
+    push_image_to_ecr(image_name, image_tag, algorithm_name, verbose=verbose)
 
-    region_name = "us-west-2"
+
+def push_image_to_ecr(image_name: str,
+                      image_tag: str,
+                      algorithm_name: Union[str, constants.ProcessingStepIdentifier],
+                      region_name: str = "us-west-2",
+                      verbose: bool = False) -> None:
+    """Programmatically upload a docker image for a science algorithm to an ECR. ECR name is determined based
+    on the algorithm name.
+
+    Parameters
+    ----------
+    image_name : str
+        Name of the image
+    image_tag : str
+        Tag of the image (often latest)
+    algorithm_name : Union[str, constants.ProcessingStepIdentifier]
+        Processing step ID string or object. Used to infer the ECR repository name.
+    region_name : str
+        AWS region. Used to infer the ECR name.
+    verbose : bool
+        Enable debug logging
+
+    Returns
+    -------
+    None
+    """
+    logger.info("Preparing to push image to ECR")
+    docker_client = get_ecr_docker_client(region_name=region_name)
     logger.debug(f'Region set to {region_name}')
 
     account_id = utils.get_aws_account_number()
     logger.debug(f'Account ID is {account_id}')
 
-    algorithm_identifier = constants.ProcessingStepIdentifier(parsed_args.algorithm_name)
-    ecr_name = algorithm_identifier.ecr_name
+    algorithm_identifier = constants.ProcessingStepIdentifier(algorithm_name)
+    ecr_name = algorithm_identifier.ecr_name  # The repostiory name within the ECR
     logger.debug(f'Algorithm name is {ecr_name}')
 
-    # ECR path
+    # ECR path. This is really just "the registry" URL
     ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
     logger.debug(f'ECR path is {ecr_path}')
 
-    # Login to ECR using subprocess
-    result = login_to_ecr(account_id=account_id, region_name=region_name)
-    if result.returncode == 0:
-        logger.info(f"Docker Login successful. STDOUT: {result.stdout}")
-    else:
-        logger.error(f"STDERR: {result.stderr}")
-        raise RuntimeError(f"ECR login command: {result.stderr} failed.")
-
-    # # Tag the latest libera_utils image with the ECR repo name
+    # Tag the local image with the ECR repo name
+    logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {ecr_path}/{ecr_name}")
     docker_client.images.get(f"{image_name}:{image_tag}").tag(f"{ecr_path}/{ecr_name}")
-    logger.info("Pushing image to ECR.")
-    resp = docker_client.images.push(f"{ecr_path}/{ecr_name}", stream=True, decode=True)
-    error_message = []
-    for line in resp:
-        message = json.loads(json.dumps([line]))[0]
-        if parsed_args.verbose:
-            logger.debug(message)
 
-        if "error" in message:
-            error_message.append(message)
+    logger.info("Pushing {ecr_path}/{ecr_name} to ECR.")
+    error_messages = []
+    try:
+        push_logs = docker_client.images.push(f"{ecr_path}/{ecr_name}", stream=True, decode=True)
+        # We process these logs as print statements because this is the direct output from docker push, not log
+        # messages. We aggregate the errors to report later in an exception.
+        for log in push_logs:
+            print(log)
+            # Print and keep track of any errors in the log
+            if 'error' in log:
+                print(f"Error: {log['error']}")
+                error_messages.append(log['error'])
 
-    if error_message:
-        logger.error(f"Errors were encountered during image push. Error was: \n{error_message}")
-        return
+    except docker_errors.APIError as e:
+        logger.error("Docker API error during image push.")
+        logger.exception(e)
+        raise
+
+    if error_messages:
+        raise ValueError(f"Errors encountered during image push: \n{error_messages}")
+
     logger.info("Image pushed to ECR successfully.")

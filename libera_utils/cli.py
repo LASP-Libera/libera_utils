@@ -97,9 +97,10 @@ def parse_cli_args(cli_args: list):
 
     algorithm_names = [name.value for name in constants.ProcessingStepIdentifier]
     ecr_upload_parser = subparsers.add_parser('ecr-upload', help="Upload docker image to matching ECR repository")
-    ecr_upload_parser.set_defaults(func=ecr_upload.upload_image_to_ecr)
+    ecr_upload_parser.set_defaults(func=ecr_upload.ecr_upload_cli_func)
     ecr_upload_parser.add_argument('image_name', type=str, help="Image name of image to upload (image-name:image-tag)")
-    ecr_upload_parser.add_argument('image_tag', type=str, help="Image tag of image to upload (image-name:image-tag)")
+    ecr_upload_parser.add_argument('image_tag', type=str, default="latest",
+                                   help="Image tag of image to upload (image-name:image-tag)")
     ecr_upload_parser.add_argument('algorithm_name', type=str,
                                    help=f"Algorithm name that matches an ECR repo name, "
                                         f"inputs to names:\n {algorithm_names}")
