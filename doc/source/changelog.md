@@ -1,5 +1,9 @@
 # Version Changes
 
+## 2.4.4 (released)
+- Allow overriding the standard docker config.json file with a minimal file for ECR uploading to 
+  prevent ECR upload permission failures from cached docker login credentials from CDK deployments
+
 ## 2.4.3 (released)
 - Changes to ecr_upload to support programmatic building and pushing of Docker images
 - Remove DynamoDB docs (moved to `libera_cdk`)

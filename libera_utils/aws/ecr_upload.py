@@ -2,7 +2,9 @@
 # Standard
 import argparse
 import base64
+import tempfile
 from datetime import datetime, timezone
+import json
 import logging
 from pathlib import Path
 from typing import Union, Optional
@@ -17,7 +19,45 @@ from libera_utils.aws import constants, utils
 logger = logging.getLogger(__name__)
 
 
-def get_ecr_docker_client(region_name: Optional[str] = None) -> docker.DockerClient:
+class DockerConfigManager:
+    """Context manager object, suitable for use with docker-py DockerClient.login
+
+    If override_default_config is True, dockercfg_path points to a temporary directory
+    with a blank config. Otherwise, dockercfg_path is None, which allows DockerClient.login
+    to use the default config location.
+    """
+    _minimal_config_content = {
+        "auths": {},
+        "HttpHeaders": {}
+    }
+    def __init__(self, override_default_config: bool = False):
+        if override_default_config:
+            self.tempdir = tempfile.TemporaryDirectory(prefix="docker-config-")  # pylint: disable=consider-using-with
+            self.dockercfg_path = self.tempdir.name
+            config_file_path = Path(self.dockercfg_path) / "config.json"
+            logger.info("Overriding default docker config location with minimal config: "
+                        f"{config_file_path}")
+            with config_file_path.open("w") as f:
+                json_str = json.dumps(self._minimal_config_content, indent=4)
+                f.write(json_str)
+        else:
+            self.tempdir = None
+            self.dockercfg_path = None
+
+    def __enter__(self):
+        # Return self so it can be used as a context manager
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        # Automatically clean up the file (if it exists) when exiting the context
+        if self.tempdir:
+            self.tempdir.cleanup()
+
+
+def get_ecr_docker_client(
+        region_name: Optional[str] = None,
+        dockercfg_path: Optional[Path] = None
+) -> docker.DockerClient:
     """Perform programmatic docker login to the default ECR for the current AWS credential account (e.g. AWS_PROFILE)
     and return a DockerClient object for interacting with the ECR.
 
@@ -26,6 +66,9 @@ def get_ecr_docker_client(region_name: Optional[str] = None) -> docker.DockerCli
     region_name : Optional[str]
         AWS region name. Each region has a separate default ECR. If region_name is None, boto3 uses the default
         region for the configured credentials.
+    dockercfg_path : Optional[Path]
+        Use a custom path for the Docker config file.
+        (default `$HOME/.docker/config.json` if present, otherwise `$HOME/.dockercfg`)
 
     Returns
     -------
@@ -38,7 +81,7 @@ def get_ecr_docker_client(region_name: Optional[str] = None) -> docker.DockerCli
     token = ecr_client.get_authorization_token()
     username, password = base64.b64decode(token['authorizationData'][0]['authorizationToken']).decode().split(':')
     registry = token['authorizationData'][0]['proxyEndpoint']
-    docker_client.login(username, password, registry=registry)
+    docker_client.login(username, password, registry=registry, reauth=True, dockercfg_path=dockercfg_path)
     logger.info(f"Docker login successful. ECR registry: {registry}")
     return docker_client
 
@@ -122,18 +165,17 @@ def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)
     logger.debug(f"CLI args: {parsed_args}")
-    verbose: bool = parsed_args.verbose
     image_name: str = parsed_args.image_name
     image_tag = parsed_args.image_tag
     algorithm_name = parsed_args.algorithm_name
-    push_image_to_ecr(image_name, image_tag, algorithm_name, verbose=verbose)
+    push_image_to_ecr(image_name, image_tag, algorithm_name, ignore_docker_config=parsed_args.ignore_docker_config)
 
 
 def push_image_to_ecr(image_name: str,
                       image_tag: str,
                       algorithm_name: Union[str, constants.ProcessingStepIdentifier],
                       region_name: str = "us-west-2",
-                      verbose: bool = False) -> None:
+                      ignore_docker_config: bool = False) -> None:
     """Programmatically upload a docker image for a science algorithm to an ECR. ECR name is determined based
     on the algorithm name.
 
@@ -147,51 +189,50 @@ def push_image_to_ecr(image_name: str,
         Processing step ID string or object. Used to infer the ECR repository name.
     region_name : str
         AWS region. Used to infer the ECR name.
-    verbose : bool
-        Enable debug logging
+    ignore_docker_config : bool
+        Default False. If True, creates a temporary docker config.json file to prevent using stored credentials.
 
     Returns
     -------
     None
     """
-    logger.info("Preparing to push image to ECR")
-    docker_client = get_ecr_docker_client(region_name=region_name)
-    logger.debug(f'Region set to {region_name}')
+    with DockerConfigManager(override_default_config=ignore_docker_config) as docker_config_manager:
 
-    account_id = utils.get_aws_account_number()
-    logger.debug(f'Account ID is {account_id}')
+        logger.info("Preparing to push image to ECR")
+        docker_client = get_ecr_docker_client(region_name=region_name,
+                                              dockercfg_path=docker_config_manager.dockercfg_path)
+        account_id = utils.get_aws_account_number()
+        algorithm_identifier = constants.ProcessingStepIdentifier(algorithm_name)
+        ecr_name = algorithm_identifier.ecr_name  # The repository name within the ECR
+        logger.debug(f'Algorithm name is {ecr_name}')
 
-    algorithm_identifier = constants.ProcessingStepIdentifier(algorithm_name)
-    ecr_name = algorithm_identifier.ecr_name  # The repostiory name within the ECR
-    logger.debug(f'Algorithm name is {ecr_name}')
+        # ECR path. This is really just "the registry" URL
+        ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
+        logger.debug(f'ECR path is {ecr_path}')
 
-    # ECR path. This is really just "the registry" URL
-    ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
-    logger.debug(f'ECR path is {ecr_path}')
+        # Tag the local image with the ECR repo name
+        logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {ecr_path}/{ecr_name}")
+        docker_client.images.get(f"{image_name}:{image_tag}").tag(f"{ecr_path}/{ecr_name}")
 
-    # Tag the local image with the ECR repo name
-    logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {ecr_path}/{ecr_name}")
-    docker_client.images.get(f"{image_name}:{image_tag}").tag(f"{ecr_path}/{ecr_name}")
+        logger.info("Pushing {ecr_path}/{ecr_name} to ECR.")
+        error_messages = []
+        try:
+            push_logs = docker_client.images.push(f"{ecr_path}/{ecr_name}", stream=True, decode=True)
+            # We process these logs as print statements because this is the direct output from docker push, not log
+            # messages. We aggregate the errors to report later in an exception.
+            for log in push_logs:
+                print(log)
+                # Print and keep track of any errors in the log
+                if 'error' in log:
+                    print(f"Error: {log['error']}")
+                    error_messages.append(log['error'])
 
-    logger.info("Pushing {ecr_path}/{ecr_name} to ECR.")
-    error_messages = []
-    try:
-        push_logs = docker_client.images.push(f"{ecr_path}/{ecr_name}", stream=True, decode=True)
-        # We process these logs as print statements because this is the direct output from docker push, not log
-        # messages. We aggregate the errors to report later in an exception.
-        for log in push_logs:
-            print(log)
-            # Print and keep track of any errors in the log
-            if 'error' in log:
-                print(f"Error: {log['error']}")
-                error_messages.append(log['error'])
+        except docker_errors.APIError as e:
+            logger.error("Docker API error during image push.")
+            logger.exception(e)
+            raise
 
-    except docker_errors.APIError as e:
-        logger.error("Docker API error during image push.")
-        logger.exception(e)
-        raise
+        if error_messages:
+            raise ValueError(f"Errors encountered during image push: \n{error_messages}")
 
-    if error_messages:
-        raise ValueError(f"Errors encountered during image push: \n{error_messages}")
-
-    logger.info("Image pushed to ECR successfully.")
+        logger.info("Image pushed to ECR successfully.")
