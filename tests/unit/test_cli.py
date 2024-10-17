@@ -29,13 +29,13 @@ from libera_utils.aws import processing_step_function_trigger as psfn
          argparse.Namespace(
              func=cli.print_version_info)
          ),
-        (['ecr-upload', 'fake_image', 'fake_tag', 'fake_algo', '--verbose'],
+        (['ecr-upload', 'fake_image', 'fake_tag', 'fake_algo', '--ignore-docker-config'],
          argparse.Namespace(
              func=ecr_upload.ecr_upload_cli_func,
              image_name='fake_image',
              image_tag='fake_tag',
              algorithm_name='fake_algo',
-             verbose=True)
+             ignore_docker_config=True)
          ),
         (['step-function-trigger', 'fake_algorithm', '2000-01-01', '--wait_for_finish', '--verbose'],
          argparse.Namespace(

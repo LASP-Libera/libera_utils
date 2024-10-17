@@ -104,8 +104,8 @@ def parse_cli_args(cli_args: list):
     ecr_upload_parser.add_argument('algorithm_name', type=str,
                                    help=f"Algorithm name that matches an ECR repo name, "
                                         f"inputs to names:\n {algorithm_names}")
-    ecr_upload_parser.add_argument('-v', '--verbose', action='store_true',
-                                   help="Prints out the result of the ecr push")
+    ecr_upload_parser.add_argument('--ignore-docker-config', action='store_true',
+                                   help="Ignore the standard docker config.json to bypass the credential store")
 
     sfn_trigger_parser = subparsers.add_parser('step-function-trigger',
                                                help="Manually trigger a specific step function")

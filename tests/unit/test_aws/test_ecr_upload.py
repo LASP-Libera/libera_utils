@@ -1,10 +1,31 @@
 """File for testing ECR upload module"""
 # Installed
 import docker
+import json
 from unittest import mock
 from moto import mock_aws
+from pathlib import Path
 # Local
-from libera_utils.aws.ecr_upload import get_ecr_docker_client, build_docker_image
+from libera_utils.aws.ecr_upload import get_ecr_docker_client, build_docker_image, DockerConfigManager
+
+
+def test_docker_config_manager():
+    with DockerConfigManager() as dcfg:
+        # When no override, this should just be None
+        assert dcfg.dockercfg_path is None
+
+    with DockerConfigManager(override_default_config=True) as dcfg:
+        # When overriding, we make a minimal temp config file to pass to the DockerClient.login method
+        assert dcfg.dockercfg_path is not None
+        assert Path(dcfg.dockercfg_path).exists()
+        config_file = Path(dcfg.dockercfg_path) / "config.json"
+        assert config_file.is_file()
+        with config_file.open("r") as f:
+            s = f.read()
+            d = json.loads(s)
+            assert d == {"auths": {}, "HttpHeaders": {}}
+
+    assert not config_file.exists()  # Ensure temp config gets cleaned up correctly
 
 
 @mock_aws
@@ -27,6 +48,3 @@ def test_build_docker_image(test_data_path):
         image_name="test-image",
         target="test-target"
     )
-
-
-
