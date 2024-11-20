@@ -40,7 +40,7 @@ ENV PATH="$PATH:/root/.local/bin"
 COPY libera_utils $LIBERA_UTILS_DIRECTORY/libera_utils
 COPY README.md $LIBERA_UTILS_DIRECTORY
 COPY pyproject.toml $LIBERA_UTILS_DIRECTORY
-COPY LICENSE $LIBERA_UTILS_DIRECTORY
+COPY LICENSE.txt $LIBERA_UTILS_DIRECTORY
 
 # This is so stupid but it fixes known a bug in docker build
 # https://github.com/moby/moby/issues/37965

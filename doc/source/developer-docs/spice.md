@@ -3,6 +3,7 @@
 
 Fun fact: SPICE stands for "Spacecraft Planet Instrument C-matrix Events,"
 which were the original primary concerns of those developing the library.
+The "C" stands for Camera because early instruments using SPICE were cameras.
 
 
 ## Static Kernels Generated at Libera SDC
@@ -12,7 +13,7 @@ These kernels are part of the package data, are manually edited, and change rare
 ### Frame Kernel (FK)
 e.g. `libera_fk_v01.tf`
 
-Contains reference frame definitions for JPSS and Libera
+Contains reference frame definitions for JPSS and Libera.
 
 ### Spacecraft Clock Kernel (SCLK)
 e.g. `jpss_sclk_v01.tsc`
@@ -45,14 +46,10 @@ e.g. `libera_azrot_20210408t235850_20210409t015849_vM3m14p159_r25365125959.bc`
 
 Contains attitude data for the Libera Azimuth Rotation mechanism.
 
-Note: there is currently no mechanism for creating this kernel because no telemetry data exists.
-
 ### Elevation Scan Mechanism Attitude Kernel (CK)
 e.g. `libera_elscan_20210408t235850_20210409t015849_vM3m14p159_r25365125959.bc`
 
 Contains attitude data for the Libera Elevation Scan mechanism.
-
-Note: there is currently no mechanism for creating this kernel because no telemetry data exists.
 
 
 ## Kernels Retrieved from NAIF
@@ -66,7 +63,7 @@ them in an S3 bucket and retrieve them from there instead of from the NAIF websi
 ### Leapseconds Kernel (LSK)
 e.g. `naif0012.tls`
 
-Contains leapsecond data used by time conversion routines.
+Contains leap second data used by time conversion routines.
 
 ### Development Ephemeris Kernel (SPK)
 e.g. `de440s.bsp`
@@ -92,3 +89,10 @@ Used to designate ITRF93 as the default body-fixed frame associated with the Ear
 e.g. `pck00010.tpc`
 
 Contains orientation data and other planetary constants for planetary bodies.
+
+
+# Libraries Used for Kernel Handling
+
+We use [Curryer](https://github.com/lasp/curryer) for kernel generation and 
+[SpiceyPy](https://spiceypy.readthedocs.io/en/stable/) for generic kernel handling and calls to CSPICE
+(Curryer also uses SpiceyPy internally).

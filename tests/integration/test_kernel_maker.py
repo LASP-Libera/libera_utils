@@ -12,6 +12,9 @@ from libera_utils import kernel_maker
 from libera_utils.io.manifest import Manifest
 from libera_utils.aws.constants import ManifestType
 
+# Mark test module as integration tests
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture
 def add_start_end_time_to_manifest():

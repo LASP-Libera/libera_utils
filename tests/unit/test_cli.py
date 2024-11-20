@@ -35,6 +35,7 @@ from libera_utils.aws import processing_step_function_trigger as psfn
              image_name='fake_image',
              image_tag='fake_tag',
              algorithm_name='fake_algo',
+             ecr_image_tags=None,
              ignore_docker_config=True)
          ),
         (['step-function-trigger', 'fake_algorithm', '2000-01-01', '--wait_for_finish', '--verbose'],

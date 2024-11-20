@@ -23,7 +23,8 @@ Version: |release|
 Developing Libera Utils
 -----------------------
 
-Libera Utils is versioned formally and released as new features are made available and bugs are fixed. You can
+Libera Utils is versioned formally using semantic versioning and released as new features are made
+available and bugs are fixed. You can
 find the complete release history on PyPI. Release candidate (rc) versions are also released in order for the SDC Team
 to test new functionality without breaking downstream code using generous dependency specifications.
 

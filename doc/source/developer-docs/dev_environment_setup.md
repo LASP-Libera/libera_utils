@@ -1,9 +1,5 @@
 # Setting Up a Development Environment
 
-
-If you have access to the internal LASP confluence space, please refer to the following resources:
-- [Python Development Environment Management](https://confluence.lasp.colorado.edu/x/kyY4B)
-
 ## Managing Multiple Base Python Versions
 
 In order to develop with multiple different versions of Python and create virtual environments associated with 
@@ -42,7 +38,7 @@ virtual environment activated on top of it.
 
 Once poetry is installed, check that it works by running `poetry --version`. You should get something like 
 ```
-Poetry version 1.4.0
+Poetry version 1.8.3
 ```
 
 ### Installing Poetry with System Python
@@ -54,46 +50,25 @@ system python interpreter (usually `/usr/bin/python3`).
 curl -sSL https://install.python-poetry.org | python3 -
 ```
 
-### Installing Poetry in the Conda `base` Environment
-
-```
-conda activate
-conda install -y poetry
-poetry --version
-conda deactivate
-poetry --version  # This should fail to find Poetry
-```
-
 ## Configuring Poetry
 
-We recommend configuring Poetry to create virtual environments in project directories by default.
-
-```shell
-poetry config virtualenvs.in-project true
-```
-
-This command will write a value to a config file for your global poetry installation. On Mac this is in 
-`~/Library/Application\ Support/pypoetry/config.toml`.
+We recommend creating your own virtual environments in locations of your choosing (common to create them in the 
+project directory, as `venv` or `.venv`).
 
 ## Setting Up Development Virtual Environment(s)
 
-Poetry manages virtual environments for you on a per-package and per-python-version basis. However, Poetry will
-dynamically detect the presence of an activated virtual environment and use that if present.
+Poetry will
+dynamically detect the presence of an activated virtual environment and use that if present. If none is present,
+Poetry will automatically create one for you in your user cache location 
+(e.g. on mac in `~/Library/Caches/pypoetry/virtualenvs`). This can be confusing so we recommend creating your venv 
+and letting poetry use it when activated.
 
-1. Deactivate all Conda environments and virtual environments 
-   (except for the conda environment which contains Poetry, if applicable).
-2. Save the path to the version of Python you want to use for development
-   ```shell
-   PATH_TO_PYTHON=$(conda env list | grep "conda-python3.11" | awk '{print $2}')/bin/python
-   ```
-3. Instruct Poetry to create a managed virtual environment
-   ```shell
-   poetry env use $PATH_TO_PYTHON
-   ```
-   This will create a virtual environment. If you have enabled `virtualenvs.in-project` as described above, it will be created 
-   in your project directory in `.venv`.
-4. Configure your IDE to recognize the correct poetry-managed virtual environment for the version you wish to develop with.
-5. Run `poetry env info` and verify that Poetry is recognizing your virtual environment properly:
+1. Deactivate all Conda environments and virtual environments
+2. Activate the conda environment you wish to use for your base python interpreter (e.g. `conda activate conda-python3.11`)
+3. Create a virtual environment anywhere you wish. `python -m venv path/to/venv`.
+4. Activate newly created venv: `source path/to/venv/bin/activate`
+5. [Recommended]: Configure your IDE to recognize the correct poetry-managed virtual environment for the version you wish to develop with.
+6. Run `poetry env info` and verify that Poetry is recognizing your virtual environment properly:
     ```
     Virtualenv
     Python:         3.9.9
@@ -104,17 +79,11 @@ dynamically detect the presence of an activated virtual environment and use that
 
 ### Changing Python Versions
 It is common to recreate your virtual environment on a regular basis in order to use different python versions.
-You can do this with 
-
-```shell
-poetry env use /full/path/to/python
-```
-
-Poetry will recreate your virtual environment in the `.venv` directory if `virtualenvs.in-project` is set. Otherwise it will 
-create a virtual environment in `~/Library/Caches/pypoetry/virtualenvs`.
+You can do this by making sure that `python` points to the base interpreter you wish to use (e.g. 3.12) and 
+going through the steps above to create a new venv (you can name it differently) and activating it for poetry to use.
 
 ### Installing Dependencies
-1. Run `poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the 
+1. Run `poetry lock && poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the 
    dependency tree and then installing dependencies. This also installs dev group dependencies, as specified in 
    `pyproject.toml`. Lastly you should see it installing the local package.
 2. To install optional "extra" dependencies, run `poetry install -E extra_name1 -E extra_name2`.
