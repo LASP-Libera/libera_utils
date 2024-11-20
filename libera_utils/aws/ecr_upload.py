@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, List
 # Installed
 import boto3
 import docker
@@ -168,12 +168,21 @@ def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
     image_name: str = parsed_args.image_name
     image_tag = parsed_args.image_tag
     algorithm_name = parsed_args.algorithm_name
-    push_image_to_ecr(image_name, image_tag, algorithm_name, ignore_docker_config=parsed_args.ignore_docker_config)
+    ecr_image_tags = parsed_args.ecr_image_tags
+    push_image_to_ecr(
+        image_name,
+        image_tag,
+        algorithm_name,
+        ecr_image_tags=ecr_image_tags,
+        ignore_docker_config=parsed_args.ignore_docker_config
+    )
 
 
 def push_image_to_ecr(image_name: str,
                       image_tag: str,
                       algorithm_name: Union[str, constants.ProcessingStepIdentifier],
+                      *,
+                      ecr_image_tags: Optional[List[str]] = None,
                       region_name: str = "us-west-2",
                       ignore_docker_config: bool = False) -> None:
     """Programmatically upload a docker image for a science algorithm to an ECR. ECR name is determined based
@@ -182,11 +191,15 @@ def push_image_to_ecr(image_name: str,
     Parameters
     ----------
     image_name : str
-        Name of the image
+        Local name of the image
     image_tag : str
-        Tag of the image (often latest)
+        Local tag of the image (often latest)
     algorithm_name : Union[str, constants.ProcessingStepIdentifier]
         Processing step ID string or object. Used to infer the ECR repository name.
+        L0 processing step IDs are not allowed because they have no associated ECR.
+    ecr_image_tags : Optional[List[str]]
+        List of tags to apply to the pushed image in the ECR (e.g. ["1.3.4", "latest"]). Default None, results
+        in pushing only as "latest".
     region_name : str
         AWS region. Used to infer the ECR name.
     ignore_docker_config : bool
@@ -196,43 +209,53 @@ def push_image_to_ecr(image_name: str,
     -------
     None
     """
-    with DockerConfigManager(override_default_config=ignore_docker_config) as docker_config_manager:
+    if not ecr_image_tags:
+        # Default to tagging the remote image as "latest"
+        ecr_image_tags = ["latest"]
 
+    with DockerConfigManager(override_default_config=ignore_docker_config) as docker_config_manager:
         logger.info("Preparing to push image to ECR")
         docker_client = get_ecr_docker_client(region_name=region_name,
                                               dockercfg_path=docker_config_manager.dockercfg_path)
         account_id = utils.get_aws_account_number()
         algorithm_identifier = constants.ProcessingStepIdentifier(algorithm_name)
         ecr_name = algorithm_identifier.ecr_name  # The repository name within the ECR
+        if ecr_name is None:
+            raise ValueError(f"Unable to determine an ECR name for algorithm identifier: {algorithm_identifier}. "
+                             f"Note, L0 (`l0-*`) algorithm IDs do not have associated ECRs.")
         logger.debug(f'Algorithm name is {ecr_name}')
 
         # ECR path. This is really just "the registry" URL
         ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
         logger.debug(f'ECR path is {ecr_path}')
 
-        # Tag the local image with the ECR repo name
-        logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {ecr_path}/{ecr_name}")
-        docker_client.images.get(f"{image_name}:{image_tag}").tag(f"{ecr_path}/{ecr_name}")
+        for remote_tag in ecr_image_tags:
+            # Tag the local image with the ECR repo name
+            full_ecr_tag = f"{ecr_path}/{ecr_name}:{remote_tag}"
+            logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {full_ecr_tag}")
+            docker_client.images.get(f"{image_name}:{image_tag}").tag(full_ecr_tag)
 
-        logger.info("Pushing {ecr_path}/{ecr_name} to ECR.")
-        error_messages = []
-        try:
-            push_logs = docker_client.images.push(f"{ecr_path}/{ecr_name}", stream=True, decode=True)
-            # We process these logs as print statements because this is the direct output from docker push, not log
-            # messages. We aggregate the errors to report later in an exception.
-            for log in push_logs:
-                print(log)
-                # Print and keep track of any errors in the log
-                if 'error' in log:
-                    print(f"Error: {log['error']}")
-                    error_messages.append(log['error'])
+            logger.info(f"Pushing {full_ecr_tag}.")
+            error_messages = []
+            try:
+                push_logs = docker_client.images.push(full_ecr_tag, stream=True, decode=True)
+                # We process these logs as print statements because this is the direct output from docker push, not log
+                # messages. We aggregate the errors to report later in an exception.
+                for log in push_logs:
+                    print(log)
+                    # Print and keep track of any errors in the log
+                    if 'error' in log:
+                        print(f"Error: {log['error']}")
+                        error_messages.append(log['error'])
 
-        except docker_errors.APIError as e:
-            logger.error("Docker API error during image push.")
-            logger.exception(e)
-            raise
+            except docker_errors.APIError as e:
+                logger.error("Docker API error during image push.")
+                logger.exception(e)
+                raise
 
-        if error_messages:
-            raise ValueError(f"Errors encountered during image push: \n{error_messages}")
+            if error_messages:
+                raise ValueError(f"Errors encountered during image push: \n{error_messages}")
 
-        logger.info("Image pushed to ECR successfully.")
+            logger.info(f"Successfully pushed {full_ecr_tag}.")
+
+        logger.info("All tags pushed to ECR successfully.")

@@ -4,16 +4,15 @@
 Also see [Working with NetCDF4 Files](netcdf.md)
 
 The libera-utils smart_open function has the capability to read and write files to/from a local directory or S3 bucket
-transparently. It supports a context manager pattern 
-[HQC: "context manager pattern" may be confusing to our L2 dev users] and the usual modes for 
-reading/writing/binary provided by most Python filelike objects:
+transparently. It supports a [context manager pattern](https://book.pythontips.com/en/latest/context_managers.html) 
+and the usual modes for reading/writing/binary provided by most Python filelike objects:
 
 ```python
 from libera_utils.io.smart_open import smart_open
 from libera_utils.io.filenaming import LiberaDataProductFilename
+
 f = LiberaDataProductFilename("s3://some-bucket/LIBERA_L1B_RAD_V1-2-3_20250102T120000_20250103T120000_R25005112233.nc")
 with smart_open(f.path, "r") as filehandler:
     # Work with file contents
     pass
 ```
-

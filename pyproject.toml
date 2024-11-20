@@ -11,7 +11,8 @@ authors = [  # Alphabetical
 ]
 maintainers = ["Gavin Medley <gavin.medley@lasp.colorado.edu>"]
 license = "BSD-3-Clause"
-include = ["CHANGES.md", "LICENSE", "README.md"]
+readme = "README.md"
+include = ["LICENSE.txt", "README.md"]
 
 # Reference for dependency specifications:
 # https://python-poetry.org/docs/dependency-specification/
@@ -57,6 +58,16 @@ pydata-sphinx-theme = "*"
 
 [tool.poetry.scripts]
 libera-utils = 'libera_utils.cli:main'
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: mark a test as an integration test. Skip these tests with `pytest -m 'not integration' tests`"
+]
+addopts = [
+    "-s"  # Don't capture output (print it)
+]
+minversion = 6.0
+xfail_strict = true
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

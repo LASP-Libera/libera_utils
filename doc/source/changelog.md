@@ -1,5 +1,8 @@
 # Version Changes
 
+## 2.4.5 (in development)
+- Add `--ecr-image-tags` option to `libera-utils ecr-upload` CLI for tagging remote algorithm images in an ECR
+
 ## 2.4.4 (released)
 - Allow overriding the standard docker config.json file with a minimal file for ECR uploading to 
   prevent ECR upload permission failures from cached docker login credentials from CDK deployments

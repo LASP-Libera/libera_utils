@@ -8,7 +8,7 @@ see the documentation
 There are several python packages (and libraries in other languages) that support reading and writing NetCDF4 files. 
 The SDC is using the Xarray python library. 
 
-The official documentation for Xarray is [here.](https://docs.xarray.dev/en/stable/). It includes a much more comprehensive user guide with code examples.
+The official documentation for Xarray is [here](https://docs.xarray.dev/en/stable/). It includes a much more comprehensive user guide with code examples.
 
 Xarray builds on the numpy package, introducing labels for 
 multidimensional arrays in python. These labels come in the form of coordinates, dimensions, and attributes. 
@@ -17,7 +17,8 @@ such that a single DataSet can hold multiple DataArrays. DataSets can then be wr
 
 ## Reading NetCDF4 Files
 
-To read NetCDF4 files we can use Xarray as well. NetCDF4 files have similar structure to HDF5 files. NetCDF4 DataSets can have DataSets nested within one another. Here is an example of how to access each DataSet/Group.
+To read NetCDF4 files we can use Xarray as well. NetCDF4 files have similar structure to HDF5 files. 
+NetCDF4 DataSets can have DataSets nested within one another. Here is an example of how to access each DataSet/Group.
 
 ```python
 import xarray
@@ -114,6 +115,9 @@ ds = xr.Dataset({
 },
     coords={'times': times},
 )
+
+# Write some metadata
+ds.attrs["ALGORITHM_VERSION"] = "3.14.159"
 
 # write to a NetCDF4 file
 ds.to_netcdf('filename', group="/", mode='a', engine='h5netcdf')

@@ -11,6 +11,20 @@ to manifest file handling.
 ```python
 from libera_utils.io.manifest import Manifest
 
-my_manifest = Manifest.from_file("s3://some-dropbox/LIBERA_INPUT_MANIFEST_20270102T122233.json")
-# Work with manifest file
+# Manifest filenames are passed into your Docker image CLI as its only argument
+input_manifest = Manifest.from_file("s3://some-dropbox/LIBERA_INPUT_MANIFEST_20270102T122233.json")
+# Read from manifest file to do processing
+
+# Create an output manifest named according to the input manifest (timestamp matches for traceability)
+output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest)
+
+# Add files. This will raise a credentials error because it tries to checksum the file but can't access S3
+# without credentials provided (your Docker images will have proper credentials attached).
+output_manifest.add_files(
+    "s3://some-dropbox/LIBERA_L2_CLOUD-FRACTION_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc"
+)
+
+# Automatically generates a proper output manifest filename and writes it to the path specified, 
+# usually this path is retrieved from the environment, like `os.environ["PROCESSING_DROPBOX"]`.
+output_manifest.write("s3://some-dropbox/")
 ```

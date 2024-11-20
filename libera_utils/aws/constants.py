@@ -1,5 +1,7 @@
 """AWS ECR Repository/Algorithm names"""
+# Standard
 from enum import Enum
+from typing import Union
 
 
 class ManifestType(Enum):
@@ -77,12 +79,16 @@ class ProcessingStepIdentifier(Enum):
     l0_cr = 'l0-cr'
 
     @property
-    def ecr_name(self) -> str:
+    def ecr_name(self) -> Union[str, None]:
         """Get the manually-configured ECR name for this processing step
 
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
         with on a regular basis.
         """
+        if self.value.startswith("l0-"):
+            # There is no ECR for the L0 processing steps. These are "dummy" processing steps used only for
+            # purposes of orchestration management.
+            return None
         return f"{self.value}-docker-repo"
 
 
