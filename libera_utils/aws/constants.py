@@ -1,7 +1,7 @@
 """AWS ECR Repository/Algorithm names"""
 # Standard
 from enum import Enum
-from typing import Union
+from typing import Optional, Union
 
 
 class ManifestType(Enum):
@@ -53,6 +53,36 @@ class DataProductIdentifier(Enum):
     # Ancillary products
     anc_adm = "anc-adm"
 
+    @classmethod
+    def validate(cls, product_name: str) -> tuple["DataProductIdentifier", Optional[int]]:
+        """Validate a product name string used by the DAG or the processing orchestration system.
+
+        If successful, returns a tuple containing the DataProductIdentifier and the chunk_number,
+        which can be None if the input string does not contain a valid chunk number.
+        """
+        if (idx := product_name.rfind("-")) > 0:
+            # the dash could be internal to the enum name, check that
+            try:
+                # check against the snake-case value
+                product_id = DataProductIdentifier(product_name[:idx])
+                # the int conversion could also fail with ValueError
+                return product_id, int(product_name[idx + 1:])
+            except ValueError:
+                # assume that there is no chunk number, fall through to check that
+                pass
+        return DataProductIdentifier(product_name), None
+
+    def dump(self, chunk_number: Optional[int] = None) -> str:
+        """Convert the DataProductIdentifier to a string suitable for matching
+        with a DAG key or in the processing orchestration system.
+
+        The chunk_number can be specified when the data product represents
+        a PDS file that is typically provided in 12 2-hour chunks per day.
+        In that case, the chunk_number appears as a suffix to the orchestration
+        product name.
+        """
+        return f"{self.value}-{chunk_number}" if chunk_number is not None else self.value
+
 
 class ProcessingStepIdentifier(Enum):
     """Enumeration of processing step IDs used in AWS resource naming and processing orchestration
@@ -77,6 +107,8 @@ class ProcessingStepIdentifier(Enum):
     l0_rad_pds = 'l0-rad'
     l0_cam_pds = 'l0-cam'
     l0_cr = 'l0-cr'
+    cal_rad = 'cal-rad'
+    cal_cam = 'cal-cam'
 
     @property
     def ecr_name(self) -> Union[str, None]:
@@ -90,6 +122,36 @@ class ProcessingStepIdentifier(Enum):
             # purposes of orchestration management.
             return None
         return f"{self.value}-docker-repo"
+
+    @classmethod
+    def validate(cls, processing_step: str) -> tuple["ProcessingStepIdentifier", Optional[int]]:
+        """Validate a processing step string used by the DAG or the orchestration system.
+
+        If successful, returns a tuple containing the ProcessingStepIdentifier and the chunk_number,
+        which can be None if the input string does not contain a valid chunk number.
+        """
+        if (idx := processing_step.rfind("-")) > 0:
+            # the dash could be internal to the enum name, check that
+            try:
+                # check against the snake-case value
+                product_id = ProcessingStepIdentifier(processing_step[:idx])
+                # the int conversion could also fail with ValueError
+                return product_id, int(processing_step[idx + 1:])
+            except ValueError:
+                # assume that there is no chunk number, fall through to check that
+                pass
+        return ProcessingStepIdentifier(processing_step), None
+
+    def dump(self, chunk_number: Optional[int] = None) -> str:
+        """Convert the ProcessingStepIdentifier to a string suitable for matching
+        with a DAG key or in the processing orchestration system.
+
+        The chunk_number can be specified when the data product represents
+        a PDS file that is typically provided in 12 2-hour chunks per day.
+        In that case, the chunk_number appears as a suffix to the orchestration
+        step identifier
+        """
+        return f"{self.value}-{chunk_number}" if chunk_number is not None else self.value
 
 
 class CkObject(Enum):
