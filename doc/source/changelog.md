@@ -2,6 +2,7 @@
 
 ## 2.4.5 (in development)
 - Add `--ecr-image-tags` option to `libera-utils ecr-upload` CLI for tagging remote algorithm images in an ECR
+- Add validation and serialization methods to the `DataProductIdentifier` and `ProcessingStepProductIdentifier` enums
 
 ## 2.4.4 (released)
 - Allow overriding the standard docker config.json file with a minimal file for ECR uploading to 
