@@ -1,6 +1,11 @@
 # Version Changes
 
-## 2.4.5 (in development)
+## 2.5.0 (released)
+- Reimplement Manifest class as a pydantic model and integrate with dependent code
+- BREAKING: Remove the deprecated add_file_to_manifest method from Manifest class
+- BREAKING: Rename outpath to out_path on the Manifest class write method
+
+## 2.4.5 (released)
 - Add `--ecr-image-tags` option to `libera-utils ecr-upload` CLI for tagging remote algorithm images in an ECR
 - Add validation and serialization methods to the `DataProductIdentifier` and `ProcessingStepProductIdentifier` enums
 

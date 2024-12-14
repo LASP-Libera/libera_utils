@@ -27,7 +27,7 @@ def add_start_end_time_to_manifest():
         # make sure the system generates a new filename for the updated input manifest
         m.filename = None
         time.sleep(1)
-        updated_manifest_path = m.write(outpath=manifest_path.parent)
+        updated_manifest_path = m.write(out_path=manifest_path.parent)
         return updated_manifest_path
 
     return _add_start_end_time_to_manifest

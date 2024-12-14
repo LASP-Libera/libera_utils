@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "libera_utils"
-version = "2.4.5"
+version = "2.5.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     "Stephane Beland <stephane.beland@lasp.colorado.edu>",
@@ -21,11 +21,11 @@ include = ["LICENSE.txt", "README.md"]
 [tool.poetry.dependencies]
 # Keep these "as loose as practical" to allow maximum compatibility with others' environments
 python = ">=3.9,<4"
-astropy = ">=6.0"
 cloudpathlib = {extras = ["s3"], version = ">=0.14.0,<1.0"}
 h5netcdf = ">=1.0.0"
 h5py = ">=3.3"
 numpy = ">=1.21"  # Numpy 2.0 is up for release very soon
+pydantic = ">2.0.3"
 requests = ">=2.27.0,<3.0"
 setuptools = ">=69.0.0"
 space-packet-parser = "4.1.1"
