@@ -1,19 +1,16 @@
 """Tests for manifest module"""
 # Standard
-from datetime import datetime, timedelta
 import json
-from pathlib import Path
-import re
 import sys
-from unittest import mock
+from datetime import datetime, timedelta
 from hashlib import md5
-from zoneinfo import ZoneInfo
+from pathlib import Path
 # Installed
-from cloudpathlib import S3Path
 import pytest
+from cloudpathlib import S3Path
 # Local
-from libera_utils.io.manifest import Manifest
 from libera_utils.aws.constants import ManifestType
+from libera_utils.io.manifest import Manifest, ManifestFileRecord
 from libera_utils.io.smart_open import smart_open
 
 
@@ -29,7 +26,6 @@ def test_manifest_constructor_with_file_list(test_txt, test_construction_record_
     m = Manifest(
         manifest_type=ManifestType.INPUT,
         files=[test_txt, test_construction_record_1],
-        configuration={}
     )
     m.validate_checksums()
     assert len(m.files) == 2
@@ -38,8 +34,6 @@ def test_manifest_constructor_with_file_list(test_txt, test_construction_record_
 def test_manifest_add_relative_path_file_error():
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
     )
     with pytest.raises(ValueError):
         m.add_files(Path("relative/a_file.txt"))
@@ -49,8 +43,6 @@ def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test
     """Test factory method for adding files to a manifest with checksum and local paths"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
     )
     initial_list_len = len(m.files)
     m.add_files(test_json_manifest)
@@ -77,8 +69,6 @@ def test_manifest_add_files_to_manifest_s3(test_json_manifest, test_txt, test_co
 
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
     )
     initial_list_len = len(m.files)
     m.add_files(manifest_path)
@@ -87,7 +77,6 @@ def test_manifest_add_files_to_manifest_s3(test_json_manifest, test_txt, test_co
 
     m.add_files(*text_paths)
     m.validate_checksums()
-    m.validate()
     assert len(m.files) == initial_list_len + 3
 
 
@@ -95,8 +84,6 @@ def test_manifest_add_duplicate_file_to_manifest(test_json_manifest):
     """Test factory method for adding a duplicate file to a manifest"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
     )
     m.add_files(test_json_manifest)
     initial_length = len(m.files)
@@ -134,8 +121,6 @@ def test_manifest_write(tmp_path):
     """Test writing a manifest file from an object"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
     )
     m.write(tmp_path, 'LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json')
     with open(tmp_path / 'LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json') as f:
@@ -147,13 +132,13 @@ def test_manifest_write(tmp_path):
 def test_manifest_generate_filename():
     """Test generating a filename for a manifest file"""
     m = Manifest(
-        manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
+        manifest_type=ManifestType.INPUT
     )
     assert m._generate_filename().filename_parts.ulid_code is not None
     m.manifest_type = ManifestType.OUTPUT
     assert m._generate_filename().filename_parts.ulid_code is not None
+    assert m.files == []
+    assert m.configuration == {}
 
 
 def test_manifest_write_s3(create_mock_bucket):
@@ -161,8 +146,6 @@ def test_manifest_write_s3(create_mock_bucket):
     bucket = create_mock_bucket()
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[],
-        configuration={}
     )
     outpath = S3Path(f"s3://{bucket.name}")
     filename = "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
@@ -177,8 +160,8 @@ def test_validate_checksums(test_json_manifest, caplog):
     """Test the method that validates checksums in a manifest file"""
     # We test by referencing the manifest file itself, so we're only dependent on one test file
     m = Manifest.from_file(test_json_manifest)
-    m.files[0]['filename'] = test_json_manifest.absolute()
-    m.files[1]['filename'] = test_json_manifest.absolute()
+    m.files[0].filename = test_json_manifest.absolute()
+    m.files[1].filename = test_json_manifest.absolute()
     with caplog.at_level("ERROR"):
         with pytest.raises(ValueError):  # Fake values don't validate
             m.validate_checksums()
@@ -186,7 +169,7 @@ def test_validate_checksums(test_json_manifest, caplog):
 
     with test_json_manifest.open('rb') as fh:
         checksum = md5(fh.read()).hexdigest()
-    m.files = [{"filename": test_json_manifest.absolute(), "checksum": checksum}]
+    m.files = [ManifestFileRecord(filename=str(test_json_manifest.absolute()), checksum=checksum)]
     m.validate_checksums()
 
 
@@ -213,6 +196,9 @@ def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest,
     elif isinstance(input_manifest, Manifest):
         input_manifest_object = input_manifest
 
+    else:
+        raise NotImplementedError(f"Unexpected type for input_manifest: {type(input_manifest)}")
+
     output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest=input_manifest_object)
     input_time = input_manifest_object.ulid_code.datetime
     output_time = output_manifest.ulid_code.datetime
@@ -233,7 +219,7 @@ def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest,
 def test_manifest_validation_failure(man_path, man_files, man_type, man_config):
     """Test manifest validation method for correct failure cases"""
     with pytest.raises(ValueError):
-        m = Manifest(
+        _ = Manifest(
             manifest_type=man_type,
             files=man_files,
             configuration=man_config,
@@ -249,7 +235,7 @@ def test_manifest_validation_failure(man_path, man_files, man_type, man_config):
 )
 def test_manifest_validation_success(man_path, man_files, man_type, man_config):
     """Test manifest validation method for correct success cases"""
-    m = Manifest(
+    _ = Manifest(
         manifest_type=man_type,
         files=man_files,
         configuration=man_config,

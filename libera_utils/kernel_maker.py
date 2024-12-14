@@ -55,7 +55,7 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     if "start_time" not in m.configuration:
         # No time range information is provided. Process all files in the manifest
         for file_entry in m.files:
-            files_in_range.append(str(file_entry["filename"]))
+            files_in_range.append(str(file_entry.filename))
     else:
         # Load desired time range from the manifest configuration
         start_time_text = m.configuration["start_time"]
@@ -67,7 +67,7 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
         # TODO update this if possible to use the metadata files when those are more defined
 
         for file_entry in m.files:
-            file_path_from_list = file_entry["filename"]
+            file_path_from_list = file_entry.filename
             packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
             ephemeris_time = time.scs2e_wrapper(
                 [f"{d}:{ms}:{us}" for d, ms, us in
