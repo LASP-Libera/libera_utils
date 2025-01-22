@@ -1,5 +1,8 @@
 # Version Changes
 
+## 2.5.1 (released)
+- BUGFIX: missing pyyaml dependency that prevented usage of logutil module
+
 ## 2.5.0 (released)
 - Reimplement Manifest class as a pydantic model and integrate with dependent code
 - BREAKING: Remove the deprecated add_file_to_manifest method from Manifest class
