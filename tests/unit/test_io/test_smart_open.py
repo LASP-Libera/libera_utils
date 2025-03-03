@@ -10,6 +10,7 @@ from cloudpathlib import S3Path, AnyPath
 import pytest
 # Local
 from libera_utils.io.smart_open import smart_open, is_gzip, is_s3, smart_copy_file
+from libera_utils.aws.s3_utilities import s3_copy_file
 
 
 @pytest.mark.parametrize(
@@ -189,7 +190,12 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
     "wrapper",
     [AnyPath, str]
 )
-def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3):
+@pytest.mark.parametrize(
+    "function_to_call",
+    [smart_copy_file, s3_copy_file]
+)
+def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, function_to_call,
+                                                   create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file to a local directory path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
@@ -206,7 +212,7 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("ignore")
         warnings.simplefilter("always", UserWarning)  # Catch only UserWarnings
-        smart_copy_file(wrapped_remote_file_path, wrapped_local_destination)
+        function_to_call(wrapped_remote_file_path, wrapped_local_destination)
         assert len(w) == 1
         assert "A directory was given as the destination for the smart file copy" in str(w[0].message)
 
@@ -214,7 +220,7 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
 
     # confirm file is deleted if optional parameter delete is set to True
     source_path = S3Path(remote_file_uri)
-    smart_copy_file(wrapped_remote_file_path, wrapped_local_destination, delete=True)
+    function_to_call(wrapped_remote_file_path, wrapped_local_destination, delete=True)
     assert not source_path.exists()
 
 

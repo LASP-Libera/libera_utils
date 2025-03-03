@@ -1,5 +1,15 @@
 # Version Changes
 
+## 2.5.2 (released)
+- Added the s3-utils cli interface with subcommands put, list, and cp for ease of use s3 interactions
+- The cli subcommand `libera-utils s3-utils put` will upload a file to the correct S3 archive bucket given an algorithm
+- The cli subcommand `libera-utils s3-utils list` will list all files in a given S3 archive bucket for a given algorithm
+- The cli subcommand `libera-utils s3-utils cp` will copy a file from one S3 archive bucket to another location
+- Added the Libera Archive bucket naming pattern to the aws constants module
+- Improved type hinting for the smart_open module
+- Improved readability of cli testing
+- Removing testing against python 3.9 and 3.10
+
 ## 2.5.1 (released)
 - BUGFIX: missing pyyaml dependency that prevented usage of logutil module
 

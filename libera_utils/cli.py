@@ -6,6 +6,7 @@ import argparse
 from libera_utils import kernel_maker
 from libera_utils.aws import ecr_upload, constants
 from libera_utils.aws import processing_step_function_trigger as psfn
+from libera_utils.aws import s3_utilities
 from libera_utils.version import version as libera_utils_version
 
 
@@ -21,6 +22,7 @@ def print_version_info(*args):
           f"\n\tCopyright 2023 University of Colorado\n\tReleased under BSD3 license")
 
 
+# pylint: disable=too-many-statements
 def parse_cli_args(cli_args: list):
     """Parse CLI arguments
 
@@ -103,10 +105,16 @@ def parse_cli_args(cli_args: list):
     azel_ck_parser.add_argument('-v', '--verbose', action='store_true',
                                 help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)")
 
+    # ==============
+    # AWS CLI TOOLS
+    # ==============
+    steps_with_ecrs = [f"{name}" for name in constants.ProcessingStepIdentifier if name.ecr_name]
+    processing_steps = [f"{name}" for name in constants.ProcessingStepIdentifier]
+    account_suffixes = [f"{name}" for name in constants.LiberaAccountSuffix]
+
     # ==========
     # ECR UPLOAD
     # ==========
-    algorithm_names = [name.value for name in constants.ProcessingStepIdentifier if name.ecr_name]
     ecr_upload_parser = subparsers.add_parser('ecr-upload',
                                               help="Upload docker image to ECR repository for a specific algorithm")
     ecr_upload_parser.set_defaults(func=ecr_upload.ecr_upload_cli_func)
@@ -116,7 +124,7 @@ def parse_cli_args(cli_args: list):
                                    help="Image tag of image to upload (image-name:image-tag)")
     ecr_upload_parser.add_argument('algorithm_name', type=str,
                                    help=f"Algorithm name that matches an ECR repo name, "
-                                        f"inputs to names:\n {algorithm_names}")
+                                        f"inputs to names:\n {steps_with_ecrs}")
     ecr_upload_parser.add_argument('--ecr-image-tags', type=str, nargs="+",
                                    help="List of tags to apply to the uploaded image in the ECR "
                                         "(e.g. `--ecr-image-tags latest 1.3.4`) "
@@ -131,14 +139,65 @@ def parse_cli_args(cli_args: list):
     sfn_trigger_parser = subparsers.add_parser('step-function-trigger',
                                                help="Manually trigger a specific step function")
     sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger)
+    # TODO Change this to processing step identifier rather than algorithm name and use choices
     sfn_trigger_parser.add_argument('algorithm_name', type=str,
-                                    help="Algorithm name you want to run")
+                                    help=f"Algorithm name you want to run. Options are: {processing_steps}")
     sfn_trigger_parser.add_argument('applicable_day', type=str,
                                     help="Day of data you want to rerun. Format of date: YYYY-MM-DD")
     sfn_trigger_parser.add_argument('-w', '--wait_for_finish', action='store_true',
                                     help="Block command line until step function completes (may be a long time)")
     sfn_trigger_parser.add_argument('-v', '--verbose', action='store_true',
                                     help="Prints out the result of the step_function_trigger run")
+
+    # ============================
+    # S3 UTILITIES
+    # ============================
+    s3_utilities_parser = subparsers.add_parser('s3-utils',
+                                                help="Utilities for working with S3 archives for processing steps")
+    s3_utilities_subparser = s3_utilities_parser.add_subparsers(description="sub-commands for s3-utils sub-command")
+
+    # ============================
+    # S3 PUT
+    # ============================
+    s3_put_parser = s3_utilities_subparser.add_parser('put',
+                                                      help="Upload tool for putting files into S3 archives "
+                                                           "for designated processing steps")
+    s3_put_parser.set_defaults(func=s3_utilities.s3_put_cli_handler)
+    s3_put_parser.add_argument('algorithm_name', type=str, choices=processing_steps,
+                               help=f"Algorithm name string. Used to determine the S3 archive bucket name. Options"
+                                    f" are: {processing_steps}")
+    s3_put_parser.add_argument('file_path', type=str,
+                               help="Path to the file to upload")
+    s3_put_parser.add_argument('--account_suffix', type=str, default="-stage", choices=account_suffixes,
+                               help=f"Account suffix for the bucket name. Default is -stage."
+                                    f" Options are: {account_suffixes}")
+
+    # ============================
+    # S3 LIST
+    # ============================
+    s3_list_parser = s3_utilities_subparser.add_parser('ls',
+                                                       help="List files in an S3 archive for a designated processing "
+                                                            "step")
+    s3_list_parser.set_defaults(func=s3_utilities.s3_list_cli_handler)
+    s3_list_parser.add_argument('algorithm_name', type=str, choices=processing_steps,
+                                help=f"Algorithm name string. Used to determine the S3 archive bucket name."
+                                     f"Options are: {processing_steps}")
+    s3_list_parser.add_argument('--account_suffix', type=str, default="-stage", choices=account_suffixes,
+                                help=f"Account suffix for the bucket name. Default is -stage. "
+                                     f"Options are: {account_suffixes}")
+
+    # ============================
+    # S3 COPY
+    # ============================
+    s3_get_object_parser = s3_utilities_subparser.add_parser('cp',
+                                                             help="Copy an object from one location to another.")
+    s3_get_object_parser.set_defaults(func=s3_utilities.s3_copy_cli_handler)
+    s3_get_object_parser.add_argument('source_path', type=str,
+                                      help="The current path path to the object to retrieve")
+    s3_get_object_parser.add_argument('dest_path', type=str,
+                                      help="Destination path to save the object to.")
+    s3_get_object_parser.add_argument('--delete', action='store_true',
+                                      help="If set, deletes files copied from source")
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args

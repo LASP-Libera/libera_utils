@@ -1,10 +1,10 @@
 """AWS ECR Repository/Algorithm names"""
 # Standard
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Optional, Union
 
 
-class ManifestType(Enum):
+class ManifestType(StrEnum):
     """Enumerated legal manifest type values"""
     INPUT = 'INPUT'
     input = INPUT
@@ -12,7 +12,15 @@ class ManifestType(Enum):
     output = OUTPUT
 
 
-class DataProductIdentifier(Enum):
+class LiberaAccountSuffix(StrEnum):
+    """Suffixes for the various account types"""
+    STAGE = "-stage"
+    PROD = "-prod"
+    DEV = "-dev"
+    TEST = "-test"
+
+
+class DataProductIdentifier(StrEnum):
     """Enumeration of data product canonical IDs used in AWS resource naming
     These IDs refer to the data products (files) themselves, NOT the processing steps (since processing steps
     may produce multiple products).
@@ -81,10 +89,10 @@ class DataProductIdentifier(Enum):
         In that case, the chunk_number appears as a suffix to the orchestration
         product name.
         """
-        return f"{self.value}-{chunk_number}" if chunk_number is not None else self.value
+        return f"{self}-{chunk_number}" if chunk_number is not None else self
 
 
-class ProcessingStepIdentifier(Enum):
+class ProcessingStepIdentifier(StrEnum):
     """Enumeration of processing step IDs used in AWS resource naming and processing orchestration
 
     In orchestration code, these are used as "NodeID" values to identify processing steps:
@@ -92,12 +100,11 @@ class ProcessingStepIdentifier(Enum):
         and the node names in processing_system_dag.json must match these.
     They must also be passed to the ecr_upload module called by some libera_cdk integration tests.
     """
-    l2cf = 'l2-cloud-fraction'
-    l2_stf = 'l2-ssw-toa'
-    adms = 'libera-adms'
+    l2_cam_cf = 'l2-cloud-fraction'
+    l2_rad_ssw_toa = 'l2-ssw-toa'
+    adms = 'adms-libera'
     l2_surface_flux = 'l2-ssw-surface-flux'
-    l2_firf = 'l2-far-ir-toa-flux'
-    unfilt = 'l1c-unfiltered'
+    l2_unfiltered = 'l2-unfiltered'
     spice_azel = 'spice-azel'
     spice_jpss = 'spice-jpss'
     l1b_rad = 'l1b-rad'
@@ -117,11 +124,11 @@ class ProcessingStepIdentifier(Enum):
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
         with on a regular basis.
         """
-        if self.value.startswith("l0-"):
+        if self.startswith("l0-"):
             # There is no ECR for the L0 processing steps. These are "dummy" processing steps used only for
             # purposes of orchestration management.
             return None
-        return f"{self.value}-docker-repo"
+        return f"{self}-docker-repo"
 
     @classmethod
     def validate(cls, processing_step: str) -> tuple["ProcessingStepIdentifier", Optional[int]]:
@@ -142,6 +149,37 @@ class ProcessingStepIdentifier(Enum):
                 pass
         return ProcessingStepIdentifier(processing_step), None
 
+    def get_archive_bucket_name(self,
+                                account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> Union[str, None]:
+        """Gets the archive bucket name for this processing step.
+
+        Buckets are named according to the level of data they are storing and which account they are in. This is
+        expected to be used by the L2 developers who will most commonly be working with the stage account.
+
+        Parameters
+        ----------
+        account_suffix : LiberaAccountSuffix, optional
+            Account suffix for the bucket name, by default LiberaAccountSuffix.STAGE (stage account)
+
+        Returns
+        -------
+        str
+            The name of the archive bucket for this processing step
+        """
+        match self.value.split("-", maxsplit=1)[0]:
+            case "l0":
+                return f"{LiberaDataBucketName.L0_ARCHIVE_BUCKET}{account_suffix}"
+            case "l1b":
+                return f"{LiberaDataBucketName.L1B_ARCHIVE_BUCKET}{account_suffix}"
+            case "l2":
+                return f"{LiberaDataBucketName.L2_ARCHIVE_BUCKET}{account_suffix}"
+            case "spice":
+                return f"{LiberaDataBucketName.SPICE_ARCHIVE_BUCKET}{account_suffix}"
+            case "cal" | "adms":
+                return f"{LiberaDataBucketName.ANCILLARY_ARCHIVE_BUCKET}{account_suffix}"
+            case _:
+                raise ValueError(f"Unknown processing step {self.value}")
+
     def dump(self, chunk_number: Optional[int] = None) -> str:
         """Convert the ProcessingStepIdentifier to a string suitable for matching
         with a DAG key or in the processing orchestration system.
@@ -151,7 +189,7 @@ class ProcessingStepIdentifier(Enum):
         In that case, the chunk_number appears as a suffix to the orchestration
         step identifier
         """
-        return f"{self.value}-{chunk_number}" if chunk_number is not None else self.value
+        return f"{self}-{chunk_number}" if chunk_number is not None else self.value
 
 
 class CkObject(Enum):
@@ -198,7 +236,7 @@ class SpkObject(Enum):
         return ProcessingStepIdentifier.spice_jpss
 
 
-class DataLevel(Enum):
+class DataLevel(StrEnum):
     """Data product level"""
     L0 = "L0"
     SPICE = "SPICE"
@@ -213,3 +251,12 @@ class LiberaApid(Enum):
     FILTERED_RADIOMETER = 1036
     FILTERED_AZEL = 1048
     CAMERA = 9999
+
+
+class LiberaDataBucketName(StrEnum):
+    """Names of the data archive buckets"""
+    L0_ARCHIVE_BUCKET = "libera-l0-data"
+    SPICE_ARCHIVE_BUCKET = "libera-spice-kernels"
+    ANCILLARY_ARCHIVE_BUCKET = "libera-ancillary-data"
+    L1B_ARCHIVE_BUCKET = "libera-l1b-data"
+    L2_ARCHIVE_BUCKET = "libera-l2-data"

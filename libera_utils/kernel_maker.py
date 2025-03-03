@@ -132,6 +132,7 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths):
 
 
 def make_jpss_spk(parsed_args: argparse.Namespace):
+    # TODO Make low level functions that are more python usable
     """Create a JPSS SPK from APID 11 CCSDS packets.
     The SPK system is the component of SPICE concerned with ephemeris data (position/velocity).
 
