@@ -84,20 +84,6 @@ pipeline {
                 }
             }
         }
-        stage('Run Tests Against Python 3.10') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    sh 'docker-compose up --build --exit-code-from 3.10-tests 3.10-tests'
-                }
-            }
-        }
-        stage('Run Tests Against Python 3.9') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    sh 'docker-compose up --build --exit-code-from 3.9-tests 3.9-tests'
-                }
-            }
-        }
     }
     post {
         always {

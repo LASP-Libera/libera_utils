@@ -1,20 +1,22 @@
 """Module for smart_open"""
+import typing
 # Standard
 from gzip import GzipFile
 from pathlib import Path
 import warnings
 import shutil
+from typing import Union, Optional
 # Installed
 import boto3
 from cloudpathlib import S3Path, AnyPath
 
 
-def is_s3(path: str or Path or S3Path):
+def is_s3(path: Union[str, Path, S3Path]):
     """Determine if a string points to an s3 location or not.
 
     Parameters
     ----------
-    path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
+    path : Union[str, Path, S3Path]
         Path to determine if it is and s3 location or not.
 
     Returns
@@ -34,12 +36,12 @@ def is_s3(path: str or Path or S3Path):
     raise ValueError(f"Unrecognized path type for {path} ({type(path)})")
 
 
-def is_gzip(path: str or Path or S3Path):
-    """Determine if a string points to an gzip file.
+def is_gzip(path: Union[str, Path, S3Path]):
+    """Determine if a string points to a gzip file.
 
     Parameters
     ----------
-    path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
+    path : Union[str, Path, S3Path]
         Path to check.
 
     Returns
@@ -51,14 +53,14 @@ def is_gzip(path: str or Path or S3Path):
     return path.name.endswith('.gz')
 
 
-def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool = True):
+def smart_open(path: Union[str, Path, S3Path], mode: Optional[str] = 'rb', enable_gzip: Optional[bool] = True):
     """
     Open function that can handle local files or files in an S3 bucket. It also
     correctly handles gzip files determined by a `*.gz` extension.
 
     Parameters
     ----------
-    path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
+    path : Union[str, Path, S3Path]
         Path to the file to be opened. Files residing in an s3 bucket must begin
         with "s3://".
     mode: str, Optional
@@ -73,7 +75,7 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
     -------
     : typing.IO or gzip.GzipFile
     """
-    def _gzip_wrapper(fileobj):
+    def _gzip_wrapper(fileobj: typing.IO):
         """Wrapper around a filelike object that unzips it
         (if it is enabled and if the file object was opened in binary mode).
 
@@ -99,21 +101,21 @@ def smart_open(path: str or Path or S3Path, mode: str = 'rb', enable_gzip: bool 
     return _gzip_wrapper(AnyPath(path).open(mode=mode))  # pylint: disable=E1101
 
 
-def _copy_local_to_local(source_path: str or Path, dest_path: str or Path, delete: bool):
+def _copy_local_to_local(source_path: Union[str, Path], dest_path: Union[str, Path], delete: Optional[bool] = False):
     """Copy a local source file to a local destination.
 
     Parameters
     ----------
-    source_path : str or pathlib.Path
+    source_path : Union[str, Path]
         Path to the source file to be copied.
-    dest_path : str or pathlib.Path
+    dest_path : Union[str, Path]
         Path to the destination for the copied file.
-    delete : bool
+    delete : bool, Optional
         If true, deletes files copied from source (default = False)
 
     Returns
     -------
-    : pathlib.Path
+    : Path
         The path to the newly created file
     """
     # This is a local copy and uses shutil copy
@@ -133,22 +135,22 @@ def _copy_local_to_local(source_path: str or Path, dest_path: str or Path, delet
     return shutil.copy(source_path, dest_path)
 
 
-def _copy_local_to_s3(source_path: str or Path, dest_path: str or S3Path, delete: bool):
+def _copy_local_to_s3(source_path: Union[str, Path], dest_path: Union[str, S3Path], delete: Optional[bool] = False):
     """Copy a local file to an S3 object.
 
     Parameters
     ----------
-    source_path : str or pathlib.Path
+    source_path : Union[str, Path]
         Path to the source file to be copied.
-    dest_path : str or cloudpathlib.s3.s3path.S3Path
+    dest_path : Union[str, S3Path]
         Path to the destination for the copied file. Files residing in an s3 bucket
         must begin with "s3://".
-    delete : bool
+    delete : bool, optional
         If true, deletes files copied from source (default = False)
 
     Returns
     -------
-    : cloudpathlib.s3.s3path.S3Path
+    : S3Path
         The path to the newly created file
     """
     # This is a local to remote copy and uses S3 upload
@@ -169,22 +171,22 @@ def _copy_local_to_s3(source_path: str or Path, dest_path: str or S3Path, delete
     return s3_dest_path
 
 
-def _copy_s3_to_local(source_path: str or Path, dest_path: str or S3Path, delete: bool):
+def _copy_s3_to_local(source_path: Union[str, S3Path], dest_path: Union[str, Path], delete: Optional[bool] = False):
     """Copy an S3 object to a local file.
 
     Parameters
     ----------
-    source_path : str or cloudpathlib.s3.s3path.S3Path
+    source_path : Union[str, S3Path]
         Path to the source file to be copied. Files residing in an s3 bucket must begin
         with "s3://".
-    dest_path : str or pathlib.Path
+    dest_path : Union[str, Path]
         Path to the destination for the copied file.
-    delete : bool
+    delete : bool, optional
         If true, deletes files copied from source (default = False)
 
     Returns
     -------
-    : pathlib.Path
+    : Path
         The path to the newly created file
     """
     # This is a remote to local copy and uses S3 download
@@ -212,23 +214,23 @@ def _copy_s3_to_local(source_path: str or Path, dest_path: str or S3Path, delete
     return Path(local_dest_path)
 
 
-def _copy_s3_to_s3(source_path: str or Path, dest_path: str or S3Path, delete: bool):
+def _copy_s3_to_s3(source_path: Union[str, S3Path], dest_path: Union[str, S3Path], delete: Optional[bool] = False):
     """Copy an S3 object to a different S3 object.
 
     Parameters
     ----------
-    source_path : str or cloudpathlib.s3.s3path.S3Path
+    source_path : Union[str, S3Path]
         Path to the source file to be copied. Files residing in an s3 bucket must begin
         with "s3://".
-    dest_path : str or cloudpathlib.s3.s3path.S3Path
+    dest_path : Union[str, S3Path]
         Path to the Destination file to be copied to. Files residing in an s3 bucket
         must begin with "s3://".
-    delete : bool
+    delete : bool, optional
         If true, deletes files copied from source (default = False)
 
     Returns
     -------
-    : cloudpathlib.s3.s3path.S3Path
+    : S3Path
         The path to the newly created file
     """
     # This is a remote to remote copy and uses S3 copy
@@ -256,24 +258,25 @@ def _copy_s3_to_s3(source_path: str or Path, dest_path: str or S3Path, delete: b
     return s3_dest_path
 
 
-def smart_copy_file(source_path: str or Path or S3Path, dest_path: str or Path or S3Path, delete=False):
+def smart_copy_file(source_path: Union[str, Path, S3Path], dest_path: Union[str, Path, S3Path],
+                    delete: Optional[bool] = False):
     """Copy function that can handle local files or files in an S3 bucket.
     Returns the path to the newly created file as a Path or an S3Path, depending on the destination.
 
     Parameters
     ----------
-    source_path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
+    source_path : Union[str, Path, S3Path]
         Path to the source file to be copied. Files residing in an s3 bucket must begin
         with "s3://".
-    dest_path : str or pathlib.Path or cloudpathlib.s3.s3path.S3Path
+    dest_path : Union[str, Path, S3Path]
         Path to the Destination file to be copied to. Files residing in an s3 bucket
         must begin with "s3://".
-    delete : bool
+    delete : bool, optional
         If true, deletes files copied from source (default = False)
 
     Returns
     -------
-    : pathlib.Path or cloudpathlib.s3.s3path.S3Path
+    : Path or S3Path
         The path to the newly created file
     """
     if not is_s3(source_path) and not is_s3(dest_path):

@@ -193,3 +193,12 @@ def make_step_function(mock_step_function, monkeypatch_session):
         return state_machine
 
     yield _make_step_function
+
+
+@pytest.fixture
+def make_test_archive_buckets(create_mock_bucket):
+    """Creates the test archive buckets for the libera unit tests"""
+    create_mock_bucket("libera-l0-data-test")
+    create_mock_bucket("libera-spice-kernels-test")
+    create_mock_bucket("libera-l1b-data-test")
+    create_mock_bucket("libera-l2-data-test")

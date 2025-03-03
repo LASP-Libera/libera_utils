@@ -2,7 +2,7 @@
 # Standard
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from enum import Enum
+from enum import StrEnum
 from importlib import metadata
 import re
 from types import SimpleNamespace
@@ -66,7 +66,7 @@ MANIFEST_FILE_REGEX = re.compile(r"^LIBERA"
                                  r"\.json")
 
 
-class ProductName(Enum):
+class ProductName(StrEnum):
     """Enum of valid product names as used in filenames, defined and sourced from the LASP-ASDC ICD"""
     RAD = "RAD"
     CAM = "CAM"
@@ -76,19 +76,19 @@ class ProductName(Enum):
     def processing_step_id(self) -> ProcessingStepIdentifier:
         """ProcessingStepIdentifier for this product name"""
         _product_name_to_processing_step_id = {
-            ProductName.RAD.value: ProcessingStepIdentifier.l1b_rad,
-            ProductName.CAM.value: ProcessingStepIdentifier.l1b_cam
+            ProductName.RAD: ProcessingStepIdentifier.l1b_rad,
+            ProductName.CAM: ProcessingStepIdentifier.l1b_cam
         }
-        return _product_name_to_processing_step_id[self.value]
+        return _product_name_to_processing_step_id[self]
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
         """DataProductIdentifier for this product name"""
         _product_name_to_data_product_id = {
-            ProductName.RAD.value: DataProductIdentifier.l1b_rad,
-            ProductName.CAM.value: DataProductIdentifier.l1b_cam
+            ProductName.RAD: DataProductIdentifier.l1b_rad,
+            ProductName.CAM: DataProductIdentifier.l1b_cam
         }
-        return _product_name_to_data_product_id[self.value]
+        return _product_name_to_data_product_id[self]
 
 
 # used by from_file_path result typehint
@@ -609,7 +609,7 @@ class ManifestFilename(AbstractValidFilename):
         # Generate prefix structure
         # <manifest_type>/<year>/<month>/<day>
         """
-        manifest_type = self.filename_parts.manifest_type.value
+        manifest_type = self.filename_parts.manifest_type
 
         applicable_date = self.filename_parts.ulid_code.datetime
 
@@ -660,7 +660,7 @@ class ManifestFilename(AbstractValidFilename):
         : str
             Formatted filename
         """
-        return cls._fmt.format(manifest_type=manifest_type.value.upper(),
+        return cls._fmt.format(manifest_type=manifest_type.upper(),
                                ulid_code=ulid_code)
 
     def _parse_filename_parts(self):

@@ -3,8 +3,6 @@
 import logging
 # Installed
 import pytest
-# Local
-from libera_utils import logutil
 
 pytest_plugins = [
     "tests.plugins.data_path_fixtures",
