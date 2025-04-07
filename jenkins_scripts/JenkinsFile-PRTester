@@ -56,17 +56,10 @@ pipeline {
                 }
             }
         }
-        stage('Run Pylint') {
+        stage('Ruff Check') {
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                     sh 'docker-compose up --build --exit-code-from linting linting'
-                }
-            }
-        }
-        stage('Run Bandit') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    sh 'docker-compose up --build --exit-code-from ast ast'
                 }
             }
         }

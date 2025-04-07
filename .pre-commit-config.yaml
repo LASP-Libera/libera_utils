@@ -1,0 +1,28 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+    - id: check-added-large-files
+      args: ['--maxkb=1000']
+    - id: detect-aws-credentials
+      args: [--allow-missing-credentials]
+    - id: detect-private-key
+    - id: mixed-line-ending
+    - id: trailing-whitespace
+      exclude: |
+        (?x)^(
+          tests/test_data/.*|
+          libera_utils/data/.*
+        )$
+    - id: no-commit-to-branch
+      args: [--branch, main, --branch, dev]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 'v0.9.8'
+    hooks:
+    - id: ruff
+      args: [--fix]
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.6
+    hooks:
+      - id: codespell
+        files: ^.*\.(py|md|rst|yml)$

@@ -1,17 +1,15 @@
 """Module for smart_open"""
+import shutil
 import typing
-# Standard
+import warnings
 from gzip import GzipFile
 from pathlib import Path
-import warnings
-import shutil
-from typing import Union, Optional
-# Installed
+
 import boto3
-from cloudpathlib import S3Path, AnyPath
+from cloudpathlib import AnyPath, S3Path
 
 
-def is_s3(path: Union[str, Path, S3Path]):
+def is_s3(path: str | Path | S3Path):
     """Determine if a string points to an s3 location or not.
 
     Parameters
@@ -36,7 +34,7 @@ def is_s3(path: Union[str, Path, S3Path]):
     raise ValueError(f"Unrecognized path type for {path} ({type(path)})")
 
 
-def is_gzip(path: Union[str, Path, S3Path]):
+def is_gzip(path: str | Path | S3Path):
     """Determine if a string points to a gzip file.
 
     Parameters
@@ -53,7 +51,7 @@ def is_gzip(path: Union[str, Path, S3Path]):
     return path.name.endswith('.gz')
 
 
-def smart_open(path: Union[str, Path, S3Path], mode: Optional[str] = 'rb', enable_gzip: Optional[bool] = True):
+def smart_open(path: str | Path | S3Path, mode: str | None = 'rb', enable_gzip: bool | None = True):
     """
     Open function that can handle local files or files in an S3 bucket. It also
     correctly handles gzip files determined by a `*.gz` extension.
@@ -90,18 +88,18 @@ def smart_open(path: Union[str, Path, S3Path], mode: Optional[str] = 'rb', enabl
         """
         if is_gzip(path) and enable_gzip:
             if 'b' not in mode:
-                raise IOError(f'Gzip files must be opened in binary (b) mode. Got {mode}.')
+                raise OSError(f'Gzip files must be opened in binary (b) mode. Got {mode}.')
             return GzipFile(filename=path, fileobj=fileobj)
         return fileobj
 
-    if isinstance(path, (Path, S3Path)):
+    if isinstance(path, Path | S3Path):
         return _gzip_wrapper(path.open(mode=mode))
 
     # AnyPath is polymorphic to Path and S3Path. Disable false pylint error
     return _gzip_wrapper(AnyPath(path).open(mode=mode))  # pylint: disable=E1101
 
 
-def _copy_local_to_local(source_path: Union[str, Path], dest_path: Union[str, Path], delete: Optional[bool] = False):
+def _copy_local_to_local(source_path: str | Path, dest_path: str | Path, delete: bool | None = False):
     """Copy a local source file to a local destination.
 
     Parameters
@@ -135,7 +133,7 @@ def _copy_local_to_local(source_path: Union[str, Path], dest_path: Union[str, Pa
     return shutil.copy(source_path, dest_path)
 
 
-def _copy_local_to_s3(source_path: Union[str, Path], dest_path: Union[str, S3Path], delete: Optional[bool] = False):
+def _copy_local_to_s3(source_path: str | Path, dest_path: str | S3Path, delete: bool | None = False):
     """Copy a local file to an S3 object.
 
     Parameters
@@ -171,7 +169,7 @@ def _copy_local_to_s3(source_path: Union[str, Path], dest_path: Union[str, S3Pat
     return s3_dest_path
 
 
-def _copy_s3_to_local(source_path: Union[str, S3Path], dest_path: Union[str, Path], delete: Optional[bool] = False):
+def _copy_s3_to_local(source_path: str | S3Path, dest_path: str | Path, delete: bool | None = False):
     """Copy an S3 object to a local file.
 
     Parameters
@@ -214,7 +212,7 @@ def _copy_s3_to_local(source_path: Union[str, S3Path], dest_path: Union[str, Pat
     return Path(local_dest_path)
 
 
-def _copy_s3_to_s3(source_path: Union[str, S3Path], dest_path: Union[str, S3Path], delete: Optional[bool] = False):
+def _copy_s3_to_s3(source_path: str | S3Path, dest_path: str | S3Path, delete: bool | None = False):
     """Copy an S3 object to a different S3 object.
 
     Parameters
@@ -258,8 +256,8 @@ def _copy_s3_to_s3(source_path: Union[str, S3Path], dest_path: Union[str, S3Path
     return s3_dest_path
 
 
-def smart_copy_file(source_path: Union[str, Path, S3Path], dest_path: Union[str, Path, S3Path],
-                    delete: Optional[bool] = False):
+def smart_copy_file(source_path: str | Path | S3Path, dest_path: str | Path | S3Path,
+                    delete: bool | None = False):
     """Copy function that can handle local files or files in an S3 bucket.
     Returns the path to the newly created file as a Path or an S3Path, depending on the destination.
 

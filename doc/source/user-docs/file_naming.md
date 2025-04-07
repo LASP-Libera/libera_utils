@@ -1,8 +1,8 @@
 # File Naming
 
-The Libera Utils `Filename` classes allow reliable file naming, checking, and path management to support conformity 
-with the Libera filenaming conventions. Each type of filename contains regex that validates every definition or update 
-of the internally tracked filename string. These classes transparently support both S3 paths and local filepaths, 
+The Libera Utils `Filename` classes allow reliable file naming, checking, and path management to support conformity
+with the Libera filenaming conventions. Each type of filename contains regex that validates every definition or update
+of the internally tracked filename string. These classes transparently support both S3 paths and local filepaths,
 including dynamic switching between the two, to simplify the transition between local development environments and AWS.
 
 Full specifics including all available file naming classes are available [in the filenaming API documentation here](../api-doc/generated/libera_utils.io.filenaming.rst)

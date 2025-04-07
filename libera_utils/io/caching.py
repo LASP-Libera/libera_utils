@@ -1,5 +1,4 @@
 """Module containing code to manage local file caching"""
-# Standard
 import os
 import sys
 from importlib.metadata import version

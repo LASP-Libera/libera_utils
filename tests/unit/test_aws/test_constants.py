@@ -1,7 +1,6 @@
 """Tests for constants file"""
-# Installed
 import pytest
-# Local
+
 from libera_utils.aws import constants
 from libera_utils.aws.constants import DataProductIdentifier, ProcessingStepIdentifier
 
@@ -53,10 +52,10 @@ def test_product_validate():
     assert prod_enum == DataProductIdentifier.l0_cam_pds
     assert chunk == 11
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="is not a valid DataProductIdentifier"):
         _, _ = DataProductIdentifier.validate("l0-rad-pds-bad")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="is not a valid DataProductIdentifier"):
         _, _ = DataProductIdentifier.validate("spice_az_ck")
 
 
@@ -81,8 +80,8 @@ def test_step_validate():
     assert prod_enum == ProcessingStepIdentifier.l0_rad_pds
     assert chunk == 11
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="is not a valid DataProductIdentifier"):
         _, _ = DataProductIdentifier.validate("l0-rad-bad")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="is not a valid DataProductIdentifier"):
         _, _ = DataProductIdentifier.validate("spice_jpss")

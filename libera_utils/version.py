@@ -1,5 +1,4 @@
 """Module for anything related to package versioning"""
-# Standard
 from importlib import metadata
 
 

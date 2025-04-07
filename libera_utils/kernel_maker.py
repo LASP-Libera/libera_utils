@@ -1,27 +1,25 @@
 """Module containing CLI tool for creating SPICE kernels from packets"""
-# Standard
 import argparse
-import warnings
-from datetime import datetime, timezone
 import logging
-from pathlib import Path
 import shutil
 import subprocess  # nosec B404
 import tempfile
-# Installed
+import warnings
+from datetime import UTC, datetime
+from pathlib import Path
+
 import numpy as np
 import numpy.lib.recfunctions as nprf
-from cloudpathlib import S3Path, AnyPath
+from cloudpathlib import AnyPath, S3Path
 from space_packet_parser import parser, xtcedef
-# Local
-from libera_utils import spice_utils
-from libera_utils.logutil import configure_task_logging
+
+from libera_utils import packets as libera_packets
+from libera_utils import spice_utils, time
 from libera_utils.config import config
 from libera_utils.io import filenaming
-from libera_utils import packets as libera_packets
-from libera_utils import time
-from libera_utils.io.smart_open import smart_open, smart_copy_file
 from libera_utils.io.manifest import Manifest
+from libera_utils.io.smart_open import smart_copy_file, smart_open
+from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +144,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     None
     """
 
-    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    now = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     configure_task_logging(f'spk_generator_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
@@ -182,7 +180,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
         utc_start = time.et_2_datetime(ephemeris_time[0])
         utc_end = time.et_2_datetime(ephemeris_time[-1])
-        revision_time = datetime.now(timezone.utc)
+        revision_time = datetime.now(UTC)
         spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
             spk_object='jpss',
             utc_start=utc_start,
@@ -196,7 +194,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
         logger.info("Running MKSPK...")
         try:
-            result = subprocess.run(['mkspk',  # nosec B603 B607
+            result = subprocess.run(['mkspk',  # noqa S603 S607
                                      '-setup', str(spk_setup_filepath),
                                      '-input', str(spk_data_filepath),
                                      '-output', str(output_filepath)],
@@ -232,7 +230,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     -------
     None
     """
-    now = datetime.now(timezone.utc).strftime("%Y%m%dt%H%M%S")
+    now = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
     configure_task_logging(f'ck_generator_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
@@ -265,7 +263,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
         utc_start = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
         utc_end = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
-        revision_time = datetime.now(timezone.utc)
+        revision_time = datetime.now(UTC)
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
             ck_object='jpss',
             utc_start=utc_start,
@@ -279,7 +277,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
         logger.info("Running MSOPCK...")
         try:
-            result = subprocess.run(['msopck',  # nosec B603 B607
+            result = subprocess.run(['msopck',  # noqa S603 S607
                                      str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
                                     capture_output=True, check=True)
         except subprocess.CalledProcessError as cpe:
@@ -406,7 +404,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
 
         logger.info("Running MSOPCK...")
         try:
-            result = subprocess.run(['msopck',  # nosec B603 B607
+            result = subprocess.run(['msopck',  # noqa s603 S607
                                      str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
                                     capture_output=True, check=True)
         except subprocess.CalledProcessError as cpe:

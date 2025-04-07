@@ -1,20 +1,18 @@
 """Module for uploading docker images to the ECR"""
-# Standard
 import argparse
 import base64
-import tempfile
-from datetime import datetime, timezone
 import json
 import logging
+import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Union, Optional, List
-# Installed
+
 import boto3
 import docker
 from docker import errors as docker_errors
-# Local
-from libera_utils.logutil import configure_task_logging
+
 from libera_utils.aws import constants, utils
+from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +53,8 @@ class DockerConfigManager:
 
 
 def get_ecr_docker_client(
-        region_name: Optional[str] = None,
-        dockercfg_path: Optional[Path] = None
+        region_name: str | None = None,
+        dockercfg_path: Path | None = None
 ) -> docker.DockerClient:
     """Perform programmatic docker login to the default ECR for the current AWS credential account (e.g. AWS_PROFILE)
     and return a DockerClient object for interacting with the ECR.
@@ -87,10 +85,10 @@ def get_ecr_docker_client(
 
 
 def build_docker_image(
-        context_dir: Union[str, Path],
+        context_dir: str | Path,
         image_name: str,
         tag: str = "latest",
-        target: Optional[str]=None,
+        target: str | None=None,
         platform: str = "linux/amd64"
 ) -> None:
     """
@@ -160,7 +158,7 @@ def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
     -------
     None
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     configure_task_logging(f'ecr_upload_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)
@@ -180,9 +178,9 @@ def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
 
 def push_image_to_ecr(image_name: str,
                       image_tag: str,
-                      algorithm_name: Union[str, constants.ProcessingStepIdentifier],
+                      algorithm_name: str | constants.ProcessingStepIdentifier,
                       *,
-                      ecr_image_tags: Optional[List[str]] = None,
+                      ecr_image_tags: list[str] | None = None,
                       region_name: str = "us-west-2",
                       ignore_docker_config: bool = False) -> None:
     """Programmatically upload a docker image for a science algorithm to an ECR. ECR name is determined based

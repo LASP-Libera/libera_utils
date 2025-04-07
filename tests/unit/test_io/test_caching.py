@@ -1,8 +1,7 @@
 """Tests for the caching module"""
-# Standard
 from pathlib import Path
 from unittest import mock
-# Local
+
 from libera_utils.io import caching
 
 

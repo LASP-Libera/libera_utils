@@ -1,12 +1,12 @@
 """File for testing ECR upload module"""
-# Installed
-import docker
 import json
-from unittest import mock
-from moto import mock_aws
 from pathlib import Path
-# Local
-from libera_utils.aws.ecr_upload import get_ecr_docker_client, build_docker_image, DockerConfigManager
+from unittest import mock
+
+import docker
+from moto import mock_aws
+
+from libera_utils.aws.ecr_upload import DockerConfigManager, build_docker_image, get_ecr_docker_client
 
 
 def test_docker_config_manager():

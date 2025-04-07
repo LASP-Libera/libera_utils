@@ -10,15 +10,14 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 
 3. All functions should have robust type-hinting.
 """
-# Standard
 import re
+from collections.abc import Collection
 from datetime import datetime, timedelta
-from typing import Union, Collection
 from zoneinfo import ZoneInfo
-# Installed
+
 import numpy as np
 import spiceypy as spice
-# Local
+
 from libera_utils.config import config
 from libera_utils.spice_utils import ensure_spice
 
@@ -36,8 +35,8 @@ PRINTABLE_TS_FORMAT = "%Y%m%dT%H%M%S"
 NUMERIC_DOY_TS_FORMAT = "%y%j%H%M%S"
 
 
-def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],
-                   fmt: str = '%Y%m%dT%H%M%S.%f') -> Union[str, Collection[str]]:
+def et_2_timestamp(et: float | Collection[float] | np.ndarray,
+                   fmt: str = '%Y%m%dT%H%M%S.%f') -> str | Collection[str]:
     """
     Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
 
@@ -63,7 +62,7 @@ def et_2_timestamp(et: Union[float, Collection[float], np.ndarray],
     return time_out
 
 
-def et_2_datetime(et: Union[float, Collection[float], np.ndarray]) -> Union[datetime, np.ndarray]:
+def et_2_datetime(et: float | Collection[float] | np.ndarray) -> datetime | np.ndarray:
     """
     Convert ephemeris time to a python datetime object by first converting it to a UTC timestamp.
 
@@ -88,7 +87,7 @@ def et_2_datetime(et: Union[float, Collection[float], np.ndarray]) -> Union[date
 
 
 @ensure_spice(time_kernels_only=True)
-def et2utc_wrapper(et: Union[float, Collection[float], np.ndarray], fmt: str, prec: int) -> Union[str, Collection[str]]:
+def et2utc_wrapper(et: float | Collection[float] | np.ndarray, fmt: str, prec: int) -> str | Collection[str]:
     """
     Convert ephemeris times to UTC ISO strings.
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/et2utc_c.html
@@ -113,7 +112,7 @@ def et2utc_wrapper(et: Union[float, Collection[float], np.ndarray], fmt: str, pr
 
 
 @ensure_spice(time_kernels_only=True)
-def utc2et_wrapper(iso_str: Union[str, Collection[str]]) -> Union[float, np.ndarray]:
+def utc2et_wrapper(iso_str: str | Collection[str]) -> float | np.ndarray:
     """
     Convert UTC ISO strings to ephemeris times.
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/utc2et_c.html
@@ -137,7 +136,7 @@ def utc2et_wrapper(iso_str: Union[str, Collection[str]]) -> Union[float, np.ndar
 
 
 @ensure_spice(time_kernels_only=True)
-def scs2e_wrapper(sclk_str: Union[str, Collection[str]]) -> Union[float, np.ndarray]:
+def scs2e_wrapper(sclk_str: str | Collection[str]) -> float | np.ndarray:
     """
     Convert SCLK strings to ephemeris time.
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/scs2e_c.html
@@ -162,7 +161,7 @@ def scs2e_wrapper(sclk_str: Union[str, Collection[str]]) -> Union[float, np.ndar
 
 
 @ensure_spice(time_kernels_only=True)
-def sce2s_wrapper(et: Union[float, Collection[float], np.ndarray]) -> Union[str, np.ndarray]:
+def sce2s_wrapper(et: float | Collection[float] | np.ndarray) -> str | np.ndarray:
     """
     Convert ephemeris times to SCLK string
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sce2s_c.html

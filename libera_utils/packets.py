@@ -1,11 +1,10 @@
 """Module for reading packet data"""
-# Standard
 import logging
-# Installed
-from space_packet_parser import parser
+
 import numpy as np
 import numpy.lib.recfunctions as nprf
-# Local
+from space_packet_parser import parser
+
 from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)

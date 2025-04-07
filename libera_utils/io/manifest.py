@@ -1,21 +1,18 @@
 """Module for manifest file handling"""
-# Standard
 import json
 import logging
 import warnings
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from hashlib import md5
 from pathlib import Path
-from typing import Union, Optional, Any, List, Dict
+from typing import Any, Union
 
-# Installed
-from cloudpathlib import S3Path, AnyPath
-from pydantic import BaseModel, Field, ConfigDict, field_validator, field_serializer
+from cloudpathlib import AnyPath, S3Path
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 from ulid import ULID
 
-# Local
 from libera_utils.aws.constants import ManifestType
-from libera_utils.io.filenaming import ManifestFilename, AbstractValidFilename
+from libera_utils.io.filenaming import AbstractValidFilename, ManifestFilename
 from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)
@@ -26,14 +23,14 @@ class ManifestError(Exception):
     pass
 
 
-def calculate_checksum(file: Union[str, Path, S3Path]) -> str:
+def calculate_checksum(file: str | Path | S3Path) -> str:
     """Compute the checksum of the given file."""
     with smart_open(file, 'rb') as fh:
         checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
     return checksum_calculated
 
 
-def get_ulid_code(filename: Optional[Union[str, Path, S3Path, ManifestFilename]]) -> Optional[ULID]:
+def get_ulid_code(filename: str | Path | S3Path | ManifestFilename | None) -> ULID | None:
     """Get ULID code from filename."""
     if not filename:
         return None
@@ -53,26 +50,26 @@ class Manifest(BaseModel):
     manifest_type: ManifestType = Field(
         description="Either INPUT or OUTPUT."
     )
-    files: List[ManifestFileRecord] = Field(
+    files: list[ManifestFileRecord] = Field(
         default_factory=list,
         description="List of ManifestFileStructure."
     )
-    configuration: Dict[str, Any] = Field(
+    configuration: dict[str, Any] = Field(
         default_factory=dict,
         description="Freeform json-compatible dictionary of configuration items."
     )
-    filename: Optional[ManifestFilename] = Field(
+    filename: ManifestFilename | None = Field(
         default=None,
         description="Preset filename, optional."
     )
-    ulid_code: Optional[ULID] = Field(
+    ulid_code: ULID | None = Field(
         default_factory=lambda data: get_ulid_code(data.get('filename')),
         description="ULID code from input filename."
     )
 
     @field_validator("filename", mode="before")  # noqa  avoid type warning
     @classmethod
-    def transform_filename(cls, raw_filename: Optional[Union[str, ManifestFilename]]) -> Optional[ManifestFilename]:
+    def transform_filename(cls, raw_filename: str | ManifestFilename | None) -> ManifestFilename | None:
         """Convert raw filename to ManifestFilename class if necessary."""
         if raw_filename is None:
             return None
@@ -106,7 +103,7 @@ class Manifest(BaseModel):
     @classmethod
     def transform_files(
             cls,
-            raw_list: Optional[list[Union[dict, str, Path, S3Path, ManifestFileRecord]]]
+            raw_list: list[dict | str | Path | S3Path | ManifestFileRecord] | None
     ) -> list[ManifestFileRecord]:
         """Allow for the incoming files list to have varying types.
         Convert to a standardized list of ManifestFileStructure."""
@@ -135,7 +132,7 @@ class Manifest(BaseModel):
     @field_serializer('filename')
     def serialize_filename(
             self,
-            filename: Optional[Union[str, Path, S3Path, ManifestFilename]],
+            filename: str | Path | S3Path | ManifestFilename | None,
             _info
     ) -> str:
         """Custom serializer for the manifest filename."""
@@ -147,7 +144,7 @@ class Manifest(BaseModel):
     )
 
     @classmethod
-    def from_file(cls, filepath: Union[str, Path, S3Path]):
+    def from_file(cls, filepath: str | Path | S3Path):
         """Read a manifest file and return a Manifest object (factory method).
 
         Parameters
@@ -166,7 +163,7 @@ class Manifest(BaseModel):
         contents['ulid_code'] = get_ulid_code(filepath)
         return Manifest.model_validate(contents)
 
-    def add_files(self, *files: Union[str, Path, S3Path]):
+    def add_files(self, *files: str | Path | S3Path):
         """Add files to the manifest from filename
 
         Parameters
@@ -213,11 +210,11 @@ class Manifest(BaseModel):
         """Generate a valid manifest filename"""
         mfn = ManifestFilename.from_filename_parts(
             manifest_type=self.manifest_type,
-            ulid_code=ULID.from_datetime(datetime.now(timezone.utc))
+            ulid_code=ULID.from_datetime(datetime.now(UTC))
         )
         return mfn
 
-    def write(self, out_path: Union[str, Path, S3Path], filename: str = None) -> Union[Path, S3Path]:
+    def write(self, out_path: str | Path | S3Path, filename: str = None) -> Path | S3Path:
         """Write a manifest file from a Manifest object (self).
 
         Parameters

@@ -23,7 +23,7 @@
 - Add validation and serialization methods to the `DataProductIdentifier` and `ProcessingStepProductIdentifier` enums
 
 ## 2.4.4 (released)
-- Allow overriding the standard docker config.json file with a minimal file for ECR uploading to 
+- Allow overriding the standard docker config.json file with a minimal file for ECR uploading to
   prevent ECR upload permission failures from cached docker login credentials from CDK deployments
 
 ## 2.4.3 (released)

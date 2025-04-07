@@ -9,7 +9,7 @@ and a consistent API for common tasks required of all developers.
 
 Documentation site, including full API listing: [https://lasp-libera-sdc-libera-utils.readthedocs-hosted.com](https://lasp-libera-sdc-libera-utils.readthedocs-hosted.com)
 
-Additional documentation helpful for Level 2 Algorithm Developers is also available in the Libera SDC Developer Guide. 
+Additional documentation helpful for Level 2 Algorithm Developers is also available in the Libera SDC Developer Guide.
 Please contact the Libera SDC Team at LASP for access to the Developer Guide.
 
 ## Installation
@@ -18,6 +18,6 @@ Please contact the Libera SDC Team at LASP for access to the Developer Guide.
 pip install libera-utils
 ```
 
-Other suffixed versions such as release candidate versions 
-(version strings suffixed with `rc` followed by the candidate number, e.g. `1.2.3rc2`) 
+Other suffixed versions such as release candidate versions
+(version strings suffixed with `rc` followed by the candidate number, e.g. `1.2.3rc2`)
 may also be available but are likely to contain bugs.

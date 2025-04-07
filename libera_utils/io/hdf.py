@@ -1,5 +1,4 @@
 """Utils for HDF5 file handling"""
-# Installed
 import h5py as h5
 
 
@@ -20,7 +19,7 @@ def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = Fa
     : str
         Concatenated string of HDF5 contents
     """
-    if not isinstance(f, (h5.File, h5.Group)):
+    if not isinstance(f, h5.File | h5.Group):
         raise ValueError(f"Invalid input to h5dump. H5 object f must be a File or Group. Got {type(f)}")
     srep = []
 

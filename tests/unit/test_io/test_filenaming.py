@@ -1,16 +1,14 @@
 """Tests for filenaming module"""
-# Standard
-from types import SimpleNamespace
 import datetime as dt
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
-# Installed
-from cloudpathlib import S3Path
+
 import pytest
+from cloudpathlib import S3Path
 from ulid import ULID
 
 import libera_utils.aws.constants
-# Local
 from libera_utils.io import filenaming
 
 
@@ -20,10 +18,14 @@ from libera_utils.io import filenaming
         ('/some/fake/path/P1590006SOMESCIENCEAAA99030231459001.PDS', filenaming.L0Filename),
         (Path('/fake-path/P1590006SOMESCIENCEAAA99030231459001.PDS'), filenaming.L0Filename),
         ('s3://fake-bucket/P1590006SOMESCIENCEAAA99030231459001.PDS', filenaming.L0Filename),
-        ('/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc', filenaming.LiberaDataProductFilename),
-        ('/some/fake/path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc', filenaming.LiberaDataProductFilename),
-        ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp', filenaming.EphemerisKernelFilename),
-        ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc', filenaming.AttitudeKernelFilename)
+        ('/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
+         filenaming.LiberaDataProductFilename),
+        ('/some/fake/path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
+         filenaming.LiberaDataProductFilename),
+        ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp',
+         filenaming.EphemerisKernelFilename),
+        ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
+         filenaming.AttitudeKernelFilename)
     ]
 )
 def test_from_filename(filename, filename_type):
@@ -37,13 +39,17 @@ def test_from_filename(filename, filename_type):
         ('/ignore/this/P1590006SOMESCIENCEAAA99030231459001.PDS', 's3://my-bucket',
          S3Path('s3://my-bucket/PDS/0006/P1590006SOMESCIENCEAAA99030231459001.PDS')),
         ('/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc', '/absolute/local',
-         Path('/absolute/local/CAM/2027/01/02/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc')),
+         Path('/absolute/local/CAM/2027/01/02/'
+              'LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc')),
         ('LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc', '/absolute/local',
-         Path('/absolute/local/CLOUD-FRACTION/2027/01/02/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc')),
+         Path('/absolute/local/CLOUD-FRACTION/2027/01/02/'
+              'LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc')),
         ('ignore/relative/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp', '/absolute/local',
-         Path('/absolute/local/JPSS/2027/01/02/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp')),
+         Path('/absolute/local/JPSS/2027/01/02/'
+              'LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp')),
         ('LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc', '/absolute/local',
-         Path('/absolute/local/AZROT/2027/01/15/LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc')),
+         Path('/absolute/local/AZROT/2027/01/15/'
+              'LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc')),
         ('/ignore/this/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json', 's3://my-dropbox-bucket',
          S3Path('s3://my-dropbox-bucket/INPUT/2027/01/02/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json')),
 
@@ -137,8 +143,8 @@ def test_L0Filename_parts(filename, basepath, parts):
         '/some/fake/path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
         Path('/fake-path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc'),
         's3://fake-bucket/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
-        S3Path(
-            's3://fake-bucket/LIBERA_L2_UNFILTERED-RADIANCE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc'),
+        S3Path('s3://fake-bucket/'
+               'LIBERA_L2_UNFILTERED-RADIANCE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc'),
         '~/LIBERA_L2_TOA-FLUX_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
         'LIBERA_L2_SFC-FLUX_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
         'LIBERA_L2_SFC-FLUX_V3-14-159RC1_20270102T112233_20270102T122233_R27002112233.nc'  # Release candidate version
@@ -242,7 +248,7 @@ def test_LiberaDataProductFilename_parts(filename, basepath, parts):
 )
 def test_ManifestFilename(filename):
     """Test ManifestFilename"""
-    fn = filenaming.ManifestFilename(filename)
+    _ = filenaming.ManifestFilename(filename)
 
 
 @pytest.mark.parametrize(
@@ -372,7 +378,7 @@ def test_changing_path():
     p.path = p.path.name
     assert isinstance(p.path, Path)
     # Check that providing a bad value for a basepath doesn't pollute the instance's valid path
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
         p.path = '/bad/prefix' + p.path.name  # The missing / will make this fail regex validation
     assert p.path.name == 'LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.h5'
 
@@ -380,7 +386,7 @@ def test_changing_path():
 @mock.patch("libera_utils.io.filenaming.datetime")
 def test_get_current_revision_str(mock_datetime):
     """Test getting the current revision string for writing a new filename"""
-    mock_datetime.now.return_value = dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.timezone.utc)
+    mock_datetime.now.return_value = dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
     assert filenaming.get_current_revision_str() == 'R27002112233'
 
 
@@ -413,7 +419,7 @@ def test_working_with_mocked_s3_paths(create_mock_bucket):
         scid=987,
         first_apid=11,
         fill="FAKE",
-        created_time=dt.datetime.now(dt.timezone.utc),
+        created_time=dt.datetime.now(dt.UTC),
         numeric_id=1,
         file_number=1,
         extension="PDS"

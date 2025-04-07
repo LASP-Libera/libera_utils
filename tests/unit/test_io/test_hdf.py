@@ -1,8 +1,7 @@
 """Tests for hdf module"""
-# Installed
 import h5py as h5
 import pytest
-# Local
+
 from libera_utils.io import hdf
 
 
