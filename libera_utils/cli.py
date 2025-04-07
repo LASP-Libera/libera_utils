@@ -1,12 +1,10 @@
 """Module for the Libera SDC utilities CLI
 """
-# Standard
 import argparse
-# Local
+
 from libera_utils import kernel_maker
-from libera_utils.aws import ecr_upload, constants
+from libera_utils.aws import constants, ecr_upload, s3_utilities
 from libera_utils.aws import processing_step_function_trigger as psfn
-from libera_utils.aws import s3_utilities
 from libera_utils.version import version as libera_utils_version
 
 

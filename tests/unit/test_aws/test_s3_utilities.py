@@ -1,16 +1,14 @@
 """File for testing ECR upload module"""
-# Standard
 import argparse
-# Installed
-import pytest
-from unittest.mock import patch
 from pathlib import Path
-from cloudpathlib import S3Path, AnyPath
-# Local
-from libera_utils.io.smart_open import smart_copy_file
-from libera_utils.io import filenaming
+from unittest.mock import patch
+
+import pytest
+from cloudpathlib import AnyPath, S3Path
+
 from libera_utils.aws import s3_utilities
-from libera_utils.aws.constants import ProcessingStepIdentifier, LiberaAccountSuffix
+from libera_utils.aws.constants import LiberaAccountSuffix, ProcessingStepIdentifier
+from libera_utils.io import filenaming
 
 
 @pytest.mark.parametrize(

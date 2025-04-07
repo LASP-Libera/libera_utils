@@ -1,20 +1,20 @@
 """Modules for SPICE kernel creation, management, and usage"""
-# Standard
 import datetime
-from enum import Enum
 import functools
 import logging
 import os
-from pathlib import Path
 import re
-from typing import NamedTuple, Callable
 import time
-# Installed
-from cloudpathlib import S3Path
+from collections.abc import Callable
+from enum import Enum
+from pathlib import Path
+from typing import NamedTuple
+
 import requests
 import spiceypy as spice
+from cloudpathlib import S3Path
 from spiceypy.utils.exceptions import NotFoundError, SpiceyError
-# Local
+
 from libera_utils.config import config
 from libera_utils.io import caching, smart_open
 

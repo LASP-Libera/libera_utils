@@ -1,13 +1,12 @@
 """Tests for logutil module"""
-# Standard
-from copy import deepcopy
 import json
 import logging
 import logging.handlers
-from typing import Mapping
-# Installed
+from collections.abc import Mapping
+from copy import deepcopy
+
 import pytest
-# Local
+
 from libera_utils import logutil
 
 TEST_APP_PACKAGE_NAME = 'my_test_app'
@@ -161,7 +160,8 @@ def test_json_formatter_for_cloudwatch(caplog, cleanup_loggers, logged_value):
         for key, value in logged_value.items():  # Only check the keys that are in the logged value
             assert reconstituted_logged_value[key] == value
         # Assert that the keys are exactly what we expect: a union of original keys and added attributes
-        assert set(reconstituted_logged_value.keys()) == set(logged_value.keys()).union(set(added_attrs)).union({"asctime"})
+        assert (set(reconstituted_logged_value.keys()) ==
+                set(logged_value.keys()).union(set(added_attrs)).union({"asctime"}))
     else:
         assert reconstituted_logged_value['msg'] == logged_value
         assert set(reconstituted_logged_value.keys()) == set(added_attrs).union({'msg'}).union({"asctime"})

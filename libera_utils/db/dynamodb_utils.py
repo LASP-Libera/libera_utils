@@ -1,8 +1,7 @@
 """Module for database utilities"""
-# Standard
 import logging
-# Installed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from boto3 import resource as boto3_resource
 
 logger = logging.getLogger(__name__)
@@ -36,7 +35,7 @@ def create_ddb_metadata_file_item(filename: str,
 
 def add_archive_time_to_ddb_item(ddb_item: dict):
     """Add archive time to DynamoDB item"""
-    ddb_item.update({'archive-time': datetime.now(timezone.utc).isoformat()})
+    ddb_item.update({'archive-time': datetime.now(UTC).isoformat()})
     return ddb_item
 
 

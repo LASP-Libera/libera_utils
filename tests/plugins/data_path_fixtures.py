@@ -1,8 +1,7 @@
 """Pytest plugin module for test data paths"""
-# Standard
-from pathlib import Path
 import sys
-# Installed
+from pathlib import Path
+
 import pytest
 
 

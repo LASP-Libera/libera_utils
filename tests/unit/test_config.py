@@ -1,7 +1,6 @@
 """Tests for config module"""
-# Installed
 import pytest
-# Local
+
 from libera_utils.config import config
 
 

@@ -1,16 +1,15 @@
 """Tests for smart_open module"""
-# Standard
 import os
+import warnings
+from pathlib import Path
+
 import h5py as h5
 import numpy as np
-from pathlib import Path
-import warnings
-# Installed
-from cloudpathlib import S3Path, AnyPath
 import pytest
-# Local
-from libera_utils.io.smart_open import smart_open, is_gzip, is_s3, smart_copy_file
+from cloudpathlib import AnyPath, S3Path
+
 from libera_utils.aws.s3_utilities import s3_copy_file
+from libera_utils.io.smart_open import is_gzip, is_s3, smart_copy_file, smart_open
 
 
 @pytest.mark.parametrize(
@@ -183,7 +182,7 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
     # confirm file is deleted if optional parameter delete is set to True
     smart_copy_file((tmp_folder_path / "testtextfile.txt"),
                     wrapped_tmp_output_file, delete=True)
-    assert not os.path.isfile((tmp_folder_path / "testtextfile.txt"))
+    assert not os.path.isfile(tmp_folder_path / "testtextfile.txt")
 
 
 @pytest.mark.parametrize(
@@ -368,7 +367,7 @@ def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_buc
     # confirm file is deleted if optional parameter delete is set to True
     smart_copy_file(local_file_path, tmp_file_path)
     smart_copy_file(tmp_file_path, remote_file_path, delete=True)
-    assert not os.path.isfile((tmp_file_path / "testtextfile.txt"))
+    assert not os.path.isfile(tmp_file_path / "testtextfile.txt")
 
 
 @pytest.mark.parametrize(

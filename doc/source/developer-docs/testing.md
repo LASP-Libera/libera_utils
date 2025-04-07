@@ -10,25 +10,25 @@ Pytest configuration is stored in `pyproject.toml` under `[tools.pytest.ini_opti
 
 Tests are stored in the `tests` directory and are divided into
 `integration` and `unit` tests. Unit tests check for expected behavior of small pieces of the
-package (e.g. a single function). Integration tests check for "larger" behavior across wider swaths of the package, 
+package (e.g. a single function). Integration tests check for "larger" behavior across wider swaths of the package,
 testing that components function together cohesively. Integration test modules contain the pytest mark
-`pytestmark = pytest.mark.integration`. This allows you to selectively exclude running integration tests with 
+`pytestmark = pytest.mark.integration`. This allows you to selectively exclude running integration tests with
 ```
 pytest -m "not integration" tests
 ```
 
-Unit tests heavily utilize pytest parameterization in order to 
-run a single test against many sets of inputs and outputs without duplicating code (see 
+Unit tests heavily utilize pytest parameterization in order to
+run a single test against many sets of inputs and outputs without duplicating code (see
 [parameterize]
-(https://docs.pytest.org/en/stable/example/parametrize.html#set-marks-or-test-id-for-individual-parametrized-test)). 
+(https://docs.pytest.org/en/stable/example/parametrize.html#set-marks-or-test-id-for-individual-parametrized-test)).
 
 We also heavily utilize custom pytest [fixtures]
-(https://docs.pytest.org/en/stable/how-to/fixtures.html#requesting-fixtures), 
-defined in `tests/plugins`. These plugins are made available to 
-pytest in `conftest.py`, the main test configuration file for pytest. 
+(https://docs.pytest.org/en/stable/how-to/fixtures.html#requesting-fixtures),
+defined in `tests/plugins`. These plugins are made available to
+pytest in `conftest.py`, the main test configuration file for pytest.
 
-In order to better ensure test independence, we use `pytest-randomly` to randomize the order of tests. 
-The random seed used to set the order is printed at the beginning of a test run. You 
+In order to better ensure test independence, we use `pytest-randomly` to randomize the order of tests.
+The random seed used to set the order is printed at the beginning of a test run. You
 can re-run the tests with a specific random seed by running `pytest --randomly-seed=<seed>`.
 
 ## Generating Coverage and Test Reports
@@ -55,7 +55,7 @@ docker to rebuild the testing container image before running (e.g. if things hav
 
 ### Copying Test Report Artifacts from Docker
 
-When we run tests in Docker on Jenkins, we often want to copy and save Corbertura and JUnit test reports. Jenkins 
+When we run tests in Docker on Jenkins, we often want to copy and save Corbertura and JUnit test reports. Jenkins
 has facility for doing this easily with
 ```Groovy
 always {
@@ -63,7 +63,7 @@ always {
     cobertura coberturaReportFile: '**/*coverage.xml'
 }
 ```
-The challenge when running in Docker is to make these test artifacts available to Jenkins. By default these files 
+The challenge when running in Docker is to make these test artifacts available to Jenkins. By default these files
 exist only inside the Docker container so we must copy them out. Do this with
 ```shell
 docker-compose --exit-code-from tests up tests
@@ -72,94 +72,32 @@ docker-compose cp tests:/path/to/report.xml .
 
 
 ## Static Analysis
-NASA requirements document NPR7150.2C requires that we perform static analysis of our codebase to check for 
-common vulnerabilities and statically detectable code weaknesses and vulnerabilities (CWEs and CVEs). 
+NASA requirements document NPR7150.2C requires that we perform static analysis of our codebase to check for
+common vulnerabilities and statically detectable code weaknesses and vulnerabilities (CWEs and CVEs).
 
+We use the [Ruff](https://docs.astral.sh/ruff/#ruff) tool to perform a comprehensive static analysis of our code. Ruff includes configurations for
+pycodestyle, flake8, Bandit, and more. It is configured to run automatically as a pre-commit hook via the
+pre-commit tool.
 
-### Pylint for Code Style
-[Pylint](https://pylint.pycqa.org/en/latest/) is a powerful and highly configurable static analysis tool that 
-analyzes Python code for coding standards (e.g. PEP8), code smells, type errors, and violations of common 
-best practices. Together, these violations are common code weaknesses and we strive to eliminate them.
-
-To run pylint locally, run 
-
-```pylint libera_sdp```
-
-from the repo root. This will lint the `libera_sdp` directory and automatically pick up our `pylintrc` 
-configuration file.
-
-To run pylint inside Docker, run 
-
-```docker-compose up [--build] linting```
-
-This starts up the linting service described in `docker-compose.yml`, which runs pylint inside a 
-testing docker container.
-
-
-### Bandit for Automated Security Testing (AST)
-[Bandit](https://github.com/PyCQA/bandit) is a security vulnerability tester that analyzes Python code for common 
-weaknesses, including the "official" CWE set provided by the [MITRE Corp.](https://cwe.mitre.org/). 
-
-To run bandit locally, run 
-
-```bandit -r libera_sdp``` 
-
-from the repo root. This will recursively (`-r`) analyze the `libera_sdp` directory and report results.
-
-To run bandit inside Docker, run 
-
-```docker-compose up [--build] ast```
-
-This starts up the `ast` service described in `docker-compose.yml`, which runs bandit inside a testing docker container.
-
-
-### Static Analysis pre-commit Git Hook
-
-The static analysis checking can be annoying when you only catch it after you have committed, rebased, and put up a PR.
-To alleviate that suffering, here is a pre-commit git hook that will execute before every commit and refuse to 
-continue until you have fixed your static analysis problems.
-
+To manually run all ruff checks, run
 ```shell
-#!/bin/sh
+ruff check
+```
 
-# .git/hooks/pre-commit
+Configuration for ruff is declared in `pyproject.toml`.
 
-# Redirect output to stderr.
-exec 1>&2
 
-# Run pylint.
-echo "Running pylint..."
-files_to_check=$(git diff --name-only --cached --diff-filter=AM libera_utils | grep '.py$')
-if [ -n "$files_to_check" ]; then
-  pylint $files_to_check
-else
-  echo "No .py file changes to lint"
-fi
+## Pre-commit Hooks
 
-# Capture the output of pylint.
-pylint_exit_code=$?
+To ensure code quality with minimal effort on the part of developers, we use pre-commit to run automatic linting
+before commits are allowed. Configuration for pre-commit is in `.pre-commit-config.yaml`.
 
-# If pylint returns a non-zero exit code, cancel the commit.
-if [ $pylint_exit_code -ne 0 ]; then
-  echo "Pylint check failed, aborting commit..."
-  exit 1
-fi
+To install pre-commit, run:
+```shell
+pre-commit install
+```
 
-# Otherwise, proceed with the commit.
-echo "Pylint check passed, proceeding with commit..."
-
-echo "Running bandit..."
-bandit -r --quiet libera_utils
-bandit_exit_code=$?
-
-# If Bandit returned a non-zero exit code, cancel the commit.
-if [ $bandit_exit_code -ne 0 ]; then
-    echo "Bandit check failed, aborting commit..."
-    exit 1
-fi
-
-# Otherwise, proceed
-echo "Bandit AST passed, proceeding with commit..."
-
-exit 0
+To run all hooks on all files manually, run:
+```shell
+pre-commit run --all-files
 ```

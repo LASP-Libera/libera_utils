@@ -1,14 +1,14 @@
 """Tests for manifest module"""
-# Standard
 import json
 import sys
 from datetime import datetime, timedelta
 from hashlib import md5
 from pathlib import Path
-# Installed
+
 import pytest
 from cloudpathlib import S3Path
-# Local
+from pydantic import ValidationError
+
 from libera_utils.aws.constants import ManifestType
 from libera_utils.io.manifest import Manifest, ManifestFileRecord
 from libera_utils.io.smart_open import smart_open
@@ -35,7 +35,7 @@ def test_manifest_add_relative_path_file_error():
     m = Manifest(
         manifest_type=ManifestType.INPUT,
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         m.add_files(Path("relative/a_file.txt"))
 
 
@@ -109,7 +109,7 @@ def test_manifest_add_desired_time_range(test_json_manifest):
 
 def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):
     """Test loading a file from S3"""
-    file_key = f"s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
+    file_key = "s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
     s3_path = write_file_to_s3(test_json_manifest, file_key)
     m = Manifest.from_file(s3_path)
     assert m.manifest_type == ManifestType.INPUT
@@ -163,7 +163,7 @@ def test_validate_checksums(test_json_manifest, caplog):
     m.files[0].filename = test_json_manifest.absolute()
     m.files[1].filename = test_json_manifest.absolute()
     with caplog.at_level("ERROR"):
-        with pytest.raises(ValueError):  # Fake values don't validate
+        with pytest.raises(ValueError, match="Files failed checksum validation"):  # Fake values don't validate
             m.validate_checksums()
         assert f"Checksum validation for {test_json_manifest.absolute()} failed." in caplog.records[0].message
 
@@ -210,7 +210,7 @@ def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest,
 
 
 @pytest.mark.parametrize(
-    'man_path, man_files, man_type, man_config',
+    ("man_path", "man_files", "man_type", "man_config"),
     [('subfolder/LIBERA_INPUT_MANIFEST_201GDHWG4R0W8KXWY0KRDD6BZTT.json',
       [{"filename": "relative/file.txt", "checksum": "fakesum"}], ManifestType.OUTPUT, None),
      ('subfolder/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json', None, ManifestType.OUTPUT, ["config"])
@@ -218,7 +218,7 @@ def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest,
 )
 def test_manifest_validation_failure(man_path, man_files, man_type, man_config):
     """Test manifest validation method for correct failure cases"""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError, match=""):
         _ = Manifest(
             manifest_type=man_type,
             files=man_files,
@@ -228,10 +228,14 @@ def test_manifest_validation_failure(man_path, man_files, man_type, man_config):
 
 
 @pytest.mark.parametrize(
-    'man_path, man_files, man_type, man_config',
-    [(None, [{"filename": "s3://abs/file.txt", "checksum": "fakesum"}], ManifestType.OUTPUT, {"data": "description"}),
-    ('subfolder/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json', None, ManifestType.OUTPUT, {"data": "description"}),
-    (None, None, ManifestType.OUTPUT, {"data": "description"})]
+    ("man_path", "man_files", "man_type", "man_config"),
+    [
+        (None, [{"filename": "s3://abs/file.txt", "checksum": "fakesum"}],
+         ManifestType.OUTPUT, {"data": "description"}),
+        ('subfolder/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json', None,
+         ManifestType.OUTPUT, {"data": "description"}),
+        (None, None,
+         ManifestType.OUTPUT, {"data": "description"})]
 )
 def test_manifest_validation_success(man_path, man_files, man_type, man_config):
     """Test manifest validation method for correct success cases"""

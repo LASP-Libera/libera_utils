@@ -57,11 +57,4 @@ services:
     build:
       context: .
       target: libera-utils-test
-    entrypoint: ["pylint", "libera_utils"]
-
-  ast:
-    image: libera-utils-test:latest
-    build:
-      context: .
-      target: libera-utils-test
-    entrypoint: [ "bandit", "-r", "libera_utils" ]
+    entrypoint: ["ruff", "check"]

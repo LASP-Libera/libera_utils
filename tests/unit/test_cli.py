@@ -1,12 +1,11 @@
 """Tests for cli module"""
-# Installed
 import argparse
+
 import pytest
-# Local
+
 from libera_utils import cli, kernel_maker
-from libera_utils.aws import ecr_upload
+from libera_utils.aws import ecr_upload, s3_utilities
 from libera_utils.aws import processing_step_function_trigger as psfn
-from libera_utils.aws import s3_utilities
 
 
 @pytest.mark.parametrize(

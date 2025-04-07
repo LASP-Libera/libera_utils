@@ -1,13 +1,12 @@
 """Configuration reader. To modify the configuration, see file: config.json"""
-# Standard
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import string
 import sys
 import warnings
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

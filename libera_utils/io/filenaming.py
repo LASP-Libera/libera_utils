@@ -1,26 +1,25 @@
 """Module for file naming utilities"""
-# Standard
+import re
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import metadata
-import re
-from types import SimpleNamespace
-from typing import Union, Optional, Any, TypeVar
 from pathlib import Path
-# Installed
-from cloudpathlib import AnyPath, S3Path
+from types import SimpleNamespace
+from typing import Any, TypeVar
+
 import ulid
-# Local
+from cloudpathlib import AnyPath, S3Path
+
 from libera_utils.aws.constants import (
+    CkObject,
+    DataProductIdentifier,
+    LiberaApid,
     ManifestType,
     ProcessingStepIdentifier,
-    DataProductIdentifier,
-    CkObject,
     SpkObject,
-    LiberaApid
 )
-from libera_utils.time import PRINTABLE_TS_FORMAT, NUMERIC_DOY_TS_FORMAT
+from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
@@ -94,6 +93,7 @@ class ProductName(StrEnum):
 # used by from_file_path result typehint
 AVF = TypeVar('AVF', bound='AbstractValidFilename')
 
+
 class AbstractValidFilename(ABC):
     """Composition of a CloudPath/Path instance with some methods to perform
     regex validation on filenames
@@ -129,16 +129,16 @@ class AbstractValidFilename(ABC):
                          "Are you sure this is a valid Libera file name?")
 
     @property
-    def path(self) -> Union[Path, S3Path]:
+    def path(self) -> Path | S3Path:
         """Property containing the file path"""
         return self._path
 
     @path.setter
-    def path(self, new_path: Union[str, Path, S3Path]):
+    def path(self, new_path: str | Path | S3Path):
         if isinstance(new_path, str):
             new_path = AnyPath(new_path)
         self.regex_match(new_path)  # validates against regex pattern
-        self._path: Union[Path, S3Path] = AnyPath(new_path)
+        self._path: Path | S3Path = AnyPath(new_path)
 
     @property
     def filename_parts(self):
@@ -167,7 +167,7 @@ class AbstractValidFilename(ABC):
     @abstractmethod
     def from_filename_parts(cls,
                             *args: Any,  # Required filename parts as defined by child class
-                            basepath: Union[str, Path, S3Path] = None,
+                            basepath: str | Path | S3Path = None,
                             **kwargs: Any  # Optional filename parts or options as defined by child class
                             ):
         """Abstract method that must be implemented to provide hinting for required parts"""
@@ -176,7 +176,7 @@ class AbstractValidFilename(ABC):
     @classmethod
     def _from_filename_parts(cls,
                              *,  # No positional arguments
-                             basepath: Union[str, Path, S3Path] = None,
+                             basepath: str | Path | S3Path = None,
                              **parts: Any):
         """Create instance from filename parts.
 
@@ -217,7 +217,7 @@ class AbstractValidFilename(ABC):
         : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
-        d = self.regex_match(self.path)
+        _ = self.regex_match(self.path)
         # Do stuff to parse the elements of d into a SimpleNamespace
         raise NotImplementedError()
 
@@ -245,7 +245,7 @@ class AbstractValidFilename(ABC):
         applicable_date = datetime.date(t_mean)
         return applicable_date
 
-    def regex_match(self, path: Union[str, Path, S3Path]):
+    def regex_match(self, path: str | Path | S3Path):
         """Parse and validate a given path against class-attribute defined regex
 
         Returns
@@ -259,7 +259,7 @@ class AbstractValidFilename(ABC):
             raise ValueError(f"Proposed path {path} failed validation against regex pattern {self._regex}")
         return match.groupdict()
 
-    def generate_prefixed_path(self, parent_path: Union[str, Path, S3Path]) -> Union[Path, S3Path]:
+    def generate_prefixed_path(self, parent_path: str | Path | S3Path) -> Path | S3Path:
         """Generates an absolute path of the form {parent_path}/{prefix_structure}/{file_basename}
         The parent_path can be an S3 bucket or an absolute local filepath (must start with /)
 
@@ -336,8 +336,8 @@ class L0Filename(AbstractValidFilename):
                             numeric_id: int,
                             file_number: int,
                             extension: str,
-                            signal: Optional[str] = None,
-                            basepath: Optional[Union[str, Path, S3Path]] = None):
+                            signal: str | None = None,
+                            basepath: str | Path | S3Path | None = None):
         """Create instance from filename parts
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -392,7 +392,7 @@ class L0Filename(AbstractValidFilename):
                                numeric_id: int,
                                file_number: int,
                                extension: str,
-                               signal: Optional[str] = None):
+                               signal: str | None = None):
         """Construct a path from filename parts
 
         Parameters
@@ -487,7 +487,7 @@ class LiberaDataProductFilename(AbstractValidFilename):
                             utc_end: datetime,
                             revision: datetime,
                             extension: str = 'nc',
-                            basepath: Optional[Union[str, Path, S3Path]] = None):
+                            basepath: str | Path | S3Path | None = None):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -619,7 +619,7 @@ class ManifestFilename(AbstractValidFilename):
     def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
                             manifest_type: ManifestType,
                             ulid_code: ulid.ULID,
-                            basepath: Union[str, Path, S3Path] = None):
+                            basepath: str | Path | S3Path = None):
         """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -712,7 +712,7 @@ class EphemerisKernelFilename(AbstractValidFilename):
                             utc_start: datetime,
                             utc_end: datetime,
                             revision: datetime,
-                            basepath: Optional[Union[str, Path, S3Path]] = None):
+                            basepath: str | Path | S3Path | None = None):
         """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -829,7 +829,7 @@ class AttitudeKernelFilename(AbstractValidFilename):
                             utc_start: datetime,
                             utc_end: datetime,
                             revision: datetime,
-                            basepath: Optional[Union[str, Path, S3Path]] = None):
+                            basepath: str | Path | S3Path | None = None):
         """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -919,7 +919,7 @@ def get_current_revision_str() -> str:
     : str
         Current (now) revision string.
     """
-    return datetime.now(timezone.utc).strftime(REVISION_TS_FORMAT)
+    return datetime.now(UTC).strftime(REVISION_TS_FORMAT)
 
 
 def format_semantic_version(semantic_version: str) -> str:

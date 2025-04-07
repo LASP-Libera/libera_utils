@@ -1,10 +1,10 @@
 """Pytest plugin module for SPICE-related fixtures"""
-# Installed
+import tempfile
 from pathlib import Path
+
 import pytest
 import spiceypy as spice
-import tempfile
-# Local
+
 from libera_utils.config import config
 
 

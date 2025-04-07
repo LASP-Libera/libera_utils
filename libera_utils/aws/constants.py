@@ -1,7 +1,5 @@
 """AWS ECR Repository/Algorithm names"""
-# Standard
 from enum import Enum, StrEnum
-from typing import Optional, Union
 
 
 class ManifestType(StrEnum):
@@ -62,7 +60,7 @@ class DataProductIdentifier(StrEnum):
     anc_adm = "anc-adm"
 
     @classmethod
-    def validate(cls, product_name: str) -> tuple["DataProductIdentifier", Optional[int]]:
+    def validate(cls, product_name: str) -> tuple["DataProductIdentifier", int | None]:
         """Validate a product name string used by the DAG or the processing orchestration system.
 
         If successful, returns a tuple containing the DataProductIdentifier and the chunk_number,
@@ -80,7 +78,7 @@ class DataProductIdentifier(StrEnum):
                 pass
         return DataProductIdentifier(product_name), None
 
-    def dump(self, chunk_number: Optional[int] = None) -> str:
+    def dump(self, chunk_number: int | None = None) -> str:
         """Convert the DataProductIdentifier to a string suitable for matching
         with a DAG key or in the processing orchestration system.
 
@@ -118,7 +116,7 @@ class ProcessingStepIdentifier(StrEnum):
     cal_cam = 'cal-cam'
 
     @property
-    def ecr_name(self) -> Union[str, None]:
+    def ecr_name(self) -> str | None:
         """Get the manually-configured ECR name for this processing step
 
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
@@ -131,7 +129,7 @@ class ProcessingStepIdentifier(StrEnum):
         return f"{self}-docker-repo"
 
     @classmethod
-    def validate(cls, processing_step: str) -> tuple["ProcessingStepIdentifier", Optional[int]]:
+    def validate(cls, processing_step: str) -> tuple["ProcessingStepIdentifier", int | None]:
         """Validate a processing step string used by the DAG or the orchestration system.
 
         If successful, returns a tuple containing the ProcessingStepIdentifier and the chunk_number,
@@ -150,7 +148,7 @@ class ProcessingStepIdentifier(StrEnum):
         return ProcessingStepIdentifier(processing_step), None
 
     def get_archive_bucket_name(self,
-                                account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> Union[str, None]:
+                                account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> str | None:
         """Gets the archive bucket name for this processing step.
 
         Buckets are named according to the level of data they are storing and which account they are in. This is
@@ -180,7 +178,7 @@ class ProcessingStepIdentifier(StrEnum):
             case _:
                 raise ValueError(f"Unknown processing step {self.value}")
 
-    def dump(self, chunk_number: Optional[int] = None) -> str:
+    def dump(self, chunk_number: int | None = None) -> str:
         """Convert the ProcessingStepIdentifier to a string suitable for matching
         with a DAG key or in the processing orchestration system.
 

@@ -1,15 +1,12 @@
 """Tests for kernels module"""
-# Standard
 import logging
-import unittest
-from unittest import mock, TestCase
-from unittest.mock import patch
-import pytest
-# Installed
+from unittest import mock
+
 import numpy as np
-import responses
+import pytest
 import requests
-# Local
+import responses
+
 import libera_utils.kernel_maker
 from libera_utils import spice_utils
 from libera_utils.config import config
@@ -22,7 +19,7 @@ def test_find_most_recent_naif_kernel(test_data_path):
     test_index_url = 'https://fake-naif-page/'
 
     # Mock the response for the index page with the saved html
-    with open(test_data_path / 'naif_pck_index.html', 'r') as fh:
+    with open(test_data_path / 'naif_pck_index.html') as fh:
         responses.add(
             responses.GET, test_index_url,
             body=fh.read(), status=200,
@@ -43,7 +40,7 @@ def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
     cache = spice_utils.KernelFileCache(full_file_url,
                                         fallback_kernel=spice_test_data_path / test_kernel_filename)
 
-    with open(test_data_path / 'naif_pck_index.html', 'r') as fh:
+    with open(test_data_path / 'naif_pck_index.html') as fh:
         responses.add(
             responses.GET, 'https://fake-naif-page/',
             body=fh.read(), status=200,
@@ -116,7 +113,7 @@ def test_ls_kernel_coverage(furnish_test_jpss_ck, furnish_test_jpss_spk, furnish
     spice_utils.ls_kernel_coverage('CK', True)
     spice_utils.ls_kernel_coverage('SPK', True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Invalid kernel_type argument to ls_kernel_coverage"):
         spice_utils.ls_kernel_coverage('FOO', True)
 
 
@@ -167,7 +164,7 @@ def test_write_kernel_setup_file(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ["mock_responses", "expectation"],
+    ("mock_responses", "expectation"),
     [
         ([
              responses.Response(method="GET", url="https://fake-naif-page/",
@@ -204,7 +201,7 @@ def test_find_most_recent_naif_kernel_timeout_loop(mock_responses, expectation, 
 
     if isinstance(expectation, Exception):
         with pytest.raises(requests.RequestException):
-            recent_kernel = spice_utils.find_most_recent_naif_kernel("https://fake-naif-page",
+            _ = spice_utils.find_most_recent_naif_kernel("https://fake-naif-page",
                                                                      "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc")
     else:
         success = spice_utils.find_most_recent_naif_kernel("https://fake-naif-page",
@@ -213,7 +210,7 @@ def test_find_most_recent_naif_kernel_timeout_loop(mock_responses, expectation, 
 
 
 @pytest.mark.parametrize(
-    ["mock_responses", "expectation"],
+    ("mock_responses", "expectation"),
     [
         ([
              responses.Response(method="GET", url="https://fake-naif-page/earth_000101_211220_210926.bpc",
@@ -256,7 +253,7 @@ def test_download_failure(mock_responses, expectation, spice_test_data_path, tes
         with pytest.raises(expectation.__class__):
             cache.download_kernel(full_file_url, allowed_attempts=3)
     else:
-        success = cache.download_kernel(full_file_url, allowed_attempts=3)
+        _ = cache.download_kernel(full_file_url, allowed_attempts=3)
 
     for mock_response in mock_responses:
         assert mock_response.call_count == 1

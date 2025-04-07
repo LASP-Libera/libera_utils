@@ -1,10 +1,9 @@
 """Module for performing geolocation tasks"""
-# Standard
 import logging
-# Installed
+
 import numpy as np
 import spiceypy as spice
-# Local
+
 from libera_utils import spice_utils
 
 logger = logging.getLogger(__name__)

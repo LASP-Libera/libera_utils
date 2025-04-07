@@ -1,8 +1,9 @@
 """Tests for time module"""
+from collections.abc import Iterable
+from datetime import datetime
+
 import numpy as np
 import pytest
-from datetime import datetime
-from typing import Iterable
 
 from libera_utils import time
 
@@ -10,7 +11,7 @@ from libera_utils import time
 # TODO: Prevent these tests from retrieving their LSK from NAIF by
 #  providing a mocked metakernel and asserting that it gets furnished by checking numbers of calls
 @pytest.mark.parametrize(
-    "et, expected",
+    ("et", "expected"),
     [(0, datetime.strptime('2000-01-01T11:58:55.816073', '%Y-%m-%dT%H:%M:%S.%f')),
      (378651667, datetime.strptime('2012-01-01T01:00:00.816089', '%Y-%m-%dT%H:%M:%S.%f')),
      ([378651667, 378651668], [datetime.strptime('2012-01-01T01:00:00.816089', '%Y-%m-%dT%H:%M:%S.%f'),
@@ -22,7 +23,7 @@ def test_et_2_datetime(et, expected):
 
 
 @pytest.mark.parametrize(
-    "et, fmt, expected",
+    ("et", "fmt", "expected"),
     [(0, '%Y%m%dt%H%M%S', '20000101t115855'),
      (378651667, '%Y%m%dt%H%M%S.%f', '20120101t010000.816089'),
      ([378651667, 378651668], '%Y/%j %b %d %H:%M:%S', ['2012/001 Jan 01 01:00:00', '2012/001 Jan 01 01:00:01'])]

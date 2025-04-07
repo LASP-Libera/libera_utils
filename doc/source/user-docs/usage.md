@@ -26,9 +26,9 @@ subcommands:
 ```
 
 ### Sub-Command `ecr-upload`
-This is a tool to upload a docker image to AWS ECR. The image name and tag identify the local docker image while 
-the --ecr-image-tags option specifies the tags to apply to the image in the ECR (remote tags). If `--ecr-image-tags` 
-is not provided, only the `latest` tag is applied by default. If `--ecr-image-tags` is specified, you must include 
+This is a tool to upload a docker image to AWS ECR. The image name and tag identify the local docker image while
+the --ecr-image-tags option specifies the tags to apply to the image in the ECR (remote tags). If `--ecr-image-tags`
+is not provided, only the `latest` tag is applied by default. If `--ecr-image-tags` is specified, you must include
 `latest` explicitly.
 ```shell
 usage: libera-utils ecr-upload [-h] [--ecr-image-tags ECR_IMAGE_TAGS [ECR_IMAGE_TAGS ...]] [--ignore-docker-config] image_name image_tag algorithm_name
@@ -36,7 +36,7 @@ usage: libera-utils ecr-upload [-h] [--ecr-image-tags ECR_IMAGE_TAGS [ECR_IMAGE_
 positional arguments:
   image_name            Image name of image to upload (image-name:image-tag)
   image_tag             Image tag of image to upload (image-name:image-tag)
-  algorithm_name        Algorithm name that matches an ECR repo name, inputs to names: 
+  algorithm_name        Algorithm name that matches an ECR repo name, inputs to names:
                         ['l2-cloud-fraction', 'l2-ssw-toa', 'libera-adms', 'l2-ssw-surface-flux', 'l2-far-ir-toa-flux', 'l1c-unfiltered',
                         'spice-azel', 'spice-jpss', 'l1b-rad', 'l1b-cam']
 
@@ -49,7 +49,7 @@ options:
                         Ignore the standard docker config.json to bypass the credential store
 ```
 
-Example usage: 
+Example usage:
 ```shell
 libera-utils ecr-upload recently-built-ssw-sfc-flux latest l2-ssw-surface-flux --ecr-image-tags latest --ignore-docker-config
 ```

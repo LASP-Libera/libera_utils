@@ -239,9 +239,9 @@ code but ignore debug messages from dependency code (AWS boto APIs in particular
 
 ## Fully Customized Logging
 
-If you want complete control over your logging configuration, you can use our provided `configure_static_logging` 
-function, which reads a YAML configuration file that represents a Python logging configuration. This is a completely static 
-configuration and should be supplied as part of your processing algorithm application code. 
+If you want complete control over your logging configuration, you can use our provided `configure_static_logging`
+function, which reads a YAML configuration file that represents a Python logging configuration. This is a completely static
+configuration and should be supplied as part of your processing algorithm application code.
 
 ```python
 """Example of configuring logging with static config file"""
@@ -264,11 +264,11 @@ version: 1
 disable_existing_loggers: False
 formatters:
     json:
-        format: '{"time": "%(asctime)s", 
-                  "level": "%(levelname)s", 
-                  "module": "%(filename)s", 
-                  "function": "%(funcName)s", 
-                  "line": %(lineno)d, 
+        format: '{"time": "%(asctime)s",
+                  "level": "%(levelname)s",
+                  "module": "%(filename)s",
+                  "function": "%(funcName)s",
+                  "line": %(lineno)d,
                   "message": "%(message)s"}'
     plaintext:
         format: "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"

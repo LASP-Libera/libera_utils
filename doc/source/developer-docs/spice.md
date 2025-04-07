@@ -18,7 +18,7 @@ Contains reference frame definitions for JPSS and Libera.
 ### Spacecraft Clock Kernel (SCLK)
 e.g. `jpss_sclk_v01.tsc`
 
-Contains specification of the spacecraft clock on JPSS. 
+Contains specification of the spacecraft clock on JPSS.
 
 ### Instrument Kernel (IK)
 e.g. `libera_cam_ik_v01.ti`, `libera_rad_ik_v01.ti`
@@ -27,7 +27,7 @@ Contains geometry specification data of the Libera instruments.
 
 
 ## Dynamic Kernels Generated at Libera SDC
-These kernels are binary generated kernels. They are ancillary data products and are created 
+These kernels are binary generated kernels. They are ancillary data products and are created
 as part of pipeline processing.
 
 
@@ -56,7 +56,7 @@ Contains attitude data for the Libera Elevation Scan mechanism.
 These kernels are generated at NAIF. We download them as needed using the `KernelFileCache` class,
 which is configured with a NAIF index page URL and a regex string that finds the proper download URL
 on the index page. The downloaded file is put in a cache so the download only occurs after the cached
-data is of a specified age. If we want to effectively cache some kernels indefinitely, we can put 
+data is of a specified age. If we want to effectively cache some kernels indefinitely, we can put
 them in an S3 bucket and retrieve them from there instead of from the NAIF website.
 
 
@@ -93,6 +93,6 @@ Contains orientation data and other planetary constants for planetary bodies.
 
 # Libraries Used for Kernel Handling
 
-We use [Curryer](https://github.com/lasp/curryer) for kernel generation and 
+We use [Curryer](https://github.com/lasp/curryer) for kernel generation and
 [SpiceyPy](https://spiceypy.readthedocs.io/en/stable/) for generic kernel handling and calls to CSPICE
 (Curryer also uses SpiceyPy internally).

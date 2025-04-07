@@ -1,15 +1,14 @@
 """Plugin module for mocking AWS resources"""
-# Standard
-import string
 import json
-from pathlib import Path
 import random
-# Installed
+import string
+from pathlib import Path
+
 import boto3
-from cloudpathlib import S3Path, S3Client
-from moto import mock_aws
 import pytest
-# Local
+from cloudpathlib import S3Client, S3Path
+from moto import mock_aws
+
 from libera_utils.config import config
 
 
@@ -91,7 +90,7 @@ def create_mock_bucket(mock_s3_context):
                   f" file as a previous test due to the behavior of cloudpathlib S3Path objects.")
         return bucket
 
-    yield _create_bucket
+    return _create_bucket
 
 
 @pytest.fixture
@@ -192,7 +191,7 @@ def make_step_function(mock_step_function, monkeypatch_session):
         )
         return state_machine
 
-    yield _make_step_function
+    return _make_step_function
 
 
 @pytest.fixture

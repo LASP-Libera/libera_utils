@@ -1,64 +1,92 @@
-[tool.poetry]
+[project]
 name = "libera_utils"
 version = "2.5.2"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
-    "Stephane Beland <stephane.beland@lasp.colorado.edu>",
-    "Kim Kokkonen <kim.kokkonen@lasp.colorado.edu>",
-    "Gavin Medley <gavin.medley@lasp.colorado.edu>",
-    "Laura Sandoval <laura.sandoval@lasp.colorado.edu>",
-    "Matt Watwood <matt.watwood@lasp.colorado.edu>"
+    { name = "Stephane Beland", email = "stephane.beland@lasp.colorado.edu" },
+    { name = "Kim Kokkonen", email = "kim.kokkonen@lasp.colorado.edu" },
+    { name = "Gavin Medley", email = "gavin.medley@lasp.colorado.edu" },
+    { name = "Laura Sandoval", email = "laura.sandoval@lasp.colorado.edu" },
+    { name = "Matt Watwood", email = "matt.watwood@lasp.colorado.edu" }
 ]
-maintainers = ["Gavin Medley <gavin.medley@lasp.colorado.edu>"]
-license = "BSD-3-Clause"
+maintainers = [
+    { name = "Gavin Medley", email = "gavin.medley@lasp.colorado.edu" },
+    { name = "Matt Watwood", email = "matt.watwood@lasp.colorado.edu" }
+]
+license = { text = "BSD-3-Clause" }
 readme = "README.md"
-include = ["LICENSE.txt", "README.md"]
+requires-python = ">=3.11,<4"
+keywords = [
+    "libera",
+    "earth science",
+    "radiation budget",
+    "lasp",
+    "university of colorado"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: BSD License"
+]
+# These are the dependencies used in the package metadata when building the project
+dependencies = [
+    "cloudpathlib[s3]>=0.14.0,<1.0",
+    "h5netcdf>=1.0.0",
+    "h5py>=3.3",
+    "numpy>=1.21",  # Numpy 2.0 is up for release very soon
+    "pydantic>2.0.3",
+    "requests>=2.27.0,<3.0",
+    "setuptools>=69.0.0",
+    "space-packet-parser==4.1.1",
+    "spiceypy>=5.0.0",
+    "urllib3<2.0",  # This pin speeds up solving boto dependencies, which require urllib3<2.0
+    "watchtower>=3.0.0,<4.0",
+    "xarray>=2023.1.0",
+    "botocore",
+    "docker>=7.1.0,<8",
+    "importlib-metadata>=4.8.1,<5",
+    "python-ulid>=2.4.0,<3",
+    "pyyaml>=6.0.2,<7",
+]
 
-# Reference for dependency specifications:
-# https://python-poetry.org/docs/dependency-specification/
-# Note on caret notation: ^1.2.3 is equivalent to >=1.2.3,<2.0.0 (prevents major version updates)
+[project.urls]
+documentation = "https://libera-utils.readthedocs.io"
 
-[tool.poetry.dependencies]
-# Keep these "as loose as practical" to allow maximum compatibility with others' environments
-python = ">=3.9,<4"
-cloudpathlib = {extras = ["s3"], version = ">=0.14.0,<1.0"}
-h5netcdf = ">=1.0.0"
-h5py = ">=3.3"
-numpy = ">=1.21"  # Numpy 2.0 is up for release very soon
-pydantic = ">2.0.3"
-requests = ">=2.27.0,<3.0"
-setuptools = ">=69.0.0"
-space-packet-parser = "4.1.1"
-spiceypy = ">=5.0.0"
-urllib3 = "<2.0"  # This pin speeds up solving boto dependencies, which require urllib3<2.0
-watchtower = ">=3.0.0,<4.0"
-xarray = ">=2023.1.0"
-botocore = "*"
-docker = "^7.1.0"
-importlib-metadata = "^4.8.1"
-python-ulid = "^2.4.0"
-pyyaml = "^6.0.2"
+[project.scripts]
+libera-utils = 'libera_utils.cli:main'
+
+[tool.poetry]
+packages = [
+    { include = "libera_utils" }
+]
+include = [
+    "LICENSE.txt",
+    "README.md"
+]
 
 [tool.poetry.group.dev.dependencies]
 # These specs are totally open because they are only needed for developers
 bandit = "*"
 moto = {extras = ["s3"], version = "*"}
+pre-commit = "*"
 pytest-cov = "*"
-pylint = "*"
 pytest-randomly = "*"
-responses = "*"
 pytest-subprocess = "*"
+responses = "*"
+ruff = "*"
 
 [tool.poetry.group.docgen.dependencies]
 # These are listed as a group rather than an extra because no end user will need them
 # The specs are totally open because no user will need them
 myst-parser = "*"  # Parses markdown for sphinx
 numpydoc = "*"  # Parses Numpy style docstrings
-sphinx = "*"
 pydata-sphinx-theme = "*"
-
-[tool.poetry.scripts]
-libera-utils = 'libera_utils.cli:main'
+sphinx = "*"
 
 [tool.pytest.ini_options]
 markers = [
@@ -71,5 +99,28 @@ minversion = 6.0
 xfail_strict = true
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.1"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 120
+extend-include = [
+    "libera_utils/**/*.py",
+    "tests/**/*.py"
+]
+extend-exclude = [
+    "tests/test_data/**",
+    "libera_utils/data/**"
+]
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort import sorting
+    "S",  # flake8-bandit security
+    "PT",  # flake8-pytest-style
+    "UP"  # pyupgrade syntax upgrader
+]
+per-file-ignores = { "tests/*" = ["S"] }

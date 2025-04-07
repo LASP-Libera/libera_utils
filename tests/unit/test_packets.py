@@ -1,9 +1,7 @@
 """Tests for libera_utils.io.packets module"""
-# Standard
 import numpy as np
-# Installed
 from space_packet_parser import parser
-# Local
+
 from libera_utils import packets as libera_packets
 
 

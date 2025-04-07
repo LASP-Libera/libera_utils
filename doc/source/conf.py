@@ -5,10 +5,9 @@ list see the documentation:
 https://www.sphinx-doc.org/en/master/usage/configuration.html
 """
 
+import importlib.metadata
 import os
 import sys
-import importlib.metadata
-
 
 # -- Path setup --------------------------------------------------------------
 # If extensions (or modules to document with autodoc) are in another directory,
@@ -33,7 +32,7 @@ def skip_module(app, what, name, obj, skip, options):
             return True
 
         # Skip this member if it's part of an excluded module
-        if module_name and any((module_name.startswith(excluded) for excluded in excluded_modules)):
+        if module_name and any(module_name.startswith(excluded) for excluded in excluded_modules):
             return True
 
     # Skip the top level excluded modules themselves
@@ -145,6 +144,5 @@ intersphinx_mapping = {
     # TODO: This is left commented out until space-packet-parser implements intersphinx support
     # "space_packet_parser": ("https://spacepacket-parser.readthedocs.io/en/latest/", None),
     "sqlalchemy": ("https://docs.sqlalchemy.org/en/14/", None),
-    # "bitstring": ("https://bitstring.readthedocs.io/en/stable/", None),  # Bitstring doesn't seem to actually support intersphinx
     "h5py": (" https://docs.h5py.org/en/stable", None),
 }

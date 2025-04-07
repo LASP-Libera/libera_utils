@@ -1,8 +1,7 @@
 """Tests for geolocation module"""
-# Installed
-import pytest
 import numpy as np
-# Local
+import pytest
+
 from libera_utils import geolocation as geo
 from libera_utils import spice_utils
 

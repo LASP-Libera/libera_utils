@@ -1,7 +1,6 @@
 """Helper functions for AWS access"""
-# Standard
 import logging
-# Installed
+
 import boto3
 
 logger = logging.getLogger(__name__)

@@ -1,16 +1,14 @@
 """Tests for kernel_maker CLI module"""
-# Standard
 import argparse
+import time
 from datetime import datetime
 from unittest import mock
-import time
-# Installed
+
 import pytest
-from cloudpathlib import S3Path, AnyPath
-# Local
+from cloudpathlib import AnyPath, S3Path
+
 from libera_utils import kernel_maker
 from libera_utils.io.manifest import Manifest
-from libera_utils.aws.constants import ManifestType
 
 # Mark test module as integration tests
 pytestmark = pytest.mark.integration

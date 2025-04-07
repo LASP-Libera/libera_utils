@@ -1,6 +1,5 @@
 """Quality flag definitions"""
-# Local
-from enum import Flag, STRICT, verify, UNIQUE, NAMED_FLAGS
+from enum import NAMED_FLAGS, STRICT, UNIQUE, Flag, verify
 
 
 class LiberaFlag(Flag, boundary=STRICT):

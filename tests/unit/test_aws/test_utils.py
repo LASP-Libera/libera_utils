@@ -1,8 +1,6 @@
 """Tests for AWS utils functions"""
-# Standard
-# Installed
 from moto import mock_aws
-# Local
+
 from libera_utils.aws import utils
 
 

@@ -1,9 +1,8 @@
 """Fixtures for integration testing libera_utils"""
-# Installed
-import pytest
 from argparse import Namespace
+
+import pytest
 from cloudpathlib import S3Path
-# Local
 
 
 class L0MockParsedArgsNamespace(Namespace):

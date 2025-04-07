@@ -1,26 +1,24 @@
 """Module for S3 cli utilities"""
-# Standard
 import argparse
-from datetime import datetime, timezone
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Union, Optional
-# Installed
+
 import boto3
-from cloudpathlib import S3Path, AnyPath
-# Local
+from cloudpathlib import AnyPath, S3Path
+
 from libera_utils.aws import constants
-from libera_utils.logutil import configure_task_logging
+from libera_utils.aws.constants import LiberaAccountSuffix as AccountSuffix
 from libera_utils.io.filenaming import AbstractValidFilename
 from libera_utils.io.smart_open import smart_copy_file
-from libera_utils.aws.constants import LiberaAccountSuffix as AccountSuffix
+from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
 
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for s3-utils put CLI subcommand."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     configure_task_logging(f'aws_s3_put_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)
@@ -35,10 +33,10 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 
 def s3_put_in_archive_for_processing_step(
-        path_to_file: Union[Path, S3Path],
-        processing_step: Union[str, constants.ProcessingStepIdentifier],
+        path_to_file: Path | S3Path,
+        processing_step: str | constants.ProcessingStepIdentifier,
         *,
-        account_suffix: Optional[Union[str, AccountSuffix]] = AccountSuffix.STAGE):
+        account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE):
     """Upload a file to the archive S3 bucket associated with a given processing step.
 
     Parameters
@@ -67,7 +65,7 @@ def s3_put_in_archive_for_processing_step(
 
 def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for s3-utils list CLI subcommand."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     configure_task_logging(f'aws_upload_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)
@@ -81,10 +79,10 @@ def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 
 def s3_list_archive_files(
-        processing_step: Union[str, constants.ProcessingStepIdentifier],
+        processing_step: str | constants.ProcessingStepIdentifier,
         *,
-        account_suffix: Optional[Union[str, AccountSuffix]] = AccountSuffix.STAGE,
-        print_out: Optional[bool] = False) -> list:
+        account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
+        print_out: bool | None = False) -> list:
     """List all files in an archive S3 bucket for a given processing step.
 
     Parameters
@@ -121,7 +119,7 @@ def s3_list_archive_files(
 
 def s3_copy_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for s3-utils cp CLI subcommand."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     configure_task_logging(f'aws_s3_cp_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)

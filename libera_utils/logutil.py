@@ -1,19 +1,19 @@
 """Logging utilities"""
-# Standard
 import copy
-from datetime import date, datetime
 import json
 import logging
 import logging.config
 import logging.handlers
-from pathlib import Path
 import traceback
-from typing import Optional, Tuple, Mapping, Union, Any, Iterable
-import yaml
-# Installed
-from cloudpathlib import AnyPath, S3Path
+from collections.abc import Iterable, Mapping
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
+
 import watchtower
-# Local
+import yaml
+from cloudpathlib import AnyPath, S3Path
+
 from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ def _json_serialize_default(o: Any) -> str:
 
     - Serializes all other objects using repr().
     """
-    if isinstance(o, (date, datetime)):
+    if isinstance(o, date | datetime):
         return o.isoformat()
     return repr(o)
 
@@ -40,7 +40,7 @@ class JsonLogFormatter(logging.Formatter):
     def __init__(
             self,
             *args,
-            add_log_record_attrs: Optional[Tuple[str, ...]] = None,
+            add_log_record_attrs: tuple[str, ...] | None = None,
             add_asctime: bool = True,
             **kwargs,
     ):
@@ -96,7 +96,7 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(record.msg, default=_json_serialize_default)  # Serialize the msg dict
 
 
-def configure_static_logging(config_file: Union[str, Path, S3Path]):
+def configure_static_logging(config_file: str | Path | S3Path):
     """Configure logging based on a static logging configuration yaml file.
 
     The yaml is interpreted as a dict configuration. There is no ability to customize this logging
@@ -119,11 +119,11 @@ def configure_static_logging(config_file: Union[str, Path, S3Path]):
 
 
 def configure_task_logging(task_id: str, *,  # Only keyword arguments after this point
-                           limit_debug_loggers: Optional[Union[Iterable[str], str]] = None,
-                           console_log_level: Union[str, int] = logging.INFO,
+                           limit_debug_loggers: Iterable[str] | str | None = None,
+                           console_log_level: str | int = logging.INFO,
                            console_log_json: bool = False,
-                           log_dir: Optional[Union[str, Path, S3Path]] = None,
-                           cloudwatch_log_group: Optional[str] = None):
+                           log_dir: str | Path | S3Path | None = None,
+                           cloudwatch_log_group: str | None = None):
     """Configure logging for a specific task (e.g. a processing algorithm).
 
     File-based logging is always done at the DEBUG level.

@@ -1,16 +1,15 @@
 """Module for manually triggering a step function"""
-# Standard
 import argparse
-from datetime import datetime, timezone
 import json
-import time
 import logging
-# Installed
+import time
+from datetime import UTC, datetime
+
 import boto3
 from botocore.exceptions import ClientError
-# Local
-from libera_utils.logutil import configure_task_logging
+
 from libera_utils.aws import utils
+from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ def step_function_trigger(parsed_args: argparse.Namespace):
         -------
         None
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     configure_task_logging(f'processing_step_function_trigger_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG)

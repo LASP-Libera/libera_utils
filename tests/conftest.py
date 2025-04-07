@@ -1,7 +1,6 @@
 """Pytest fixtures"""
-# Standard
 import logging
-# Installed
+
 import pytest
 
 pytest_plugins = [
