@@ -130,7 +130,12 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths):
 
 
 def make_jpss_spk(parsed_args: argparse.Namespace):
-    # TODO Make low level functions that are more python usable
+    # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
+    # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
+    # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
+    # TODO: the arguments from the Namespace and call the second function which has the explicit arguments and does the
+    # TODO: work. This will allow for easier unit testing of the core functionality vs the cli interface.
+    #
     """Create a JPSS SPK from APID 11 CCSDS packets.
     The SPK system is the component of SPICE concerned with ephemeris data (position/velocity).
 
@@ -218,6 +223,11 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
 
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
+    # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
+    # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
+    # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
+    # TODO: the arguments from the Namespace and call the second function which has the explicit arguments and does the
+    # TODO: work. This will allow for easier unit testing of the core functionality vs the cli interface.
     """Create a JPSS CK from APID 11 CCSDS packets.
     The C-kernel (CK) is the component of SPICE concerned with attitude of spacecraft structures or instruments.
 
@@ -299,6 +309,11 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
 
 
 def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-statements
+    # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
+    # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
+    # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
+    # TODO: the arguments from the Namespace and call the second function which has the explicit arguments and does the
+    # TODO: work. This will allow for easier unit testing of the core functionality vs the cli interface.
     """Create a Libera Az-El CK from CCSDS packets or ASCII input files
     The C-kernel (CK) is the component of SPICE concerned with attitude of spacecraft structures or instruments.
 

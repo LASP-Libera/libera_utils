@@ -172,13 +172,15 @@ def make_step_function(mock_step_function, monkeypatch_session):
     """Creates a fake AWS step function"""
     client = mock_step_function
 
-    def _make_step_function(sfn_name: str, status: str = "FAILED"):
+    def _make_step_function(sfn_name: str, status: str = None):
         """Creates a fake AWS step function with the given name"""
-        monkeypatch_session.setenv("SF_EXECUTION_HISTORY_TYPE", status)
+        monkeypatch_session.delenv("SF_EXECUTION_HISTORY_TYPE", raising=False)
+        if status is not None:
+            monkeypatch_session.setenv("SF_EXECUTION_HISTORY_TYPE", status)
         state_machine = client.create_state_machine(
             name=sfn_name,
             definition=json.dumps({
-                "Comment": "A description of my state machine",
+                "Comment": "A simple test state machine",
                 "StartAt": "Pass",
                 "States": {
                     "Pass": {
