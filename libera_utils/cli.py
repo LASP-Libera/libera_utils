@@ -115,17 +115,18 @@ def parse_cli_args(cli_args: list):
     # ==========
     ecr_upload_parser = subparsers.add_parser('ecr-upload',
                                               help="Upload docker image to ECR repository for a specific algorithm")
-    ecr_upload_parser.set_defaults(func=ecr_upload.ecr_upload_cli_func)
+    ecr_upload_parser.set_defaults(func=ecr_upload.ecr_upload_cli_handler)
+    ecr_upload_parser.add_argument('algorithm_name', type=str, choices=processing_steps,
+                                   help=f"Algorithm name used to determine the ECR repo name, "
+                                        f"Options are:\n {steps_with_ecrs}")
     ecr_upload_parser.add_argument('image_name', type=str,
                                    help="Image name of image to upload (image-name:image-tag)")
-    ecr_upload_parser.add_argument('image_tag', type=str, default="latest",
-                                   help="Image tag of image to upload (image-name:image-tag)")
-    ecr_upload_parser.add_argument('algorithm_name', type=str,
-                                   help=f"Algorithm name that matches an ECR repo name, "
-                                        f"inputs to names:\n {steps_with_ecrs}")
-    ecr_upload_parser.add_argument('--ecr-image-tags', type=str, nargs="+",
-                                   help="List of tags to apply to the uploaded image in the ECR "
-                                        "(e.g. `--ecr-image-tags latest 1.3.4`) "
+    ecr_upload_parser.add_argument('--image-tag', type=str, default="latest",
+                                   help="The current image tag of the local image that will be uploaded "
+                                        "(image-name:image-tag). Default value is 'latest'")
+    ecr_upload_parser.add_argument('--ecr-tags', type=str, nargs='+',
+                                   help="List of tags to be used in the ECR for the uploaded image in the ECR "
+                                        "(e.g. `--ecr_tags latest 1.3.4`) "
                                         "Note, latest is applied if this option is not set. If it is set, you must "
                                         "specify latest if you want it tagged as such in the ECR.")
     ecr_upload_parser.add_argument('--ignore-docker-config', action='store_true',
@@ -137,15 +138,12 @@ def parse_cli_args(cli_args: list):
     sfn_trigger_parser = subparsers.add_parser('step-function-trigger',
                                                help="Manually trigger a specific step function")
     sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger)
-    # TODO Change this to processing step identifier rather than algorithm name and use choices
-    sfn_trigger_parser.add_argument('algorithm_name', type=str,
+    sfn_trigger_parser.add_argument('algorithm_name', type=str, choices=processing_steps,
                                     help=f"Algorithm name you want to run. Options are: {processing_steps}")
     sfn_trigger_parser.add_argument('applicable_day', type=str,
                                     help="Day of data you want to rerun. Format of date: YYYY-MM-DD")
-    sfn_trigger_parser.add_argument('-w', '--wait_for_finish', action='store_true',
-                                    help="Block command line until step function completes (may be a long time)")
-    sfn_trigger_parser.add_argument('-v', '--verbose', action='store_true',
-                                    help="Prints out the result of the step_function_trigger run")
+    sfn_trigger_parser.add_argument('--wait-time', type=float, default=5,
+                                    help="Time in seconds to wait for step function completes ")
 
     # ============================
     # S3 UTILITIES
@@ -166,9 +164,9 @@ def parse_cli_args(cli_args: list):
                                     f" are: {processing_steps}")
     s3_put_parser.add_argument('file_path', type=str,
                                help="Path to the file to upload")
-    s3_put_parser.add_argument('--account_suffix', type=str, default="-stage", choices=account_suffixes,
+    s3_put_parser.add_argument('--account-suffix', type=str, default="-stage",
                                help=f"Account suffix for the bucket name. Default is -stage."
-                                    f" Options are: {account_suffixes}")
+                                    f" Common options are: {account_suffixes}")
 
     # ============================
     # S3 LIST
@@ -180,9 +178,9 @@ def parse_cli_args(cli_args: list):
     s3_list_parser.add_argument('algorithm_name', type=str, choices=processing_steps,
                                 help=f"Algorithm name string. Used to determine the S3 archive bucket name."
                                      f"Options are: {processing_steps}")
-    s3_list_parser.add_argument('--account_suffix', type=str, default="-stage", choices=account_suffixes,
+    s3_list_parser.add_argument('--account-suffix', type=str, default="-stage",
                                 help=f"Account suffix for the bucket name. Default is -stage. "
-                                     f"Options are: {account_suffixes}")
+                                     f"Common options are: {account_suffixes}")
 
     # ============================
     # S3 COPY

@@ -1,5 +1,10 @@
 # Version Changes
 
+## 3.0.0 (WIP)
+- BREAKING: Removed support for python version 3.9 and 3.10
+- BREAKING: Updated the aws constants ProcessingStepIdentifier dump method to be to_str_with_chunk_number
+- Improved the standardization of CLI commands to call cli_handler functions that wrap the main functionality
+
 ## 2.5.2 (released)
 - Added the s3-utils cli interface with subcommands put, list, and cp for ease of use s3 interactions
 - The cli subcommand `libera-utils s3-utils put` will upload a file to the correct S3 archive bucket given an algorithm

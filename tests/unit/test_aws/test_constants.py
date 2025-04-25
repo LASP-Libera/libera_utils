@@ -60,10 +60,10 @@ def test_product_validate():
 
 
 def test_step_dump():
-    step_name = ProcessingStepIdentifier.l0_rad_pds.dump(chunk_number=0)
+    step_name = ProcessingStepIdentifier.l0_rad_pds.to_str_with_chunk_number(chunk_number=0)
     assert step_name == "l0-rad-0"
 
-    step_name = ProcessingStepIdentifier.spice_jpss.dump()
+    step_name = ProcessingStepIdentifier.spice_jpss.to_str_with_chunk_number()
     assert step_name == "spice-jpss"
 
 

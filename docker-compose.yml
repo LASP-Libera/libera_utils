@@ -28,30 +28,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 
-  # Tests against Python 3.10 (EOL 2026-10)
-  3.10-tests:
-    platform: linux/amd64
-    image: 3.10-test:latest
-    build:
-      context: .
-      target: libera-utils-test
-      args:
-        - BASE_IMAGE_PYTHON_VERSION=3.10
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-
-  # Tests against Python 3.9 (EOL 2025-10)
-  3.9-tests:
-    platform: linux/amd64
-    image: 3.9-tests:latest
-    build:
-      context: .
-      target: libera-utils-test
-      args:
-        - BASE_IMAGE_PYTHON_VERSION=3.9
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-
   linting:
     image: libera-utils-test:latest
     build:

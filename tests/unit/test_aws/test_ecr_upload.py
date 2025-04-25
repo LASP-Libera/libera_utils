@@ -1,12 +1,21 @@
 """File for testing ECR upload module"""
+import argparse
 import json
 from pathlib import Path
 from unittest import mock
 
 import docker
+import pytest
 from moto import mock_aws
 
-from libera_utils.aws.ecr_upload import DockerConfigManager, build_docker_image, get_ecr_docker_client
+import libera_utils.aws.ecr_upload as ecr_upload
+from libera_utils.aws.constants import ProcessingStepIdentifier
+from libera_utils.aws.ecr_upload import (
+    DockerConfigManager,
+    build_docker_image,
+    get_ecr_docker_client,
+    push_image_to_ecr,
+)
 
 
 def test_docker_config_manager():
@@ -48,3 +57,59 @@ def test_build_docker_image(test_data_path):
         image_name="test-image",
         target="test-target"
     )
+
+
+@pytest.mark.parametrize(
+    ("algorithm_name", "image_name", "image_tag", "ecr_tags", "ignore_docker_config"),
+    [
+        ("l1b-cam", "test-image", "latest", None, True),
+        ("l1b-rad", "test-image", "latest", ["latest", "v1.0"], False)
+    ]
+)
+@mock.patch('libera_utils.aws.ecr_upload.push_image_to_ecr')
+def test_ecr_upload_cli_handler(mock_push_image_to_ecr, image_name, algorithm_name, image_tag, ecr_tags,
+                                ignore_docker_config):
+    """Test the ECR upload CLI handler for file upload."""
+    # Make the input namespace object
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name=algorithm_name,
+        image_name=image_name,
+        image_tag=image_tag,
+        ecr_tags=ecr_tags,
+        ignore_docker_config=ignore_docker_config)
+
+    ecr_upload.ecr_upload_cli_handler(args)
+
+    expected_algorithm = ProcessingStepIdentifier(algorithm_name)
+    mock_push_image_to_ecr.assert_called_once_with(image_name, image_tag, expected_algorithm, ecr_image_tags=ecr_tags,
+                                                   ignore_docker_config=ignore_docker_config)
+
+
+@pytest.mark.parametrize(
+    "ecr_tags",
+    [
+        None,
+        ["latest"],
+        ["latest", "v1.0"]
+    ]
+)
+@mock_aws()
+@mock.patch('libera_utils.aws.ecr_upload.get_ecr_docker_client', return_value=docker.from_env())
+@mock.patch("docker.DockerClient.login", return_value="Mock login succeeded!")
+def test_push_image_to_ecr(mock_docker_client_login, mock_get_ecr_docker_client, ecr_tags):
+    """Test the push_image_to_ecr function."""
+    # Mock the docker push method to simulate a successful push
+    with mock.patch(
+            'docker.models.images.ImageCollection.push', return_value=["Successfully mock pushed"]) as mock_push:
+        # We don't actually push to ECR, but we can test that the function is called correctly
+        push_image_to_ecr("test-image", "latest",
+                          ProcessingStepIdentifier.l1b_rad,
+                          ecr_image_tags=ecr_tags,
+                          ignore_docker_config=True)
+        if ecr_tags is None:
+            assert mock_push.call_count == 1
+        else:
+            assert mock_push.call_count == len(ecr_tags)
+
+

@@ -146,7 +146,7 @@ def build_docker_image(
     logger.info(f"Image built successfully and tagged as {image_name}:{tag}")
 
 
-def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
+def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for ecr-upload CLI subcommand.
 
     Parameters
@@ -165,20 +165,20 @@ def ecr_upload_cli_func(parsed_args: argparse.Namespace) -> None:
     logger.debug(f"CLI args: {parsed_args}")
     image_name: str = parsed_args.image_name
     image_tag = parsed_args.image_tag
-    algorithm_name = parsed_args.algorithm_name
-    ecr_image_tags = parsed_args.ecr_image_tags
+    algorithm_name = constants.ProcessingStepIdentifier(parsed_args.algorithm_name)
+    ecr_tags = parsed_args.ecr_tags
     push_image_to_ecr(
         image_name,
         image_tag,
         algorithm_name,
-        ecr_image_tags=ecr_image_tags,
+        ecr_image_tags=ecr_tags,
         ignore_docker_config=parsed_args.ignore_docker_config
     )
 
 
 def push_image_to_ecr(image_name: str,
                       image_tag: str,
-                      algorithm_name: str | constants.ProcessingStepIdentifier,
+                      processing_step_id: str | constants.ProcessingStepIdentifier,
                       *,
                       ecr_image_tags: list[str] | None = None,
                       region_name: str = "us-west-2",
@@ -192,7 +192,7 @@ def push_image_to_ecr(image_name: str,
         Local name of the image
     image_tag : str
         Local tag of the image (often latest)
-    algorithm_name : Union[str, constants.ProcessingStepIdentifier]
+    processing_step_id : Union[str, constants.ProcessingStepIdentifier]
         Processing step ID string or object. Used to infer the ECR repository name.
         L0 processing step IDs are not allowed because they have no associated ECR.
     ecr_image_tags : Optional[List[str]]
@@ -210,16 +210,17 @@ def push_image_to_ecr(image_name: str,
     if not ecr_image_tags:
         # Default to tagging the remote image as "latest"
         ecr_image_tags = ["latest"]
+    if isinstance(processing_step_id, str):
+        processing_step_id = constants.ProcessingStepIdentifier(processing_step_id)
 
     with DockerConfigManager(override_default_config=ignore_docker_config) as docker_config_manager:
         logger.info("Preparing to push image to ECR")
         docker_client = get_ecr_docker_client(region_name=region_name,
                                               dockercfg_path=docker_config_manager.dockercfg_path)
         account_id = utils.get_aws_account_number()
-        algorithm_identifier = constants.ProcessingStepIdentifier(algorithm_name)
-        ecr_name = algorithm_identifier.ecr_name  # The repository name within the ECR
+        ecr_name = processing_step_id.ecr_name  # The repository name within the ECR
         if ecr_name is None:
-            raise ValueError(f"Unable to determine an ECR name for algorithm identifier: {algorithm_identifier}. "
+            raise ValueError(f"Unable to determine an ECR name for algorithm identifier: {processing_step_id}. "
                              f"Note, L0 (`l0-*`) algorithm IDs do not have associated ECRs.")
         logger.debug(f'Algorithm name is {ecr_name}')
 

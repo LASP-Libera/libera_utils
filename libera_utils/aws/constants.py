@@ -134,6 +134,17 @@ class ProcessingStepIdentifier(StrEnum):
 
         If successful, returns a tuple containing the ProcessingStepIdentifier and the chunk_number,
         which can be None if the input string does not contain a valid chunk number.
+
+        Parameters
+        ----------
+        processing_step : str
+            The processing step string to validate
+
+        Returns
+        -------
+        tuple[ProcessingStepIdentifier, Optional[int]]
+            The ProcessingStepIdentifier and the chunk number, if present
+
         """
         if (idx := processing_step.rfind("-")) > 0:
             # the dash could be internal to the enum name, check that
@@ -178,7 +189,7 @@ class ProcessingStepIdentifier(StrEnum):
             case _:
                 raise ValueError(f"Unknown processing step {self.value}")
 
-    def dump(self, chunk_number: int | None = None) -> str:
+    def to_str_with_chunk_number(self, chunk_number: int | None = None) -> str:
         """Convert the ProcessingStepIdentifier to a string suitable for matching
         with a DAG key or in the processing orchestration system.
 
@@ -186,6 +197,11 @@ class ProcessingStepIdentifier(StrEnum):
         a PDS file that is typically provided in 12 2-hour chunks per day.
         In that case, the chunk_number appears as a suffix to the orchestration
         step identifier
+
+        Parameters
+        ----------
+        chunk_number : int, optional
+            The chunk number, if applicable for L0 files
         """
         return f"{self}-{chunk_number}" if chunk_number is not None else self.value
 
