@@ -1,9 +1,11 @@
 """Pytest plugin module for SPICE-related fixtures"""
+import os
 import tempfile
 from pathlib import Path
 
 import pytest
 import spiceypy as spice
+from curryer import spicetime
 
 from libera_utils.config import config
 
@@ -17,6 +19,14 @@ def short_tmp_path():
     """
     with tempfile.TemporaryDirectory(prefix='/tmp/') as td:
         yield Path(td)
+
+
+@pytest.fixture
+def curryer_lsk(test_lsk):
+    """Loads the Libera LSK for use by Curryer"""
+    os.environ['LEAPSECOND_FILE_ENV'] = str(test_lsk.parent)
+    spicetime.leapsecond.load(test_lsk)
+    return test_lsk
 
 
 # Furnishing fixtures for testing kernels

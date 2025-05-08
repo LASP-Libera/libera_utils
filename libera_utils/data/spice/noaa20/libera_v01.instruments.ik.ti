@@ -1,0 +1,138 @@
+KPL/IK
+
+Instrument kernel for Libera
+----------------------------------------------------------
+
+    TODO: Uses NOAA20 (JPSS-1) base ID, needs updating to JPSS-3 at launch!
+
+    NOTE: Only the FOV and BORESIGHT variables are official IK variables. All
+    others require manual reading from the SPICE variable pool.
+
+    This file was created by LASP_SDS_TEAM
+    on 2024-11-07/00:00:00.
+
+
+Kernel data
+----------------------------------------------------------
+
+    Libera WFOV Camera (-143013010) - Science FOV
+    ---------------------------------------------
+        FIXME: FOV half or full angle??
+
+        \begindata
+
+        INS-143013010_FOV_SHAPE            = 'CIRCLE'
+        INS-143013010_FOV_FRAME            = 'LIBERA_WFOV_CAM_COORD'
+        INS-143013010_BORESIGHT            = ( 0.0 0.0 1.0 )
+        INS-143013010_FOV_CLASS_SPEC       = 'ANGLES'
+        INS-143013010_FOV_REF_VECTOR       = ( 1.0 0.0 0.0 )
+        INS-143013010_FOV_REF_ANGLE        = 61.5
+        INS-143013010_FOV_ANGLE_UNITS      = 'DEGREES'
+
+        \begintext
+
+    Libera SW Radiometer (-143013011) - Science FOV
+    -----------------------------------------------
+        TODO: Get correct FOV value!!!
+
+        \begindata
+
+        INS-143013011_FOV_SHAPE            = 'CIRCLE'
+        INS-143013011_FOV_FRAME            = 'LIBERA_SW_RAD_COORD'
+        INS-143013011_BORESIGHT            = ( 0.0 0.0 1.0 )
+        INS-143013011_FOV_CLASS_SPEC       = 'ANGLES'
+        INS-143013011_FOV_REF_VECTOR       = ( 1.0 0.0 0.0 )
+        INS-143013011_FOV_REF_ANGLE        = 1.0
+        INS-143013011_FOV_ANGLE_UNITS      = 'DEGREES'
+
+        \begintext
+
+    Libera SSW Radiometer (-143013012) - Science FOV
+    ------------------------------------------------
+        TODO: Get correct FOV value!!!
+
+        \begindata
+
+        INS-143013012_FOV_SHAPE            = 'CIRCLE'
+        INS-143013012_FOV_FRAME            = 'LIBERA_SSW_RAD_COORD'
+        INS-143013012_BORESIGHT            = ( 0.0 0.0 1.0 )
+        INS-143013012_FOV_CLASS_SPEC       = 'ANGLES'
+        INS-143013012_FOV_REF_VECTOR       = ( 1.0 0.0 0.0 )
+        INS-143013012_FOV_REF_ANGLE        = 1.0
+        INS-143013012_FOV_ANGLE_UNITS      = 'DEGREES'
+
+        \begintext
+
+    Libera LW Radiometer (-143013013) - Science FOV
+    -----------------------------------------------
+        TODO: Get correct FOV value!!!
+
+        \begindata
+
+        INS-143013013_FOV_SHAPE            = 'CIRCLE'
+        INS-143013013_FOV_FRAME            = 'LIBERA_LW_RAD_COORD'
+        INS-143013013_BORESIGHT            = ( 0.0 0.0 1.0 )
+        INS-143013013_FOV_CLASS_SPEC       = 'ANGLES'
+        INS-143013013_FOV_REF_VECTOR       = ( 1.0 0.0 0.0 )
+        INS-143013013_FOV_REF_ANGLE        = 1.0
+        INS-143013013_FOV_ANGLE_UNITS      = 'DEGREES'
+
+        \begintext
+
+    Libera TOT Radiometer (-143013014) - Science FOV
+    ------------------------------------------------
+        TODO: Get correct FOV value!!!
+
+        \begindata
+
+        INS-143013014_FOV_SHAPE            = 'CIRCLE'
+        INS-143013014_FOV_FRAME            = 'LIBERA_TOT_RAD_COORD'
+        INS-143013014_BORESIGHT            = ( 0.0 0.0 1.0 )
+        INS-143013014_FOV_CLASS_SPEC       = 'ANGLES'
+        INS-143013014_FOV_REF_VECTOR       = ( 1.0 0.0 0.0 )
+        INS-143013014_FOV_REF_ANGLE        = 1.0
+        INS-143013014_FOV_ANGLE_UNITS      = 'DEGREES'
+
+        \begintext
+
+NAIF ID Code to Name Mapping
+----------------------------------------------------------
+
+    Instrument body name/id mappings.
+
+        \begintext data
+
+        NAIF_BODY_NAME += ( 'LIBERA_WFOV_CAM' )
+        NAIF_BODY_CODE += ( -143013010 )
+
+        NAIF_BODY_NAME += ( 'LIBERA_SW_RAD' )
+        NAIF_BODY_CODE += ( -143013011 )
+
+        NAIF_BODY_NAME += ( 'LIBERA_SSW_RAD' )
+        NAIF_BODY_CODE += ( -143013012 )
+
+        NAIF_BODY_NAME += ( 'LIBERA_LW_RAD' )
+        NAIF_BODY_CODE += ( -143013013 )
+
+        NAIF_BODY_NAME += ( 'LIBERA_TOT_RAD' )
+        NAIF_BODY_CODE += ( -143013014 )
+
+        \begintext
+
+Platform ID
+----------------------------------------------------------
+
+    The camera instrument is mounted on the AZ platform, and
+    the radiometers are mounted on the EL platform.
+
+    TODO: Is this a supported keyword? Used in Cassini kernel...
+
+        \begintext data
+
+        INS-143013010_PLATFORM_ID = ( -143013002 )
+        INS-143013011_PLATFORM_ID = ( -143013003 )
+        INS-143013012_PLATFORM_ID = ( -143013003 )
+        INS-143013013_PLATFORM_ID = ( -143013003 )
+        INS-143013014_PLATFORM_ID = ( -143013003 )
+
+        \begintext
