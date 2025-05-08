@@ -1,5 +1,8 @@
 # Version Changes
 
+## 3.1.1 (released)
+- BUGFIX: Testing improvement for mocking docker image building
+
 ## 3.1.0 (released)
 - Added Curryer (lasp-curryer) library dependency for SPICE kernel creation and geolocation
 - Added static SPICE kernels and configuration files for geolocating NOAA-20 / CERES
