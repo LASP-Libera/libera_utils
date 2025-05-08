@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from libera_utils import time
@@ -107,3 +108,18 @@ def test_utc2et_wrapper(utc_str, expected):
         assert np.array_equal(result, expected)
     else:
         assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("data", "epoch", "expected"),
+    [([(0, 0, 0)], None, ['1958-01-01']),
+     ([(1, 0, 0), (0, 1, 0), (0, 0, 1)], None,
+      ['1958-01-02T00:00:00.000000', '1958-01-01T00:00:00.001000', '1958-01-01T00:00:00.000001']),
+     ([(23109, 43206030, 922)], None, ['2021-04-09 12:00:06.030922']),
+     ([(0, 0, 0)], '2000-01-01', ['2000-01-01'])]
+)
+def test_multipart_to_dt64(data, epoch, expected):
+    """Test multipart_to_dt64 wrapper function"""
+    data = pd.DataFrame(data, columns=['a', 'b', 'c'])
+    result = time.multipart_to_dt64(data, 'a', 'b', 'c', **({} if epoch is None else dict(epoch=epoch)))
+    assert np.array_equal(result, pd.to_datetime(expected))

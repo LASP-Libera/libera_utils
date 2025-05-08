@@ -1,0 +1,57 @@
+{
+  "mappings": {
+    "NOAA20_SC": {
+      "id_code": -143013,
+      "frame": true,
+      "clock": true,
+      "attitude": true
+    },
+    "LIBERA_BASE": {
+      "id_code": -143013001,
+      "frame": true
+    },
+    "LIBERA_AZ": {
+      "id_code": -143013002,
+      "clock": -143013,
+      "frame": true,
+      "attitude": true
+    },
+    "LIBERA_WFOV_CAM": {
+      "id_code": -143013010,
+      "frame": true
+    },
+    "LIBERA_EL": {
+      "id_code": -143013003,
+      "clock": -143013,
+      "frame": true,
+      "attitude": true
+    },
+    "LIBERA_SW_RAD": {
+      "id_code": -143013011,
+      "frame": true
+    },
+    "LIBERA_SSW_RAD": {
+      "id_code": -143013012,
+      "frame": true
+    },
+    "LIBERA_LW_RAD": {
+      "id_code": -143013013,
+      "frame": true
+    },
+    "LIBERA_TOT_RAD": {
+      "id_code": -143013014,
+      "frame": true
+    }
+  },
+  "mission_kernels": [
+    "libera_v01.frames.fk.tf",
+    "libera_v01.instruments.ik.ti",
+    "noaa20_v01.fakeclock.sclk.tsc"
+  ],
+  "sds_kernels": [
+    "earth_assoc_itrf93.tf",
+    "earth_000101_211220_210926.bpc",
+    "naif0012.tls",
+    "pck00010.tpc"
+  ]
+}

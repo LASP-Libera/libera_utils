@@ -1,20 +1,19 @@
 """Module containing CLI tool for creating SPICE kernels from packets"""
 import argparse
 import logging
-import shutil
-import subprocess  # nosec B404
 import tempfile
-import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 import numpy.lib.recfunctions as nprf
-from cloudpathlib import AnyPath, S3Path
+import pandas as pd
+from cloudpathlib import AnyPath
+from curryer import kernels, meta, spicetime
 from space_packet_parser import parser, xtcedef
 
 from libera_utils import packets as libera_packets
-from libera_utils import spice_utils, time
+from libera_utils import time
 from libera_utils.config import config
 from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest
@@ -67,17 +66,15 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
         for file_entry in m.files:
             file_path_from_list = file_entry.filename
             packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
-            ephemeris_time = time.scs2e_wrapper(
-                [f"{d}:{ms}:{us}" for d, ms, us in
-                 zip(packet_data['ADAET1DAY'], packet_data['ADAET1MS'], packet_data['ADAET1US'])]
-            )
+            packet_dt64 = time.multipart_to_dt64(packet_data, 'ADAET1DAY', 'ADAET1MS', 'ADAET1US')
+
             # Check if any of the packet data are in increasing order by comparing an array element to
             # its right neighbor and ensuring that is always greater or equal. If this is not true
             # throw an error
-            if not np.all(ephemeris_time[:-1] <= ephemeris_time[1:]):
+            if not np.all(packet_dt64[:-1] <= packet_dt64[1:]):
                 raise ValueError(f"The data in {file_path_from_list} are not monotonic in time")
-            packet_start_time = time.et_2_datetime(ephemeris_time[0])
-            packet_end_time = time.et_2_datetime(ephemeris_time[-1])
+            packet_start_time = packet_dt64[0].to_pydatetime()
+            packet_end_time = packet_dt64[-1].to_pydatetime()
 
             # Packet range starts before desired range - first packet or full data
             if packet_start_time < desired_start_time < packet_end_time:
@@ -102,13 +99,13 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     return output_directory
 
 
-def get_spice_packet_data_from_filepaths(packet_data_filepaths):
+def get_spice_packet_data_from_filepaths(packet_data_filepaths: list[str or AnyPath]):
     """Utility function to return an array of packet data from a list of file paths of raw JPSS APID 11
     geolocation packet data files.
 
      Parameters
     ----------
-    packet_data_filepaths : list
+    packet_data_filepaths : list of str or cloudpathlib.anypath.AnyPath
         The list of file paths to the raw packet data
 
     Returns
@@ -129,7 +126,59 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths):
     return packet_data
 
 
+def make_kernel(config_file: str or Path, output_kernel: str or AnyPath, input_data: str or Path = None,
+                overwrite: bool = False, append: bool = False):
+    """Create a SPICE kernel from a configuration file and input data.
+
+    Parameters
+    ----------
+    config_file : str or pathlib.Path
+        JSON configuration file defining how to create the kernel.
+    output_kernel : str or cloudpathlib.anypath.AnyPath
+        Output directory or file to create the kernel. If a directory, the
+        file name will be based on the config_file, but with the SPICE file
+        extension.
+    input_data : str or pathlib.Path or pd.DataFrame, optional
+        Input data file or object. Not required if defined within the config.
+    overwrite : bool, optional
+        Option to overwrite an existing file.
+    append : bool, optional
+        Option to append to an existing file.
+
+    Returns
+    -------
+    str or cloudpathlib.anypath.AnyPath
+        Output kernel file path
+
+    """
+    output_kernel = AnyPath(output_kernel)
+    config_file = Path(config_file)
+
+    # Load meta kernel details. Required to auto-map frame IDs.
+    meta_kernel_file = Path(config.get('LIBERA_KERNEL_META'))
+    _ = meta.MetaKernel.from_json(meta_kernel_file, relative=True)
+
+    # Create the kernels from the JSONs definitions.
+    creator = kernels.create.KernelCreator(overwrite=overwrite, append=append)
+
+    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
+        tmp_path = Path(tmp_dir)
+        if output_kernel.is_file():
+            tmp_path = tmp_dir / output_kernel.name
+
+        out_fn = creator.write_from_json(config_file, output_kernel=tmp_path, input_data=input_data)
+
+        # Use smart copy here to avoiding using two nested smart_open calls
+        # one call would be to open the newly created file, and one to open the desired location
+        if output_kernel.is_dir():
+            output_kernel = output_kernel / out_fn.name
+        smart_copy_file(out_fn, output_kernel)
+        logger.info("Kernel copied to %s", output_kernel)
+    return output_kernel
+
+
 def make_jpss_spk(parsed_args: argparse.Namespace):
+    # TODO Make low level functions that are more python usable
     # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
     # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
     # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
@@ -163,63 +212,23 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
     logger.info("Done.")
 
-    # Calculate and append a ET representation of the epochs. MKSPK is picky about time formats.
-    ephemeris_time = time.scs2e_wrapper(
-        [f"{d}:{ms}:{us}" for d, ms, us in
-         zip(packet_data['ADAET1DAY'], packet_data['ADAET1MS'], packet_data['ADAET1US'])]
+    # Compute the ephemeris time from the multipart ephemeris time.
+    packet_dt64 = time.multipart_to_dt64(packet_data, 'ADAET1DAY', 'ADAET1MS', 'ADAET1US')
+    packet_data = pd.DataFrame(packet_data)
+    packet_data['SPK_ET'] = spicetime.adapt(packet_dt64.values, 'dt64', 'et')
+
+    spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
+        spk_object='jpss',
+        utc_start=packet_dt64[0].to_pydatetime(),
+        utc_end=packet_dt64[-1].to_pydatetime(),
+        version=filenaming.get_current_version_str('libera_utils'),
+        revision=datetime.now(UTC)
     )
-    packet_data = nprf.append_fields(packet_data, 'ET', ephemeris_time, dtypes=(np.float64,))
+    output_full_path = output_dir / spk_filename.path.name  # pylint: disable=no-member
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
-        tmp_path = Path(tmp_dir)
-        spk_data_filepath = write_kernel_input_file(
-            packet_data,
-            filepath=tmp_path / 'mkspk_data.txt',
-            fields=['ET', 'ADGPSPOSX', 'ADGPSPOSY', 'ADGPSPOSZ', 'ADGPSVELX', 'ADGPSVELY', 'ADGPSVELZ'])
-        logger.info("MKSPK input data written to %s", spk_data_filepath)
-
-        spk_setup_filepath = write_kernel_setup_file(
-            config.get("MKSPK_SETUPFILE_CONTENTS"),
-            filepath=tmp_path / 'mkspk_setup.txt')
-        logger.info("MKSPK setup file written to %s", spk_setup_filepath)
-
-        utc_start = time.et_2_datetime(ephemeris_time[0])
-        utc_end = time.et_2_datetime(ephemeris_time[-1])
-        revision_time = datetime.now(UTC)
-        spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
-            spk_object='jpss',
-            utc_start=utc_start,
-            utc_end=utc_end,
-            version=filenaming.get_current_version_str('libera_utils'),
-            revision=revision_time)
-        output_filepath = tmp_path / spk_filename.path.name  # pylint: disable=no-member
-
-        if parsed_args.overwrite is True:
-            output_filepath.unlink(missing_ok=True)
-
-        logger.info("Running MKSPK...")
-        try:
-            result = subprocess.run(['mkspk',  # noqa S603 S607
-                                     '-setup', str(spk_setup_filepath),
-                                     '-input', str(spk_data_filepath),
-                                     '-output', str(output_filepath)],
-                                    capture_output=True, check=True)
-        except subprocess.CalledProcessError as cpe:
-            logger.info("Captured stdout: \n%s", cpe.stdout.decode())
-            if cpe.stderr:
-                logger.error("Captured stderr: \n%s", cpe.stderr.decode())
-            raise
-
-        logger.info("Captured stdout:\n%s", result.stdout.decode())
-        if result.stderr:
-            logger.error(result.stderr.decode())
-        logger.info("Finished! SPK written to %s", output_filepath)
-
-        output_full_path = output_dir / spk_filename.path.name  # pylint: disable=no-member
-        # Use smart copy here to avoiding using two nested smart_open calls
-        # one call would be to open the newly created file, and one to open the desired location
-        smart_copy_file(output_filepath, output_full_path)
-        logger.info("SPK copied to %s", output_full_path)
+    config_file = config.get('LIBERA_KERNEL_SC_SPK_CONFIG')
+    make_kernel(config_file=config_file, output_kernel=output_full_path,
+                input_data=packet_data, overwrite=parsed_args.overwrite)
 
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
@@ -252,60 +261,23 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
     logger.info("Done.")
 
-    # Add a column that is the SCLK string, formatted with delimiters, to the input data recarray
-    attitude_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
-    packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', attitude_sclk_string)
+    # Compute the ephemeris time from the multipart attitude time.
+    packet_dt64 = time.multipart_to_dt64(packet_data, 'ADAET2DAY', 'ADAET2MS', 'ADAET2US')
+    packet_data = pd.DataFrame(packet_data)
+    packet_data['CK_ET'] = spicetime.adapt(packet_dt64.values, 'dt64', 'et')
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
-        tmp_path = Path(tmp_dir)
-        ck_data_filepath = write_kernel_input_file(
-            packet_data,
-            filepath=tmp_path / 'msopck_data.txt',
-            fields=['ATTSCLKSTR', 'ADCFAQ4', 'ADCFAQ1', 'ADCFAQ2', 'ADCFAQ3'],
-            fmt=['%s', '%.16f', '%.16f', '%.16f', '%.16f']
-        )  # produces w + i + j + k in SPICE_QUATERNION style
-        logger.info("MSOPCK input data written to %s", ck_data_filepath)
+    ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
+        ck_object='jpss',
+        utc_start=packet_dt64[0].to_pydatetime(),
+        utc_end=packet_dt64[-1].to_pydatetime(),
+        version=filenaming.get_current_version_str('libera_utils'),
+        revision=datetime.now(UTC)
+    )
+    output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
 
-        ck_setup_filepath = write_kernel_setup_file(
-            config.get("MSOPCK_SETUPFILE_CONTENTS"),
-            filepath=tmp_path / 'msopck_setup.txt')
-        logger.info("MSOPCK setup file written to %s", ck_setup_filepath)
-
-        utc_start = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[0]))
-        utc_end = time.et_2_datetime(time.scs2e_wrapper(attitude_sclk_string[-1]))
-        revision_time = datetime.now(UTC)
-        ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object='jpss',
-            utc_start=utc_start,
-            utc_end=utc_end,
-            version=filenaming.get_current_version_str('libera_utils'),
-            revision=revision_time)
-        output_filepath = tmp_path / ck_filename.path.name  # pylint: disable=no-member
-
-        if parsed_args.overwrite is True:
-            output_filepath.unlink(missing_ok=True)
-
-        logger.info("Running MSOPCK...")
-        try:
-            result = subprocess.run(['msopck',  # noqa S603 S607
-                                     str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
-                                    capture_output=True, check=True)
-        except subprocess.CalledProcessError as cpe:
-            logger.info("Captured stdout: \n%s", cpe.stdout.decode())
-            if cpe.stderr:
-                logger.error("Captured stderr: \n%s", cpe.stderr.decode())
-            raise
-
-        logger.info("Captured stdout:\n%s", result.stdout.decode())
-        if result.stderr:
-            logger.error(result.stderr.decode())
-        logger.info("Finished! CK written to %s", output_filepath)
-
-        output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
-        # Use smart copy here to avoiding using two nested smart_open calls
-        # one call would be to open the newly created file, and one to open the desired location
-        smart_copy_file(output_filepath, output_full_path)
-        logger.info("CK copied to %s", output_full_path)
+    config_file = config.get('LIBERA_KERNEL_SC_CK_CONFIG')
+    make_kernel(config_file=config_file, output_kernel=output_full_path,
+                input_data=packet_data, overwrite=parsed_args.overwrite)
 
 
 def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-statements
@@ -328,7 +300,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
     """
     print(parsed_args)
 
-    now = datetime.utcnow().strftime("%Y%m%dt%H%M%S")
+    now = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
     configure_task_logging(f'ck_generator_{now}',
                            limit_debug_loggers='libera_utils',
                            console_log_level=logging.DEBUG if parsed_args.verbose else None)
@@ -348,8 +320,6 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
 
         # TODO: identify which APID we're reading AZ or EL
         # TODO: assign this_config and ck_object below based on the APID of the packet decoded
-        this_config = config.get("MSOPCK_AZ_SETUPFILE_CONTENTS")
-        ck_object = 'azrot'
 
         azel_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
         packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', azel_sclk_string)
@@ -358,7 +328,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
     else:
         logger.info("Parsing CSV file...")
         # get the data from the ASCII file
-        packet_data=np.genfromtxt(parsed_args.packet_data_filepaths[0], delimiter=',', dtype='double')
+        packet_data = np.genfromtxt(parsed_args.packet_data_filepaths[0], delimiter=',', dtype='double')
         # make sure we have all 3 axis defined: X is RAM, Y is Elev when Az is at 0.0, Z is nadir
         if (parsed_args.azimuth is True) and (parsed_args.elevation is True):
             try:
@@ -367,15 +337,11 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
                 logger.exception(error)
 
         if parsed_args.azimuth:
-            packet_data=packet_data.view([('ET_TIME', 'double'), ('AZIMUTH', 'double')])
+            packet_data = packet_data.view([('ET_TIME', 'double'), ('AZIMUTH', 'double')])
             packet_data = nprf.append_fields(packet_data, 'ELEVATION', np.zeros(packet_data.size,dtype='double'))
-            this_config = config.get("MSOPCK_AZ_SETUPFILE_CONTENTS")
-            ck_object = 'azrot'
         elif parsed_args.elevation:
-            packet_data=packet_data.view([('ET_TIME', 'double'), ('ELEVATION', 'double')])
+            packet_data = packet_data.view([('ET_TIME', 'double'), ('ELEVATION', 'double')])
             packet_data = nprf.append_fields(packet_data, 'AZIMUTH', np.zeros(packet_data.size, dtype='double'))
-            this_config = config.get("MSOPCK_EL_SETUPFILE_CONTENTS")
-            ck_object = 'elscan'
         else:
             try:
                 raise ValueError("Expecting at least one: --azimuth or --elevation. None provided.\n")
@@ -389,146 +355,32 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
         utc_end = time.et_2_datetime(packet_data['ET_TIME'][-1])
 
     logger.info("Done.")
+    revision = datetime.now(UTC)
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
-        tmp_path = Path(tmp_dir)
-        ck_data_filepath = write_kernel_input_file(
-            packet_data,
-            filepath=tmp_path / 'msopck_data.txt',
-            fields=['AZELSCLKSTR', 'AZIMUTH', 'ELEVATION', 'AZEL_Z'],
-            fmt=['%s', '%.16f', '%.16f', '%.16f']
-        )  # produces  X, Y, Z angles for the specific mechanism
-        logger.info("MSOPCK input data written to %s", ck_data_filepath)
-
-        ck_setup_filepath = write_kernel_setup_file(
-            this_config,
-            filepath=tmp_path / 'msopck_setup.txt')
-        logger.info("MSOPCK setup file written to %s", ck_setup_filepath)
-
-        revision_time = datetime.utcnow()
+    if parsed_args.azimuth:
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object=ck_object,
+            ck_object='azrot',
             utc_start=utc_start,
             utc_end=utc_end,
             version=filenaming.get_current_version_str('libera_utils'),
-            revision=revision_time)
-        output_filepath = tmp_path / ck_filename.path.name  # pylint: disable=no-member
-
-        if parsed_args.overwrite is True:
-            output_filepath.unlink(missing_ok=True)
-
-        logger.info("Running MSOPCK...")
-        try:
-            result = subprocess.run(['msopck',  # noqa s603 S607
-                                     str(ck_setup_filepath), str(ck_data_filepath), str(output_filepath)],
-                                    capture_output=True, check=True)
-        except subprocess.CalledProcessError as cpe:
-            logger.info("Captured stdout: \n%s", cpe.stdout.decode())
-            if cpe.stderr:
-                logger.error("Captured stderr: \n%s", cpe.stderr.decode())
-            raise
-
-        logger.info("Captured stdout:\n%s", result.stdout.decode())
-        if result.stderr:
-            logger.error(result.stderr.decode())
-        logger.info("Finished! CK written to %s", output_filepath)
-
+            revision=revision
+        )
         output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
-        # Use smart copy here to avoiding using two nested smart_open calls
-        # one call would be to open the newly created file, and one to open the desired location
-        smart_copy_file(output_filepath, output_full_path)
-        logger.info("CK copied to %s", output_full_path)
 
+        config_file = config.get('LIBERA_KERNEL_AZ_CK_CONFIG')
+        make_kernel(config_file=config_file, output_kernel=output_full_path,
+                    input_data=packet_data, overwrite=parsed_args.overwrite)
 
-def write_kernel_input_file(data: np.ndarray, filepath: str or Path or S3Path,
-                            fields: list = None, fmt: str or list = "%.16f"):
-    """Write ephemeris and attitude data to MKSPK and MSOPCK input data files, respectively.
+    if parsed_args.elevation:
+        ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
+            ck_object='elscan',
+            utc_start=utc_start,
+            utc_end=utc_end,
+            version=filenaming.get_current_version_str('libera_utils'),
+            revision=revision
+        )
+        output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
 
-    See MSOPCK documentation here:
-        https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/msopck.html
-    See MKSPK documentation here:
-        https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/mkspk.html
-
-    Parameters
-    ----------
-    data : numpy.ndarray
-        Structured array (named, with data types) of attitude or ephemeris data.
-    filepath : str or pathlib.Path
-        Filepath to write to.
-    fields : list
-        Optional. List of field names to write out to the data file. If not specified, assume fields are already
-        in the proper order.
-    fmt : str or list
-        Format specifier(s) to pass to np.savetxt. Default is to assume everything should be floats with 16 decimal
-        places of precision (%.16f). If a list is passed, it must contain a format specifier for each column in data.
-
-    Returns
-    -------
-    : pathlib.Path
-        Absolute path to written file.
-    """
-    if fields:
-        np.savetxt(filepath, data[fields], delimiter=" ", fmt=fmt)
-    else:
-        np.savetxt(filepath, data[:], delimiter=" ", fmt=fmt)
-    return filepath.absolute()
-
-
-def write_kernel_setup_file(data: dict, filepath: Path):
-    """Write an MSOPCK or MKSPK compatible setup file of key-value pairs.
-    See documentation here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/ug/msopck.html#Input%20Data%20Format
-
-    Parameters
-    ----------
-    data : dict
-        Dictionary of key-value pairs to write to the setup file.
-    filepath : pathlib.Path
-        Filepath to write to.
-
-    Returns
-    -------
-    : pathlib.Path
-        Absolute path to written file.
-    """
-    with open(filepath, 'x+', encoding='utf_8') as fh:
-        fh.write("\\begindata\n")
-        for key, value in data.items():
-            if key in ('PATH_VALUES', 'PATH_SYMBOLS', 'KERNELS_TO_LOAD'):
-                inside = ", ".join([f"\n\t'{item}'" for item in value])
-                value_str = f"({inside}\n)"
-            elif key in ('LSK_FILE_NAME', 'LEAPSECONDS_FILE'):
-                lsk_url = spice_utils.find_most_recent_naif_kernel(spice_utils.NAIF_LSK_INDEX_URL,
-                                                                   spice_utils.NAIF_LSK_REGEX)
-                lsk = spice_utils.KernelFileCache(lsk_url)
-                if len(str(lsk.kernel_path)) > 78:
-                    # MSOPCK is limited to 80 character file names (including single quotes)
-                    # so we copy the kernel to the same directory where we are writing this setup file
-                    copied_kernel = shutil.copy(str(lsk.kernel_path), filepath.parent)
-                    value_str = f"'{copied_kernel}'"
-                else:
-                    value_str = f"'{str(lsk.kernel_path)}'"
-            elif key == 'SCLK_FILE_NAME' and len(value) > 78:
-                # MSOPCK is limited to 80 character file names (including single quotes) so we copy the SCLK to the
-                # same directory where we are writing this setup file
-                copied_sclk = shutil.copy(value, filepath.parent)
-                value_str = f"'{copied_sclk}'"
-            elif key == 'EULER_ROTATIONS_ORDER':
-                value_str = f"{value}"
-            elif isinstance(value, str):
-                value_str = f"'{value}'"
-            elif isinstance(value, list):
-                list_str = " ".join(value)
-                value_str = f"'{list_str}'"
-            elif isinstance(value, dict):
-                dict_str = " ".join([f"\n\t'{k}={v}'" for k, v in value.items()])
-                value_str = f"({dict_str}\n)"
-            else:
-                value_str = f"{value}"
-            if len(value_str) > 80:
-                warnings.warn("Detected a SPICE setup file value that is over 80 characters. "
-                              f"This will likely cause an error. {value_str}")
-            fh.write(f"{key}={value_str}\n")
-        fh.write("\\begintext\n")
-        fh.seek(0)
-        logger.info("Setup file contents:\n%s", ''.join(fh.readlines()))
-    return filepath.absolute()
+        config_file = config.get('LIBERA_KERNEL_EL_CK_CONFIG')
+        make_kernel(config_file=config_file, output_kernel=output_full_path,
+                    input_data=packet_data, overwrite=parsed_args.overwrite)

@@ -1,0 +1,32 @@
+{
+  "kernel": {
+    "class_path": "curryer.kernels.ephemeris.EphemerisStateProperties",
+    "properties": {
+      "input_body": "NOAA20_SC",
+      "input_frame": "ITRF93",
+      "input_center": "EARTH",
+      "input_data_units": {
+        "angles": "degrees",
+        "distances": "meters"
+      },
+      "input_time_type": "et",
+      "input_time_columns": [
+        "et"
+      ],
+      "input_gap_threshold": "30s",
+      "spk_type": "INTERP_HERMITE_UNEVEN",
+      "polynom_degree": 3,
+      "frame_kernel": "libera_v01.frames.fk.tf"
+    }
+  },
+  "input_data": null,
+  "input_columns": {
+    "SPK_ET": "et",
+    "ADGPSPOSX": "position_x",
+    "ADGPSPOSY": "position_y",
+    "ADGPSPOSZ": "position_z",
+    "ADGPSVELX": "velocity_x",
+    "ADGPSVELY": "velocity_y",
+    "ADGPSVELZ": "velocity_z"
+  }
+}

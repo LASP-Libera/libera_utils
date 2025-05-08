@@ -1,6 +1,11 @@
 # Version Changes
 
-## 3.0.0 (WIP)
+## 3.1.0 (released)
+- Added Curryer (lasp-curryer) library dependency for SPICE kernel creation and geolocation
+- Added static SPICE kernels and configuration files for geolocating NOAA-20 / CERES
+- BREAKING: Removed geolocation submodule, replaced by interfaces within Curryer 
+
+## 3.0.0 (released)
 - BREAKING: Removed support for python version 3.9 and 3.10
 - BREAKING: Updated the aws constants ProcessingStepIdentifier dump method to be to_str_with_chunk_number
 - Improved the standardization of CLI commands to call cli_handler functions that wrap the main functionality

@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import numpy as np
+import pandas as pd
 import spiceypy as spice
 
 from libera_utils.config import config
@@ -218,3 +219,30 @@ def convert_cds_integer_to_datetime(satellite_time: int):
     # TODO: cds_time = timezone("UTC").localize(non_tz_datetime)
 
     return cds_time
+
+
+def multipart_to_dt64(data: pd.DataFrame, day_field: str, ms_field: str, us_field: str, epoch: str = '1958-01-01'):
+    """Convert multipart time fields to a datetime64 time.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Any data structure containing the named subscript-able fields.
+    day_field : str
+        Name of the day count field.
+    ms_field : str
+        Name of the millisecond count field.
+    us_field : str
+        Name of the microsecond count field.
+    epoch : str, optional
+        Date time string of the zero-offset epoch. Default="1958-01-01"
+
+    Returns
+    -------
+    pd.Series
+        Pandas series of the datetime64 values.
+
+    """
+    return (pd.Timestamp(epoch) + pd.to_timedelta(data[day_field], 'D')
+            + pd.to_timedelta(data[ms_field], 'ms')
+            + pd.to_timedelta(data[us_field], 'us'))

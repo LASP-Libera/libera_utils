@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "3.0.0"
+version = "3.1.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland", email = "stephane.beland@lasp.colorado.edu" },
@@ -36,6 +36,7 @@ classifiers = [
 # These are the dependencies used in the package metadata when building the project
 dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
+    "lasp-curryer>=0.1.3",
     "h5netcdf>=1.0.0",
     "h5py>=3.3",
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
