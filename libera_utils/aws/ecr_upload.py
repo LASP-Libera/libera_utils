@@ -232,7 +232,8 @@ def push_image_to_ecr(image_name: str,
             # Tag the local image with the ECR repo name
             full_ecr_tag = f"{ecr_path}/{ecr_name}:{remote_tag}"
             logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {full_ecr_tag}")
-            docker_client.images.get(f"{image_name}:{image_tag}").tag(full_ecr_tag)
+            local_image = docker_client.images.get(f"{image_name}:{image_tag}")
+            local_image.tag(full_ecr_tag)
 
             logger.info(f"Pushing {full_ecr_tag}.")
             error_messages = []

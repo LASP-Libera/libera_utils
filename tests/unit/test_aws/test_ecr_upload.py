@@ -96,20 +96,25 @@ def test_ecr_upload_cli_handler(mock_push_image_to_ecr, image_name, algorithm_na
 )
 @mock_aws()
 @mock.patch('libera_utils.aws.ecr_upload.get_ecr_docker_client', return_value=docker.from_env())
-@mock.patch("docker.DockerClient.login", return_value="Mock login succeeded!")
-def test_push_image_to_ecr(mock_docker_client_login, mock_get_ecr_docker_client, ecr_tags):
+@mock.patch("docker.models.images.ImageCollection.get", return_value=docker.models.images.Image())
+@mock.patch("docker.models.images.Image.tag", return_value="Successfully Tagged the Mock")
+@mock.patch('docker.models.images.ImageCollection.push', return_value=["Successfully mock pushed"])
+def test_push_image_to_ecr(mock_docker_push, mock_docker_tag_image, mock_docker_get_image, mock_get_ecr_docker_client,
+                           ecr_tags):
     """Test the push_image_to_ecr function."""
     # Mock the docker push method to simulate a successful push
-    with mock.patch(
-            'docker.models.images.ImageCollection.push', return_value=["Successfully mock pushed"]) as mock_push:
-        # We don't actually push to ECR, but we can test that the function is called correctly
-        push_image_to_ecr("test-image", "latest",
-                          ProcessingStepIdentifier.l1b_rad,
-                          ecr_image_tags=ecr_tags,
-                          ignore_docker_config=True)
-        if ecr_tags is None:
-            assert mock_push.call_count == 1
-        else:
-            assert mock_push.call_count == len(ecr_tags)
+
+    # We don't actually push to ECR, but we can test that the function is called correctly
+    push_image_to_ecr("test-image", "latest",
+                      ProcessingStepIdentifier.l1b_rad,
+                      ecr_image_tags=ecr_tags,
+                      ignore_docker_config=True)
+
+    assert mock_get_ecr_docker_client.call_count == 1
+
+    expected_calls = 1 if ecr_tags is None else len(ecr_tags)
+    assert mock_docker_push.call_count == expected_calls
+    assert mock_docker_tag_image.call_count == expected_calls
+    assert mock_docker_get_image.call_count == expected_calls
 
 
