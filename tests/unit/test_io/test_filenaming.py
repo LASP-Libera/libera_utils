@@ -9,6 +9,7 @@ from cloudpathlib import S3Path
 from ulid import ULID
 
 import libera_utils.aws.constants
+from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.io import filenaming
 
 
@@ -22,9 +23,9 @@ from libera_utils.io import filenaming
          filenaming.LiberaDataProductFilename),
         ('/some/fake/path/LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
          filenaming.LiberaDataProductFilename),
-        ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp',
+        ('/some/foobar/path/LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp',
          filenaming.EphemerisKernelFilename),
-        ('/some/foobar/path/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
+        ('/some/foobar/path/LIBERA_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
          filenaming.AttitudeKernelFilename)
     ]
 )
@@ -38,18 +39,22 @@ def test_from_filename(filename, filename_type):
     [
         ('/ignore/this/P1590006SOMESCIENCEAAA99030231459001.PDS', 's3://my-bucket',
          S3Path('s3://my-bucket/PDS/0006/P1590006SOMESCIENCEAAA99030231459001.PDS')),
-        ('/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc', '/absolute/local',
+        ('/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc',
+         '/absolute/local',
          Path('/absolute/local/CAM/2027/01/02/'
               'LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc')),
-        ('LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc', '/absolute/local',
+        ('LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc',
+         '/absolute/local',
          Path('/absolute/local/CLOUD-FRACTION/2027/01/02/'
               'LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc')),
-        ('ignore/relative/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp', '/absolute/local',
-         Path('/absolute/local/JPSS/2027/01/02/'
-              'LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp')),
-        ('LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc', '/absolute/local',
-         Path('/absolute/local/AZROT/2027/01/15/'
-              'LIBERA_AZROT_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc')),
+        ('ignore/relative/LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp',
+         '/absolute/local',
+         Path('/absolute/local/JPSS-SPK/2027/01/02/'
+              'LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp')),
+        ('LIBERA_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc',
+         '/absolute/local',
+         Path('/absolute/local/AZROT-CK/2027/01/15/'
+              'LIBERA_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc')),
         ('/ignore/this/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json', 's3://my-dropbox-bucket',
          S3Path('s3://my-dropbox-bucket/INPUT/2027/01/02/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json')),
 
@@ -287,19 +292,19 @@ def test_ManifestFilename_parts(filename, basepath, parts):
 @pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
-        ('/some/foobar/path/LIBERA_JPSS_V3-14-159RC1_20270102T112233_20270102T122233_R28002112233.bsp',
+        ('/some/foobar/path/LIBERA_JPSS-SPK_V3-14-159RC1_20270102T112233_20270102T122233_R28002112233.bsp',
          '/some/foobar/path',
          dict(
-             spk_object='JPSS',
+             spk_object=DataProductIdentifier.spice_jpss_spk,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version="V3-14-159RC1",  # Release candidate
              revision=dt.datetime(2028, 1, 2, 11, 22, 33)
          )),
-        ('s3://bucket/LIBERA_JPSS_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp',
+        ('s3://bucket/LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp',
          's3://bucket',
          dict(
-             spk_object='JPSS',
+             spk_object=DataProductIdentifier.spice_jpss_spk,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version="V3-14-159",
@@ -320,28 +325,28 @@ def test_EphemerisKernelFilename(filename, basepath, parts):
 @pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
-        ('/some/foobar/path/LIBERA_JPSS_V3-14-159RC1_20270102T112233_20270102T122233_R28002112233.bc',
+        ('/some/foobar/path/LIBERA_JPSS-CK_V3-14-159RC1_20270102T112233_20270102T122233_R28002112233.bc',
          '/some/foobar/path',
          dict(
-             ck_object='JPSS',
+             ck_object=DataProductIdentifier.spice_jpss_ck,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version="V3-14-159RC1",
              revision=dt.datetime(2028, 1, 2, 11, 22, 33)
          )),
-        ('s3://bucket/LIBERA_ELSCAN_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
+        ('s3://bucket/LIBERA_ELSCAN-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
          's3://bucket',
          dict(
-             ck_object='ELSCAN',
+             ck_object=DataProductIdentifier.spice_el_ck,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version="V3-14-159",
              revision=dt.datetime(2028, 1, 2, 11, 22, 33)
          )),
-        ('LIBERA_AZROT_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
+        ('LIBERA_AZROT-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc',
          None,
          dict(
-             ck_object='AZROT',
+             ck_object=DataProductIdentifier.spice_az_ck,
              utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),
              utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
              version="V3-14-159",

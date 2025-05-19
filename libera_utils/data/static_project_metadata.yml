@@ -1,0 +1,7 @@
+#static_project_metadata:  
+Format: NetCDF-4
+Conventions: CF-1.8
+ProjectLongName: Libera
+ProjectShortName: Libera
+PlatformLongName: TBD # Probably only needed if we are going with JPSS-4 as the platform identifier instead of NOAA-22
+PlatformShortName: NOAA-22

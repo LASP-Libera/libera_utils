@@ -124,3 +124,9 @@ def test_itrf93_pck(spice_test_data_path):
     """Path to the testing high precision planetary constants kernel (PCK) stored in the test_data directory
     to provide a single configuration for all tests"""
     return spice_test_data_path / 'earth_000101_211220_210926.bpc'
+
+
+@pytest.fixture
+def test_variable_definitions(test_data_path):
+    """Path to an example product description yaml file"""
+    return test_data_path / 'test_variable_definitions.yml'

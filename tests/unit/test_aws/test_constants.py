@@ -31,12 +31,13 @@ def test_algorithm_names(algorithm_name):
         assert processing_step_id.ecr_name
 
 
-def test_product_dump():
-    product_name = DataProductIdentifier.l0_rad_pds.dump(chunk_number=0)
+def test_product_to_string_with_chunk():
+    product_name = DataProductIdentifier.l0_rad_pds.to_str_with_chunk_number(chunk_number=0)
     assert product_name == "l0-rad-pds-0"
 
-    product_name = DataProductIdentifier.spice_az_ck.dump()
-    assert product_name == "spice-az-ck"
+    product_name = DataProductIdentifier.spice_az_ck.to_str_with_chunk_number()
+    assert product_name == "AZROT-CK"
+    assert DataProductIdentifier.spice_az_ck == "AZROT-CK"
 
 
 def test_product_validate():

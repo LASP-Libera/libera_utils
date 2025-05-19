@@ -23,14 +23,14 @@ from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
-SPK_REGEX = re.compile(r"^LIBERA_(?P<spk_object>JPSS)"
+SPK_REGEX = re.compile(r"^LIBERA_(?P<spk_object>JPSS-SPK)"
                        r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
                        r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
                        r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
                        r"_(?P<revision>R[0-9]{11})"
                        r"\.bsp$")
 
-CK_REGEX = re.compile(r"^LIBERA_(?P<ck_object>JPSS|AZROT|ELSCAN)"
+CK_REGEX = re.compile(r"^LIBERA_(?P<ck_object>(JPSS|AZROT|ELSCAN)-CK)"
                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
                       r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
                       r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"

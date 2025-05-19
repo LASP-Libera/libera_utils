@@ -26,6 +26,7 @@ class DataProductIdentifier(StrEnum):
     In general these names are of the form <level>-<source>-<type>
     """
     # L0 construction record
+    # TODO: Re-evaluate these names to be caps to match other products [LIBSDC-445]: L0 Decoding step
     l0_cr = "l0-cr"
 
     # L0 PDS files
@@ -34,29 +35,36 @@ class DataProductIdentifier(StrEnum):
     l0_azel_pds = "l0-azel-pds"
     l0_jpss_pds = "l0-jpss-pds"
 
+    # TODO: add other 24h L0 product ID [LIBSDC-445]: L0 Decoding step
+    l0_rad_24h = "L0_RAD"
+
     # SPICE kernels
-    spice_az_ck = "spice-az-ck"
-    spice_el_ck = "spice-el-ck"
-    spice_jpss_ck = "spice-jpss-ck"
-    spice_jpss_spk = "spice-jpss-spk"
+    spice_az_ck = "AZROT-CK"
+    spice_el_ck = "ELSCAN-CK"
+    spice_jpss_ck = "JPSS-CK"
+    spice_jpss_spk = "JPSS-SPK"
 
     # Calibration products
     cal_rad = "cal-rad"
     cal_cam = "cal-cam"
 
     # L1B products
-    l1b_rad = "l1b-rad"
-    l1b_cam = "l1b-cam"
+    l1b_rad = "L1B_RAD-4CH"
+    l1b_cam = "L1B_CAM"
 
     # L2 products
-    # TODO: L2 product IDs TBD
-    # l2_unf = "l2-unf"  # unfiltered radiance
-    # l2_cf = "l2-cf"  # cloud fraction
-    # l2_ssw_toa = "l2-ssw-toa"  # SSW TOA flux
-    # l2_ssw_surf = "l2-ssw-surf"  # SSW surface flux
-    # l2_fir_toa = "l2-fir-toa"  # FIR TOA flux
+    # TODO: reconcile this with the Libera-ASDC ICD [LIBSDC-544]
+    l2_unf = "L2_UNF-RAD"  # unfiltered radiances
+    l2_cf_rad = "L2_CF-RAD"  # cloud fraction on the radiometer timescale
+    l2_cf_cam = "L2_CF-CAM"  # cloud fraction on the camera timescale
+    l2_ssw_toa_osse = "L2_SSW-TOA-FLUXES-OSSE"  # ERBE-like and TRMM-like TOA SSW irradiance from OSSEs only
+    l2_ssw_toa_erbe = "L2_SSW-TOA-FLUXES-ERBE"  # ERBE-like TOA SSW irradiance
+    l2_ssw_toa_trmm = "L2_SSW-TOA-FLUXES-TRMM"  # TRMM-like TOA SSW irradiance
+    l2_ssw_toa_rt = "L2_SSW-TOA-FLUXES-RT"  # ETOA SSW irradiance from a radiative transfer model lookup
+    l2_ssw_surf = "L2_SFC-FLUXES"  # SSW surface flux
 
     # Ancillary products
+    # TODO: decide whether to categorize these Auxiliary or Ancillary. Add in current expected products
     anc_adm = "anc-adm"
 
     @classmethod
@@ -78,7 +86,7 @@ class DataProductIdentifier(StrEnum):
                 pass
         return DataProductIdentifier(product_name), None
 
-    def dump(self, chunk_number: int | None = None) -> str:
+    def to_str_with_chunk_number(self, chunk_number: int | None = None) -> str:
         """Convert the DataProductIdentifier to a string suitable for matching
         with a DAG key or in the processing orchestration system.
 
