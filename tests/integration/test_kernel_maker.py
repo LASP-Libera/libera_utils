@@ -45,7 +45,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
             verbose=False
         )
         kernel_maker.make_jpss_spk(mock_parsed_args)
-        assert (short_tmp_path / 'LIBERA_JPSS_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
+        assert (short_tmp_path / 'LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
 
 
 @pytest.mark.parametrize(
@@ -75,7 +75,7 @@ def test_make_jpss_spk_aws(mocked_get_current_version_str, test_pds_file_1, shor
     kernel_maker.make_jpss_spk(mock_parsed_args)
 
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / 'LIBERA_JPSS_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
+    assert (s3_output_path / 'LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
 
 
 @mock.patch.object(kernel_maker, 'datetime', mock.Mock(wraps=datetime))
@@ -92,7 +92,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
             verbose=False
         )
         kernel_maker.make_jpss_ck(mock_parsed_args)
-        assert (short_tmp_path / 'LIBERA_JPSS_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
+        assert (short_tmp_path / 'LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
@@ -123,7 +123,7 @@ def test_make_jpss_ck_aws(mocked_get_current_version_str, test_pds_file_1, short
     kernel_maker.make_jpss_ck(mock_parsed_args)
 
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / 'LIBERA_JPSS_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
+    assert (s3_output_path / 'LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
 
 
 @pytest.mark.xfail
@@ -229,8 +229,8 @@ def test_make_jpss_kernels_from_manifest_no_time_range(mocked_get_current_versio
 
     kernel_maker.make_jpss_kernels_from_manifest(input_manifest_path, output_path)
 
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210409T000000_20210409T055959_R25056154513.bsp').exists()
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235959_20210409T055958_R25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T055959_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T055958_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
@@ -250,8 +250,8 @@ def test_make_jpss_kernels_from_manifest_one_file(mocked_get_current_version_str
 
     kernel_maker.make_jpss_kernels_from_manifest(updated_manifest_path, output_path)
 
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
@@ -272,8 +272,8 @@ def test_make_jpss_kernels_from_manifest_two_files(mocked_get_current_version_st
 
     kernel_maker.make_jpss_kernels_from_manifest(updated_manifest_path, output_path)
 
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc').exists()
 
 
 @pytest.mark.parametrize(
@@ -294,5 +294,5 @@ def test_make_jpss_kernels_from_manifest_three_files(mocked_get_current_version_
 
     kernel_maker.make_jpss_kernels_from_manifest(updated_manifest_path, output_path)
 
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210409T000000_20210409T035959_R25056154513.bsp').exists()
-    assert (output_path / 'LIBERA_JPSS_V3-14-159_20210408T235959_20210409T035958_R25056154513.bc').exists()
+    assert (output_path / 'LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T035959_R25056154513.bsp').exists()
+    assert (output_path / 'LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T035958_R25056154513.bc').exists()

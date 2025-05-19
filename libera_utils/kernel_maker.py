@@ -14,6 +14,7 @@ from space_packet_parser import parser, xtcedef
 
 from libera_utils import packets as libera_packets
 from libera_utils import time
+from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.config import config
 from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest
@@ -218,7 +219,7 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     packet_data['SPK_ET'] = spicetime.adapt(packet_dt64.values, 'dt64', 'et')
 
     spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
-        spk_object='jpss',
+        spk_object=DataProductIdentifier.spice_jpss_spk,
         utc_start=packet_dt64[0].to_pydatetime(),
         utc_end=packet_dt64[-1].to_pydatetime(),
         version=filenaming.get_current_version_str('libera_utils'),
@@ -267,7 +268,7 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     packet_data['CK_ET'] = spicetime.adapt(packet_dt64.values, 'dt64', 'et')
 
     ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-        ck_object='jpss',
+        ck_object=DataProductIdentifier.spice_jpss_ck,
         utc_start=packet_dt64[0].to_pydatetime(),
         utc_end=packet_dt64[-1].to_pydatetime(),
         version=filenaming.get_current_version_str('libera_utils'),
@@ -359,7 +360,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
 
     if parsed_args.azimuth:
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object='azrot',
+            ck_object=DataProductIdentifier.spice_az_ck,
             utc_start=utc_start,
             utc_end=utc_end,
             version=filenaming.get_current_version_str('libera_utils'),
@@ -373,7 +374,7 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
 
     if parsed_args.elevation:
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object='elscan',
+            ck_object=DataProductIdentifier.spice_el_ck,
             utc_start=utc_start,
             utc_end=utc_end,
             version=filenaming.get_current_version_str('libera_utils'),

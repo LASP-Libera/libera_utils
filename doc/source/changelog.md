@@ -1,4 +1,9 @@
 # Version Changes
+## 3.2.0 (WIP)
+- Added pydantic models for a Configurable NetCDF-4 metadata object
+- Includes static metadata that is populated and known by these tools
+- Includes dynamic metadata that must be provided by user of these tools
+- Changed the naming scheme of the SPICE data files to include SPK or CK
 
 ## 3.1.1 (released)
 - BUGFIX: Testing improvement for mocking docker image building
@@ -6,7 +11,7 @@
 ## 3.1.0 (released)
 - Added Curryer (lasp-curryer) library dependency for SPICE kernel creation and geolocation
 - Added static SPICE kernels and configuration files for geolocating NOAA-20 / CERES
-- BREAKING: Removed geolocation submodule, replaced by interfaces within Curryer 
+- BREAKING: Removed geolocation submodule, replaced by interfaces within Curryer
 
 ## 3.0.0 (released)
 - BREAKING: Removed support for python version 3.9 and 3.10

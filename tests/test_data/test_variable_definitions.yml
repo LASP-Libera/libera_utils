@@ -1,0 +1,14 @@
+variable1:
+    long_name: Test variable long name
+    dimensions: ["along_track","across_track"]
+    units: W/(m^2*sr*nm)
+    valid_range: [0,1]
+    missing_value: -9999.
+    dtype: TBD
+variable2:
+    long_name: Second test variable long name
+    dimensions: ["along_track"]
+    units:
+    valid_range: [-9,9]
+    missing_value: -999.
+    dtype: float
