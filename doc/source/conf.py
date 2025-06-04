@@ -13,22 +13,22 @@ import sys
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-sys.path.insert(0, os.path.abspath('../../libera_utils'))
+sys.path.insert(0, os.path.abspath("../../libera_utils"))
 
 # List of modules to be excluded from documentation
 # This list is used by autodoc when processing autodoc-skip-member events.
 # This list is also passed to the jinja template used by autosummary in order to
 # skip generation of autosummary stub pages.
-excluded_modules = ['libera_utils.backports']
+excluded_modules = ["libera_utils.backports"]
 
 
 def skip_module(app, what, name, obj, skip, options):
     """Determine whether to document or skip a member (object, class, attribute, module, etc)"""
-    if hasattr(obj, '__module__'):
+    if hasattr(obj, "__module__"):
         module_name = obj.__module__
 
         # Skip this member if it's not part of libera_utils (prevents documenting imported modules like numpy)
-        if module_name and not module_name.startswith('libera_utils'):
+        if module_name and not module_name.startswith("libera_utils"):
             return True
 
         # Skip this member if it's part of an excluded module
@@ -41,21 +41,21 @@ def skip_module(app, what, name, obj, skip, options):
     #     return True
 
     # Skip all dunders because users shouldn't need to know about those
-    if name.startswith('__') and name.endswith('__'):
+    if name.startswith("__") and name.endswith("__"):
         return True
 
 
 def setup(app):
     """Set up the Sphinx documentation and activate functions for specific events"""
-    app.connect('autodoc-skip-member', skip_module)
+    app.connect("autodoc-skip-member", skip_module)
 
 
 # -- Project information -----------------------------------------------------
-project = 'libera_utils'
-copyright = '2022, University of Colorado'
-author = 'Libera SDC Team'
+project = "libera_utils"
+copyright = "2022, University of Colorado"
+author = "Libera SDC Team"
 
-libera_utils_ver = importlib.metadata.version('libera_utils')
+libera_utils_ver = importlib.metadata.version("libera_utils")
 # The full version, including alpha/beta/rc tags
 release = libera_utils_ver
 
@@ -71,16 +71,13 @@ extensions = [
     "sphinx.ext.napoleon",  # Handles numpy style docstrings
     "sphinx.ext.autosectionlabel",
     "myst_parser",  # Markdown
-    "numpydoc"  # Numpy style docstrings
+    "numpydoc",  # Numpy style docstrings
 ]
 
-source_suffix = {
-    ".rst": "restructuredtext",
-    ".md": "markdown"
-}
+source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -101,8 +98,8 @@ html_logo = "_static/libera_logo.png"
 # -- Autodoc -----------------------------------------------------------------
 autodoc_default_options = {
     "members": True,
-    #"undoc-members": True,
-    "private-members": True
+    # "undoc-members": True,
+    "private-members": True,
 }
 
 # -- Autosummary -------------------------------------------------------------

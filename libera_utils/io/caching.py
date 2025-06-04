@@ -1,4 +1,5 @@
 """Module containing code to manage local file caching"""
+
 import os
 import sys
 from importlib.metadata import version
@@ -14,22 +15,24 @@ def get_local_cache_dir():
         Path to the cache directory for this version of this package on the current system
     """
     system = sys.platform
-    package_name = __name__.split('.', 1)[0]
+    package_name = __name__.split(".", 1)[0]
     package_version = version(package_name)
-    if system == 'darwin':
-        path = Path('~/Library/Caches').expanduser()
+    if system == "darwin":
+        path = Path("~/Library/Caches").expanduser()
         if package_name:
             path = path / package_name
-    elif system.startswith('linux'):
-        if os.getenv('XDG_CACHE_HOME'):
-            path = Path(os.getenv('XDG_CACHE_HOME'))
+    elif system.startswith("linux"):
+        if os.getenv("XDG_CACHE_HOME"):
+            path = Path(os.getenv("XDG_CACHE_HOME"))
         else:
-            path = Path('~/.cache').expanduser()
+            path = Path("~/.cache").expanduser()
         if package_name:
             path = path / package_name
     else:
-        raise NotImplementedError("Only MacOS (darwin) and Linux (linux) platforms are currently supported. "
-                                  f"Unsupported platform appears to be {system}")
+        raise NotImplementedError(
+            "Only MacOS (darwin) and Linux (linux) platforms are currently supported. "
+            f"Unsupported platform appears to be {system}"
+        )
     if package_name and package_version:
         path = path / package_version
     return path

@@ -27,45 +27,44 @@ class StaticProjectMetadata(BaseModel):
     -----
     See more details at https://wiki.earthdata.nasa.gov/display/CMR/UMM-C+Schema+Representation
     """
-    Format: str = Field(
-        description="Required to be NetCDF-4 by PLRA"
-    )
+
+    Format: str = Field(description="Required to be NetCDF-4 by PLRA")
     Conventions: str = Field(
-        description = "Specifies that we are using Climate and Forecast (CF) conventions"
-         "along with which version. (Ex: CF-1.12). See https://cfconventions.org/conventions.html and"
-         "https://cfconventions.org/faq.html#my-file-was-written-using-an-earlier-version-of-cf-is-it-still-compliant"
+        description="Specifies that we are using Climate and Forecast (CF) conventions"
+        "along with which version. (Ex: CF-1.12). See https://cfconventions.org/conventions.html and"
+        "https://cfconventions.org/faq.html#my-file-was-written-using-an-earlier-version-of-cf-is-it-still-compliant"
     )
-    ProjectLongName: str = Field(
-        description = "Libera"
-    )
-    ProjectShortName: str = Field(
-        description = "Libera"
-    )
+    ProjectLongName: str = Field(description="Libera")
+    ProjectShortName: str = Field(description="Libera")
     PlatformLongName: str = Field(
-        description = "This will only be needed if JPSS-4 is the platform identifier instead of NOAA-22"
-         "and then it will be Joint Polar Satellite System 4"
+        description="This will only be needed if JPSS-4 is the platform identifier instead of NOAA-22"
+        "and then it will be Joint Polar Satellite System 4"
     )
-    PlatformShortName: str = Field(
-        description = "Likely to be NOAA-22. Need to confirm"
-    )
+    PlatformShortName: str = Field(description="Likely to be NOAA-22. Need to confirm")
+
 
 class DynamicProductMetadata(BaseModel):
     """Pydantic model for file specific metadata."""
-    GranuleID: str # output filename
+
+    GranuleID: str  # output filename
     input_files: list[str]
+
 
 class GPolygon(BaseModel):
     """Pydantic model for file specifics geolocation metadata."""
+
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
 
+
 class DynamicSpatioTemporalMetadata(BaseModel):
     """Pydantic model for file specific spatial and temporal metadata"""
-    ProductionDateTime: datetime # May end up needing to be a string
-    RangeBeginningDate: datetime # May end up needing to be a string
-    RangeBeginningTime: datetime # May end up needing to be a string
-    RangeEndingDate: datetime # May end up needing to be a string
-    RangeEndingTime: datetime # May end up needing to be a string
+
+    ProductionDateTime: datetime  # May end up needing to be a string
+    RangeBeginningDate: datetime  # May end up needing to be a string
+    RangeBeginningTime: datetime  # May end up needing to be a string
+    RangeEndingDate: datetime  # May end up needing to be a string
+    RangeEndingTime: datetime  # May end up needing to be a string
     GPolygon: list[GPolygon]
 
 
@@ -86,19 +85,22 @@ class ProductMetadata(BaseModel):
 
 class VariableMetadata(BaseModel):
     """Pydantic model for variable-level metadata for NetCDF-4 files."""
+
     long_name: str
     dimensions: list
     valid_range: list
-    missing_value: int | float # this has to end up whatever type as the data, it may make more sense as an enum
+    missing_value: int | float  # this has to end up whatever type as the data, it may make more sense as an enum
     units: str | None = None
     dtype: str | None = None
 
+
 class LiberaVariable(BaseModel):
     """Pydantic model for a Libera variable."""
-    metadata: VariableMetadata
-    variable_encoding: dict | None = {"_FillValue":None, "zlib":True,"complevel":4}
 
-    #To allow pydantic use of DataArray, ndarray, and Dataframes
+    metadata: VariableMetadata
+    variable_encoding: dict | None = {"_FillValue": None, "zlib": True, "complevel": 4}
+
+    # To allow pydantic use of DataArray, ndarray, and Dataframes
     model_config = ConfigDict(arbitrary_types_allowed=True)
     data: DataArray | np.ndarray | DataFrame | None = None
 
@@ -112,13 +114,14 @@ class DataProductConfig(BaseModel):
     This is the primary object used to configure and write properly formatted NetCDF4 files that can be archived
     with the Libera SDC.
     """
+
     # Required fields to be filled at instantiation
     data_product_id: DataProductIdentifier = Field(
         description="The libera_utils defined data product identifier used to generate a specified filename"
     )
     static_project_metadata: StaticProjectMetadata = Field(
         description="The metadata associated with the Libera Project. Loaded automatically.",
-        default_factory= lambda: DataProductConfig.get_static_project_metadata()
+        default_factory=lambda: DataProductConfig.get_static_project_metadata(),
     )
     version: str = Field(
         description="The version number in X.Y.Z format with X = Major version, Y = Minor version, Z = Patch version"
@@ -130,9 +133,9 @@ class DataProductConfig(BaseModel):
     product_metadata: ProductMetadata | None = None
 
     @classmethod
-    def get_static_project_metadata(cls,
-                                    file_path=Path(config.get("LIBERA_UTILS_DATA_DIR"))
-                                              / "static_project_metadata.yml"):
+    def get_static_project_metadata(
+        cls, file_path=Path(config.get("LIBERA_UTILS_DATA_DIR")) / "static_project_metadata.yml"
+    ):
         """Loads the static project metadata field of the object from a file
 
         Parameters
@@ -143,17 +146,15 @@ class DataProductConfig(BaseModel):
         """
         with file_path.open("r", encoding="utf-8") as f:
             yaml_data = yaml.safe_load(f)
-            return  StaticProjectMetadata(**yaml_data)
+            return StaticProjectMetadata(**yaml_data)
 
-
-    @field_validator('data_product_id', mode="before")
+    @field_validator("data_product_id", mode="before")
     @classmethod
     def ensure_data_product_id(cls, raw_data_product_id: str | DataProductIdentifier) -> DataProductIdentifier:
         """Converts raw data product id string to DataProductIdentifier class if necessary."""
         if isinstance(raw_data_product_id, DataProductIdentifier):
             return raw_data_product_id
         return DataProductIdentifier(raw_data_product_id)
-
 
     @field_validator("version", mode="before")
     @classmethod
@@ -166,7 +167,6 @@ class DataProductConfig(BaseModel):
                 raise ValueError("Version string must be formatted as M.m.p")
         return version_string
 
-
     @field_validator("variable_configuration_path", mode="before")
     @classmethod
     def use_variable_configuration(cls, variable_configuration_path: str | Path):
@@ -177,14 +177,12 @@ class DataProductConfig(BaseModel):
             variable_configuration_path = Path(variable_configuration_path)
         return variable_configuration_path
 
-
     @model_validator(mode="after")
     def load_variables_from_config(self):
         """If a model is instantiated with a configuration path listed then populate the variables from that file"""
         if self.variable_configuration_path is not None and self.variables is None:
             self.add_variables_with_metadata(self.variable_configuration_path)
         return self
-
 
     @classmethod
     def load_data_product_variables_with_metadata(cls, file_path: str | Path):
@@ -206,13 +204,12 @@ class DataProductConfig(BaseModel):
                 config_data = yaml.safe_load(f)
         else:
             raise ValueError("Unsupported file type. Must be JSON or YAML.")
-        for k,v in config_data.items():
+        for k, v in config_data.items():
             metadata = VariableMetadata(**v)
             variable_object = LiberaVariable(metadata=metadata)
             # Remake the dictionary entry with the LiberaVariable object with the metadata included
             config_data[k] = variable_object
         return config_data
-
 
     def add_variables_with_metadata(self, variable_config_file_path):
         """A wrapper around the load_data_product_variables_with_metadata method.
@@ -226,12 +223,14 @@ class DataProductConfig(BaseModel):
 
     def format_version(self):
         swap_dots_for_dashes = self.version.replace(".", "-")
-        return "V"+swap_dots_for_dashes
+        return "V" + swap_dots_for_dashes
 
-    def generate_data_product_filename(self,
-                                       utc_start_time: datetime,
-                                       utc_end_time: datetime,
-                                       revision: datetime | None = None,) -> LiberaDataProductFilename:
+    def generate_data_product_filename(
+        self,
+        utc_start_time: datetime,
+        utc_end_time: datetime,
+        revision: datetime | None = None,
+    ) -> LiberaDataProductFilename:
         """Generate a valid data product filename using the Filenaming methods"""
         filename_version = self.format_version()
         match self.data_product_id.split("_", maxsplit=1)[0]:

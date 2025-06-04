@@ -1,4 +1,5 @@
 """Tests for constants file"""
+
 import pytest
 
 from libera_utils.aws import constants
@@ -6,11 +7,23 @@ from libera_utils.aws.constants import DataProductIdentifier, ProcessingStepIden
 
 
 @pytest.mark.parametrize(
-    'algorithm_name',
+    "algorithm_name",
     [
-        'l2-cloud-fraction', 'l2-ssw-toa', 'adms-libera', 'l2-ssw-surface-flux', 'l2-unfiltered',
-        'spice-azel', 'spice-jpss', 'l1b-rad', 'l1b-cam', 'l0-jpss', 'l0-azel', 'l0-rad', 'l0-cam', 'l0-cr'
-    ]
+        "l2-cloud-fraction",
+        "l2-ssw-toa",
+        "adms-libera",
+        "l2-ssw-surface-flux",
+        "l2-unfiltered",
+        "spice-azel",
+        "spice-jpss",
+        "l1b-rad",
+        "l1b-cam",
+        "l0-jpss",
+        "l0-azel",
+        "l0-rad",
+        "l0-cam",
+        "l0-cr",
+    ],
 )
 def test_algorithm_names(algorithm_name):
     """Test algorithm enum class to ensure we get the correct names"""

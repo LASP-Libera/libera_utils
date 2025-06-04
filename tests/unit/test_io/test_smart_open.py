@@ -1,4 +1,5 @@
 """Tests for smart_open module"""
+
 import os
 import warnings
 from pathlib import Path
@@ -22,7 +23,7 @@ from libera_utils.io.smart_open import is_gzip, is_s3, smart_copy_file, smart_op
         (S3Path("s3://foobucket/barfile.txt"), True),
         (AnyPath("/tmp/foofile.tar"), False),
         (AnyPath("s3://foobucket/barfile.txt"), True),
-    ]
+    ],
 )
 def test_is_s3(path, expectation):
     """Test if it is s3"""
@@ -44,21 +45,18 @@ def test_is_s3(path, expectation):
         (S3Path("s3://foobucket/barfile.txt.gz"), True),
         (AnyPath("/tmp/foofile.tar"), False),
         (AnyPath("s3://foobucket/barfile.txt"), False),
-    ]
+    ],
 )
 def test_is_gzip(path, expectation):
     """Test if it is gzip"""
     assert is_gzip(path) == expectation
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, S3Path, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 def test_smart_open_s3(test_txt, test_txt_gz, create_mock_bucket, write_file_to_s3, wrapper):
     """Test smart_open on mocked S3 objects"""
     bucket = create_mock_bucket()  # We could also let write_file_to_s3 do this automatically for us
-    key = 'somepath'
+    key = "somepath"
     plain_uri = f"s3://{bucket.name}/{key}/test.txt"
     gz_uri = f"s3://{bucket.name}/{key}/test.txt.gz"
     write_file_to_s3(test_txt, plain_uri)
@@ -74,53 +72,44 @@ def test_smart_open_s3(test_txt, test_txt_gz, create_mock_bucket, write_file_to_
     assert uncompressed_contents == compressed_contents
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, S3Path, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrapper):
     """Test smart_open on mocked S3 objects and locally"""
     bucket = create_mock_bucket()
-    key = 'somepath'
+    key = "somepath"
     hdf5_uri = f"s3://{bucket.name}/{key}/test_hdf5"
     write_file_to_s3(test_hdf5, hdf5_uri)
 
     hdf5_wrapped = wrapper(hdf5_uri)
     # Check that the contents of the files match, regardless of s3 or local
-    with h5.File(smart_open(test_hdf5), 'r') as fh:
+    with h5.File(smart_open(test_hdf5), "r") as fh:
         dataset_local = np.array(fh[list(fh.keys())[0]])
-    with h5.File(smart_open(hdf5_wrapped), 'r') as fh:
+    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
         dataset_s3 = np.array(fh[list(fh.keys())[0]])
     assert dataset_local.all() == dataset_s3.all()
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, S3Path, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, test_hdf5):
     """
     Test smart_open can read in and write to hdf5.
     """
     bucket = create_mock_bucket()
-    key = 'somepath'
+    key = "somepath"
     hdf5_uri = f"s3://{bucket.name}/{key}/path"
     write_file_to_s3(test_hdf5, hdf5_uri)
 
     hdf5_wrapped = wrapper(hdf5_uri)
 
-    with smart_open(hdf5_wrapped, 'wb') as fh:
-        with h5.File(fh, 'r+') as hdf:
-            hdf.create_group('new_group')
-    with h5.File(smart_open(hdf5_wrapped), 'r') as fh:
+    with smart_open(hdf5_wrapped, "wb") as fh:
+        with h5.File(fh, "r+") as hdf:
+            hdf.create_group("new_group")
+    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
         group_name = list(fh.keys())[0]
-    assert group_name == 'new_group'
+    assert group_name == "new_group"
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, Path, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, Path, str])
 def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     """Test smart_open on local files"""
     plain_wrapped = wrapper(test_txt.absolute())
@@ -133,10 +122,7 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     assert uncompressed_contents == compressed_contents
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_local_to_local_file(tmp_path, test_txt, wrapper):
     """Test smart copy for a local file to local file path"""
     # Make the local destination
@@ -155,10 +141,7 @@ def test_smart_copy_file_local_to_local_file(tmp_path, test_txt, wrapper):
     assert not os.path.isfile(wrapped_output_file)
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
     """Test smart copy for a local file to local directory path"""
     # Make the local destination
@@ -180,27 +163,21 @@ def test_smart_copy_file_local_to_local_directory(tmp_path, test_txt, wrapper):
     assert (tmp_folder_path / "testtextfile.txt").exists()
 
     # confirm file is deleted if optional parameter delete is set to True
-    smart_copy_file((tmp_folder_path / "testtextfile.txt"),
-                    wrapped_tmp_output_file, delete=True)
+    smart_copy_file((tmp_folder_path / "testtextfile.txt"), wrapped_tmp_output_file, delete=True)
     assert not os.path.isfile(tmp_folder_path / "testtextfile.txt")
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
-@pytest.mark.parametrize(
-    "function_to_call",
-    [smart_copy_file, s3_copy_file]
-)
-def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, function_to_call,
-                                                   create_mock_bucket, write_file_to_s3):
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
+@pytest.mark.parametrize("function_to_call", [smart_copy_file, s3_copy_file])
+def test_smart_copy_file_remote_to_local_directory(
+    tmp_path, test_txt, wrapper, function_to_call, create_mock_bucket, write_file_to_s3
+):
     """Test smart_copy for a remote file to a local directory path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
     bucket = create_mock_bucket()
-    key = 'some_path'
+    key = "some_path"
     remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile.txt"
     write_file_to_s3(test_txt, remote_file_uri)
 
@@ -223,17 +200,14 @@ def test_smart_copy_file_remote_to_local_directory(tmp_path, test_txt, wrapper, 
     assert not source_path.exists()
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_remote_to_local_file(tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file to a local file path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
     bucket = create_mock_bucket()
-    key = 'some_path'
+    key = "some_path"
     remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile.txt"
     write_file_to_s3(test_txt, remote_file_uri)
 
@@ -249,17 +223,14 @@ def test_smart_copy_file_remote_to_local_file(tmp_path, test_txt, wrapper, creat
     assert not source_path.exists()
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_remote_no_ext_to_local_file(tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file with no extension to a local file path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
     bucket = create_mock_bucket()
-    key = 'some_path'
+    key = "some_path"
     remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile"
     write_file_to_s3(test_txt, remote_file_uri)
 
@@ -275,18 +246,16 @@ def test_smart_copy_file_remote_no_ext_to_local_file(tmp_path, test_txt, wrapper
     assert not source_path.exists()
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
-def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wrapper, create_mock_bucket,
-                                                          write_file_to_s3):
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
+def test_smart_copy_file_remote_no_ext_to_local_directory(
+    tmp_path, test_txt, wrapper, create_mock_bucket, write_file_to_s3
+):
     """Test smart_copy for a remote file to ta local file path"""
     local_folder_path = tmp_path / "destination"
     local_folder_path.mkdir()
 
     bucket = create_mock_bucket()
-    key = 'some_path'
+    key = "some_path"
     remote_file_uri = f"s3://{bucket.name}/{key}/internal/testtextfile"
     write_file_to_s3(test_txt, remote_file_uri)
 
@@ -311,21 +280,18 @@ def test_smart_copy_file_remote_no_ext_to_local_directory(tmp_path, test_txt, wr
     assert not source_path.exists()
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_mock_bucket, tmp_path):
     """Test smart_copy for a local file to a remote destination"""
     bucket = create_mock_bucket()
-    key = 'some_path'
+    key = "some_path"
     remote_file_uri = f"s3://{bucket.name}/{key}/internal/data"
 
     remote_path = wrapper(f"{remote_file_uri}")
     local_file_path = wrapper(test_txt)
 
     # Make the local destination
-    tmp_file_path = tmp_path / 'testtextfile.txt'
+    tmp_file_path = tmp_path / "testtextfile.txt"
 
     # Ensure a warning is thrown
     with warnings.catch_warnings(record=True) as w:
@@ -344,18 +310,15 @@ def test_smart_copy_file_local_to_remote_directory(test_txt, wrapper, create_moc
     assert not os.path.isfile(tmp_file_path)
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_bucket, tmp_path):
     """Test smart_copy for a local file to a remote file location"""
     bucket = create_mock_bucket()
-    key = 'some_path'
+    key = "some_path"
     remote_file_uri = f"s3://{bucket.name}/{key}/internal/newfilename.txt"
 
     # Make the local destination
-    tmp_file_path = tmp_path / 'testtextfile.txt'
+    tmp_file_path = tmp_path / "testtextfile.txt"
 
     remote_file_path = wrapper(f"{remote_file_uri}")
     local_file_path = wrapper(test_txt)
@@ -370,19 +333,16 @@ def test_smart_copy_file_local_to_remote_file(test_txt, wrapper, create_mock_buc
     assert not os.path.isfile(tmp_file_path / "testtextfile.txt")
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file to a different remote directory location"""
     source_bucket = create_mock_bucket()
-    source_key = 'source_path'
+    source_key = "source_path"
     source_file_uri = f"s3://{source_bucket.name}/{source_key}/internal/sourcedata"
     write_file_to_s3(test_txt, source_file_uri)
 
     dest_bucket = create_mock_bucket()
-    dest_key = 'dest_path'
+    dest_key = "dest_path"
     dest_file_uri = f"s3://{dest_bucket.name}/{dest_key}/internal/destdata"
 
     source_file_path = wrapper(f"{source_file_uri}")
@@ -405,19 +365,16 @@ def test_smart_copy_file_remote_to_remote_directory(test_txt, wrapper, create_mo
     assert not source_path.exists()
 
 
-@pytest.mark.parametrize(
-    "wrapper",
-    [AnyPath, str]
-)
+@pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_remote_to_remote_file(test_txt, wrapper, create_mock_bucket, write_file_to_s3):
     """Test smart_copy for a remote file to a different remote file location"""
     source_bucket = create_mock_bucket()
-    source_key = 'source_path'
+    source_key = "source_path"
     source_file_uri = f"s3://{source_bucket.name}/{source_key}/internal/testtextfile.txt"
     write_file_to_s3(test_txt, source_file_uri)
 
     dest_bucket = create_mock_bucket()
-    dest_key = 'dest_path'
+    dest_key = "dest_path"
     dest_file_uri = f"s3://{dest_bucket.name}/{dest_key}/internal/newfilename.txt"
 
     source_file_path = wrapper(f"{source_file_uri}")

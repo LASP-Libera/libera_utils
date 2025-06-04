@@ -1,4 +1,5 @@
 """Test coverage for the libera_utils.quality_flags module"""
+
 from enum import NAMED_FLAGS, UNIQUE, verify
 
 import pytest
@@ -12,6 +13,7 @@ def test_quality_flag_verify_unique():
     """
 
     with pytest.raises(ValueError, match="aliases found"):
+
         @verify(UNIQUE)
         class TestFlag(qf.LiberaFlag):
             BIT_0 = 0b001
@@ -27,6 +29,7 @@ def test_quality_flag_verify_named_flags():
     combined flag bit masks
     """
     with pytest.raises(ValueError, match="invalid Flag 'TestFlag': alias BIT_1_AND_2 is missing value 0x4"):
+
         @verify(NAMED_FLAGS)
         class TestFlag(qf.LiberaFlag):
             BIT_0 = 0b001
@@ -36,6 +39,7 @@ def test_quality_flag_verify_named_flags():
 
 def test_quality_flag_member_immutability():
     """Test that you can't change a member of a quality flag class later (you can still add members though)"""
+
     @verify(UNIQUE, NAMED_FLAGS)
     class TestFlag(qf.LiberaFlag):
         BIT_0 = 0b001
@@ -56,6 +60,7 @@ def test_quality_flag_member_immutability():
 
 def test_quality_flag():
     """Test our ability to create summary messages from a quality flag"""
+
     class TestFlag(qf.LiberaFlag):
         A = qf.FlagBit(0b1, message="Bit 0 - A")
         B = qf.FlagBit(0b10, message="Bit 1 - B")
@@ -89,6 +94,7 @@ def test_quality_flag():
 
 def test_strict_quality_flags():
     """Test that quality flags are STRICT and raise errors for invalid values"""
+
     class TestFlag(qf.LiberaFlag):
         BIT_0 = 0b001
         BIT_2 = 0b100
@@ -103,4 +109,3 @@ def test_strict_quality_flags():
         TestFlag(3)
     with pytest.raises(ValueError, match="invalid value"):
         TestFlag(6)
-

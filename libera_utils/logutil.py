@@ -1,4 +1,5 @@
 """Logging utilities"""
+
 import copy
 import json
 import logging
@@ -35,14 +36,14 @@ def _json_serialize_default(o: Any) -> str:
 class JsonLogFormatter(logging.Formatter):
     """Altered version of the CloudWatchLogFormatter provided in the watchtower library"""
 
-    _default_log_record_attrs = ('created', 'name', 'module', 'lineno', 'funcName', 'levelname')
+    _default_log_record_attrs = ("created", "name", "module", "lineno", "funcName", "levelname")
 
     def __init__(
-            self,
-            *args,
-            add_log_record_attrs: tuple[str, ...] | None = None,
-            add_asctime: bool = True,
-            **kwargs,
+        self,
+        *args,
+        add_log_record_attrs: tuple[str, ...] | None = None,
+        add_asctime: bool = True,
+        **kwargs,
     ):
         """
 
@@ -88,7 +89,7 @@ class JsonLogFormatter(logging.Formatter):
 
         # If we logged an exception, add the formatted traceback to the msg dict
         if record.exc_info:
-            formatted_traceback = ''.join(traceback.format_exception(*record.exc_info))
+            formatted_traceback = "".join(traceback.format_exception(*record.exc_info))
             msg["traceback"] = formatted_traceback
 
         # Modify the record itself with the new msg dict
@@ -118,12 +119,15 @@ def configure_static_logging(config_file: str | Path | S3Path):
     logger.info(f"Logging configured statically according to {config_file}.")
 
 
-def configure_task_logging(task_id: str, *,  # Only keyword arguments after this point
-                           limit_debug_loggers: Iterable[str] | str | None = None,
-                           console_log_level: str | int = logging.INFO,
-                           console_log_json: bool = False,
-                           log_dir: str | Path | S3Path | None = None,
-                           cloudwatch_log_group: str | None = None):
+def configure_task_logging(
+    task_id: str,
+    *,  # Only keyword arguments after this point
+    limit_debug_loggers: Iterable[str] | str | None = None,
+    console_log_level: str | int = logging.INFO,
+    console_log_json: bool = False,
+    log_dir: str | Path | S3Path | None = None,
+    cloudwatch_log_group: str | None = None,
+):
     """Configure logging for a specific task (e.g. a processing algorithm).
 
     File-based logging is always done at the DEBUG level.
@@ -195,7 +199,7 @@ def configure_task_logging(task_id: str, *,  # Only keyword arguments after this
         "class": "logging.StreamHandler",
         "formatter": "json" if console_log_json else "plaintext",
         "level": console_log_level,
-        "stream": "ext://sys.stdout"
+        "stream": "ext://sys.stdout",
     }
     handlers.update(console=console_handler)
     setup_messages.append(f"Console logging configured at level {console_log_level}.")
@@ -209,7 +213,7 @@ def configure_task_logging(task_id: str, *,  # Only keyword arguments after this
             "level": "DEBUG",
             "filename": str(log_filepath),
             "maxBytes": 10000000,  # 10MB
-            "backupCount": 3
+            "backupCount": 3,
         }
         handlers.update(logfile=logfile_handler)
         setup_messages.append(f"File logging configured to log to {log_filepath}.")
@@ -223,7 +227,7 @@ def configure_task_logging(task_id: str, *,  # Only keyword arguments after this
             "log_group_name": cloudwatch_log_group,
             "log_stream_name": task_id,
             "send_interval": 10,
-            "create_log_group": True
+            "create_log_group": True,
         }
         handlers.update(watchtower=watchtower_handler)
         setup_messages.append({"cloudwatch_log_handler_config": watchtower_handler})
@@ -237,20 +241,23 @@ def configure_task_logging(task_id: str, *,  # Only keyword arguments after this
                 "()": "libera_utils.logutil.JsonLogFormatter",
             },
             "plaintext": {
-                "format":
-                    "%(asctime)s %(levelname)-9.9s [%(name)s:%(filename)s:%(lineno)d in %(funcName)s()]: %(message)s"
-            }
+                "format": "%(asctime)s %(levelname)-9.9s [%(name)s:%(filename)s:%(lineno)d in %(funcName)s()]: "
+                "%(message)s"
+            },
         },
         "handlers": handlers,
         "root": {
             "level": "INFO" if limit_debug_loggers else "DEBUG",  # Optionally block unwanted debug messages
             "propagate": True,
-            "handlers": list(handlers.keys())
+            "handlers": list(handlers.keys()),
         },
         "loggers": {
             # This explicitly allows debug messages from specific loggers if configured
-            logger_prefix: {"level": "DEBUG", "handlers": []} for logger_prefix in limit_debug_loggers
-        } if limit_debug_loggers else {}
+            logger_prefix: {"level": "DEBUG", "handlers": []}
+            for logger_prefix in limit_debug_loggers
+        }
+        if limit_debug_loggers
+        else {},
     }
 
     logging.config.dictConfig(config_dict)

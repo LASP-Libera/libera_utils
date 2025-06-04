@@ -1,17 +1,20 @@
 """AWS ECR Repository/Algorithm names"""
+
 from enum import Enum, StrEnum
 
 
 class ManifestType(StrEnum):
     """Enumerated legal manifest type values"""
-    INPUT = 'INPUT'
+
+    INPUT = "INPUT"
     input = INPUT
-    OUTPUT = 'OUTPUT'
+    OUTPUT = "OUTPUT"
     output = OUTPUT
 
 
 class LiberaAccountSuffix(StrEnum):
     """Suffixes for the various account types"""
+
     STAGE = "-stage"
     PROD = "-prod"
     DEV = "-dev"
@@ -25,6 +28,7 @@ class DataProductIdentifier(StrEnum):
 
     In general these names are of the form <level>-<source>-<type>
     """
+
     # L0 construction record
     # TODO: Re-evaluate these names to be caps to match other products [LIBSDC-445]: L0 Decoding step
     l0_cr = "l0-cr"
@@ -80,7 +84,7 @@ class DataProductIdentifier(StrEnum):
                 # check against the snake-case value
                 product_id = DataProductIdentifier(product_name[:idx])
                 # the int conversion could also fail with ValueError
-                return product_id, int(product_name[idx + 1:])
+                return product_id, int(product_name[idx + 1 :])
             except ValueError:
                 # assume that there is no chunk number, fall through to check that
                 pass
@@ -106,22 +110,23 @@ class ProcessingStepIdentifier(StrEnum):
         and the node names in processing_system_dag.json must match these.
     They must also be passed to the ecr_upload module called by some libera_cdk integration tests.
     """
-    l2_cam_cf = 'l2-cloud-fraction'
-    l2_rad_ssw_toa = 'l2-ssw-toa'
-    adms = 'adms-libera'
-    l2_surface_flux = 'l2-ssw-surface-flux'
-    l2_unfiltered = 'l2-unfiltered'
-    spice_azel = 'spice-azel'
-    spice_jpss = 'spice-jpss'
-    l1b_rad = 'l1b-rad'
-    l1b_cam = 'l1b-cam'
-    l0_jpss_pds = 'l0-jpss'
-    l0_azel_pds = 'l0-azel'
-    l0_rad_pds = 'l0-rad'
-    l0_cam_pds = 'l0-cam'
-    l0_cr = 'l0-cr'
-    cal_rad = 'cal-rad'
-    cal_cam = 'cal-cam'
+
+    l2_cam_cf = "l2-cloud-fraction"
+    l2_rad_ssw_toa = "l2-ssw-toa"
+    adms = "adms-libera"
+    l2_surface_flux = "l2-ssw-surface-flux"
+    l2_unfiltered = "l2-unfiltered"
+    spice_azel = "spice-azel"
+    spice_jpss = "spice-jpss"
+    l1b_rad = "l1b-rad"
+    l1b_cam = "l1b-cam"
+    l0_jpss_pds = "l0-jpss"
+    l0_azel_pds = "l0-azel"
+    l0_rad_pds = "l0-rad"
+    l0_cam_pds = "l0-cam"
+    l0_cr = "l0-cr"
+    cal_rad = "cal-rad"
+    cal_cam = "cal-cam"
 
     @property
     def ecr_name(self) -> str | None:
@@ -160,14 +165,13 @@ class ProcessingStepIdentifier(StrEnum):
                 # check against the snake-case value
                 product_id = ProcessingStepIdentifier(processing_step[:idx])
                 # the int conversion could also fail with ValueError
-                return product_id, int(processing_step[idx + 1:])
+                return product_id, int(processing_step[idx + 1 :])
             except ValueError:
                 # assume that there is no chunk number, fall through to check that
                 pass
         return ProcessingStepIdentifier(processing_step), None
 
-    def get_archive_bucket_name(self,
-                                account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> str | None:
+    def get_archive_bucket_name(self, account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> str | None:
         """Gets the archive bucket name for this processing step.
 
         Buckets are named according to the level of data they are storing and which account they are in. This is
@@ -216,6 +220,7 @@ class ProcessingStepIdentifier(StrEnum):
 
 class CkObject(Enum):
     """Enum of valid CK objects"""
+
     JPSS = "JPSS"
     AZROT = "AZROT"
     ELSCAN = "ELSCAN"
@@ -226,7 +231,7 @@ class CkObject(Enum):
         _product_id_map = {
             CkObject.JPSS: DataProductIdentifier.spice_jpss_ck,
             CkObject.AZROT: DataProductIdentifier.spice_az_ck,
-            CkObject.ELSCAN: DataProductIdentifier.spice_el_ck
+            CkObject.ELSCAN: DataProductIdentifier.spice_el_ck,
         }
         return _product_id_map[self]
 
@@ -236,13 +241,14 @@ class CkObject(Enum):
         _processing_step_id_map = {
             CkObject.JPSS: ProcessingStepIdentifier.spice_jpss,
             CkObject.AZROT: ProcessingStepIdentifier.spice_azel,
-            CkObject.ELSCAN: ProcessingStepIdentifier.spice_azel
+            CkObject.ELSCAN: ProcessingStepIdentifier.spice_azel,
         }
         return _processing_step_id_map[self]
 
 
 class SpkObject(Enum):
     """Enum of valid SPK objects"""
+
     JPSS = "JPSS"
 
     @property
@@ -260,15 +266,17 @@ class SpkObject(Enum):
 
 class DataLevel(StrEnum):
     """Data product level"""
+
     L0 = "L0"
     SPICE = "SPICE"
     CAL = "CAL"
-    L1B = 'L1B'
-    L2 = 'L2'
+    L1B = "L1B"
+    L2 = "L2"
 
 
 class LiberaApid(Enum):
     """APIDs for L0 packets"""
+
     JPSS_ATTITUDE_EPHEMERIS = 11
     FILTERED_RADIOMETER = 1036
     FILTERED_AZEL = 1048
@@ -277,6 +285,7 @@ class LiberaApid(Enum):
 
 class LiberaDataBucketName(StrEnum):
     """Names of the data archive buckets"""
+
     L0_ARCHIVE_BUCKET = "libera-l0-data"
     SPICE_ARCHIVE_BUCKET = "libera-spice-kernels"
     ANCILLARY_ARCHIVE_BUCKET = "libera-ancillary-data"

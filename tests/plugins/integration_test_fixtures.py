@@ -1,4 +1,5 @@
 """Fixtures for integration testing libera_utils"""
+
 from argparse import Namespace
 
 import pytest
@@ -6,7 +7,7 @@ from cloudpathlib import S3Path
 
 
 class L0MockParsedArgsNamespace(Namespace):
-    """ Generates dummy parser """
+    """Generates dummy parser"""
 
     def __init__(self, manifest_filepath, short_tmp_path=None):
         super().__init__()
@@ -23,14 +24,17 @@ def test_type(request):
 
 
 @pytest.fixture
-def setup_kernel_maker_environment_with_manifest(test_type, generate_input_manifest_local, generate_input_manifest_s3,
-                                                 test_pds_file_1, test_pds_file_2, test_pds_file_3, create_mock_bucket,
-                                                 short_tmp_path):
-    data_files = [
-        str(test_pds_file_1),
-        str(test_pds_file_2),
-        str(test_pds_file_3)
-    ]
+def setup_kernel_maker_environment_with_manifest(
+    test_type,
+    generate_input_manifest_local,
+    generate_input_manifest_s3,
+    test_pds_file_1,
+    test_pds_file_2,
+    test_pds_file_3,
+    create_mock_bucket,
+    short_tmp_path,
+):
+    data_files = [str(test_pds_file_1), str(test_pds_file_2), str(test_pds_file_3)]
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3(*data_files)
         bucket = create_mock_bucket()

@@ -1,4 +1,5 @@
 """Tests for logutil module"""
+
 import json
 import logging
 import logging.handlers
@@ -9,7 +10,7 @@ import pytest
 
 from libera_utils import logutil
 
-TEST_APP_PACKAGE_NAME = 'my_test_app'
+TEST_APP_PACKAGE_NAME = "my_test_app"
 
 
 @pytest.fixture
@@ -20,10 +21,9 @@ def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path):
     inside a test rather than a fixture. Solution is to just instantiate loggers in a fixture like this.
     See: https://stackoverflow.com/questions/69295248
     """
-    logutil.configure_task_logging('test-task-1',
-                                   limit_debug_loggers=(TEST_APP_PACKAGE_NAME,),
-                                   console_log_level="INFO",
-                                   log_dir=tmp_path)
+    logutil.configure_task_logging(
+        "test-task-1", limit_debug_loggers=(TEST_APP_PACKAGE_NAME,), console_log_level="INFO", log_dir=tmp_path
+    )
     root_log = logging.getLogger()  # root logger
     yield
     root_log.handlers = []
@@ -47,48 +47,48 @@ def test_task_logging_behavior(setup_test_logger, caplog):
     libsdp_log = logging.getLogger(TEST_APP_PACKAGE_NAME)  # top level libera_utils logger
     assert libsdp_log.level == logging.DEBUG
 
-    libsdp_child_log = logging.getLogger(f'{TEST_APP_PACKAGE_NAME}.child')  # child libera_utils logger
+    libsdp_child_log = logging.getLogger(f"{TEST_APP_PACKAGE_NAME}.child")  # child libera_utils logger
     assert libsdp_child_log.level == logging.NOTSET
 
     # Simulates an external library that does NOT inherit from the libera_utils logger
-    external_library_log = logging.getLogger('foolib.child')
+    external_library_log = logging.getLogger("foolib.child")
     assert external_library_log.level == logging.NOTSET
 
     root_log.info("(GOOD) root info message")
-    assert caplog.records[-1].message == '(GOOD) root info message'
+    assert caplog.records[-1].message == "(GOOD) root info message"
 
     libsdp_log.info("(GOOD) my app info message")
-    assert caplog.records[-1].message == '(GOOD) my app info message'
+    assert caplog.records[-1].message == "(GOOD) my app info message"
 
     libsdp_child_log.info("(GOOD) child info message")
-    assert caplog.records[-1].message == '(GOOD) child info message'
+    assert caplog.records[-1].message == "(GOOD) child info message"
 
     external_library_log.info("(GOOD) external info message")
-    assert caplog.records[-1].message == '(GOOD) external info message'
+    assert caplog.records[-1].message == "(GOOD) external info message"
 
     # Check that the right loggers produce debug messages
     libsdp_child_log.debug("(GOOD) child debug message")
-    assert caplog.records[-1].message == '(GOOD) child debug message'
+    assert caplog.records[-1].message == "(GOOD) child debug message"
 
     libsdp_log.debug("(GOOD) my app debug message")
-    assert caplog.records[-1].message == '(GOOD) my app debug message'
+    assert caplog.records[-1].message == "(GOOD) my app debug message"
 
     # We want to exclude anything below INFO that doesn't come from a libera_utils.* logger
     external_library_log.debug("(BAD) external debug message")
     for record in caplog.records:
-        assert 'external debug message' not in record.message
+        assert "external debug message" not in record.message
 
     root_log.debug("(BAD) root debug message")
     for record in caplog.records:
-        assert '(BAD) root debug message' not in record.message
+        assert "(BAD) root debug message" not in record.message
 
 
 def test_configure_static_logging(test_data_path, cleanup_loggers, tmp_path):
     """
     Test ability to configure logging from static yaml file.
     """
-    logutil.configure_static_logging(test_data_path / 'example_logging_config.yml')
-    libsdp_log = logging.getLogger('libera_utils')
+    logutil.configure_static_logging(test_data_path / "example_logging_config.yml")
+    libsdp_log = logging.getLogger("libera_utils")
     assert libsdp_log.level == logging.DEBUG
     assert len(libsdp_log.handlers) == 0
 
@@ -101,11 +101,11 @@ def test_configure_static_logging(test_data_path, cleanup_loggers, tmp_path):
     assert len(filehandlers) == 1
     assert filehandlers[0].level == logging.DEBUG
 
-    libsdp_child_log = logging.getLogger('libera_utils.child')
+    libsdp_child_log = logging.getLogger("libera_utils.child")
     assert libsdp_child_log.level == logging.NOTSET  # Inherits from parent
     assert len(libsdp_child_log.handlers) == 0
 
-    library_log = logging.getLogger('somelibrary')
+    library_log = logging.getLogger("somelibrary")
     assert library_log.level == logging.NOTSET
     assert len(library_log.handlers) == 0
 
@@ -116,8 +116,8 @@ def test_configure_static_logging(test_data_path, cleanup_loggers, tmp_path):
         "test string log message",
         ["list", "of", 5, "test", "items"],
         {"jsondict": "value", "key": 99},
-        {"nested": [{'complex': "value"}, {"second": "value"}]}
-    ]
+        {"nested": [{"complex": "value"}, {"second": "value"}]},
+    ],
 )
 def test_json_formatter_for_cloudwatch(caplog, cleanup_loggers, logged_value):
     """Test the JsonFormatter's ability to convert different types of events to proper JSON for easy querying with
@@ -128,7 +128,7 @@ def test_json_formatter_for_cloudwatch(caplog, cleanup_loggers, logged_value):
 
     original_logged_value = deepcopy(logged_value)
     logger = logging.getLogger()  # root logger
-    added_attrs = ('name', 'lineno', 'funcName', 'levelname', 'created', 'module')
+    added_attrs = ("name", "lineno", "funcName", "levelname", "created", "module")
     formatter = logutil.JsonLogFormatter(add_log_record_attrs=added_attrs, add_asctime=True)
 
     stream = logging.StreamHandler()
@@ -160,17 +160,18 @@ def test_json_formatter_for_cloudwatch(caplog, cleanup_loggers, logged_value):
         for key, value in logged_value.items():  # Only check the keys that are in the logged value
             assert reconstituted_logged_value[key] == value
         # Assert that the keys are exactly what we expect: a union of original keys and added attributes
-        assert (set(reconstituted_logged_value.keys()) ==
-                set(logged_value.keys()).union(set(added_attrs)).union({"asctime"}))
+        assert set(reconstituted_logged_value.keys()) == set(logged_value.keys()).union(set(added_attrs)).union(
+            {"asctime"}
+        )
     else:
-        assert reconstituted_logged_value['msg'] == logged_value
-        assert set(reconstituted_logged_value.keys()) == set(added_attrs).union({'msg'}).union({"asctime"})
+        assert reconstituted_logged_value["msg"] == logged_value
+        assert set(reconstituted_logged_value.keys()) == set(added_attrs).union({"msg"}).union({"asctime"})
 
 
 def test_json_log_formatter_string_interpolation(caplog, cleanup_loggers):
     """Test that we can log strings with %-style string interpolation"""
     logger = logging.getLogger()  # root logger
-    added_attrs = ('lineno', 'funcName', 'levelname', 'created', 'module')
+    added_attrs = ("lineno", "funcName", "levelname", "created", "module")
     formatter = logutil.JsonLogFormatter(add_log_record_attrs=added_attrs, add_asctime=True)
     stream = logging.StreamHandler()
     stream.setFormatter(formatter)
@@ -197,7 +198,7 @@ def test_json_log_formatter_string_interpolation(caplog, cleanup_loggers):
 def test_json_log_formatter_exception_logging(caplog, cleanup_loggers):
     """Test logging exceptions with tracebacks"""
     logger = logging.getLogger()  # root logger
-    added_attrs = ('lineno', 'funcName', 'levelname', 'created', 'module')
+    added_attrs = ("lineno", "funcName", "levelname", "created", "module")
     formatter = logutil.JsonLogFormatter(add_log_record_attrs=added_attrs, add_asctime=True)
     stream = logging.StreamHandler()
     stream.setFormatter(formatter)
@@ -211,4 +212,4 @@ def test_json_log_formatter_exception_logging(caplog, cleanup_loggers):
         logger.exception(e)
 
     assert "traceback" in caplog.records[-1].msg
-    assert "ValueError: test error" in caplog.records[-1].msg['traceback']
+    assert "ValueError: test error" in caplog.records[-1].msg["traceback"]

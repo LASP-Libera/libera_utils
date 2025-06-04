@@ -1,4 +1,5 @@
 """Module for reading packet data"""
+
 import logging
 
 import numpy as np
@@ -28,7 +29,7 @@ def array_from_packets(packets: list, apid: int = None):
         Record array with one column per field name in the packet type. Values are derived if a derived value exists,
         otherwise, the values are the raw values.
     """
-    apids_present = {packet.header['PKT_APID'].raw_value for packet in packets}
+    apids_present = {packet.header["PKT_APID"].raw_value for packet in packets}
     if apid is not None and apid not in apids_present:
         raise ValueError("Requested APID not found in parsed packets.")
     if apid is None and len(apids_present) > 1:
@@ -39,11 +40,11 @@ def array_from_packets(packets: list, apid: int = None):
     field_values = [
         tuple(pdi.derived_value or pdi.raw_value for pdi in packet.data.values())
         for packet in packets
-        if packet.header['PKT_APID'].raw_value == apid
+        if packet.header["PKT_APID"].raw_value == apid
     ]
     names = tuple(pdi.name for pdi in packets[0].data.values())  # Get data field names from the first Packet
     formats = tuple(type(val) if not isinstance(val, str) else object for val in field_values[0])
-    return np.array(field_values, dtype={'names': names, 'formats': formats})
+    return np.array(field_values, dtype={"names": names, "formats": formats})
 
 
 def parse_packets(packet_parser: parser.PacketParser, packet_data_filepaths: list, apid: int = None):

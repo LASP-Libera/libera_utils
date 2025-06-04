@@ -1,4 +1,5 @@
 """Module for uploading docker images to the ECR"""
+
 import argparse
 import base64
 import json
@@ -24,17 +25,15 @@ class DockerConfigManager:
     with a blank config. Otherwise, dockercfg_path is None, which allows DockerClient.login
     to use the default config location.
     """
-    _minimal_config_content = {
-        "auths": {},
-        "HttpHeaders": {}
-    }
+
+    _minimal_config_content = {"auths": {}, "HttpHeaders": {}}
+
     def __init__(self, override_default_config: bool = False):
         if override_default_config:
             self.tempdir = tempfile.TemporaryDirectory(prefix="docker-config-")  # pylint: disable=consider-using-with
             self.dockercfg_path = self.tempdir.name
             config_file_path = Path(self.dockercfg_path) / "config.json"
-            logger.info("Overriding default docker config location with minimal config: "
-                        f"{config_file_path}")
+            logger.info(f"Overriding default docker config location with minimal config: {config_file_path}")
             with config_file_path.open("w") as f:
                 json_str = json.dumps(self._minimal_config_content, indent=4)
                 f.write(json_str)
@@ -52,10 +51,7 @@ class DockerConfigManager:
             self.tempdir.cleanup()
 
 
-def get_ecr_docker_client(
-        region_name: str | None = None,
-        dockercfg_path: Path | None = None
-) -> docker.DockerClient:
+def get_ecr_docker_client(region_name: str | None = None, dockercfg_path: Path | None = None) -> docker.DockerClient:
     """Perform programmatic docker login to the default ECR for the current AWS credential account (e.g. AWS_PROFILE)
     and return a DockerClient object for interacting with the ECR.
 
@@ -75,21 +71,21 @@ def get_ecr_docker_client(
     """
     logger.info("Creating a docker client for ECR")
     docker_client = docker.from_env()
-    ecr_client = boto3.client('ecr', region_name=region_name)
+    ecr_client = boto3.client("ecr", region_name=region_name)
     token = ecr_client.get_authorization_token()
-    username, password = base64.b64decode(token['authorizationData'][0]['authorizationToken']).decode().split(':')
-    registry = token['authorizationData'][0]['proxyEndpoint']
+    username, password = base64.b64decode(token["authorizationData"][0]["authorizationToken"]).decode().split(":")
+    registry = token["authorizationData"][0]["proxyEndpoint"]
     docker_client.login(username, password, registry=registry, reauth=True, dockercfg_path=dockercfg_path)
     logger.info(f"Docker login successful. ECR registry: {registry}")
     return docker_client
 
 
 def build_docker_image(
-        context_dir: str | Path,
-        image_name: str,
-        tag: str = "latest",
-        target: str | None=None,
-        platform: str = "linux/amd64"
+    context_dir: str | Path,
+    image_name: str,
+    tag: str = "latest",
+    target: str | None = None,
+    platform: str = "linux/amd64",
 ) -> None:
     """
     Build a Docker image from a specified directory and tag it with a custom name.
@@ -124,16 +120,13 @@ def build_docker_image(
     logger.info(f"Building docker target {target} in context directory {context_dir}")
     try:
         _, logs = client.images.build(
-            path=str(context_dir.absolute()),
-            target=target,
-            tag=f"{image_name}:{tag}",
-            platform=platform
+            path=str(context_dir.absolute()), target=target, tag=f"{image_name}:{tag}", platform=platform
         )
         # We process this output as print statements rather than logging messages because it's the direct
         # output from `docker build`
         for log in logs:
-            if 'stream' in log:
-                print(log['stream'].strip())  # Print build output to console
+            if "stream" in log:
+                print(log["stream"].strip())  # Print build output to console
         print(f"Image {image_name}:{tag} built successfully.")
     except docker_errors.BuildError as e:
         logger.error("Failed to build docker image.")
@@ -159,9 +152,7 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     None
     """
     now = datetime.now(UTC)
-    configure_task_logging(f'ecr_upload_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG)
+    configure_task_logging(f"ecr_upload_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
     logger.debug(f"CLI args: {parsed_args}")
     image_name: str = parsed_args.image_name
     image_tag = parsed_args.image_tag
@@ -172,17 +163,19 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
         image_tag,
         algorithm_name,
         ecr_image_tags=ecr_tags,
-        ignore_docker_config=parsed_args.ignore_docker_config
+        ignore_docker_config=parsed_args.ignore_docker_config,
     )
 
 
-def push_image_to_ecr(image_name: str,
-                      image_tag: str,
-                      processing_step_id: str | constants.ProcessingStepIdentifier,
-                      *,
-                      ecr_image_tags: list[str] | None = None,
-                      region_name: str = "us-west-2",
-                      ignore_docker_config: bool = False) -> None:
+def push_image_to_ecr(
+    image_name: str,
+    image_tag: str,
+    processing_step_id: str | constants.ProcessingStepIdentifier,
+    *,
+    ecr_image_tags: list[str] | None = None,
+    region_name: str = "us-west-2",
+    ignore_docker_config: bool = False,
+) -> None:
     """Programmatically upload a docker image for a science algorithm to an ECR. ECR name is determined based
     on the algorithm name.
 
@@ -215,18 +208,21 @@ def push_image_to_ecr(image_name: str,
 
     with DockerConfigManager(override_default_config=ignore_docker_config) as docker_config_manager:
         logger.info("Preparing to push image to ECR")
-        docker_client = get_ecr_docker_client(region_name=region_name,
-                                              dockercfg_path=docker_config_manager.dockercfg_path)
+        docker_client = get_ecr_docker_client(
+            region_name=region_name, dockercfg_path=docker_config_manager.dockercfg_path
+        )
         account_id = utils.get_aws_account_number()
         ecr_name = processing_step_id.ecr_name  # The repository name within the ECR
         if ecr_name is None:
-            raise ValueError(f"Unable to determine an ECR name for algorithm identifier: {processing_step_id}. "
-                             f"Note, L0 (`l0-*`) algorithm IDs do not have associated ECRs.")
-        logger.debug(f'Algorithm name is {ecr_name}')
+            raise ValueError(
+                f"Unable to determine an ECR name for algorithm identifier: {processing_step_id}. "
+                f"Note, L0 (`l0-*`) algorithm IDs do not have associated ECRs."
+            )
+        logger.debug(f"Algorithm name is {ecr_name}")
 
         # ECR path. This is really just "the registry" URL
         ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
-        logger.debug(f'ECR path is {ecr_path}')
+        logger.debug(f"ECR path is {ecr_path}")
 
         for remote_tag in ecr_image_tags:
             # Tag the local image with the ECR repo name
@@ -244,9 +240,9 @@ def push_image_to_ecr(image_name: str,
                 for log in push_logs:
                     print(log)
                     # Print and keep track of any errors in the log
-                    if 'error' in log:
+                    if "error" in log:
                         print(f"Error: {log['error']}")
-                        error_messages.append(log['error'])
+                        error_messages.append(log["error"])
 
             except docker_errors.APIError as e:
                 logger.error("Docker API error during image push.")

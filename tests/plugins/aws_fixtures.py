@@ -1,4 +1,5 @@
 """Plugin module for mocking AWS resources"""
+
 import json
 import random
 import string
@@ -12,16 +13,16 @@ from moto import mock_aws
 from libera_utils.config import config
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def mock_aws_credentials(monkeypatch_session):
     """Mocked AWS Credentials for moto."""
-    monkeypatch_session.setenv('AWS_ACCESS_KEY_ID', 'testing')
-    monkeypatch_session.setenv('AWS_SECRET_ACCESS_KEY', 'testing')
-    monkeypatch_session.setenv('AWS_SECURITY_TOKEN', 'testing')
-    monkeypatch_session.setenv('AWS_SESSION_TOKEN', 'testing')
-    monkeypatch_session.delenv('AWS_PROFILE', raising=False)
-    monkeypatch_session.delenv('AWS_REGION', raising=False)
-    monkeypatch_session.delenv('AWS_DEFAULT_REGION', raising=False)
+    monkeypatch_session.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch_session.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch_session.setenv("AWS_SECURITY_TOKEN", "testing")
+    monkeypatch_session.setenv("AWS_SESSION_TOKEN", "testing")
+    monkeypatch_session.delenv("AWS_PROFILE", raising=False)
+    monkeypatch_session.delenv("AWS_REGION", raising=False)
+    monkeypatch_session.delenv("AWS_DEFAULT_REGION", raising=False)
 
 
 @pytest.fixture
@@ -30,10 +31,10 @@ def mock_cloudwatch_context(monkeypatch):
     """Everything under/inherited by this runs in the mock_logs context manager"""
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")  # CW requires region be set
     with mock_aws():
-        yield boto3.resource('cloudwatch')
+        yield boto3.resource("cloudwatch")
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def set_up_cloudpathlib_s3client(mock_aws_credentials, monkeypatch_session):
     """This sets the default client used for S3Path objects as a mocked S3 context.
     Make sure this code runs before any code that tries to instantiate an S3Path object without an explicit client.
@@ -57,7 +58,7 @@ def mock_s3_context():
     with mock_aws():
         # Yield the (mocked) s3 Resource object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
-        yield boto3.resource('s3')
+        yield boto3.resource("s3")
 
 
 @pytest.fixture
@@ -80,14 +81,16 @@ def create_mock_bucket(mock_s3_context):
         : s3.Bucket
         """
         if not bucket_name:
-            bucket_name = ''.join(local_random.choice(string.ascii_letters) for _ in range(16))
+            bucket_name = "".join(local_random.choice(string.ascii_letters) for _ in range(16))
         bucket = s3.Bucket(bucket_name)
         if not bucket.creation_date:  # If bucket doesn't already exist
             bucket.create()
             print(f"Created mock S3 bucket {bucket}.")
         else:
-            print(f"Using existing mock S3 bucket {bucket}. You may see FileExistsErrors if you are writing the same"
-                  f" file as a previous test due to the behavior of cloudpathlib S3Path objects.")
+            print(
+                f"Using existing mock S3 bucket {bucket}. You may see FileExistsErrors if you are writing the same"
+                f" file as a previous test due to the behavior of cloudpathlib S3Path objects."
+            )
         return bucket
 
     return _create_bucket
@@ -146,8 +149,12 @@ def create_mock_secret_manager(mock_secret_manager):
         host_name = config.get("LIBERA_DB_HOST")
         if not host_name:
             host_name = "localhost"
-        secret_json_string = f'{{\n "host":"{host_name}",\n  "password":"testerpass",\n ' \
-                             f'"dbname":"libera",\n "username":"{username}" }}\n'
+        secret_json_string = (
+            f'{{\n "host":"{host_name}",\n  '
+            f'"password":"testerpass",\n '
+            f'"dbname":"libera",\n '
+            f'"username":"{username}" }}\n'
+        )
         try:
             client.create_secret(Name=secret_name, SecretString=secret_json_string)
         except client.exceptions.ResourceExistsException:
@@ -161,10 +168,10 @@ def create_mock_secret_manager(mock_secret_manager):
 @pytest.fixture
 def mock_step_function():
     """Everything under/inherited by this runs in the mock_step_function context manager"""
-    with mock_aws(config={'stepfunctions': {"execute_state_machine": True}}):
+    with mock_aws(config={"stepfunctions": {"execute_state_machine": True}}):
         # Yield the (mocked) stepfunction client object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/clients.html)
-        yield boto3.client("stepfunctions", 'us-west-2')
+        yield boto3.client("stepfunctions", "us-west-2")
 
 
 @pytest.fixture
@@ -179,17 +186,14 @@ def make_step_function(mock_step_function, monkeypatch_session):
             monkeypatch_session.setenv("SF_EXECUTION_HISTORY_TYPE", status)
         state_machine = client.create_state_machine(
             name=sfn_name,
-            definition=json.dumps({
-                "Comment": "A simple test state machine",
-                "StartAt": "Pass",
-                "States": {
-                    "Pass": {
-                        "Type": "Pass",
-                        "End": True
-                    }
+            definition=json.dumps(
+                {
+                    "Comment": "A simple test state machine",
+                    "StartAt": "Pass",
+                    "States": {"Pass": {"Type": "Pass", "End": True}},
                 }
-            }),
-            roleArn='arn:aws:iam::123456789012:role/role-name',
+            ),
+            roleArn="arn:aws:iam::123456789012:role/role-name",
         )
         return state_machine
 

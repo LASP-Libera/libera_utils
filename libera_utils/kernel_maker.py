@@ -1,4 +1,5 @@
 """Module containing CLI tool for creating SPICE kernels from packets"""
+
 import argparse
 import logging
 import tempfile
@@ -24,8 +25,7 @@ from libera_utils.logutil import configure_task_logging
 logger = logging.getLogger(__name__)
 
 
-def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
-                                    output_directory: str or AnyPath):
+def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath, output_directory: str or AnyPath):
     """Alpha function triggering kernel generation from manifest file.
 
     If the manifest configuration field contains "start_time" and "end_time"
@@ -57,9 +57,9 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
     else:
         # Load desired time range from the manifest configuration
         start_time_text = m.configuration["start_time"]
-        desired_start_time = datetime.strptime(start_time_text, '%Y-%m-%d:%H:%M:%S')
+        desired_start_time = datetime.strptime(start_time_text, "%Y-%m-%d:%H:%M:%S")
         end_time_text = m.configuration["end_time"]
-        desired_end_time = datetime.strptime(end_time_text, '%Y-%m-%d:%H:%M:%S')
+        desired_end_time = datetime.strptime(end_time_text, "%Y-%m-%d:%H:%M:%S")
 
         # Load the packet files and check the time ranges against the manifest configuration
         # TODO update this if possible to use the metadata files when those are more defined
@@ -67,7 +67,7 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
         for file_entry in m.files:
             file_path_from_list = file_entry.filename
             packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
-            packet_dt64 = time.multipart_to_dt64(packet_data, 'ADAET1DAY', 'ADAET1MS', 'ADAET1US')
+            packet_dt64 = time.multipart_to_dt64(packet_data, "ADAET1DAY", "ADAET1MS", "ADAET1US")
 
             # Check if any of the packet data are in increasing order by comparing an array element to
             # its right neighbor and ensuring that is always greater or equal. If this is not true
@@ -89,10 +89,7 @@ def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath,
 
     # Create the arguments to pass to the kernel generation
     parsed_args = argparse.Namespace(
-        packet_data_filepaths=files_in_range,
-        outdir=str(output_directory),
-        overwrite=False,
-        verbose=False
+        packet_data_filepaths=files_in_range, outdir=str(output_directory), overwrite=False, verbose=False
     )
     make_jpss_spk(parsed_args)
     make_jpss_ck(parsed_args)
@@ -113,8 +110,8 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths: list[str or AnyP
     -------
     packet_data : numpy.ndarray
         The configured packet data. See packets.py for more details on structure
-     """
-    packet_definition_uri = AnyPath(config.get('JPSS_GEOLOCATION_PACKET_DEFINITION'))
+    """
+    packet_definition_uri = AnyPath(config.get("JPSS_GEOLOCATION_PACKET_DEFINITION"))
     logger.info("Using packet definition %s", packet_definition_uri)
 
     with smart_open(packet_definition_uri) as packet_definition_filepath:
@@ -127,8 +124,13 @@ def get_spice_packet_data_from_filepaths(packet_data_filepaths: list[str or AnyP
     return packet_data
 
 
-def make_kernel(config_file: str or Path, output_kernel: str or AnyPath, input_data: str or Path = None,
-                overwrite: bool = False, append: bool = False):
+def make_kernel(
+    config_file: str or Path,
+    output_kernel: str or AnyPath,
+    input_data: str or Path = None,
+    overwrite: bool = False,
+    append: bool = False,
+):
     """Create a SPICE kernel from a configuration file and input data.
 
     Parameters
@@ -156,13 +158,13 @@ def make_kernel(config_file: str or Path, output_kernel: str or AnyPath, input_d
     config_file = Path(config_file)
 
     # Load meta kernel details. Required to auto-map frame IDs.
-    meta_kernel_file = Path(config.get('LIBERA_KERNEL_META'))
+    meta_kernel_file = Path(config.get("LIBERA_KERNEL_META"))
     _ = meta.MetaKernel.from_json(meta_kernel_file, relative=True)
 
     # Create the kernels from the JSONs definitions.
     creator = kernels.create.KernelCreator(overwrite=overwrite, append=append)
 
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as tmp_dir:  # nosec B108
+    with tempfile.TemporaryDirectory(prefix="/tmp/") as tmp_dir:  # nosec B108
         tmp_path = Path(tmp_dir)
         if output_kernel.is_file():
             tmp_path = tmp_dir / output_kernel.name
@@ -200,9 +202,11 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     """
 
     now = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-    configure_task_logging(f'spk_generator_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG if parsed_args.verbose else None)
+    configure_task_logging(
+        f"spk_generator_{now}",
+        limit_debug_loggers="libera_utils",
+        console_log_level=logging.DEBUG if parsed_args.verbose else None,
+    )
 
     logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
 
@@ -214,22 +218,23 @@ def make_jpss_spk(parsed_args: argparse.Namespace):
     logger.info("Done.")
 
     # Compute the ephemeris time from the multipart ephemeris time.
-    packet_dt64 = time.multipart_to_dt64(packet_data, 'ADAET1DAY', 'ADAET1MS', 'ADAET1US')
+    packet_dt64 = time.multipart_to_dt64(packet_data, "ADAET1DAY", "ADAET1MS", "ADAET1US")
     packet_data = pd.DataFrame(packet_data)
-    packet_data['SPK_ET'] = spicetime.adapt(packet_dt64.values, 'dt64', 'et')
+    packet_data["SPK_ET"] = spicetime.adapt(packet_dt64.values, "dt64", "et")
 
     spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
         spk_object=DataProductIdentifier.spice_jpss_spk,
         utc_start=packet_dt64[0].to_pydatetime(),
         utc_end=packet_dt64[-1].to_pydatetime(),
-        version=filenaming.get_current_version_str('libera_utils'),
-        revision=datetime.now(UTC)
+        version=filenaming.get_current_version_str("libera_utils"),
+        revision=datetime.now(UTC),
     )
     output_full_path = output_dir / spk_filename.path.name  # pylint: disable=no-member
 
-    config_file = config.get('LIBERA_KERNEL_SC_SPK_CONFIG')
-    make_kernel(config_file=config_file, output_kernel=output_full_path,
-                input_data=packet_data, overwrite=parsed_args.overwrite)
+    config_file = config.get("LIBERA_KERNEL_SC_SPK_CONFIG")
+    make_kernel(
+        config_file=config_file, output_kernel=output_full_path, input_data=packet_data, overwrite=parsed_args.overwrite
+    )
 
 
 def make_jpss_ck(parsed_args: argparse.Namespace):
@@ -251,9 +256,11 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     None
     """
     now = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
-    configure_task_logging(f'ck_generator_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG if parsed_args.verbose else None)
+    configure_task_logging(
+        f"ck_generator_{now}",
+        limit_debug_loggers="libera_utils",
+        console_log_level=logging.DEBUG if parsed_args.verbose else None,
+    )
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of JPSS attitue/quaternion packet files.")
 
@@ -263,22 +270,23 @@ def make_jpss_ck(parsed_args: argparse.Namespace):
     logger.info("Done.")
 
     # Compute the ephemeris time from the multipart attitude time.
-    packet_dt64 = time.multipart_to_dt64(packet_data, 'ADAET2DAY', 'ADAET2MS', 'ADAET2US')
+    packet_dt64 = time.multipart_to_dt64(packet_data, "ADAET2DAY", "ADAET2MS", "ADAET2US")
     packet_data = pd.DataFrame(packet_data)
-    packet_data['CK_ET'] = spicetime.adapt(packet_dt64.values, 'dt64', 'et')
+    packet_data["CK_ET"] = spicetime.adapt(packet_dt64.values, "dt64", "et")
 
     ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
         ck_object=DataProductIdentifier.spice_jpss_ck,
         utc_start=packet_dt64[0].to_pydatetime(),
         utc_end=packet_dt64[-1].to_pydatetime(),
-        version=filenaming.get_current_version_str('libera_utils'),
-        revision=datetime.now(UTC)
+        version=filenaming.get_current_version_str("libera_utils"),
+        revision=datetime.now(UTC),
     )
     output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
 
-    config_file = config.get('LIBERA_KERNEL_SC_CK_CONFIG')
-    make_kernel(config_file=config_file, output_kernel=output_full_path,
-                input_data=packet_data, overwrite=parsed_args.overwrite)
+    config_file = config.get("LIBERA_KERNEL_SC_CK_CONFIG")
+    make_kernel(
+        config_file=config_file, output_kernel=output_full_path, input_data=packet_data, overwrite=parsed_args.overwrite
+    )
 
 
 def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-statements
@@ -302,9 +310,11 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
     print(parsed_args)
 
     now = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
-    configure_task_logging(f'ck_generator_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG if parsed_args.verbose else None)
+    configure_task_logging(
+        f"ck_generator_{now}",
+        limit_debug_loggers="libera_utils",
+        console_log_level=logging.DEBUG if parsed_args.verbose else None,
+    )
 
     logger.info("Starting CK maker. This CLI tool creates a CK from a list of Azimuth or Elevation files.")
 
@@ -323,13 +333,13 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
         # TODO: assign this_config and ck_object below based on the APID of the packet decoded
 
         azel_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
-        packet_data = nprf.append_fields(packet_data, 'ATTSCLKSTR', azel_sclk_string)
+        packet_data = nprf.append_fields(packet_data, "ATTSCLKSTR", azel_sclk_string)
         utc_start = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[0]))
         utc_end = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[-1]))
     else:
         logger.info("Parsing CSV file...")
         # get the data from the ASCII file
-        packet_data = np.genfromtxt(parsed_args.packet_data_filepaths[0], delimiter=',', dtype='double')
+        packet_data = np.genfromtxt(parsed_args.packet_data_filepaths[0], delimiter=",", dtype="double")
         # make sure we have all 3 axis defined: X is RAM, Y is Elev when Az is at 0.0, Z is nadir
         if (parsed_args.azimuth is True) and (parsed_args.elevation is True):
             try:
@@ -338,22 +348,22 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
                 logger.exception(error)
 
         if parsed_args.azimuth:
-            packet_data = packet_data.view([('ET_TIME', 'double'), ('AZIMUTH', 'double')])
-            packet_data = nprf.append_fields(packet_data, 'ELEVATION', np.zeros(packet_data.size,dtype='double'))
+            packet_data = packet_data.view([("ET_TIME", "double"), ("AZIMUTH", "double")])
+            packet_data = nprf.append_fields(packet_data, "ELEVATION", np.zeros(packet_data.size, dtype="double"))
         elif parsed_args.elevation:
-            packet_data = packet_data.view([('ET_TIME', 'double'), ('ELEVATION', 'double')])
-            packet_data = nprf.append_fields(packet_data, 'AZIMUTH', np.zeros(packet_data.size, dtype='double'))
+            packet_data = packet_data.view([("ET_TIME", "double"), ("ELEVATION", "double")])
+            packet_data = nprf.append_fields(packet_data, "AZIMUTH", np.zeros(packet_data.size, dtype="double"))
         else:
             try:
                 raise ValueError("Expecting at least one: --azimuth or --elevation. None provided.\n")
             except ValueError as error:
                 logger.exception(error)
 
-        packet_data = nprf.append_fields(packet_data, 'AZEL_Z', np.zeros(packet_data.size, dtype='double'))
-        azel_sclk_string = [f"{d}" for d in packet_data['ET_TIME']]
-        packet_data = nprf.append_fields(packet_data, 'AZELSCLKSTR', azel_sclk_string)
-        utc_start = time.et_2_datetime(packet_data['ET_TIME'][0])
-        utc_end = time.et_2_datetime(packet_data['ET_TIME'][-1])
+        packet_data = nprf.append_fields(packet_data, "AZEL_Z", np.zeros(packet_data.size, dtype="double"))
+        azel_sclk_string = [f"{d}" for d in packet_data["ET_TIME"]]
+        packet_data = nprf.append_fields(packet_data, "AZELSCLKSTR", azel_sclk_string)
+        utc_start = time.et_2_datetime(packet_data["ET_TIME"][0])
+        utc_end = time.et_2_datetime(packet_data["ET_TIME"][-1])
 
     logger.info("Done.")
     revision = datetime.now(UTC)
@@ -363,25 +373,33 @@ def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-s
             ck_object=DataProductIdentifier.spice_az_ck,
             utc_start=utc_start,
             utc_end=utc_end,
-            version=filenaming.get_current_version_str('libera_utils'),
-            revision=revision
+            version=filenaming.get_current_version_str("libera_utils"),
+            revision=revision,
         )
         output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
 
-        config_file = config.get('LIBERA_KERNEL_AZ_CK_CONFIG')
-        make_kernel(config_file=config_file, output_kernel=output_full_path,
-                    input_data=packet_data, overwrite=parsed_args.overwrite)
+        config_file = config.get("LIBERA_KERNEL_AZ_CK_CONFIG")
+        make_kernel(
+            config_file=config_file,
+            output_kernel=output_full_path,
+            input_data=packet_data,
+            overwrite=parsed_args.overwrite,
+        )
 
     if parsed_args.elevation:
         ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
             ck_object=DataProductIdentifier.spice_el_ck,
             utc_start=utc_start,
             utc_end=utc_end,
-            version=filenaming.get_current_version_str('libera_utils'),
-            revision=revision
+            version=filenaming.get_current_version_str("libera_utils"),
+            revision=revision,
         )
         output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
 
-        config_file = config.get('LIBERA_KERNEL_EL_CK_CONFIG')
-        make_kernel(config_file=config_file, output_kernel=output_full_path,
-                    input_data=packet_data, overwrite=parsed_args.overwrite)
+        config_file = config.get("LIBERA_KERNEL_EL_CK_CONFIG")
+        make_kernel(
+            config_file=config_file,
+            output_kernel=output_full_path,
+            input_data=packet_data,
+            overwrite=parsed_args.overwrite,
+        )

@@ -61,7 +61,7 @@ pipeline {
             emailext attachLog: true,
             body: 'Log is attached',
             subject: 'Libera Utils (libera_utils) Tests Failed',
-            to: 'gavin.medley@lasp.colorado.edu,matt.watwood@lasp.colorado.edu,Kim.Kokkonen@lasp.colorado.edu'
+            to: 'libera.sdp.dev.cicd@lists.lasp.colorado.edu'
 
             slackSend color: "bad", message: "Periodic libera_utils unit tests FAILED: ${env.BUILD_URL}"
         }

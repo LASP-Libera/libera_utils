@@ -1,4 +1,5 @@
 """Pytest plugin module for SPICE-related fixtures"""
+
 import os
 import tempfile
 from pathlib import Path
@@ -17,14 +18,14 @@ def short_tmp_path():
     text kernels (e.g. MSOPCK and MKSPK setup files).
     For all other use cases that don't require a short path, use the pytest tmp_path fixture.
     """
-    with tempfile.TemporaryDirectory(prefix='/tmp/') as td:
+    with tempfile.TemporaryDirectory(prefix="/tmp/") as td:
         yield Path(td)
 
 
 @pytest.fixture
 def curryer_lsk(test_lsk):
     """Loads the Libera LSK for use by Curryer"""
-    os.environ['LEAPSECOND_FILE_ENV'] = str(test_lsk.parent)
+    os.environ["LEAPSECOND_FILE_ENV"] = str(test_lsk.parent)
     spicetime.leapsecond.load(test_lsk)
     return test_lsk
 
@@ -42,7 +43,7 @@ def autoclear_spice():
 @pytest.fixture
 def furnish_fk():
     """Furnishes (temporarily) the Libera frame kernel (FK) stored in the package data directory"""
-    spice.furnsh(config.get('LIBERA_FK'))
+    spice.furnsh(config.get("LIBERA_FK"))
     yield
     spice.kclear()
 
@@ -50,7 +51,7 @@ def furnish_fk():
 @pytest.fixture
 def furnish_sclk():
     """Furnishes (temporarily) the SCLK for JPSS stored in the package data directory"""
-    spice.furnsh(config.get('JPSS_SCLK'))
+    spice.furnsh(config.get("JPSS_SCLK"))
     yield
     spice.kclear()
 
@@ -101,16 +102,22 @@ def furnish_test_itrf93_pck(test_itrf93_pck):
     Also furnishes (temporarily) a NAIF-produced FK that associates the Earth body with the ITRF93 reference frame.
     """
     spice.furnsh(str(test_itrf93_pck))
-    spice.furnsh(config.get('EARTH_ASSOC_ITRF93_FK'))
+    spice.furnsh(config.get("EARTH_ASSOC_ITRF93_FK"))
     yield
     spice.kclear()
 
 
 @pytest.fixture
-def furnish_testing_kernels(furnish_fk,
-                            furnish_sclk, furnish_test_lsk,
-                            furnish_test_de_spk, furnish_test_pck, furnish_test_itrf93_pck,
-                            furnish_test_jpss_ck, furnish_test_jpss_spk):
+def furnish_testing_kernels(
+    furnish_fk,
+    furnish_sclk,
+    furnish_test_lsk,
+    furnish_test_de_spk,
+    furnish_test_pck,
+    furnish_test_itrf93_pck,
+    furnish_test_jpss_ck,
+    furnish_test_jpss_spk,
+):
     """Furnishes all the testing kernels provided above, basically as a syntactic shortcut. Fixtures are executed
     from left to right in order so the first argument to this fixture furnishes first.
     Note: Order matters here if multiple files furnish the same data. The latest file furnished is always used.

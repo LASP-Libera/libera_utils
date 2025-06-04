@@ -10,6 +10,7 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 
 3. All functions should have robust type-hinting.
 """
+
 import re
 from collections.abc import Collection
 from datetime import datetime, timedelta
@@ -22,22 +23,25 @@ import spiceypy as spice
 from libera_utils.config import config
 from libera_utils.spice_utils import ensure_spice
 
-ISOT_REGEX = re.compile(r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
-                        r"[T|t]"
-                        r"(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})"
-                        r"(?:\.(?P<fractional_second>[0-9]*))?$")
+ISOT_REGEX = re.compile(
+    r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
+    r"[T|t]"
+    r"(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})"
+    r"(?:\.(?P<fractional_second>[0-9]*))?$"
+)
 
-PRINTABLE_TS_REGEX = re.compile(r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})"
-                                r"[T|t]"
-                                r"(?P<hour>[0-9]{2})(?P<minute>[0-9]{2})(?P<second>[0-9]{2})$")
+PRINTABLE_TS_REGEX = re.compile(
+    r"^(?P<year>[0-9]{4})(?P<month>[0-9]{2})(?P<day>[0-9]{2})"
+    r"[T|t]"
+    r"(?P<hour>[0-9]{2})(?P<minute>[0-9]{2})(?P<second>[0-9]{2})$"
+)
 
 PRINTABLE_TS_FORMAT = "%Y%m%dT%H%M%S"
 
 NUMERIC_DOY_TS_FORMAT = "%y%j%H%M%S"
 
 
-def et_2_timestamp(et: float | Collection[float] | np.ndarray,
-                   fmt: str = '%Y%m%dT%H%M%S.%f') -> str | Collection[str]:
+def et_2_timestamp(et: float | Collection[float] | np.ndarray, fmt: str = "%Y%m%dT%H%M%S.%f") -> str | Collection[str]:
     """
     Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
 
@@ -77,10 +81,10 @@ def et_2_datetime(et: float | Collection[float] | np.ndarray) -> datetime | np.n
     : datetime.datetime or numpy.ndarray
         Object representation of ephemeris times.
     """
-    isoc_fmt = '%Y-%m-%dT%H:%M:%S.%f'
+    isoc_fmt = "%Y-%m-%dT%H:%M:%S.%f"
     isoc_prec = 6
 
-    isoc_timestamp = et2utc_wrapper(et, 'ISOC', isoc_prec)
+    isoc_timestamp = et2utc_wrapper(et, "ISOC", isoc_prec)
     if isinstance(et, Collection):
         return np.array([datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
 
@@ -198,19 +202,19 @@ def convert_cds_integer_to_datetime(satellite_time: int):
     Returns
     -------
     cds_time : datetime.datetime
-     """
-    byte_data = satellite_time.to_bytes(8, 'big')
+    """
+    byte_data = satellite_time.to_bytes(8, "big")
     int_days = int.from_bytes([byte_data[0], byte_data[1]], byteorder="big")
-    int_millisec = int.from_bytes([byte_data[2], byte_data[3],
-                                    byte_data[4], byte_data[5]],
-                                   byteorder="big")
+    int_millisec = int.from_bytes([byte_data[2], byte_data[3], byte_data[4], byte_data[5]], byteorder="big")
     int_microsec = int.from_bytes([byte_data[6], byte_data[7]], byteorder="big")
 
     reference_date = datetime(1958, 1, 1, 0, 0, 0, 0, ZoneInfo("UTC"))
-    cds_time = (reference_date +
-                timedelta(days=int_days) +
-                timedelta(milliseconds=int_millisec) +
-                timedelta(microseconds=int_microsec))
+    cds_time = (
+        reference_date
+        + timedelta(days=int_days)
+        + timedelta(milliseconds=int_millisec)
+        + timedelta(microseconds=int_microsec)
+    )
 
     # TODO: Check with EDOS on this time conversion. The commented out below gives approximately a 70 second difference
     # TODO: to the method above.
@@ -221,7 +225,7 @@ def convert_cds_integer_to_datetime(satellite_time: int):
     return cds_time
 
 
-def multipart_to_dt64(data: pd.DataFrame, day_field: str, ms_field: str, us_field: str, epoch: str = '1958-01-01'):
+def multipart_to_dt64(data: pd.DataFrame, day_field: str, ms_field: str, us_field: str, epoch: str = "1958-01-01"):
     """Convert multipart time fields to a datetime64 time.
 
     Parameters
@@ -243,6 +247,9 @@ def multipart_to_dt64(data: pd.DataFrame, day_field: str, ms_field: str, us_fiel
         Pandas series of the datetime64 values.
 
     """
-    return (pd.Timestamp(epoch) + pd.to_timedelta(data[day_field], 'D')
-            + pd.to_timedelta(data[ms_field], 'ms')
-            + pd.to_timedelta(data[us_field], 'us'))
+    return (
+        pd.Timestamp(epoch)
+        + pd.to_timedelta(data[day_field], "D")
+        + pd.to_timedelta(data[ms_field], "ms")
+        + pd.to_timedelta(data[us_field], "us")
+    )

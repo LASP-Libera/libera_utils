@@ -1,4 +1,5 @@
 """Helper functions for AWS access"""
+
 import logging
 
 import boto3
@@ -19,9 +20,7 @@ def get_aws_account_number(region_name="us-west-2"):
         users account_id number
     """
     session = boto3.session.Session()
-    client = session.client(
-        service_name='sts',
-        region_name=region_name)
+    client = session.client(service_name="sts", region_name=region_name)
     account_id = client.get_caller_identity()["Account"]
     logger.info(f"AWS Account ID: {account_id}")
     return account_id

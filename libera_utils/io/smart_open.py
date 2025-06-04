@@ -1,4 +1,5 @@
 """Module for smart_open"""
+
 import shutil
 import typing
 import warnings
@@ -23,11 +24,12 @@ def is_s3(path: str | Path | S3Path):
     """
 
     if isinstance(path, str):
-        return path.startswith('s3://')
+        return path.startswith("s3://")
     if isinstance(path, Path):
-        if str(path).startswith('s3://'):
-            warnings.warn("Path object appears to contain an S3 path. "
-                          "You should use S3Path to refer to S3 object urls.")
+        if str(path).startswith("s3://"):
+            warnings.warn(
+                "Path object appears to contain an S3 path. You should use S3Path to refer to S3 object urls."
+            )
         return False
     if isinstance(path, S3Path):
         return True
@@ -47,11 +49,11 @@ def is_gzip(path: str | Path | S3Path):
     : bool
     """
     if isinstance(path, str):
-        return path.endswith('.gz')
-    return path.name.endswith('.gz')
+        return path.endswith(".gz")
+    return path.name.endswith(".gz")
 
 
-def smart_open(path: str | Path | S3Path, mode: str | None = 'rb', enable_gzip: bool | None = True):
+def smart_open(path: str | Path | S3Path, mode: str | None = "rb", enable_gzip: bool | None = True):
     """
     Open function that can handle local files or files in an S3 bucket. It also
     correctly handles gzip files determined by a `*.gz` extension.
@@ -73,6 +75,7 @@ def smart_open(path: str | Path | S3Path, mode: str | None = 'rb', enable_gzip: 
     -------
     : typing.IO or gzip.GzipFile
     """
+
     def _gzip_wrapper(fileobj: typing.IO):
         """Wrapper around a filelike object that unzips it
         (if it is enabled and if the file object was opened in binary mode).
@@ -87,8 +90,8 @@ def smart_open(path: str | Path | S3Path, mode: str | None = 'rb', enable_gzip: 
         : gzip.GzipFile
         """
         if is_gzip(path) and enable_gzip:
-            if 'b' not in mode:
-                raise OSError(f'Gzip files must be opened in binary (b) mode. Got {mode}.')
+            if "b" not in mode:
+                raise OSError(f"Gzip files must be opened in binary (b) mode. Got {mode}.")
             return GzipFile(filename=path, fileobj=fileobj)
         return fileobj
 
@@ -122,9 +125,11 @@ def _copy_local_to_local(source_path: str | Path, dest_path: str | Path, delete:
 
     # Warning if no suffix is used in destination.
     if len(local_dest_path.suffix) == 0:
-        warnings.warn(f'You have copied to a location without a file extension.'
-                      f'Source location: {local_source_path} to destination:'
-                      f'{local_dest_path}.')
+        warnings.warn(
+            f"You have copied to a location without a file extension."
+            f"Source location: {local_source_path} to destination:"
+            f"{local_dest_path}."
+        )
 
     # Returns a PosixPath of the newly created file
     if delete:
@@ -157,9 +162,11 @@ def _copy_local_to_s3(source_path: str | Path, dest_path: str | S3Path, delete: 
 
     # Warning if no suffix is used.
     if len(s3_dest_path.suffix) == 0:
-        warnings.warn(f'You have copied a file to S3 without a file extension.'
-                      f'Source location: {local_source_path} to S3 location:'
-                      f'{s3_dest_path}.')
+        warnings.warn(
+            f"You have copied a file to S3 without a file extension."
+            f"Source location: {local_source_path} to S3 location:"
+            f"{s3_dest_path}."
+        )
 
     s3 = boto3.resource("s3")
     # Has no return, but will raise exceptions on problems
@@ -194,15 +201,18 @@ def _copy_s3_to_local(source_path: str | S3Path, dest_path: str | Path, delete: 
     # Ensure a full destination path including file name is used
     if local_dest_path.is_dir():
         local_dest_path = local_dest_path / s3_source_path.name
-        warnings.warn(f'A directory was given as the destination for the smart file '
-                      f'copy. This was modified to include a name as follows.'
-                      f'Copy from {s3_source_path} to {local_dest_path}.')
+        warnings.warn(
+            f"A directory was given as the destination for the smart file "
+            f"copy. This was modified to include a name as follows."
+            f"Copy from {s3_source_path} to {local_dest_path}."
+        )
 
     # Warning if no suffix is used.
     if len(local_dest_path.suffix) == 0:
-        warnings.warn(f'You have copied a file without a file extension.'
-                      f'Source: {s3_source_path} to destination:'
-                      f'{local_dest_path}.')
+        warnings.warn(
+            f"You have copied a file without a file extension. "
+            f"Source: {s3_source_path} to destination:{local_dest_path}."
+        )
 
     s3 = boto3.resource("s3")
     # Has no return, but will raise exceptions on problems
@@ -235,16 +245,15 @@ def _copy_s3_to_s3(source_path: str | S3Path, dest_path: str | S3Path, delete: b
     s3_source_path = S3Path(source_path)
     s3_dest_path = S3Path(dest_path)
 
-    copy_source = {
-        'Bucket': s3_source_path.bucket,
-        'Key': s3_source_path.key
-    }
+    copy_source = {"Bucket": s3_source_path.bucket, "Key": s3_source_path.key}
 
     # Warning if no suffix is used.
     if len(s3_dest_path.suffix) == 0:
-        warnings.warn(f'You have copied a file to S3 without a file extension.'
-                      f'Source location: {s3_source_path} to S3 location:'
-                      f'{s3_dest_path}.')
+        warnings.warn(
+            f"You have copied a file to S3 without a file extension."
+            f"Source location: {s3_source_path} to S3 location:"
+            f"{s3_dest_path}."
+        )
 
     client = boto3.client("s3")
     # Has no return, but will raise exceptions
@@ -252,12 +261,11 @@ def _copy_s3_to_s3(source_path: str | S3Path, dest_path: str | S3Path, delete: b
 
     if delete:
         s3 = boto3.resource("s3")
-        s3.Object(copy_source['Bucket'], copy_source['Key']).delete()
+        s3.Object(copy_source["Bucket"], copy_source["Key"]).delete()
     return s3_dest_path
 
 
-def smart_copy_file(source_path: str | Path | S3Path, dest_path: str | Path | S3Path,
-                    delete: bool | None = False):
+def smart_copy_file(source_path: str | Path | S3Path, dest_path: str | Path | S3Path, delete: bool | None = False):
     """Copy function that can handle local files or files in an S3 bucket.
     Returns the path to the newly created file as a Path or an S3Path, depending on the destination.
 
