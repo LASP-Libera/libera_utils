@@ -1,4 +1,5 @@
 """Quality flag definitions"""
+
 from enum import NAMED_FLAGS, STRICT, UNIQUE, Flag, verify
 
 
@@ -52,20 +53,24 @@ class LiberaFlag(Flag, boundary=STRICT):
         members, not_covered = self.decompose()
         print(members)
         if not_covered:
-            raise ValueError(f"{self.__class__.__name__} has value {self.value} "
-                             "but that value cannot be created by elements "
-                             f"of {self.__class__}. This should never happen unless a quality flag was declared "
-                             "without using the FrozenFlagMeta metaclass.")
+            raise ValueError(
+                f"{self.__class__.__name__} has value {self.value} "
+                "but that value cannot be created by elements "
+                f"of {self.__class__}. This should never happen unless a quality flag was declared "
+                "without using the FrozenFlagMeta metaclass."
+            )
 
         try:
             return self.value, [m.value.message for m in members]
         except Exception as err:
             raise AttributeError(
-                "Tried to summarize a quality flag but its values don't appear to have messages.") from err
+                "Tried to summarize a quality flag but its values don't appear to have messages."
+            ) from err
 
 
 class FlagBit(int):
     """Subclass of int to capture both an integer value and an accompanying message"""
+
     def __new__(cls, *args, message=None, **kwargs):
         obj = super().__new__(cls, *args, **kwargs)
         obj.message = message
@@ -80,4 +85,5 @@ class LiberaQualityFlag(LiberaFlag):
     """
     TODO: Once these quality flags are well defined, write tests against them
     """
+
     MISSING_DATA = FlagBit(0b1, message="At least some data is missing")

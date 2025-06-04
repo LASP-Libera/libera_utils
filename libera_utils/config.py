@@ -1,4 +1,5 @@
 """Configuration reader. To modify the configuration, see file: config.json"""
+
 import json
 import logging
 import os
@@ -26,10 +27,10 @@ class ConfigurationFormatter(string.Formatter):
 class _ConfigurationCache:
     """Class that stores the JSON configuration and provides methods for accessing configuration information"""
 
-    _json_config_filepath = Path(__file__).parent / 'data/config.json'
+    _json_config_filepath = Path(__file__).parent / "data/config.json"
 
     # Should handle all floats
-    FLOAT_REGEXP = re.compile(r'^[-+]?([0-9]+|[0-9]*\.[0-9]+)([eE][-+]?[0-9]+)?$')
+    FLOAT_REGEXP = re.compile(r"^[-+]?([0-9]+|[0-9]*\.[0-9]+)([eE][-+]?[0-9]+)?$")
     # Example "-12.34E+56"      # sign (-)
     #     integer (12)
     #           OR
@@ -38,7 +39,7 @@ class _ConfigurationCache:
 
     def __init__(self):
         logger.debug("Initializing configuration cache from config.json.")
-        with open(self._json_config_filepath, encoding='utf_8') as config_file:
+        with open(self._json_config_filepath, encoding="utf_8") as config_file:
             self._cached_json_config = json.load(config_file)
             self._known_config_variables = set(self._cached_json_config)
 
@@ -59,7 +60,7 @@ class _ConfigurationCache:
             # if the string contains only a curly bracket keyword, return the value of get_config(keyword)
             key_iter = formatter.parse(value)
             text_and_key = next(key_iter)
-            if text_and_key[0] == '' and not any(key_iter):
+            if text_and_key[0] == "" and not any(key_iter):
                 return config.get(text_and_key[1])
 
             return formatter.format(value)
@@ -112,16 +113,18 @@ class _ConfigurationCache:
         : any
             Resulting value
         """
-        if (key != 'PKG_ROOT') and (key not in self._known_config_variables):
-            warnings.warn(f"Configuration key {key} is not known to the config module. "
-                          f"We will try to find it in the environment anyway but a default should be added to "
-                          f"the config.json file.")
+        if (key != "PKG_ROOT") and (key not in self._known_config_variables):
+            warnings.warn(
+                f"Configuration key {key} is not known to the config module. "
+                f"We will try to find it in the environment anyway but a default should be added to "
+                f"the config.json file."
+            )
 
         if key is None:
             return self._cached_json_config
 
-        if key == 'PKG_ROOT':  # Special case for root of installed package
-            return str(Path(sys.modules[__name__.split('.', maxsplit=1)[0]].__file__).parent)
+        if key == "PKG_ROOT":  # Special case for root of installed package
+            return str(Path(sys.modules[__name__.split(".", maxsplit=1)[0]].__file__).parent)
 
         # Checking the environment first allows easy override of any json config variable
         if os.getenv(key):
@@ -132,7 +135,7 @@ class _ConfigurationCache:
             result = self._cached_json_config[key]
             return self._parse_numeric_types(self._format_return_value(result))
 
-        raise KeyError(f'Configuration variable {key} not found.')
+        raise KeyError(f"Configuration variable {key} not found.")
 
 
 config = _ConfigurationCache()

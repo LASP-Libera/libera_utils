@@ -1,4 +1,5 @@
 """Modules for SPICE kernel creation, management, and usage"""
+
 import datetime
 import functools
 import logging
@@ -30,21 +31,24 @@ logger = logging.getLogger(__name__)
 
 class SpiceId(NamedTuple):
     """Class that represents a unique identifier in the NAIF SPICE library"""
+
     strid: str
     numid: int
 
 
 class SpiceBody(Enum):
     """Enum containing SPICE IDs for ephemeris bodies that we use."""
-    JPSS = SpiceId('JPSS', config.get('JPSS_SC_ID'))
-    SSB = SpiceId('SOLAR_SYSTEM_BARYCENTER', 0)
-    SUN = SpiceId('SUN', 10)
-    EARTH = SpiceId('EARTH', 399)
-    EARTH_MOON_BARYCENTER = SpiceId('EARTH-MOON BARYCENTER', 3)
+
+    JPSS = SpiceId("JPSS", config.get("JPSS_SC_ID"))
+    SSB = SpiceId("SOLAR_SYSTEM_BARYCENTER", 0)
+    SUN = SpiceId("SUN", 10)
+    EARTH = SpiceId("EARTH", 399)
+    EARTH_MOON_BARYCENTER = SpiceId("EARTH-MOON BARYCENTER", 3)
 
 
 class SpiceInstrument(Enum):
     """Enum containing SPICE IDs for instrument geometries configured in the Instrument Kernel (IK)"""
+
     # TODO: We don't have an IK yet. Once we do we should add instrument names and IDs, like
     #  LIBERA_SW_RADIOMETER = SpiceId('LIBERA_SW_RADIOMETER', -143013301)
     #  Do the required reading on NAIF on how to assign IDs to instrument bodies in an IK,
@@ -55,8 +59,9 @@ class SpiceInstrument(Enum):
 
 class SpiceFrame(Enum):
     """Enum containing SPICE IDs for reference frames, possibly defined in the Frame Kernel (FK)"""
-    J2000 = SpiceId('J2000', 1)
-    ITRF93 = SpiceId('ITRF93', 3000)
+
+    J2000 = SpiceId("J2000", 1)
+    ITRF93 = SpiceId("ITRF93", 3000)
     # EARTH_FIXED is a generic frame used only by the internals of SPICE. See docs here:
     # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/frames.html \
     #     #Appendix.%20High%20Precision%20Earth%20Fixed%20Frames
@@ -73,9 +78,12 @@ class KernelFileCache:
     is not recommended.
     """
 
-    def __init__(self, kernel_url: str or S3Path,
-                 max_cache_age: datetime.timedelta = datetime.timedelta(days=1),
-                 fallback_kernel: Path = None):
+    def __init__(
+        self,
+        kernel_url: str or S3Path,
+        max_cache_age: datetime.timedelta = datetime.timedelta(days=1),
+        fallback_kernel: Path = None,
+    ):
         """Create a new file cache. Downloading is done on first access of kernel_path if the file is not already
         cached. Fallback occurs only after failing to download.
         Parameters
@@ -125,16 +133,16 @@ class KernelFileCache:
         if self.is_cached():
             return self.cache_dir / self.kernel_basename
 
-        logger.info("No valid cached file %s in %s",
-                    self.kernel_basename, self.cache_dir)
+        logger.info("No valid cached file %s in %s", self.kernel_basename, self.cache_dir)
         try:
             downloaded_kernel = self.download_kernel(self.kernel_url)
             return downloaded_kernel
         except Exception as unhandled:
             logger.exception(unhandled)
             if self.fallback_kernel:
-                logger.error("Error finding and downloading %s. Falling back to %s",
-                             self.kernel_url, self.fallback_kernel)
+                logger.error(
+                    "Error finding and downloading %s. Falling back to %s", self.kernel_url, self.fallback_kernel
+                )
                 return self.fallback_kernel
             raise
 
@@ -189,7 +197,7 @@ class KernelFileCache:
         # If kernel_url is an S3 object location
         if smart_open.is_s3(kernel_url):
             with smart_open.smart_open(kernel_url) as s3_object:
-                with local_filepath.open('wb') as local_object:
+                with local_filepath.open("wb") as local_object:
                     local_object.write(s3_object.read())
         elif isinstance(kernel_url, str):
             # Else, treat as URL string
@@ -201,15 +209,16 @@ class KernelFileCache:
                 try:
                     with requests.get(kernel_url, stream=True, timeout=30) as r:
                         r.raise_for_status()
-                        with open(local_filepath, 'wb') as f:
+                        with open(local_filepath, "wb") as f:
                             for chunk in r.iter_content(chunk_size=8192):
                                 f.write(chunk)
                     break
                 except requests.exceptions.RequestException as error:
                     logger.info(f"Request failed. {error}")
                     if attempt_number < allowed_attempts:
-                        logger.info(f"Trying again, retries left {allowed_attempts - attempt_number}, "
-                                    f"Exception: {error}")
+                        logger.info(
+                            f"Trying again, retries left {allowed_attempts - attempt_number}, Exception: {error}"
+                        )
                         time.sleep(1)
                     else:
                         logger.error(f"Failed to download file after {allowed_attempts} attempts, Final Error: {error}")
@@ -258,16 +267,17 @@ def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str, all
 
     file_names = re.findall(kernel_link_regex, resp.text)
     if len(file_names) == 0:
-        raise ValueError(f'No files were found on the NAIF page: {naif_base_url}')
+        raise ValueError(f"No files were found on the NAIF page: {naif_base_url}")
 
     file_names.sort()  # NAIF filenames sort properly
-    logger.debug('Found files on NAIF page: %r', file_names)
+    logger.debug("Found files on NAIF page: %r", file_names)
 
     return os.path.join(naif_base_url, file_names[-1])
 
 
 class KernelFileRecord(NamedTuple):
     """Tuple for keeping track of kernel files with default kernel_level"""
+
     kernel_type: str
     file_name: str
 
@@ -342,8 +352,10 @@ def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
         Decorated function, with spice error handling
     """
     if f_py and not callable(f_py):
-        raise ValueError(f"Received a non-callable object {f_py} as the f_py argument to ensure_spice. "
-                         "f_py must be a callable object.")
+        raise ValueError(
+            f"Received a non-callable object {f_py} as the f_py argument to ensure_spice. "
+            f"f_py must be a callable object."
+        )
 
     def _decorator(func):
         """This is either a decorator or a function wrapper, depending on how ensure_spice is being used"""
@@ -360,18 +372,19 @@ def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
             except SpiceyError as spcy_err:
                 try:
                     # Step 2.
-                    metakernel_path = os.environ['SPICE_METAKERNEL']
+                    metakernel_path = os.environ["SPICE_METAKERNEL"]
                     spice.furnsh(metakernel_path)
                 except KeyError:
                     if time_kernels_only:
                         lsk_url = find_most_recent_naif_kernel(NAIF_LSK_INDEX_URL, NAIF_LSK_REGEX)
                         lsk = KernelFileCache(lsk_url)
                         spice.furnsh(str(lsk.kernel_path))
-                        spice.furnsh(config.get('JPSS_SCLK'))
+                        spice.furnsh(config.get("JPSS_SCLK"))
                     else:
-                        raise SpiceyError("When calling a function requiring SPICE, we failed to load a metakernel. "
-                                          "SPICE_METAKERNEL is not set, and time_kernels_only is not set to True"
-                                          ) from spcy_err
+                        raise SpiceyError(
+                            "When calling a function requiring SPICE, we failed to load a metakernel. "
+                            "SPICE_METAKERNEL is not set, and time_kernels_only is not set to True"
+                        ) from spcy_err
                 return func(*args, **kwargs)
 
         return wrapper_ensure_spice
@@ -395,12 +408,12 @@ def ls_kernels(verbose: bool = False, log: bool = False) -> list:
     list
         A list of KernelFileRecord named tuples.
     """
-    count = spice.ktotal('ALL')
+    count = spice.ktotal("ALL")
     if verbose:
         print(f"SPICE ktotal reports {count} kernels loaded")
     result = []
     for i in range(count):
-        file, kernel_type, _, _ = spice.kdata(i, 'ALL')  # pylint: disable=W0632
+        file, kernel_type, _, _ = spice.kdata(i, "ALL")  # pylint: disable=W0632
         kfr = KernelFileRecord(kernel_type=kernel_type, file_name=file)
         if verbose:
             print(kfr)
@@ -426,7 +439,7 @@ def ls_spice_constants(verbose: bool = False) -> dict:
         Dictionary of kernel constants
     """
     try:
-        kervars = spice.gnpool('*', 0, 1000, 81)
+        kervars = spice.gnpool("*", 0, 1000, 81)
     except NotFoundError:  # Happens if there are no constants in the pool
         return {}
 
@@ -435,12 +448,12 @@ def ls_spice_constants(verbose: bool = False) -> dict:
         n, kernel_type = spice.dtpool(kervar)  # pylint: disable=W0632
         if verbose:
             print(f"{kervar:<50} {kernel_type} {n}")
-        if kernel_type == 'N':
+        if kernel_type == "N":
             values = spice.gdpool(kervar, 0, n)
             result[kervar] = values
             if verbose:
                 print(values)
-        elif kernel_type == 'C':
+        elif kernel_type == "C":
             values = spice.gcpool(kervar, 0, n, 81)
             result[kervar] = values
             if verbose:
@@ -464,7 +477,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
     dict
         Key is filename, value is a list of tuples giving the start and end times in ET.
     """
-    if kernel_type not in ('CK', 'SPK'):
+    if kernel_type not in ("CK", "SPK"):
         raise ValueError(f"Invalid kernel_type argument to ls_kernel_coverage {kernel_type}. Must be CK or SPK.")
 
     result = {}
@@ -472,15 +485,15 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
     for i in range(count):
         file, _, _, _ = spice.kdata(i, kernel_type)  # pylint: disable=W0632
         result[file] = []
-        if kernel_type.upper() == 'CK':
+        if kernel_type.upper() == "CK":
             ids = spice.ckobj(file)
         else:  # Must be SPK
             ids = spice.spkobj(file)
 
         for kernel_id in ids:
             cover = spice.cell_double(10000)
-            if kernel_type.upper() == 'CK':
-                cover = spice.ckcov(file, kernel_id, False, 'INTERVAL', 0.0, 'TDB', cover)
+            if kernel_type.upper() == "CK":
+                cover = spice.ckcov(file, kernel_id, False, "INTERVAL", 0.0, "TDB", cover)
             else:  # Must be SPK
                 cover = spice.spkcov(file, kernel_id, cover)
             card = spice.wncard(cover)
@@ -488,6 +501,8 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
                 left, right = spice.wnfetd(cover, i_window)
                 result[file].append((left, right))
                 if verbose:
-                    print(f"{kernel_type},{file},{kernel_id},"
-                          f"{left:17.6f},{spice.etcal(left)},{right:17.6f},{spice.etcal(right)}")
+                    print(
+                        f"{kernel_type},{file},{kernel_id},"
+                        f"{left:17.6f},{spice.etcal(left)},{right:17.6f},{spice.etcal(right)}"
+                    )
     return result

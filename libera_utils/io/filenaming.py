@@ -1,4 +1,5 @@
 """Module for file naming utilities"""
+
 import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
@@ -23,50 +24,61 @@ from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
-SPK_REGEX = re.compile(r"^LIBERA_(?P<spk_object>JPSS-SPK)"
-                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
-                       r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
-                       r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-                       r"_(?P<revision>R[0-9]{11})"
-                       r"\.bsp$")
+SPK_REGEX = re.compile(
+    r"^LIBERA_(?P<spk_object>JPSS-SPK)"
+    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+    r"_(?P<revision>R[0-9]{11})"
+    r"\.bsp$"
+)
 
-CK_REGEX = re.compile(r"^LIBERA_(?P<ck_object>(JPSS|AZROT|ELSCAN)-CK)"
-                      r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
-                      r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
-                      r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-                      r"_(?P<revision>R[0-9]{11})"
-                      r"\.bc$")
+CK_REGEX = re.compile(
+    r"^LIBERA_(?P<ck_object>(JPSS|AZROT|ELSCAN)-CK)"
+    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+    r"_(?P<revision>R[0-9]{11})"
+    r"\.bc$"
+)
 
 # L0 filename format determined by EDOS Production Data Set and Construction Record filenaming conventions
-LIBERA_L0_REGEX = re.compile(r"^(?P<id_char>[PX])"
-                             r"(?P<scid>[0-9]{3})"
-                             r"(?P<first_apid>[0-9]{4})"
-                             # In some cases at least, the last character of the fill field specifies a time (T)
-                             # or session (S) based product. e.g. VIIRSSCIENCEAT
-                             r"(?P<fill>.{14})"
-                             r"(?P<created_time>[0-9]{11})"
-                             r"(?P<numeric_id>[0-9])"
-                             r"(?P<file_number>[0-9]{2})"
-                             r".(?P<extension>PDR|PDS)"
-                             r"(?P<signal>.XFR)?$")
+LIBERA_L0_REGEX = re.compile(
+    r"^(?P<id_char>[PX])"
+    r"(?P<scid>[0-9]{3})"
+    r"(?P<first_apid>[0-9]{4})"
+    # In some cases at least, the last character of the fill field specifies a time (T)
+    # or session (S) based product. e.g. VIIRSSCIENCEAT
+    r"(?P<fill>.{14})"
+    r"(?P<created_time>[0-9]{11})"
+    r"(?P<numeric_id>[0-9])"
+    r"(?P<file_number>[0-9]{2})"
+    r".(?P<extension>PDR|PDS)"
+    r"(?P<signal>.XFR)?$"
+)
 
-LIBERA_DATA_PRODUCT_REGEX = re.compile(r"^LIBERA_(?P<data_level>L1B|L2)"
-                                       r"_(?P<product_name>[^_]*)"
-                                       r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
-                                       r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
-                                       r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-                                       r"_(?P<revision>R[0-9]{11})"
-                                       r"\.(?P<extension>nc|h5)$")
+LIBERA_DATA_PRODUCT_REGEX = re.compile(
+    r"^LIBERA_(?P<data_level>L1B|L2)"
+    r"_(?P<product_name>[^_]*)"
+    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+    r"_(?P<revision>R[0-9]{11})"
+    r"\.(?P<extension>nc|h5)$"
+)
 
-MANIFEST_FILE_REGEX = re.compile(r"^LIBERA"
-                                 r"_(?P<manifest_type>INPUT|OUTPUT)"
-                                 r"_MANIFEST"
-                                 r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
-                                 r"\.json")
+MANIFEST_FILE_REGEX = re.compile(
+    r"^LIBERA"
+    r"_(?P<manifest_type>INPUT|OUTPUT)"
+    r"_MANIFEST"
+    r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
+    r"\.json"
+)
 
 
 class ProductName(StrEnum):
     """Enum of valid product names as used in filenames, defined and sourced from the LASP-ASDC ICD"""
+
     RAD = "RAD"
     CAM = "CAM"
     # TODO: Add the additional product names from the ICD
@@ -76,7 +88,7 @@ class ProductName(StrEnum):
         """ProcessingStepIdentifier for this product name"""
         _product_name_to_processing_step_id = {
             ProductName.RAD: ProcessingStepIdentifier.l1b_rad,
-            ProductName.CAM: ProcessingStepIdentifier.l1b_cam
+            ProductName.CAM: ProcessingStepIdentifier.l1b_cam,
         }
         return _product_name_to_processing_step_id[self]
 
@@ -85,19 +97,20 @@ class ProductName(StrEnum):
         """DataProductIdentifier for this product name"""
         _product_name_to_data_product_id = {
             ProductName.RAD: DataProductIdentifier.l1b_rad,
-            ProductName.CAM: DataProductIdentifier.l1b_cam
+            ProductName.CAM: DataProductIdentifier.l1b_cam,
         }
         return _product_name_to_data_product_id[self]
 
 
 # used by from_file_path result typehint
-AVF = TypeVar('AVF', bound='AbstractValidFilename')
+AVF = TypeVar("AVF", bound="AbstractValidFilename")
 
 
 class AbstractValidFilename(ABC):
     """Composition of a CloudPath/Path instance with some methods to perform
     regex validation on filenames
     """
+
     _regex: re.Pattern
     _fmt: str
     _required_parts: tuple
@@ -116,17 +129,22 @@ class AbstractValidFilename(ABC):
     @classmethod
     def from_file_path(cls, *args, **kwargs) -> AVF:
         """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)"""
-        for CandidateClass in (L0Filename, AttitudeKernelFilename,
-                               EphemerisKernelFilename, LiberaDataProductFilename,
-                               ManifestFilename):
+        for CandidateClass in (
+            L0Filename,
+            AttitudeKernelFilename,
+            EphemerisKernelFilename,
+            LiberaDataProductFilename,
+            ManifestFilename,
+        ):
             try:
                 filename = CandidateClass(*args, **kwargs)
                 return filename
             except ValueError:
                 continue
 
-        raise ValueError(f"Unable to create a valid filename from {args}. "
-                         "Are you sure this is a valid Libera file name?")
+        raise ValueError(
+            f"Unable to create a valid filename from {args}. Are you sure this is a valid Libera file name?"
+        )
 
     @property
     def path(self) -> Path | S3Path:
@@ -165,19 +183,22 @@ class AbstractValidFilename(ABC):
 
     @classmethod
     @abstractmethod
-    def from_filename_parts(cls,
-                            *args: Any,  # Required filename parts as defined by child class
-                            basepath: str | Path | S3Path = None,
-                            **kwargs: Any  # Optional filename parts or options as defined by child class
-                            ):
+    def from_filename_parts(
+        cls,
+        *args: Any,  # Required filename parts as defined by child class
+        basepath: str | Path | S3Path = None,
+        **kwargs: Any,  # Optional filename parts or options as defined by child class
+    ):
         """Abstract method that must be implemented to provide hinting for required parts"""
         raise NotImplementedError()
 
     @classmethod
-    def _from_filename_parts(cls,
-                             *,  # No positional arguments
-                             basepath: str | Path | S3Path = None,
-                             **parts: Any):
+    def _from_filename_parts(
+        cls,
+        *,  # No positional arguments
+        basepath: str | Path | S3Path = None,
+        **parts: Any,
+    ):
         """Create instance from filename parts.
 
         The part kwarg names are named according to the regex for the file type.
@@ -277,8 +298,10 @@ class AbstractValidFilename(ABC):
             parent_path = AnyPath(parent_path)
 
         if not parent_path.is_absolute():
-            raise ValueError(f"Detected relative parent_path {parent_path} passed to generate_prefixed_path. "
-                             "The parent_path must be an absolute path. e.g. s3://my-bucket or /starts/with/root.")
+            raise ValueError(
+                f"Detected relative parent_path {parent_path} passed to generate_prefixed_path. "
+                "The parent_path must be an absolute path. e.g. s3://my-bucket or /starts/with/root."
+            )
 
         return parent_path / self.archive_prefix / self.path.name
 
@@ -292,13 +315,13 @@ class L0Filename(AbstractValidFilename):
         LiberaApid.JPSS_ATTITUDE_EPHEMERIS.value: ProcessingStepIdentifier.l0_jpss_pds,
         LiberaApid.FILTERED_RADIOMETER.value: ProcessingStepIdentifier.l0_rad_pds,
         LiberaApid.FILTERED_AZEL.value: ProcessingStepIdentifier.l0_azel_pds,
-        LiberaApid.CAMERA.value: ProcessingStepIdentifier.l0_cam_pds
+        LiberaApid.CAMERA.value: ProcessingStepIdentifier.l0_cam_pds,
     }
     _apid_to_data_product_id = {
         LiberaApid.JPSS_ATTITUDE_EPHEMERIS.value: DataProductIdentifier.l0_jpss_pds,
         LiberaApid.FILTERED_RADIOMETER.value: DataProductIdentifier.l0_rad_pds,
         LiberaApid.FILTERED_AZEL.value: DataProductIdentifier.l0_azel_pds,
-        LiberaApid.CAMERA.value: DataProductIdentifier.l0_cam_pds
+        LiberaApid.CAMERA.value: DataProductIdentifier.l0_cam_pds,
     }
 
     @property
@@ -326,18 +349,20 @@ class L0Filename(AbstractValidFilename):
         return f"{l0_file_type}/{apid:0>4}"
 
     @classmethod
-    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
-                            *,  # No positional arguments
-                            id_char: str,
-                            scid: int,
-                            first_apid: int,
-                            fill: str,
-                            created_time: datetime,
-                            numeric_id: int,
-                            file_number: int,
-                            extension: str,
-                            signal: str | None = None,
-                            basepath: str | Path | S3Path | None = None):
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        *,  # No positional arguments
+        id_char: str,
+        scid: int,
+        first_apid: int,
+        fill: str,
+        created_time: datetime,
+        numeric_id: int,
+        file_number: int,
+        extension: str,
+        signal: str | None = None,
+        basepath: str | Path | S3Path | None = None,
+    ):
         """Create instance from filename parts
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -370,29 +395,33 @@ class L0Filename(AbstractValidFilename):
         -------
         : L0Filename
         """
-        return cls._from_filename_parts(basepath=basepath,
-                                        id_char=id_char,
-                                        scid=scid,
-                                        first_apid=first_apid,
-                                        fill=fill,
-                                        created_time=created_time,
-                                        numeric_id=numeric_id,
-                                        file_number=file_number,
-                                        extension=extension,
-                                        signal=signal)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            id_char=id_char,
+            scid=scid,
+            first_apid=first_apid,
+            fill=fill,
+            created_time=created_time,
+            numeric_id=numeric_id,
+            file_number=file_number,
+            extension=extension,
+            signal=signal,
+        )
 
     @classmethod
-    def _format_filename_parts(cls,  # pylint: disable=arguments-differ
-                               *, # No positional arguments
-                               id_char: str,
-                               scid: int,
-                               first_apid: int,
-                               fill: str,
-                               created_time: datetime,
-                               numeric_id: int,
-                               file_number: int,
-                               extension: str,
-                               signal: str | None = None):
+    def _format_filename_parts(
+        cls,  # pylint: disable=arguments-differ
+        *,  # No positional arguments
+        id_char: str,
+        scid: int,
+        first_apid: int,
+        fill: str,
+        created_time: datetime,
+        numeric_id: int,
+        file_number: int,
+        extension: str,
+        signal: str | None = None,
+    ):
         """Construct a path from filename parts
 
         Parameters
@@ -423,15 +452,17 @@ class L0Filename(AbstractValidFilename):
         """
         signal = signal if signal else ""
 
-        return cls._fmt.format(id_char=id_char,
-                               scid=scid,
-                               first_apid=first_apid,
-                               fill=fill,
-                               created_time=created_time.strftime(NUMERIC_DOY_TS_FORMAT),
-                               numeric_id=numeric_id,
-                               file_number=file_number,
-                               extension=extension,
-                               signal=signal)
+        return cls._fmt.format(
+            id_char=id_char,
+            scid=scid,
+            first_apid=first_apid,
+            fill=fill,
+            created_time=created_time.strftime(NUMERIC_DOY_TS_FORMAT),
+            numeric_id=numeric_id,
+            file_number=file_number,
+            extension=extension,
+            signal=signal,
+        )
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings
@@ -442,11 +473,11 @@ class L0Filename(AbstractValidFilename):
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
-        d['scid'] = int(d['scid'])
-        d['first_apid'] = int(d['first_apid'])
-        d['numeric_id'] = int(d['numeric_id'])
-        d['file_number'] = int(d['file_number'])
-        d['created_time'] = datetime.strptime(d['created_time'], NUMERIC_DOY_TS_FORMAT)
+        d["scid"] = int(d["scid"])
+        d["first_apid"] = int(d["first_apid"])
+        d["numeric_id"] = int(d["numeric_id"])
+        d["file_number"] = int(d["file_number"])
+        d["created_time"] = datetime.strptime(d["created_time"], NUMERIC_DOY_TS_FORMAT)
         return SimpleNamespace(**d)
 
 
@@ -478,16 +509,18 @@ class LiberaDataProductFilename(AbstractValidFilename):
         return f"{product_name}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
-                            *, # No positional arguments
-                            data_level: str,
-                            product_name: str,
-                            version: str,
-                            utc_start: datetime,
-                            utc_end: datetime,
-                            revision: datetime,
-                            extension: str = 'nc',
-                            basepath: str | Path | S3Path | None = None):
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        *,  # No positional arguments
+        data_level: str,
+        product_name: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+        extension: str = "nc",
+        basepath: str | Path | S3Path | None = None,
+    ):
         """Create instance from filename parts. All keyword arguments other than basepath are required!
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -517,25 +550,29 @@ class LiberaDataProductFilename(AbstractValidFilename):
         -------
         : LiberaDataProductFilename
         """
-        return cls._from_filename_parts(basepath=basepath,
-                                        data_level=data_level,
-                                        product_name=product_name,
-                                        version=version,
-                                        utc_start=utc_start,
-                                        utc_end=utc_end,
-                                        revision=revision,
-                                        extension=extension)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            data_level=data_level,
+            product_name=product_name,
+            version=version,
+            utc_start=utc_start,
+            utc_end=utc_end,
+            revision=revision,
+            extension=extension,
+        )
 
     @classmethod
-    def _format_filename_parts(cls,  # pylint: disable=arguments-differ
-                               *,  # No positional arguments
-                               data_level: str,
-                               product_name: str,
-                               version: str,
-                               utc_start: datetime,
-                               utc_end: datetime,
-                               revision: datetime,
-                               extension: str):
+    def _format_filename_parts(
+        cls,  # pylint: disable=arguments-differ
+        *,  # No positional arguments
+        data_level: str,
+        product_name: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+        extension: str,
+    ):
         """Construct a path from filename parts
 
         Parameters
@@ -562,13 +599,15 @@ class LiberaDataProductFilename(AbstractValidFilename):
         : str
             Formatted filename
         """
-        return cls._fmt.format(data_level=data_level.upper(),
-                               product_name=product_name.upper(),
-                               version=version.upper(),
-                               utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
-                               utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               revision=revision.strftime(REVISION_TS_FORMAT),
-                               extension=extension)
+        return cls._fmt.format(
+            data_level=data_level.upper(),
+            product_name=product_name.upper(),
+            version=version.upper(),
+            utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
+            utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
+            revision=revision.strftime(REVISION_TS_FORMAT),
+            extension=extension,
+        )
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings
@@ -579,9 +618,9 @@ class LiberaDataProductFilename(AbstractValidFilename):
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
-        d['utc_start'] = datetime.strptime(d['utc_start'], PRINTABLE_TS_FORMAT)
-        d['utc_end'] = datetime.strptime(d['utc_end'], PRINTABLE_TS_FORMAT)
-        d['revision'] = datetime.strptime(d['revision'], REVISION_TS_FORMAT)
+        d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT)
+        d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT)
+        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT)
         return SimpleNamespace(**d)
 
 
@@ -616,10 +655,12 @@ class ManifestFilename(AbstractValidFilename):
         return f"{manifest_type}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
-                            manifest_type: ManifestType,
-                            ulid_code: ulid.ULID,
-                            basepath: str | Path | S3Path = None):
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        manifest_type: ManifestType,
+        ulid_code: ulid.ULID,
+        basepath: str | Path | S3Path = None,
+    ):
         """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -638,14 +679,14 @@ class ManifestFilename(AbstractValidFilename):
         -------
         : ManifestFilename
         """
-        return cls._from_filename_parts(basepath=basepath,
-                                        manifest_type=manifest_type,
-                                        ulid_code=ulid_code)
+        return cls._from_filename_parts(basepath=basepath, manifest_type=manifest_type, ulid_code=ulid_code)
 
     @classmethod
-    def _format_filename_parts(cls,  # pylint: disable=arguments-differ
-                               manifest_type: ManifestType,
-                               ulid_code: ulid.ULID):
+    def _format_filename_parts(
+        cls,  # pylint: disable=arguments-differ
+        manifest_type: ManifestType,
+        ulid_code: ulid.ULID,
+    ):
         """Construct a path from filename parts
 
         Parameters
@@ -660,8 +701,7 @@ class ManifestFilename(AbstractValidFilename):
         : str
             Formatted filename
         """
-        return cls._fmt.format(manifest_type=manifest_type.upper(),
-                               ulid_code=ulid_code)
+        return cls._fmt.format(manifest_type=manifest_type.upper(), ulid_code=ulid_code)
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings
@@ -672,8 +712,8 @@ class ManifestFilename(AbstractValidFilename):
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
-        d['manifest_type'] = ManifestType(d['manifest_type'].upper())
-        d['ulid_code'] = ulid.ULID.from_str(d['ulid_code'])
+        d["manifest_type"] = ManifestType(d["manifest_type"].upper())
+        d["ulid_code"] = ulid.ULID.from_str(d["ulid_code"])
         return SimpleNamespace(**d)
 
 
@@ -705,14 +745,16 @@ class EphemerisKernelFilename(AbstractValidFilename):
         return f"{spk_object}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
-                            *,  # No positional arguments
-                            spk_object: str,
-                            version: str,
-                            utc_start: datetime,
-                            utc_end: datetime,
-                            revision: datetime,
-                            basepath: str | Path | S3Path | None = None):
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        *,  # No positional arguments
+        spk_object: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+        basepath: str | Path | S3Path | None = None,
+    ):
         """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -738,21 +780,25 @@ class EphemerisKernelFilename(AbstractValidFilename):
         -------
         : EphemerisKernelFilename
         """
-        return cls._from_filename_parts(basepath=basepath,
-                                        spk_object=spk_object,
-                                        version=version,
-                                        utc_start=utc_start,
-                                        utc_end=utc_end,
-                                        revision=revision)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            spk_object=spk_object,
+            version=version,
+            utc_start=utc_start,
+            utc_end=utc_end,
+            revision=revision,
+        )
 
     @classmethod
-    def _format_filename_parts(cls,  # pylint: disable=arguments-differ
-                               *,  # No positional arguments
-                               spk_object: str,
-                               version: str,
-                               utc_start: datetime,
-                               utc_end: datetime,
-                               revision: datetime):
+    def _format_filename_parts(
+        cls,  # pylint: disable=arguments-differ
+        *,  # No positional arguments
+        spk_object: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+    ):
         """Format filename parts as a string
 
         Parameters
@@ -773,11 +819,13 @@ class EphemerisKernelFilename(AbstractValidFilename):
         -------
         : str
         """
-        return cls._fmt.format(spk_object=spk_object.upper(),
-                               version=version.upper(),
-                               utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
-                               utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               revision=revision.strftime(REVISION_TS_FORMAT))
+        return cls._fmt.format(
+            spk_object=spk_object.upper(),
+            version=version.upper(),
+            utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
+            utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
+            revision=revision.strftime(REVISION_TS_FORMAT),
+        )
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings
@@ -788,9 +836,9 @@ class EphemerisKernelFilename(AbstractValidFilename):
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
-        d['utc_start'] = datetime.strptime(d['utc_start'], PRINTABLE_TS_FORMAT)
-        d['utc_end'] = datetime.strptime(d['utc_end'], PRINTABLE_TS_FORMAT)
-        d['revision'] = datetime.strptime(d['revision'], REVISION_TS_FORMAT)
+        d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT)
+        d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT)
+        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT)
         return SimpleNamespace(**d)
 
 
@@ -822,14 +870,16 @@ class AttitudeKernelFilename(AbstractValidFilename):
         return f"{ck_object}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
 
     @classmethod
-    def from_filename_parts(cls,  # noqa pylint: disable=arguments-differ
-                            *,  # No positional arguments
-                            ck_object: str,
-                            version: str,
-                            utc_start: datetime,
-                            utc_end: datetime,
-                            revision: datetime,
-                            basepath: str | Path | S3Path | None = None):
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        *,  # No positional arguments
+        ck_object: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+        basepath: str | Path | S3Path | None = None,
+    ):
         """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
@@ -855,21 +905,25 @@ class AttitudeKernelFilename(AbstractValidFilename):
         -------
         : AttitudeKernelFilename
         """
-        return cls._from_filename_parts(basepath=basepath,
-                                        ck_object=ck_object,
-                                        version=version,
-                                        utc_start=utc_start,
-                                        utc_end=utc_end,
-                                        revision=revision)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            ck_object=ck_object,
+            version=version,
+            utc_start=utc_start,
+            utc_end=utc_end,
+            revision=revision,
+        )
 
     @classmethod
-    def _format_filename_parts(cls,  # pylint: disable=arguments-differ
-                               *,  # No positional arguments
-                               ck_object: str,
-                               version: str,
-                               utc_start: datetime,
-                               utc_end: datetime,
-                               revision: datetime):
+    def _format_filename_parts(
+        cls,  # pylint: disable=arguments-differ
+        *,  # No positional arguments
+        ck_object: str,
+        version: str,
+        utc_start: datetime,
+        utc_end: datetime,
+        revision: datetime,
+    ):
         """Format filename parts as a string
 
         Parameters
@@ -890,11 +944,13 @@ class AttitudeKernelFilename(AbstractValidFilename):
         -------
         : str
         """
-        return cls._fmt.format(ck_object=ck_object.upper(),
-                               version=version.upper(),
-                               utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
-                               utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
-                               revision=revision.strftime(REVISION_TS_FORMAT))
+        return cls._fmt.format(
+            ck_object=ck_object.upper(),
+            version=version.upper(),
+            utc_start=utc_start.strftime(PRINTABLE_TS_FORMAT),
+            utc_end=utc_end.strftime(PRINTABLE_TS_FORMAT),
+            revision=revision.strftime(REVISION_TS_FORMAT),
+        )
 
     def _parse_filename_parts(self):
         """Parse the filename parts into objects from regex matched strings
@@ -905,9 +961,9 @@ class AttitudeKernelFilename(AbstractValidFilename):
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
-        d['utc_start'] = datetime.strptime(d['utc_start'], PRINTABLE_TS_FORMAT)
-        d['utc_end'] = datetime.strptime(d['utc_end'], PRINTABLE_TS_FORMAT)
-        d['revision'] = datetime.strptime(d['revision'], REVISION_TS_FORMAT)
+        d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT)
+        d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT)
+        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT)
         return SimpleNamespace(**d)
 
 
@@ -939,7 +995,7 @@ def format_semantic_version(semantic_version: str) -> str:
     -------
     : str
     """
-    major, minor, patch = semantic_version.split('.')
+    major, minor, patch = semantic_version.split(".")
     return f"V{major}-{minor}-{patch}".upper()
 
 

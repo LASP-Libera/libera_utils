@@ -1,4 +1,5 @@
 """Utils for HDF5 file handling"""
+
 import h5py as h5
 
 
@@ -26,14 +27,17 @@ def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = Fa
     def _print(name, obj):
         if isinstance(obj, h5.Group):
             s = f"Group:{obj.name} ({len(obj)} members, {len(obj.attrs) if obj.attrs else 0} attributes)"
-            srep.append(s + '\n')
+            srep.append(s + "\n")
         elif isinstance(obj, h5.Dataset):
-            s = (f"Dataset:{obj.name} "
-                 f"(shape={obj.shape}, type={obj.dtype}, {len(obj.attrs) if obj.attrs else 0} attributes)")
-            srep.append(s + '\n')
+            s = (
+                f"Dataset:{obj.name} (shape={obj.shape}, "
+                f"type={obj.dtype}, "
+                f"{len(obj.attrs) if obj.attrs else 0} attributes)"
+            )
+            srep.append(s + "\n")
         elif isinstance(obj, h5.Datatype):
             s = f"Datatype:{obj.name} {obj}"
-            srep.append(s + '\n')
+            srep.append(s + "\n")
         else:
             raise ValueError(f"Unrecognized object discovered in h5dump, of type {type(obj)}.")
 
@@ -43,11 +47,11 @@ def h5dump(f: h5.File or h5.Group, include_attrs: bool = True, stdout: bool = Fa
         if include_attrs and obj.attrs:
             for key, val in obj.attrs.items():
                 s = f"    @ {key} = {val}"
-                srep.append(s + '\n')
+                srep.append(s + "\n")
                 if stdout:
                     print(s)
 
-    top_obj_name = f.name if f.name == '/' else f.name[1:]  # Creates a name similar to that passed by visititems
+    top_obj_name = f.name if f.name == "/" else f.name[1:]  # Creates a name similar to that passed by visititems
     _print(top_obj_name, f)
     f.visititems(_print)
     return "".join(srep)

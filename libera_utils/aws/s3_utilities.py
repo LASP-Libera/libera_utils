@@ -1,4 +1,5 @@
 """Module for S3 cli utilities"""
+
 import argparse
 import logging
 from datetime import UTC, datetime
@@ -19,9 +20,7 @@ logger = logging.getLogger(__name__)
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for s3-utils put CLI subcommand."""
     now = datetime.now(UTC)
-    configure_task_logging(f'aws_s3_put_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG)
+    configure_task_logging(f"aws_s3_put_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
     logger.debug(f"CLI args: {parsed_args}")
 
     # The other two subcommands have more complex logic as functions with some shared arguments
@@ -33,10 +32,11 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 
 def s3_put_in_archive_for_processing_step(
-        path_to_file: Path | S3Path,
-        processing_step: str | constants.ProcessingStepIdentifier,
-        *,
-        account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE):
+    path_to_file: Path | S3Path,
+    processing_step: str | constants.ProcessingStepIdentifier,
+    *,
+    account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
+):
     """Upload a file to the archive S3 bucket associated with a given processing step.
 
     Parameters
@@ -54,8 +54,9 @@ def s3_put_in_archive_for_processing_step(
     if isinstance(account_suffix, str):
         account_suffix = AccountSuffix(account_suffix)
 
-    bucket_name = constants.ProcessingStepIdentifier.get_archive_bucket_name(processing_step,
-                                                                             account_suffix=account_suffix)
+    bucket_name = constants.ProcessingStepIdentifier.get_archive_bucket_name(
+        processing_step, account_suffix=account_suffix
+    )
     bucket_path = S3Path(f"s3://{bucket_name}")
     filename_object = AbstractValidFilename.from_file_path(path_to_file)
 
@@ -66,9 +67,7 @@ def s3_put_in_archive_for_processing_step(
 def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for s3-utils list CLI subcommand."""
     now = datetime.now(UTC)
-    configure_task_logging(f'aws_upload_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG)
+    configure_task_logging(f"aws_upload_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
     logger.debug(f"CLI args: {parsed_args}")
 
     # The other two subcommands have more complex logic as functions with some shared arguments
@@ -79,10 +78,11 @@ def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 
 def s3_list_archive_files(
-        processing_step: str | constants.ProcessingStepIdentifier,
-        *,
-        account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
-        print_out: bool | None = False) -> list:
+    processing_step: str | constants.ProcessingStepIdentifier,
+    *,
+    account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
+    print_out: bool | None = False,
+) -> list:
     """List all files in an archive S3 bucket for a given processing step.
 
     Parameters
@@ -104,12 +104,15 @@ def s3_list_archive_files(
     if isinstance(account_suffix, str):
         account_suffix = AccountSuffix(account_suffix)
 
-    bucket_name = constants.ProcessingStepIdentifier.get_archive_bucket_name(processing_step,
-                                                                             account_suffix=account_suffix)
-    client = boto3.client('s3')
+    bucket_name = constants.ProcessingStepIdentifier.get_archive_bucket_name(
+        processing_step, account_suffix=account_suffix
+    )
+    client = boto3.client("s3")
 
-    bucket_objects = [S3Path(f"s3://{bucket_name}/{obj['Key']}")
-                      for obj in client.list_objects_v2(Bucket=bucket_name).get('Contents', [])]
+    bucket_objects = [
+        S3Path(f"s3://{bucket_name}/{obj['Key']}")
+        for obj in client.list_objects_v2(Bucket=bucket_name).get("Contents", [])
+    ]
 
     if print_out:
         for obj in bucket_objects:
@@ -120,9 +123,7 @@ def s3_list_archive_files(
 def s3_copy_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for s3-utils cp CLI subcommand."""
     now = datetime.now(UTC)
-    configure_task_logging(f'aws_s3_cp_{now}',
-                           limit_debug_loggers='libera_utils',
-                           console_log_level=logging.DEBUG)
+    configure_task_logging(f"aws_s3_cp_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
     logger.debug(f"CLI args: {parsed_args}")
 
     # The other two subcommands have more complex logic as functions with some shared arguments

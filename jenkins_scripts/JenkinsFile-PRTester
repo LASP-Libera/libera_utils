@@ -87,7 +87,7 @@ pipeline {
             emailext attachLog: true,
             body: 'Log is attached',
             subject: 'libera_utils PR Tests Failed',
-            to: 'gavin.medley@lasp.colorado.edu,matt.watwood@lasp.colorado.edu,caleb.kumar@lasp.colorado.edu'
+            to: 'libera.sdp.dev.cicd@lists.lasp.colorado.edu'
 
             slackSend color: "bad", message: """libera_utils PR tests FAILED for PR #${env.pr_id}
             Source branch: ${env.pr_from_ref}

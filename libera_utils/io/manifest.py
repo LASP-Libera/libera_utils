@@ -1,4 +1,5 @@
 """Module for manifest file handling"""
+
 import json
 import logging
 import warnings
@@ -20,12 +21,13 @@ logger = logging.getLogger(__name__)
 
 class ManifestError(Exception):
     """Generic exception related to manifest file handling"""
+
     pass
 
 
 def calculate_checksum(file: str | Path | S3Path) -> str:
     """Compute the checksum of the given file."""
-    with smart_open(file, 'rb') as fh:
+    with smart_open(file, "rb") as fh:
         checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
     return checksum_calculated
 
@@ -41,30 +43,22 @@ def get_ulid_code(filename: str | Path | S3Path | ManifestFilename | None) -> UL
 
 class ManifestFileRecord(BaseModel):
     """Pydantic model for an individual data product file recorded within a manifest file."""
+
     filename: str = Field(description="Manifest file name")
     checksum: str = Field(description="Manifest file checksum, calculated if not provided")
 
 
 class Manifest(BaseModel):
     """Pydantic model for a manifest file."""
-    manifest_type: ManifestType = Field(
-        description="Either INPUT or OUTPUT."
-    )
-    files: list[ManifestFileRecord] = Field(
-        default_factory=list,
-        description="List of ManifestFileStructure."
-    )
+
+    manifest_type: ManifestType = Field(description="Either INPUT or OUTPUT.")
+    files: list[ManifestFileRecord] = Field(default_factory=list, description="List of ManifestFileStructure.")
     configuration: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Freeform json-compatible dictionary of configuration items."
+        default_factory=dict, description="Freeform json-compatible dictionary of configuration items."
     )
-    filename: ManifestFilename | None = Field(
-        default=None,
-        description="Preset filename, optional."
-    )
+    filename: ManifestFilename | None = Field(default=None, description="Preset filename, optional.")
     ulid_code: ULID | None = Field(
-        default_factory=lambda data: get_ulid_code(data.get('filename')),
-        description="ULID code from input filename."
+        default_factory=lambda data: get_ulid_code(data.get("filename")), description="ULID code from input filename."
     )
 
     @field_validator("filename", mode="before")  # noqa  avoid type warning
@@ -79,10 +73,7 @@ class Manifest(BaseModel):
 
     @classmethod
     def check_file_structure(
-            cls,
-            file_structure: ManifestFileRecord,
-            existing_names: set[str],
-            existing_checksums: set[str]
+        cls, file_structure: ManifestFileRecord, existing_names: set[str], existing_checksums: set[str]
     ) -> bool:
         """Check file structure, returning True if it is good."""
         file = file_structure.filename
@@ -94,16 +85,16 @@ class Manifest(BaseModel):
             return False
         checksum_calculated = file_structure.checksum if file_structure.checksum else calculate_checksum(file)
         if checksum_calculated in existing_checksums:
-            warnings.warn(f"Attempting to add {file} to manifest but another file with "
-                          f"the same checksum is already included.")
+            warnings.warn(
+                f"Attempting to add {file} to manifest but another file with the same checksum is already included."
+            )
             return False
         return True
 
     @field_validator("files", mode="before")  # noqa  avoid type warning
     @classmethod
     def transform_files(
-            cls,
-            raw_list: list[dict | str | Path | S3Path | ManifestFileRecord] | None
+        cls, raw_list: list[dict | str | Path | S3Path | ManifestFileRecord] | None
     ) -> list[ManifestFileRecord]:
         """Allow for the incoming files list to have varying types.
         Convert to a standardized list of ManifestFileStructure."""
@@ -120,8 +111,7 @@ class Manifest(BaseModel):
                 )
             else:
                 file_structure = ManifestFileRecord(
-                    filename=str(AnyPath(raw_file)),
-                    checksum=calculate_checksum(raw_file)
+                    filename=str(AnyPath(raw_file)), checksum=calculate_checksum(raw_file)
                 )
             if cls.check_file_structure(file_structure, existing_names, existing_checksums):
                 result.append(file_structure)
@@ -129,12 +119,8 @@ class Manifest(BaseModel):
                 existing_checksums.add(file_structure.checksum)
         return result
 
-    @field_serializer('filename')
-    def serialize_filename(
-            self,
-            filename: str | Path | S3Path | ManifestFilename | None,
-            _info
-    ) -> str:
+    @field_serializer("filename")
+    def serialize_filename(self, filename: str | Path | S3Path | ManifestFilename | None, _info) -> str:
         """Custom serializer for the manifest filename."""
         return str(filename)
 
@@ -159,8 +145,8 @@ class Manifest(BaseModel):
         """
         with smart_open(filepath) as manifest_file:
             contents = json.loads(manifest_file.read())
-        contents['filename'] = filepath if isinstance(filepath, ManifestFilename) else ManifestFilename(filepath)
-        contents['ulid_code'] = get_ulid_code(filepath)
+        contents["filename"] = filepath if isinstance(filepath, ManifestFilename) else ManifestFilename(filepath)
+        contents["ulid_code"] = get_ulid_code(filepath)
         return Manifest.model_validate(contents)
 
     def add_files(self, *files: str | Path | S3Path):
@@ -200,8 +186,10 @@ class Manifest(BaseModel):
             filename = file_structure.filename
             checksum_calculated = calculate_checksum(filename)
             if checksum_expected != checksum_calculated:
-                logger.error(f"Checksum validation for {filename} failed. "
-                             f"Expected {checksum_expected} but got {checksum_calculated}.")
+                logger.error(
+                    f"Checksum validation for {filename} failed. "
+                    f"Expected {checksum_expected} but got {checksum_calculated}."
+                )
                 failed_filenames.append(str(filename))
         if failed_filenames:
             raise ValueError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
@@ -209,8 +197,7 @@ class Manifest(BaseModel):
     def _generate_filename(self) -> ManifestFilename:
         """Generate a valid manifest filename"""
         mfn = ManifestFilename.from_filename_parts(
-            manifest_type=self.manifest_type,
-            ulid_code=ULID.from_datetime(datetime.now(UTC))
+            manifest_type=self.manifest_type, ulid_code=ULID.from_datetime(datetime.now(UTC))
         )
         return mfn
 
@@ -240,7 +227,7 @@ class Manifest(BaseModel):
         # Update object's filename to the filepath we just wrote
         self.filename = ManifestFilename(filepath)
 
-        with smart_open(self.filename.path, 'x') as manifest_file:
+        with smart_open(self.filename.path, "x") as manifest_file:
             manifest_file.write(self.model_dump_json())
         return self.filename.path
 
@@ -259,15 +246,12 @@ class Manifest(BaseModel):
         -------
         None
         """
-        self.configuration["start_time"] = start_datetime.strftime('%Y-%m-%d:%H:%M:%S')
-        self.configuration["end_time"] = end_datetime.strftime('%Y-%m-%d:%H:%M:%S')
+        self.configuration["start_time"] = start_datetime.strftime("%Y-%m-%d:%H:%M:%S")
+        self.configuration["end_time"] = end_datetime.strftime("%Y-%m-%d:%H:%M:%S")
 
     @classmethod
-    def output_manifest_from_input_manifest(
-            cls,
-            input_manifest: Union[Path, S3Path, 'Manifest']
-    ) -> 'Manifest':
-        """ Create Output manifest from input manifest file path, adds input files to output manifest configuration
+    def output_manifest_from_input_manifest(cls, input_manifest: Union[Path, S3Path, "Manifest"]) -> "Manifest":
+        """Create Output manifest from input manifest file path, adds input files to output manifest configuration
 
         Parameters
         ----------
@@ -286,11 +270,14 @@ class Manifest(BaseModel):
         input_filename = input_manifest.filename
         input_manifest_ulid_code = input_filename.filename_parts.ulid_code
 
-        output_filename = ManifestFilename.from_filename_parts(manifest_type=ManifestType.OUTPUT,
-                                                               ulid_code=input_manifest_ulid_code)
+        output_filename = ManifestFilename.from_filename_parts(
+            manifest_type=ManifestType.OUTPUT, ulid_code=input_manifest_ulid_code
+        )
 
-        output_manifest = Manifest(manifest_type=ManifestType.OUTPUT,
-                                   filename=output_filename,
-                                   configuration={'input_manifest_files': input_manifest.files})
+        output_manifest = Manifest(
+            manifest_type=ManifestType.OUTPUT,
+            filename=output_filename,
+            configuration={"input_manifest_files": input_manifest.files},
+        )
 
         return output_manifest
