@@ -25,7 +25,7 @@ from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
 SPK_REGEX = re.compile(
-    r"^LIBERA_(?P<spk_object>JPSS-SPK)"
+    r"^LIBERA_(?P<spk_object>(JPSS)-SPK)"
     r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
@@ -726,12 +726,12 @@ class EphemerisKernelFilename(AbstractValidFilename):
     @property
     def processing_step_id(self) -> ProcessingStepIdentifier:
         """Property that contains the ProcessingStepIdentifier that generates this file"""
-        return SpkObject[self.filename_parts.spk_object].processing_step_id
+        return SpkObject(self.filename_parts.spk_object).processing_step_id
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
         """Property that contains the DataProductIdentifier for this file type"""
-        return SpkObject[self.filename_parts.spk_object].data_product_id
+        return SpkObject(self.filename_parts.spk_object).data_product_id
 
     @property
     def archive_prefix(self) -> str:
@@ -851,12 +851,12 @@ class AttitudeKernelFilename(AbstractValidFilename):
     @property
     def processing_step_id(self) -> ProcessingStepIdentifier:
         """Property that contains the ProcessingStepIdentifier that generates this file"""
-        return CkObject[self.filename_parts.ck_object].processing_step_id
+        return CkObject(self.filename_parts.ck_object).processing_step_id
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
         """Property that contains the DataProductIdentifier for this file type"""
-        return CkObject[self.filename_parts.ck_object].data_product_id
+        return CkObject(self.filename_parts.ck_object).data_product_id
 
     @property
     def archive_prefix(self) -> str:

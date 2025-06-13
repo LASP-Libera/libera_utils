@@ -218,12 +218,12 @@ class ProcessingStepIdentifier(StrEnum):
         return f"{self}-{chunk_number}" if chunk_number is not None else self.value
 
 
-class CkObject(Enum):
+class CkObject(StrEnum):
     """Enum of valid CK objects"""
 
-    JPSS = "JPSS"
-    AZROT = "AZROT"
-    ELSCAN = "ELSCAN"
+    JPSS = "JPSS-CK"
+    AZROT = "AZROT-CK"
+    ELSCAN = "ELSCAN-CK"
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
@@ -246,10 +246,10 @@ class CkObject(Enum):
         return _processing_step_id_map[self]
 
 
-class SpkObject(Enum):
+class SpkObject(StrEnum):
     """Enum of valid SPK objects"""
 
-    JPSS = "JPSS"
+    JPSS = "JPSS-SPK"
 
     @property
     def data_product_id(self) -> DataProductIdentifier:

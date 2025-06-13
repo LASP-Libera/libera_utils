@@ -1,5 +1,11 @@
 # Version Changes
-## 3.2.0 (WIP)
+
+## 3.2.1 (WIP)
+- Added automatic formatting to the repository using `pre-commit` hooks
+- Added a list-serv for ci/cd output as part of the Jenkins files
+- BUGFIX: Fixed filenaming changes from 3.2.0 that affected the CDK deployment and usage
+
+## 3.2.0 (Released)
 - Added pydantic models for a Configurable NetCDF-4 metadata object
 - Includes static metadata that is populated and known by these tools
 - Includes dynamic metadata that must be provided by user of these tools
