@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "3.2.0"
+version = "3.2.1"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland", email = "stephane.beland@lasp.colorado.edu" },

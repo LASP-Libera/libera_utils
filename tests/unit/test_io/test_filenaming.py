@@ -10,7 +10,7 @@ from cloudpathlib import S3Path
 from ulid import ULID
 
 import libera_utils.aws.constants
-from libera_utils.aws.constants import DataProductIdentifier
+from libera_utils.aws.constants import CkObject, DataProductIdentifier, SpkObject
 from libera_utils.io import filenaming
 
 
@@ -379,6 +379,8 @@ def test_EphemerisKernelFilename(filename, basepath, parts):
     assert fn_from_parts == fn
     assert fn_from_parts.path.name == fn.path.name
     assert fn_from_parts.filename_parts == fn.filename_parts
+    assert fn_from_parts.data_product_id == SpkObject(parts["spk_object"]).data_product_id
+    assert fn_from_parts.processing_step_id == SpkObject(parts["spk_object"]).processing_step_id
 
 
 @pytest.mark.parametrize(
@@ -427,6 +429,8 @@ def test_AttitudeKernelFilename(filename, basepath, parts):
     assert fn_from_parts == fn
     assert fn_from_parts.path.name == fn.path.name
     assert fn_from_parts.filename_parts == fn.filename_parts
+    assert fn_from_parts.data_product_id == CkObject(parts["ck_object"]).data_product_id
+    assert fn_from_parts.processing_step_id == CkObject(parts["ck_object"]).processing_step_id
 
 
 def test_missing_required_parts_argument():
