@@ -1,0 +1,9 @@
+n_samples:
+  size: "dynamic"
+  long_name: "A running count for daily data for the number of samples"
+camera_pixel_count_x:
+  size: 2048
+  long_name: "The X-axis dimension of the camera images"
+camera_pixel_count_y:
+  size: 2048
+  long_name: "The Y-axis dimension of the camera images"
