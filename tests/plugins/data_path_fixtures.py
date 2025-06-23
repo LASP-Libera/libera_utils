@@ -24,6 +24,15 @@ def spice_test_data_path(test_data_path):
     return test_data_path / "spice"
 
 
+@pytest.fixture
+def product_definitions_test_data_path(test_data_path):
+    """Returns the product_definitions subdirectory of the test_data directory
+
+    This directory contains yml product/project definition files used for proper NetCDF4 file creation
+    """
+    return test_data_path / "product_definitions"
+
+
 # Paths to commonly used test data files
 # --------------------------------------
 @pytest.fixture
@@ -128,6 +137,12 @@ def test_itrf93_pck(spice_test_data_path):
 
 
 @pytest.fixture
-def test_variable_definitions(test_data_path):
+def test_variable_definitions(product_definitions_test_data_path):
     """Path to an example product description yaml file"""
-    return test_data_path / "test_variable_definitions.yml"
+    return product_definitions_test_data_path / "test_camera_variable_definitions.yml"
+
+
+@pytest.fixture
+def test_product_definition(product_definitions_test_data_path):
+    """Path to an example product description yaml file"""
+    return product_definitions_test_data_path / "unit_test_product_definition.yml"

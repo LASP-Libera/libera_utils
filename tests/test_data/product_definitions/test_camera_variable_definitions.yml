@@ -1,0 +1,42 @@
+time:
+    long_name: Time of sample collection
+    dimensions: [ "n_samples" ]
+    units: datetime64[ns]
+    valid_range: [0,1] # TODO Update this with realistic values
+    missing_value: -9999
+    dtype: datetime64[ns]
+pix_rad:
+    long_name: Filtered Radiance of each pixel
+    dimensions: ["n_samples", "camera_pixel_count_x", "camera_pixel_count_y"]
+    units: W/(m^2*sr*nm)
+    valid_range: [0,1000]
+    missing_value: -9999
+    dtype: float
+pix_lat:
+    long_name: Geolocation latitude of each pixel
+    dimensions: ["n_samples", "camera_pixel_count_x", "camera_pixel_count_y"]
+    units: degrees
+    valid_range: [-90,90]
+    missing_value: -999
+    dtype: float
+pix_lon:
+    long_name: Geolocation longitude of each pixel
+    dimensions: ["n_samples", "camera_pixel_count_x", "camera_pixel_count_y"]
+    units: degrees
+    valid_range: [0,360]
+    missing_value: -999
+    dtype: float
+mask:
+    long_name: Pixel level mask for data
+    dimensions: ["n_samples", "camera_pixel_count_x", "camera_pixel_count_y"]
+    units: W/(m^2*sr*nm)
+    valid_range: [0, 1]
+    missing_value: -999
+    dtype: int
+q_flags:
+    long_name: Quality Flags
+    dimensions: [ "n_samples" ]
+    units: N/A
+    valid_range: [ 0,2147483647 ]
+    missing_value: -999
+    dtype: int32

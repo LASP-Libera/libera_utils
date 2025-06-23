@@ -1,6 +1,10 @@
 # Version Changes
 
-## 3.2.1 (WIP)
+## 3.2.2 (WIP)
+- Added dimension handling for data product configuration
+- Added internal DataArray data storage matching to known dimensions
+
+## 3.2.1 (Released)
 - Added automatic formatting to the repository using `pre-commit` hooks
 - Added a list-serv for ci/cd output as part of the Jenkins files
 - BUGFIX: Fixed filenaming changes from 3.2.0 that affected the CDK deployment and usage

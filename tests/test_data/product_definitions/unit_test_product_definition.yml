@@ -1,0 +1,47 @@
+static_product_metadata:
+    ProductID: L1B_RAD-4CH
+    version: 0.0.1
+    
+variables:
+    time:
+        long_name: Time
+        dimensions: [ "n_samples" ]
+        units: datetime64[ns]
+        valid_range: [ 0,1 ] # Update this
+        missing_value: -9999
+        dtype: datetime64
+    fil_rad:
+        long_name: Filtered Radiance
+        dimensions: [ "n_samples" ]
+        units: W/(m^2*sr*nm)
+        valid_range: [ 0,1000 ]
+        missing_value: -9999
+        dtype: float
+    lat:
+        long_name: Geolocation latitude
+        dimensions: [ "n_samples" ]
+        units: degrees
+        valid_range: [ -90,90 ]
+        missing_value: -999
+        dtype: float
+    co-lat:
+        long_name: Geolocation co-latitude
+        dimensions: [ "n_samples" ]
+        units: degrees
+        valid_range: [ 0,180 ]
+        missing_value: -999
+        dtype: float
+    lon:
+        long_name: Geolocation longitude
+        dimensions: [ "n_samples" ]
+        units: degrees
+        valid_range: [ 0,360 ]
+        missing_value: -999
+        dtype: float
+    q_flags:
+        long_name: Quality Flags
+        dimensions: [ "n_samples" ]
+        units: N/A
+        valid_range: [ 0,2147483647 ]
+        missing_value: -999
+        dtype: int32
