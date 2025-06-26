@@ -14,13 +14,17 @@ WORKDIR $LIBERA_UTILS_DIRECTORY
 # Turn off interactive shell to suppress configuration errors
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Install libpq so we can install psycopg2 later and curl so we can install poetry
-RUN apt-get update && apt-get install -y curl gcc
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y curl gcc ca-certificates && \
+    update-ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install spice utilities directly from NAIF (precompiled for Linux)
-ADD https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z /tmp/cspice.tar.Z
 ENV CSPICE_DIR=/opt/naif
-RUN mkdir -p $CSPICE_DIR && tar -C $CSPICE_DIR -xvzf /tmp/cspice.tar.Z cspice/exe && rm -r /tmp/cspice.tar.Z
+RUN curl -L -o /tmp/cspice.tar.Z https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z && \
+    mkdir -p $CSPICE_DIR && tar -C $CSPICE_DIR -xvzf /tmp/cspice.tar.Z cspice/exe && rm -r /tmp/cspice.tar.Z
 ENV PATH="$PATH:$CSPICE_DIR/cspice/exe"
 
 # Create virtual environment and permanently activate it for this image

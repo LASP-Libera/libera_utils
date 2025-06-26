@@ -2,7 +2,6 @@
 
 import json
 import logging
-import warnings
 from datetime import UTC, datetime
 from hashlib import md5
 from pathlib import Path
@@ -81,11 +80,11 @@ class Manifest(BaseModel):
         if not AnyPath(file).is_absolute():
             raise ValueError(f"The file path for {file} must be an absolute path.")
         if file in existing_names:
-            warnings.warn(f"Attempting to add {file} to manifest but it is already included.")
+            logger.warning(f"Attempting to add {file} to manifest but it is already included.")
             return False
         checksum_calculated = file_structure.checksum if file_structure.checksum else calculate_checksum(file)
         if checksum_calculated in existing_checksums:
-            warnings.warn(
+            logger.warning(
                 f"Attempting to add {file} to manifest but another file with the same checksum is already included."
             )
             return False

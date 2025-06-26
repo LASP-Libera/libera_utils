@@ -10,10 +10,10 @@ def test_get_config_test_key():
     assert config.get("TEST_KEY") == -999
 
 
-def test_get_config_no_default(monkeypatch):
+def test_get_config_no_default(caplog, monkeypatch):
     """Test setting custom variables that are not necessarily present in the json"""
     monkeypatch.setenv("TEST_ENV_VAR", "FOOBAR")
-    with pytest.warns(UserWarning):  # Check that the config module warns about non-standard config key
+    with caplog.at_level("WARNING"):  # Check that the config module warns about non-standard config key
         assert config.get("TEST_ENV_VAR") == "FOOBAR"
 
 

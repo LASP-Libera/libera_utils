@@ -6,7 +6,6 @@ import os
 import re
 import string
 import sys
-import warnings
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -114,7 +113,7 @@ class _ConfigurationCache:
             Resulting value
         """
         if (key != "PKG_ROOT") and (key not in self._known_config_variables):
-            warnings.warn(
+            logger.warning(
                 f"Configuration key {key} is not known to the config module. "
                 f"We will try to find it in the environment anyway but a default should be added to "
                 f"the config.json file."

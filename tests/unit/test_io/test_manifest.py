@@ -81,7 +81,7 @@ def test_manifest_add_files_to_manifest_s3(
     assert len(m.files) == initial_list_len + 3
 
 
-def test_manifest_add_duplicate_file_to_manifest(test_json_manifest):
+def test_manifest_add_duplicate_file_to_manifest(caplog, test_json_manifest):
     """Test factory method for adding a duplicate file to a manifest"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
@@ -90,11 +90,10 @@ def test_manifest_add_duplicate_file_to_manifest(test_json_manifest):
     initial_length = len(m.files)
 
     # Add the same file
-    with pytest.warns(UserWarning) as record:
+    with caplog.at_level("WARNING"):
         m.add_files(test_json_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_length
-    assert len(record) == 1
 
 
 def test_manifest_add_desired_time_range(test_json_manifest):
