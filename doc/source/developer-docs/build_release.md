@@ -13,7 +13,6 @@ text. The tag text is used to trigger the CI/CD pipeline, but the version number
 when building and publishing the package to PyPI. The convention is to use the tag text as the version number for
 consistency.
 
-
 ## Local package building for CLI testing
 
 To build the package locally for testing especially for the cli interface, use the following steps:
@@ -40,11 +39,11 @@ To build the package locally for testing especially for the cli interface, use t
    process is progressing as you polish the release branch.
 
 6. When you are satisfied that the release branch is ready and the team has approved, merge the PR into `main`. This
-should be a purely "fast-forward" merge. You can delete the release branch after merging.
+   should be a purely "fast-forward" merge. You can delete the release branch after merging.
 
 7. Check out the `main` branch, pull the merged changes, and tag the newly created merge commit with the
    desired version `X.Y.Z` and push the tag upstream. **This triggers the automatic build and publish by Jenkins.
-Poetry uses the version number in `pyproject.toml` not the tag text for publishing in PyPI.**
+   Poetry uses the version number in `pyproject.toml` not the tag text for publishing in PyPI.**
 
    ```bash
    git tag -a X.Y.Z -m "version release X.Y.Z"
@@ -54,7 +53,7 @@ Poetry uses the version number in `pyproject.toml` not the tag text for publishi
 ## Release Process for Patch Releases
 
 1. In your working branch, bump the version of the package to the next patch version, either manually by editing
-`pyproject.toml` or by running `poetry version`.
+   `pyproject.toml` or by running `poetry version`.
 
 2. Update the `CHANGELOG.md` file to include a new section for the patch release, and add any relevant changes
    that have been made since the last release.
@@ -70,7 +69,6 @@ Poetry uses the version number in `pyproject.toml` not the tag text for publishi
 6. Check out the `main` branch, pull the merged changes, and tag the newly created merge commit with the
    desired version `X.Y.Z` and push the tag upstream. **This triggers the automatic build and publish by Jenkins.**
 
-
 ## Release Process for Pre-Releases and Testing in Dependent Packages
 
 1. In your working branch, bump the version of the package to the next pre-release version, either manually by editing
@@ -83,7 +81,6 @@ Poetry uses the version number in `pyproject.toml` not the tag text for publishi
    git tag -a X.Y.Z-alpha.1 -m "pre-release X.Y.Z-alpha.1"
    git push origin X.Y.Z-alpha.1
    ```
-
 
 ## Manually Building and Distribution to Public PyPI
 

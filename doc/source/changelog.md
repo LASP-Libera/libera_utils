@@ -1,6 +1,6 @@
 # Version Changes
 
-## 3.2.2 (WIP)
+## 3.2.2 (Released)
 
 - Added dimension handling for data product configuration
 - Added internal DataArray data storage matching to known dimensions
@@ -8,6 +8,8 @@
 - Added contact listserv for project
 - Added json and yaml linting to the pre-commit hooks
 - Added prettier configuration for formatting markdown, json, and yaml files
+- Added internal Dataset object to the Configurable NetCDF-4 metadata object
+- Added writing of output file for the Configurable NetCDF-4 data product object
 
 ## 3.2.1 (Released)
 

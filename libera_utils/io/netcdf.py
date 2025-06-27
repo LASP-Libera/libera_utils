@@ -1,7 +1,6 @@
 # Standard
 import json
 import logging
-import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
@@ -12,13 +11,13 @@ from cloudpathlib import AnyPath
 
 # Installed
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
-from xarray import DataArray
+from xarray import DataArray, Dataset
 
 # Local
 from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.config import config
 from libera_utils.io.filenaming import AttitudeKernelFilename, EphemerisKernelFilename, LiberaDataProductFilename
-from libera_utils.io.smart_open import smart_open
+from libera_utils.io.smart_open import smart_copy_file, smart_open
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +272,7 @@ class VariableMetadata(BaseModel):
         if self.dimensions[selected_dimension.name].is_dynamic_size:
             if not self.dimensions[selected_dimension.name].is_set:
                 if data_length == 0:
-                    warnings.warn(
+                    logger.warning(
                         f"Setting the {selected_dimension.name} dimension to 0. This may cause issues "
                         f"with data processing."
                     )
@@ -282,7 +281,7 @@ class VariableMetadata(BaseModel):
                 self.dimensions[selected_dimension.name].size = data_length
                 self.dimensions[selected_dimension.name].is_set = True
             else:
-                raise ValueError(f"The {selected_dimension.name} dimension has already been set")
+                logger.warning(f"The {selected_dimension.name} dimension has already been set")
         else:
             raise ValueError(f"The {selected_dimension.name} dimension is not listed as dynamic")
 
@@ -325,6 +324,8 @@ class LiberaVariable(BaseModel):
 
     Attributes
     ----------
+    name: str
+        The name of the variable
     metadata: VariableMetadata
         The metadata associated with the variable, including its dimensions, valid range, missing value, units, and
         data type.
@@ -334,6 +335,7 @@ class LiberaVariable(BaseModel):
         The data associated with the variable, stored as an xarray DataArray
     """
 
+    name: str
     metadata: VariableMetadata
     variable_encoding: dict | None = {"_FillValue": None, "zlib": True, "complevel": 4}
 
@@ -574,6 +576,12 @@ class DataProductConfig(BaseModel):
     variables: dict[str, LiberaVariable] | None = None
     product_metadata: ProductMetadata | None = None
 
+    # Allow xarray Datasets to be used by pydantic
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    data_product_dataset: Dataset | None = None
+    data_start_time: datetime | None = None
+    data_end_time: datetime | None = None
+
     @classmethod
     def get_static_project_metadata(
         cls, file_path=Path(config.get("LIBERA_UTILS_DATA_DIR")) / "static_project_metadata.yml"
@@ -595,18 +603,29 @@ class DataProductConfig(BaseModel):
             return StaticProjectMetadata(**yaml_data)
 
     @classmethod
-    def from_data_config_file(cls, product_config_filepath: str | AnyPath):
+    def from_data_config_file(
+        cls, product_config_filepath: str | AnyPath, data: list[DataArray] | list[np.ndarray] | None = None
+    ):
         """Primary means of making a data product config all at once
 
         Parameters
         ----------
         product_config_filepath: str | AnyPath
             The path to the configuration file containing the product metadata and variable definitions.
+        data: list[DataArray] | list[np.ndarray] | None
+            Optional data to be associated with the variables. If provided, it should be a list of DataArray or
+            numpy ndarray objects, where each entry corresponds to a variable defined in the configuration file.
 
         Returns
         -------
         DataProductConfig
             An instance of DataProductConfig with the loaded data product ID, version, and variables.
+
+        Raises
+        ------
+        ValueError
+            If the data is provided as a list but contains an empty entry, or if the configuration file does not
+            contain the expected structure.
 
         Notes
         -----
@@ -619,11 +638,30 @@ class DataProductConfig(BaseModel):
             product_id = yaml_data["static_product_metadata"]["ProductID"]
             version = yaml_data["static_product_metadata"]["version"]
             variables = yaml_data["variables"]
+
+            add_data = False
+            data_index = 0
+            if isinstance(data, list):
+                add_data = True
+
+            if add_data and len(data) != len(variables):
+                raise ValueError(
+                    f"The number of data entries ({len(data)}) provided does not match the number of variables "
+                    f"({len(variables)} defined in the configuration file."
+                )
+
             # Convert variable metadata as text into metadata objects
             for k, v in variables.items():
                 metadata = VariableMetadata(**v)
-                variable_object = LiberaVariable(metadata=metadata)
+                if add_data:
+                    if len(data[data_index]) == 0:
+                        raise ValueError("Data cannot contain an empty entry")
+                    variable_object = LiberaVariable(name=k, metadata=metadata, data=data[data_index])
+                    data_index += 1
+                else:
+                    variable_object = LiberaVariable(name=k, metadata=metadata)
                 variables[k] = variable_object
+
             return cls(data_product_id=product_id, version=version, variables=variables)
 
     @field_validator("data_product_id", mode="before")
@@ -669,6 +707,7 @@ class DataProductConfig(BaseModel):
         Raises
         ------
         ValueError
+            If the version string does not match the expected format M.m.p, where M, m, and p are integers.
 
         Notes
         -----
@@ -760,9 +799,31 @@ class DataProductConfig(BaseModel):
             raise ValueError("Unsupported file type. Must be JSON or YAML.")
         for k, v in config_data.items():
             metadata = VariableMetadata(**v)
-            variable_object = LiberaVariable(metadata=metadata)
+            variable_object = LiberaVariable(name=k, metadata=metadata)
             config_data[k] = variable_object
         return config_data
+
+    @computed_field
+    def variable_encoding_dict(self) -> dict:
+        """Create the needed variable encodings for writing data from the variable metadata
+
+        Notes
+        -----
+        This property returns a dictionary where the keys are variable names and the values are the encoding
+        dictionaries for each variable. If the variables are None, it returns None.
+        Returns
+        -------
+        dict | None
+            A dictionary of variable encodings, where each key is a variable name and the value is its encoding.
+            If the variable has no data the no encoding is defined. If no variables are defined returns None.
+        """
+        if self.variables is None:
+            return None
+        encoding_dict = {}
+        for variable in self.variables:
+            if self.variables[variable].data is not None:
+                encoding_dict[variable] = self.variables[variable].variable_encoding
+        return encoding_dict
 
     def _format_version_for_filename(self):
         """Internal method for ensuring version string is proper for file output
@@ -780,25 +841,68 @@ class DataProductConfig(BaseModel):
         swap_dots_for_dashes = self.version.replace(".", "-")
         return "V" + swap_dots_for_dashes
 
-    def add_variable_metadata_from_file(self, variable_config_file_path):
-        """A wrapper around the load_data_product_variables_with_metadata method.
+    def _check_for_complete_variables(self):
+        """An internal method checking if all defined variables have data and metadata
+
+        Notes
+        -----
+        This method iterates through all the variables in the data product and checks if each variable has both
+        data and metadata associated with it. If any variable is missing either, it returns False.
+        Returns
+        -------
+        bool
+            True if all variables have both data and metadata, False otherwise.
+        """
+        return not any(val.data is None or val.metadata is None for val in self.variables.values())
+
+    def _generate_internal_dataset(self, allow_incomplete: bool = False):
+        """An internal method to create the data product dataset from variables data and metadata
 
         Parameters
         ----------
-        variable_config_file_path: str | Path
-            The path to the configuration file containing variable metadata.
+        allow_incomplete: bool
+            If True, allows variables without data to be skipped. If False, raises an error if any variable is missing
+            data or metadata.
 
         Raises
         ------
         ValueError
-            If the provided file path does not point to a valid JSON or YAML file.
+            If any variable is missing data or metadata and allow_incomplete is False.
 
         Notes
         -----
-        This allows the model to be validated after the variables have been added.
+        This method creates an xarray Dataset from the variables defined in the data product. It checks that each
+        variable has both data and metadata associated with it. The static project metadata is added as attributes to
+        the dataset.
+
         """
-        self.variables = DataProductConfig.load_data_product_variables_with_metadata(variable_config_file_path)
-        DataProductConfig.model_validate(self)
+        dataset_variables_dict = {}
+        for variable in self.variables.values():
+            if variable.data is None:
+                if allow_incomplete:
+                    logger.warning(f"The {variable.name} variable has no data, it will not be included.")
+                    continue
+                raise ValueError(f"The {variable} variable has no data associated with it.")
+            if variable.metadata is None:
+                raise ValueError(f"The {variable} variable has no metadata associated with it")
+            dataset_variables_dict[variable.name] = (variable.metadata.dimensions_name_list, variable.data.data)
+        self.data_product_dataset = Dataset(dataset_variables_dict, attrs=dict(self.static_project_metadata))
+
+        # assign variable-level attributes
+        for _, variable in self.variables.items():
+            if variable.data is not None:
+                self.data_product_dataset[variable.name].attrs["long_name"] = variable.metadata.long_name
+                self.data_product_dataset[variable.name].attrs["valid_range"] = variable.metadata.valid_range
+                self.data_product_dataset[variable.name].attrs["missing_value"] = variable.metadata.missing_value
+                self.data_product_dataset[variable.name].attrs["dtype"] = variable.metadata.dtype
+                if "datetime" not in variable.metadata.units:
+                    self.data_product_dataset[variable.name].attrs["units"] = variable.metadata.units
+
+    # TODO revisit when have time to extract from data
+    def _set_data_start_end_time(self) -> None:
+        """An internal method that sets the start and end times of the data in this product"""
+        self.data_start_time = datetime(1990, 1, 2, 11, 22, 33)
+        self.data_end_time = datetime(1990, 1, 2, 12, 22, 33)
 
     def _generate_data_product_filename(
         self,
@@ -889,3 +993,58 @@ class DataProductConfig(BaseModel):
         It checks if the variable exists in the configuration and then sets the data for that variable.
         """
         self.variables[variable_name].set_data(variable_data)
+        if self._check_for_complete_variables():
+            self._generate_internal_dataset()
+            self._set_data_start_end_time()
+
+    def add_variable_metadata_from_file(self, variable_config_file_path):
+        """A wrapper around the load_data_product_variables_with_metadata method.
+
+        Parameters
+        ----------
+        variable_config_file_path: str | Path
+            The path to the configuration file containing variable metadata.
+
+        Raises
+        ------
+        ValueError
+            If the provided file path does not point to a valid JSON or YAML file.
+
+        Notes
+        -----
+        This allows the model to be validated after the variables have been added.
+        """
+        self.variables = DataProductConfig.load_data_product_variables_with_metadata(variable_config_file_path)
+        DataProductConfig.model_validate(self)
+
+    def write(self, folder_location: str | AnyPath, allow_incomplete: bool = False):
+        """The primary writing method for the Libera Data Products"""
+        if allow_incomplete:
+            # If not all variables have been set then the internal dataset won't exist
+            self._generate_internal_dataset(allow_incomplete=allow_incomplete)
+        else:
+            if not self._check_for_complete_variables():
+                missing_variables_str = ""
+                for _, variable in self.variables.items():
+                    if variable.data is None or variable.metadata is None:
+                        missing_variables_str += f"{variable.name} "
+                raise ValueError(
+                    f"Not all variables have metadata or data, no file will be written. "
+                    f"The {missing_variables_str}are incomplete. Use add_data_to_variable method or add the "
+                    f"allow_incomplete flag to the write method."
+                )
+        if self.data_product_dataset is None:
+            self._generate_internal_dataset()
+        if self.data_start_time is None:
+            self._set_data_start_end_time()
+
+        filename = self._generate_data_product_filename(
+            utc_start_time=self.data_start_time, utc_end_time=self.data_end_time, revision=self.data_end_time
+        )
+        self.data_product_dataset.to_netcdf(
+            filename.path, mode="w", engine="h5netcdf", encoding=self.variable_encoding_dict
+        )
+        if isinstance(folder_location, str):
+            folder_location = AnyPath(folder_location)
+        output_path = folder_location / filename.path
+        smart_copy_file(filename.path, output_path, delete=True)
