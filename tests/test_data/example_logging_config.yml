@@ -2,34 +2,34 @@
 version: 1
 disable_existing_loggers: False
 formatters:
-    json:
-        format: '{"time": "%(asctime)s", 
-                  "level": "%(levelname)s", 
-                  "module": "%(filename)s", 
-                  "function": "%(funcName)s", 
-                  "line": %(lineno)d, 
-                  "message": "%(message)s"}'
-    plaintext:
-        format: "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"
+  json:
+    format: '{"time": "%(asctime)s",
+      "level": "%(levelname)s",
+      "module": "%(filename)s",
+      "function": "%(funcName)s",
+      "line": %(lineno)d,
+      "message": "%(message)s"}'
+  plaintext:
+    format: "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"
 handlers:
-    console:
-        class: logging.StreamHandler
-        formatter: plaintext
-        level: INFO
-        stream: ext://sys.stdout
-    logfile:
-        class: logging.handlers.RotatingFileHandler
-        formatter: plaintext
-        level: DEBUG
-        filename: /tmp/libera_utils_test_log.log
-        maxBytes: 1000000
-        backupCount: 3
-root:
+  console:
+    class: logging.StreamHandler
+    formatter: plaintext
     level: INFO
-    propagate: True
-    handlers: [console, logfile]
+    stream: ext://sys.stdout
+  logfile:
+    class: logging.handlers.RotatingFileHandler
+    formatter: plaintext
+    level: DEBUG
+    filename: /tmp/libera_utils_test_log.log
+    maxBytes: 1000000
+    backupCount: 3
+root:
+  level: INFO
+  propagate: True
+  handlers: [console, logfile]
 loggers:
-    libera_utils:
-        qualname: libera_utils
-        level: DEBUG
-        handlers: []
+  libera_utils:
+    qualname: libera_utils
+    level: DEBUG
+    handlers: []

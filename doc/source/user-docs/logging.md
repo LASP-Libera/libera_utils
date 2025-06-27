@@ -1,4 +1,5 @@
 # Logging
+
 High quality logging is an important part of operational processing and the Libera SDC Team has made logging setup as painless as possible, while also offering a high degree of
 configuration for processing algorithms. See below for a general discussion of logging principles followed by some
 example use cases.
@@ -27,12 +28,12 @@ See examples of these use cases in the code examples throughout this page.
 
 ## Logging Levels in Python
 
-* DEBUG - Detailed information, typically of interest only when diagnosing problems.
-* INFO - Confirmation that things are working as expected.
-* WARNING - An indication that something unexpected happened, or indicative of some problem in the near future
+- DEBUG - Detailed information, typically of interest only when diagnosing problems.
+- INFO - Confirmation that things are working as expected.
+- WARNING - An indication that something unexpected happened, or indicative of some problem in the near future
   (e.g. ‘disk space low’). The software is still working as expected.
-* ERROR - Due to a more serious problem, the software has not been able to perform some function.
-* CRITICAL - A serious error, indicating that the program itself may be unable to continue running.
+- ERROR - Due to a more serious problem, the software has not been able to perform some function.
+- CRITICAL - A serious error, indicating that the program itself may be unable to continue running.
 
 ## Setting Up Logging in Applications
 
@@ -87,7 +88,7 @@ produces
 ...and much much more
 ```
 
-*Notice the huge volume of DEBUG messages originating from loggers in the `botocore` package.*
+_Notice the huge volume of DEBUG messages originating from loggers in the `botocore` package._
 
 ### Filtered Logging Setup
 
@@ -236,7 +237,6 @@ than those named, for example, `some_spammy_library.emit_spam`. In our logging s
 messages for all loggers that aren't named with specific prefixes. This allows us to pass up debug messages from our
 code but ignore debug messages from dependency code (AWS boto APIs in particular spam a LOT of debug messages).
 
-
 ## Fully Customized Logging
 
 If you want complete control over your logging configuration, you can use our provided `configure_static_logging`
@@ -263,35 +263,35 @@ An example of a logging config file:
 version: 1
 disable_existing_loggers: False
 formatters:
-    json:
-        format: '{"time": "%(asctime)s",
-                  "level": "%(levelname)s",
-                  "module": "%(filename)s",
-                  "function": "%(funcName)s",
-                  "line": %(lineno)d,
-                  "message": "%(message)s"}'
-    plaintext:
-        format: "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"
+  json:
+    format: '{"time": "%(asctime)s",
+      "level": "%(levelname)s",
+      "module": "%(filename)s",
+      "function": "%(funcName)s",
+      "line": %(lineno)d,
+      "message": "%(message)s"}'
+  plaintext:
+    format: "%(asctime)s %(levelname)-9.9s [%(filename)s:%(lineno)s in %(funcName)s()]: %(message)s"
 handlers:
-    console:
-        class: logging.StreamHandler
-        formatter: plaintext
-        level: INFO
-        stream: ext://sys.stdout
-    logfile:
-        class: logging.handlers.RotatingFileHandler
-        formatter: plaintext
-        level: DEBUG
-        filename: /tmp/libera_utils_test_log.log
-        maxBytes: 1000000
-        backupCount: 3
-root:
+  console:
+    class: logging.StreamHandler
+    formatter: plaintext
     level: INFO
-    propagate: True
-    handlers: [console, logfile]
+    stream: ext://sys.stdout
+  logfile:
+    class: logging.handlers.RotatingFileHandler
+    formatter: plaintext
+    level: DEBUG
+    filename: /tmp/libera_utils_test_log.log
+    maxBytes: 1000000
+    backupCount: 3
+root:
+  level: INFO
+  propagate: True
+  handlers: [console, logfile]
 loggers:
-    libera_utils:
-        qualname: libera_utils
-        level: DEBUG
-        handlers: []
+  libera_utils:
+    qualname: libera_utils
+    level: DEBUG
+    handlers: []
 ```
