@@ -61,3 +61,4 @@
 /jenkins_scripts/JenkinsFile-UnitTester filter=lfs diff=lfs merge=lfs -text
 *.csv filter=lfs diff=lfs merge=lfs -text
 /tests/test_data/docker_test/Dockerfile filter=lfs diff=lfs merge=lfs -text
+/jenkins_scripts/JenkinsFile-PypiPublisher filter=lfs diff=lfs merge=lfs -text
