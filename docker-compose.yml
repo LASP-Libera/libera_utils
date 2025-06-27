@@ -29,8 +29,28 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 
   linting:
+    platform: linux/amd64
     image: libera-utils-test:latest
     build:
       context: .
       target: libera-utils-test
     entrypoint: ["ruff", "check"]
+
+  pypi-publish:
+    platform: linux/amd64
+    image: libera-utils-test:latest
+    environment:
+      - PYPI_TOKEN
+    build:
+      context: .
+      target: libera-utils-test
+    entrypoint:
+      [
+        "poetry",
+        "publish",
+        "--build",
+        "--username",
+        "__token__",
+        "--password",
+        "${PYPI_TOKEN}",
+      ]
