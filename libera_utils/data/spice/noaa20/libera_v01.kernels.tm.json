@@ -43,6 +43,15 @@
       "frame": true
     }
   },
-  "mission_kernels": ["libera_v01.frames.fk.tf", "libera_v01.instruments.ik.ti", "noaa20_v01.fakeclock.sclk.tsc"],
-  "sds_kernels": ["earth_assoc_itrf93.tf", "earth_000101_211220_210926.bpc", "naif0012.tls", "pck00010.tpc"]
+  "mission_kernels": [
+    "libera_v01.frames.fk.tf",
+    "libera_v01.instruments.ik.ti",
+    "noaa20_v01.fakeclock.sclk.tsc"
+  ],
+  "sds_kernels": [
+    "earth_assoc_itrf93.tf",
+    "earth_000101_211220_210926.bpc",
+    "naif0012.tls",
+    "pck00010.tpc"
+  ]
 }

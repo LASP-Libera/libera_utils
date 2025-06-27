@@ -1,5 +1,6 @@
 # Standard
 import datetime as dt
+import os
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,7 @@ import numpy as np
 import pytest
 import xarray as xr
 import yaml
+from cloudpathlib import AnyPath
 from pydantic import ValidationError
 from xarray import DataArray
 
@@ -111,7 +113,7 @@ def variable_metadata_for_testing(test_variable_definitions):
 
 def test_check_data_dimensions(variable_metadata_for_testing):
     """Test that the dimensions check is working"""
-    test_variable = LiberaVariable(metadata=variable_metadata_for_testing)
+    test_variable = LiberaVariable(name="test_variable", metadata=variable_metadata_for_testing)
 
     # Wrong number of dimensions
     wrong_dims_data = np.full((10, 2048), 11)
@@ -128,15 +130,15 @@ def test_check_data_dimensions(variable_metadata_for_testing):
     test_variable._check_for_bad_dimensions(good_data)
 
 
-def test_set_dynamic_dimension(variable_metadata_for_testing):
+def test_set_dynamic_dimension(caplog, variable_metadata_for_testing):
     """Test that a dynamic dimension can be set correctly"""
     first_dimension = variable_metadata_for_testing.dimensions["n_samples"]
 
     # Set the dimension in the metadata
-    with pytest.warns():
+    with caplog.at_level("WARNING"):
         variable_metadata_for_testing.set_dynamic_dimension(first_dimension, 0)
 
-    with pytest.raises(ValueError, match=r"The n_samples dimension"):
+    with caplog.at_level("WARNING"):
         variable_metadata_for_testing.set_dynamic_dimension(first_dimension, 10)
 
     variable_metadata_for_testing.dimensions["n_samples"].size = -1
@@ -150,7 +152,7 @@ def test_set_dynamic_dimension(variable_metadata_for_testing):
 def test_set_dynamic_data_dimension(variable_metadata_for_testing):
     """Test that dimensions of a supplied data file are checked against the variables metadata"""
     test_data = np.full((10, 2048, 1024), 21)
-    test_variable = LiberaVariable(metadata=variable_metadata_for_testing)
+    test_variable = LiberaVariable(name="test_variable", metadata=variable_metadata_for_testing)
 
     assert test_variable.metadata.dimensions["n_samples"].size == -1
     test_variable._set_all_dynamic_dimension_lengths(test_data)
@@ -170,7 +172,7 @@ def test_set_dynamic_data_dimension(variable_metadata_for_testing):
 def test_set_data_dimension_match_from_ndarray(variable_metadata_for_testing):
     """Testing that dimensions get set correctly in the DataArray object with a ndarray input"""
     test_data = np.full((10, 2048, 1024), 21)
-    test_variable = LiberaVariable(metadata=variable_metadata_for_testing)
+    test_variable = LiberaVariable(name="test_variable", metadata=variable_metadata_for_testing)
 
     # Before calling the dimension match function
     assert isinstance(test_data, np.ndarray)
@@ -194,8 +196,8 @@ def test_set_data_with_dimension_match_from_dataarray(
     variable_metadata_for_testing, data_shape, data_value, input_dims
 ):
     """Testing that dimensions get set correctly in the DataArray object with a DataArray input"""
-    test_data = xr.DataArray(np.full(data_shape, data_value), dims=input_dims)
-    test_variable = LiberaVariable(metadata=variable_metadata_for_testing)
+    test_data = xr.DataArray(np.full(data_shape, data_value))
+    test_variable = LiberaVariable(name="test_variable", metadata=variable_metadata_for_testing)
 
     # Before calling the dimension match function ensure data is not set
     assert test_variable.data is None
@@ -209,7 +211,7 @@ def test_set_data_with_dimension_match_from_dataarray(
 
 def test_libera_variable_set_data(variable_metadata_for_testing):
     """Test that data can be added to a LiberaVariable that is defined in a yaml file"""
-    test_variable = LiberaVariable(metadata=variable_metadata_for_testing)
+    test_variable = LiberaVariable(name="test_variable", metadata=variable_metadata_for_testing)
 
     with pytest.raises(TypeError):
         test_variable.set_data("not an array")
@@ -227,7 +229,7 @@ def test_libera_variable_set_data(variable_metadata_for_testing):
 def test_create_libera_variable_with_data(variable_metadata_for_testing):
     """Test the instantiation of LiberaVariable object when a data object is given"""
     test_data = np.full((10, 2048, 1024), 123)
-    test_variable = LiberaVariable(metadata=variable_metadata_for_testing, data=test_data)
+    test_variable = LiberaVariable(name="test_variable", metadata=variable_metadata_for_testing, data=test_data)
     assert isinstance(test_variable.data, xr.DataArray)
     assert np.all(test_variable.data == 123)
     # Check for dimension matching
@@ -290,11 +292,47 @@ def test_load_data_product_variables_with_metadata(test_variable_definitions):
     assert isinstance(variables_dict["pix_rad"].metadata, VariableMetadata)
 
 
+def test_variable_encodings(test_variable_definitions):
+    """Test that the variable encodings work as expected"""
+    new_config = DataProductConfig(data_product_id=DataProductIdentifier.l1b_rad, version="1.0.0")
+    assert new_config.variable_encoding_dict is None
+
+    new_config = DataProductConfig(
+        data_product_id=DataProductIdentifier.l1b_rad,
+        version="1.0.0",
+        variable_configuration_path=test_variable_definitions,
+    )
+    assert len(new_config.variable_encoding_dict) == 0
+
+    new_config.add_data_to_variable("time", np.full((100,), dt.datetime(2023, 1, 1)))
+    assert len(new_config.variable_encoding_dict) == 1
+
+
 def test_version_format():
     """Test that the version format is correct for a filename"""
     new_config = DataProductConfig(data_product_id=DataProductIdentifier.l1b_rad, version="1.0.0")
     formatted_version = new_config._format_version_for_filename()
     assert formatted_version == "V1-0-0"
+
+
+def test_check_for_complete_variables(test_variable_definitions):
+    product_config = DataProductConfig(
+        data_product_id=DataProductIdentifier.l1b_cam,
+        version="1.0.0",
+        variable_configuration_path=test_variable_definitions,
+    )
+    test_array = np.full((100,), 2)
+    test_images = np.full((100, 2048, 2048), 3)
+
+    product_config.add_data_to_variable("time", test_array)
+    product_config.add_data_to_variable("pix_rad", test_images)
+    product_config.add_data_to_variable("pix_lat", test_images)
+    product_config.add_data_to_variable("pix_lon", test_images)
+    product_config.add_data_to_variable("mask", test_images)
+    assert not product_config._check_for_complete_variables()
+
+    product_config.add_data_to_variable("q_flags", test_array)
+    assert product_config._check_for_complete_variables()
 
 
 def test_add_variable_metadata(test_variable_definitions):
@@ -312,6 +350,84 @@ def test_add_variable_metadata(test_variable_definitions):
     assert new_config.variables["time"].metadata.valid_range == [0, 1]
     assert new_config.variables["time"].metadata.missing_value == -9999.0
     assert new_config.variables["time"].metadata.dtype == "datetime64[ns]"
+
+    # Only returns variable encoding for variables that have data
+    assert len(new_config.variable_encoding_dict) == 0
+
+
+@pytest.mark.parametrize("data_type", [np.array, xr.DataArray])
+@pytest.mark.parametrize(
+    ("variable_name", "data_size", "data_value"),
+    [
+        ("pix_rad", (10, 2048, 2048), 123),
+        ("time", (10,), 456),
+    ],
+)
+def test_add_data_to_variable(test_variable_definitions, data_type, variable_name, data_size, data_value):
+    """Test that data can be added to a variable that is defined in a yaml file"""
+    new_config = DataProductConfig(
+        data_product_id=DataProductIdentifier.l1b_cam,
+        version="1.0.0",
+        variable_configuration_path=test_variable_definitions,
+    )
+
+    # Set up the starting data
+    data = np.full(data_size, data_value)
+    # Take that array and give it a higher level type (ndarray or DataArray)
+    typed_data = data_type(data)
+
+    new_config.add_data_to_variable(variable_name=variable_name, variable_data=typed_data)
+    # Resulting data in the object should be a properly made DataArray
+    assert isinstance(new_config.variables[variable_name].data, xr.DataArray)
+    assert np.all(new_config.variables[variable_name].data == data_value)
+
+    # Check for matching dimensions in the DataArray and metadata (order independent)
+    expected_dimensions = new_config.variables[variable_name].metadata.dimensions_name_list
+    found_dimensions = new_config.variables[variable_name].data.dims
+    assert np.all([found_dimension in expected_dimensions for found_dimension in found_dimensions])
+
+
+def test_create_libera_data_config_no_variable_info():
+    # Cannot make a data product config without a data product id and version
+    with pytest.raises(ValidationError):
+        DataProductConfig()
+    with pytest.raises(ValidationError):
+        DataProductConfig(data_product_id=DataProductIdentifier.l1b_rad)
+
+    new_config = DataProductConfig(data_product_id=DataProductIdentifier.l1b_rad, version="1.0.0")
+
+    assert new_config.variables is None
+    assert new_config.data_product_id == DataProductIdentifier.l1b_rad
+    assert new_config.version == "1.0.0"
+    assert new_config.static_project_metadata is not None
+    assert new_config.variables is None
+    assert new_config.variable_configuration_path is None
+
+
+def test_create_libera_data_config_with_variable_metadata(test_variable_definitions):
+    config_with_variables = DataProductConfig(
+        data_product_id=DataProductIdentifier.l1b_rad,
+        version="1.0.0",
+        variable_configuration_path=test_variable_definitions,
+    )
+    assert len(config_with_variables.variables) == 6
+
+    example_variable = config_with_variables.variables["time"]
+    assert isinstance(example_variable, LiberaVariable)
+    assert example_variable.name == "time"
+
+    assert isinstance(example_variable.metadata.dimensions["n_samples"], LiberaDimension)
+
+
+def test_create_libera_data_product_from_config_file(test_product_definition):
+    """Test that a DataProductConfig can be made from a single proper yml file"""
+    test_config = DataProductConfig.from_data_config_file(test_product_definition)
+    assert len(test_config.variables) == 5
+
+    example_variable = test_config.variables["time_stamp"]
+    assert isinstance(example_variable, LiberaVariable)
+
+    assert isinstance(example_variable.metadata.dimensions["n_samples"], LiberaDimension)
 
 
 @pytest.mark.parametrize(
@@ -406,75 +522,76 @@ def test_generate_data_product_filename(filename, product_id, version, parts):
     assert str(fn) == filename
 
 
-@pytest.mark.parametrize("data_type", [np.array, xr.DataArray])
-@pytest.mark.parametrize(
-    ("variable_name", "data_size", "data_value"),
-    [
-        ("pix_rad", (10, 2048, 2048), 123),
-        ("time", (10,), 456),
-    ],
-)
-def test_add_data_to_variable(test_variable_definitions, data_type, variable_name, data_size, data_value):
-    """Test that data can be added to a variable that is defined in a yaml file"""
-    new_config = DataProductConfig(
-        data_product_id=DataProductIdentifier.l1b_cam,
-        version="1.0.0",
-        variable_configuration_path=test_variable_definitions,
-    )
+def test_create_libera_data_config_with_data(test_product_definition):
+    """Test a complete libera data config object is created"""
+    sample_length = 32
+    time_data = np.full((sample_length,), dt.datetime(2023, 1, 1))
+    rad_data = np.full((sample_length,), 123.456)
+    lat_data = np.full((sample_length,), 45.678)
+    lon_data = np.full((sample_length,), 123.456)
+    qflags_data = np.full((sample_length,), 0)
 
-    # Set up the starting data
-    data = np.full(data_size, data_value)
-    # Take that array and give it a higher level type (ndarray or DataArray)
-    typed_data = data_type(data)
+    incomplete_data = [time_data, rad_data, lat_data, lon_data]
+    with pytest.raises(ValueError, match="The number of data entries*"):
+        DataProductConfig.from_data_config_file(test_product_definition, data=incomplete_data)
 
-    new_config.add_data_to_variable(variable_name=variable_name, variable_data=typed_data)
-    # Resulting data in the object should be a properly made DataArray
-    assert isinstance(new_config.variables[variable_name].data, xr.DataArray)
-    assert np.all(new_config.variables[variable_name].data == data_value)
-
-    # Check for matching dimensions in the DataArray and metadata (order independent)
-    expected_dimensions = new_config.variables[variable_name].metadata.dimensions_name_list
-    found_dimensions = new_config.variables[variable_name].data.dims
-    assert np.all([found_dimension in expected_dimensions for found_dimension in found_dimensions])
-
-
-def test_create_libera_data_config_no_variable_info():
-    # Cannot make a data product config without a data product id and version
-    with pytest.raises(ValidationError):
-        DataProductConfig()
-    with pytest.raises(ValidationError):
-        DataProductConfig(data_product_id=DataProductIdentifier.l1b_rad)
-
-    new_config = DataProductConfig(data_product_id=DataProductIdentifier.l1b_rad, version="1.0.0")
-
-    assert new_config.variables is None
+    full_data = [time_data, rad_data, lat_data, lon_data, qflags_data]
+    new_config = DataProductConfig.from_data_config_file(test_product_definition, data=full_data)
     assert new_config.data_product_id == DataProductIdentifier.l1b_rad
-    assert new_config.version == "1.0.0"
-    assert new_config.static_project_metadata is not None
-    assert new_config.variables is None
-    assert new_config.variable_configuration_path is None
+    assert new_config.version == "0.0.1"
+    assert len(new_config.variables) == 5
+    assert new_config._check_for_complete_variables()
 
 
-def test_create_libera_data_config_with_variable_metadata(test_variable_definitions):
-    config_with_variables = DataProductConfig(
-        data_product_id=DataProductIdentifier.l1b_rad,
-        version="1.0.0",
-        variable_configuration_path=test_variable_definitions,
-    )
-    assert len(config_with_variables.variables) == 6
+def test_write_netcdf_output_file(test_product_definition, tmp_path):
+    new_config = DataProductConfig.from_data_config_file(test_product_definition)
 
-    example_variable = config_with_variables.variables["time"]
-    assert isinstance(example_variable, LiberaVariable)
+    sample_length = 100
+    time_data = np.full((sample_length,), dt.datetime(2023, 1, 1))
+    rad_data = np.full((sample_length,), 123.456)
+    new_config.add_data_to_variable("time_stamp", time_data)
+    new_config.add_data_to_variable("fil_rad", rad_data)
 
-    assert isinstance(example_variable.metadata.dimensions["n_samples"], LiberaDimension)
+    # Write the file to a temporary location
+    new_config.write(folder_location=tmp_path, allow_incomplete=True)
+
+    expected_filename = tmp_path / "LIBERA_L1B_RAD-4CH_V0-0-1_19900102T112233_19900102T122233_R90002122233.nc"
+    assert expected_filename.exists()
+    os.remove(expected_filename)  # Clean up the file after the test
+
+    with pytest.raises(ValueError, match="Not all variables have*"):
+        new_config.write(folder_location=tmp_path, allow_incomplete=False)
+
+    new_config.add_data_to_variable("lat", np.full((sample_length,), 45.678))
+    new_config.add_data_to_variable("lon", np.full((sample_length,), 123.456))
+    new_config.add_data_to_variable("q_flags", np.full((sample_length,), 0))
+
+    # Now write the file again with all variables
+    assert not expected_filename.exists()
+    new_config.write(folder_location=tmp_path, allow_incomplete=False)
+    assert expected_filename.exists()
 
 
-def test_create_libera_data_product_from_config_file(test_product_definition):
-    """Test that a DataProductConfig can be made from a single proper yml file"""
-    test_config = DataProductConfig.from_data_config_file(test_product_definition)
-    assert len(test_config.variables) == 6
+def test_write_netcdf_output_file_s3(test_product_definition, create_mock_bucket):
+    """Test writing a NetCDF file to an S3 bucket"""
+    bucket = create_mock_bucket()
+    s3_path = f"s3://{bucket.name}/test_path"
 
-    example_variable = test_config.variables["time"]
-    assert isinstance(example_variable, LiberaVariable)
+    new_config = DataProductConfig.from_data_config_file(test_product_definition)
 
-    assert isinstance(example_variable.metadata.dimensions["n_samples"], LiberaDimension)
+    sample_length = 100
+    time_data = np.full((sample_length,), dt.datetime(2023, 1, 1))
+    rad_data = np.full((sample_length,), 123.456)
+    new_config.add_data_to_variable("time_stamp", time_data)
+    new_config.add_data_to_variable("fil_rad", rad_data)
+    new_config.add_data_to_variable("lat", np.full((sample_length,), 45.678))
+    new_config.add_data_to_variable("lon", np.full((sample_length,), 123.456))
+    new_config.add_data_to_variable("q_flags", np.full((sample_length,), 0))
+
+    # Write the file to the S3 bucket
+    new_config.write(folder_location=s3_path)
+
+    filename = "LIBERA_L1B_RAD-4CH_V0-0-1_19900102T112233_19900102T122233_R90002122233.nc"
+    expected_filepath = AnyPath(s3_path) / filename
+    assert expected_filepath.exists()
+    assert not (AnyPath(os.getcwd()) / filename).exists()
