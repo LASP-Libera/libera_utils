@@ -36,8 +36,8 @@ and makes life slightly easier for our beloved Web Team.
 Release branches are created in preparation for a tagged release from `main`. They are really just special feature
 branches that allow us to ensure the repo metadata (version, dependencies, changelog, docs, etc.) are in good shape
 for a formal release. When we merge a release branch, we delete it and perform the final release from the latest commit
-in `main` by tagging that commit with the version and deploying build artifacts to PyPI.
-See the [build and release docs](build_release.md) for more details on our release process.
+in `main` by tagging that commit with the version and pushing this tag which automatically deploys build artifacts to
+PyPI. See the [build and release docs](build_release.md) for more details on our release process.
 
 # Git LFS (Large File Storage) Usage
 

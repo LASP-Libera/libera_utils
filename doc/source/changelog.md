@@ -3,6 +3,8 @@
 ## 3.2.2 (WIP)
 - Added dimension handling for data product configuration
 - Added internal DataArray data storage matching to known dimensions
+- Added jenkins file for publishing to PyPI
+- Added contact listserv for project
 
 ## 3.2.1 (Released)
 - Added automatic formatting to the repository using `pre-commit` hooks
