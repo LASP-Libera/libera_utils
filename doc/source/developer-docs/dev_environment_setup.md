@@ -13,7 +13,7 @@ We recommended using Conda and outline the steps below for using Conda to manage
    disable auto-activation of the `base` conda environment on shell startup.
 3. Create a conda environment with your preferred version of python: `conda create -n conda-python3.11 python=3.11`
    - Note: Name this environment with a convention that makes sense to you for a base interpreter.
-     *Do not delete this conda environment!* Deleting it will break all subsequent virtual environments based on it.
+     _Do not delete this conda environment!_ Deleting it will break all subsequent virtual environments based on it.
 4. The Python interpreter provided by your new conda environment is a full base interpreter and you can use it to
    create virtual environments. You can find the full path to the base interpreter by running something similar
    to the following (run `conda env list` to see why this works):
@@ -23,6 +23,7 @@ We recommended using Conda and outline the steps below for using Conda to manage
    ```
 
 ## Installing Poetry
+
 Poetry is a command line tool that helps manage a python development environment,
 including package management, virtual environment management, and package building.
 
@@ -38,6 +39,7 @@ environment is activated. Things can get a bit confusing when you have a conda e
 virtual environment activated on top of it.
 
 Once poetry is installed, check that it works by running `poetry --version`. You should get something like
+
 ```
 Poetry version 2.1.0
 ```
@@ -70,20 +72,22 @@ and letting poetry use it when activated.
 4. Activate newly created venv: `source path/to/venv/bin/activate`
 5. [Recommended]: Configure your IDE to recognize the correct poetry-managed virtual environment for the version you wish to develop with.
 6. Run `poetry env info` and verify that Poetry is recognizing your virtual environment properly:
-    ```
-    Virtualenv
-    Python:         3.9.9
-    Implementation: CPython
-    Path:           /Users/myuser/path/to/libera_utils/venv
-    Valid:          True
-    ```
+   ```
+   Virtualenv
+   Python:         3.9.9
+   Implementation: CPython
+   Path:           /Users/myuser/path/to/libera_utils/venv
+   Valid:          True
+   ```
 
 ### Changing Python Versions
+
 It is common to recreate your virtual environment on a regular basis in order to use different python versions.
 You can do this by making sure that `python` points to the base interpreter you wish to use (e.g. 3.12) and
 going through the steps above to create a new venv (you can name it differently) and activating it for poetry to use.
 
 ### Installing Dependencies
+
 1. Run `poetry lock && poetry install` in the same directory as the `pyproject.toml` file. You should see poetry solving the
    dependency tree and then installing dependencies. This also installs dev group dependencies, as specified in
    `pyproject.toml`. Lastly you should see it installing the local package.

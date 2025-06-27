@@ -43,7 +43,7 @@ PyPI. See the [build and release docs](build_release.md) for more details on our
 
 We use Git LFS to store large files in a way that doesn't blow up the size of our repo on the git server. Usually
 each commit contains a snapshot of the repository at that point in time. If you store a 100MB file, your entire repo
-size will be 100MB * number of commits, which can easily balloon to a big number. Incidentally, this is also
+size will be 100MB \* number of commits, which can easily balloon to a big number. Incidentally, this is also
 why we squash PRs to reduce the number of commits in the main branch over time.
 
 [Git LFS Documentation](https://git-lfs.com/)
@@ -57,6 +57,7 @@ why we squash PRs to reduce the number of commits in the main branch over time.
 Install Git LFS according to the Git LFS official documentation (linked above).
 
 Run the following to initialize Git LFS for your user:
+
 ```shell
 git lfs install
 ```
@@ -80,6 +81,7 @@ so we're not addressing it here. GLHF!
 LFS keeps track of which files are stored in LFS via the `.gitattributes` file.
 
 To track specific files:
+
 ```shell
 git lfs track "<pattern>"  # The double quotes matter to prevent shell expansion
 # e.g. track all files in every directory named test_data
@@ -88,6 +90,7 @@ git lfs track "**/test_data/*"
 ```
 
 To track files based on a pattern in `.gitattributes`:
+
 ```text
 # .gitattributes
 # Track all netCDF files that live anywhere inside a test_data directory
@@ -105,6 +108,7 @@ Add it specifically using `git lfs track` e.g.
 ```shell
 git lfs track my_large_file.big
 ```
+
 This method appears to have some magic sugar behind it that automatically removes and re-adds
 the file to git tracking.
 
@@ -123,25 +127,28 @@ _NOTE: As a bit of a trick, you can combine the above strategies by running `git
 you wish to store in Git LFS. Then replace the individual records added to `.gitattributes` with the appropriate generic
 pattern that matches the specific files to be tracked._
 
-
 ## Useful Git LFS Commands
 
 List all files in the current git ref (branch, commit, tag, etc.) currently managed by Git LFS:
+
 ```shell
 git lfs ls-files
 ```
 
 Update the files in your `.git/lfs` directory with the version for your current ref:
+
 ```shell
 git lfs fetch
 ```
 
 Convert local pointer files to full files (from `.git/lfs` directory):
+
 ```shell
 git lfs checkout
 ```
 
 Combine fetch and pull into one step:
+
 ```shell
 git lfs pull
 ```

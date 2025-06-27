@@ -1,6 +1,7 @@
 # Documentation Generation for Libera Utils
 
 ## Creating Documentation with Sphinx
+
 Sphinx documentation is a python library for generating documentation from docstring comments throughout a
 codebase in combination with other rst or md pages separate from the generated documentation. We use it to
 generate automatic API documentation for the codebase as well as building developer documentation and user
@@ -9,11 +10,14 @@ documentation from markdown and restructured text documents (such as this one).
 You will need `make` installed on your machine in order to build sphinx docs.
 
 ### Compatible Comments and Docstrings
+
 Docstrings in this project are expected in the [Numpy docstring format](https://numpydoc.readthedocs.io/en/latest/format.html).
 
 ### Writing Custom Documentation Pages
+
 If you wish to add pages that are not part of the generation from the code such as reference pages, use
 the following steps.
+
 1. Create your files and folders and add them to the project folder `doc/source/`
 2. Edit the `doc/source/index.rst` file to add the file you have just created to the toctree (table of contents
    tree)
@@ -47,6 +51,7 @@ See the [dev environment setup documentation](dev-environment-setup.md) for poet
 5. Open the generated `build/index.html` file to go to the documentation homepage.
 
 Oneliner for an IDE configuration:
+
 ```shell
 # Must be run from the `doc` working directory
 make html && open build/html/index.html

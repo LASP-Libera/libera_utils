@@ -1,4 +1,5 @@
 # Configuration
+
 Configurations are stored in a JSON file [`config.json`](../../../libera_utils/data/config.json)
 but we allow overriding those values with environment variables.
 If, at any point in the code, the config is queried (`config.get(key)`)
