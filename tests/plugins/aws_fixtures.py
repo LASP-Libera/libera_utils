@@ -58,7 +58,10 @@ def mock_s3_context():
     with mock_aws():
         # Yield the (mocked) s3 Resource object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
-        yield boto3.resource("s3")
+        # We specify the region because S3 requires us-east-1 to be used for bucket
+        # creation requests. If the machine running the tests provides default regions,
+        # it can cause tests to fail.
+        yield boto3.resource("s3", region_name="us-east-1")
 
 
 @pytest.fixture
