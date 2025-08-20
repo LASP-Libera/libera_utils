@@ -73,6 +73,7 @@ out
 # Virtual environment #
 #######################
 venv
+.venv
 
 # Configurations #
 ##################

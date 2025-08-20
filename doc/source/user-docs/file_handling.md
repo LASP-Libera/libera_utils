@@ -11,7 +11,7 @@ and the usual modes for reading/writing/binary provided by most Python filelike 
 from libera_utils.io.smart_open import smart_open
 from libera_utils.io.filenaming import LiberaDataProductFilename
 
-f = LiberaDataProductFilename("s3://some-bucket/LIBERA_L1B_RAD_V1-2-3_20250102T120000_20250103T120000_R25005112233.nc")
+f = LiberaDataProductFilename("s3://some-bucket/LIBERA_L1B_RAD-4CH_V1-2-3_20250102T120000_20250103T120000_R25005112233.nc")
 with smart_open(f.path, "r") as filehandler:
     # Work with file contents
     pass

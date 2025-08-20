@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "3.2.4"
+version = "4.0.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -132,3 +132,7 @@ ignore = [
     "E501", # Ignore line length errors, as we trust ruff format to handle this.
     "F541" # Allow f strings as docstrings
 ]
+
+[tool.codespell]
+ignore-words-list = "ANC"
+

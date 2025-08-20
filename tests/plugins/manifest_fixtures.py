@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from libera_utils.aws.constants import ManifestType
+from libera_utils.constants import ManifestType
 from libera_utils.io.manifest import Manifest
 
 

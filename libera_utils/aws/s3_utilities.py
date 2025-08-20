@@ -8,8 +8,8 @@ from pathlib import Path
 import boto3
 from cloudpathlib import AnyPath, S3Path
 
-from libera_utils.aws import constants
 from libera_utils.aws.constants import LiberaAccountSuffix as AccountSuffix
+from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.io.filenaming import AbstractValidFilename
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.logutil import configure_task_logging
@@ -25,7 +25,7 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
 
     # The other two subcommands have more complex logic as functions with some shared arguments
     algorithm_name_string = parsed_args.algorithm_name
-    processing_step = constants.ProcessingStepIdentifier(algorithm_name_string)
+    processing_step = ProcessingStepIdentifier(algorithm_name_string)
     account_suffix = parsed_args.account_suffix
     local_file_path = AnyPath(parsed_args.file_path)
     s3_put_in_archive_for_processing_step(local_file_path, processing_step, account_suffix=account_suffix)
@@ -33,7 +33,7 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 def s3_put_in_archive_for_processing_step(
     path_to_file: Path | S3Path,
-    processing_step: str | constants.ProcessingStepIdentifier,
+    processing_step: str | ProcessingStepIdentifier,
     *,
     account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
 ):
@@ -44,19 +44,16 @@ def s3_put_in_archive_for_processing_step(
     path_to_file : Path
         Local path to the file to upload
     processing_step : str
-        processing_step : Union[str, constants.ProcessingStepIdentifier]
+        processing_step : Union[str, ProcessingStepIdentifier]
         Processing step ID string or object. Used to infer the S3 archive bucket name.
-    account_suffix : Union[str, constants.LiberaAccountSuffix], optional
-        Account suffix for the bucket name, by default constants.LiberaAccountSuffix.STAGE
+    account_suffix : Union[str, LiberaAccountSuffix], optional
+        Account suffix for the bucket name, by default LiberaAccountSuffix.STAGE
     """
     if isinstance(processing_step, str):
-        processing_step = constants.ProcessingStepIdentifier(processing_step)
-    if isinstance(account_suffix, str):
-        account_suffix = AccountSuffix(account_suffix)
+        processing_step = ProcessingStepIdentifier(processing_step)
+    # Don't convert string account_suffix to enum - pass it directly to get_archive_bucket_name
 
-    bucket_name = constants.ProcessingStepIdentifier.get_archive_bucket_name(
-        processing_step, account_suffix=account_suffix
-    )
+    bucket_name = ProcessingStepIdentifier.get_archive_bucket_name(processing_step, account_suffix=account_suffix)
     bucket_path = S3Path(f"s3://{bucket_name}")
     filename_object = AbstractValidFilename.from_file_path(path_to_file)
 
@@ -72,13 +69,13 @@ def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:
 
     # The other two subcommands have more complex logic as functions with some shared arguments
     algorithm_name_string = parsed_args.algorithm_name
-    processing_step = constants.ProcessingStepIdentifier(algorithm_name_string)
+    processing_step = ProcessingStepIdentifier(algorithm_name_string)
     account_suffix = parsed_args.account_suffix
     s3_list_archive_files(processing_step, account_suffix=account_suffix)
 
 
 def s3_list_archive_files(
-    processing_step: str | constants.ProcessingStepIdentifier,
+    processing_step: str | ProcessingStepIdentifier,
     *,
     account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
 ) -> list:
@@ -88,8 +85,8 @@ def s3_list_archive_files(
     ----------
     processing_step : str
         Processing step ID string. Used to infer the S3 archive bucket name.
-    account_suffix : Union[str, constants.LiberaAccountSuffix], optional
-        Account suffix for the bucket name, by default constants.LiberaAccountSuffix.STAGE
+    account_suffix : Union[str, LiberaAccountSuffix], optional
+        Account suffix for the bucket name, by default LiberaAccountSuffix.STAGE
     print_out : bool, optional
         Print the list of files to the console, by default False
 
@@ -99,13 +96,10 @@ def s3_list_archive_files(
         S3Path objects for each file in the bucket
     """
     if isinstance(processing_step, str):
-        processing_step = constants.ProcessingStepIdentifier(processing_step)
-    if isinstance(account_suffix, str):
-        account_suffix = AccountSuffix(account_suffix)
+        processing_step = ProcessingStepIdentifier(processing_step)
+    # Don't convert string account_suffix to enum - pass it directly to get_archive_bucket_name
 
-    bucket_name = constants.ProcessingStepIdentifier.get_archive_bucket_name(
-        processing_step, account_suffix=account_suffix
-    )
+    bucket_name = ProcessingStepIdentifier.get_archive_bucket_name(processing_step, account_suffix=account_suffix)
     client = boto3.client("s3")
 
     bucket_objects = [

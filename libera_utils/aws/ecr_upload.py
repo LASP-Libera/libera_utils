@@ -12,7 +12,8 @@ import boto3
 import docker
 from docker import errors as docker_errors
 
-from libera_utils.aws import constants, utils
+from libera_utils.aws import utils as aws_utils
+from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     logger.debug(f"CLI args: {parsed_args}")
     image_name: str = parsed_args.image_name
     image_tag = parsed_args.image_tag
-    algorithm_name = constants.ProcessingStepIdentifier(parsed_args.algorithm_name)
+    algorithm_name = ProcessingStepIdentifier(parsed_args.algorithm_name)
     ecr_tags = parsed_args.ecr_tags
     push_image_to_ecr(
         image_name,
@@ -230,7 +231,7 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
 def push_image_to_ecr(
     image_name: str,
     image_tag: str,
-    processing_step_id: str | constants.ProcessingStepIdentifier,
+    processing_step_id: str | ProcessingStepIdentifier,
     *,
     ecr_image_tags: list[str] = None,
     region_name: str = "us-west-2",
@@ -249,7 +250,7 @@ def push_image_to_ecr(
         Local name of the Docker image
     image_tag : str
         Local tag of the Docker image (often 'latest')
-    processing_step_id : Union[str, constants.ProcessingStepIdentifier]
+    processing_step_id : Union[str, ProcessingStepIdentifier]
         Processing step ID string or object used to determine ECR repository name.
         L0 processing step IDs are not supported as they have no associated ECR.
     ecr_image_tags : Optional[List[str]], default None
@@ -281,13 +282,13 @@ def push_image_to_ecr(
         ecr_image_tags = ["latest"]
 
     if isinstance(processing_step_id, str):
-        processing_step_id = constants.ProcessingStepIdentifier(processing_step_id)
+        processing_step_id = ProcessingStepIdentifier(processing_step_id)
 
     with DockerConfigManager(override_default_config=ignore_docker_config):
         logger.info(f"Starting ECR push for image {image_name}:{image_tag}")
 
         # Get AWS account and ECR repository information
-        account_id = utils.get_aws_account_number()
+        account_id = aws_utils.get_aws_account_number()
         ecr_name = processing_step_id.ecr_name
 
         if ecr_name is None:

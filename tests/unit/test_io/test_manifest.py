@@ -10,7 +10,7 @@ import pytest
 from cloudpathlib import S3Path
 from pydantic import ValidationError
 
-from libera_utils.aws.constants import ManifestType
+from libera_utils.constants import ManifestType
 from libera_utils.io.manifest import Manifest, ManifestFileRecord
 from libera_utils.io.smart_open import smart_open
 

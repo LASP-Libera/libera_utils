@@ -42,8 +42,9 @@ positional arguments:
   image_name            Image name of image to upload (image-name:image-tag)
   image_tag             Image tag of image to upload (image-name:image-tag)
   algorithm_name        Algorithm name that matches an ECR repo name, inputs to names:
-                        ['l2-cloud-fraction', 'l2-ssw-toa', 'libera-adms', 'l2-ssw-surface-flux', 'l2-far-ir-toa-flux', 'l1c-unfiltered',
-                        'spice-azel', 'spice-jpss', 'l1b-rad', 'l1b-cam']
+                        ['cal-rad', 'cal-cam', 'spice-azel', 'spice-jpss', 'l1b-rad', 'l1b-cam', 'int-footprint-scene-id',
+                        'l2-cf-rad', 'l2-cf-cam', 'l2-unfiltered', 'l2-ssw-toa-osse', 'l2-ssw-toa-erbe', 'l2-ssw-toa-trmm',
+                        'l2-ssw-toa-rt', 'l2-ssw-surface-flux', 'adm-binning']
 
 options:
   -h, --help            show this help message and exit
