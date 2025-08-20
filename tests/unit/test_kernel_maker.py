@@ -10,8 +10,8 @@ import pytest
 from cloudpathlib import AnyPath
 
 from libera_utils import kernel_maker
-from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.config import config
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.manifest import Manifest, ManifestFileRecord
 
 
@@ -51,7 +51,7 @@ def test_from_args(mock_make_kernel, mock_process_data, mock_version, kernel_dpi
     mock_make_kernel.assert_called_once_with(
         config_file=config.get(config_key),
         output_kernel=Path(
-            f"/fake/dropbox/LIBERA_{kernel_dpi}_V2-5-2_20200101T000000_20200101T235959_R25056154513.{out_ext}"
+            f"/fake/dropbox/LIBERA_SPICE_{kernel_dpi}_V2-5-2_20200101T000000_20200101T235959_R25056154513.{out_ext}"
         ),
         input_data=mock_process_data.return_value[0],
         overwrite=False,

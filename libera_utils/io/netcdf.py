@@ -13,10 +13,11 @@ from cloudpathlib import AnyPath
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 from xarray import DataArray, Dataset
 
-# Local
-from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.config import config
-from libera_utils.io.filenaming import AttitudeKernelFilename, EphemerisKernelFilename, LiberaDataProductFilename
+
+# Local
+from libera_utils.constants import DataLevel, DataProductIdentifier
+from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.smart_open import smart_copy_file, smart_open
 
 logger = logging.getLogger(__name__)
@@ -932,40 +933,33 @@ class DataProductConfig(BaseModel):
         and revision date. It uses the LiberaDataProductFilename class to create the filename.
         """
         filename_version = self._format_version_for_filename()
-        match self.data_product_id.split("_", maxsplit=1)[0]:
-            case "L2" | "L1B" | "L0":
-                data_level = self.data_product_id.split("_", maxsplit=1)[0]
-                product_name = self.data_product_id.split("_", maxsplit=1)[1]
+        level = self.data_product_id.data_level
+        product_name = str(self.data_product_id)
+
+        match level:
+            case DataLevel.L0 | DataLevel.L1A | DataLevel.L1B | DataLevel.L2:
                 filename = LiberaDataProductFilename.from_filename_parts(
-                    data_level=data_level,
+                    data_level=level.value,
                     product_name=product_name,
                     version=filename_version,
                     utc_start=utc_start_time,
                     utc_end=utc_end_time,
                     revision=revision or datetime.now(UTC),
                 )
-            case self.data_product_id:
-                product_name = self.data_product_id
-                # Second half of a SPICE product id will be -CK or -SPK
-                match product_name.split("-")[1]:
-                    case "SPK":
-                        filename = EphemerisKernelFilename.from_filename_parts(
-                            spk_object=product_name,
-                            version=filename_version,
-                            utc_start=utc_start_time,
-                            utc_end=utc_end_time,
-                            revision=revision or datetime.now(UTC),
-                        )
-                    case "CK":
-                        filename = AttitudeKernelFilename.from_filename_parts(
-                            ck_object=product_name,
-                            version=filename_version,
-                            utc_start=utc_start_time,
-                            utc_end=utc_end_time,
-                            revision=revision or datetime.now(UTC),
-                        )
-                    case _:
-                        raise ValueError(f"Got unexpected product name {product_name}")
+            case DataLevel.SPICE:
+                # SPICE products use bsp or bc extensions (without leading dot)
+                extension = "bsp" if product_name.endswith("-SPK") else "bc"
+                filename = LiberaDataProductFilename.from_filename_parts(
+                    data_level="SPICE",
+                    product_name=product_name,
+                    version=filename_version,
+                    utc_start=utc_start_time,
+                    utc_end=utc_end_time,
+                    revision=revision or datetime.now(UTC),
+                    extension=extension,
+                )
+            case _:
+                raise ValueError(f"Got unexpected data level {level} for product {product_name}")
         return filename
 
     def add_data_to_variable(self, variable_name: str, variable_data: np.ndarray | DataArray):

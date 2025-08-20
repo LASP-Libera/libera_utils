@@ -33,9 +33,13 @@ repos:
     rev: v2.4.1
     hooks:
       - id: codespell
+        additional_dependencies:
+          - tomli
         files: ^.*\.(py|md|rst|yml)$
   - repo: https://github.com/lasp/prevent-dangling-todos
-    rev: v0.3.0
+    rev: v0.4.0
     hooks:
       - id: prevent-dangling-todos
         args: ["--jira-prefix=LIBSDC", "--comment-prefix=TODO,FIXME"]
+        verbose: true
+        always_run: true

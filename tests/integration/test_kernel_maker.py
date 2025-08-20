@@ -30,7 +30,9 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
             overwrite=False,
             verbose=False,
         )
-        assert (short_tmp_path / "LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp").exists()
+        assert (
+            short_tmp_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp"
+        ).exists()
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
@@ -63,7 +65,9 @@ def test_make_jpss_spk_aws(
     )
 
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / "LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp").exists()
+    assert (
+        s3_output_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp"
+    ).exists()
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
@@ -83,7 +87,9 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
             overwrite=False,
             verbose=False,
         )
-        assert (short_tmp_path / "LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc").exists()
+        assert (
+            short_tmp_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc"
+        ).exists()
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
@@ -115,7 +121,7 @@ def test_make_jpss_ck_aws(
         verbose=False,
     )
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / "LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc").exists()
+    assert (s3_output_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc").exists()
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
@@ -135,7 +141,9 @@ def test_make_az_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_
             overwrite=False,
             verbose=False,
         )
-        assert (short_tmp_path / "LIBERA_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc").exists()
+        assert (
+            short_tmp_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc"
+        ).exists()
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
@@ -167,7 +175,7 @@ def test_make_az_ck_aws(
         verbose=False,
     )
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / "LIBERA_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc").exists()
+    assert (s3_output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc").exists()
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
@@ -187,7 +195,9 @@ def test_make_el_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_
             overwrite=False,
             verbose=False,
         )
-        assert (short_tmp_path / "LIBERA_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc").exists()
+        assert (
+            short_tmp_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc"
+        ).exists()
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
@@ -219,7 +229,9 @@ def test_make_el_ck_aws(
         verbose=False,
     )
     s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / "LIBERA_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc").exists()
+    assert (
+        s3_output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc"
+    ).exists()
 
 
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
@@ -239,8 +251,8 @@ def test_make_jpss_kernels_from_manifest(
     assert isinstance(mani_out, Manifest)
     assert len(mani_out.files), 2  # Two kernel types.
 
-    assert (output_path / "LIBERA_JPSS-SPK_V3-14-159_20210409T000000_20210409T055959_R25056154513.bsp").exists()
-    assert (output_path / "LIBERA_JPSS-CK_V3-14-159_20210408T235959_20210409T055958_R25056154513.bc").exists()
+    assert (output_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20210409T000000_20210409T055959_R25056154513.bsp").exists()
+    assert (output_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20210408T235959_20210409T055958_R25056154513.bc").exists()
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
 
 
@@ -261,6 +273,6 @@ def test_make_azel_kernels_from_manifest(
     assert isinstance(mani_out, Manifest)
     assert len(mani_out.files), 2  # Two kernel types.
 
-    assert (output_path / "LIBERA_AZROT-CK_V3-14-159_20250806T183730_20250806T184532_R25056154513.bc").exists()
-    assert (output_path / "LIBERA_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184532_R25056154513.bc").exists()
+    assert (output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250806T183730_20250806T184532_R25056154513.bc").exists()
+    assert (output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184532_R25056154513.bc").exists()
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.

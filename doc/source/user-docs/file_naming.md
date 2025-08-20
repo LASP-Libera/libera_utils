@@ -16,7 +16,7 @@ from cloudpathlib import S3Path
 from libera_utils.io import filenaming
 
 p = filenaming.LiberaDataProductFilename(
-    'LIBERA_L2_CLOUD-FRACTION_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc')
+    'LIBERA_L2_CF-RAD_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc')
 # Add an S3 prefix
 p.path = S3Path('s3://bucket') / p.path
 assert isinstance(p.path, S3Path)
@@ -32,5 +32,5 @@ try:
     raise Exception('The previous line should have raised a ValueError')
 except ValueError as e:
     assert "failed validation against regex pattern" in str(e)
-assert p.path.name == 'LIBERA_L2_CLOUD-FRACTION_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc'
+assert p.path.name == 'LIBERA_L2_CF-RAD_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc'
 ```

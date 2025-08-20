@@ -8,7 +8,7 @@ import pytest
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils.aws import s3_utilities
-from libera_utils.aws.constants import LiberaAccountSuffix, ProcessingStepIdentifier
+from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.io import filenaming
 
 
@@ -45,24 +45,26 @@ def test_s3_utils_put_cli_handler(mock_s3_put_for_processing_step, file_path, al
 @pytest.mark.parametrize(
     ("processing_step", "file_name"),
     [
-        (ProcessingStepIdentifier.l0_rad_pds, "P1590006SOMESCIENCEAAA99030231459001.PDS"),
         (
             ProcessingStepIdentifier.spice_jpss,
-            "LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+            "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
         ),
         (
             ProcessingStepIdentifier.spice_azel,
-            "LIBERA_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
+            "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
         ),
         (ProcessingStepIdentifier.l1b_cam, "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
-        (ProcessingStepIdentifier.l1b_rad, "LIBERA_L1B_RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
+        (
+            ProcessingStepIdentifier.l1b_rad,
+            "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+        ),
         (
             ProcessingStepIdentifier.l2_cf_cam,
-            "LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
         ),
         (
             ProcessingStepIdentifier.l2_ssw_toa_osse,
-            "LIBERA_L2_SSW-TOA_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "LIBERA_L2_SSW-TOA-FLUXES-OSSE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
         ),
     ],
 )
@@ -74,14 +76,12 @@ def test_s3_put_for_processing_step(tmp_path, make_test_archive_buckets, process
 
     # Make the expected file path in S3
     filename_object = filenaming.AbstractValidFilename.from_file_path(tmp_path / file_name)
-    bucket_name = processing_step.get_archive_bucket_name(account_suffix=LiberaAccountSuffix.TEST)
+    bucket_name = processing_step.get_archive_bucket_name(account_suffix="-test")
     s3_path = f"s3://{bucket_name}"
     expected_s3_path = filename_object.generate_prefixed_path(s3_path)
 
     # Run the upload function
-    s3_utilities.s3_put_in_archive_for_processing_step(
-        tmp_path / file_name, processing_step, account_suffix=LiberaAccountSuffix.TEST
-    )
+    s3_utilities.s3_put_in_archive_for_processing_step(tmp_path / file_name, processing_step, account_suffix="-test")
     # Check that the expected file is in the S3 bucket
     assert S3Path(expected_s3_path).exists()
 
@@ -114,21 +114,17 @@ def test_s3_utils_list_cli_handler(mock_s3_list_files, algorithm_name, account_s
     ("processing_step", "file_names"),
     [
         (
-            ProcessingStepIdentifier.l0_rad_pds,
-            ["P1590006SOMESCIENCEAAA99030231459001.PDS", "P1590007SOMESCIENCEAAA99030231459001.PDS"],
-        ),
-        (
             ProcessingStepIdentifier.spice_jpss,
             [
-                "LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
-                "LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112234.bsp",
+                "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+                "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112234.bsp",
             ],
         ),
         (
             ProcessingStepIdentifier.spice_azel,
             [
-                "LIBERA_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
-                "LIBERA_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112234.bc",
+                "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
+                "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112234.bc",
             ],
         ),
         (
@@ -141,22 +137,22 @@ def test_s3_utils_list_cli_handler(mock_s3_list_files, algorithm_name, account_s
         (
             ProcessingStepIdentifier.l1b_rad,
             [
-                "LIBERA_L1B_RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L1B_RAD_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
+                "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
             ],
         ),
         (
             ProcessingStepIdentifier.l2_cf_cam,
             [
-                "LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
+                "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
             ],
         ),
         (
             ProcessingStepIdentifier.l2_ssw_toa_osse,
             [
-                "LIBERA_L2_SSW-TOA_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L2_SSW-TOA_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
+                "LIBERA_L2_SSW-TOA-FLUXES-OSSE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L2_SSW-TOA-FLUXES-OSSE_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
             ],
         ),
     ],
@@ -170,16 +166,14 @@ def test_s3_list_objects(tmp_path, make_test_archive_buckets, processing_step, f
         # Make the expected file path in S3
         filename_object = filenaming.AbstractValidFilename.from_file_path(tmp_path / file)
         processing_step = ProcessingStepIdentifier(processing_step)
-        archive_bucket_name = processing_step.get_archive_bucket_name(account_suffix=LiberaAccountSuffix.TEST)
+        archive_bucket_name = processing_step.get_archive_bucket_name(account_suffix="-test")
         s3_path = f"s3://{archive_bucket_name}"
         expected_s3_paths.append(filename_object.generate_prefixed_path(s3_path))
 
         # Run the upload function
-        s3_utilities.s3_put_in_archive_for_processing_step(
-            tmp_path / file, processing_step, account_suffix=LiberaAccountSuffix.TEST
-        )
+        s3_utilities.s3_put_in_archive_for_processing_step(tmp_path / file, processing_step, account_suffix="-test")
     # List out all files in the s3 bucket
-    found_files = s3_utilities.s3_list_archive_files(processing_step, account_suffix=LiberaAccountSuffix.TEST)
+    found_files = s3_utilities.s3_list_archive_files(processing_step, account_suffix="-test")
     # Check that the number of files found matches the number of files uploaded
     assert len(found_files) == len(file_names)
     # Check that the expected files are in the S3 bucket

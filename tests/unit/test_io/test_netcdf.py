@@ -13,7 +13,7 @@ from cloudpathlib import AnyPath
 from pydantic import ValidationError
 from xarray import DataArray
 
-from libera_utils.aws.constants import DataProductIdentifier
+from libera_utils.constants import DataProductIdentifier
 
 # Local
 from libera_utils.io.netcdf import DataProductConfig, LiberaDimension, LiberaVariable, VariableMetadata
@@ -253,7 +253,7 @@ def test_get_static_project_metadata():
     assert project_metadata.Conventions == "CF-1.8"
 
 
-@pytest.mark.parametrize("data_product_id", [DataProductIdentifier.l1b_rad, "L1B_RAD-4CH"])
+@pytest.mark.parametrize("data_product_id", [DataProductIdentifier.l1b_rad, "RAD-4CH"])
 def test_config_data_product_id_validation(data_product_id):
     """Test that a configuration object can be made with a data product identifier string or object"""
     DataProductConfig(data_product_id=data_product_id, version="1.0.0")
@@ -435,7 +435,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
     [
         (
             "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-            "L1B_CAM",
+            "CAM",
             "3.14.159",
             dict(
                 utc_start_time=dt.datetime(2027, 1, 2, 11, 22, 33),
@@ -445,7 +445,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
         ),
         (
             "LIBERA_L1B_RAD-4CH_V3-14-159_20250102T112233_20250102T122233_R27002112233.nc",
-            "L1B_RAD-4CH",
+            "RAD-4CH",
             "3.14.159",
             dict(
                 utc_start_time=dt.datetime(2025, 1, 2, 11, 22, 33),
@@ -455,7 +455,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
         ),
         (
             "LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-            "L2_CF-RAD",
+            "CF-RAD",
             "3.14.159",
             dict(
                 utc_start_time=dt.datetime(2027, 1, 2, 11, 22, 33),
@@ -465,7 +465,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
         ),
         (
             "LIBERA_L2_SSW-TOA-FLUXES-ERBE_V3-14-159_20250102T112233_20250102T122233_R27002112233.nc",
-            "L2_SSW-TOA-FLUXES-ERBE",
+            "SSW-TOA-FLUXES-ERBE",
             "3.14.159",
             dict(
                 utc_start_time=dt.datetime(2025, 1, 2, 11, 22, 33),
@@ -474,7 +474,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
             ),
         ),
         (
-            "LIBERA_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+            "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
             "JPSS-SPK",
             "3.14.159",
             dict(
@@ -484,7 +484,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
             ),
         ),
         (
-            "LIBERA_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
+            "LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
             "JPSS-CK",
             "3.14.159",
             dict(
@@ -494,7 +494,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
             ),
         ),
         (
-            "LIBERA_ELSCAN-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
+            "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
             "ELSCAN-CK",
             "3.14.159",
             dict(
@@ -504,7 +504,7 @@ def test_create_libera_data_product_from_config_file(test_product_definition):
             ),
         ),
         (
-            "LIBERA_AZROT-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
+            "LIBERA_SPICE_AZROT-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
             "AZROT-CK",
             "3.14.159",
             dict(

@@ -9,7 +9,7 @@ from moto import mock_aws
 
 # Local
 from libera_utils.aws import processing_step_function_trigger as psfn
-from libera_utils.aws.constants import ProcessingStepIdentifier
+from libera_utils.constants import ProcessingStepIdentifier
 
 
 @pytest.mark.parametrize(

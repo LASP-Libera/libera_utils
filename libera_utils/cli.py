@@ -5,6 +5,7 @@ import argparse
 from libera_utils import kernel_maker
 from libera_utils.aws import constants, ecr_upload, s3_utilities
 from libera_utils.aws import processing_step_function_trigger as psfn
+from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.version import version as libera_utils_version
 
 
@@ -70,8 +71,8 @@ def parse_cli_args(cli_args: list):
     # ==============
     # AWS CLI TOOLS
     # ==============
-    steps_with_ecrs = [f"{name}" for name in constants.ProcessingStepIdentifier if name.ecr_name]
-    processing_steps = [f"{name}" for name in constants.ProcessingStepIdentifier]
+    steps_with_ecrs = [f"{name}" for name in ProcessingStepIdentifier if name.ecr_name]
+    processing_steps = [f"{name}" for name in ProcessingStepIdentifier]
     account_suffixes = [f"{name}" for name in constants.LiberaAccountSuffix]
 
     # ==========

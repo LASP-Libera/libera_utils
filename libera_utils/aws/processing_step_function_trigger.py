@@ -11,7 +11,7 @@ from botocore.exceptions import ClientError
 from ulid import ULID
 
 from libera_utils.aws import utils
-from libera_utils.aws.constants import ProcessingStepIdentifier
+from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)

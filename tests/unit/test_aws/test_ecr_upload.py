@@ -12,7 +12,6 @@ import pytest
 from moto import mock_aws
 
 import libera_utils.aws.ecr_upload as ecr_upload
-from libera_utils.aws.constants import ProcessingStepIdentifier
 from libera_utils.aws.ecr_upload import (
     DockerConfigManager,
     _get_fresh_ecr_auth,
@@ -20,6 +19,7 @@ from libera_utils.aws.ecr_upload import (
     build_docker_image,
     push_image_to_ecr,
 )
+from libera_utils.constants import ProcessingStepIdentifier
 
 
 def test_docker_config_manager():

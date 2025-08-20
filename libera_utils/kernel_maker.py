@@ -16,8 +16,8 @@ from curryer import kernels, meta, spicetime
 
 from libera_utils import packets as libera_packets
 from libera_utils import time
-from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.config import config
+from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import smart_copy_file
@@ -267,12 +267,18 @@ def from_args(
         revision=datetime.now(UTC),
     )
     if kernel_identifier.value.endswith("SPK"):
-        krn_filename = filenaming.EphemerisKernelFilename.from_filename_parts(spk_object=kernel_identifier, **fn_kwargs)
+        extension = "bsp"
     elif kernel_identifier.value.endswith("CK"):
-        krn_filename = filenaming.AttitudeKernelFilename.from_filename_parts(ck_object=kernel_identifier, **fn_kwargs)
+        extension = "bc"
     else:
         raise ValueError(f"Incorrectly named SPICE kernel Data Product Identifier: {kernel_identifier}")
 
+    krn_filename = filenaming.LiberaDataProductFilename.from_filename_parts(
+        data_level=DataLevel.SPICE,
+        product_name=kernel_identifier,
+        extension=extension,
+        **fn_kwargs
+    )
     output_full_path = output_dir / krn_filename.path.name
 
     # Create the kernel(s).
