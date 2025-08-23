@@ -51,33 +51,95 @@ class DockerConfigManager:
             self.tempdir.cleanup()
 
 
-def get_ecr_docker_client(region_name: str | None = None, dockercfg_path: Path | None = None) -> docker.DockerClient:
-    """Perform programmatic docker login to the default ECR for the current AWS credential account (e.g. AWS_PROFILE)
-    and return a DockerClient object for interacting with the ECR.
+def _push_single_tag(
+    docker_client: docker.DockerClient,
+    local_image: docker.models.images.Image,
+    full_ecr_tag: str,
+    region_name: str,
+    max_retries: int = 3,
+) -> None:
+    """Push a single tagged image to ECR with retry logic and fresh authentication.
 
     Parameters
     ----------
-    region_name : Optional[str]
-        AWS region name. Each region has a separate default ECR. If region_name is None, boto3 uses the default
-        region for the configured credentials.
-    dockercfg_path : Optional[Path]
-        Use a custom path for the Docker config file.
-        (default `$HOME/.docker/config.json` if present, otherwise `$HOME/.dockercfg`)
+    docker_client : docker.DockerClient
+        Docker client instance
+    local_image : docker.models.images.Image
+        Local Docker image to push
+    full_ecr_tag : str
+        Complete ECR tag (registry/repository:tag)
+    region_name : str
+        AWS region name
+    max_retries : int
+        Maximum retry attempts
+    """
+    for attempt in range(max_retries + 1):
+        try:
+            # Get fresh ECR credentials for this push attempt
+            auth_config = _get_fresh_ecr_auth(region_name)
+
+            # Tag the local image
+            local_image.tag(full_ecr_tag)
+            logger.info(f"Tagged local image with: {full_ecr_tag}")
+
+            # Push with explicit authentication
+            logger.info(f"Pushing {full_ecr_tag} (attempt {attempt + 1}/{max_retries + 1})")
+
+            push_logs = docker_client.api.push(full_ecr_tag, stream=True, decode=True, auth_config=auth_config)
+
+            error_messages = []
+            for log in push_logs:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Push log: {log}")
+
+                if "error" in log:
+                    error_message = log["error"]
+                    logger.error(f"Push error: {error_message}")
+                    error_messages.append(error_message)
+
+            if error_messages:
+                raise ValueError(f"Push errors: {error_messages}")
+
+            # Success - break out of retry loop
+            break
+
+        except (docker_errors.APIError, ValueError) as e:
+            if attempt < max_retries:
+                logger.warning(f"Push attempt {attempt + 1} failed, retrying: {e}")
+                continue
+            else:
+                logger.error(f"Push failed after {max_retries + 1} attempts")
+                raise
+
+
+def _get_fresh_ecr_auth(region_name: str) -> dict:
+    """Get fresh ECR authentication configuration.
+
+    Parameters
+    ----------
+    region_name : str
+        AWS region name
 
     Returns
     -------
-    : docker.DockerClient
-        Logged in docker client.
+    dict
+        Authentication configuration for Docker API
     """
-    logger.info("Creating a docker client for ECR")
-    docker_client = docker.from_env()
-    ecr_client = boto3.client("ecr", region_name=region_name)
-    token = ecr_client.get_authorization_token()
-    username, password = base64.b64decode(token["authorizationData"][0]["authorizationToken"]).decode().split(":")
-    registry = token["authorizationData"][0]["proxyEndpoint"]
-    docker_client.login(username, password, registry=registry, reauth=True, dockercfg_path=dockercfg_path)
-    logger.info(f"Docker login successful. ECR registry: {registry}")
-    return docker_client
+    try:
+        ecr_client = boto3.client("ecr", region_name=region_name)
+        token_response = ecr_client.get_authorization_token()
+
+        auth_data = token_response["authorizationData"][0]
+        token = auth_data["authorizationToken"]
+
+        # Decode base64 token to get username:password
+        username, password = base64.b64decode(token).decode().split(":", 1)
+
+        return {"username": username, "password": password}
+
+    except Exception as e:
+        logger.exception(f"Error obtaining ECR authorization token. {e}", stack_info=True)
+        raise
 
 
 def build_docker_image(
@@ -129,12 +191,10 @@ def build_docker_image(
                 print(log["stream"].strip())  # Print build output to console
         print(f"Image {image_name}:{tag} built successfully.")
     except docker_errors.BuildError as e:
-        logger.error("Failed to build docker image.")
-        logger.exception(e)
+        logger.exception(f"Failed to build docker image. {e}", stack_info=True)
         raise
     except docker_errors.APIError as e:
-        logger.error("Docker API error.")
-        logger.exception(e)
+        logger.exception(f"Docker API error. {e}", stack_info=True)
         raise
     logger.info(f"Image built successfully and tagged as {image_name}:{tag}")
 
@@ -172,86 +232,103 @@ def push_image_to_ecr(
     image_tag: str,
     processing_step_id: str | constants.ProcessingStepIdentifier,
     *,
-    ecr_image_tags: list[str] | None = None,
+    ecr_image_tags: list[str] = None,
     region_name: str = "us-west-2",
     ignore_docker_config: bool = False,
+    max_retries: int = 1,
 ) -> None:
-    """Programmatically upload a docker image for a science algorithm to an ECR. ECR name is determined based
-    on the algorithm name.
+    """Push a Docker image to Amazon ECR with robust authentication handling.
+
+    This function handles ECR authentication by obtaining fresh credentials for each
+    push operation, preventing authentication token expiration issues during
+    multi-tag pushes.
 
     Parameters
     ----------
     image_name : str
-        Local name of the image
+        Local name of the Docker image
     image_tag : str
-        Local tag of the image (often latest)
+        Local tag of the Docker image (often 'latest')
     processing_step_id : Union[str, constants.ProcessingStepIdentifier]
-        Processing step ID string or object. Used to infer the ECR repository name.
-        L0 processing step IDs are not allowed because they have no associated ECR.
-    ecr_image_tags : Optional[List[str]]
-        List of tags to apply to the pushed image in the ECR (e.g. ["1.3.4", "latest"]). Default None, results
-        in pushing only as "latest".
-    region_name : str
-        AWS region. Used to infer the ECR name.
-    ignore_docker_config : bool
-        Default False. If True, creates a temporary docker config.json file to prevent using stored credentials.
+        Processing step ID string or object used to determine ECR repository name.
+        L0 processing step IDs are not supported as they have no associated ECR.
+    ecr_image_tags : Optional[List[str]], default None
+        Tags to apply to the pushed image in ECR (e.g., ["1.3.4", "latest"]).
+        If None, defaults to ["latest"].
+    region_name : str, default "us-west-2"
+        AWS region containing the target ECR registry
+    ignore_docker_config : bool, default False
+        If True, creates a temporary Docker config to prevent using stored credentials
+    max_retries : int, default 3
+        Maximum number of retry attempts for failed push operations
+
+    Raises
+    ------
+    ValueError
+        If processing_step_id cannot be mapped to an ECR repository name,
+        or if push operations encounter errors after all retries
+    docker.errors.APIError
+        If Docker API operations fail
+    boto3.exceptions.ClientError
+        If AWS ECR operations fail
 
     Returns
     -------
     None
     """
+    # Input validation and defaults
     if not ecr_image_tags:
-        # Default to tagging the remote image as "latest"
         ecr_image_tags = ["latest"]
+
     if isinstance(processing_step_id, str):
         processing_step_id = constants.ProcessingStepIdentifier(processing_step_id)
 
-    with DockerConfigManager(override_default_config=ignore_docker_config) as docker_config_manager:
-        logger.info("Preparing to push image to ECR")
-        docker_client = get_ecr_docker_client(
-            region_name=region_name, dockercfg_path=docker_config_manager.dockercfg_path
-        )
+    with DockerConfigManager(override_default_config=ignore_docker_config):
+        logger.info(f"Starting ECR push for image {image_name}:{image_tag}")
+
+        # Get AWS account and ECR repository information
         account_id = utils.get_aws_account_number()
-        ecr_name = processing_step_id.ecr_name  # The repository name within the ECR
+        ecr_name = processing_step_id.ecr_name
+
         if ecr_name is None:
             raise ValueError(
-                f"Unable to determine an ECR name for algorithm identifier: {processing_step_id}. "
-                f"Note, L0 (`l0-*`) algorithm IDs do not have associated ECRs."
+                f"Unable to determine ECR repository name for processing step: {processing_step_id}. "
+                f"Note: L0 processing steps (l0-*) do not have associated ECR repositories."
             )
-        logger.debug(f"Algorithm name is {ecr_name}")
 
-        # ECR path. This is really just "the registry" URL
-        ecr_path = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
-        logger.debug(f"ECR path is {ecr_path}")
+        ecr_registry = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com"
+        logger.info(f"Target ECR registry: {ecr_registry}/{ecr_name}")
+
+        # Verify local image exists before attempting pushes
+        docker_client = docker.from_env()
+        try:
+            local_image = docker_client.images.get(f"{image_name}:{image_tag}")
+        except docker.errors.ImageNotFound:
+            raise ValueError(f"Local image not found: {image_name}:{image_tag}")
+
+        successful_pushes = []
 
         for remote_tag in ecr_image_tags:
-            # Tag the local image with the ECR repo name
-            full_ecr_tag = f"{ecr_path}/{ecr_name}:{remote_tag}"
-            logger.info(f"Tagging {image_name}:{image_tag} into ECR repo {full_ecr_tag}")
-            local_image = docker_client.images.get(f"{image_name}:{image_tag}")
-            local_image.tag(full_ecr_tag)
+            full_ecr_tag = f"{ecr_registry}/{ecr_name}:{remote_tag}"
 
-            logger.info(f"Pushing {full_ecr_tag}.")
-            error_messages = []
             try:
-                push_logs = docker_client.images.push(full_ecr_tag, stream=True, decode=True)
-                # We process these logs as print statements because this is the direct output from docker push, not log
-                # messages. We aggregate the errors to report later in an exception.
-                for log in push_logs:
-                    print(log)
-                    # Print and keep track of any errors in the log
-                    if "error" in log:
-                        print(f"Error: {log['error']}")
-                        error_messages.append(log["error"])
+                _push_single_tag(
+                    docker_client=docker_client,
+                    local_image=local_image,
+                    full_ecr_tag=full_ecr_tag,
+                    region_name=region_name,
+                    max_retries=max_retries,
+                )
+                successful_pushes.append(remote_tag)
+                logger.info(f"Successfully pushed tag: {remote_tag}")
 
-            except docker_errors.APIError as e:
-                logger.error("Docker API error during image push.")
-                logger.exception(e)
+            except Exception as e:
+                logger.exception(f"Failed to push tag {remote_tag}: {e}", stack_info=True)
+                # Clean up any successful pushes on failure (optional)
+                if successful_pushes:
+                    logger.warning(f"Partial success: pushed tags {successful_pushes} before failure")
                 raise
 
-            if error_messages:
-                raise ValueError(f"Errors encountered during image push: \n{error_messages}")
-
-            logger.info(f"Successfully pushed {full_ecr_tag}.")
-
-        logger.info("All tags pushed to ECR successfully.")
+        logger.info(
+            f"All {len(ecr_image_tags)} tags pushed successfully to ECR. Remote tags pushed: {successful_pushes}"
+        )

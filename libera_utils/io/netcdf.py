@@ -1017,8 +1017,40 @@ class DataProductConfig(BaseModel):
         self.variables = DataProductConfig.load_data_product_variables_with_metadata(variable_config_file_path)
         DataProductConfig.model_validate(self)
 
-    def write(self, folder_location: str | AnyPath, allow_incomplete: bool = False):
-        """The primary writing method for the Libera Data Products"""
+    def write(
+        self,
+        folder_location: str | AnyPath,
+        allow_incomplete: bool = False,
+        start_time: datetime = None,
+        end_time: datetime = None,
+    ) -> AnyPath:
+        """The primary writing method for the Libera Data Products
+
+        Parameters
+        ----------
+        folder_location: str | AnyPath
+            The location where the data product file will be written. It can be a string or an AnyPath object.
+        allow_incomplete: bool
+            If True, allows the writing of the data product even if some variables are incomplete (i.e., missing data
+            or metadata). If False, raises an error if any variable is incomplete.
+        start_time: datetime | None
+            The start time of the data product. If not provided, it will be set to the earliest time in the data.
+        end_time: datetime | None
+            The end time of the data product. If not provided, it will be set to the latest time in the data.
+
+        Returns
+        -------
+        AnyPath
+            The path to the written data product file.
+
+        Raises
+        ------
+        ValueError
+            If not all variables have metadata or data, and allow_incomplete is False. It will also raise an error if
+            the data product dataset is None and no internal dataset can be generated.
+        ValueError
+            If start_time is provided without end_time, or vice versa.
+        """
         if allow_incomplete:
             # If not all variables have been set then the internal dataset won't exist
             self._generate_internal_dataset(allow_incomplete=allow_incomplete)
@@ -1035,8 +1067,17 @@ class DataProductConfig(BaseModel):
                 )
         if self.data_product_dataset is None:
             self._generate_internal_dataset()
-        if self.data_start_time is None:
+
+        if self.data_start_time is None and start_time is None:
             self._set_data_start_end_time()
+        if start_time is not None and end_time is not None:
+            self.data_start_time = start_time
+            self.data_end_time = end_time
+
+        if start_time is not None and end_time is None:
+            raise ValueError("If start_time is provided, end_time must also be provided.")
+        if end_time is not None and start_time is None:
+            raise ValueError("If end_time is provided, start_time must also be provided.")
 
         filename = self._generate_data_product_filename(
             utc_start_time=self.data_start_time, utc_end_time=self.data_end_time, revision=self.data_end_time
@@ -1048,3 +1089,6 @@ class DataProductConfig(BaseModel):
             folder_location = AnyPath(folder_location)
         output_path = folder_location / filename.path
         smart_copy_file(filename.path, output_path, delete=True)
+
+        logger.info(f"Data product written to {output_path}")
+        return output_path

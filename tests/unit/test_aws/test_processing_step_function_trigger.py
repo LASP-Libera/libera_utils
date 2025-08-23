@@ -47,11 +47,13 @@ def test_processing_step_function_trigger(
     make_step_function, algorithm_name, applicable_day, wait_for_finish, response, expected_response
 ):
     """Test that step function trigger uploads to AWS correctly"""
+    if type(algorithm_name) is str:
+        algorithm_name = ProcessingStepIdentifier(algorithm_name)
 
     # Mock the step function and pass in the expected response that the step function will return. If None is passed
     # then the step function will return "RUNNING" forever, if "FAILED" is passed then the step function will return
     # "FAILED" after the first call. There doesn't seem to be a way with Moto to get the SUCCEEDED response.
-    make_step_function(algorithm_name, status=response)
+    make_step_function(algorithm_name.step_function_name, status=response)
 
     # Run the step function with a custom shortened wait time for testing
     resp = psfn.step_function_trigger(algorithm_name, applicable_day, wait_time=1)

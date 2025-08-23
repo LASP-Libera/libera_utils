@@ -81,7 +81,6 @@ def s3_list_archive_files(
     processing_step: str | constants.ProcessingStepIdentifier,
     *,
     account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
-    print_out: bool | None = False,
 ) -> list:
     """List all files in an archive S3 bucket for a given processing step.
 
@@ -114,9 +113,8 @@ def s3_list_archive_files(
         for obj in client.list_objects_v2(Bucket=bucket_name).get("Contents", [])
     ]
 
-    if print_out:
-        for obj in bucket_objects:
-            print(obj)
+    for obj in bucket_objects:
+        logger.info(obj)
     return bucket_objects
 
 

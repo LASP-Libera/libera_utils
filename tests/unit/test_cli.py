@@ -57,9 +57,12 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
     ("cli_args", "parsed"),
     [
         (
-            ["step-function-trigger", "l1b-cam", "2030-01-01"],
+            ["step-function-trigger", "l1b-rad", "2030-01-01"],
             argparse.Namespace(
-                func=psfn.step_function_trigger, algorithm_name="l1b-cam", applicable_day="2030-01-01", wait_time=5
+                func=psfn.step_function_trigger_cli_handler,
+                algorithm_name="l1b-rad",
+                applicable_day="2030-01-01",
+                wait_time=5,
             ),
         ),
         (
@@ -70,7 +73,10 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
                 "--wait-time=5",
             ],
             argparse.Namespace(
-                func=psfn.step_function_trigger, algorithm_name="l1b-cam", applicable_day="2030-01-01", wait_time=5
+                func=psfn.step_function_trigger_cli_handler,
+                algorithm_name="l1b-cam",
+                applicable_day="2030-01-01",
+                wait_time=5,
             ),
         ),
     ],
