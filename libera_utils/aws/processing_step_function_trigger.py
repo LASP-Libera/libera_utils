@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import boto3
 from botocore.exceptions import ClientError
+from ulid import ULID
 
 from libera_utils.aws import utils
 from libera_utils.aws.constants import ProcessingStepIdentifier
@@ -65,15 +66,19 @@ def step_function_trigger(
     account_id = utils.get_aws_account_number()
     logger.debug(f"Account id is : {account_id}")
 
-    state_machine_arn = f"arn:aws:states:{region_name}:{account_id}:stateMachine:{algorithm_name}"
+    state_machine_arn = f"arn:aws:states:{region_name}:{account_id}:stateMachine:{algorithm_name.step_function_name}"
     logger.debug(f"State machine is: {state_machine_arn}")
+
+    ulid_timestamp = ULID.from_datetime(datetime.now(UTC))
 
     step_function_client = boto3.client("stepfunctions", region_name)
     input_object = json.dumps(
         {
-            "job_id": "manual-trigger",
-            "node_id": algorithm_name,
-            "APPLICABLE_DAY": applicable_day.date().strftime("%Y-%m-%d"),
+            "detail": {
+                "job_id": f"cli-manual-trigger-{ulid_timestamp}",
+                "node_id": algorithm_name,
+                "applicable_date": applicable_day.date().strftime("%Y-%m-%d"),
+            }
         }
     )
     logger.debug(f"Input object to the state machine is : {input_object}")
@@ -103,7 +108,25 @@ def step_function_trigger(
         logger.info("Execution of Step Function Failed")
     else:
         logger.info(f"Function complete step function status: {execution_response['status']}")
-        logger.info("See AWS console for full details on Step Function execution")
+        logger.info("See AWS console for full details on Step Function execution.\n\n")
+        logger.info("" + get_stepfunction_execution_url(execution_response["executionArn"]))
         return execution_response["status"]
     logger.debug(f"Final response status was {execution_response}")
     return execution_response["status"]
+
+
+def get_stepfunction_execution_url(execution_arn) -> str:
+    """
+    Generate AWS Console URL for Step Function execution
+    """
+    # Extract state machine ARN and execution name from execution ARN
+    # execution_arn format: arn:aws:states:region:account:execution:stateMachineName:executionName
+    parts = execution_arn.split(":")
+    region = parts[3]
+
+    # Construct the console URL
+    console_url = (
+        f"https://{region}.console.aws.amazon.com/states/home?region={region}#/executions/details/{execution_arn}"
+    )
+
+    return console_url

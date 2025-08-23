@@ -57,11 +57,11 @@ def test_s3_utils_put_cli_handler(mock_s3_put_for_processing_step, file_path, al
         (ProcessingStepIdentifier.l1b_cam, "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
         (ProcessingStepIdentifier.l1b_rad, "LIBERA_L1B_RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
         (
-            ProcessingStepIdentifier.l2_cam_cf,
+            ProcessingStepIdentifier.l2_cf_cam,
             "LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
         ),
         (
-            ProcessingStepIdentifier.l2_rad_ssw_toa,
+            ProcessingStepIdentifier.l2_ssw_toa_osse,
             "LIBERA_L2_SSW-TOA_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
         ),
     ],
@@ -146,14 +146,14 @@ def test_s3_utils_list_cli_handler(mock_s3_list_files, algorithm_name, account_s
             ],
         ),
         (
-            ProcessingStepIdentifier.l2_cam_cf,
+            ProcessingStepIdentifier.l2_cf_cam,
             [
                 "LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
                 "LIBERA_L2_CLOUD-FRACTION_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
             ],
         ),
         (
-            ProcessingStepIdentifier.l2_rad_ssw_toa,
+            ProcessingStepIdentifier.l2_ssw_toa_osse,
             [
                 "LIBERA_L2_SSW-TOA_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
                 "LIBERA_L2_SSW-TOA_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",

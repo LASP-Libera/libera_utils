@@ -1,5 +1,15 @@
 # Version Changes
 
+## 3.2.3 (WIP)
+
+- Improved ECR authentication issues with the `libera-utils ecr-upload` CLI command for working with SSO authentication
+- Updated S3 list tool to print by default
+- Improved tooling of the aws constants module for both DataProductIdentifier and ProcessingStepIdentifier
+- Added step function and policy names to ProcessingStepIdentifier
+- Updated constants for L2 data products
+- Updated step function trigger tool with url output and naming improvements
+- Exposed useful L2 tools at highest level of the `libera_utils` package
+
 ## 3.2.2 (Released)
 
 - Added dimension handling for data product configuration

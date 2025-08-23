@@ -68,7 +68,7 @@ class DataProductIdentifier(StrEnum):
     l2_ssw_surf = "L2_SFC-FLUXES"  # SSW surface flux
 
     # Ancillary products
-    # TODO: decide whether to categorize these Auxiliary or Ancillary. Add in current expected products
+    # TODO: decide whether to categorize these Auxiliary or Ancillary. Add in current expected products [LIBSDC-544]
     anc_adm = "anc-adm"
 
     @classmethod
@@ -101,6 +101,33 @@ class DataProductIdentifier(StrEnum):
         """
         return f"{self}-{chunk_number}" if chunk_number is not None else self
 
+    def get_partial_archive_bucket_name(self) -> str | None:
+        """Gets the archive bucket name from the data product identifier .
+
+        Buckets are named according to the level of data they are storing and which account they are in. This is
+        expected to be used by the L2 developers who will most commonly be working with the stage account.
+
+        Returns
+        -------
+        str
+            The name of the archive bucket for this data product without an account suffix
+        """
+        match self.value.split("_", maxsplit=1)[0].lower():
+            # TODO: This doesn't work with the current L0 product IDs, which are not snake_case. [LIBSDC-544]
+            case "l0":
+                return f"{LiberaDataBucketName.L0_ARCHIVE_BUCKET}"
+            case "l1b":
+                return f"{LiberaDataBucketName.L1B_ARCHIVE_BUCKET}"
+            case "l2":
+                return f"{LiberaDataBucketName.L2_ARCHIVE_BUCKET}"
+            # TODO: This doesn't work with the current SPICE product IDs, which are not snake_case. [LIBSDC-544]
+            case "spice":
+                return f"{LiberaDataBucketName.SPICE_ARCHIVE_BUCKET}"
+            case "cal" | "adms":
+                return f"{LiberaDataBucketName.ANCILLARY_ARCHIVE_BUCKET}"
+            case _:
+                raise ValueError(f"Unknown processing step {self.value}")
+
 
 class ProcessingStepIdentifier(StrEnum):
     """Enumeration of processing step IDs used in AWS resource naming and processing orchestration
@@ -111,22 +138,66 @@ class ProcessingStepIdentifier(StrEnum):
     They must also be passed to the ecr_upload module called by some libera_cdk integration tests.
     """
 
-    l2_cam_cf = "l2-cloud-fraction"
-    l2_rad_ssw_toa = "l2-ssw-toa"
-    adms = "adms-libera"
-    l2_surface_flux = "l2-ssw-surface-flux"
-    l2_unfiltered = "l2-unfiltered"
-    spice_azel = "spice-azel"
-    spice_jpss = "spice-jpss"
-    l1b_rad = "l1b-rad"
-    l1b_cam = "l1b-cam"
+    # L0 processing steps
     l0_jpss_pds = "l0-jpss"
     l0_azel_pds = "l0-azel"
     l0_rad_pds = "l0-rad"
     l0_cam_pds = "l0-cam"
     l0_cr = "l0-cr"
+
+    # Calibration processing steps
     cal_rad = "cal-rad"
     cal_cam = "cal-cam"
+
+    # SPICE processing steps
+    spice_azel = "spice-azel"
+    spice_jpss = "spice-jpss"
+
+    # L1B processing steps
+    l1b_rad = "l1b-rad"
+    l1b_cam = "l1b-cam"
+
+    # SDC Intermediate Processing Steps
+    int_footprint_scene_id = "int-footprint-scene-id"
+
+    # L2 processing steps
+    # Camera Cloud Fraction (CF) products
+    l2_cf_rad = "l2-cf-rad"
+    l2_cf_cam = "l2-cf-cam"
+
+    # Unfiltered radiances
+    l2_unfiltered = "l2-unfiltered"
+
+    # SSW TOA fluxes
+    l2_ssw_toa_osse = "l2-ssw-toa-osse"
+    l2_ssw_toa_erbe = "l2-ssw-toa-erbe"
+    l2_ssw_toa_trmm = "l2-ssw-toa-trmm"
+    l2_ssw_toa_rt = "l2-ssw-toa-rt"
+
+    # SSW surface fluxes
+    l2_surface_flux = "l2-ssw-surface-flux"
+
+    # ADM processing steps
+    adm_binning = "adm-binning"
+
+    @property
+    def step_function_name(self):
+        """Get the name formatted for the step function for this processing step
+
+        The step function name is used to create a step function that orchestrates the processing step.
+        """
+        return f"{self.value.replace('_', '-')}-processing-step-function"
+
+    @property
+    def policy_name(self) -> str:
+        """Get the name formatted IAM policy for this processing step
+
+        The policy name is used to create an IAM policy that grants permissions to the aspects of the processing step.
+        """
+        spaced = self.replace("-", " ").replace("-", " ").lower()
+        separate = spaced.split(" ")
+        capitalized = [s.capitalize() for s in separate]
+        return "LiberaSDC".join(capitalized) + "DevPolicy"
 
     @property
     def ecr_name(self) -> str | None:
@@ -171,6 +242,8 @@ class ProcessingStepIdentifier(StrEnum):
                 pass
         return ProcessingStepIdentifier(processing_step), None
 
+    # TODO Coordinate this method with the DataProductIdentifier.get_partial_archive_bucket_name() method
+    # [LIBSDC-544] These are used in different places, but a common method would be useful.
     def get_archive_bucket_name(self, account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> str | None:
         """Gets the archive bucket name for this processing step.
 
@@ -196,7 +269,7 @@ class ProcessingStepIdentifier(StrEnum):
                 return f"{LiberaDataBucketName.L2_ARCHIVE_BUCKET}{account_suffix}"
             case "spice":
                 return f"{LiberaDataBucketName.SPICE_ARCHIVE_BUCKET}{account_suffix}"
-            case "cal" | "adms":
+            case "cal" | "adm" | "int":
                 return f"{LiberaDataBucketName.ANCILLARY_ARCHIVE_BUCKET}{account_suffix}"
             case _:
                 raise ValueError(f"Unknown processing step {self.value}")
@@ -274,6 +347,7 @@ class DataLevel(StrEnum):
     L2 = "L2"
 
 
+# TODO [LIBSDC-544]: Add the known APIDs for L0 packets WFOV camera and full samples for radiometers
 class LiberaApid(Enum):
     """APIDs for L0 packets"""
 
@@ -283,6 +357,7 @@ class LiberaApid(Enum):
     CAMERA = 9999
 
 
+# TODO [LIBSDC-544]: Consider making methods here that use the DataProductIdentifier and ProcessingStepIdentifier
 class LiberaDataBucketName(StrEnum):
     """Names of the data archive buckets"""
 

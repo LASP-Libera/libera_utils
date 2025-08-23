@@ -155,7 +155,7 @@ def parse_cli_args(cli_args: list):
     sfn_trigger_parser = subparsers.add_parser(
         "step-function-trigger", help="Manually trigger a specific step function"
     )
-    sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger)
+    sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger_cli_handler)
     sfn_trigger_parser.add_argument(
         "algorithm_name",
         type=str,
