@@ -34,3 +34,14 @@ repos:
     hooks:
       - id: codespell
         files: ^.*\.(py|md|rst|yml)$
+  - repo: https://github.com/lasp/prevent-dangling-todos
+    rev: v0.2.0
+    hooks:
+      - id: prevent-dangling-todos
+        args:
+          [
+            "--jira-prefix=LIBSDC",
+            "--comment-prefix=TODO,FIXME",
+            "--succeed-always"
+          ]
+        verbose: true
