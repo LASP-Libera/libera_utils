@@ -3,6 +3,8 @@ KPL/IK
 Instrument kernel for Libera
 ----------------------------------------------------------
 
+    TODO[LIBSDC-601]: Uses NOAA20 (JPSS-1) base ID, needs updating to JPSS-4 at launch.
+
     NOTE: Only the FOV and BORESIGHT variables are official IK variables. All
     others require manual reading from the SPICE variable pool.
 
@@ -15,6 +17,7 @@ Kernel data
 
     Libera WFOV Camera (-143013010) - Science FOV
     ---------------------------------------------
+        TODO[LIBSDC-601]: FOV half or full angle?
 
         \begindata
 
@@ -30,6 +33,7 @@ Kernel data
 
     Libera SW Radiometer (-143013011) - Science FOV
     -----------------------------------------------
+        TODO[LIBSDC-601]: Get ground-measured FOV value
 
         \begindata
 
@@ -44,6 +48,8 @@ Kernel data
         \begintext
 
     Libera SSW Radiometer (-143013012) - Science FOV
+    ------------------------------------------------
+        TODO[LIBSDC-601]: Get ground-measured FOV value
 
         \begindata
 
@@ -59,6 +65,7 @@ Kernel data
 
     Libera LW Radiometer (-143013013) - Science FOV
     -----------------------------------------------
+        TODO[LIBSDC-601]: Get ground-measured FOV value
 
         \begindata
 
@@ -74,6 +81,7 @@ Kernel data
 
     Libera TOT Radiometer (-143013014) - Science FOV
     ------------------------------------------------
+        TODO[LIBSDC-601]: Get ground-measured FOV value
 
         \begindata
 

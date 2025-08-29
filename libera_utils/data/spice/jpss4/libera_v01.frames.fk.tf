@@ -1,14 +1,16 @@
 KPL/FK
 
-Frame definitions for the JPSS-1 spacecraft & CERES instrument
+Frame definitions for the JPSS spacecraft & CPRS mission
 --------------------------------------------------------
+
+    TODO[LIBSDC-601]: Uses NOAA-20 (JPSS-1) base ID, needs updating to JPSS-4 at launch.
 
     Frame definitions required for the CPRS mission.
 
     Frame Name              Relative to Frame   Frame Type  Frame ID
     ==========              =================   ==========  ========
-    NOAA20_SC_COORD         J2000 (ECI)         CK          -143013000
-    LIBERA_BASE_COORD       NOAA20_SC_COORD     FIXED       -143013001
+    JPSS4_SC_COORD          J2000 (ECI)         CK          -143013000
+    LIBERA_BASE_COORD       JPSS4_SC_COORD      FIXED       -143013001
     LIBERA_AZ_COORD         LIBERA_BASE_COORD   CK          -143013002
     LIBERA_WFOV_CAM_COORD   LIBERA_AZ_COORD     FIXED       -143013010
     LIBERA_EL_COORD         LIBERA_AZ_COORD     CK          -143013003
@@ -23,7 +25,7 @@ Frame definitions for the JPSS-1 spacecraft & CERES instrument
                      | <- ck                               | <- pck
                      |                                     V
                      V                                "IAU_EARTH"
-             "NOAA20_SC_COORD"                      EARTH BODY-FIXED
+             "JPSS4_SC_COORD"                      EARTH BODY-FIXED
              -----------------                      ----------------
                      |
                      | <- fixed
@@ -72,20 +74,20 @@ Frame offsets
 Frame definitions
 --------------------------------------------------------
 
-    NOAA-20 SC (-143013) - Spacecraft (CK)
+    JPSS-4 SC (-143013) - Spacecraft (CK)
     --------------------------------------
 
         \begindata
 
-        FRAME_NOAA20_SC_COORD       = -143013000
-        FRAME_-143013000_NAME       = 'NOAA20_SC_COORD'
+        FRAME_JPSS4_SC_COORD        = -143013000
+        FRAME_-143013000_NAME       = 'JPSS4_SC_COORD'
         FRAME_-143013000_CLASS      = 3
         FRAME_-143013000_CLASS_ID   = -143013000
         FRAME_-143013000_CENTER     = -143013
         CK_-143013000_SCLK          = -143013
         CK_-143013000_SPK           = -143013
 
-        OBJECT_-143013_FRAME        = 'NOAA20_SC_COORD'
+        OBJECT_-143013_FRAME        = 'JPSS4_SC_COORD'
 
         \begintext
 
@@ -99,7 +101,7 @@ Frame definitions
         FRAME_-143013001_CLASS      = 4
         FRAME_-143013001_CLASS_ID   = -143013001
         FRAME_-143013001_CENTER     = -143013
-        TKFRAME_-143013001_RELATIVE = 'NOAA20_SC_COORD'
+        TKFRAME_-143013001_RELATIVE = 'JPSS4_SC_COORD'
         TKFRAME_-143013001_SPEC     = 'ANGLES'
         TKFRAME_-143013001_UNITS    = 'DEGREES'
         TKFRAME_-143013001_AXES     = ( 1,     2,      3   )

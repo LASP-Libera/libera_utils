@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,77 +25,12 @@ from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
-
-def make_jpss_kernels_from_manifest(manifest_file_path: str or AnyPath, output_directory: str or AnyPath):
-    """Alpha function triggering kernel generation from manifest file.
-
-    If the manifest configuration field contains "start_time" and "end_time"
-    fields then this function will select only packet data that falls in that
-    range. If these are not given, then all packet data will be used.
-
-    Parameters
-    ----------
-    manifest_file_path : str or cloudpathlib.anypath.AnyPath
-        Path to the manifest file that includes end_time and start_time
-        in the configuration section
-    output_directory :  str or cloudpathlib.anypath.AnyPath
-        Path to save the completed kernels
-    Returns
-    -------
-    output_directory : str or cloudpathlib.anypath.AnyPath
-        Path to the directory containing the completed kernels
-    """
-    # TODO: Consider cases to return/error if the entire range is not covered
-
-    m = Manifest.from_file(manifest_file_path)
-    m.validate_checksums()
-    files_in_range = []
-
-    if "start_time" not in m.configuration:
-        # No time range information is provided. Process all files in the manifest
-        for file_entry in m.files:
-            files_in_range.append(str(file_entry.filename))
-    else:
-        # Load desired time range from the manifest configuration
-        start_time_text = m.configuration["start_time"]
-        desired_start_time = datetime.strptime(start_time_text, "%Y-%m-%d:%H:%M:%S")
-        end_time_text = m.configuration["end_time"]
-        desired_end_time = datetime.strptime(end_time_text, "%Y-%m-%d:%H:%M:%S")
-
-        # Load the packet files and check the time ranges against the manifest configuration
-        # TODO update this if possible to use the metadata files when those are more defined
-
-        for file_entry in m.files:
-            file_path_from_list = file_entry.filename
-            packet_data = get_spice_packet_data_from_filepaths([file_path_from_list])
-            packet_dt64 = time.multipart_to_dt64(packet_data, "ADAET1DAY", "ADAET1MS", "ADAET1US")
-
-            # Check if any of the packet data are in increasing order by comparing an array element to
-            # its right neighbor and ensuring that is always greater or equal. If this is not true
-            # throw an error
-            if not np.all(packet_dt64[:-1] <= packet_dt64[1:]):
-                raise ValueError(f"The data in {file_path_from_list} are not monotonic in time")
-            packet_start_time = packet_dt64[0].to_pydatetime()
-            packet_end_time = packet_dt64[-1].to_pydatetime()
-
-            # Packet range starts before desired range - first packet or full data
-            if packet_start_time < desired_start_time < packet_end_time:
-                files_in_range.append(str(file_path_from_list))
-            # Desired range starts before packet range - middle or end packet
-            if desired_start_time < packet_start_time < desired_end_time:
-                files_in_range.append(str(file_path_from_list))
-
-        if not files_in_range:
-            raise ValueError(f"No files contained packets in timerange ({desired_start_time}, {desired_end_time})")
-
-    # Create the arguments to pass to the kernel generation
-    parsed_args = argparse.Namespace(
-        packet_data_filepaths=files_in_range, outdir=str(output_directory), overwrite=False, verbose=False
-    )
-    make_jpss_spk(parsed_args)
-    make_jpss_ck(parsed_args)
-
-    return output_directory
+KERNEL_DPI = (
+    DataProductIdentifier.spice_jpss_spk,
+    DataProductIdentifier.spice_jpss_ck,
+    DataProductIdentifier.spice_az_ck,
+    DataProductIdentifier.spice_el_ck,
+)
 
 
 def get_spice_packet_data_from_filepaths(packet_data_filepaths: list[str or AnyPath]):
@@ -167,7 +103,7 @@ def make_kernel(
     with tempfile.TemporaryDirectory(prefix="/tmp/") as tmp_dir:  # nosec B108
         tmp_path = Path(tmp_dir)
         if output_kernel.is_file():
-            tmp_path = tmp_dir / output_kernel.name
+            tmp_path = tmp_path / output_kernel.name
 
         out_fn = creator.write_from_json(config_file, output_kernel=tmp_path, input_data=input_data)
 
@@ -180,115 +116,289 @@ def make_kernel(
     return output_kernel
 
 
-def make_jpss_spk(parsed_args: argparse.Namespace):
-    # TODO Make low level functions that are more python usable
-    # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
-    # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
-    # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
-    # TODO: the arguments from the Namespace and call the second function which has the explicit arguments and does the
-    # TODO: work. This will allow for easier unit testing of the core functionality vs the cli interface.
-    #
-    """Create a JPSS SPK from APID 11 CCSDS packets.
-    The SPK system is the component of SPICE concerned with ephemeris data (position/velocity).
+def preprocess_data(input_data_file, nominal_time_field: str = None, pkt_time_fields: list[str] = None):
+    """Preprocess kernel data to perform conversions and determine time range.
 
     Parameters
     ----------
-    parsed_args : argparse.Namespace
-        Namespace of parsed CLI arguments
+    input_data_file : str or pathlib.Path
+        Input data file.
+    nominal_time_field : str
+        Name of the field to store the converted time field as.
+    pkt_time_fields : list of str
+        Name of the telemetry packet time fields used to convert the time.
 
     Returns
     -------
-    None
-    """
+    pd.DataFrame
+        Loaded SPICE kernel data.
+    datetime.datetime, datetime.datetime
+        The date time range of the data.
 
+    """
+    # Load the input data.
+    input_data_file = AnyPath(input_data_file)
+    if input_data_file.suffix == ".csv":
+        # TODO[LIBSDC-279]: Implement or remove (xfail test case uses csv)
+        input_dataset, utc_range = None, (None, None)
+        raise NotImplementedError
+
+    # Assume a binary file of raw packets.
+    else:
+        input_dataset = get_spice_packet_data_from_filepaths([input_data_file])
+
+        # Compute the ephemeris time from the multipart ephemeris time.
+        packet_dt64 = time.multipart_to_dt64(input_dataset, *pkt_time_fields)
+        input_dataset = pd.DataFrame(input_dataset)
+        input_dataset[nominal_time_field] = spicetime.adapt(packet_dt64.values, "dt64", "et")
+
+        utc_range = (packet_dt64[0].to_pydatetime(), packet_dt64[-1].to_pydatetime())
+
+    return input_dataset, utc_range
+
+
+def from_args(
+    input_data_files: list[str or AnyPath],
+    kernel_identifier: str or DataProductIdentifier,
+    output_dir: str or AnyPath,
+    overwrite=False,
+    append=False,
+    verbose=False,
+):
+    """Create a SPICE kernel from an input file and kernel data product type.
+
+    Parameters
+    ----------
+    input_data_files : list of str or pathlib.Path
+        Input data files.
+    kernel_identifier : str or DataProductIdentifier
+        Data product identifier that is associated with a kernel.
+    output_dir : str or AnyPath
+        Output location for the SPICE kernels and output manifest.
+    overwrite : bool, optional
+        Option to overwrite any existing similar-named SPICE kernels.
+    append : bool, optional
+        Option to append to any existing similar-named SPICE kernels.
+    verbose : bool, optional
+        Option to log with extra verbosity.
+
+    Returns
+    -------
+    str or AnyPath
+        Output kernel file path.
+
+    """
     now = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     configure_task_logging(
-        f"spk_generator_{now}",
-        limit_debug_loggers="libera_utils",
-        console_log_level=logging.DEBUG if parsed_args.verbose else None,
+        f"kernel_generator_{now}",
+        limit_debug_loggers=["libera_utils", "curryer"],
+        console_log_level=logging.DEBUG if verbose else None,
     )
 
-    logger.info("Starting SPK maker. This CLI tool creates an SPK from a list of geolocation packet files.")
+    # Validate and parse the input arguments.
+    output_dir = AnyPath(output_dir)
 
-    output_dir = AnyPath(parsed_args.outdir)
-    logger.info("Writing resulting SPK to %s", output_dir)
+    kernel_identifier = DataProductIdentifier(kernel_identifier)
+    if kernel_identifier not in KERNEL_DPI:
+        raise ValueError(
+            f"The `kernel_identifier` [{kernel_identifier}] is not a Data Product Identifier associated"
+            f" with a SPICE kernel, expected one of: [{KERNEL_DPI}]"
+        )
 
-    logger.info("Parsing packets...")
-    packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
-    logger.info("Done.")
+    if kernel_identifier == DataProductIdentifier.spice_jpss_spk:
+        config_file = config.get("LIBERA_KERNEL_SC_SPK_CONFIG")
+        pkt_time_fields = ("ADAET1DAY", "ADAET1MS", "ADAET1US")
+        nominal_time_field = "SPK_ET"
 
-    # Compute the ephemeris time from the multipart ephemeris time.
-    packet_dt64 = time.multipart_to_dt64(packet_data, "ADAET1DAY", "ADAET1MS", "ADAET1US")
-    packet_data = pd.DataFrame(packet_data)
-    packet_data["SPK_ET"] = spicetime.adapt(packet_dt64.values, "dt64", "et")
+    elif kernel_identifier == DataProductIdentifier.spice_jpss_ck:
+        config_file = config.get("LIBERA_KERNEL_SC_CK_CONFIG")
+        pkt_time_fields = ("ADAET2DAY", "ADAET2MS", "ADAET2US")
+        nominal_time_field = "CK_ET"
 
-    spk_filename = filenaming.EphemerisKernelFilename.from_filename_parts(
-        spk_object=DataProductIdentifier.spice_jpss_spk,
-        utc_start=packet_dt64[0].to_pydatetime(),
-        utc_end=packet_dt64[-1].to_pydatetime(),
+    elif kernel_identifier == DataProductIdentifier.spice_az_ck:
+        config_file = config.get("LIBERA_KERNEL_AZ_CK_CONFIG")
+        # TODO[LIBSDC-279]: Check if fields are correct for Az/El science packets!
+        pkt_time_fields = ("ADAET2DAY", "ADAET2MS", "ADAET2US")
+        nominal_time_field = "CK_ET"
+
+    elif kernel_identifier == DataProductIdentifier.spice_el_ck:
+        config_file = config.get("LIBERA_KERNEL_EL_CK_CONFIG")
+        pkt_time_fields = ("ADAET2DAY", "ADAET2MS", "ADAET2US")
+        nominal_time_field = "CK_ET"
+
+    else:
+        raise ValueError(kernel_identifier)
+
+    # Prepare the input data and determine the min/max time span.
+    input_datasets = []
+    input_time_range = None
+    for file_name in input_data_files:
+        in_dataset, in_range = preprocess_data(
+            file_name, nominal_time_field=nominal_time_field, pkt_time_fields=pkt_time_fields
+        )
+        input_datasets.append(in_dataset)
+        if input_time_range is None:
+            input_time_range = in_range
+        else:
+            input_time_range = (min(input_time_range[0], in_range[0]), max(input_time_range[1], in_range[1]))
+
+    # Generate the output file name.
+    fn_kwargs = dict(
+        utc_start=input_time_range[0],
+        utc_end=input_time_range[1],
         version=filenaming.get_current_version_str("libera_utils"),
         revision=datetime.now(UTC),
     )
-    output_full_path = output_dir / spk_filename.path.name  # pylint: disable=no-member
+    if kernel_identifier.value.endswith("SPK"):
+        krn_filename = filenaming.EphemerisKernelFilename.from_filename_parts(spk_object=kernel_identifier, **fn_kwargs)
+    elif kernel_identifier.value.endswith("CK"):
+        krn_filename = filenaming.AttitudeKernelFilename.from_filename_parts(ck_object=kernel_identifier, **fn_kwargs)
+    else:
+        raise ValueError(f"Incorrectly named SPICE kernel Data Product Identifier: {kernel_identifier}")
 
-    config_file = config.get("LIBERA_KERNEL_SC_SPK_CONFIG")
-    make_kernel(
-        config_file=config_file, output_kernel=output_full_path, input_data=packet_data, overwrite=parsed_args.overwrite
-    )
+    output_full_path = output_dir / krn_filename.path.name
+
+    # Create the kernel(s).
+    output_kernel = None
+    for ith, an_input_dataset in enumerate(input_datasets):
+        output_kernel = make_kernel(
+            config_file=config_file,
+            output_kernel=output_full_path,
+            input_data=an_input_dataset,
+            overwrite=overwrite,
+            append=append or ith,
+        )
+    return output_kernel
 
 
-def make_jpss_ck(parsed_args: argparse.Namespace):
-    # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
-    # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
-    # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
-    # TODO: the arguments from the Namespace and call the second function which has the explicit arguments and does the
-    # TODO: work. This will allow for easier unit testing of the core functionality vs the cli interface.
-    """Create a JPSS CK from APID 11 CCSDS packets.
-    The C-kernel (CK) is the component of SPICE concerned with attitude of spacecraft structures or instruments.
+def from_manifest(
+    input_manifest: str or AnyPath,
+    data_product_identifiers: list[str],
+    output_dir: str or AnyPath,
+    overwrite=False,
+    append=False,
+    verbose=False,
+):
+    """Generate SPICE kernels from a manifest file.
+
+    Parameters
+    ----------
+    input_manifest : str or AnyPath
+        Input manifest file containing one or more input data files.
+    data_product_identifiers : list[str]
+        One or more SPICE kernel data product identifiers.
+    output_dir : str or AnyPath
+        Output location for the SPICE kernels and output manifest.
+    overwrite : bool, optional
+        Option to overwrite any existing similar-named SPICE kernels.
+    append : bool, optional
+        Option to append to any existing similar-named SPICE kernels.
+    verbose : bool, optional
+        Option to log with extra verbosity.
+
+    Returns
+    -------
+    libera_utils.io.manifest.Manifest
+        Output manifest file containing one or more kernel files.
+
+    """
+    # Process input manifest
+    mani = Manifest.from_file(input_manifest)
+    mani.validate_checksums()
+
+    input_data_files = mani.files
+    if isinstance(data_product_identifiers, str):
+        data_product_identifiers = [data_product_identifiers]
+
+    # Perform processing.
+    input_file_names = [file_entry.filename for file_entry in input_data_files]
+    outputs = []
+    for kernel_identifier in data_product_identifiers:
+        try:
+            outputs.append(
+                from_args(
+                    input_data_files=input_file_names,
+                    kernel_identifier=kernel_identifier,
+                    output_dir=output_dir,
+                    overwrite=overwrite,
+                    append=append,
+                    verbose=verbose,
+                )
+            )
+        except Exception as _:
+            # Dev note: At a future time, additional information might need to
+            # be captured to indicate a "partial" failure through the output
+            # manifest file.
+            logger.exception(
+                "Kernel generation failed for DPI [%s] and inputs [%s]. Suppressing and continuing with"
+                "other kernels (if any)",
+                kernel_identifier,
+                input_file_names,
+            )
+
+    # Duplicates are possible depending on file naming and append flag.
+    outputs = sorted(set(outputs))
+
+    # Generate output manifest.
+    pedi = Manifest.output_manifest_from_input_manifest(mani)
+    pedi.add_files(*outputs)
+
+    # Automatically generates a proper output manifest filename and writes it to the path specified,
+    # usually this path is retrieved from the environment.
+    pedi.write(output_dir)
+
+    return pedi
+
+
+def jpss_kernel_cli_handler(parsed_args: argparse.Namespace):
+    """Generate SPICE JPSS kernels from command line arguments.
 
     Parameters
     ----------
     parsed_args : argparse.Namespace
-        Namespace of parsed CLI arguments
+        Namespace of parsed CLI arguments.
 
     Returns
     -------
-    None
+    libera_utils.io.manifest.Manifest
+        Output manifest file containing one or more kernel files.
+
     """
-    now = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
-    configure_task_logging(
-        f"ck_generator_{now}",
-        limit_debug_loggers="libera_utils",
-        console_log_level=logging.DEBUG if parsed_args.verbose else None,
-    )
-
-    logger.info("Starting CK maker. This CLI tool creates a CK from a list of JPSS attitue/quaternion packet files.")
-
-    output_dir = AnyPath(parsed_args.outdir)
-    logger.info("Writing resulting CK to %s", output_dir)
-    packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
-    logger.info("Done.")
-
-    # Compute the ephemeris time from the multipart attitude time.
-    packet_dt64 = time.multipart_to_dt64(packet_data, "ADAET2DAY", "ADAET2MS", "ADAET2US")
-    packet_data = pd.DataFrame(packet_data)
-    packet_data["CK_ET"] = spicetime.adapt(packet_dt64.values, "dt64", "et")
-
-    ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-        ck_object=DataProductIdentifier.spice_jpss_ck,
-        utc_start=packet_dt64[0].to_pydatetime(),
-        utc_end=packet_dt64[-1].to_pydatetime(),
-        version=filenaming.get_current_version_str("libera_utils"),
-        revision=datetime.now(UTC),
-    )
-    output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
-
-    config_file = config.get("LIBERA_KERNEL_SC_CK_CONFIG")
-    make_kernel(
-        config_file=config_file, output_kernel=output_full_path, input_data=packet_data, overwrite=parsed_args.overwrite
+    return from_manifest(
+        input_manifest=parsed_args.input_manifest,
+        data_product_identifiers=[DataProductIdentifier.spice_jpss_spk, DataProductIdentifier.spice_jpss_ck],
+        output_dir=AnyPath(os.environ["PROCESSING_PATH"]),
+        overwrite=False,
+        append=False,
+        verbose=parsed_args.verbose,
     )
 
 
+def azel_kernel_cli_handler(parsed_args: argparse.Namespace):
+    """Generate SPICE Az/El kernels from command line arguments.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Namespace of parsed CLI arguments.
+
+    Returns
+    -------
+    libera_utils.io.manifest.Manifest
+        Output manifest file containing one or more kernel files.
+
+    """
+    return from_manifest(
+        input_manifest=parsed_args.input_manifest,
+        data_product_identifiers=[DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck],
+        output_dir=AnyPath(os.environ["PROCESSING_PATH"]),
+        overwrite=False,
+        append=False,
+        verbose=parsed_args.verbose,
+    )
+
+
+# TODO[LIBSDC-279]: Delete after the defunct unit test is replaced by something functional!
 def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-statements
     # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
     # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a

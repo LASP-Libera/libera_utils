@@ -1,5 +1,11 @@
 # Version Changes
 
+## 3.2.4 (WIP)
+
+- Changed the SPICE kernel creation API
+- Added the SPICE kernel creation Docker image
+- Added the Geolocation Tier-1 integration test case and data files
+
 ## 3.2.3 (WIP)
 
 - Improved ECR authentication issues with the `libera-utils ecr-upload` CLI command for working with SSO authentication
@@ -10,7 +16,7 @@
 - Updated step function trigger tool with url output and naming improvements
 - Exposed useful L2 tools at highest level of the `libera_utils` package
 
-## 3.2.2 (Released)
+## 3.2.2 (released)
 
 - Added dimension handling for data product configuration
 - Added internal DataArray data storage matching to known dimensions
@@ -21,13 +27,13 @@
 - Added internal Dataset object to the Configurable NetCDF-4 metadata object
 - Added writing of output file for the Configurable NetCDF-4 data product object
 
-## 3.2.1 (Released)
+## 3.2.1 (released)
 
 - Added automatic formatting to the repository using `pre-commit` hooks
 - Added a list-serv for ci/cd output as part of the Jenkins files
 - BUGFIX: Fixed filenaming changes from 3.2.0 that affected the CDK deployment and usage
 
-## 3.2.0 (Released)
+## 3.2.0 (released)
 
 - Added pydantic models for a Configurable NetCDF-4 metadata object
 - Includes static metadata that is populated and known by these tools

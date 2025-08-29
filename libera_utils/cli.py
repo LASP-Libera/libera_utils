@@ -18,7 +18,7 @@ def print_version_info(*args):
     """Print CLI version information"""
     print(
         f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}"
-        f"\n\tCopyright 2023 University of Colorado\n\tReleased under BSD3 license"
+        f"\n\tCopyright 2025 University of Colorado\n\tReleased under BSD3 license"  # TODO[LIBSDC-607]: Automate date?
     )
 
 
@@ -47,64 +47,25 @@ def parse_cli_args(cli_args: list):
 
     subparsers = parser.add_subparsers(description="sub-commands for libera-utils CLI")
 
-    # make-kernel
-    make_kernel_parser = subparsers.add_parser("make-kernel", help="generate SPICE kernel from telemetry data")
+    # ============
+    # Kernel Maker
+    # ============
+    kernel_parser = subparsers.add_parser("make-kernel", help="generate SPICE kernels from a manifest file")
+    kernel_subparsers = kernel_parser.add_subparsers(description="sub-commands for make-kernel sub-command")
 
-    make_kernel_subparsers = make_kernel_parser.add_subparsers(description="sub-commands for make-kernel sub-command")
+    jpss_kernel_parser = kernel_subparsers.add_parser(
+        "jpss", help="generate SPICE JPSS SPK/CK kernels from a manifest file"
+    )
+    jpss_kernel_parser.set_defaults(func=kernel_maker.jpss_kernel_cli_handler)
+    jpss_kernel_parser.add_argument("input_manifest", type=str, help="path to input manifest file")
+    jpss_kernel_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
 
-    # TODO: the interfaces to these spice kernel makers need to be changed to accept a manifest file path, which
-    #   points to the PDS files from which to generate the kernels.
-    # TODO: The JPSS CK and JPSS SPK makers should be combined to a single entrypoint that produces both an SPK and CK
-    # ==============
-    # JPSS SPK MAKER
-    # ==============
-    jpss_spk_parser = make_kernel_subparsers.add_parser("jpss-spk", help="generate JPSS SPK kernel from telemetry")
-    jpss_spk_parser.set_defaults(func=kernel_maker.make_jpss_spk)
-    jpss_spk_parser.add_argument("packet_data_filepaths", nargs="+", type=str, help="paths to L0 packet files")
-    jpss_spk_parser.add_argument("--outdir", "-o", type=str, required=True, help="output directory for generated SPK")
-    jpss_spk_parser.add_argument(
-        "--overwrite", action="store_true", help="force overwriting an existing kernel if it exists"
+    azel_kernel_parser = kernel_subparsers.add_parser(
+        "azel", help="generate SPICE Az/El CK kernels from a manifest file"
     )
-    jpss_spk_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
-
-    # =============
-    # JPSS CK MAKER
-    # =============
-    jpss_ck_parser = make_kernel_subparsers.add_parser("jpss-ck", help="generate JPSS CK kernel from telemetry")
-    jpss_ck_parser.set_defaults(func=kernel_maker.make_jpss_ck)
-    jpss_ck_parser.add_argument("packet_data_filepaths", nargs="+", type=str, help="paths to L0 packet files")
-    jpss_ck_parser.add_argument("--outdir", "-o", type=str, required=True, help="output directory for generated CK")
-    jpss_ck_parser.add_argument(
-        "--overwrite", action="store_true", help="force overwriting an existing kernel if it exists"
-    )
-    jpss_ck_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
-
-    # ==============
-    # AZ EL CK MAKER
-    # ==============
-    azel_ck_parser = make_kernel_subparsers.add_parser(
-        "azel-ck", help="generate Libera Az-El CK kernels from telemetry"
-    )
-    azel_ck_parser.set_defaults(func=kernel_maker.make_azel_ck)
-    # TODO: Modify this CLI to take a manifest file as input rather than direct input of filepaths
-    azel_ck_parser.add_argument("packet_data_filepaths", nargs="+", type=str, help="paths to L0 packet files")
-    azel_ck_parser.add_argument("--azimuth", action="store_true", help="generate ck for Azimuth")
-    azel_ck_parser.add_argument("--elevation", action="store_true", help="generate ck for Elevation")
-    azel_ck_parser.add_argument("--outdir", "-o", type=str, required=True, help="output directory for generated CK")
-    azel_ck_parser.add_argument(
-        "--overwrite", action="store_true", help="force overwriting an existing kernel if it exists"
-    )
-    azel_ck_parser.add_argument(
-        "--csv",
-        action="store_true",
-        help="the provided Az and El packet_data_filepaths are ASCII csv files instead of binary CCSDS",
-    )
-    azel_ck_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="set DEBUG level logging output (otherwise set by LIBSDP_STREAM_LOG_LEVEL)",
-    )
+    azel_kernel_parser.set_defaults(func=kernel_maker.azel_kernel_cli_handler)
+    azel_kernel_parser.add_argument("input_manifest", type=str, help="path to input manifest file")
+    azel_kernel_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
 
     # ==============
     # AWS CLI TOOLS
@@ -229,3 +190,7 @@ def parse_cli_args(cli_args: list):
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args
+
+
+if __name__ == "__main__":
+    main()

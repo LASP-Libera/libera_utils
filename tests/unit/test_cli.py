@@ -23,23 +23,19 @@ def test_parse_cli_args(cli_args, parsed):
     ("cli_args", "parsed"),
     [
         (
-            ["make-kernel", "jpss-spk", "-ofakedir", "file1.pkts", "file2.pkts"],
+            ["make-kernel", "jpss", "file.manifest"],
             argparse.Namespace(
-                func=kernel_maker.make_jpss_spk,
-                packet_data_filepaths=["file1.pkts", "file2.pkts"],
-                outdir="fakedir",
+                func=kernel_maker.jpss_kernel_cli_handler,
+                input_manifest="file.manifest",
                 verbose=False,
-                overwrite=False,
             ),
         ),
         (
-            ["make-kernel", "jpss-ck", "--outdir", "fakedir", "file1.pkts", "file2.pkts"],
+            ["make-kernel", "azel", "file.manifest", "--verbose"],
             argparse.Namespace(
-                func=kernel_maker.make_jpss_ck,
-                packet_data_filepaths=["file1.pkts", "file2.pkts"],
-                outdir="fakedir",
-                verbose=False,
-                overwrite=False,
+                func=kernel_maker.azel_kernel_cli_handler,
+                input_manifest="file.manifest",
+                verbose=True,
             ),
         ),
     ],
