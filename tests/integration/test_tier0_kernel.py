@@ -18,10 +18,6 @@ Preparation:
         - For the unit test, a 2-minute chunk was extracted and saved to a CSV,
         checked into the repo
 
-See Also
---------
-https://lasp.colorado.edu/galaxy/spaces/LS/pages/226956760/Tier+0+SPICE+Processing+Test+-+April+2025
-
 """
 
 import shutil

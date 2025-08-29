@@ -1,10 +1,10 @@
 KPL/SCLK
  
-SCLK Kernel for JPSS-3
+SCLK Kernel for JPSS-4
 --------------------------------------------------------
  
    This SCLK kernel contains the data necessary for converting from
-   ephemeris time (ET) to JPSS-3 spacecraft clock ticks in the format,
+   ephemeris time (ET) to JPSS-4 spacecraft clock ticks in the format,
    day:ms:us since Jan 1, 1958.
 
    DATA_TYPE means we use SCLK01 type (the only type?)

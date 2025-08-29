@@ -13,7 +13,7 @@ Version and Date
    The TEXT_KERNEL_ID stores version information of loaded project text
    kernels. Each entry associated with the keyword is a string that consists
    of four parts: the kernel name, version, entry date, and type. For example,
-   the ISS I-kernel might have an entry as follows:
+   the JPSS I-kernel might have an entry as follows:
  
            TEXT_KERNEL_ID += 'LIBERA CAM V0.0 13-OCTOBER-2022 IK'
                                   |       |         |          |
@@ -25,7 +25,7 @@ Version and Date
                                                     V
                                                ENTRY DATE
  
-   ISS I-Kernel Version:
+   JPSS I-Kernel Version:
  
            \begindata
  

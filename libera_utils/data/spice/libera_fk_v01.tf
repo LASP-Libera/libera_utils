@@ -1,6 +1,6 @@
 KPL/FK
 
-Frame Kernel for Libera Instrument on JPSS-3
+Frame Kernel for Libera Instrument on JPSS-4
 ===============================================================================
 
 This frame kernel file (.tf) contains frame definitions for the elements of the
@@ -31,7 +31,7 @@ Version libera_fk_rev01 - 21 Sep 2021 - Gavin Medley
 
   Initial version for prelaunch analysis. In this version we use the NORAD ID
   for JPSS-1 to derive a NAIF ID: -100000 - 43013 = -143013. This will have to
-  be updated for JPSS-3 once a NORAD ID is assigned.
+  be updated for JPSS-4 once a NORAD ID is assigned.
 --------------------
 
 Frames Hierarchy

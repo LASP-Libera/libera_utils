@@ -25,6 +25,6 @@ output_manifest.add_files(
 )
 
 # Automatically generates a proper output manifest filename and writes it to the path specified,
-# usually this path is retrieved from the environment, like `os.environ["PROCESSING_DROPBOX"]`.
+# usually this path is retrieved from the environment, like `os.environ["PROCESSING_PATH"]`.
 output_manifest.write("s3://some-dropbox/")
 ```

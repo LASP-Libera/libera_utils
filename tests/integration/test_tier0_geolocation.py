@@ -12,10 +12,6 @@ Preparation:
         - For the unit test, a 2-minute chunk was extracted and saved to a CSV,
         checked into the repo.
 
-See Also
---------
-https://lasp.colorado.edu/galaxy/spaces/LS/pages/247998141/Tier+0+Geolocation+Processing+Test+-+April+2025
-
 """
 
 import numpy as np

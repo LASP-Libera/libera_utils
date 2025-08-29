@@ -53,6 +53,10 @@ RUN true
 # Install libera_utils and all its (non-dev) dependencies according to pyproject.toml
 RUN poetry lock && poetry sync --only main
 
+# TODO[LIBSDC-600]: Temporary until Curryer is updated to auto-download.
+# Let the curryer library know where the leapsecond file is stored.
+ENV LEAPSECOND_FILE_ENV=$LIBERA_UTILS_DIRECTORY/libera_utils/data/spice
+
 # Define the entrypoint of the container. Passing arguments when running the
 # container will be passed as arguments to the function
 ENTRYPOINT ["libera-utils"]
@@ -70,3 +74,17 @@ COPY tests $LIBERA_UTILS_DIRECTORY/tests
 
 # Set entrypoint
 ENTRYPOINT ["pytest", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]
+
+
+# CLI for creating SPICE JPSS kernels from a manifest file.
+# ---------------------------------------------------------
+FROM libera-utils AS libera-utils-make-kernel-jpss
+
+ENTRYPOINT ["libera-utils", "make-kernel", "jpss"]
+
+
+# CLI for creating SPICE AzEl kernels from a manifest file.
+# ---------------------------------------------------------
+FROM libera-utils AS libera-utils-make-kernel-azel
+
+ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
