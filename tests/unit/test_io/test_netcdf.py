@@ -245,7 +245,7 @@ def test_get_static_project_metadata():
 
     assert project_metadata.ProjectLongName == "Libera"
     assert project_metadata.ProjectShortName == "Libera"
-    # TODO Add this when known
+    # TODO[LIBSDC-613]: Add this when known
     # assert empty_config.static_project_metadata.PlatformLongName == "TBD"
 
     assert project_metadata.PlatformShortName == "NOAA-22"
