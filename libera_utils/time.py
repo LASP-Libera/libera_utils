@@ -216,11 +216,12 @@ def convert_cds_integer_to_datetime(satellite_time: int):
         + timedelta(microseconds=int_microsec)
     )
 
-    # TODO: Check with EDOS on this time conversion. The commented out below gives approximately a 70 second difference
-    # TODO: to the method above.
-    # TODO: satellite_time_string = f"{int_days}:{int_millisec}:{int_microsec}"
-    # TODO: non_tz_datetime = et_2_datetime(scs2e_wrapper(satellite_time_string))
-    # TODO: cds_time = timezone("UTC").localize(non_tz_datetime)
+    # TODO[LIBSDC-206]: Check with EDOS on this time conversion.
+    #  The commented out below gives approximately a 70 second difference
+    #  to the method above.
+    #  satellite_time_string = f"{int_days}:{int_millisec}:{int_microsec}"
+    #  non_tz_datetime = et_2_datetime(scs2e_wrapper(satellite_time_string))
+    #  cds_time = timezone("UTC").localize(non_tz_datetime)
 
     return cds_time
 
