@@ -29,6 +29,7 @@ NAIF_DE_REGEX = "de[0-9]{3}.bsp"
 logger = logging.getLogger(__name__)
 
 
+# TODO[LIBSDC-611]: Revisit idea.
 class SpiceId(NamedTuple):
     """Class that represents a unique identifier in the NAIF SPICE library"""
 
@@ -49,7 +50,7 @@ class SpiceBody(Enum):
 class SpiceInstrument(Enum):
     """Enum containing SPICE IDs for instrument geometries configured in the Instrument Kernel (IK)"""
 
-    # TODO: We don't have an IK yet. Once we do we should add instrument names and IDs, like
+    # TODO[LIBSDC-611]: We don't have an IK yet. Once we do we should add instrument names and IDs, like
     #  LIBERA_SW_RADIOMETER = SpiceId('LIBERA_SW_RADIOMETER', -143013301)
     #  Do the required reading on NAIF on how to assign IDs to instrument bodies in an IK,
     #  here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/Tutorials/pdf/individual_docs/25_ik.pdf
@@ -289,8 +290,8 @@ class KernelFileRecord(NamedTuple):
 
 
 def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
-    # TODO: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't figured out
-    #  exactly how we want to use it for SPK and CK files.
+    # TODO[LIBSDC-614]: revisit this interface. It works well for time kernels currently (LSK/SCLK) but we haven't
+    #  figured out exactly how we want to use it for SPK and CK files.
     #  Perhaps this decorator should only be smart enough to check for generic kernels?
     """
     Before trying to understand this piece of code, read this:
