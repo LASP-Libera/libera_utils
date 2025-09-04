@@ -90,8 +90,8 @@ def step_function_trigger(
             logger.debug("Execution is running.")
             if wait_time > 0:
                 logger.debug("Execution is still running. Waiting...")
-                # TODO: Let's reevaluate the amount of time needed to wait for the step function to finish once
-                # TODO: we have a better understanding of how the L2 algorithms will take to run
+                # TODO[LIBSDC-615]: Let's reevaluate the amount of time needed to wait for the step function to finish
+                # TODO[LIBSDC-615]: once we have a better understanding of how the L2 algorithms will take to run
                 time.sleep(wait_time)
                 execution_response = step_function_client.describe_execution(executionArn=response["executionArn"])
 
