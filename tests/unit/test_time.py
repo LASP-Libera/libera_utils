@@ -10,7 +10,7 @@ import pytest
 from libera_utils import time
 
 
-# TODO: Prevent these tests from retrieving their LSK from NAIF by
+# TODO[LIBSDC-206]: Prevent these tests from retrieving their LSK from NAIF by
 #  providing a mocked metakernel and asserting that it gets furnished by checking numbers of calls
 @pytest.mark.parametrize(
     ("et", "expected"),

@@ -116,7 +116,9 @@ nitpicky = True
 # Some inherited method targets aren't found through intersphinx
 # NOTE: When developing, periodically turn these off to see if we are accidentally excluding warnings we care about.
 nitpick_ignore_regex = [
-    (r"py:.*", r".*space_packet_parser.*"),  # TODO: Remove this when space-packet-parser implements intersphinx
+    # TODO[LIBSDC-617][https://github.com/lasp/space_packet_parser/issues/17]:
+    #  Remove this warning ignore filter when space-packet-parser implements intersphinx
+    (r"py:.*", r".*space_packet_parser.*"),
     (r"py:.*", r".*libera_utils\.backports.*"),  # Since we're not documenting this module, others can't link to it
     (r"py:.*", r".*bitstring.*"),  # Bitstring library doesn't appear to support intersphinx
     (r"py:.*", r".*h5py\._hl\.files\.File.*"),  # h5py.File doesn't resolve for some reason
@@ -138,7 +140,8 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
     "xarray": ("https://docs.xarray.dev/en/stable/", None),
     "cloudpathlib": ("https://cloudpathlib.drivendata.org/stable/", None),
-    # TODO: This is left commented out until space-packet-parser implements intersphinx support
+    # TODO[LIBSDC-617][https://github.com/lasp/space_packet_parser/issues/17]:
+    #  This is left commented out until space-packet-parser implements intersphinx support
     # "space_packet_parser": ("https://spacepacket-parser.readthedocs.io/en/latest/", None),
     "sqlalchemy": ("https://docs.sqlalchemy.org/en/14/", None),
     "h5py": (" https://docs.h5py.org/en/stable", None),

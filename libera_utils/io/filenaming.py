@@ -81,7 +81,6 @@ class ProductName(StrEnum):
 
     RAD = "RAD"
     CAM = "CAM"
-    # TODO: Add the additional product names from the ICD
 
     @property
     def processing_step_id(self) -> ProcessingStepIdentifier:
