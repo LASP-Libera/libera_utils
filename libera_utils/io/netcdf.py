@@ -898,7 +898,7 @@ class DataProductConfig(BaseModel):
                 if "datetime" not in variable.metadata.units:
                     self.data_product_dataset[variable.name].attrs["units"] = variable.metadata.units
 
-    # TODO revisit when have time to extract from data
+    # TODO[LIBSDC-612]: revisit when have time to extract from data
     def _set_data_start_end_time(self) -> None:
         """An internal method that sets the start and end times of the data in this product"""
         self.data_start_time = datetime(1990, 1, 2, 11, 22, 33)

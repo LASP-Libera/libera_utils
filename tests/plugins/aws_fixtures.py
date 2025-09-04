@@ -26,7 +26,7 @@ def mock_aws_credentials(monkeypatch_session):
 
 
 @pytest.fixture
-# TODO: Change this fixture scope to the entire test session
+# TODO[LIBSDC-616]: Change this fixture scope to the entire test session
 def mock_cloudwatch_context(monkeypatch):
     """Everything under/inherited by this runs in the mock_logs context manager"""
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")  # CW requires region be set

@@ -2,7 +2,7 @@ time:
   long_name: Time of sample collection
   dimensions: ["n_samples"]
   units: datetime64[ns]
-  valid_range: [0, 1] # TODO Update this with realistic values
+  valid_range: [0, 1] # TODO[LIBSDC-618]: Update this with realistic values
   missing_value: -9999
   dtype: datetime64[ns]
 pix_rad:

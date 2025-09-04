@@ -83,7 +83,7 @@ class FlagBit(int):
 @verify(UNIQUE, NAMED_FLAGS)
 class LiberaQualityFlag(LiberaFlag):
     """
-    TODO: Once these quality flags are well defined, write tests against them
+    TODO[LIBSDC-610]: Once these quality flags are well defined, write tests against them
     """
 
     MISSING_DATA = FlagBit(0b1, message="At least some data is missing")
