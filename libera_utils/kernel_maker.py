@@ -4,15 +4,15 @@ import argparse
 import logging
 import os
 import tempfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import numpy as np
-import numpy.lib.recfunctions as nprf
 import pandas as pd
 from cloudpathlib import AnyPath
 from curryer import kernels, meta, spicetime
-from space_packet_parser import parser, xtcedef
 
 from libera_utils import packets as libera_packets
 from libera_utils import time
@@ -20,7 +20,7 @@ from libera_utils.aws.constants import DataProductIdentifier
 from libera_utils.config import config
 from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest
-from libera_utils.io.smart_open import smart_copy_file, smart_open
+from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
@@ -33,64 +33,37 @@ KERNEL_DPI = (
 )
 
 
-def get_spice_packet_data_from_filepaths(packet_data_filepaths: list[str or AnyPath]):
-    """Utility function to return an array of packet data from a list of file paths of raw JPSS APID 11
-    geolocation packet data files.
-
-     Parameters
-    ----------
-    packet_data_filepaths : list of str or cloudpathlib.anypath.AnyPath
-        The list of file paths to the raw packet data
-
-    Returns
-    -------
-    packet_data : numpy.ndarray
-        The configured packet data. See packets.py for more details on structure
-    """
-    packet_definition_uri = AnyPath(config.get("JPSS_GEOLOCATION_PACKET_DEFINITION"))
-    logger.info("Using packet definition %s", packet_definition_uri)
-
-    with smart_open(packet_definition_uri) as packet_definition_filepath:
-        packet_definition = xtcedef.XtcePacketDefinition(packet_definition_filepath)
-
-    packet_parser = parser.PacketParser(packet_definition=packet_definition)
-
-    packet_data = libera_packets.parse_packets(packet_parser, packet_data_filepaths)
-
-    return packet_data
-
-
 def make_kernel(
-    config_file: str or Path,
-    output_kernel: str or AnyPath,
-    input_data: str or Path = None,
+    config_file: str | Path,
+    output_kernel: str | filenaming.PathType,
+    input_data: str | Path | None = None,
     overwrite: bool = False,
-    append: bool = False,
-):
+    append: bool | int = False,
+) -> filenaming.PathType:
     """Create a SPICE kernel from a configuration file and input data.
 
     Parameters
     ----------
-    config_file : str or pathlib.Path
+    config_file : str | pathlib.Path
         JSON configuration file defining how to create the kernel.
-    output_kernel : str or cloudpathlib.anypath.AnyPath
+    output_kernel : str | filenaming.PathType
         Output directory or file to create the kernel. If a directory, the
         file name will be based on the config_file, but with the SPICE file
         extension.
-    input_data : str or pathlib.Path or pd.DataFrame, optional
+    input_data : str | filenaming.PathType or pd.DataFrame, optional
         Input data file or object. Not required if defined within the config.
-    overwrite : bool, optional
+    overwrite : bool
         Option to overwrite an existing file.
-    append : bool, optional
-        Option to append to an existing file.
+    append : bool | int
+        Option to append to an existing file. Anything truthy will be treated as True.
 
     Returns
     -------
-    str or cloudpathlib.anypath.AnyPath
+    filenaming.PathType
         Output kernel file path
 
     """
-    output_kernel = AnyPath(output_kernel)
+    output_kernel = cast(filenaming.PathType, AnyPath(output_kernel))
     config_file = Path(config_file)
 
     # Load meta kernel details. Required to auto-map frame IDs.
@@ -116,17 +89,24 @@ def make_kernel(
     return output_kernel
 
 
-def preprocess_data(input_data_file, nominal_time_field: str = None, pkt_time_fields: list[str] = None):
+def preprocess_data(
+    input_data_file: str | filenaming.PathType,
+    nominal_time_field: str,
+    pkt_time_fields: Sequence[str],
+    kernel_identifier: DataProductIdentifier,
+) -> tuple[pd.DataFrame, tuple[datetime, datetime]]:
     """Preprocess kernel data to perform conversions and determine time range.
 
     Parameters
     ----------
-    input_data_file : str or pathlib.Path
+    input_data_file : str | filenaming.PathType
         Input data file.
     nominal_time_field : str
         Name of the field to store the converted time field as.
-    pkt_time_fields : list of str
-        Name of the telemetry packet time fields used to convert the time.
+    pkt_time_fields : Sequence[str]
+        Names of the telemetry packet time fields used to convert the time.
+    kernel_identifier : DataProductIdentifier
+        The kernel type being generated (needed to determine which packet reader to use).
 
     Returns
     -------
@@ -137,54 +117,87 @@ def preprocess_data(input_data_file, nominal_time_field: str = None, pkt_time_fi
 
     """
     # Load the input data.
-    input_data_file = AnyPath(input_data_file)
+    input_data_file = cast(filenaming.PathType, AnyPath(input_data_file))
     if input_data_file.suffix == ".csv":
-        # TODO[LIBSDC-279]: Implement or remove (xfail test case uses csv)
-        input_dataset, utc_range = None, (None, None)
-        raise NotImplementedError
+        # TODO[LIBSDC-485]: Implement or remove when adding support for other input file types. Test data exists for this but the format is not defined.
+        raise NotImplementedError(
+            "This function previously worked with CSV files but tests were never written so functionality was removed."
+        )
+    elif input_data_file.suffix == ".nc":
+        # TODO[LIBSDC-485]: Implement when we have combined packet data NetCDF files.
+        raise NotImplementedError("This function does not support NetCDF input files yet.")
 
     # Assume a binary file of raw packets.
     else:
-        input_dataset = get_spice_packet_data_from_filepaths([input_data_file])
+        # Use the appropriate packet reader based on kernel type
+        if kernel_identifier in [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck]:
+            input_dataset = libera_packets.read_azel_packet_data([input_data_file])
+        elif kernel_identifier in [DataProductIdentifier.spice_jpss_ck, DataProductIdentifier.spice_jpss_spk]:
+            input_dataset = libera_packets.read_sc_packet_data([input_data_file])
+        else:
+            raise ValueError(
+                f"Unexpected kernel data product identifier {kernel_identifier}. Expected one of {KERNEL_DPI}."
+            )
 
         # Compute the ephemeris time from the multipart ephemeris time.
-        packet_dt64 = time.multipart_to_dt64(input_dataset, *pkt_time_fields)
-        input_dataset = pd.DataFrame(input_dataset)
-        input_dataset[nominal_time_field] = spicetime.adapt(packet_dt64.values, "dt64", "et")
+        if kernel_identifier in [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck]:
+            # For Az/El packets, use seconds and microseconds
+            packet_dt64 = time.multipart_to_dt64(input_dataset, s_field=pkt_time_fields[0], us_field=pkt_time_fields[1])
+            # Prepare the data for Az or El kernel generation
+            if kernel_identifier == DataProductIdentifier.spice_az_ck:
+                # For azimuth kernel, select and rename columns appropriately
+                input_dataset["AZ_ET"] = spicetime.adapt(packet_dt64.values, "dt64", "et")
+                # Convert radians to degrees
+                input_dataset["AZ_ANGLE"] = np.degrees(input_dataset["AZ_ANGLE_RAD"])
+                # Keep only the columns needed for the kernel
+                input_dataset = input_dataset[["AZ_ET", "AZ_ANGLE"]]
+            else:  # spice_el_ck
+                # For elevation kernel, select and rename columns appropriately
+                input_dataset["EL_ET"] = spicetime.adapt(packet_dt64.values, "dt64", "et")
+                # Convert radians to degrees
+                input_dataset["EL_ANGLE"] = np.degrees(input_dataset["EL_ANGLE_RAD"])
+                # Keep only the columns needed for the kernel
+                input_dataset = input_dataset[["EL_ET", "EL_ANGLE"]]
+        else:
+            # For spacecraft packets, use days, milliseconds, and microseconds
+            packet_dt64 = time.multipart_to_dt64(input_dataset, *pkt_time_fields)
+            input_dataset[nominal_time_field] = spicetime.adapt(packet_dt64.values, "dt64", "et")
 
-        utc_range = (packet_dt64[0].to_pydatetime(), packet_dt64[-1].to_pydatetime())
+        utc_range = (packet_dt64.iloc[0].to_pydatetime(), packet_dt64.iloc[-1].to_pydatetime())
 
     return input_dataset, utc_range
 
 
 def from_args(
-    input_data_files: list[str or AnyPath],
-    kernel_identifier: str or DataProductIdentifier,
-    output_dir: str or AnyPath,
+    input_data_files: list[str | filenaming.PathType],
+    kernel_identifier: str | DataProductIdentifier,
+    output_dir: str | filenaming.PathType,
     overwrite=False,
     append=False,
     verbose=False,
-):
+) -> filenaming.PathType:
     """Create a SPICE kernel from an input file and kernel data product type.
 
     Parameters
     ----------
-    input_data_files : list of str or pathlib.Path
+    input_data_files : list[str, filenaming.PathType]
         Input data files.
-    kernel_identifier : str or DataProductIdentifier
+    kernel_identifier : str | DataProductIdentifier
         Data product identifier that is associated with a kernel.
-    output_dir : str or AnyPath
+    output_dir : str | filenaming.PathType
         Output location for the SPICE kernels and output manifest.
-    overwrite : bool, optional
+    overwrite : bool
         Option to overwrite any existing similar-named SPICE kernels.
-    append : bool, optional
+    append : bool
         Option to append to any existing similar-named SPICE kernels.
-    verbose : bool, optional
+        If multiple input files are provided with append=False, the first file will create a new kernel,
+        and subsequent files will append to it.
+    verbose : bool
         Option to log with extra verbosity.
 
     Returns
     -------
-    str or AnyPath
+    filenaming.PathType
         Output kernel file path.
 
     """
@@ -192,11 +205,11 @@ def from_args(
     configure_task_logging(
         f"kernel_generator_{now}",
         limit_debug_loggers=["libera_utils", "curryer"],
-        console_log_level=logging.DEBUG if verbose else None,
+        console_log_level=logging.DEBUG if verbose else logging.INFO,
     )
 
     # Validate and parse the input arguments.
-    output_dir = AnyPath(output_dir)
+    output_dir = cast(filenaming.PathType, AnyPath(output_dir))
 
     kernel_identifier = DataProductIdentifier(kernel_identifier)
     if kernel_identifier not in KERNEL_DPI:
@@ -207,23 +220,24 @@ def from_args(
 
     if kernel_identifier == DataProductIdentifier.spice_jpss_spk:
         config_file = config.get("LIBERA_KERNEL_SC_SPK_CONFIG")
-        pkt_time_fields = ("ADAET1DAY", "ADAET1MS", "ADAET1US")
+        pkt_time_fields = ["ADAET1DAY", "ADAET1MS", "ADAET1US"]
         nominal_time_field = "SPK_ET"
 
     elif kernel_identifier == DataProductIdentifier.spice_jpss_ck:
         config_file = config.get("LIBERA_KERNEL_SC_CK_CONFIG")
-        pkt_time_fields = ("ADAET2DAY", "ADAET2MS", "ADAET2US")
+        pkt_time_fields = ["ADAET2DAY", "ADAET2MS", "ADAET2US"]
         nominal_time_field = "CK_ET"
 
     elif kernel_identifier == DataProductIdentifier.spice_az_ck:
         config_file = config.get("LIBERA_KERNEL_AZ_CK_CONFIG")
-        # TODO[LIBSDC-279]: Check if fields are correct for Az/El science packets!
-        pkt_time_fields = ("ADAET2DAY", "ADAET2MS", "ADAET2US")
+        # For Az/El packets, we use seconds and microseconds from SAMPLE_SEC and SAMPLE_USEC
+        pkt_time_fields = ["SAMPLE_SEC", "SAMPLE_USEC"]
         nominal_time_field = "CK_ET"
 
     elif kernel_identifier == DataProductIdentifier.spice_el_ck:
         config_file = config.get("LIBERA_KERNEL_EL_CK_CONFIG")
-        pkt_time_fields = ("ADAET2DAY", "ADAET2MS", "ADAET2US")
+        # For Az/El packets, we use seconds and microseconds from SAMPLE_SEC and SAMPLE_USEC
+        pkt_time_fields = ["SAMPLE_SEC", "SAMPLE_USEC"]
         nominal_time_field = "CK_ET"
 
     else:
@@ -231,16 +245,19 @@ def from_args(
 
     # Prepare the input data and determine the min/max time span.
     input_datasets = []
-    input_time_range = None
+    input_time_range: list[datetime] = []
     for file_name in input_data_files:
         in_dataset, in_range = preprocess_data(
-            file_name, nominal_time_field=nominal_time_field, pkt_time_fields=pkt_time_fields
+            file_name,
+            nominal_time_field=nominal_time_field,
+            pkt_time_fields=pkt_time_fields,
+            kernel_identifier=kernel_identifier,
         )
         input_datasets.append(in_dataset)
-        if input_time_range is None:
-            input_time_range = in_range
+        if not input_time_range:
+            input_time_range = list(in_range)
         else:
-            input_time_range = (min(input_time_range[0], in_range[0]), max(input_time_range[1], in_range[1]))
+            input_time_range = [min(input_time_range[0], in_range[0]), max(input_time_range[1], in_range[1])]
 
     # Generate the output file name.
     fn_kwargs = dict(
@@ -259,7 +276,6 @@ def from_args(
     output_full_path = output_dir / krn_filename.path.name
 
     # Create the kernel(s).
-    output_kernel = None
     for ith, an_input_dataset in enumerate(input_datasets):
         output_kernel = make_kernel(
             config_file=config_file,
@@ -272,9 +288,9 @@ def from_args(
 
 
 def from_manifest(
-    input_manifest: str or AnyPath,
+    input_manifest: str | filenaming.PathType,
     data_product_identifiers: list[str],
-    output_dir: str or AnyPath,
+    output_dir: str | filenaming.PathType,
     overwrite=False,
     append=False,
     verbose=False,
@@ -283,11 +299,11 @@ def from_manifest(
 
     Parameters
     ----------
-    input_manifest : str or AnyPath
+    input_manifest : str | filenaming.PathType
         Input manifest file containing one or more input data files.
     data_product_identifiers : list[str]
         One or more SPICE kernel data product identifiers.
-    output_dir : str or AnyPath
+    output_dir : str | filenaming.PathType
         Output location for the SPICE kernels and output manifest.
     overwrite : bool, optional
         Option to overwrite any existing similar-named SPICE kernels.
@@ -313,7 +329,9 @@ def from_manifest(
     # Perform processing.
     input_file_names = [file_entry.filename for file_entry in input_data_files]
     outputs = []
+    kernel_processing_failures: list[tuple[str, list]] = []
     for kernel_identifier in data_product_identifiers:
+        # Make each type of kernel requested (each kernel type has a unique DPI)
         try:
             outputs.append(
                 from_args(
@@ -326,15 +344,18 @@ def from_manifest(
                 )
             )
         except Exception as _:
-            # Dev note: At a future time, additional information might need to
-            # be captured to indicate a "partial" failure through the output
-            # manifest file.
+            kernel_processing_failures.append((kernel_identifier, input_file_names))
             logger.exception(
                 "Kernel generation failed for DPI [%s] and inputs [%s]. Suppressing and continuing with"
                 "other kernels (if any)",
                 kernel_identifier,
                 input_file_names,
             )
+
+    # If failures occurred during kernel generation, raise before we write out a manifest
+    # This allows the kernel maker to try making each kernel but if any fail, we don't want to continue.
+    if kernel_processing_failures:
+        raise ValueError(f"Kernel processing steps failed (kernel DPI, input_files): {kernel_processing_failures}")
 
     # Duplicates are possible depending on file naming and append flag.
     outputs = sorted(set(outputs))
@@ -367,7 +388,7 @@ def jpss_kernel_cli_handler(parsed_args: argparse.Namespace):
     return from_manifest(
         input_manifest=parsed_args.input_manifest,
         data_product_identifiers=[DataProductIdentifier.spice_jpss_spk, DataProductIdentifier.spice_jpss_ck],
-        output_dir=AnyPath(os.environ["PROCESSING_PATH"]),
+        output_dir=os.environ["PROCESSING_PATH"],
         overwrite=False,
         append=False,
         verbose=parsed_args.verbose,
@@ -391,125 +412,8 @@ def azel_kernel_cli_handler(parsed_args: argparse.Namespace):
     return from_manifest(
         input_manifest=parsed_args.input_manifest,
         data_product_identifiers=[DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck],
-        output_dir=AnyPath(os.environ["PROCESSING_PATH"]),
+        output_dir=os.environ["PROCESSING_PATH"],
         overwrite=False,
         append=False,
         verbose=parsed_args.verbose,
     )
-
-
-# TODO[LIBSDC-279]: Delete after the defunct unit test is replaced by something functional!
-def make_azel_ck(parsed_args: argparse.Namespace):  # pylint: disable=too-many-statements
-    # TODO: If we're going to keep using this same structure moving forward, we should consider refactoring this into
-    # TODO: two separate functions. One is a cli_handler that is called when the cli tool is used to make a
-    # TODO: kernel and has only the argparse.Namespace input parameter. This method should explicitly pull out the
-    # TODO: the arguments from the Namespace and call the second function which has the explicit arguments and does the
-    # TODO: work. This will allow for easier unit testing of the core functionality vs the cli interface.
-    """Create a Libera Az-El CK from CCSDS packets or ASCII input files
-    The C-kernel (CK) is the component of SPICE concerned with attitude of spacecraft structures or instruments.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Namespace of parsed CLI arguments
-
-    Returns
-    -------
-    None
-    """
-    print(parsed_args)
-
-    now = datetime.now(UTC).strftime("%Y%m%dt%H%M%S")
-    configure_task_logging(
-        f"ck_generator_{now}",
-        limit_debug_loggers="libera_utils",
-        console_log_level=logging.DEBUG if parsed_args.verbose else None,
-    )
-
-    logger.info("Starting CK maker. This CLI tool creates a CK from a list of Azimuth or Elevation files.")
-
-    output_dir = AnyPath(parsed_args.outdir)
-    logger.info("Writing resulting CK to %s", output_dir)
-
-    if not parsed_args.csv:
-        logger.info("Parsing packets...")
-        packet_data = get_spice_packet_data_from_filepaths(parsed_args.packet_data_filepaths)
-        # Add a column that is the SCLK string, formatted with delimiters, to the input data recarray
-        # TODO: the timing for the Az and El will most likely be labelled differently in the XTCE xml file for Libera
-        # TODO: get the config depending on AZ or El
-        # TODO: the MSOPCK expects ET time stamps: for packets this will need to be convert to ET
-
-        # TODO: identify which APID we're reading AZ or EL
-        # TODO: assign this_config and ck_object below based on the APID of the packet decoded
-
-        azel_sclk_string = [f"{row['ADAET2DAY']}:{row['ADAET2MS']}:{row['ADAET2US']}" for row in packet_data]
-        packet_data = nprf.append_fields(packet_data, "ATTSCLKSTR", azel_sclk_string)
-        utc_start = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[0]))
-        utc_end = time.et_2_datetime(time.scs2e_wrapper(azel_sclk_string[-1]))
-    else:
-        logger.info("Parsing CSV file...")
-        # get the data from the ASCII file
-        packet_data = np.genfromtxt(parsed_args.packet_data_filepaths[0], delimiter=",", dtype="double")
-        # make sure we have all 3 axis defined: X is RAM, Y is Elev when Az is at 0.0, Z is nadir
-        if (parsed_args.azimuth is True) and (parsed_args.elevation is True):
-            try:
-                raise ValueError("Expecting only one: --azimuth or --elevation. Got both\n")
-            except ValueError as error:
-                logger.exception(error)
-
-        if parsed_args.azimuth:
-            packet_data = packet_data.view([("ET_TIME", "double"), ("AZIMUTH", "double")])
-            packet_data = nprf.append_fields(packet_data, "ELEVATION", np.zeros(packet_data.size, dtype="double"))
-        elif parsed_args.elevation:
-            packet_data = packet_data.view([("ET_TIME", "double"), ("ELEVATION", "double")])
-            packet_data = nprf.append_fields(packet_data, "AZIMUTH", np.zeros(packet_data.size, dtype="double"))
-        else:
-            try:
-                raise ValueError("Expecting at least one: --azimuth or --elevation. None provided.\n")
-            except ValueError as error:
-                logger.exception(error)
-
-        packet_data = nprf.append_fields(packet_data, "AZEL_Z", np.zeros(packet_data.size, dtype="double"))
-        azel_sclk_string = [f"{d}" for d in packet_data["ET_TIME"]]
-        packet_data = nprf.append_fields(packet_data, "AZELSCLKSTR", azel_sclk_string)
-        utc_start = time.et_2_datetime(packet_data["ET_TIME"][0])
-        utc_end = time.et_2_datetime(packet_data["ET_TIME"][-1])
-
-    logger.info("Done.")
-    revision = datetime.now(UTC)
-
-    if parsed_args.azimuth:
-        ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object=DataProductIdentifier.spice_az_ck,
-            utc_start=utc_start,
-            utc_end=utc_end,
-            version=filenaming.get_current_version_str("libera_utils"),
-            revision=revision,
-        )
-        output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
-
-        config_file = config.get("LIBERA_KERNEL_AZ_CK_CONFIG")
-        make_kernel(
-            config_file=config_file,
-            output_kernel=output_full_path,
-            input_data=packet_data,
-            overwrite=parsed_args.overwrite,
-        )
-
-    if parsed_args.elevation:
-        ck_filename = filenaming.AttitudeKernelFilename.from_filename_parts(
-            ck_object=DataProductIdentifier.spice_el_ck,
-            utc_start=utc_start,
-            utc_end=utc_end,
-            version=filenaming.get_current_version_str("libera_utils"),
-            revision=revision,
-        )
-        output_full_path = output_dir / ck_filename.path.name  # pylint: disable=no-member
-
-        config_file = config.get("LIBERA_KERNEL_EL_CK_CONFIG")
-        make_kernel(
-            config_file=config_file,
-            output_kernel=output_full_path,
-            input_data=packet_data,
-            overwrite=parsed_args.overwrite,
-        )

@@ -242,8 +242,8 @@ class ProcessingStepIdentifier(StrEnum):
                 pass
         return ProcessingStepIdentifier(processing_step), None
 
-    # TODO Coordinate this method with the DataProductIdentifier.get_partial_archive_bucket_name() method
-    # [LIBSDC-544] These are used in different places, but a common method would be useful.
+    # TODO[LIBSDC-544]: Coordinate this method with the DataProductIdentifier.get_partial_archive_bucket_name() method
+    #  These are used in different places, but a common method would be useful.
     def get_archive_bucket_name(self, account_suffix: LiberaAccountSuffix = LiberaAccountSuffix.STAGE) -> str | None:
         """Gets the archive bucket name for this processing step.
 

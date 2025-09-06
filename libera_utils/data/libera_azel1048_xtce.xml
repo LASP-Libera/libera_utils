@@ -1,0 +1,1745 @@
+<?xml version="1.0" ?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204" name="AzEl">
+  <xtce:Header date="Created=2025/07/15 19:53:14" version="LASPXTCESchemaVersion=1.2" validationStatus="Working"/>
+  <xtce:TelemetryMetaData>
+    <xtce:ParameterTypeSet>
+      <xtce:IntegerParameterType name="VERSION_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="3" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="TYPE_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="1" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="SEC_HDR_FLAG_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="1" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="PKT_APID_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="11" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="SEQ_FLGS_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="2" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="SRC_SEQ_CTR_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="14" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="PKT_LEN_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="REUSABLE_SPARE_8_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="8" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__TM_DAY_AXIS_SAMPLE_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__TM_MS_AXIS_SAMPLE_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__TM_US_AXIS_SAMPLE_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_OBSID_RAD_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_OBSID_WFOV_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC0_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB0_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT0_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT0_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC1_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB1_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT1_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT1_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC2_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB2_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT2_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT2_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC3_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB3_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT3_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT3_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC4_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB4_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT4_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT4_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC5_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB5_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT5_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT5_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC6_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB6_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT6_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT6_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC7_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB7_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT7_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT7_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC8_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB8_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT8_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT8_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC9_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB9_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT9_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT9_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC10_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB10_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT10_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT10_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC11_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB11_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT11_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT11_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC12_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB12_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT12_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT12_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC13_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB13_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT13_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT13_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC14_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB14_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT14_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT14_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC15_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB15_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT15_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT15_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC16_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB16_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT16_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT16_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC17_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB17_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT17_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT17_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC18_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB18_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT18_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT18_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC19_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB19_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT19_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT19_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC20_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB20_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT20_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT20_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC21_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB21_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT21_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT21_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC22_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB22_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT22_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT22_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC23_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB23_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT23_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT23_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC24_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB24_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT24_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT24_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC25_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB25_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT25_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT25_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC26_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB26_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT26_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT26_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC27_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB27_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT27_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT27_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC28_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB28_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT28_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT28_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC29_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB29_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT29_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT29_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC30_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB30_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT30_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT30_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC31_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB31_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT31_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT31_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC32_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB32_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT32_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT32_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC33_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB33_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT33_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT33_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC34_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB34_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT34_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT34_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC35_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB35_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT35_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT35_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC36_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB36_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT36_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT36_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC37_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB37_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT37_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT37_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC38_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB38_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT38_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT38_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC39_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB39_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT39_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT39_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC40_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB40_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT40_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT40_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC41_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB41_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT41_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT41_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC42_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB42_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT42_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT42_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC43_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB43_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT43_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT43_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC44_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB44_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT44_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT44_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC45_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB45_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT45_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT45_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC46_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB46_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT46_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT46_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC47_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB47_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT47_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT47_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC48_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB48_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT48_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT48_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SEC49_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_TM_SUB49_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_EL_FILT49_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:FloatParameterType name="ICIE__AXIS_AZ_FILT49_Type">
+        <xtce:UnitSet/>
+        <xtce:FloatDataEncoding sizeInBits="32"/>
+      </xtce:FloatParameterType>
+      <xtce:IntegerParameterType name="ICIE__AXIS_SAMPLE_CHECKSUM_Type">
+        <xtce:UnitSet/>
+        <xtce:IntegerDataEncoding sizeInBits="32" encoding="unsigned"/>
+      </xtce:IntegerParameterType>
+    </xtce:ParameterTypeSet>
+    <xtce:ParameterSet>
+      <xtce:Parameter name="VERSION" parameterTypeRef="VERSION_Type"/>
+      <xtce:Parameter name="TYPE" parameterTypeRef="TYPE_Type"/>
+      <xtce:Parameter name="SEC_HDR_FLAG" parameterTypeRef="SEC_HDR_FLAG_Type"/>
+      <xtce:Parameter name="PKT_APID" parameterTypeRef="PKT_APID_Type"/>
+      <xtce:Parameter name="SEQ_FLGS" parameterTypeRef="SEQ_FLGS_Type"/>
+      <xtce:Parameter name="SRC_SEQ_CTR" parameterTypeRef="SRC_SEQ_CTR_Type"/>
+      <xtce:Parameter name="PKT_LEN" parameterTypeRef="PKT_LEN_Type"/>
+      <xtce:Parameter name="REUSABLE_SPARE_8" parameterTypeRef="REUSABLE_SPARE_8_Type" shortDescription="&quot;Reusable Spare 8 Bit Field&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__TM_DAY_AXIS_SAMPLE" parameterTypeRef="ICIE__TM_DAY_AXIS_SAMPLE_Type" shortDescription="&quot;Time Day&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__TM_MS_AXIS_SAMPLE" parameterTypeRef="ICIE__TM_MS_AXIS_SAMPLE_Type" shortDescription="&quot;Time Ms&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__TM_US_AXIS_SAMPLE" parameterTypeRef="ICIE__TM_US_AXIS_SAMPLE_Type" shortDescription="&quot;Time Us&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_OBSID_RAD" parameterTypeRef="ICIE__AXIS_OBSID_RAD_Type" shortDescription="&quot;Observation ID for Radiometers&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_OBSID_WFOV" parameterTypeRef="ICIE__AXIS_OBSID_WFOV_Type" shortDescription="&quot;Observation ID for WFOV&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC0" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC0_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB0" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB0_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT0" parameterTypeRef="ICIE__AXIS_EL_FILT0_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT0" parameterTypeRef="ICIE__AXIS_AZ_FILT0_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC1" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC1_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB1" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB1_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT1" parameterTypeRef="ICIE__AXIS_EL_FILT1_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT1" parameterTypeRef="ICIE__AXIS_AZ_FILT1_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC2" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC2_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB2" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB2_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT2" parameterTypeRef="ICIE__AXIS_EL_FILT2_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT2" parameterTypeRef="ICIE__AXIS_AZ_FILT2_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC3" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC3_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB3" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB3_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT3" parameterTypeRef="ICIE__AXIS_EL_FILT3_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT3" parameterTypeRef="ICIE__AXIS_AZ_FILT3_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC4" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC4_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB4" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB4_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT4" parameterTypeRef="ICIE__AXIS_EL_FILT4_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT4" parameterTypeRef="ICIE__AXIS_AZ_FILT4_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC5" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC5_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB5" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB5_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT5" parameterTypeRef="ICIE__AXIS_EL_FILT5_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT5" parameterTypeRef="ICIE__AXIS_AZ_FILT5_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC6" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC6_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB6" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB6_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT6" parameterTypeRef="ICIE__AXIS_EL_FILT6_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT6" parameterTypeRef="ICIE__AXIS_AZ_FILT6_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC7" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC7_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB7" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB7_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT7" parameterTypeRef="ICIE__AXIS_EL_FILT7_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT7" parameterTypeRef="ICIE__AXIS_AZ_FILT7_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC8" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC8_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB8" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB8_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT8" parameterTypeRef="ICIE__AXIS_EL_FILT8_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT8" parameterTypeRef="ICIE__AXIS_AZ_FILT8_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC9" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC9_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB9" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB9_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT9" parameterTypeRef="ICIE__AXIS_EL_FILT9_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT9" parameterTypeRef="ICIE__AXIS_AZ_FILT9_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC10" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC10_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB10" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB10_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT10" parameterTypeRef="ICIE__AXIS_EL_FILT10_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT10" parameterTypeRef="ICIE__AXIS_AZ_FILT10_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC11" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC11_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB11" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB11_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT11" parameterTypeRef="ICIE__AXIS_EL_FILT11_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT11" parameterTypeRef="ICIE__AXIS_AZ_FILT11_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC12" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC12_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB12" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB12_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT12" parameterTypeRef="ICIE__AXIS_EL_FILT12_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT12" parameterTypeRef="ICIE__AXIS_AZ_FILT12_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC13" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC13_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB13" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB13_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT13" parameterTypeRef="ICIE__AXIS_EL_FILT13_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT13" parameterTypeRef="ICIE__AXIS_AZ_FILT13_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC14" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC14_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB14" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB14_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT14" parameterTypeRef="ICIE__AXIS_EL_FILT14_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT14" parameterTypeRef="ICIE__AXIS_AZ_FILT14_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC15" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC15_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB15" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB15_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT15" parameterTypeRef="ICIE__AXIS_EL_FILT15_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT15" parameterTypeRef="ICIE__AXIS_AZ_FILT15_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC16" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC16_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB16" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB16_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT16" parameterTypeRef="ICIE__AXIS_EL_FILT16_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT16" parameterTypeRef="ICIE__AXIS_AZ_FILT16_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC17" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC17_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB17" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB17_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT17" parameterTypeRef="ICIE__AXIS_EL_FILT17_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT17" parameterTypeRef="ICIE__AXIS_AZ_FILT17_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC18" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC18_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB18" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB18_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT18" parameterTypeRef="ICIE__AXIS_EL_FILT18_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT18" parameterTypeRef="ICIE__AXIS_AZ_FILT18_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC19" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC19_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB19" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB19_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT19" parameterTypeRef="ICIE__AXIS_EL_FILT19_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT19" parameterTypeRef="ICIE__AXIS_AZ_FILT19_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC20" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC20_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB20" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB20_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT20" parameterTypeRef="ICIE__AXIS_EL_FILT20_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT20" parameterTypeRef="ICIE__AXIS_AZ_FILT20_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC21" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC21_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB21" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB21_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT21" parameterTypeRef="ICIE__AXIS_EL_FILT21_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT21" parameterTypeRef="ICIE__AXIS_AZ_FILT21_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC22" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC22_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB22" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB22_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT22" parameterTypeRef="ICIE__AXIS_EL_FILT22_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT22" parameterTypeRef="ICIE__AXIS_AZ_FILT22_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC23" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC23_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB23" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB23_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT23" parameterTypeRef="ICIE__AXIS_EL_FILT23_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT23" parameterTypeRef="ICIE__AXIS_AZ_FILT23_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC24" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC24_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB24" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB24_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT24" parameterTypeRef="ICIE__AXIS_EL_FILT24_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT24" parameterTypeRef="ICIE__AXIS_AZ_FILT24_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC25" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC25_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB25" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB25_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT25" parameterTypeRef="ICIE__AXIS_EL_FILT25_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT25" parameterTypeRef="ICIE__AXIS_AZ_FILT25_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC26" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC26_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB26" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB26_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT26" parameterTypeRef="ICIE__AXIS_EL_FILT26_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT26" parameterTypeRef="ICIE__AXIS_AZ_FILT26_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC27" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC27_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB27" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB27_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT27" parameterTypeRef="ICIE__AXIS_EL_FILT27_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT27" parameterTypeRef="ICIE__AXIS_AZ_FILT27_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC28" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC28_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB28" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB28_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT28" parameterTypeRef="ICIE__AXIS_EL_FILT28_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT28" parameterTypeRef="ICIE__AXIS_AZ_FILT28_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC29" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC29_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB29" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB29_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT29" parameterTypeRef="ICIE__AXIS_EL_FILT29_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT29" parameterTypeRef="ICIE__AXIS_AZ_FILT29_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC30" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC30_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB30" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB30_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT30" parameterTypeRef="ICIE__AXIS_EL_FILT30_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT30" parameterTypeRef="ICIE__AXIS_AZ_FILT30_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC31" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC31_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB31" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB31_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT31" parameterTypeRef="ICIE__AXIS_EL_FILT31_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT31" parameterTypeRef="ICIE__AXIS_AZ_FILT31_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC32" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC32_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB32" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB32_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT32" parameterTypeRef="ICIE__AXIS_EL_FILT32_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT32" parameterTypeRef="ICIE__AXIS_AZ_FILT32_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC33" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC33_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB33" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB33_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT33" parameterTypeRef="ICIE__AXIS_EL_FILT33_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT33" parameterTypeRef="ICIE__AXIS_AZ_FILT33_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC34" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC34_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB34" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB34_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT34" parameterTypeRef="ICIE__AXIS_EL_FILT34_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT34" parameterTypeRef="ICIE__AXIS_AZ_FILT34_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC35" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC35_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB35" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB35_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT35" parameterTypeRef="ICIE__AXIS_EL_FILT35_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT35" parameterTypeRef="ICIE__AXIS_AZ_FILT35_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC36" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC36_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB36" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB36_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT36" parameterTypeRef="ICIE__AXIS_EL_FILT36_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT36" parameterTypeRef="ICIE__AXIS_AZ_FILT36_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC37" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC37_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB37" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB37_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT37" parameterTypeRef="ICIE__AXIS_EL_FILT37_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT37" parameterTypeRef="ICIE__AXIS_AZ_FILT37_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC38" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC38_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB38" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB38_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT38" parameterTypeRef="ICIE__AXIS_EL_FILT38_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT38" parameterTypeRef="ICIE__AXIS_AZ_FILT38_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC39" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC39_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB39" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB39_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT39" parameterTypeRef="ICIE__AXIS_EL_FILT39_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT39" parameterTypeRef="ICIE__AXIS_AZ_FILT39_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC40" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC40_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB40" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB40_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT40" parameterTypeRef="ICIE__AXIS_EL_FILT40_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT40" parameterTypeRef="ICIE__AXIS_AZ_FILT40_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC41" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC41_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB41" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB41_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT41" parameterTypeRef="ICIE__AXIS_EL_FILT41_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT41" parameterTypeRef="ICIE__AXIS_AZ_FILT41_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC42" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC42_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB42" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB42_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT42" parameterTypeRef="ICIE__AXIS_EL_FILT42_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT42" parameterTypeRef="ICIE__AXIS_AZ_FILT42_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC43" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC43_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB43" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB43_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT43" parameterTypeRef="ICIE__AXIS_EL_FILT43_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT43" parameterTypeRef="ICIE__AXIS_AZ_FILT43_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC44" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC44_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB44" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB44_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT44" parameterTypeRef="ICIE__AXIS_EL_FILT44_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT44" parameterTypeRef="ICIE__AXIS_AZ_FILT44_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC45" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC45_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB45" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB45_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT45" parameterTypeRef="ICIE__AXIS_EL_FILT45_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT45" parameterTypeRef="ICIE__AXIS_AZ_FILT45_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC46" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC46_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB46" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB46_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT46" parameterTypeRef="ICIE__AXIS_EL_FILT46_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT46" parameterTypeRef="ICIE__AXIS_AZ_FILT46_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC47" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC47_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB47" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB47_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT47" parameterTypeRef="ICIE__AXIS_EL_FILT47_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT47" parameterTypeRef="ICIE__AXIS_AZ_FILT47_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC48" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC48_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB48" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB48_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT48" parameterTypeRef="ICIE__AXIS_EL_FILT48_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT48" parameterTypeRef="ICIE__AXIS_AZ_FILT48_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SEC49" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SEC49_Type" shortDescription="&quot;Sample Timestamp (seconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_TM_SUB49" parameterTypeRef="ICIE__AXIS_SAMPLE_TM_SUB49_Type" shortDescription="&quot;Sample Timestamp (subseconds)&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_EL_FILT49" parameterTypeRef="ICIE__AXIS_EL_FILT49_Type" shortDescription="&quot;Filtered EL Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_AZ_FILT49" parameterTypeRef="ICIE__AXIS_AZ_FILT49_Type" shortDescription="&quot;Filtered AZ Angle&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+      <xtce:Parameter name="ICIE__AXIS_SAMPLE_CHECKSUM" parameterTypeRef="ICIE__AXIS_SAMPLE_CHECKSUM_Type" shortDescription="&quot;Packet checksum&quot;">
+        <xtce:ParameterProperties dataSource="telemetered"/>
+      </xtce:Parameter>
+    </xtce:ParameterSet>
+    <xtce:ContainerSet>
+      <xtce:SequenceContainer name="CCSDSPacket" abstract="true">
+        <xtce:LongDescription>Super-container for telemetry and command packets</xtce:LongDescription>
+        <xtce:AncillaryDataSet>
+          <xtce:AncillaryData name="topLevelPacket">false</xtce:AncillaryData>
+        </xtce:AncillaryDataSet>
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="VERSION"/>
+          <xtce:ParameterRefEntry parameterRef="TYPE"/>
+          <xtce:ParameterRefEntry parameterRef="SEC_HDR_FLAG"/>
+          <xtce:ParameterRefEntry parameterRef="PKT_APID"/>
+          <xtce:ParameterRefEntry parameterRef="SEQ_FLGS"/>
+          <xtce:ParameterRefEntry parameterRef="SRC_SEQ_CTR"/>
+          <xtce:ParameterRefEntry parameterRef="PKT_LEN"/>
+        </xtce:EntryList>
+      </xtce:SequenceContainer>
+      <xtce:SequenceContainer name="CCSDSTelemetryPacket" abstract="true">
+        <xtce:LongDescription>Super-container for all telemetry packets</xtce:LongDescription>
+        <xtce:AncillaryDataSet>
+          <xtce:AncillaryData name="topLevelPacket">false</xtce:AncillaryData>
+        </xtce:AncillaryDataSet>
+        <xtce:EntryList/>
+        <xtce:BaseContainer containerRef="CCSDSPacket">
+          <xtce:RestrictionCriteria>
+            <xtce:ComparisonList>
+              <xtce:Comparison value="0" parameterRef="VERSION" useCalibratedValue="false"/>
+              <xtce:Comparison value="0" parameterRef="TYPE" useCalibratedValue="false"/>
+            </xtce:ComparisonList>
+          </xtce:RestrictionCriteria>
+        </xtce:BaseContainer>
+      </xtce:SequenceContainer>
+      <xtce:SequenceContainer name="ICIE__AXIS_SAMPLE" shortDescription="&quot;AXIS Downsampled Packet&quot;">
+        <xtce:EntryList>
+          <xtce:ParameterRefEntry parameterRef="ICIE__TM_DAY_AXIS_SAMPLE"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__TM_MS_AXIS_SAMPLE"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__TM_US_AXIS_SAMPLE"/>
+          <xtce:ParameterRefEntry parameterRef="REUSABLE_SPARE_8"/>
+          <xtce:ParameterRefEntry parameterRef="REUSABLE_SPARE_8"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_OBSID_RAD"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_OBSID_WFOV"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC0"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB0"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT0"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT0"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC1"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB1"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT1"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT1"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC2"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB2"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT2"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT2"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC3"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB3"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT3"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT3"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC4"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB4"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT4"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT4"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC5"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB5"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT5"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT5"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC6"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB6"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT6"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT6"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC7"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB7"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT7"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT7"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC8"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB8"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT8"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT8"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC9"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB9"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT9"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT9"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC10"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB10"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT10"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT10"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC11"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB11"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT11"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT11"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC12"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB12"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT12"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT12"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC13"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB13"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT13"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT13"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC14"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB14"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT14"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT14"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC15"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB15"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT15"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT15"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC16"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB16"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT16"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT16"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC17"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB17"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT17"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT17"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC18"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB18"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT18"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT18"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC19"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB19"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT19"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT19"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC20"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB20"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT20"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT20"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC21"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB21"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT21"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT21"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC22"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB22"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT22"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT22"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC23"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB23"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT23"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT23"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC24"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB24"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT24"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT24"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC25"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB25"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT25"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT25"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC26"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB26"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT26"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT26"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC27"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB27"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT27"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT27"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC28"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB28"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT28"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT28"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC29"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB29"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT29"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT29"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC30"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB30"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT30"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT30"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC31"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB31"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT31"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT31"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC32"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB32"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT32"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT32"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC33"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB33"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT33"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT33"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC34"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB34"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT34"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT34"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC35"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB35"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT35"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT35"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC36"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB36"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT36"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT36"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC37"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB37"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT37"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT37"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC38"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB38"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT38"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT38"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC39"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB39"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT39"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT39"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC40"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB40"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT40"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT40"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC41"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB41"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT41"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT41"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC42"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB42"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT42"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT42"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC43"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB43"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT43"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT43"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC44"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB44"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT44"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT44"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC45"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB45"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT45"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT45"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC46"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB46"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT46"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT46"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC47"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB47"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT47"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT47"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC48"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB48"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT48"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT48"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SEC49"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_TM_SUB49"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_EL_FILT49"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_AZ_FILT49"/>
+          <xtce:ParameterRefEntry parameterRef="ICIE__AXIS_SAMPLE_CHECKSUM"/>
+        </xtce:EntryList>
+        <xtce:BaseContainer containerRef="CCSDSTelemetryPacket">
+          <xtce:RestrictionCriteria>
+            <xtce:ComparisonList>
+              <xtce:Comparison value="1048" parameterRef="PKT_APID" useCalibratedValue="false"/>
+            </xtce:ComparisonList>
+          </xtce:RestrictionCriteria>
+        </xtce:BaseContainer>
+      </xtce:SequenceContainer>
+    </xtce:ContainerSet>
+  </xtce:TelemetryMetaData>
+</xtce:SpaceSystem>

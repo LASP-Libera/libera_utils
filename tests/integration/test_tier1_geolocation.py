@@ -23,7 +23,7 @@ from libera_utils.config import config
 pytestmark = pytest.mark.integration
 
 
-def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_time_fields=None):
+def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_time_fields=None, kernel_identifier=None):
     """Preprocess input CSVs provided by Jake."""
     input_data_file = Path(input_data_file)
 

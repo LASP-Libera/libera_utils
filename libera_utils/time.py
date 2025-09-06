@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 import spiceypy as spice
+import xarray as xr
 
 from libera_utils.config import config
 from libera_utils.spice_utils import ensure_spice
@@ -226,19 +227,28 @@ def convert_cds_integer_to_datetime(satellite_time: int):
     return cds_time
 
 
-def multipart_to_dt64(data: pd.DataFrame, day_field: str, ms_field: str, us_field: str, epoch: str = "1958-01-01"):
+def multipart_to_dt64(
+    data: pd.DataFrame | xr.Dataset,
+    day_field: str | None = None,
+    ms_field: str | None = None,
+    us_field: str | None = None,
+    s_field: str | None = None,
+    epoch: str = "1958-01-01",
+):
     """Convert multipart time fields to a datetime64 time.
 
     Parameters
     ----------
-    data : pd.DataFrame
+    data : pd.DataFrame | xr.Dataset
         Any data structure containing the named subscript-able fields.
-    day_field : str
+    day_field : str | None, optional
         Name of the day count field.
-    ms_field : str
+    ms_field : str | None, optional
         Name of the millisecond count field.
-    us_field : str
+    us_field : str | None, optional
         Name of the microsecond count field.
+    s_field : str | None, optional
+        Name of the second count field.
     epoch : str, optional
         Date time string of the zero-offset epoch. Default="1958-01-01"
 
@@ -248,9 +258,15 @@ def multipart_to_dt64(data: pd.DataFrame, day_field: str, ms_field: str, us_fiel
         Pandas series of the datetime64 values.
 
     """
-    return (
-        pd.Timestamp(epoch)
-        + pd.to_timedelta(data[day_field], "D")
-        + pd.to_timedelta(data[ms_field], "ms")
-        + pd.to_timedelta(data[us_field], "us")
-    )
+    result = pd.Timestamp(epoch)
+
+    if day_field is not None:
+        result = result + pd.to_timedelta(data[day_field], "D")
+    if s_field is not None:
+        result = result + pd.to_timedelta(data[s_field], "s")
+    if ms_field is not None:
+        result = result + pd.to_timedelta(data[ms_field], "ms")
+    if us_field is not None:
+        result = result + pd.to_timedelta(data[us_field], "us")
+
+    return result

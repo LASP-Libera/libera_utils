@@ -3,6 +3,8 @@ KPL/SCLK
 Fake SCLK Kernel for Spacecraft with ID -143013
 --------------------------------------------------------
 
+   Uses NOAA20 (JPSS-1) base ID. This is only for testing against JPSS1 and CERES data
+
    This SCLK kernel contains the data necessary for converting from
    ephemeris time (ET) to ticks for a fake clock associated with the
    spacecraft with ID code. This fake clock runs at the same rate

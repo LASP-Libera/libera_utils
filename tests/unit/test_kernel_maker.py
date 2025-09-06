@@ -113,8 +113,83 @@ def test_kernel_cli_handler(mock_from_manifest, cli_handler, dpis, monkeypatch):
     mock_from_manifest.assert_called_once_with(
         input_manifest="manifest.json",
         data_product_identifiers=dpis,
-        output_dir=Path("/fake/dropbox"),
+        output_dir="/fake/dropbox",
         overwrite=False,
         append=False,
         verbose=False,
     )
+
+
+@mock.patch.object(kernel_maker, "from_args")
+@mock.patch.object(kernel_maker, "Manifest")
+def test_from_manifest_multi_file_processing(mock_manifest_class, mock_from_args):
+    """Test that from_manifest correctly processes multiple input files using new structure"""
+    mock_mani = mock.Mock()
+    mock_mani.files = [
+        mock.Mock(filename="file1.bin"),
+        mock.Mock(filename="file2.bin"),
+    ]
+    mock_manifest_class.from_file.return_value = mock_mani
+    mock_manifest_class.output_manifest_from_input_manifest.return_value = mock.Mock()
+
+    # Mock from_args to return a unique filename for each call
+    mock_from_args.side_effect = ["output1.bsp", "output2.bsp"]
+
+    _ = kernel_maker.from_manifest(
+        input_manifest="test.manifest",
+        data_product_identifiers=["JPSS-SPK", "JPSS-CK"],
+        output_dir="/output",
+        verbose=True,
+    )
+
+    # Verify that from_args is called with the list of all input files for each DPI
+    assert mock_from_args.call_count == 2
+    expected_calls = [
+        mock.call(
+            input_data_files=["file1.bin", "file2.bin"],
+            kernel_identifier="JPSS-SPK",
+            output_dir="/output",
+            overwrite=False,
+            append=False,
+            verbose=True,
+        ),
+        mock.call(
+            input_data_files=["file1.bin", "file2.bin"],
+            kernel_identifier="JPSS-CK",
+            output_dir="/output",
+            overwrite=False,
+            append=False,
+            verbose=True,
+        ),
+    ]
+    mock_from_args.assert_has_calls(expected_calls)
+
+
+@mock.patch("libera_utils.kernel_maker.logger")
+@mock.patch.object(kernel_maker, "from_args")
+@mock.patch.object(kernel_maker, "Manifest")
+def test_from_manifest_exception_handling(mock_manifest_class, mock_from_args, mock_logger):
+    """Test that from_manifest handles exceptions properly and continues processing"""
+    mock_mani = mock.Mock()
+    mock_mani.files = [mock.Mock(filename="file1.bin")]
+    mock_manifest_class.from_file.return_value = mock_mani
+    mock_pedi = mock.Mock()
+    mock_manifest_class.output_manifest_from_input_manifest.return_value = mock_pedi
+
+    # Mock from_args to raise exception for first DPI, succeed for second
+    mock_from_args.side_effect = [Exception("Test error"), "output2.bsp"]
+
+    with pytest.raises(
+        ValueError,
+        match=r"Kernel processing steps failed \(kernel DPI, input_files\): \[\('JPSS-SPK', \['file1.bin'\]\)\]",
+    ):
+        _ = kernel_maker.from_manifest(
+            input_manifest="test.manifest",
+            data_product_identifiers=["JPSS-SPK", "JPSS-CK"],
+            output_dir="/output",
+        )
+
+    # Verify exception was logged
+    mock_logger.exception.assert_called_once()
+    # Verify we did not make it to the manifest creation due to the error
+    mock_pedi.add_files.assert_not_called()

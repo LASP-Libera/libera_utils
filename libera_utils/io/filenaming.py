@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Any, TypeVar
 
 import ulid
-from cloudpathlib import AnyPath, S3Path
+from cloudpathlib import AnyPath, CloudPath, S3Path
 
 from libera_utils.aws.constants import (
     CkObject,
@@ -23,6 +23,9 @@ from libera_utils.aws.constants import (
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
+
+# Type alias for paths returned by AnyPath() constructor
+PathType = CloudPath | Path
 
 SPK_REGEX = re.compile(
     r"^LIBERA_(?P<spk_object>(JPSS)-SPK)"
