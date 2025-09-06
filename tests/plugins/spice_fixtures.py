@@ -1,6 +1,5 @@
 """Pytest plugin module for SPICE-related fixtures"""
 
-import os
 import tempfile
 from pathlib import Path
 
@@ -23,10 +22,10 @@ def short_tmp_path():
 
 
 @pytest.fixture
-def curryer_lsk(test_lsk):
-    """Loads the Libera LSK for use by Curryer"""
+def curryer_lsk(test_lsk, monkeypatch):
+    """Loads the Libera LSK for use by Curryer and sets the environment variable temporarily"""
     # TODO[LIBSDC-600]: Reconsider after curryer LSK logic is updated.
-    os.environ["LEAPSECOND_FILE_ENV"] = str(test_lsk.parent)
+    monkeypatch.setenv("LEAPSECOND_FILE_ENV", str(test_lsk.parent))
     spicetime.leapsecond.load(test_lsk)
     return test_lsk
 

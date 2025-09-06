@@ -43,8 +43,31 @@ def test_docker_config_manager():
 
 def test_build_docker_image(test_data_path):
     """Test building a docker image programmatically.
-    This actually builds the image locally so Docker must be running."""
-    build_docker_image(context_dir=test_data_path / "docker_test", image_name="test-image", target="test-target")
+    This mocks the Docker client to avoid needing a real Docker daemon."""
+    # Create a mock Docker client
+    mock_docker_client = mock.MagicMock(spec=docker.DockerClient)
+
+    # Mock the build logs
+    mock_logs = [
+        {"stream": "Step 1/3 : FROM python:3.9\n"},
+        {"stream": "Step 2/3 : COPY . /app\n"},
+        {"stream": 'Step 3/3 : CMD ["python", "app.py"]\n'},
+        {"stream": "Successfully built abc123\n"},
+    ]
+
+    # Configure the mock client's images.build() method
+    mock_docker_client.images.build.return_value = (mock.MagicMock(), mock_logs)
+
+    # Mock docker.from_env to return our mock client
+    with mock.patch("docker.from_env", return_value=mock_docker_client):
+        build_docker_image(context_dir=test_data_path / "docker_test", image_name="test-image", target="test-target")
+
+        # Verify build was called with expected arguments
+        assert mock_docker_client.images.build.called
+        call_args = mock_docker_client.images.build.call_args
+        assert call_args[1]["target"] == "test-target"
+        assert call_args[1]["tag"] == "test-image:latest"
+        assert call_args[1]["platform"] == "linux/amd64"
 
 
 @pytest.mark.parametrize(

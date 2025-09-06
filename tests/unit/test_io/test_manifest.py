@@ -15,9 +15,9 @@ from libera_utils.io.manifest import Manifest, ManifestFileRecord
 from libera_utils.io.smart_open import smart_open
 
 
-def test_manifest_from_file(test_json_manifest):
+def test_manifest_from_file(test_jpss_manifest):
     """Test factory method for creating a manifest object from a filepath"""
-    m = Manifest.from_file(test_json_manifest)
+    m = Manifest.from_file(test_jpss_manifest)
     assert m.manifest_type == ManifestType.INPUT
     assert isinstance(m.files, list)
     assert isinstance(m.configuration, dict)
@@ -40,13 +40,13 @@ def test_manifest_add_relative_path_file_error():
         m.add_files(Path("relative/a_file.txt"))
 
 
-def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test_construction_record_1):
+def test_manifest_add_files_to_manifest_local(test_jpss_manifest, test_txt, test_construction_record_1):
     """Test factory method for adding files to a manifest with checksum and local paths"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
     )
     initial_list_len = len(m.files)
-    m.add_files(test_json_manifest)
+    m.add_files(test_jpss_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 1
 
@@ -57,14 +57,14 @@ def test_manifest_add_files_to_manifest_local(test_json_manifest, test_txt, test
 
 
 def test_manifest_add_files_to_manifest_s3(
-    test_json_manifest, test_txt, test_construction_record_1, create_mock_bucket, write_file_to_s3
+    test_jpss_manifest, test_txt, test_construction_record_1, create_mock_bucket, write_file_to_s3
 ):
     """Test factory method for adding files to a manifest with checksum with S3 paths.
     Ensures functionality for single and multiple file additions."""
     bucket = create_mock_bucket()
     manifest_path = f"s3://{bucket.name}/test_file1.json"
     text_paths = (f"s3://{bucket.name}/test_file2.txt", f"s3://{bucket.name}/test_construction_record.PDS")
-    write_file_to_s3(test_json_manifest, manifest_path)
+    write_file_to_s3(test_jpss_manifest, manifest_path)
     write_file_to_s3(test_txt, text_paths[0])
     write_file_to_s3(test_construction_record_1, text_paths[1])
 
@@ -81,24 +81,24 @@ def test_manifest_add_files_to_manifest_s3(
     assert len(m.files) == initial_list_len + 3
 
 
-def test_manifest_add_duplicate_file_to_manifest(caplog, test_json_manifest):
+def test_manifest_add_duplicate_file_to_manifest(caplog, test_jpss_manifest):
     """Test factory method for adding a duplicate file to a manifest"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
     )
-    m.add_files(test_json_manifest)
+    m.add_files(test_jpss_manifest)
     initial_length = len(m.files)
 
     # Add the same file
     with caplog.at_level("WARNING"):
-        m.add_files(test_json_manifest)
+        m.add_files(test_jpss_manifest)
     m.validate_checksums()
     assert len(m.files) == initial_length
 
 
-def test_manifest_add_desired_time_range(test_json_manifest):
+def test_manifest_add_desired_time_range(test_jpss_manifest):
     """Test factory method for adding a time range to a manifest file"""
-    m = Manifest.from_file(test_json_manifest)
+    m = Manifest.from_file(test_jpss_manifest)
     start = datetime.now()
     end = start + timedelta(hours=1)
     m.add_desired_time_range(start, end)
@@ -107,10 +107,10 @@ def test_manifest_add_desired_time_range(test_json_manifest):
     assert "end_time" in m.configuration.keys()
 
 
-def test_manifest_from_file_s3(test_json_manifest, write_file_to_s3):
+def test_manifest_from_file_s3(test_jpss_manifest, write_file_to_s3):
     """Test loading a file from S3"""
     file_key = "s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
-    s3_path = write_file_to_s3(test_json_manifest, file_key)
+    s3_path = write_file_to_s3(test_jpss_manifest, file_key)
     m = Manifest.from_file(s3_path)
     assert m.manifest_type == ManifestType.INPUT
     assert isinstance(m.files, list)
@@ -154,20 +154,20 @@ def test_manifest_write_s3(create_mock_bucket):
             assert element in manifest_dict
 
 
-def test_validate_checksums(test_json_manifest, caplog):
+def test_validate_checksums(test_jpss_manifest, caplog):
     """Test the method that validates checksums in a manifest file"""
     # We test by referencing the manifest file itself, so we're only dependent on one test file
-    m = Manifest.from_file(test_json_manifest)
-    m.files[0].filename = test_json_manifest.absolute()
-    m.files[1].filename = test_json_manifest.absolute()
+    m = Manifest.from_file(test_jpss_manifest)
+    m.files[0].filename = test_jpss_manifest.absolute()
+    m.files[1].filename = test_jpss_manifest.absolute()
     with caplog.at_level("ERROR"):
         with pytest.raises(ValueError, match="Files failed checksum validation"):  # Fake values don't validate
             m.validate_checksums()
-        assert f"Checksum validation for {test_json_manifest.absolute()} failed." in caplog.records[0].message
+        assert f"Checksum validation for {test_jpss_manifest.absolute()} failed." in caplog.records[0].message
 
-    with test_json_manifest.open("rb") as fh:
+    with test_jpss_manifest.open("rb") as fh:
         checksum = md5(fh.read()).hexdigest()
-    m.files = [ManifestFileRecord(filename=str(test_json_manifest.absolute()), checksum=checksum)]
+    m.files = [ManifestFileRecord(filename=str(test_jpss_manifest.absolute()), checksum=checksum)]
     m.validate_checksums()
 
 
@@ -190,10 +190,10 @@ def test_validate_checksums(test_json_manifest, caplog):
         (S3Path("s3://l0-ingest-dropbox/processing//LIBERA_OUTPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")),
     ],
 )
-def test_output_manifest_from_input_manifest(input_manifest, test_json_manifest, write_file_to_s3):
+def test_output_manifest_from_input_manifest(input_manifest, test_jpss_manifest, write_file_to_s3):
     """Test method that creates output manifest from input manifest filename or object"""
     if isinstance(input_manifest, S3Path):
-        s3_path = write_file_to_s3(test_json_manifest, str(input_manifest))
+        s3_path = write_file_to_s3(test_jpss_manifest, str(input_manifest))
         input_manifest_object = Manifest.from_file(filepath=s3_path)
 
     elif isinstance(input_manifest, Path):

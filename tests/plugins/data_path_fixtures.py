@@ -53,46 +53,62 @@ def test_txt_gz(test_data_path):
     return test_data_path / "testtextfile.txt.gz"
 
 
+# JPSS test data
+# --------------
 @pytest.fixture
-def test_json_manifest(test_data_path):
-    """Path to test manifest file"""
+def test_jpss_manifest(test_data_path):
+    """Path to test JPSS manifest file"""
     return test_data_path / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
 
 
 @pytest.fixture
 def test_construction_record_1(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "P1590011AAAAAAAAAAAAAT21099051420500.PDS"
+    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099051420500.PDS"
 
 
 @pytest.fixture
 def test_pds_file_1(test_data_path):
     """Path to the test PDS file associated with construction record 1"""
-    return test_data_path / "P1590011AAAAAAAAAAAAAT21099051420501.PDS"
+    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099051420501.PDS"
 
 
 @pytest.fixture
 def test_construction_record_2(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "P1590011AAAAAAAAAAAAAT21099065436900.PDS"
+    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099065436900.PDS"
 
 
 @pytest.fixture
 def test_pds_file_2(test_data_path):
     """Path to the test PDS file associated with construction record 2"""
-    return test_data_path / "P1590011AAAAAAAAAAAAAT21099065436901.PDS"
+    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099065436901.PDS"
 
 
 @pytest.fixture
 def test_construction_record_3(test_data_path):
     """Path to test construction record"""
-    return test_data_path / "P1590011AAAAAAAAAAAAAT21099091211400.PDS"
+    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099091211400.PDS"
 
 
 @pytest.fixture
 def test_pds_file_3(test_data_path):
     """Path to the test PDS file associated with construction record 3"""
-    return test_data_path / "P1590011AAAAAAAAAAAAAT21099091211401.PDS"
+    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099091211401.PDS"
+
+
+# AzEl test data
+# --------------
+@pytest.fixture
+def test_azel_ccsds_2025_218_18_37_32(test_data_path):
+    """Path to a test AzEl packet file"""
+    return test_data_path / "libera_azel_packets/ccsds_2025_218_18_37_32"
+
+
+@pytest.fixture
+def test_azel_ccsds_2025_218_18_41_30(test_data_path):
+    """Path to a test AzEl packet file"""
+    return test_data_path / "libera_azel_packets/ccsds_2025_218_18_41_30"
 
 
 # SPICE test data
@@ -136,6 +152,8 @@ def test_itrf93_pck(spice_test_data_path):
     return spice_test_data_path / "earth_000101_211220_210926.bpc"
 
 
+# Test configuration files
+# ------------------------
 @pytest.fixture
 def test_variable_definitions(product_definitions_test_data_path):
     """Path to an example product description yaml file"""

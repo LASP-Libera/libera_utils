@@ -24,7 +24,7 @@ def test_type(request):
 
 
 @pytest.fixture
-def setup_kernel_maker_environment_with_manifest(
+def setup_jpss_kernel_maker_environment_with_manifest(
     test_type,
     generate_input_manifest_local,
     generate_input_manifest_s3,
@@ -35,6 +35,28 @@ def setup_kernel_maker_environment_with_manifest(
     short_tmp_path,
 ):
     data_files = [str(test_pds_file_1), str(test_pds_file_2), str(test_pds_file_3)]
+    if test_type == "S3":
+        input_manifest_path = generate_input_manifest_s3(*data_files)
+        bucket = create_mock_bucket()
+        output_path = S3Path(f"s3://{bucket.name}/kernel_output/")
+    else:
+        input_manifest_path = generate_input_manifest_local(*data_files)
+        output_path = short_tmp_path
+
+    return input_manifest_path, output_path
+
+
+@pytest.fixture
+def setup_azel_kernel_maker_environment_with_manifest(
+    test_type,
+    generate_input_manifest_local,
+    generate_input_manifest_s3,
+    test_azel_ccsds_2025_218_18_37_32,
+    test_azel_ccsds_2025_218_18_41_30,
+    create_mock_bucket,
+    short_tmp_path,
+):
+    data_files = [str(test_azel_ccsds_2025_218_18_37_32), str(test_azel_ccsds_2025_218_18_41_30)]
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3(*data_files)
         bucket = create_mock_bucket()

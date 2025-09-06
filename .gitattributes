@@ -16,6 +16,8 @@
 **/test_data/**/*.PDS filter=lfs diff=lfs merge=lfs -text
 # csv files
 **/test_data/spice/*.csv filter=lfs diff=lfs merge=lfs -text
+# Test packet data
+**/test_data/libera_azel_packets/* filter=lfs diff=lfs merge=lfs -text
 # Do not store package data (libera_utils/data) in LFS or it will break our PyPI package!
 tests/test_data/tier1_geo/JPSS-4_Fixed_Ephemeris_And_Attitude.csv filter=lfs diff=lfs merge=lfs -text
 tests/test_data/tier1_geo/JPSS-4_Geodetic_LLA_libya4_access03.csv filter=lfs diff=lfs merge=lfs -text
