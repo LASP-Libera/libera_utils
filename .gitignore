@@ -12,6 +12,7 @@ analysis
 *.so
 *.pyc
 *.pytest_cache
+*.ruff_cache
 
 # Testing Artifacts #
 #####################

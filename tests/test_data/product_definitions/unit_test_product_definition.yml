@@ -1,40 +1,50 @@
-static_product_metadata:
+# Product level metadata attributes
+# Key-value pairs. These and only these keys are allowed and all are required (not null) on the data product.
+# Values provided here are strictly required and may not be overwritten.
+attributes:
   ProductID: RAD-4CH
-  version: 0.0.1
+  algorithm_version: 0.0.1
 
-variables:
-  time_stamp:
-    long_name: Time
-    dimensions: ["n_samples"]
-    units: datetime64[ns]
-    valid_range: [0, 1] # Update this
-    missing_value: -9999
-    dtype: datetime64
-  fil_rad:
-    long_name: Filtered Radiance
-    dimensions: ["n_samples"]
-    units: W/(m^2*sr*nm)
-    valid_range: [0, 1000]
-    missing_value: -9999
-    dtype: float
+# Coordinates
+# Dimension coordinates (coordinate name = dimension name) must be 1D arrays
+# Non-dimension coordinates can be multi-dimensional arrays and/or have a different dimension name than the coordinate itself
+coordinates:
+  time:
+    dtype: datetime64[ns]
+    dimensions: ["time"] # Optional, defaults to the name of the coordinate. Must exist in dimensions list
+    attributes:
+      long_name: "Time of sample collection"
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
   lat:
-    long_name: Geolocation latitude
-    dimensions: ["n_samples"]
-    units: degrees
-    valid_range: [-90, 90]
-    missing_value: -999
-    dtype: float
+    dtype: float64
+    attributes:
+      long_name: Geolocation latitude
+      units: degrees
+      valid_range: [-90, 90]
+    dimensions: ["time"]
   lon:
-    long_name: Geolocation longitude
-    dimensions: ["n_samples"]
-    units: degrees
-    valid_range: [-180, 180]
-    missing_value: -999
-    dtype: float
-  q_flags:
-    long_name: Quality Flags
-    dimensions: ["n_samples"]
-    units: N/A
-    valid_range: [0, 2147483647]
-    missing_value: -999
+    dtype: float64
+    dimensions: ["time"]
+    attributes:
+      long_name: Geolocation longitude
+      units: degrees
+      valid_range: [-180, 180]
+
+# Data Variables
+variables:
+  fil_rad:
+    dtype: float64
+    dimensions: ["time"]
+    attributes:
+      long_name: Filtered Radiance
+      units: W/(m^2*sr*nm)
+      valid_range: [0, 1000]
+  q_flag:
     dtype: int32
+    dimensions: ["time"]
+    attributes:
+      long_name: Quality Flags
+      valid_range: [0, 2147483647]

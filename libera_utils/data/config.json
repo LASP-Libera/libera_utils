@@ -5,6 +5,7 @@
   "LIBERA_UTILS_DATA_DIR": "{PKG_ROOT}/data",
   "DROPBOX_PATH": null,
   "METADATA_DDB_TABLE_NAME": null,
+  "XARRAY_NETCDF_ENGINE": "netcdf4",
   "JPSS_SCLK": "{LIBERA_UTILS_DATA_DIR}/spice/jpss_sclk_v01.tsc",
   "LIBERA_FK": "{LIBERA_UTILS_DATA_DIR}/spice/libera_fk_v01.tf",
   "EARTH_ASSOC_ITRF93_FK": "{LIBERA_UTILS_DATA_DIR}/spice/earth_assoc_itrf93.tf",
@@ -32,5 +33,8 @@
   "LIBERA_KERNEL_SC_CK_CONFIG": "{LIBERA_KERNEL_DIR}/noaa20_sc_v01.attitude.ck.json",
   "LIBERA_KERNEL_AZ_CK_CONFIG": "{LIBERA_KERNEL_DIR}/libera_az_v01.attitude.ck.json",
   "LIBERA_KERNEL_EL_CK_CONFIG": "{LIBERA_KERNEL_DIR}/libera_el_v01.attitude.ck.json",
+  "LIBERA_PRODUCT_DEFINITIONS_PATH": "{LIBERA_UTILS_DATA_DIR}/product_definitions",
+  "LIBERA_DIMENSIONS_DEFINITION_PATH": "{LIBERA_UTILS_DATA_DIR}/libera_dimensions.yml",
+  "LIBERA_GLOBAL_PRODUCT_ATTRIBUTES_PATH": "{LIBERA_UTILS_DATA_DIR}/static_project_metadata.yml",
   "TEST_KEY": -999
 }

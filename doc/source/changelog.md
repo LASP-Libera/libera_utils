@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.0.0
+
+- FEAT: Add `write_libera_data_product` to `netcdf.py` for one-shot product writes from numpy arrays
+- BREAKING: Remove L1A `ProcessingStepIdentifier` (node) enum constants
+- BREAKING: Refactor `DataProductDefinition` (previously `DataProductConfig`) and product definition validation
+- MAINT: Remove `hdf.py` and associated tests
+
 ## 4.0.0
 
 - BREAKING: Removed L0 file chunking support: The chunk_number parameter and related methods have been removed from L0 data product identifiers

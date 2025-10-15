@@ -283,7 +283,7 @@ class L0Filename(AbstractDataProductFilename):
     def data_product_id(self) -> DataProductIdentifier:
         """Property that contains the DataProductIdentifier for this file type"""
         if self.filename_parts.file_number == 0:
-            return DataProductIdentifier.pds_cr
+            return DataProductIdentifier.l0_pds_cr
         apid_enum = LiberaApid(self.filename_parts.first_apid)
         return apid_enum.data_product_id
 
@@ -483,14 +483,14 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
     @classmethod
     def from_filename_parts(
-        cls,  # noqa pylint: disable=arguments-differ
+        cls,
         *,  # No positional arguments
-        data_level: str,
-        product_name: str,
+        product_name: str | DataProductIdentifier,
         version: str,
         utc_start: datetime,
         utc_end: datetime,
-        revision: datetime,
+        data_level: str | DataLevel | None = None,
+        revision: datetime = datetime.now(tz=UTC),
         extension: str | None = None,
         basepath: str | Path | S3Path | None = None,
     ):
@@ -501,9 +501,9 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
         Parameters
         ----------
-        data_level : str
-            L1B or L2 identifying the level of the data product
-        product_name : str
+        data_level : str | DataLevel | None
+            L1B or L2 identifying the level of the data product. Default None will infer the data level from the product name (DataProductIdentifier)
+        product_name : str | DataProductIdentifier
             Product type. e.g. CF-RAD for L2 or RAD-4CH for L1B. May contain anything except for underscores.
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
@@ -513,7 +513,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         utc_end : datetime.datetime
             Last timestamp in the SPK
         revision: datetime.datetime
-            Time when the file was created.
+            Time when the file was created. Default is now in UTC time.
         extension : str | None
             File extension. Default None will infer extension based on product_name.
         basepath : Optional[Union[str, Path, S3Path]]
@@ -523,8 +523,8 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         -------
         : LiberaDataProductFilename
         """
+        dpi = DataProductIdentifier(product_name)
         if not extension:
-            dpi = DataProductIdentifier(product_name)
             match dpi:
                 case DataProductIdentifier.spice_jpss_spk:
                     # Special case for our only SPK
@@ -535,6 +535,13 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
                 case _:
                     # Everything else is NetCDF4
                     extension = "nc"
+
+        if not data_level:
+            data_level = dpi.data_level
+        elif dpi.data_level != data_level:
+            warnings.warn(
+                f"Provided data level {data_level} does not match data level of data product identifier {dpi}:{dpi.data_level}"
+            )
 
         return cls._from_filename_parts(
             basepath=basepath,
@@ -691,17 +698,6 @@ class ManifestFilename(AbstractValidFilename):
         d["manifest_type"] = ManifestType(d["manifest_type"].upper())
         d["ulid_code"] = ulid.ULID.from_str(d["ulid_code"])
         return SimpleNamespace(**d)
-
-
-def get_current_revision_str() -> str:
-    """Get the current `r%y%j%H%M%S` string for filename revisions.
-
-    Returns
-    -------
-    : str
-        Current (now) revision string.
-    """
-    return datetime.now(UTC).strftime(REVISION_TS_FORMAT)
 
 
 def format_semantic_version(semantic_version: str) -> str:

@@ -1,0 +1,840 @@
+attributes:
+  ProductID: NOM-HK-DECODED
+  version: 0.0.1
+coordinates:
+  PACKET_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp from ICIE main processor
+      valid_range: ["1900-01-01T00:00:00", "2100-01-01T00:00:00"]
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+variables:
+  VERSION:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet version
+      valid_range: [0, 7]
+  TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet type
+      valid_range: [0, 1]
+  SEC_HDR_FLAG:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Secondary header flag
+      valid_range: [0, 1]
+  PKT_APID:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet application ID
+      valid_range: [0, 2047]
+  SEQ_FLGS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Sequence flags
+      valid_range: [0, 3]
+  SRC_SEQ_CTR:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Source sequence counter
+      valid_range: [0, 16383]
+  PKT_LEN:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet length
+      units: bytes
+  ICIE__TM_DAY_NOM_HK:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry day for packet
+      units: integer days
+  ICIE__TM_MS_NOM_HK:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry milliseconds for packet
+      units: integer milliseconds
+      valid_range: [0, 86399999]
+  ICIE__TM_US_NOM_HK:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry microseconds for packet
+      units: integer microseconds
+      valid_range: [0, 999]
+  ICIE__CFPEC_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__CFPEV_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__CFPE_SWCR_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__FPEC_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__FPEV_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__FPE_TSCOPE_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__HK_MRAM_ST:
+    dtype: "|S6"
+    dimensions: ["packet"]
+  ICIE__ICIE_12_VMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_26_IMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_26_VMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_3P3_IMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_3P3_VMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_5P0_IMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_5P0_VMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_AZ_AMB_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_EL_PWB_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__NOM_HK_CHECKSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+  ICIE__PEC_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__PEV_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__PE_P3P3V2_MON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__PE_P5_VMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__PE_RCM_MX_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__PE_RCM_PX_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__PE_WFOV_FPA_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__SV_SAS_FAULT:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ANG_ERR_AZ:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ANG_ERR_EL:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ANG_MEAS_AZ:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ANG_MEAS_EL:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_AWU_ST_AZ:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_AWU_ST_EL:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_BRK_ST:
+    dtype: "|S10"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_CMD_AZ:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_CMD_EL:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_CMD_PCG0_AZ:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_CMD_PCG0_EL:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_CMD_PCG1_AZ:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_CMD_PCG1_EL:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ENC_MD_AZ:
+    dtype: "|S6"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ENC_MD_EL:
+    dtype: "|S6"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ENC_ST_AZ:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_ENC_ST_EL:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FAULT_ST_AZ:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FAULT_ST_EL:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_ANG_AZ:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_ANG_EL:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_ERR_AZ:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_ERR_EL:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_RT_AZ:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_RT_EL:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_TQ_AZ:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_FLT_TQ_EL:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_MTR_ST_AZ:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_MTR_ST_EL:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_CAL_SAMPLE:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_CFPEC_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_CFPEV_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_CMD_FAIL_CODE:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_CMD_FMT_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_CMD_RCV_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_CMD_RJCT_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_CMD_RJCT_OP:
+    dtype: "|S21"
+    dimensions: ["packet"]
+  ICIE__SW_CMD_SUCC_OP:
+    dtype: "|S21"
+    dimensions: ["packet"]
+  ICIE__SW_FP_RESP_CNT:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP0:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP1:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP10:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP100:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP101:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP102:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP103:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP104:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP105:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP106:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP107:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP108:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP109:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP11:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP110:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP111:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP112:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP113:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP114:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP115:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP116:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP117:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP118:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP119:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP12:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP120:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP121:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP122:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP123:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP124:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP125:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP126:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP127:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP13:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP14:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP15:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP16:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP17:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP18:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP19:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP2:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP20:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP21:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP22:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP23:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP24:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP25:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP26:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP27:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP28:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP29:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP3:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP30:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP31:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP32:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP33:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP34:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP35:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP36:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP37:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP38:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP39:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP4:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP40:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP41:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP42:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP43:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP44:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP45:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP46:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP47:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP48:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP49:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP5:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP50:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP51:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP52:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP53:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP54:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP55:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP56:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP57:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP58:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP59:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP6:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP60:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP61:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP62:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP63:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP64:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP65:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP66:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP67:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP68:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP69:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP7:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP70:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP71:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP72:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP73:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP74:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP75:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP76:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP77:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP78:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP79:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP8:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP80:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP81:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP82:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP83:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP84:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP85:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP86:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP87:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP88:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP89:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP9:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP90:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP91:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP92:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP93:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP94:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP95:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP96:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP97:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP98:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_FP_WP_ST_WP99:
+    dtype: "|S8"
+    dimensions: ["packet"]
+  ICIE__SW_LL_OVR_AZ:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_LL_OVR_EL:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_LWC_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_MEM_OP_TYPE:
+    dtype: "|S3"
+    dimensions: ["packet"]
+  ICIE__SW_MEM_XSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+  ICIE__SW_MSG_RCV_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_OBSID_RAD:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_OBSID_WFOV:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_OS_CPU_MAX:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_OS_CPU_USAGE:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_PPS_RCV_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_RAD_PKT_CNT_CFPE:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_RAD_PKT_CNT_FPE:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_RAD_SAMPLE_0:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_RAD_SAMPLE_1:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_RAD_SAMPLE_2:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_RAD_SAMPLE_3:
+    dtype: float32
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP0:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP1:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP2:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP3:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP4:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP5:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP6:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_BUF_OP7:
+    dtype: "|S12"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP0:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP1:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP2:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP3:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP4:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP5:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP6:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_EXEC_POS_OP7:
+    dtype: uint16
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_LD_ST:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP0:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP1:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP2:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP3:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP4:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP5:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP6:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_STOP_CD_OP7:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP0:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP1:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP2:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP3:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP4:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP5:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP6:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SEQ_ST_OP7:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_SV_RCV_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_TBL_LD_ST:
+    dtype: "|S11"
+    dimensions: ["packet"]
+  ICIE__SW_TIME_PPMS_SRC:
+    dtype: "|S6"
+    dimensions: ["packet"]
+  ICIE__SW_WFOV_CAM_RCV_ERR:
+    dtype: "|S3"
+    dimensions: ["packet"]
+  ICIE__SW_WFOV_FSW_RD_PAG:
+    dtype: uint32
+    dimensions: ["packet"]
+  ICIE__SW_WFOV_FSW_WRT_PAG:
+    dtype: uint32
+    dimensions: ["packet"]
+  ICIE__SW_WFOV_IMG_ST:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_WFOV_NAND_BAD:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_WFOV_TLM_ST:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  REUSABLE_SPARE_2:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: REUSABLE_SPARE_2
+  REUSABLE_SPARE_8:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: REUSABLE_SPARE_8

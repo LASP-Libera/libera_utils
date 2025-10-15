@@ -1,0 +1,167 @@
+attributes:
+  ProductID: SC-POS-DECODED
+  version: 0.0.1
+coordinates:
+  PACKET_JPSS_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+  ADGPS_JPSS_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: ADGPS timestamp
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+  ADCFA_JPSS_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["ADCFA_JPSS_TIME"]
+    attributes:
+      long_name: ADCFA timestamp
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+variables:
+  VERSION:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet version
+      valid_range: [0, 7]
+  TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet type
+      valid_range: [0, 1]
+  SEC_HDR_FLG:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Secondary header flag
+      valid_range: [0, 1]
+  PKT_APID:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet application ID
+      valid_range: [0, 2047]
+  SEQ_FLGS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Sequence flags
+      valid_range: [0, 3]
+  SRC_SEQ_CTR:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Source sequence counter
+      valid_range: [0, 16383]
+  PKT_LEN:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet length
+      units: bytes
+  DAYS:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Days since epoch 1958-01-01
+      units: integer days
+  MSEC:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Milliseconds within day
+      units: integer milliseconds
+      valid_range: [0, 86399999]
+  USEC:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Microseconds within millisecond
+      units: integer microseconds
+      valid_range: [0, 999]
+  ADAESCID:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: ADAESC ID
+      valid_range: [0, 255]
+  ADGPSPOSX:
+    dtype: float32
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: GPS position X coordinate
+      units: meters
+  ADGPSPOSY:
+    dtype: float32
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: GPS position Y coordinate
+      units: meters
+  ADGPSPOSZ:
+    dtype: float32
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: GPS position Z coordinate
+      units: meters
+  ADGPSVELX:
+    dtype: float32
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: GPS velocity X component
+      units: meters/second
+  ADGPSVELY:
+    dtype: float32
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: GPS velocity Y component
+      units: meters/second
+  ADGPSVELZ:
+    dtype: float32
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: GPS velocity Z component
+      units: meters/second
+  ADCFAQ1:
+    dtype: float32
+    dimensions: ["ADCFA_JPSS_TIME"]
+    attributes:
+      long_name: ADCFA quaternion component 1
+      valid_range: [-1, 1]
+  ADCFAQ2:
+    dtype: float32
+    dimensions: ["ADCFA_JPSS_TIME"]
+    attributes:
+      long_name: ADCFA quaternion component 2
+      valid_range: [-1, 1]
+  ADCFAQ3:
+    dtype: float32
+    dimensions: ["ADCFA_JPSS_TIME"]
+    attributes:
+      long_name: ADCFA quaternion component 3
+      valid_range: [-1, 1]
+  ADCFAQ4:
+    dtype: float32
+    dimensions: ["ADCFA_JPSS_TIME"]
+    attributes:
+      long_name: ADCFA quaternion rotation component
+      units: radians
+      valid_range: [-1, 1]
+  ADGPS_packet_index:
+    dtype: int64
+    dimensions: ["ADGPS_JPSS_TIME"]
+    attributes:
+      long_name: Packet index for ADGPS sample data
+      comment: Maps each ADGPS sample to its originating packet index

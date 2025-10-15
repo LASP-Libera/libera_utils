@@ -51,12 +51,12 @@ def setup_azel_kernel_maker_environment_with_manifest(
     test_type,
     generate_input_manifest_local,
     generate_input_manifest_s3,
-    test_azel_ccsds_2025_218_18_37_32,
-    test_azel_ccsds_2025_218_18_41_30,
+    test_ccsds_2025_218_18_37_32,
+    test_ccsds_2025_218_18_41_30,
     create_mock_bucket,
     short_tmp_path,
 ):
-    data_files = [str(test_azel_ccsds_2025_218_18_37_32), str(test_azel_ccsds_2025_218_18_41_30)]
+    data_files = [str(test_ccsds_2025_218_18_37_32), str(test_ccsds_2025_218_18_41_30)]
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3(*data_files)
         bucket = create_mock_bucket()

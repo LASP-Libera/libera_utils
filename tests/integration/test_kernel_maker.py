@@ -126,7 +126,7 @@ def test_make_jpss_ck_aws(
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
-def test_make_az_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk):
+def test_make_az_ck(mocked_get_current_version_str, test_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk):
     """Test creating an Az CK from AzEl packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
@@ -135,7 +135,7 @@ def test_make_az_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_
         return_value=short_tmp_path,
     ):
         kernel_maker.from_args(
-            input_data_files=[str(test_azel_ccsds_2025_218_18_37_32)],
+            input_data_files=[str(test_ccsds_2025_218_18_37_32)],
             kernel_identifier="AZROT-CK",
             output_dir=str(short_tmp_path),
             overwrite=False,
@@ -151,7 +151,7 @@ def test_make_az_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_az_ck_aws(
     mocked_get_current_version_str,
-    test_azel_ccsds_2025_218_18_37_32,
+    test_ccsds_2025_218_18_37_32,
     create_mock_bucket,
     write_file_to_s3,
     wrapper,
@@ -162,8 +162,8 @@ def test_make_az_ck_aws(
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
-    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_azel_ccsds_2025_218_18_37_32.name}"
-    write_file_to_s3(test_azel_ccsds_2025_218_18_37_32, kernel_uri)
+    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_ccsds_2025_218_18_37_32.name}"
+    write_file_to_s3(test_ccsds_2025_218_18_37_32, kernel_uri)
     packet_s3_path = wrapper(f"{kernel_uri}")
     s3_output_directory = f"s3://{bucket}/{key}/kernel_output/"
 
@@ -180,7 +180,7 @@ def test_make_az_ck_aws(
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
-def test_make_el_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk):
+def test_make_el_ck(mocked_get_current_version_str, test_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk):
     """Test creating an El CK from AzEl packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
@@ -189,7 +189,7 @@ def test_make_el_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_
         return_value=short_tmp_path,
     ):
         kernel_maker.from_args(
-            input_data_files=[str(test_azel_ccsds_2025_218_18_37_32)],
+            input_data_files=[str(test_ccsds_2025_218_18_37_32)],
             kernel_identifier="ELSCAN-CK",
             output_dir=str(short_tmp_path),
             overwrite=False,
@@ -205,7 +205,7 @@ def test_make_el_ck(mocked_get_current_version_str, test_azel_ccsds_2025_218_18_
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_el_ck_aws(
     mocked_get_current_version_str,
-    test_azel_ccsds_2025_218_18_37_32,
+    test_ccsds_2025_218_18_37_32,
     create_mock_bucket,
     write_file_to_s3,
     wrapper,
@@ -216,8 +216,8 @@ def test_make_el_ck_aws(
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
-    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_azel_ccsds_2025_218_18_37_32.name}"
-    write_file_to_s3(test_azel_ccsds_2025_218_18_37_32, kernel_uri)
+    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_ccsds_2025_218_18_37_32.name}"
+    write_file_to_s3(test_ccsds_2025_218_18_37_32, kernel_uri)
     packet_s3_path = wrapper(f"{kernel_uri}")
     s3_output_directory = f"s3://{bucket}/{key}/kernel_output/"
 

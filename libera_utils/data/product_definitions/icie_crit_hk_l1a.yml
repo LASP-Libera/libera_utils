@@ -1,0 +1,182 @@
+attributes:
+  ProductID: CRIT-HK-DECODED
+  version: 0.0.1
+coordinates:
+  PACKET_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp from ICIE main processor
+      valid_range: ["1900-01-01T00:00:00", "2100-01-01T00:00:00"]
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+variables:
+  VERSION:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet version
+      valid_range: [0, 7]
+  TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet type
+      valid_range: [0, 1]
+  SEC_HDR_FLAG:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Secondary header flag
+      valid_range: [0, 1]
+  PKT_APID:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet application ID
+      valid_range: [0, 2047]
+  SEQ_FLGS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Sequence flags
+      valid_range: [0, 3]
+  SRC_SEQ_CTR:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Source sequence counter
+      valid_range: [0, 16383]
+  PKT_LEN:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet length
+      units: bytes
+  ICIE__TM_DAY_CRIT_HK:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry day for packet
+      units: integer days
+  ICIE__TM_MS_CRIT_HK:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry milliseconds for packet
+      units: integer milliseconds
+      valid_range: [0, 86399999]
+  ICIE__TM_US_CRIT_HK:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry microseconds for packet
+      units: integer microseconds
+      valid_range: [0, 999]
+  ICIE__ICIE_FPGA_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__ICIE_PWR_TEMP:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__CFPE_ST:
+    dtype: "|S3"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP0:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP1:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP2:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP3:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP4:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP5:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP6:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_SEQ_ST_OP7:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__FPE_ST:
+    dtype: "|S3"
+    dimensions: ["packet"]
+  ICIE__PE_ST:
+    dtype: "|S3"
+    dimensions: ["packet"]
+  ICIE__SW_ADC_SAS_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_STATE_AZ:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_STATE_EL:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_AXIS_STATE_SS:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_BOOT_WDOG_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_FPEC_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_FPEV_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_PEC_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_PEV_ALIVE_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__SW_RST_ST:
+    dtype: "|S4"
+    dimensions: ["packet"]
+  ICIE__SW_TIME_FREE_ST:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__CRIT_HK_CHECKSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+  ICIE__CRIT_SV_UNIT_VALID:
+    dtype: "|S5"
+    dimensions: ["packet"]
+  ICIE__ICIE_12_IMON:
+    dtype: float64
+    dimensions: ["packet"]
+  ICIE__SW_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_IMG_ID:
+    dtype: uint8
+    dimensions: ["packet"]
+  ICIE__SW_SAFE_CAUSE:
+    dtype: "|S4"
+    dimensions: ["packet"]
+  ICIE__SW_SYSTEM_MODE:
+    dtype: "|S7"
+    dimensions: ["packet"]
+  ICIE__SW_TIME_PPS_SRC:
+    dtype: "|S6"
+    dimensions: ["packet"]
+  ICIE__SW_TLM_JPSS_SIDE:
+    dtype: "|S1"
+    dimensions: ["packet"]
+  REUSABLE_SPARE_1:
+    dtype: uint8
+    dimensions: ["packet"]
+  REUSABLE_SPARE_8:
+    dtype: uint8
+    dimensions: ["packet"]

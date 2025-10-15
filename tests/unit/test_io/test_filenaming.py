@@ -462,13 +462,6 @@ def test_changing_path():
     assert p.path.name == "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.h5"
 
 
-@mock.patch("libera_utils.io.filenaming.datetime")
-def test_get_current_revision_str(mock_datetime):
-    """Test getting the current revision string for writing a new filename"""
-    mock_datetime.now.return_value = dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
-    assert filenaming.get_current_revision_str() == "R27002112233"
-
-
 @pytest.mark.parametrize(
     ("mock_version", "version_string"), [("3.1.4", "V3-1-4"), ("1.2.3rc0", "V1-2-3RC0"), ("1.0", ValueError())]
 )
