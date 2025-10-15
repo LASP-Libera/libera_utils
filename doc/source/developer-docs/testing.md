@@ -46,6 +46,33 @@ pytest --cov-report=html:coverage_report --cov=libera_utils
 pytest --cov-report=xml:coverage.xml --cov=libera_utils
 ```
 
+## Test Profiling
+
+### Time Profiling
+
+We use the `pytest-profiling` plugin for time profiling of tests.
+
+To create profiling output for a test:
+
+```
+pytest --profile tests/test_module.py::test_specific_test[PARAM_ID]
+```
+
+This generates a `prof` directory. To visualize the results, we have a tool called `snakeviz` included in dev dependencies.
+
+To visualize profiling results with `snakeviz`:
+
+```
+snakeviz prof/combined.prof
+```
+
+It will start a web server with a navigable GUI of timing profiles for each part of the stack.
+
+### Memory Profiling
+
+We use the `memory-profiler` package for profiling memory usage in tests.
+Documentation here: https://github.com/pythonprofilers/memory_profiler
+
 ## Testing in Docker
 
 To run the unit tests in docker, run
@@ -109,4 +136,31 @@ To run all hooks on all files manually, run:
 
 ```shell
 pre-commit run --all-files
+```
+
+# Testing Another Package Against a Working Version of Libera Utils
+
+When developing Libera Utils, it is often useful to test that package against a specific commit hash of Libera Utils to make sure it works as expected.
+
+Update the `pyproject.toml` file of the dependent project with a reference to the specific git hash of Libera Utils.
+
+```toml
+[tool.poetry.dependencies]
+libera_utils = { git = "ssh_or_http_url_to_libera_utils_repo", rev = "abc123def456..." }
+```
+
+If your pyproject.toml is using the PEP 621 format:
+
+```toml
+[project]
+dependencies = [
+    "libera_utils @ git+ssh_or_http_url_to_libera_utils_repo@abc123def456..."
+]
+```
+
+Then uninstall the old version (if you don't, Poetry sometimes assumes it's already installed if the version isn't different in the specific commit you want to reference) and reinstall dependencies:
+
+```
+pip uninstall libera_utils
+poetry lock && poetry sync
 ```
