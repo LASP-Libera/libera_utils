@@ -1,0 +1,135 @@
+attributes:
+  ProductID: RAD-SAMPLE-DECODED
+  version: 0.0.1
+coordinates:
+  PACKET_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp from ICIE main processor
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+  RAD_SAMPLE_FPE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RAD_SAMPLE_FPE_TIME"]
+    attributes:
+      long_name: Radiometer sample timestamp from FPE (samples at 200Hz)
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+variables:
+  VERSION:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet version
+      valid_range: [0, 7]
+  TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet type
+      valid_range: [0, 1]
+  SEC_HDR_FLAG:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Secondary header flag
+      valid_range: [0, 1]
+  PKT_APID:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet application ID
+      valid_range: [0, 2047]
+  SEQ_FLGS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Sequence flags
+      valid_range: [0, 3]
+  SRC_SEQ_CTR:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Source sequence counter
+      valid_range: [0, 16383]
+  PKT_LEN:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet length
+      units: bytes
+  ICIE__TM_DAY_RAD_SAMPLE:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry day for packet
+      units: integer days
+  ICIE__TM_MS_RAD_SAMPLE:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry milliseconds for packet
+      units: integer milliseconds
+      valid_range: [0, 86399999]
+  ICIE__TM_US_RAD_SAMPLE:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE telemetry microseconds for packet
+      units: integer microseconds
+      valid_range: [0, 999]
+  REUSABLE_SPARE_8:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Reusable spare field (8 bits)
+  ICIE__RAD_OBSID_RAD:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE radiometer observation ID for radiometer
+  ICIE__RAD_OBSID_WFOV:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE radiometer observation ID for wide field of view camera
+  ICIE__RAD_SAMPLE_CHECKSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: ICIE radiometer sample packet checksum
+  ICIE__RAD_SAMPLE_0:
+    dtype: float32
+    dimensions: ["RAD_SAMPLE_FPE_TIME"]
+    attributes:
+      long_name: ICIE radiometer sample channel 0 (SW)
+      units: W/(m^2*sr*nm)
+  ICIE__RAD_SAMPLE_1:
+    dtype: float32
+    dimensions: ["RAD_SAMPLE_FPE_TIME"]
+    attributes:
+      long_name: ICIE radiometer sample channel 1 (TOT)
+      units: W/(m^2*sr*nm)
+  ICIE__RAD_SAMPLE_2:
+    dtype: float32
+    dimensions: ["RAD_SAMPLE_FPE_TIME"]
+    attributes:
+      long_name: ICIE radiometer sample channel 2 (LW)
+      units: W/(m^2*sr*nm)
+  ICIE__RAD_SAMPLE_3:
+    dtype: float32
+    dimensions: ["RAD_SAMPLE_FPE_TIME"]
+    attributes:
+      long_name: ICIE radiometer sample channel 3 (SSW)
+      units: W/(m^2*sr*nm)
+  RAD_SAMPLE_packet_index:
+    dtype: int64
+    dimensions: ["RAD_SAMPLE_FPE_TIME"]
+    attributes:
+      long_name: Packet index for radiometer sample data
+      comment: Maps each radiometer sample to its originating packet index

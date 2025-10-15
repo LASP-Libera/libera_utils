@@ -6,6 +6,7 @@ import pytest
 
 pytest_plugins = [
     "tests.plugins.data_path_fixtures",
+    "tests.plugins.data_product_fixtures",
     "tests.plugins.spice_fixtures",
     "tests.plugins.aws_fixtures",
     "tests.plugins.manifest_fixtures",

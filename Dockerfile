@@ -16,10 +16,20 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && \
-    apt-get install -y curl gcc ca-certificates && \
-    update-ca-certificates && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    ca-certificates \
+    libudunits2-dev \
+    libgdal-dev \
+    libhdf5-dev \
+    libnetcdf-dev \
+    python3-dev \
+    python3-numpy \
+    && update-ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install spice utilities directly from NAIF (precompiled for Linux)
 ENV CSPICE_DIR=/opt/naif

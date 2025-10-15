@@ -24,14 +24,14 @@ def test_read_sc_packet_data(test_pds_file_1):
     assert all(result_df["PKT_APID"] == 11), "All packets should have APID 11"
 
 
-def test_read_azel_packet_data(test_azel_ccsds_2025_218_18_37_32, test_azel_ccsds_2025_218_18_41_30):
+def test_read_azel_packet_data(test_ccsds_2025_218_18_37_32, test_ccsds_2025_218_18_41_30):
     """Test reading Az/El packet data from real CCSDS files
 
     Uses AZEL packet definition and verifies APID 1048 parsing with
     restructuring to 50 samples per packet. Tests with both new data files
     that should have no duplicate timestamps.
     """
-    result_df = packets.read_azel_packet_data([test_azel_ccsds_2025_218_18_37_32, test_azel_ccsds_2025_218_18_41_30])
+    result_df = packets.read_azel_packet_data([test_ccsds_2025_218_18_37_32, test_ccsds_2025_218_18_41_30])
 
     # Basic assertions
     assert not result_df.empty, "DataFrame should not be empty"

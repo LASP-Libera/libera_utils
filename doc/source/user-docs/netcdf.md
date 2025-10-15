@@ -1,126 +1,226 @@
-# Working with NetCDF4 Files
+# Creating Libera Data Product Files (NetCDF-4)
 
-NetCDF4 is a complete redesign of the NetCDF file format based on HDF5 data structures. i.e. all NetCDF4 files
-are HDF5 files with some additional requirements and limitation of functionality.
-Note that not all HDF5 files are NetCDF4 files. For more information on NetCDF5 and the underlying HDF5 structures,
-see the documentation
-[here](https://www.earthdata.nasa.gov/esdis/esco/standards-and-practices/netcdf-4hdf5-file-format).
-There are several python packages (and libraries in other languages) that support reading and writing NetCDF4 files.
-The SDC is using the Xarray python library.
+TODO[LIBSDC-633]: Include discussion here (or in the YAML format description below) of Dimensions, static global attributes, and dynamic attributes.
 
-The official documentation for Xarray is [here](https://docs.xarray.dev/en/stable/). It includes a much more comprehensive user guide with code examples.
+The Libera SDC provides utilities for creating NetCDF4 data product files that conform to YAML data product definitions and a few global expectations.
+These definitions ensure a degree of consistency across all Libera data products, including proper metadata, coordinate systems, and data types.
+Libera Utils includes a few different ways to work with data product definitions for validation.
 
-Xarray builds on the numpy package, introducing labels for
-multidimensional arrays in python. These labels come in the form of coordinates, dimensions, and attributes.
-Xarray is broken into two main data structures: DataArrays and DataSets. DataArrays are contained within DataSets,
-such that a single DataSet can hold multiple DataArrays. DataSets can then be written to NetCDF4 files.
+## Basic Usage
 
-## Reading NetCDF4 Files
-
-To read NetCDF4 files we can use Xarray as well. NetCDF4 files have similar structure to HDF5 files.
-NetCDF4 DataSets can have DataSets nested within one another. Here is an example of how to access each DataSet/Group.
+The simplest way to create a valid Libera data product is using the `write_libera_data_product` function:
 
 ```python
-import xarray
-
-with xarray.open_dataset("filename", group='/') as ds:
-    print(ds) # print the highest level group
-```
-
-## Creating and Using DataArrays
-
-[See documentation on `DataArray.to_netcdf` here.](https://docs.xarray.dev/en/stable/generated/xarray.DataArray.to_netcdf.html)
-
-DataArrays are arrays that can handle multiple dimensions with named or labeled axes. These DataArray objects add
-metadata such as dimension names, coordinates, and attributes. DataArrays can be created from numpy arrays,
-numpy-like arrays, pandas Series, and pandas DataFrames.
-
-```python
-import xarray as xr
 import numpy as np
-import pandas as pd
+from pathlib import Path
+from libera_utils.io.netcdf import write_libera_data_product
 
-# Create the coordinates
-time = pd.date_range(start='2022-01-01', periods=10, freq='D')  # 10 daily time steps
-lat = np.linspace(-90, 90, 5)  # 5 latitude points from -90 to 90
-lon = np.linspace(-180, 180, 8)  # 8 longitude points from -180 to 180
+# Define the path to the data product definition YAML file
+product_definition_path = Path("path/to/product_definition.yml")
 
-# Create random data
-data = np.random.random((len(time), len(lat), len(lon)))
+# Create numpy data arrays for each variable and coordinate required
+n_times = 100
+time_data = np.arange(n_times).astype("datetime64[ns]") + np.datetime64("2024-01-01")
+lat_data = np.linspace(-90, 90, n_times)
+lon_data = np.linspace(-180, 180, n_times)
+fil_rad_data = np.random.rand(n_times) * 1000  # Filtered radiance values
+q_flag_data = np.zeros(n_times, dtype=np.int32)  # Quality flags
 
-# Create the DataArray
-data_array = xr.DataArray(data,
-                          coords=[time, lat, lon],
-                          dims=['time', 'lat', 'lon'])
+# Combine all data into a dictionary
+data = {
+    "time": time_data,
+    "lat": lat_data,
+    "lon": lon_data,
+    "fil_rad": fil_rad_data,
+    "q_flag": q_flag_data,
+}
 
-# Display the DataArray
-print(data_array)
-
-
-print(data_array.values)  # the data in the object
-print(data_array.dims)  # access the dimensions
-print(data_array.coords)  # access the coors attribute
-print(data_array.attrs)  # access metadata about the DataArray
-```
-
-You can create DataArrays across more dimensions as well. The number of variables in `dims` and `coords` should be
-equal for multiple dimensions. You can also modify the DataArrays values with scalars.
-
-```python
-data_array.values = data_array.values * 2 # multiply the entire array by 2
-```
-
-## Writing DataSets as NetCDF4
-
-[See documentation on `Dataset.to_netcdf` here.](https://docs.xarray.dev/en/stable/generated/xarray.Dataset.to_netcdf.html)
-
-Creating DataSets is similar to creating DataArrays, provide the data variables themselves, along with the coords,
-dims and attributes you want to include. The data variables should be a dictionary with each key being the name of the
-data and each value can be a DataSet, pandas dataframe or numpy array. Coords and Dims should be a dictionary as well.
-
-For this example, we are creating the DataArrays first ,then will add them all into one DataSet and write that to a
-NetCDF4 file. When creating DataSets, Xarray will often infer the dims from the coords and data variables given, if
-you do not pass any while creating DataSets. When writing to the NetCDF4 files if different variables “lie” on
-different dimensions, they will smash them together and replace the extra values (when viewed in a file viewer)
-with zeros. When writing a file using Xarray, using the engine “h5netcdf” will write the file faster.
-
-```python
-import random
-import pandas
-import numpy
-import xarray as xr
-
-data_length = random.randint(1000,2000) # creating random vector length to simulate data
-
-# creating multiple data fields to simulate fake data
-times = pandas.date_range("2014-09-06", periods=data_length)
-short_wave = numpy.random.rand(data_length)
-long_wave = numpy.random.rand(data_length)
-total_radiance = numpy.random.rand(data_length)
-split_radiance = numpy.random.rand(data_length)
-
-# creating the DataSets from the created fields
-short_wave = xr.DataArray(short_wave, coords=[times], dims=['times'])
-long_wave = xr.DataArray(long_wave, coords=[times], dims=['times'])
-total_rad = xr.DataArray(total_radiance, coords=[times], dims=['times'])
-split_rad = xr.DataArray(split_radiance, coords=[times], dims=['times'])
-
-# create the DataSet
-ds = xr.Dataset({
-    'short_wave': short_wave,
-    'long_wave': long_wave,
-    'total_radiance': total_rad,
-    'split_rad': split_rad
-},
-    coords={'times': times},
+# Call write_libera_data_product with correct arguments
+output_dir = Path("/path/to/output/directory")
+filename = write_libera_data_product(
+    data_product_definition=product_definition_path,
+    data=data,
+    output_path=output_dir,
+    time_variable="time",  # Specify which variable contains time data
+    strict=True,  # Enforce strict conformance, raising exceptions on errors
 )
 
-# Write some metadata
-ds.attrs["ALGORITHM_VERSION"] = "3.14.159"
-
-# write to a NetCDF4 file
-ds.to_netcdf('filename', group="/", mode='a', engine='h5netcdf')
+print(f"Created data product: {filename.path}")
+# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T002739_R25280215327.nc
 ```
 
-You can specify group structure with group keyword, similar to a filesystem path (/groups/are/paths). When writing
-multiple DataSets to a file or if you need to append them, use keyword “mode” with value “a” to append.
+The function automatically:
+
+- Validates data against the product definition
+- Generates a standardized filename based on the time range
+- Applies correct encoding and compression settings
+- Ensures CF-convention compliance
+
+## Advanced Usage
+
+There are a few other APIs that may be useful for debugging data product creation during development. Once a data product definition is working,
+the proper approach is to call `write_libera_data_product` with `strict=True`.
+
+### Creation, Enforcement, and Validation for Existing Dataset
+
+You can use the `DataProductDefinition` class to create, enforce (modify), and validate xarray Dataset objects.
+
+#### Validation of Conformance
+
+The `DataProductDefinition.check_dataset_conformance()` method takes a dataset as an argument and checks that
+it conforms to the data product definition. The typical usage of this method is in strict mode, which raises an exception for any validation error.
+For debugging, you can run with `strict=False`, in which case it returns a (possibly empty) list of informational error messages.
+
+```python
+# Call DataProductDefinition.check_dataset_conformance() with strict=False
+# so we get a list of error messages instead of an exception raised.
+# This checks the conformance of an existing dataset against a data product definition without modifying it
+# Note that the dataset need not be generated by create_conforming_dataset. This method accepts _any_ xarray Dataset object.
+validation_errors = dpd.check_dataset_conformance(dataset, strict=False)
+
+# Demonstrate how to use the return values
+if validation_errors:
+    print(f"\nValidation found {len(validation_errors)} issues")
+    print("Attempting to fix issues with enforce_dataset_conformance...")
+```
+
+#### Enforcement of Product Definition
+
+The `DataProductDefinition.enforce_dataset_conformance()` method takes a Dataset as an argument and attempts to enforce all
+data product definition requirements by modifying any necessary attributes, data types, and encodings. This doesn't necessarily work, so
+we return a list of error messages for any problems that couldn't be fixed.
+
+```python
+# Call dpd.enforce_dataset_conformance() to fix problems with a dataset
+# This modifies the dataset in-place to fix what it can
+# Obviously some problems are not fixable such as missing variables.
+fixed_dataset, remaining_errors = dpd.enforce_dataset_conformance(dataset)
+
+# Demonstrate how to use the return values
+if not remaining_errors:
+    print("Successfully fixed all conformance issues!")
+    # Save the fixed dataset
+    fixed_dataset.to_netcdf("output_fixed.nc")
+else:
+    print("Some issues could not be automatically fixed")
+    print(f"Remaining issues: {len(remaining_errors)}")
+    for error in remaining_errors:
+        print(f"  - {error}")
+```
+
+#### Direct Creation of Conforming Dataset
+
+```python
+import numpy as np
+import xarray as xr
+from pathlib import Path
+from libera_utils.io.product_definition import DataProductDefinition
+
+# Create DataProductDefinition object from a YAML file
+definition_path = Path("path/to/product_definition.yml")
+dpd = DataProductDefinition.from_yaml(definition_path)
+
+# Prepare your data as numpy arrays
+n_times = 50
+data = {
+    "time": np.arange(n_times).astype("datetime64[ns]") + np.datetime64("2024-03-01"),
+    "lat": np.linspace(-90, 90, n_times),
+    "lon": np.linspace(-180, 180, n_times),
+    "fil_rad": np.random.rand(n_times) * 500,
+    "q_flag": np.random.randint(0, 100, n_times, dtype=np.int32),
+}
+
+# Create a Dataset with dpd.create_conforming_dataset() with strict=False
+# This allows creation even if some requirements aren't met.
+# This method coerces the resulting dataset to conform as closely as possible
+# to the data product definition by adding attributes, encodings,
+# and coercing data types if possible.
+dataset, errors = dpd.create_conforming_dataset(
+    data=data,
+    strict=False  # Don't raise exceptions, just report issues
+)
+
+# Demonstrate how to use the return values
+if not errors:
+    print("Dataset is valid and conforms to the product definition")
+else:
+    print(f"Dataset has {len(errors)} conformance issues:")
+    for error in errors[:5]:  # Show first 5 errors
+        print(f"  - {error}")
+```
+
+### Dynamic Global and Variable Attributes
+
+_Note: L2 Developers should not need this._
+
+Avoid this unless absolutely necessary!
+
+When creating datasets, you can specify attributes whose values are not defined in the YAML (i.e. they are null).
+We call these "dynamic attributes" and they are required but must be passed directly during dataset creation:
+
+```python
+# Set dynamic global attribute values (e.g., algorithm-specific metadata values for required attribute keys)
+user_global_attrs = {
+    "date_created": "2024-03-15T11:22:33",
+    "algorithm_version": "2.1.0",
+    "processing_level": "L1B",
+}
+
+# Set dynamic variable attribute values
+# NOTE: these should be avoided unless absolutely necessary
+user_var_attrs = {
+    "fil_rad": {
+        "calibration_date": "2024-01-01",
+        "sensor_id": "LIBERA-001",
+    },
+    "q_flag": {
+        "flag_meanings": "good questionable bad",
+        "flag_values": [0, 1, 2],
+    },
+}
+
+# Create dataset with custom attributes
+dataset, errors = dpd.create_conforming_dataset(
+    data=data,
+    user_global_attributes=user_global_attrs,
+    user_variable_attributes=user_var_attrs,
+    strict=True,
+)
+```
+
+## Product Definition YAML Structure
+
+TODO[LIBSDC-623]: Include discussion of dimension names being in a global namespace.
+
+Product definition files specify the exact structure and metadata for data products:
+
+```yaml
+# Product level metadata attributes
+attributes:
+  ProductID: RAD-4CH
+  version: 0.0.1
+
+# Coordinate variables (dimensions)
+coordinates:
+  time:
+    dtype: datetime64[ns]
+    dimensions: ["time"]
+    attributes:
+      long_name: "Time of sample collection"
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+# Data variables
+variables:
+  fil_rad:
+    dtype: float64
+    dimensions: ["time"]
+    attributes:
+      long_name: Filtered Radiance
+      units: W/(m^2*sr*nm)
+      valid_range: [0, 1000]
+```
+
+The DataProductDefinition system ensures all Libera data products maintain consistent structure, metadata, and quality standards across the mission.

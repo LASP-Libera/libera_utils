@@ -1,5 +1,4 @@
 n_samples:
-  size: "dynamic"
   long_name: "A running count for daily data for the number of samples"
 camera_pixel_count_x:
   size: 2048
@@ -7,3 +6,15 @@ camera_pixel_count_x:
 camera_pixel_count_y:
   size: 2048
   long_name: "The Y-axis dimension of the camera images"
+PACKET_JPSS_TIME:
+  long_name: "Packet creation time from spacecraft clock"
+ADGPS_JPSS_TIME:
+  long_name: "SC position (ephemeris) sample time from spacecraft clock"
+ADCFA_JPSS_TIME:
+  long_name: "SC control frame attitude sample time from spacecraft clock"
+PACKET_ICIE_TIME:
+  long_name: "Packet creation time from ICIE main processor clock"
+AXIS_SAMPLE_ICIE_TIME:
+  long_name: "Azimuth and elevation encoder sample time from ICIE main processor clock"
+RAD_SAMPLE_FPE_TIME:
+  long_name: "Radiometer sample time from ICIE fast processor clock"

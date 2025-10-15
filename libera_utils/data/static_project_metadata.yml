@@ -1,7 +1,13 @@
-#static_project_metadata:
+# Required global attributes with set values
+# These exact key-value pairs are required on all Libera data products
 Format: NetCDF-4
 Conventions: CF-1.8
 ProjectLongName: Libera
 ProjectShortName: Libera
 PlatformLongName: TBD # Probably only needed if we are going with JPSS-4 as the platform identifier instead of NOAA-22
 PlatformShortName: NOAA-22
+
+# Required attributes to be set by user
+# These keys are required on all Libera data products but their values vary by data product
+ProductID: null # Data Product ID
+algorithm_version: null # Algorithm semantic version that produced the file

@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "4.0.0"
+version = "5.0.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -39,9 +39,9 @@ classifiers = [
 # These are the dependencies used in the package metadata when building the project
 dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
-    "lasp-curryer>=0.1.0,<1.0",
-    "h5netcdf>=1.0.0",
-    "h5py>=3.3",
+    "lasp-curryer>=0.1.4,<1.0",
+    "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
+    "netCDF4>=1.7.0,<2.0.0,!=1.7.3",  # netcdf4 engine support for xarray
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
     "pydantic>2.0.3",
     "requests>=2.27.0,<3.0",
@@ -76,6 +76,8 @@ include = [
 [tool.poetry.group.dev.dependencies]
 # These specs are totally open because they are only needed for developers
 bandit = "*"
+cfchecker = "*"
+matplotlib = "*"
 moto = {extras = ["s3"], version = "*"}
 pre-commit = "*"
 pytest-cov = "*"
