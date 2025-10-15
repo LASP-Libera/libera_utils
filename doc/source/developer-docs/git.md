@@ -10,14 +10,28 @@ The following is a general order of events:
 2. Add commits to your feature branch.
 3. (Optional) Put up a Draft PR to signify a work in progress while still allowing team members visibility. This
    also allows automated tests to run based on changes to the PR.
-4. Ensure your branch is rebased and commits are squashed onto the latest commits in `main`. This may involve separate
-   squashing and rebasing operations to minimize conflicts (i.e. squash first, then rebase a single commit).
-5. Put up a PR to merge into `main`
-6. Wait for review.
+   - Jenkins tests run for draft PRs
+   - Only add reviewers if you really expect a thorough review
+4. Ensure your branch is rebased and you are satisfied with the state of your code. That is, you don't plan to add any more commits until it's reviewed.
+5. Put up a PR to merge into `main`.
+6. Wait for review, address all comments, and wait for all reviewers to approve.
 7. Merge using the "fast-forward only" strategy in Bitbucket. If properly squashed, should only add 1 commit.
+   - In most cases you should squash your branch to a single commit
+   - Commit messages merged into `main` should be nicely formatted but we don't have a strict standard.
 
-_If any of this doesn't make sense, don't just run commands! Ask someone!
-You can really hose your local repo state and even lose your work if you don't know what you're doing._
+### Suggested Commit Message Formatting
+
+```
+Title of Commit
+
+Narrative description of the changes in the commit, limited to 80 character
+line length by convention.
+
+You can include bullet points that, for example, summarize specific individual changes:
+
+- MAINT: Maintenance change
+- CONFIG: Configuration change
+```
 
 ## Reasons for Rebasing
 
