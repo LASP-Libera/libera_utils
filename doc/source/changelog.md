@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.1.0
+
+- Added UMMGranule Pydantic class to validate datasets against the UMM-G schema
+- Added methods to convert Libera datasets to UMMGranule instances
+
 ## 5.0.0
 
 - FEAT: Add `write_libera_data_product` to `netcdf.py` for one-shot product writes from numpy arrays
