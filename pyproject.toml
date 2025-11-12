@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.1.0"
+version = "5.2.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -78,13 +78,17 @@ include = [
 bandit = "*"
 cfchecker = "*"
 matplotlib = "*"
+memory-profiler = "*"
 moto = {extras = ["s3"], version = "*"}
 pre-commit = "*"
+psutil = "*"  # Speeds up memory-profiler
 pytest-cov = "*"
+pytest-profiling = "*"
 pytest-randomly = "*"
 pytest-subprocess = "*"
 responses = "*"
 ruff = "*"
+snakeviz = "*"  # Visualization for time profiling
 
 [tool.poetry.group.docgen.dependencies]
 # These are listed as a group rather than an extra because no end user will need them

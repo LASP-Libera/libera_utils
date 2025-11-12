@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.2.0
+
+- FEAT: Implement processing to L1A Dataset from packets
+- CONFIG: Add full ICIE XTCE to Libera Utils package
+
 ## 5.1.0
 
 - Added UMMGranule Pydantic class to validate datasets against the UMM-G schema

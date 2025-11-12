@@ -31,7 +31,7 @@
                 <xtce:UnitSet/>
                 <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
             </xtce:IntegerParameterType>
-            <xtce:FloatParameterType name="DOY_Type">
+            <xtce:FloatParameterType name="DAYS_Type">
                 <xtce:UnitSet>
                     <xtce:Unit>day</xtce:Unit>
                 </xtce:UnitSet>
@@ -110,8 +110,8 @@
             <xtce:Parameter name="PKT_LEN" parameterTypeRef="PKT_LEN_Type">
                 <xtce:LongDescription>Number of bytes of the data field following the primary header -1. (To get the length of the whole packet, add 7)</xtce:LongDescription>
             </xtce:Parameter>
-            <xtce:Parameter name="DOY" parameterTypeRef="DOY_Type" shortDescription="Secondary Header Day of Year">
-                <xtce:LongDescription>CCSDS Packet 2nd Header Day of Year in days.</xtce:LongDescription>
+            <xtce:Parameter name="DAYS" parameterTypeRef="DAYS_Type" shortDescription="Secondary Header Days Since Epoch">
+                <xtce:LongDescription>CCSDS Packet 2nd Header days since CCSDS epoch (TAI epoch).</xtce:LongDescription>
             </xtce:Parameter>
             <xtce:Parameter name="MSEC" parameterTypeRef="MSEC_Type" shortDescription="Secondary Header Coarse Time (millisecond)">
                 <xtce:LongDescription>CCSDS Packet 2nd Header Coarse Time in milliseconds.</xtce:LongDescription>
@@ -174,7 +174,7 @@
                     <xtce:AncillaryData name="topLevelPacket">false</xtce:AncillaryData>
                 </xtce:AncillaryDataSet>
                 <xtce:EntryList>
-                    <xtce:ParameterRefEntry parameterRef="DOY"/>
+                    <xtce:ParameterRefEntry parameterRef="DAYS"/>
                     <xtce:ParameterRefEntry parameterRef="MSEC"/>
                     <xtce:ParameterRefEntry parameterRef="USEC"/>
                 </xtce:EntryList>

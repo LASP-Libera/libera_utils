@@ -24,17 +24,17 @@ def test_type(request):
 
 
 @pytest.fixture
-def setup_jpss_kernel_maker_environment_with_manifest(
+def setup_jpss1_kernel_maker_environment_with_manifest(
     test_type,
     generate_input_manifest_local,
     generate_input_manifest_s3,
-    test_pds_file_1,
-    test_pds_file_2,
-    test_pds_file_3,
+    test_jpss1_pds_file_1,
+    test_jpss1_pds_file_2,
+    test_jpss1_pds_file_3,
     create_mock_bucket,
     short_tmp_path,
 ):
-    data_files = [str(test_pds_file_1), str(test_pds_file_2), str(test_pds_file_3)]
+    data_files = [str(test_jpss1_pds_file_1), str(test_jpss1_pds_file_2), str(test_jpss1_pds_file_3)]
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3(*data_files)
         bucket = create_mock_bucket()

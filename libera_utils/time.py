@@ -41,6 +41,9 @@ PRINTABLE_TS_FORMAT = "%Y%m%dT%H%M%S"
 
 NUMERIC_DOY_TS_FORMAT = "%y%j%H%M%S"
 
+# Epoch recommended by CCSDS and used by JPSS4 and Libera
+CCSDS_EPOCH = datetime.fromisoformat("1958-01-01")
+
 
 def et_2_timestamp(et: float | Collection[float] | np.ndarray, fmt: str = "%Y%m%dT%H%M%S.%f") -> str | Collection[str]:
     """
@@ -233,8 +236,8 @@ def multipart_to_dt64(
     ms_field: str | None = None,
     us_field: str | None = None,
     s_field: str | None = None,
-    epoch: str = "1958-01-01",
-):
+    epoch: str | datetime = CCSDS_EPOCH,
+) -> pd.Series:
     """Convert multipart time fields to a datetime64 time.
 
     Parameters
@@ -249,7 +252,7 @@ def multipart_to_dt64(
         Name of the microsecond count field.
     s_field : str | None, optional
         Name of the second count field.
-    epoch : str, optional
+    epoch : str | datetime
         Date time string of the zero-offset epoch. Default="1958-01-01"
 
     Returns

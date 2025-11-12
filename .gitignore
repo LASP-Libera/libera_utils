@@ -20,6 +20,7 @@ analysis
 coverage_report
 corbertura_report.xml
 tests/test_data/hidden
+prof
 
 # Local Installation Artifacts #
 ################################

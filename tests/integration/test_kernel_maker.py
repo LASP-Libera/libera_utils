@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
-def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tmp_path, curryer_lsk):
+def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
@@ -24,7 +24,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
         return_value=short_tmp_path,
     ):
         kernel_maker.from_args(
-            input_data_files=[str(test_pds_file_1)],
+            input_data_files=[str(test_jpss1_pds_file_1)],
             kernel_identifier="JPSS-SPK",
             output_dir=str(short_tmp_path),
             overwrite=False,
@@ -40,7 +40,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_pds_file_1, short_tm
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_spk_aws(
     mocked_get_current_version_str,
-    test_pds_file_1,
+    test_jpss1_pds_file_1,
     create_mock_bucket,
     write_file_to_s3,
     wrapper,
@@ -51,8 +51,8 @@ def test_make_jpss_spk_aws(
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
-    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_pds_file_1.name}"
-    write_file_to_s3(test_pds_file_1, kernel_uri)
+    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_jpss1_pds_file_1.name}"
+    write_file_to_s3(test_jpss1_pds_file_1, kernel_uri)
     packet_s3_path = wrapper(f"{kernel_uri}")
     s3_output_directory = f"s3://{bucket}/{key}/kernel_output/"
 
@@ -72,7 +72,7 @@ def test_make_jpss_spk_aws(
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
-def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp_path, curryer_lsk):
+def test_make_jpss_ck(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
     """Test creating a CK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
@@ -81,7 +81,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
         return_value=short_tmp_path,
     ):
         kernel_maker.from_args(
-            input_data_files=[str(test_pds_file_1)],
+            input_data_files=[str(test_jpss1_pds_file_1)],
             kernel_identifier="JPSS-CK",
             output_dir=str(short_tmp_path),
             overwrite=False,
@@ -97,7 +97,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_pds_file_1, short_tmp
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_ck_aws(
     mocked_get_current_version_str,
-    test_pds_file_1,
+    test_jpss1_pds_file_1,
     create_mock_bucket,
     write_file_to_s3,
     wrapper,
@@ -108,8 +108,8 @@ def test_make_jpss_ck_aws(
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
-    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_pds_file_1.name}"
-    write_file_to_s3(test_pds_file_1, kernel_uri)
+    kernel_uri = f"s3://{bucket}/{key}/test_kernel/{test_jpss1_pds_file_1.name}"
+    write_file_to_s3(test_jpss1_pds_file_1, kernel_uri)
     packet_s3_path = wrapper(f"{kernel_uri}")
     s3_output_directory = f"s3://{bucket}/{key}/kernel_output/"
 
@@ -238,13 +238,13 @@ def test_make_el_ck_aws(
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
 def test_make_jpss_kernels_from_manifest(
-    mocked_get_current_version_str, setup_jpss_kernel_maker_environment_with_manifest, curryer_lsk
+    mocked_get_current_version_str, setup_jpss1_kernel_maker_environment_with_manifest, curryer_lsk
 ):
     # Test that the kernels are generated when no desired range
     # is given.
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
-    input_manifest_path, output_path = setup_jpss_kernel_maker_environment_with_manifest
+    input_manifest_path, output_path = setup_jpss1_kernel_maker_environment_with_manifest
 
     mani_out = kernel_maker.from_manifest(input_manifest_path, ["JPSS-CK", "JPSS-SPK"], output_path)
 

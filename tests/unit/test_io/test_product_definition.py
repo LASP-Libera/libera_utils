@@ -11,8 +11,8 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
 
 
-class TestDataProductDefinition:
-    """Tests for the DataProductDefinition class."""
+class TestLiberaDataProductDefinition:
+    """Tests for the LiberaDataProductDefinition class."""
 
     def test_valid_definition(self, test_product_definition):
         """Test loading a valid product definition."""
@@ -458,8 +458,8 @@ class TestVariableCreateMethods:
             var_def.create_conforming_data_array(data, "fil_rad", {})
 
 
-class TestDataProductDefinitionCreateMethods:
-    """Tests for DataProductDefinition.create_conforming_dataset method"""
+class TestLiberaDataProductDefinitionCreateMethods:
+    """Tests for LiberaDataProductDefinition.create_conforming_dataset method"""
 
     def test_create_conforming_dataset(self, test_product_definition):
         """Test creating a valid Dataset from numpy arrays"""
