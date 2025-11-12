@@ -23,10 +23,10 @@ def test_manifest_from_file(test_jpss_manifest):
     assert isinstance(m.configuration, dict)
 
 
-def test_manifest_constructor_with_file_list(test_txt, test_construction_record_1):
+def test_manifest_constructor_with_file_list(test_txt, test_jpss1_cr_1):
     m = Manifest(
         manifest_type=ManifestType.INPUT,
-        files=[test_txt, test_construction_record_1],
+        files=[test_txt, test_jpss1_cr_1],
     )
     m.validate_checksums()
     assert len(m.files) == 2
@@ -40,7 +40,7 @@ def test_manifest_add_relative_path_file_error():
         m.add_files(Path("relative/a_file.txt"))
 
 
-def test_manifest_add_files_to_manifest_local(test_jpss_manifest, test_txt, test_construction_record_1):
+def test_manifest_add_files_to_manifest_local(test_jpss_manifest, test_txt, test_jpss1_cr_1):
     """Test factory method for adding files to a manifest with checksum and local paths"""
     m = Manifest(
         manifest_type=ManifestType.INPUT,
@@ -50,14 +50,14 @@ def test_manifest_add_files_to_manifest_local(test_jpss_manifest, test_txt, test
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 1
 
-    more_files = (test_txt, test_construction_record_1)
+    more_files = (test_txt, test_jpss1_cr_1)
     m.add_files(*more_files)
     m.validate_checksums()
     assert len(m.files) == initial_list_len + 3
 
 
 def test_manifest_add_files_to_manifest_s3(
-    test_jpss_manifest, test_txt, test_construction_record_1, create_mock_bucket, write_file_to_s3
+    test_jpss_manifest, test_txt, test_jpss1_cr_1, create_mock_bucket, write_file_to_s3
 ):
     """Test factory method for adding files to a manifest with checksum with S3 paths.
     Ensures functionality for single and multiple file additions."""
@@ -66,7 +66,7 @@ def test_manifest_add_files_to_manifest_s3(
     text_paths = (f"s3://{bucket.name}/test_file2.txt", f"s3://{bucket.name}/test_construction_record.PDS")
     write_file_to_s3(test_jpss_manifest, manifest_path)
     write_file_to_s3(test_txt, text_paths[0])
-    write_file_to_s3(test_construction_record_1, text_paths[1])
+    write_file_to_s3(test_jpss1_cr_1, text_paths[1])
 
     m = Manifest(
         manifest_type=ManifestType.INPUT,

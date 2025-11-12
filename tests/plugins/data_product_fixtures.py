@@ -7,7 +7,7 @@ from xarray import DataArray, Dataset
 
 @pytest.fixture
 def test_dataset():
-    """Test Dataset for testing the validation functions of the DataProductDefinition class
+    """Test Dataset for testing the validation functions of the LiberaDataProductDefinition class
 
     This is a fully manually created Dataset object that perfectly matches the data product definition in
     unit_test_product_definition.yml

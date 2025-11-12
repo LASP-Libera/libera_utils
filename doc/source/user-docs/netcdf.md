@@ -59,7 +59,7 @@ The function automatically:
 ## Advanced Usage
 
 There are a few other APIs that may be useful for debugging data product creation during development. Once a data product definition is working,
-the proper approach is to call `write_libera_data_product` with `strict=True`.
+the proper approach is to call `write_libera_data_product` with `strict=True` (the default).
 
 ### Creation, Enforcement, and Validation for Existing Dataset
 

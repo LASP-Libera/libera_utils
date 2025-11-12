@@ -61,33 +61,53 @@ def test_jpss_manifest(test_data_path):
 
 
 @pytest.fixture
-def test_construction_record_1(test_data_path):
-    """Path to test construction record"""
-    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099051420500.PDS"
+def test_jpss1_cr_1(test_data_path):
+    """Path to test JPSS-1 construction record"""
+    return test_data_path / "packets/jpss1_sc_pos_packets/P1590011AAAAAAAAAAAAAT21099051420500.PDS"
 
 
 @pytest.fixture
-def test_pds_file_1(test_data_path):
-    """Path to the test PDS file associated with construction record 1"""
-    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099051420501.PDS"
+def test_jpss1_pds_file_1(test_data_path):
+    """Path to the test JPSS-1 PDS file associated with construction record 1"""
+    return test_data_path / "packets/jpss1_sc_pos_packets/P1590011AAAAAAAAAAAAAT21099051420501.PDS"
 
 
 @pytest.fixture
-def test_construction_record_2(test_data_path):
-    """Path to test construction record"""
-    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099065436900.PDS"
+def test_jpss1_cr_2(test_data_path):
+    """Path to test JPSS-1 construction record"""
+    return test_data_path / "packets/jpss1_sc_pos_packets/P1590011AAAAAAAAAAAAAT21099065436900.PDS"
 
 
 @pytest.fixture
-def test_pds_file_2(test_data_path):
-    """Path to the test PDS file associated with construction record 2"""
-    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099065436901.PDS"
+def test_jpss1_pds_file_2(test_data_path):
+    """Path to the test JPSS-1 PDS file associated with construction record 2"""
+    return test_data_path / "packets/jpss1_sc_pos_packets/P1590011AAAAAAAAAAAAAT21099065436901.PDS"
 
 
 @pytest.fixture
-def test_pds_file_3(test_data_path):
-    """Path to the test PDS file associated with construction record 3"""
-    return test_data_path / "jpss_sc_position_packets/P1590011AAAAAAAAAAAAAT21099091211401.PDS"
+def test_jpss1_cr_3(test_data_path):
+    """Path to test JPSS-1 construction record"""
+    return test_data_path / "packets/jpss1_sc_pos_packets/P1590011AAAAAAAAAAAAAT21099091211400.PDS"
+
+
+@pytest.fixture
+def test_jpss1_pds_file_3(test_data_path):
+    """Path to the test JPSS-1 PDS file associated with construction record 3"""
+    return test_data_path / "packets/jpss1_sc_pos_packets/P1590011AAAAAAAAAAAAAT21099091211401.PDS"
+
+
+# JPSS-4 PDS Data
+# ---------------
+@pytest.fixture
+def test_jpss4_cr_1(test_data_path):
+    """Path to test JPSS4 construction record"""
+    return test_data_path / "packets/jpss4_sc_pos_packets/P1790011AAAAAAAAAAAAAT25255141303500.PDS"
+
+
+@pytest.fixture
+def test_jpss4_pds_file_1(test_data_path):
+    """Path to the test JPSS4 PDS file associated with construction record 1"""
+    return test_data_path / "packets/jpss4_sc_pos_packets/P1790011AAAAAAAAAAAAAT25255141303501.PDS"
 
 
 # Libera ISTR Packets
@@ -169,7 +189,7 @@ def test_product_definition(product_definitions_test_data_path):
 def test_camera_product_definition(product_definitions_test_data_path):
     """Path to a full camera product definition yaml file for unit testing
 
-    This file contains a complete DataProductDefinition for camera data products,
+    This file contains a complete LiberaDataProductDefinition for camera data products,
     including attributes, coordinates, and variables sections.
     """
     return product_definitions_test_data_path / "test_camera_product_definition.yml"

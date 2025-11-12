@@ -77,7 +77,7 @@ class DataProductIdentifier(StrEnum):
 
     _level: DataLevel
 
-    def __new__(cls, value, level=None):
+    def __new__(cls, value: str, level: DataLevel = None):  # type: ignore
         """Create a new DataProductIdentifier with embedded metadata.
 
         Parameters
@@ -249,7 +249,7 @@ class ProcessingStepIdentifier(StrEnum):
 
     _products: list["DataProductIdentifier"]
 
-    def __new__(cls, value, products=None):
+    def __new__(cls, value: str, products: list[DataProductIdentifier] = None):  # type: ignore
         """Create a new ProcessingStepIdentifier with embedded metadata.
 
         Parameters
@@ -267,15 +267,6 @@ class ProcessingStepIdentifier(StrEnum):
         obj._value_ = value
         obj._products = products or []
         return obj
-
-    # TODO: [LIBSDC-485] Remove these dummy L1a PSIs.
-    #   They are only here because the Job Creator and Completion Checker require a "completed" processing step
-    #   at the beginning of a DAG. Since L0 Preprocessing isn't a real processing step, the Job Creator and
-    #   Completion Checker should not require these
-    l1a_rad = ("l1a-rad", [DataProductIdentifier.l1a_icie_rad_sample_decoded])
-    l1a_cam = ("l1a-cam", [DataProductIdentifier.l1a_icie_wfov_sci_decoded])
-    l1a_jpss = ("l1a-jpss", [DataProductIdentifier.l1a_jpss_sc_pos_decoded])
-    l1a_azel = ("l1a-azel", [DataProductIdentifier.l1a_icie_axis_sample_decoded])
 
     # Calibration processing steps
     cal_rad = ("cal-rad", [DataProductIdentifier.cal_rad])
@@ -466,7 +457,10 @@ class LiberaApid(IntEnum):
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
-        """Get the DataProductIdentifier for L0 PDS files with this APID"""
+        """Get the DataProductIdentifier for L0 PDS files with this APID
+
+        This relies on the strict naming convention that the packet name is part of the L0 data product ID name
+        """
         l0_dpis = (dpi for dpi in DataProductIdentifier if dpi.data_level == DataLevel.L0)
         for dpi in l0_dpis:
             if self.name in dpi.name:
