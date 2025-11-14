@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.2.0"
+version = "5.2.1"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -56,6 +56,7 @@ dependencies = [
     "importlib-metadata>=4.8.1,<5",
     "python-ulid>=2.4.0,<3",
     "pyyaml>=6.0.2,<7",
+    "pandas (>=2.3.2,<3.0.0)",
 ]
 
 [project.urls]
