@@ -36,5 +36,7 @@
   "LIBERA_PRODUCT_DEFINITIONS_PATH": "{LIBERA_UTILS_DATA_DIR}/product_definitions",
   "LIBERA_DIMENSIONS_DEFINITION_PATH": "{LIBERA_UTILS_DATA_DIR}/libera_dimensions.yml",
   "LIBERA_GLOBAL_PRODUCT_ATTRIBUTES_PATH": "{LIBERA_UTILS_DATA_DIR}/static_project_metadata.yml",
-  "TEST_KEY": -999
+  "TEST_KEY": -999,
+  "TRMM_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/trmm.csv",
+  "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/erbe.csv"
 }

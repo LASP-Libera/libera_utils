@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.2.1
+
+- Added scene_id module for processing footprint data to produce datasets with assigned scene IDs according to libera_utils standard definitions.
+
 ## 5.2.0
 
 - FEAT: Implement processing to L1A Dataset from packets
