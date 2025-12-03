@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.2.2
+
+- Updated the Curryer version pin to use at least 0.2.0, which is when the problematic subdependencies were removed
+
 ## 5.2.1
 
 - Added scene_id module for processing footprint data to produce datasets with assigned scene IDs according to libera_utils standard definitions.
