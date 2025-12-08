@@ -28,46 +28,26 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
     input_data_file = Path(input_data_file)
 
     if "Fixed_Ephemeris" in input_data_file.name:
-        input_dataset = pd.read_csv(input_data_file, index_col=0)
-
-        input_dataset = input_dataset.rename(
-            columns={
-                "x (km)": "ADGPSPOSX",
-                "y (km)": "ADGPSPOSY",
-                "z (km)": "ADGPSPOSZ",
-                "vx (km/sec)": "ADGPSVELX",
-                "vy (km/sec)": "ADGPSVELY",
-                "vz (km/sec)": "ADGPSVELZ",
-                "q1": "ADCFAQ1",
-                "q2": "ADCFAQ2",
-                "q3": "ADCFAQ3",
-                "q4": "ADCFAQ4",
-            }
-        )
-
-        for col in ["ADGPSPOSX", "ADGPSPOSY", "ADGPSPOSZ", "ADGPSVELX", "ADGPSVELY", "ADGPSVELZ"]:
-            input_dataset[col] *= 1e3  # KM to meters.
-
-        input_dataset["SPK_ET"] = spicetime.adapt(input_dataset.index.values, "iso", "et")
-        input_dataset["CK_ET"] = spicetime.adapt(input_dataset.index.values, "iso", "et")
-
-        # For this test's purpose, it doesn't matter if we use SPK or CK here.
-        time_span = spicetime.adapt([input_dataset["SPK_ET"].iloc[0], input_dataset["SPK_ET"].iloc[-1]], "et", "dt64")
+        # Spacecraft ephemeris and attitude csv containing time, position/velocity, and attitude quaternions.
+        input_dataset, time_span = kernel_maker.create_jpss_kernel_dataframe_from_csv(input_data_file)
 
     elif "Libya-4_access003" in input_data_file.name:
+        # Instrument azimuth angle csv containing time and azimuth angle values (and other fields we don't need).
         input_az_data = pd.read_csv(input_data_file, index_col=0)
-        input_az_data = input_az_data.rename(columns={"Command Azimuth (deg)": "AZ_ANGLE"})
+        input_az_data = input_az_data.rename(columns={"Command Azimuth (deg)": "ICIE__AXIS_AZ_FILT"})
 
         az_timetags = pd.to_datetime(input_az_data.index.values)
-        input_dataset = input_az_data[["AZ_ANGLE"]]
-        input_dataset["AZ_ET"] = spicetime.adapt(az_timetags, "dt64", "et")
+        input_dataset = input_az_data[["ICIE__AXIS_AZ_FILT"]]
+        input_dataset["ICIE__AXIS_AZ_FILT"] = np.deg2rad(input_dataset["ICIE__AXIS_AZ_FILT"].to_numpy())
+        input_dataset["AXIS_SAMPLE_ICIE_ET"] = spicetime.adapt(az_timetags, "dt64", "et")
 
         time_span = [az_timetags[0], az_timetags[-1]]
         time_span = [time_span[0].to_pydatetime(), time_span[1].to_pydatetime()]
 
     elif "libera_el" in input_data_file.name:
+        # Instrument elevation angle csv containing time and elevation mechanism angle values.
         input_el_data = pd.read_csv(input_data_file, index_col=0)
-        input_el_data = input_el_data.rename(columns={"El Angle [deg]": "EL_ANGLE"})
+        input_el_data = input_el_data.rename(columns={"El Angle [deg]": "ICIE__AXIS_EL_FILT"})
 
         # NOTE: Also depends on the Az file (name is assumed!)
         input_az_file = input_data_file.parent / "Libya-4_access003.csv"
@@ -84,19 +64,20 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
         el_values = []
         prev_timetag = az_timetags[0]
         for ith in range(n_loops):
-            el_values.append(input_el_data["EL_ANGLE"].values)
+            el_values.append(input_el_data["ICIE__AXIS_EL_FILT"].values)
             el_timetags.append(prev_timetag + el_delta_sec)
             prev_timetag = el_timetags[-1][-1]
 
         el_timetags = pd.to_datetime(np.hstack(el_timetags))
         el_values = np.hstack(el_values)
         el_values = el_values[el_timetags <= az_timetags[-1]]
+        el_values = np.deg2rad(el_values)
         el_timetags = el_timetags[el_timetags <= az_timetags[-1]]
 
         input_dataset = pd.DataFrame(
             {
-                "EL_ANGLE": el_values,
-                "EL_ET": spicetime.adapt(el_timetags, "dt64", "et"),
+                "ICIE__AXIS_EL_FILT": el_values,
+                "AXIS_SAMPLE_ICIE_ET": spicetime.adapt(el_timetags, "dt64", "et"),
             }
         )
 
@@ -109,8 +90,10 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
     return input_dataset, time_span
 
 
-@mock.patch.object(kernel_maker, "preprocess_data", preprocess_preliminary_data)
-def test_geolocate_earth_target(curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch):
+@mock.patch.object(kernel_maker.xr, "open_dataset", return_value=mock.MagicMock())
+def test_geolocate_earth_target(
+    mock_open_dataset, curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch
+):
     """Integration test for an Earth Target scenario."""
 
     # Force the config gets to use alternative configuration files for JPSS-4.
@@ -130,17 +113,29 @@ def test_geolocate_earth_target(curryer_lsk, short_tmp_path, spice_test_data_pat
     input_az_file = test_data_path / "tier1_geo" / "Libya-4_access003.csv"
     input_el_file = test_data_path / "tier1_geo" / "libera_el_cross_track_scan_profile_72deg_2021-10.csv"
 
-    sc_spk_file = kernel_maker.from_args([input_sc_file], "JPSS-SPK", short_tmp_path)
-    sc_ck_file = kernel_maker.from_args([input_sc_file], "JPSS-CK", short_tmp_path)
-    az_ck_file = kernel_maker.from_args([input_az_file], "AZROT-CK", short_tmp_path)
-    el_ck_file = kernel_maker.from_args([input_el_file], "ELSCAN-CK", short_tmp_path)
+    # Generate Curryer-friendly kernel dataframes from the preliminary CSV data
+    mock_sc_kernel_dataframe = preprocess_preliminary_data(input_sc_file)
+    mock_az_kernel_dataframe = preprocess_preliminary_data(input_az_file)
+    mock_el_kernel_dataframe = preprocess_preliminary_data(input_el_file)
+
+    with mock.patch("libera_utils.kernel_maker.create_kernel_dataframe_from_l1a") as mock_create_l1a:
+        # Mock create_kernel_dataframe_from_l1a to return the dataframes from preliminary CSV data
+        mock_create_l1a.return_value = mock_sc_kernel_dataframe
+        sc_spk_file = kernel_maker.create_kernel_from_l1a(input_sc_file, "JPSS-SPK", short_tmp_path)
+        sc_ck_file = kernel_maker.create_kernel_from_l1a(input_sc_file, "JPSS-CK", short_tmp_path)
+
+        mock_create_l1a.return_value = mock_az_kernel_dataframe
+        az_ck_file = kernel_maker.create_kernel_from_l1a(input_az_file, "AZROT-CK", short_tmp_path)
+
+        mock_create_l1a.return_value = mock_el_kernel_dataframe
+        el_ck_file = kernel_maker.create_kernel_from_l1a(input_el_file, "ELSCAN-CK", short_tmp_path)
 
     generated_kernels.extend([sc_spk_file, sc_ck_file, az_ck_file, el_ck_file])
 
     # Load time to geolocate values onto. Email said to use 100hz cadence.
     # Offsetting AZ times by one index since EL times start at +0.001.
     az_dataset, _ = preprocess_preliminary_data(input_az_file)
-    az_utc_times = spicetime.adapt(az_dataset["AZ_ET"], "et", "dt64")
+    az_utc_times = spicetime.adapt(az_dataset["AXIS_SAMPLE_ICIE_ET"], "et", "dt64")
     ugps_times = spicetime.adapt(pd.date_range(az_utc_times[1], az_utc_times[-2], freq="10ms", inclusive="left"), "iso")
 
     # Load meta kernel details.

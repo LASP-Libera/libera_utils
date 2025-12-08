@@ -7,66 +7,17 @@ import pytest
 import xarray as xr
 from cfchecker import cfchecks
 
-from libera_utils import packets
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
+from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.packet_configs import get_packet_config
+from libera_utils.l1a import packets
+from libera_utils.l1a.l1a_packet_configs import get_packet_config
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
 
 
-# TESTS OF FUNCTIONS TO BE REMOVED IN 5.2.1
-# -----------------------------------------
-def test_read_sc_packet_data(test_jpss1_pds_file_1):
-    """Test reading spacecraft packet data from real PDS file
-
-    Uses JPSS geolocation packet definition and verifies APID 11 parsing.
-    """
-    result_df = packets.read_sc_packet_data([test_jpss1_pds_file_1])
-
-    # Basic assertions
-    assert not result_df.empty, "DataFrame should not be empty"
-    assert len(result_df) > 0, "Should have parsed some packets"
-
-    # Verify APID filtering worked correctly
-    assert "PKT_APID" in result_df.columns, "DataFrame should contain PKT_APID column"
-    assert all(result_df["PKT_APID"] == 11), "All packets should have APID 11"
-
-
-def test_read_azel_packet_data(test_ccsds_2025_218_18_37_32, test_ccsds_2025_218_18_41_30):
-    """Test reading Az/El packet data from real CCSDS files
-
-    Uses AZEL packet definition and verifies APID 1048 parsing with
-    restructuring to 50 samples per packet. Tests with both new data files
-    that should have no duplicate timestamps.
-    """
-    result_df = packets.read_azel_packet_data([test_ccsds_2025_218_18_37_32, test_ccsds_2025_218_18_41_30])
-
-    # Basic assertions
-    assert not result_df.empty, "DataFrame should not be empty"
-    assert len(result_df) > 0, "Should have parsed some samples"
-
-    # Verify expected columns from restructuring
-    expected_columns = {"SAMPLE_SEC", "SAMPLE_USEC", "AZ_ANGLE_RAD", "EL_ANGLE_RAD"}
-    assert expected_columns.issubset(set(result_df.columns)), (
-        f"Missing expected columns: {expected_columns - set(result_df.columns)}"
-    )
-
-    # Verify sample count relationship (50 samples per packet)
-    # With the new test data files, there should be no duplicate timestamps
-    assert len(result_df) % 50 == 0, (
-        f"Sample count ({len(result_df)}) should be a multiple of 50 (50 samples per packet)"
-    )
-    assert len(result_df) >= 100, "Should have at least 100 samples (2 packets worth from 2 files)"
-
-    # Verify no duplicate timestamps (combination of SAMPLE_SEC and SAMPLE_USEC)
-    assert result_df[["SAMPLE_SEC", "SAMPLE_USEC"]].duplicated().sum() == 0, "Should have no duplicate timestamps"
-
-
-# L1A Packets Tests
-# -----------------
 def check_cf_conformance(file: str | Path, silent=True, **kwargs):
     """Use CFChecker to check file conformance to CF conventions
 
@@ -97,30 +48,81 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
 
 
 @pytest.mark.parametrize(
-    ("packet_file_fixtures", "apid", "product_definition_file"),
+    ("packet_file_fixtures", "apid", "product_definition_file", "time_dimension", "skip_header_bytes"),
     [
         (
             [
                 "test_jpss1_pds_file_1",
-                "test_jpss4_pds_file_1",
+                "test_jpss1_pds_file_2",
+                "test_jpss1_pds_file_3",
             ],
             LiberaApid.jpss_sc_pos,
             "jpss_sc_pos_l1a.yml",
+            "PACKET_JPSS_TIME",
+            0,
         ),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_axis_sample, "icie_axis_sample_l1a.yml"),
-        (["test_ccsds_2025_221_16_56_48"], LiberaApid.icie_rad_sample, "icie_rad_sample_l1a.yml"),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "icie_wfov_sci_l1a.yml"),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "icie_nom_hk_l1a.yml"),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "icie_crit_hk_l1a.yml"),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "icie_temp_hk_l1a.yml"),
+        (
+            ["test_jpss4_pds_file_1"],
+            LiberaApid.jpss_sc_pos,
+            "jpss_sc_pos_l1a.yml",
+            "PACKET_JPSS_TIME",
+            0,
+        ),
+        (
+            ["test_ccsds_2025_221_17_17_58"],
+            LiberaApid.icie_axis_sample,
+            "icie_axis_sample_l1a.yml",
+            "PACKET_ICIE_TIME",
+            8,
+        ),
+        (
+            ["test_ccsds_2025_221_16_56_48"],
+            LiberaApid.icie_rad_sample,
+            "icie_rad_sample_l1a.yml",
+            "PACKET_ICIE_TIME",
+            8,
+        ),
+        (
+            ["test_ccsds_2025_221_17_17_58"],
+            LiberaApid.icie_rad_sample,
+            "icie_rad_sample_l1a.yml",
+            "PACKET_ICIE_TIME",
+            8,
+        ),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "icie_wfov_sci_l1a.yml", "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "icie_nom_hk_l1a.yml", "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "icie_crit_hk_l1a.yml", "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "icie_temp_hk_l1a.yml", "PACKET_ICIE_TIME", 8),
     ],
-    ids=("SC_POS", "AXIS_SAMPLE", "RAD_SAMPLE", "WFOV_SCI", "NOM_HK", "CRIT_HK", "TEMP_HK"),
+    ids=(
+        "JPSS1_SC_POS",
+        "JPSS4_SC_POS",
+        "AXIS_SAMPLE",
+        "RAD_SAMPLE_1",
+        "RAD_SAMPLE_2",
+        "WFOV_SCI",
+        "NOM_HK",
+        "CRIT_HK",
+        "TEMP_HK",
+    ),
 )
-def test_process_packets_to_l1a_product(packet_file_fixtures, apid, product_definition_file, request, tmp_path):
+def test_process_packets_to_l1a_product(
+    packet_file_fixtures,
+    apid,
+    product_definition_file,
+    time_dimension,
+    skip_header_bytes,
+    request,
+    tmp_path,
+    monkeypatch,
+):
     """Test complete L1A processing pipeline: PDS files → L1A Dataset → DataProductConfig → NetCDF4"""
     # Get the actual test file from the fixture
-    packet_files = [request.getfixturevalue(f) for f in packet_file_fixtures]
+    packet_files: list[Path] = [request.getfixturevalue(f) for f in packet_file_fixtures]
     l1a_processing_config = get_packet_config(apid)  # Still needed for test assertions
+
+    # Set global config for skipping packet header bytes for ground test data
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", str(skip_header_bytes))
 
     print("Parsing packets to L1A dataset...")
     dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
@@ -169,8 +171,14 @@ def test_process_packets_to_l1a_product(packet_file_fixtures, apid, product_defi
         raise ValueError("After conformance enforcement, dataset is still not valid")
 
     # Write NetCDF for round trip testing
-    output_path = tmp_path / f"{apid.name}_l1a.nc"
-    dataset.to_netcdf(output_path)
+    output_filename = write_libera_data_product(
+        data_product_definition=product_definition_path,
+        data=dataset,
+        output_path=tmp_path,
+        time_variable=time_dimension,
+        strict=True,
+    )
+    output_path = output_filename.path
 
     print(f"   NetCDF file: {output_path.name}")
     assert output_path.exists(), "NetCDF file was not created"

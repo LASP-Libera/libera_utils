@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.4.0
+
+- REFACTOR: Refactor kernel_maker to use L1a Dataset object. Packet-based kernel creation is still possible via `create_kernels_from_packets`, which runs L1a processing internally
+- CONFIG: Update Curryer kernel configs to match Libera AXIS_SAMPLE packets fields
+- Move the L1A processing configurations to YAML instead of Python objects
+- BUGFIX: Fix bug in `packets.py::_drop_duplicates` to allow dropping based on coordinate or dimension
+
 ## 5.3.0
 
 - FEAT: scene_id module alpha release capable of identifying scenes from footprint data in Ceres SSF files.

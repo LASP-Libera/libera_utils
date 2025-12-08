@@ -536,12 +536,12 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
                     # Everything else is NetCDF4
                     extension = "nc"
 
-        if not data_level:
-            data_level = dpi.data_level
-        elif dpi.data_level != data_level:
-            warnings.warn(
+        if data_level and dpi.data_level != data_level:
+            raise ValueError(
                 f"Provided data level {data_level} does not match data level of data product identifier {dpi}:{dpi.data_level}"
             )
+
+        data_level = dpi.data_level
 
         return cls._from_filename_parts(
             basepath=basepath,

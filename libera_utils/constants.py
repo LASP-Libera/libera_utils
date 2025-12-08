@@ -468,3 +468,33 @@ class LiberaApid(IntEnum):
         raise ValueError(
             f"Unable to find PDS DataProductIdentifier associated with {self}. This may mean the DPI enum name does not match our convention."
         )
+
+
+def get_l1a_apid(data_product: DataProductIdentifier) -> LiberaApid:
+    """Get the LiberaApid for an L1A decoded data product
+
+    Parameters
+    ----------
+    data_product : DataProductIdentifier
+        The L1A decoded data product to get the APID for
+
+    Returns
+    -------
+    LiberaApid
+        The APID associated with the L1A decoded data product
+
+    Raises
+    ------
+    ValueError
+        If the data product is not an L1A decoded product or if no APID is found
+    """
+    if data_product.data_level != DataLevel.L1A:
+        raise ValueError(f"Data product {data_product} is not an L1A decoded product")
+
+    for apid in LiberaApid:
+        # Use the naming convention for L1a products and APID packet names to determine the APID associated with
+        # an L1A file
+        if apid.name in data_product.name.lower():
+            return apid
+
+    raise ValueError(f"Unable to find APID associated with L1A data product {data_product}")

@@ -16,7 +16,7 @@
   },
   "input_data": null,
   "input_columns": {
-    "CK_ET": "et",
+    "ADCFA_JPSS_ET": "et",
     "ADCFAQ4": "quaternion_c",
     "ADCFAQ1": "quaternion_x",
     "ADCFAQ2": "quaternion_y",
