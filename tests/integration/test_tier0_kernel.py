@@ -45,8 +45,8 @@ def noaa20_spacecraft_data(test_data_path):
 
     spk_dt64 = time.multipart_to_dt64(input_sc_data, "ADAET1DAY", "ADAET1MS", "ADAET1US")
     ck_dt64 = time.multipart_to_dt64(input_sc_data, "ADAET2DAY", "ADAET2MS", "ADAET2US")
-    input_sc_data["SPK_ET"] = spicetime.adapt(spk_dt64.values, "dt64", "et")
-    input_sc_data["CK_ET"] = spicetime.adapt(ck_dt64.values, "dt64", "et")
+    input_sc_data["ADGPS_JPSS_ET"] = spicetime.adapt(spk_dt64.values, "dt64", "et")
+    input_sc_data["ADCFA_JPSS_ET"] = spicetime.adapt(ck_dt64.values, "dt64", "et")
 
     return input_sc_data
 
@@ -60,6 +60,18 @@ def noaa20_azel_data(test_data_path):
     # Pointing timing has an offset relative to S/C timing (unknown why).
     input_azel_data["AZ_ET"] += 0.024905
     input_azel_data["EL_ET"] += 0.024905
+    # Expect the times for both Az and El sampling to be the same (as they are in Libera AXIS_SAMPLE packets)
+    assert all(input_azel_data["AZ_ET"].to_numpy() == input_azel_data["EL_ET"].to_numpy())
+    # Drop one column and rename the other
+    input_azel_data.drop(columns=["EL_ET"])
+    # AXIS_SAMPLE_ICIE_ET is the time column used for generating both Az and El CKs
+    input_azel_data.rename(
+        columns={"AZ_ANGLE": "ICIE__AXIS_AZ_FILT", "EL_ANGLE": "ICIE__AXIS_EL_FILT", "AZ_ET": "AXIS_SAMPLE_ICIE_ET"},
+        inplace=True,
+    )
+    # Libera axis samples come in as radians so convert for consistency
+    input_azel_data["ICIE__AXIS_AZ_FILT"] = np.deg2rad(input_azel_data["ICIE__AXIS_AZ_FILT"])
+    input_azel_data["ICIE__AXIS_EL_FILT"] = np.deg2rad(input_azel_data["ICIE__AXIS_EL_FILT"])
 
     return input_azel_data
 
@@ -160,7 +172,7 @@ def test_make_spacecraft_kernels(curryer_lsk, noaa20_spacecraft_data, short_tmp_
     # Load the kernels to verify the values match what we put in.
     with sp.ext.load_kernel([mkrn.mission_kernels, generated_kernels]):
         # Position of the SC within ECEF.
-        ugps_times = spicetime.adapt(noaa20_spacecraft_data["SPK_ET"], "et")
+        ugps_times = spicetime.adapt(noaa20_spacecraft_data["ADGPS_JPSS_ET"], "et")
         pos_data = sp.ext.query_ephemeris(ugps_times, "NOAA20_SC", "EARTH", ref_frame="ITRF93", velocity=True)
         pos_data = pos_data.values * 1e3
         exp_data = noaa20_spacecraft_data[
@@ -171,7 +183,7 @@ def test_make_spacecraft_kernels(curryer_lsk, noaa20_spacecraft_data, short_tmp_
         # Note that the kernel definition forces the input quat signs to be
         # flipped, hence why we query for a rotation from the SC to the Earth.
         rot_data = []
-        for et_time in noaa20_spacecraft_data["CK_ET"]:
+        for et_time in noaa20_spacecraft_data["ADCFA_JPSS_ET"]:
             tmat = sp.pxform("NOAA20_SC_COORD", "J2000", et_time)
             rot_data.append(sp.m2q(tmat))
         rot_data = np.array(rot_data)
@@ -223,15 +235,15 @@ def test_make_spacecraft_azel_kernels(curryer_lsk, noaa20_azel_data, short_tmp_p
     # Load the kernels to verify the values match what we put in.
     with sp.ext.load_kernel([mkrn.mission_kernels, generated_kernels]):
         az_angles = []
-        for et_time in noaa20_azel_data["AZ_ET"].values:
+        for et_time in noaa20_azel_data["AXIS_SAMPLE_ICIE_ET"].values:
             tmat = sp.pxform("LIBERA_BASE_COORD", "LIBERA_AZ_COORD", et_time)
-            az_angles.append(np.rad2deg(sp.m2eul(tmat, 1, 2, 3))[2])
-        az_angles = np.array(az_angles) + 360  # Range 0-360 instead of -180-180.
-        npt.assert_allclose(noaa20_azel_data["AZ_ANGLE"].values, az_angles)
+            az_angles.append(sp.m2eul(tmat, 1, 2, 3)[2])
+        az_angles = np.array(az_angles) + 2 * np.pi  # Range (0, 2*pi) instead of (-pi, pi).
+        npt.assert_allclose(noaa20_azel_data["ICIE__AXIS_AZ_FILT"].values, az_angles)
 
         el_angles = []
-        for et_time in noaa20_azel_data["EL_ET"].values:
+        for et_time in noaa20_azel_data["AXIS_SAMPLE_ICIE_ET"].values:
             tmat = sp.pxform("LIBERA_AZ_COORD", "LIBERA_EL_COORD", et_time)
-            el_angles.append(np.rad2deg(sp.m2eul(tmat, 1, 2, 3))[0])
+            el_angles.append(sp.m2eul(tmat, 1, 2, 3)[0])
         el_angles = np.array(el_angles)
-        npt.assert_allclose(noaa20_azel_data["EL_ANGLE"].values, el_angles, rtol=7e-5)
+        npt.assert_allclose(noaa20_azel_data["ICIE__AXIS_EL_FILT"].values, el_angles, rtol=7e-5)

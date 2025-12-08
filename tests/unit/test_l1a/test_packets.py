@@ -1,6 +1,5 @@
-"""Tests for libera_utils.io.packets module"""
+"""Tests for libera_utils.l1a.packets module for L1A processing"""
 
-from dataclasses import dataclass, field
 from datetime import timedelta
 from unittest import mock
 
@@ -9,9 +8,9 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from libera_utils import packets as libera_packets
 from libera_utils.constants import LiberaApid
-from libera_utils.packet_configs import (
+from libera_utils.l1a import packets as libera_packets
+from libera_utils.l1a.l1a_packet_configs import (
     AggregationGroup,
     PacketConfiguration,
     SampleGroup,
@@ -20,123 +19,7 @@ from libera_utils.packet_configs import (
 )
 
 
-@mock.patch("libera_utils.packets.create_dataset")
-def test_parse_packets_to_dataframe_with_apid_filtering(mock_create_dataset):
-    """Test parse_packets_to_dataframe properly filters by APID and removes duplicates"""
-    # Mock the create_dataset return value - simulate multiple APIDs
-    # Create actual duplicates by using identical data in all columns
-    mock_df_1048 = pd.DataFrame(
-        {
-            "VERSION": [0, 0, 0],
-            "TYPE": [0, 0, 0],
-            "PKT_APID": [1048, 1048, 1048],
-            "SRC_SEQ_CTR": [2428, 2429, 2428],  # Third row same as first
-            "PARAM_1": ["foo", "bar", "foo"],  # Third row same as first
-            "PARAM_2": [1.1, 2.2, 1.1],  # Third row same as first
-        }
-    )
-    mock_df_1048.index.name = "packet"
-    mock_dataset_1048 = mock_df_1048.to_xarray()
-
-    mock_df_1059 = pd.DataFrame(
-        {
-            "VERSION": [0, 0],
-            "TYPE": [0, 0],
-            "PKT_APID": [1059, 1059],
-            "SRC_SEQ_CTR": [85, 86],
-            "PARAM_1": ["baz", "qux"],
-            "PARAM_2": [3.3, 4.4],
-        }
-    )
-    mock_df_1059.index.name = "packet"
-    mock_dataset_1059 = mock_df_1059.to_xarray()
-
-    mock_create_dataset.return_value = {1048: mock_dataset_1048, 1059: mock_dataset_1059}
-
-    # Test filtering for APID 1048
-    result_df = libera_packets.parse_packets_to_dataframe(
-        packet_definition="fake_path.xml", packet_data_filepaths=["fake_file.bin"], apid=1048
-    )
-
-    # Should be a DataFrame
-    assert isinstance(result_df, pd.DataFrame)
-
-    # Should only contain APID 1048 packets
-    assert all(result_df["PKT_APID"] == 1048)
-
-    # Should have removed duplicates (2 unique packets from 3 original)
-    assert len(result_df) == 2
-
-    # Verify duplicate removal worked correctly - should have foo and bar
-    assert set(result_df["PARAM_1"]) == {"foo", "bar"}
-
-
-@mock.patch("libera_utils.packets.create_dataset")
-def test_parse_packets_to_dataframe_no_apid_specified(mock_create_dataset):
-    """Test parse_packets_to_dataframe with no APID specified"""
-    # Mock single APID dataset
-    mock_df = pd.DataFrame(
-        {
-            "VERSION": [0, 0],
-            "TYPE": [0, 0],
-            "PKT_APID": [1048, 1048],
-            "SRC_SEQ_CTR": [2428, 2429],
-            "PARAM_1": ["foo", "bar"],
-            "PARAM_2": [1.1, 2.2],
-        }
-    )
-    mock_df.index.name = "packet"
-    mock_dataset = mock_df.to_xarray()
-
-    mock_create_dataset.return_value = {1048: mock_dataset}
-
-    result_df = libera_packets.parse_packets_to_dataframe(
-        packet_definition="fake_path.xml", packet_data_filepaths=["fake_file.bin"]
-    )
-
-    assert isinstance(result_df, pd.DataFrame)
-    assert len(result_df) == 2
-
-
-@mock.patch("libera_utils.packets.create_dataset")
-def test_parse_packets_to_dataframe_multiple_apids_no_filter(mock_create_dataset):
-    """Test parse_packets_to_dataframe raises error when multiple APIDs present and none specified"""
-    mock_df_1048 = pd.DataFrame({"PKT_APID": [1048]})
-    mock_df_1048.index.name = "packet"
-
-    mock_df_1059 = pd.DataFrame({"PKT_APID": [1059]})
-    mock_df_1059.index.name = "packet"
-    mock_create_dataset.return_value = {1048: mock_df_1048.to_xarray(), 1059: mock_df_1059.to_xarray()}
-
-    with pytest.raises(ValueError, match="Multiple APIDs present.*You must specify which APID you want"):
-        libera_packets.parse_packets_to_dataframe(
-            packet_definition="fake_path.xml", packet_data_filepaths=["fake_file.bin"]
-        )
-
-
-@mock.patch("libera_utils.packets.create_dataset")
-def test_parse_packets_to_dataframe_apid_not_found(mock_create_dataset):
-    """Test parse_packets_to_dataframe when requested APID is not found"""
-    # Create a proper xarray Dataset with the expected dimensions
-    mock_df = pd.DataFrame({"PKT_APID": [1048, 1048], "PARAM_1": ["foo", "bar"]})
-    # Set index to 'packet' to match what Space Packet Parser would create
-    mock_df.index.name = "packet"
-    mock_dataset = mock_df.to_xarray()
-
-    mock_create_dataset.return_value = {1048: mock_dataset}
-
-    # Request APID that doesn't exist - should raise ValueError
-    with pytest.raises(ValueError, match="Requested APID 9999 not found in parsed packets"):
-        libera_packets.parse_packets_to_dataframe(
-            packet_definition="fake_path.xml", packet_data_filepaths=["fake_file.bin"], apid=9999
-        )
-
-
-# L1A Processing Unit Tests
-# ==========================
-
-
-@mock.patch("libera_utils.packets.create_dataset")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
 def test_parse_packets_to_dataset_with_single_apid(mock_create_dataset):
     """Test parse_packets_to_dataset returns correct dataset for specified APID"""
     # Create mock dataset for APID 1048
@@ -158,14 +41,14 @@ def test_parse_packets_to_dataset_with_single_apid(mock_create_dataset):
     assert len(result["PKT_APID"]) == 2
 
 
-@mock.patch("libera_utils.packets.create_dataset")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
 def test_parse_packets_to_dataset_apid_not_found(mock_create_dataset):
     """Test parse_packets_to_dataset raises ValueError when APID not in dataset"""
     mock_df = pd.DataFrame({"PKT_APID": [1048]})
     mock_df.index.name = "packet"
     mock_create_dataset.return_value = {1048: mock_df.to_xarray()}
 
-    with pytest.raises(ValueError, match="Requested APID 9999 not found"):
+    with pytest.raises(KeyError, match="Requested APID 9999 not found"):
         libera_packets.parse_packets_to_dataset(packet_files=["fake.bin"], packet_definition="fake.xml", apid=9999)
 
 
@@ -204,7 +87,25 @@ def test_drop_duplicates_with_duplicates():
     assert 300 in result_ds["time"].values
 
 
-@mock.patch("libera_utils.packets.multipart_to_dt64")
+def test_drop_duplicates_non_dimension_coordinate():
+    """Test _drop_duplicates with a non-dimension coordinate bound to a dimension"""
+    ds = xr.Dataset({"data": (["packet"], [10, 20, 30, 40, 50, 60])})
+    # Add non-dimension coordinate bound to "packet" dimension with duplicates
+    ds = ds.assign_coords({"packet_time": (["packet"], [1, 2, 5, 8, 8, 8])})
+
+    result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "packet_time")
+
+    # Should drop 2 duplicates (keep first occurrence of value 8)
+    assert n_duplicates == 2
+    # Should have 4 unique values: [1, 2, 5, 8]
+    assert len(result_ds["packet_time"]) == 4
+    assert list(result_ds["packet_time"].values) == [1, 2, 5, 8]
+    # Data should also be reduced accordingly (keep first 4 items)
+    assert len(result_ds["data"]) == 4
+    assert list(result_ds["data"].values) == [10, 20, 30, 40]
+
+
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
 def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
     """Test _expand_sample_times with single sample per packet"""
     # Create mock dataset
@@ -222,7 +123,7 @@ def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
     assert result.dtype == np.dtype("datetime64[us]")
 
 
-@mock.patch("libera_utils.packets.multipart_to_dt64")
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
 def test_expand_sample_times_multi_sample(mock_multipart_to_dt64):
     """Test _expand_sample_times with multiple samples per packet"""
     # Create mock dataset with 2 packets, 3 samples each
@@ -335,7 +236,7 @@ def test_get_expanded_field_names_with_epoch():
     assert result == expected
 
 
-@mock.patch("libera_utils.packets.multipart_to_dt64")
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
 def test_expand_sample_group_multi_sample(mock_multipart_to_dt64):
     """Test _expand_sample_group with multiple samples per packet"""
     # 2 packets, 3 samples each
@@ -383,7 +284,7 @@ def test_expand_sample_group_multi_sample(mock_multipart_to_dt64):
     assert sample_times.dtype == np.dtype("datetime64[us]")
 
 
-@mock.patch("libera_utils.packets.multipart_to_dt64")
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
 def test_expand_sample_group_with_epoch_and_period(mock_multipart_to_dt64):
     """Test _expand_sample_group using epoch time + period"""
     # 2 packets, 3 samples each
@@ -434,8 +335,8 @@ def test_expand_sample_group_with_epoch_and_period(mock_multipart_to_dt64):
     np.testing.assert_array_equal(sample_times, expected_times)
 
 
-def test_aggregate_fields():
-    """Test _aggregate_fields aggregates sequential fields into binary blobs"""
+def test_aggregate_fields_uint8s():
+    """Test _aggregate_fields aggregates sequential uint8 fields into binary blobs"""
     # Create dataset with 2 packets, each with 3 sequential byte fields
     ds = xr.Dataset(
         {
@@ -455,12 +356,53 @@ def test_aggregate_fields():
     assert result[1] == b"abc"
 
 
+def test_aggregate_fields_bytes():
+    """Test _aggregate_fields aggregates sequential byte string fields into binary blobs"""
+    # Create dataset with 2 packets, each with 3 sequential bytestring fields
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["packet"], np.array([b"ABC", b"abc"])),
+            "FIELD_1": (["packet"], np.array([b"DEF", b"def"])),
+            "FIELD_2": (["packet"], np.array([b"GHI", b"ghi"])),
+        }
+    )
+
+    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("|S9"))
+
+    result = libera_packets._aggregate_fields(ds, agg_group)
+
+    assert len(result) == 2
+    assert result.dtype == np.dtype("|S9")
+    assert result[0] == b"ABCDEFGHI"
+    assert result[1] == b"abcdefghi"
+
+
+def test_aggregate_fields_size_mismatch():
+    """Test _aggregate_fields raises ValueError on size mismatch"""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["packet"], np.array([1, 2], dtype=np.uint16)),
+            "FIELD_1": (["packet"], np.array([3, 4], dtype=np.uint16)),
+            "FIELD_2": (["packet"], np.array([5, 6], dtype=np.uint16)),
+        }
+    )
+
+    # Agg group is expecting one byte per field (uint8 or S1) but dtype is 2 bytes per field (uint16)
+    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("|S3"))
+
+    with pytest.raises(
+        ValueError,
+        match="Aggregation group FIELD size mismatch: expected total size 3 bytes, got 6 bytes.",
+    ):
+        libera_packets._aggregate_fields(ds, agg_group)
+
+
 def test_aggregate_fields_missing_field():
     """Test _aggregate_fields raises KeyError when field is missing"""
     ds = xr.Dataset(
         {
-            "FIELD_0": (["packet"], [1, 2]),
-            "FIELD_1": (["packet"], [3, 4]),
+            "FIELD_0": (["packet"], np.array([1, 2], dtype=np.dtype("S1"))),
+            "FIELD_1": (["packet"], np.array([3, 4], dtype=np.dtype("S1"))),
             # FIELD_2 is missing
         }
     )
@@ -490,36 +432,29 @@ def test_get_aggregated_field_names():
     assert "OTHER_FIELD" not in result
 
 
-@mock.patch("libera_utils.packets.parse_packets_to_dataset")
-@mock.patch("libera_utils.packets.multipart_to_dt64")
-@mock.patch("libera_utils.packets.get_packet_config")
+@mock.patch("libera_utils.l1a.packets.parse_packets_to_dataset")
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
+@mock.patch("libera_utils.l1a.packets.get_packet_config")
 @mock.patch("libera_utils.config.config.get")
 def test_parse_packets_to_l1a_dataset_basic(
     mock_config_get, mock_get_packet_config, mock_multipart, mock_parse_packets
 ):
     """Test parse_packets_to_l1a_dataset with basic single-sample configuration"""
 
-    # Create a minimal packet configuration
-    @dataclass(frozen=True)
-    class TestPacketConfig(PacketConfiguration):
-        packet_apid: LiberaApid = LiberaApid.icie_nom_hk
-        packet_time_fields: TimeFieldMapping = field(
-            default_factory=lambda: TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS")
-        )
-        sample_groups: list[SampleGroup] = field(
-            default_factory=lambda: [
-                SampleGroup(
-                    name="TEST_SAMPLE",
-                    sample_count=1,
-                    data_field_patterns=["SAMPLE_DATA"],
-                    time_field_patterns=TimeFieldMapping(day_field="SAMPLE_DAY", ms_field="SAMPLE_MS"),
-                    time_source=SampleTimeSource.ICIE,
-                )
-            ]
-        )
-
-    # Mock config
-    config = TestPacketConfig()
+    # Create a minimal packet configuration using Pydantic
+    config = PacketConfiguration(
+        packet_apid=LiberaApid.icie_nom_hk,
+        packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
+        sample_groups=[
+            SampleGroup(
+                name="TEST_SAMPLE",
+                sample_count=1,
+                data_field_patterns=["SAMPLE_DATA"],
+                time_field_patterns=TimeFieldMapping(day_field="SAMPLE_DAY", ms_field="SAMPLE_MS"),
+                time_source=SampleTimeSource.ICIE,
+            )
+        ],
+    )
     mock_config_get.return_value = "fake_definition.xml"
     mock_get_packet_config.return_value = config
 
@@ -573,5 +508,5 @@ def test_parse_packets_to_l1a_dataset_basic(
     assert "OTHER_FIELD" in result.data_vars
 
     # Verify global attributes were added
-    assert "AlgorithmVersion" in result.attrs
-    assert "Created" in result.attrs
+    assert "algorithm_version" in result.attrs
+    assert "date_created" in result.attrs

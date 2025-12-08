@@ -1,0 +1,56 @@
+# Test L1A product definition for kernel maker unit tests
+# This defines the expected structure of L1A datasets used in testing
+# Based on icie_axis_sample_l1a.yml pattern and simplified drastically
+
+# packet is a non-coordinate dimension (index only)
+# In this test definition, we dropped all the packet level variables except the packet timestamp
+# AXIS_SAMPLE_ICIE_TIME is a coordinate dimension (dimension matches coordinate variable name)
+# All "sample" variables in this example (expanded from multiple values per packet) use
+# AXIS_SAMPLE_ICIE_TIME as their dimension
+
+attributes:
+  ProductID: TEST-AXIS-SAMPLE-L1A
+  algorithm_version: 1.0.0
+
+coordinates:
+  PACKET_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp from ICIE main processor
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+  AXIS_SAMPLE_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["AXIS_SAMPLE_ICIE_TIME"]
+    attributes:
+      long_name: Azimuth and elevation encoder sample timestamp
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  ICIE__AXIS_AZ_FILT:
+    dtype: float64
+    dimensions: ["AXIS_SAMPLE_ICIE_TIME"]
+    attributes:
+      long_name: ICIE azimuth axis filtered encoder reading
+      units: degrees
+
+  ICIE__AXIS_EL_FILT:
+    dtype: float64
+    dimensions: ["AXIS_SAMPLE_ICIE_TIME"]
+    attributes:
+      long_name: ICIE elevation axis filtered encoder reading
+      units: degrees
+
+  AXIS_SAMPLE_packet_index:
+    dtype: int64
+    dimensions: ["AXIS_SAMPLE_ICIE_TIME"]
+    attributes:
+      long_name: Packet index for axis sample data
+      comment: Maps each axis sample to its originating packet index

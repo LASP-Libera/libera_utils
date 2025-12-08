@@ -28,13 +28,11 @@ def setup_jpss1_kernel_maker_environment_with_manifest(
     test_type,
     generate_input_manifest_local,
     generate_input_manifest_s3,
-    test_jpss1_pds_file_1,
-    test_jpss1_pds_file_2,
-    test_jpss1_pds_file_3,
+    test_l1a_sc_pos_product_file,
     create_mock_bucket,
     short_tmp_path,
 ):
-    data_files = [str(test_jpss1_pds_file_1), str(test_jpss1_pds_file_2), str(test_jpss1_pds_file_3)]
+    data_files = [str(test_l1a_sc_pos_product_file)]
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3(*data_files)
         bucket = create_mock_bucket()
@@ -51,12 +49,11 @@ def setup_azel_kernel_maker_environment_with_manifest(
     test_type,
     generate_input_manifest_local,
     generate_input_manifest_s3,
-    test_ccsds_2025_218_18_37_32,
-    test_ccsds_2025_218_18_41_30,
+    test_l1a_axis_sample_product_file,
     create_mock_bucket,
     short_tmp_path,
 ):
-    data_files = [str(test_ccsds_2025_218_18_37_32), str(test_ccsds_2025_218_18_41_30)]
+    data_files = [str(test_l1a_axis_sample_product_file)]
     if test_type == "S3":
         input_manifest_path = generate_input_manifest_s3(*data_files)
         bucket = create_mock_bucket()

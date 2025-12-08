@@ -1,0 +1,202 @@
+# L1A Packet Processing Configuration
+#
+# This file defines how to parse different LIBERA and JPSS packet types into L1A datasets.
+# Each configuration specifies the packet structure, timing fields, and data organization.
+#
+# Configuration Structure:
+# -----------------------
+#
+# packet_apid: (string)
+#   The APID (Application Process Identifier) name from LiberaApid enum.
+#   Examples: "icie_axis_sample", "icie_rad_sample", "jpss_sc_pos"
+#
+# packet_time_fields: (TimeFieldMapping)
+#   Defines the packet-level timestamp fields used for the primary packet time coordinate.
+#   These fields are combined to create a single datetime64 timestamp per packet.
+#   Fields can include: day_field, s_field, ms_field, us_field (at least one is required)
+#
+# packet_time_source: (string)
+#   The time source for packet timestamps: "ICIE", "FPE", or "JPSS"
+#   This determines the name of the packet time coordinate (e.g., PACKET_ICIE_TIME)
+#
+# packet_definition_config_key: (string)
+#   Configuration key to fetch the XTCE packet definition file path.
+#   Common values: "LIBERA_PACKET_DEFINITION", "JPSS_GEOLOCATION_PACKET_DEFINITION"
+#
+# sample_groups: (list of SampleGroup)
+#   Defines groups of related samples within a packet that share timing characteristics.
+#   Each sample group creates its own time dimension and coordinates in the output dataset.
+#
+#   SampleGroup fields:
+#   - name: Identifier for the sample group (used in dimension names)
+#   - sample_count: Number of samples per packet for this group
+#   - time_source: Time source for sample timestamps ("ICIE", "FPE", or "JPSS")
+#   - data_field_patterns: List of field name patterns for sample data
+#     * Use %i placeholder for sample index (e.g., "ICIE__RAD_SAMPLE%i_0")
+#     * Omit %i for single-sample groups
+#
+#   Timing Configuration (choose ONE approach):
+#
+#   A) Explicit Per-Sample Timestamps (time_field_patterns):
+#      - Use when each sample has its own timestamp fields in the packet
+#      - time_field_patterns: TimeFieldMapping with field patterns
+#      - For multi-sample groups, all time fields must contain %i placeholder
+#      - Example: s_field: "ICIE__AXIS_SAMPLE_TM_SEC%i"
+#
+#   B) Epoch + Periodic Sampling (epoch_time_fields + sample_period):
+#      - Use when samples are evenly spaced from a starting epoch time
+#      - epoch_time_fields: TimeFieldMapping for the epoch timestamp (NO %i placeholders)
+#      - sample_period: Time between samples in MICROSECONDS (integer)
+#      - Example: epoch at t0, period=5000 → samples at t0, t0+5ms, t0+10ms, ...
+#
+# aggregation_groups: (list of AggregationGroup)
+#   Defines how to combine multiple sequential fields into single binary blobs.
+#   Used for packets like WFOV that split large binary data across many numbered fields.
+#
+#   AggregationGroup fields:
+#   - name: Name for the aggregated variable in the output dataset
+#   - field_pattern: Pattern with %i for field index (e.g., "ICIE__WFOV_DATA_%i")
+#   - field_count: Number of fields to aggregate
+#   - dtype: NumPy dtype string for the result (e.g., "|S972" for 972-byte string)
+#
+# Time Sources Explained:
+# ----------------------
+# - ICIE: Libera Instrument Control and Interface Electronics (main processor)
+# - FPE: Libera Focal Plane Electronics (detector subsystem)
+# - JPSS: Joint Polar Satellite System spacecraft clock
+#
+# Different components may use different clocks, so time_source tracking is critical
+# for proper time alignment and synchronization in downstream processing.
+
+# ==============================================================================
+# LIBERA INSTRUMENT PACKETS
+# ==============================================================================
+
+# Axis Sample Packet: Azimuth and elevation encoder measurements
+icie_axis_sample:
+  packet_apid: "icie_axis_sample"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_AXIS_SAMPLE"
+    ms_field: "ICIE__TM_MS_AXIS_SAMPLE"
+    us_field: "ICIE__TM_US_AXIS_SAMPLE"
+  sample_groups:
+    - name: "AXIS_SAMPLE"
+      time_field_patterns:
+        s_field: "ICIE__AXIS_SAMPLE_TM_SEC%i"
+        us_field: "ICIE__AXIS_SAMPLE_TM_SUB%i"
+      data_field_patterns:
+        - "ICIE__AXIS_AZ_FILT%i"
+        - "ICIE__AXIS_EL_FILT%i"
+      sample_count: 50
+      time_source: "ICIE"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Radiometer Sample Packet: Science data from the four radiometer channels
+icie_rad_sample:
+  packet_apid: "icie_rad_sample"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_RAD_SAMPLE"
+    ms_field: "ICIE__TM_MS_RAD_SAMPLE"
+    us_field: "ICIE__TM_US_RAD_SAMPLE"
+  sample_groups:
+    - name: "RAD_SAMPLE"
+      epoch_time_fields:
+        s_field: "ICIE__RAD_SAMP_START_HI"
+        us_field: "ICIE__RAD_SAMP_START_LO"
+      sample_period: 5000 # 5 milliseconds in microseconds
+      data_field_patterns:
+        - "ICIE__RAD_SAMPLE%i_0"
+        - "ICIE__RAD_SAMPLE%i_1"
+        - "ICIE__RAD_SAMPLE%i_2"
+        - "ICIE__RAD_SAMPLE%i_3"
+      sample_count: 50
+      time_source: "FPE"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Wide Field of View Science Packet: Camera science data as aggregated binary blob
+icie_wfov_sci:
+  packet_apid: "icie_wfov_sci"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_WFOV_SCI"
+    ms_field: "ICIE__TM_MS_WFOV_SCI"
+    us_field: "ICIE__TM_US_WFOV_SCI"
+  aggregation_groups:
+    - name: "ICIE__WFOV_DATA"
+      field_pattern: "ICIE__WFOV_DATA_%i"
+      field_count: 972
+      dtype: "|S972" # 972-byte binary string
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Nominal Housekeeping Packet: Routine telemetry and status
+icie_nom_hk:
+  packet_apid: "icie_nom_hk"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_NOM_HK"
+    ms_field: "ICIE__TM_MS_NOM_HK"
+    us_field: "ICIE__TM_US_NOM_HK"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Critical Housekeeping Packet: Important status and health monitoring
+icie_crit_hk:
+  packet_apid: "icie_crit_hk"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_CRIT_HK"
+    ms_field: "ICIE__TM_MS_CRIT_HK"
+    us_field: "ICIE__TM_US_CRIT_HK"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Temperature Housekeeping Packet: Thermal monitoring data
+icie_temp_hk:
+  packet_apid: "icie_temp_hk"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_TEMP_HK"
+    ms_field: "ICIE__TM_MS_TEMP_HK"
+    us_field: "ICIE__TM_US_TEMP_HK"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# ==============================================================================
+# JPSS SPACECRAFT PACKETS
+# ==============================================================================
+
+# Spacecraft Position Packet: GPS position/velocity and attitude quaternions
+jpss_sc_pos:
+  packet_apid: "jpss_sc_pos"
+  packet_time_fields:
+    day_field: "DAYS"
+    ms_field: "MSEC"
+    us_field: "USEC"
+  sample_groups:
+    - name: "ADGPS"
+      time_field_patterns:
+        day_field: "ADAET1DAY"
+        ms_field: "ADAET1MS"
+        us_field: "ADAET1US"
+      data_field_patterns:
+        - "ADGPSPOSX"
+        - "ADGPSPOSY"
+        - "ADGPSPOSZ"
+        - "ADGPSVELX"
+        - "ADGPSVELY"
+        - "ADGPSVELZ"
+      sample_count: 1
+      time_source: "JPSS"
+    - name: "ADCFA"
+      time_field_patterns:
+        day_field: "ADAET2DAY"
+        ms_field: "ADAET2MS"
+        us_field: "ADAET2US"
+      data_field_patterns:
+        - "ADCFAQ1"
+        - "ADCFAQ2"
+        - "ADCFAQ3"
+        - "ADCFAQ4"
+      sample_count: 1
+      time_source: "JPSS"
+  packet_definition_config_key: "JPSS_GEOLOCATION_PACKET_DEFINITION"
+  packet_time_source: "JPSS"

@@ -1,8 +1,8 @@
 """Unit tests for packet configurations for L1A processing"""
 
-from libera_utils import packet_configs
 from libera_utils.constants import LiberaApid
-from libera_utils.packet_configs import get_packet_config
+from libera_utils.l1a import l1a_packet_configs
+from libera_utils.l1a.l1a_packet_configs import get_packet_config
 
 
 class TestPacketConfiguration:
@@ -11,23 +11,23 @@ class TestPacketConfiguration:
     def test_packet_configuration_creation(self):
         """Test that PacketConfiguration can be instantiated with required fields."""
 
-        config = packet_configs.PacketConfiguration(
+        config = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.icie_axis_sample,
-            packet_time_fields=packet_configs.TimeFieldMapping(
+            packet_time_fields=l1a_packet_configs.TimeFieldMapping(
                 day_field="TM_DAY",
                 ms_field="TM_MS",
                 us_field="TM_US",
             ),
             sample_groups=[
-                packet_configs.SampleGroup(
+                l1a_packet_configs.SampleGroup(
                     name="TEST_SAMPLES",
-                    time_field_patterns=packet_configs.TimeFieldMapping(
+                    time_field_patterns=l1a_packet_configs.TimeFieldMapping(
                         s_field="SAMPLE_TIME_SEC%i",
                         us_field="SAMPLE_TIME_USEC%i",
                     ),
                     data_field_patterns=["DATA_FIELD_%i", "OTHER_FIELD_%i"],
                     sample_count=10,
-                    time_source=packet_configs.SampleTimeSource.ICIE,
+                    time_source=l1a_packet_configs.SampleTimeSource.ICIE,
                 )
             ],
         )
@@ -37,37 +37,37 @@ class TestPacketConfiguration:
         assert len(config.sample_groups) == 1
         assert config.sample_groups[0].name == "TEST_SAMPLES"
         assert config.sample_groups[0].sample_count == 10
-        assert config.sample_groups[0].time_source == packet_configs.SampleTimeSource.ICIE
+        assert config.sample_groups[0].time_source == l1a_packet_configs.SampleTimeSource.ICIE
 
     def test_sample_group_dimension_name(self):
         """Test that the dimension_name property works correctly for SampleGroup."""
         from datetime import timedelta
 
-        group_icie = packet_configs.SampleGroup(
+        group_icie = l1a_packet_configs.SampleGroup(
             name="TEST_GROUP",
             sample_count=1,
             data_field_patterns=["TEST_DATA"],
-            time_field_patterns=packet_configs.TimeFieldMapping(s_field="TIME_SEC"),
-            time_source=packet_configs.SampleTimeSource.ICIE,
+            time_field_patterns=l1a_packet_configs.TimeFieldMapping(s_field="TIME_SEC"),
+            time_source=l1a_packet_configs.SampleTimeSource.ICIE,
         )
         assert group_icie.sample_time_dimension == "TEST_GROUP_ICIE_TIME"
 
-        group_fpe = packet_configs.SampleGroup(
+        group_fpe = l1a_packet_configs.SampleGroup(
             name="RAD_SAMPLE",
             sample_count=10,
             data_field_patterns=["RAD_DATA"],
-            epoch_time_fields=packet_configs.TimeFieldMapping(s_field="START_SEC"),
+            epoch_time_fields=l1a_packet_configs.TimeFieldMapping(s_field="START_SEC"),
             sample_period=timedelta(milliseconds=5),
-            time_source=packet_configs.SampleTimeSource.FPE,
+            time_source=l1a_packet_configs.SampleTimeSource.FPE,
         )
         assert group_fpe.sample_time_dimension == "RAD_SAMPLE_FPE_TIME"
 
-        group_jpss = packet_configs.SampleGroup(
+        group_jpss = l1a_packet_configs.SampleGroup(
             name="ADGPS",
             sample_count=1,
             data_field_patterns=["GPS_DATA"],
-            time_field_patterns=packet_configs.TimeFieldMapping(us_field="TIME"),
-            time_source=packet_configs.SampleTimeSource.JPSS,
+            time_field_patterns=l1a_packet_configs.TimeFieldMapping(us_field="TIME"),
+            time_source=l1a_packet_configs.SampleTimeSource.JPSS,
         )
         assert group_jpss.sample_time_dimension == "ADGPS_JPSS_TIME"
 

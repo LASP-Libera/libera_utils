@@ -7,16 +7,14 @@ from os import PathLike
 from typing import cast
 
 import numpy as np
-import pandas as pd
 import xarray as xr
 from cloudpathlib import AnyPath
 from space_packet_parser.xarr import create_dataset
-from space_packet_parser.xtce.definitions import XtcePacketDefinition
 
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
-from libera_utils.io.filenaming import PathType
-from libera_utils.packet_configs import (
+from libera_utils.io import filenaming
+from libera_utils.l1a.l1a_packet_configs import (
     AggregationGroup,
     SampleGroup,
     TimeFieldMapping,
@@ -31,197 +29,9 @@ logger = logging.getLogger(__name__)
 # This is a constant and is not expected to change in SPP
 SPP_PACKET_DIMENSION = "packet"
 
-
-def parse_packets_to_dataframe(
-    packet_definition: str | PathType | XtcePacketDefinition,
-    packet_data_filepaths: list[str | PathType],
-    apid: int | None = None,
-    skip_header_bytes: int = 0,
-) -> pd.DataFrame:
-    """Parse packets from files into a pandas DataFrame using Space Packet Parser v6.0.0rc3.
-
-    Parameters
-    ----------
-    packet_definition : str | PathType | XtcePacketDefinition
-        XTCE packet definition file path or pre-loaded XtcePacketDefinition object.
-    packet_data_filepaths : list[str | PathType]
-        List of filepaths to packet files.
-    apid : Optional[int]
-        Filter on APID so we don't get mismatches in case the parser finds multiple parsable packet definitions
-        in the files. This can happen if the XTCE document contains definitions for multiple packet types and >1 of
-        those packet types is present in the packet data files.
-    skip_header_bytes : int
-        Number of header bytes to skip when reading packet files. Default is 0.
-
-    Returns
-    -------
-    pd.DataFrame
-        pandas DataFrame containing parsed packet data.
-    """
-    logger.info("Parsing packets from %d file(s) into pandas DataFrame", len(packet_data_filepaths))
-
-    dataset_dict = create_dataset(
-        packet_files=[AnyPath(f) for f in packet_data_filepaths],
-        xtce_packet_definition=AnyPath(packet_definition),
-        generator_kwargs=dict(skip_header_bytes=skip_header_bytes),
-    )
-
-    # Handle APID filtering
-    if apid is not None:
-        if apid in dataset_dict:
-            dataset = dataset_dict[apid]
-        else:
-            raise ValueError(
-                f"Requested APID {apid} not found in parsed packets. Available APIDs: {list(dataset_dict.keys())}"
-            )
-    else:
-        # No APID specified - check if we have multiple APIDs
-        if len(dataset_dict) > 1:
-            raise ValueError(
-                f"Multiple APIDs present ({list(dataset_dict.keys())}). You must specify which APID you want."
-            )
-        elif len(dataset_dict) == 1:
-            # Single APID present, use it
-            dataset = next(iter(dataset_dict.values()))
-        else:
-            raise ValueError("No packets found in files")
-
-    # Remove duplicates by converting to DataFrame, dropping duplicates, and converting back
-    # This maintains compatibility with the original behavior
-    df = dataset.to_dataframe().reset_index()
-    # Drop duplicates based on packet data, not including the original index
-    packet_columns = [col for col in df.columns if col not in ["index", "packet"]]
-    df_unique = df.drop_duplicates(subset=packet_columns)
-
-    if len(df_unique) < len(df):
-        logger.info("Removed %d duplicate packets", len(df) - len(df_unique))
-
-    # Return the unique DataFrame
-    return df_unique
+DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
 
-def read_sc_packet_data(packet_data_filepaths: list[str | PathType], apid: int = 11) -> pd.DataFrame:
-    """Read spacecraft packet data from a list of file paths.
-
-    Parameters
-    ----------
-    packet_data_filepaths : list[str | PathType]
-        The list of file paths to the raw packet data
-    apid : int
-        Application Packet ID to filter for. Default is 11 for JPSS geolocation packets.
-
-    Returns
-    -------
-    packet_data : pd.DataFrame
-        The configured packet data as a pandas DataFrame.
-    """
-    packet_definition_uri = cast(PathType, AnyPath(config.get("JPSS_GEOLOCATION_PACKET_DEFINITION")))
-    logger.info("Using packet definition %s", packet_definition_uri)
-
-    # Parse packets to DataFrame
-    df = parse_packets_to_dataframe(
-        packet_definition=packet_definition_uri, packet_data_filepaths=packet_data_filepaths, apid=apid
-    )
-
-    return df
-
-
-def read_azel_packet_data(packet_data_filepaths: list[str | PathType], apid: int = 1048) -> pd.DataFrame:
-    """Read Az/El packet data from a list of file paths.
-
-     Parameters
-    ----------
-    packet_data_filepaths : list[str | Path | CloudPath]]
-        The list of file paths to the raw packet data
-    apid : int
-        Application Packet ID to filter for. Default is 1048 for Az/El sample packets.
-
-    Returns
-    -------
-    packet_data : pd.DataFrame
-        The configured packet data as a pandas DataFrame with restructured samples.
-    """
-    packet_definition_uri = cast(PathType, AnyPath(config.get("LIBERA_PACKET_DEFINITION")))
-    logger.info("Using packet definition %s", packet_definition_uri)
-
-    # Parse packets to DataFrame
-    df = parse_packets_to_dataframe(
-        packet_definition=packet_definition_uri,
-        packet_data_filepaths=packet_data_filepaths,
-        apid=apid,
-        skip_header_bytes=8,
-    )
-
-    # Restructure the DataFrame to have one row per sample (50 samples per packet)
-    # Each packet contains 50 samples with fields like:
-    # ICIE__AXIS_SAMPLE_TM_SEC0, ICIE__AXIS_SAMPLE_TM_SUB0, ICIE__AXIS_EL_FILT0, ICIE__AXIS_AZ_FILT0
-    # ...
-    # ICIE__AXIS_SAMPLE_TM_SEC49, ICIE__AXIS_SAMPLE_TM_SUB49, ICIE__AXIS_EL_FILT49, ICIE__AXIS_AZ_FILT49
-
-    samples_list = []
-    for _, packet_row in df.iterrows():
-        # Get packet metadata for debugging
-        src_seq_ctr = packet_row["SRC_SEQ_CTR"]
-        pkt_day = packet_row["ICIE__TM_DAY_AXIS_SAMPLE"]
-        pkt_ms = packet_row["ICIE__TM_MS_AXIS_SAMPLE"]
-        pkt_us = packet_row["ICIE__TM_US_AXIS_SAMPLE"]
-
-        for i in range(50):
-            sample = {
-                "SAMPLE_SEC": packet_row[f"ICIE__AXIS_SAMPLE_TM_SEC{i}"],
-                "SAMPLE_USEC": packet_row[f"ICIE__AXIS_SAMPLE_TM_SUB{i}"],
-                "AZ_ANGLE_RAD": packet_row[f"ICIE__AXIS_AZ_FILT{i}"],
-                "EL_ANGLE_RAD": packet_row[f"ICIE__AXIS_EL_FILT{i}"],
-                # Keep metadata for debugging
-                "SRC_SEQ_CTR": src_seq_ctr,
-                "PKT_DAY": pkt_day,
-                "PKT_MS": pkt_ms,
-                "PKT_US": pkt_us,
-                "SAMPLE_INDEX": i,
-            }
-            samples_list.append(sample)
-
-    restructured_df = pd.DataFrame(samples_list)
-
-    # Check for duplicate timestamps and log detailed information
-    # FIXME: [LIBSDC-608] This is only here to help with debugging for FSW purposes. This logs a verbose listing of duplicate sample timestamps.
-    duplicates_mask = restructured_df.duplicated(subset=["SAMPLE_SEC", "SAMPLE_USEC"], keep=False)
-    if duplicates_mask.any():
-        duplicate_samples = restructured_df[duplicates_mask].sort_values(["SAMPLE_SEC", "SAMPLE_USEC"])
-
-        logger.warning("Found %d samples with duplicate timestamps", duplicates_mask.sum())
-        logger.warning("Duplicate timestamp details:")
-
-        # Group duplicates by timestamp and show details
-        for (sec, usec), group in duplicate_samples.groupby(["SAMPLE_SEC", "SAMPLE_USEC"]):
-            logger.warning("  Timestamp: SEC=%d, USEC=%d", sec, usec)
-            for _, row in group.iterrows():
-                logger.warning(
-                    "    - Packet SRC_SEQ_CTR=%s, PKT_TIME=(DAY=%s, MS=%s, US=%s), "
-                    "Sample #%d, AZ=%.6f rad, EL=%.6f rad",
-                    row["SRC_SEQ_CTR"],
-                    row["PKT_DAY"],
-                    row["PKT_MS"],
-                    row["PKT_US"],
-                    row["SAMPLE_INDEX"],
-                    row["AZ_ANGLE_RAD"],
-                    row["EL_ANGLE_RAD"],
-                )
-        # Remove duplicates, keeping the first occurrence
-        restructured_df = restructured_df.drop_duplicates(subset=["SAMPLE_SEC", "SAMPLE_USEC"], keep="first")
-        num_removed = duplicates_mask.sum() - len(
-            restructured_df[restructured_df.duplicated(subset=["SAMPLE_SEC", "SAMPLE_USEC"], keep=False)]
-        )
-        logger.info("Removed %d duplicate timestamps from Az/El data (kept first occurrence)", num_removed)
-
-    # Drop the debugging columns before returning
-    restructured_df = restructured_df[["SAMPLE_SEC", "SAMPLE_USEC", "AZ_ANGLE_RAD", "EL_ANGLE_RAD"]]
-
-    return restructured_df
-
-
-# L1A Processing Additions
-# ========================
 def parse_packets_to_dataset(
     packet_files: list[PathLike | str], packet_definition: str | PathLike, apid: int, **generator_kwargs
 ) -> xr.Dataset:
@@ -255,12 +65,12 @@ def parse_packets_to_dataset(
     )
 
     # Filter by APID
-    if apid in dataset_dict:
+    try:
         ds = dataset_dict[apid]
-    else:
-        raise ValueError(
+    except KeyError as ke:
+        raise KeyError(
             f"Requested APID {apid} not found in parsed packets. Available APIDs: {list(dataset_dict.keys())}"
-        )
+        ) from ke
 
     return ds
 
@@ -288,13 +98,17 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
         - Separate arrays for each sample group with optional multi-field expansion
         - All time coordinates properly set as dimensions
     """
+    _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
     packet_config = get_packet_config(LiberaApid(apid))
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
+    # Ground test data packets have extra 8 byte headers that need to be skipped
+    # When running ground test data, set SKIP_PACKET_HEADER_BYTES environment variable to 8
+    skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
     packet_ds = parse_packets_to_dataset(
-        packet_files, packet_definition_path, apid, **packet_config.packet_generator_kwargs
+        _packet_files, packet_definition_path, apid, skip_header_bytes=skip_header_bytes
     )
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
-    packet_times_us = packet_times_dt64.values.astype("datetime64[us]")
+    packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)
 
     # Set packet time as a non-dimension coordinate with "packet" dimension
     # The packet dimension remains as-is from SPP to enable sample-to-packet tracing
@@ -302,6 +116,7 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     packet_ds = packet_ds.assign_coords({packet_time_coordinate: (SPP_PACKET_DIMENSION, packet_times_us)})
 
     # Drop duplicates from the packet dataset before we process samples
+    # This drops full duplicate packets based on identical packet timestamps
     packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate)
 
     # Start building the dataset containing expanded sample fields
@@ -342,6 +157,9 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
         expanded_fields.update(_get_expanded_field_names(packet_ds, sample_group))
 
         # Drop and warn about duplicate samples
+        # NOTE: This should never find duplicates in flight but in ground testing, FSW was generating
+        # packets that had repeated sample timestamps due to an issue with Hydra simulating SC time pulses
+        # incorrectly, causing a microsecond counter to roll over at 1E6 without incrementing the second counter.
         sample_ds, _ = _drop_duplicates(sample_ds, sample_time_dimension)
 
         # Sort the data by the newly added dimension for the sample group
@@ -381,21 +199,12 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     # Sort the resulting Dataset by the packet time coordinate to ensure data is properly ordered
     packet_ds = packet_ds.sortby(packet_time_coordinate)
 
-    # Add global attributes
-    # TODO[LIBSDC-622]: Once the netcdf writer is working, this step should be outsourced to the writer to add correct metadata
-    # Any existing dataset metadata should also be included in the product though
-    global_attrs = {
-        "Format": "NetCDF-4",
-        "Conventions": "CF-1.8",
-        "ProjectLongName": "Libera",
-        "ProjectShortName": "Libera",
-        "PlatformLongName": "TBD",  # Probably only needed if we are going with JPSS-4 as the platform identifier instead of NOAA-22
-        "PlatformShortName": "NOAA-22",
-        "AlgorithmVersion": version(),
-        "Created": datetime.now(tz=UTC).isoformat(),
+    # Add global dynamic attributes that are required per the data product configs but do not have static values
+    global_attrs: dict[str, str | list | set] = {
+        "algorithm_version": version(),
+        "date_created": datetime.now(tz=UTC).isoformat(),
     }
-    for i, f in enumerate(packet_files):
-        global_attrs[f"INPUT_FILE{i}"] = str(f)
+    global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
 
     return packet_ds
@@ -411,7 +220,8 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str):
     dataset : xr.Dataset
         The dataset to deduplicate
     coordinate_name : str
-        The name of the coordinate over which to search for duplicates
+        The name of the coordinate over which to search for duplicates.
+        Can be either a dimension coordinate or a non-dimension coordinate.
 
     Returns
     -------
@@ -420,17 +230,48 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str):
     n_duplicates : int
         Number of duplicates detected and dropped
     """
-    coords = dataset[coordinate_name]
-    unique, counts = np.unique(coords, return_counts=True)
-    duplicates = unique[counts > 1]
+    # Validate coordinate exists
+    if coordinate_name not in dataset.coords:
+        raise KeyError(f"Coordinate '{coordinate_name}' not found in dataset")
 
-    if n_duplicates := len(duplicates) > 0:
+    coord = dataset[coordinate_name]
+
+    # Ensure coordinate is 1-dimensional
+    if len(coord.dims) != 1:
+        raise ValueError(
+            f"Coordinate '{coordinate_name}' must be 1-dimensional to deduplicate, but has dimensions: {coord.dims}"
+        )
+
+    dim_name = coord.dims[0]
+
+    # Optimize for the common case (no duplicates) by checking size first
+    # Use np.unique to find first occurrence of each unique value
+    coord_values = coord.values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+
+    # Sort indices to maintain original order in the dataset
+    # np.unique sorts the VALUES (not indices), so indices may be out of order
+    # We want to preserve the original row order when selecting
+    unique_indices_sorted = np.sort(unique_indices)
+
+    original_size = len(coord_values)
+    n_duplicates = original_size - len(unique_indices_sorted)
+
+    if n_duplicates > 0:
+        # Select only the first occurrence of each unique coordinate value
+        dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
+
+        # Log the duplicate values (not indices)
+        _, counts = np.unique(coord_values, return_counts=True)
+        duplicates = unique_values[counts > 1]
+
         warnings.warn(f"Detected {n_duplicates} duplicate packet timestamps in dataset")
         logger.warning(f"Duplicate coordinates detected ({n_duplicates}) in {coordinate_name}: {duplicates}")
-        # Create a mask for all duplicate records
-        dataset = dataset.drop_duplicates(coordinate_name)
+    else:
+        # No duplicates, return original dataset
+        dataset_deduped = dataset
 
-    return dataset, len(duplicates)
+    return dataset_deduped, n_duplicates
 
 
 def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[str, np.ndarray], np.ndarray]:
@@ -466,7 +307,7 @@ def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[
     elif group.epoch_time_fields and group.sample_period:
         # Use epoch + period to calculate sample timestamps
         epoch_times_dt64 = multipart_to_dt64(dataset, **group.epoch_time_fields.multipart_kwargs)
-        epoch_times_us = epoch_times_dt64.values.astype("datetime64[us]")
+        epoch_times_us = epoch_times_dt64.values.astype(DATETIME_USEC_DTYPE)
         period_us = np.timedelta64(int(group.sample_period.total_seconds() * 1e6), "us")
         # Epoch times are 1 per packet so create an array that is (n_samples, n_packets), transpose, and flatten it
         sample_times = np.array([epoch_times_us + i * period_us for i in range(n_samples)]).T.flatten()
@@ -524,7 +365,7 @@ def _expand_sample_times(dataset: xr.Dataset, time_fields: TimeFieldMapping, n_s
 
             if sample_kwargs:
                 sample_time_dt64 = multipart_to_dt64(dataset, **sample_kwargs)
-                sample_times_list.append(sample_time_dt64.values.astype("datetime64[us]"))
+                sample_times_list.append(sample_time_dt64.values.astype(DATETIME_USEC_DTYPE))
 
         # Stack samples (n_packets, n_samples) and flatten
         if sample_times_list:
@@ -532,11 +373,11 @@ def _expand_sample_times(dataset: xr.Dataset, time_fields: TimeFieldMapping, n_s
             return stacked_times.flatten()
         else:
             # No valid time fields found
-            return np.array([], dtype="datetime64[us]")
+            return np.array([], dtype=DATETIME_USEC_DTYPE)
     else:
         # Single sample per packet - use time_fields directly
         sample_time_dt64 = multipart_to_dt64(dataset, **time_fields.multipart_kwargs)
-        return sample_time_dt64.values.astype("datetime64[us]")
+        return sample_time_dt64.values.astype(DATETIME_USEC_DTYPE)
 
 
 def _get_expanded_field_names(dataset: xr.Dataset, group: SampleGroup) -> set[str]:
@@ -595,8 +436,9 @@ def _get_expanded_field_names(dataset: xr.Dataset, group: SampleGroup) -> set[st
 def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarray:
     """Aggregate multiple sequential fields into a single binary blob per packet.
 
-    Optimized version using vectorized numpy operations with zero-copy view conversion.
+    Optimized using vectorized numpy operations with zero-copy view conversion.
     Assumes all fields exist (validated by Space Packet Parser during parsing).
+    Assumes all fields are interpretable as bytes objects regardless of original dtype.
 
     Parameters
     ----------
@@ -614,21 +456,38 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
 
     # Extract all field arrays at once (fail fast if any missing)
     field_arrays = []
+    aggregate_size = 0  # Track total size of aggregated fields (per packet)
+
     for i in range(group.field_count):
         field_name = group.field_pattern % i
         if field_name not in dataset:
             raise KeyError(f"Required field {field_name} not found for aggregation group {group.name}")
-        field_arrays.append(dataset[field_name].values)
+
+        # The field_array is the data for one field across all packets
+        field_array = dataset[field_name].values
+
+        # Adds up total size of the aggregated fields (per packet)
+        # This allows for fields that are not all the same size/dtype to be aggregated together as bytes
+        aggregate_size += field_array.dtype.itemsize
+
+        field_arrays.append(field_array)
+
+    if not group.dtype.itemsize:
+        warnings.warn(
+            f"Aggregation group {group.name} has a dtype with unspecified size ({group.dtype}). This may lead to unexpected results."
+        )
+    elif aggregate_size != group.dtype.itemsize:
+        raise ValueError(
+            f"Aggregation group {group.name} size mismatch: "
+            f"expected total size {group.dtype.itemsize} bytes, got {aggregate_size} bytes."
+        )
 
     # Stack all fields: shape (n_fields, n_packets)
-    stacked = np.stack(field_arrays, axis=0)
-
-    # Transpose to (n_packets, n_fields) with contiguous memory layout
-    transposed = np.ascontiguousarray(stacked.T)
+    stacked_and_transposed = np.stack(field_arrays, axis=-1)
 
     # Use view() to reinterpret each row as a single bytes string - zero copy!
-    # This is the key optimization - no iteration, just memory reinterpretation
-    return transposed.view(dtype=group.dtype).reshape(n_packets)
+    # This is a key optimization - no iteration, just memory reinterpretation
+    return stacked_and_transposed.view(dtype=group.dtype).reshape(n_packets)
 
 
 def _get_aggregated_field_names(dataset: xr.Dataset, group: AggregationGroup) -> set[str]:

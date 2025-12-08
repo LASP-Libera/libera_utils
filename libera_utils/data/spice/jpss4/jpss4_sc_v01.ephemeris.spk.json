@@ -19,7 +19,7 @@
   },
   "input_data": null,
   "input_columns": {
-    "SPK_ET": "et",
+    "ADGPS_JPSS_ET": "et",
     "ADGPSPOSX": "position_x",
     "ADGPSPOSY": "position_y",
     "ADGPSPOSZ": "position_z",

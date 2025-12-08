@@ -18,12 +18,40 @@ from libera_utils.io.smart_open import smart_open
 class TestWriteLiberaDataProduct:
     """Tests for the write_libera_data_product function"""
 
-    def test_write_libera_data_product_success(self, test_product_definition, test_data_dict, tmp_path):
-        """Test successful writing of a data product with valid data"""
+    def test_write_libera_data_product_from_arrays(self, test_product_definition, test_data_dict, tmp_path):
+        """Test successful writing of a data product with valid data as data arrays"""
         # Write the data product
         result = write_libera_data_product(
             data_product_definition=test_product_definition,
             data=test_data_dict,
+            output_path=tmp_path,
+            time_variable="time",
+        )
+
+        # Verify return type
+        assert isinstance(result, LiberaDataProductFilename)
+
+        # Verify file was created
+        assert result.path.exists()
+        assert result.path.parent == tmp_path
+
+        # Verify filename format
+        assert result.path.name.startswith("LIBERA_L1B_RAD-4CH_V0-0-1_")
+        assert result.path.name.endswith(".nc")
+
+        # Read back the file and verify basic structure
+        ds = xr.open_dataset(result.path)
+        assert "time" in ds.coords
+        assert "fil_rad" in ds.data_vars
+        assert "q_flag" in ds.data_vars
+        ds.close()
+
+    def test_write_libera_data_product_from_dataset(self, test_product_definition, test_dataset, tmp_path):
+        """Test successful writing of a data product with valid data as a Dataset"""
+        # Write the data product
+        result = write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_dataset,
             output_path=tmp_path,
             time_variable="time",
         )

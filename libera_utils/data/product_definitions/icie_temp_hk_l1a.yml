@@ -1,6 +1,8 @@
 attributes:
   ProductID: TEMP-HK-DECODED
-  version: 0.0.1
+  algorithm_version: null
+  date_created: null
+  input_files: null
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]

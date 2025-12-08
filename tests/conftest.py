@@ -11,6 +11,7 @@ pytest_plugins = [
     "tests.plugins.aws_fixtures",
     "tests.plugins.manifest_fixtures",
     "tests.plugins.integration_test_fixtures",
+    "tests.plugins.l1a_fixtures",
 ]
 
 

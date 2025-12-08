@@ -1,6 +1,7 @@
 """Pytest fixtures for data product testing"""
 
 import numpy as np
+import pandas as pd
 import pytest
 from xarray import DataArray, Dataset
 
@@ -13,11 +14,10 @@ def test_dataset():
     unit_test_product_definition.yml
     """
     n_times = 20
-    start_us = np.datetime64("2024-01-01 00:00:00.000000").astype("datetime64[us]").astype(np.int64)
-    end_us = np.datetime64("2024-01-01 23:59:59.999999").astype("datetime64[us]").astype(np.int64)
-    random_us = np.random.randint(start_us, end_us, size=n_times)
-    random_us.sort()
-    times = random_us.astype("datetime64[ns]")
+    start_us = np.datetime64("2024-01-01 00:00:00.000000").astype("datetime64[us]")
+    end_us = np.datetime64("2024-01-01 23:59:59.999999").astype("datetime64[us]")
+    times = pd.date_range(start_us, end_us, periods=n_times)
+    times = times.astype("datetime64[ns]")
     time = DataArray(times, dims=["time"], attrs={"long_name": "Time of sample collection"})
     time.encoding = {
         "units": "nanoseconds since 1958-01-01",

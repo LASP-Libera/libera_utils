@@ -38,9 +38,10 @@ repos:
           - tomli
         files: ^.*\.(py|md|rst|yml)$
   - repo: https://github.com/lasp/prevent-dangling-todos
-    rev: v0.4.0
+    rev: v1.0.0
     hooks:
       - id: prevent-dangling-todos
-        args: ["--jira-prefix=LIBSDC", "--comment-prefix=TODO,FIXME"]
+        args: ["-t", "LIBSDC", "-c", "TODO", "-c", "FIXME", "--check-unstaged"]
+        exclude: ".pre-commit-config.yaml"
         verbose: true
         always_run: true

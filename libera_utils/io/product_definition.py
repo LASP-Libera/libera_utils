@@ -2,11 +2,11 @@
 
 import logging
 import warnings
-from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
 import numpy as np
+import pandas as pd
 import yaml
 from cloudpathlib import AnyPath
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -367,7 +367,10 @@ class LiberaDataProductDefinition(BaseModel):
     @field_validator("attributes", mode="before")
     @classmethod
     def _set_attributes(cls, raw_attributes: dict[str, Any]) -> dict[str, Any]:
-        """Validates product level attributes and adds requirements for globally consistent attributes
+        """Validates product level attributes and adds requirements for globally consistent attributes.
+
+        Any attributes defined with null values are treated as required dynamic attributes that must be set either
+        by the user's data product definition or dynamically on the Dataset before writing.
 
         Parameters
         ----------
@@ -391,8 +394,12 @@ class LiberaDataProductDefinition(BaseModel):
             raise ValueError(
                 f"Conflicting standard product metadata. These keys are reserved for standard attributes: {conflicts}"
             )
+        # Standard attributes with null values are required but must be set by the user
+        null_standard_attributes = {k: v for k, v in cls._standard_product_attributes.items() if v is None}
+        # Standard attributes with non-null values are required exactly
         non_null_standard_attributes = {k: v for k, v in cls._standard_product_attributes.items() if v is not None}
-        return {**raw_attributes, **non_null_standard_attributes}
+        # Null standard attributes are overridden by user-specified attributes if provided and further overridden by statically defined attribute values
+        return {**null_standard_attributes, **raw_attributes, **non_null_standard_attributes}
 
     @classmethod
     def from_yaml(
@@ -430,24 +437,28 @@ class LiberaDataProductDefinition(BaseModel):
         """
         return {k: v for k, v in self.attributes.items() if v is None}
 
-    def generate_data_product_filename(self, utc_start: datetime, utc_end: datetime) -> LiberaDataProductFilename:
+    def generate_data_product_filename(self, dataset: Dataset, time_variable: str) -> LiberaDataProductFilename:
         """Generate a standardized Libera data product filename.
 
         Parameters
         ----------
-        utc_start: datetime
-            Start time of data in the file
-        utc_end: datetime
-            End time of data in the file
+        dataset : Dataset
+            The Dataset for which to create a filename. Used to extract algorithm version and start and end times.
+        time_variable : str
+            Name of the time dimension to use for determining the start and end time.
 
         Returns
         -------
         LiberaDataProductFilename
             Properly formatted filename object
         """
+        # Convert numpy.datetime64 to Python datetime for filename generation
+        utc_start = pd.Timestamp(dataset[time_variable].values[0]).to_pydatetime()
+        utc_end = pd.Timestamp(dataset[time_variable].values[-1]).to_pydatetime()
+
         return LiberaDataProductFilename.from_filename_parts(
-            product_name=DataProductIdentifier(self.attributes["ProductID"]),
-            version=format_semantic_version(self.attributes["algorithm_version"]),
+            product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
+            version=format_semantic_version(dataset.attrs["algorithm_version"]),
             utc_start=utc_start,
             utc_end=utc_end,
         )

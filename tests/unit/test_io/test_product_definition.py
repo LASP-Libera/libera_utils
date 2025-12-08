@@ -1,6 +1,6 @@
 """Tests for data product definition YAML parsing and validation."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import numpy as np
 import pytest
@@ -54,12 +54,15 @@ class TestLiberaDataProductDefinition:
         with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
             definition.check_dataset_conformance(test_dataset)
 
-    def test_generate_filename(self, test_product_definition):
+    def test_generate_filename(self, test_product_definition, test_dataset):
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
-        start = datetime.fromisoformat("2025-01-01T00:00:00.000000")
-        end = datetime.fromisoformat("2025-01-01T23:59:59.999999")
-        fn = definition.generate_data_product_filename(utc_start=start, utc_end=end)
+        fn = definition.generate_data_product_filename(test_dataset, time_variable="time")
         assert isinstance(fn, LiberaDataProductFilename)
+        print(fn.path.name)
+        assert fn.filename_parts.product_name == "RAD-4CH"
+        assert fn.filename_parts.version == "V0-0-1"
+        assert fn.filename_parts.utc_start == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
+        assert fn.filename_parts.utc_end == datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
 
     def test_enforce_dataset_conformance_missing_attributes(self, test_product_definition, test_dataset):
         """Test that enforce_dataset_conformance adds missing attributes."""
