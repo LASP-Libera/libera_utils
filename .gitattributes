@@ -82,3 +82,4 @@
 /tests/test_data/packets/libera_istr_packets/ccsds_2025_218_18_41_30 filter=lfs diff=lfs merge=lfs -text
 /tests/test_data/packets/libera_istr_packets/ccsds_2025_221_16_56_48 filter=lfs diff=lfs merge=lfs -text
 /tests/test_data/packets/libera_istr_packets/ccsds_2025_221_17_17_58 filter=lfs diff=lfs merge=lfs -text
+*.nc filter=lfs diff=lfs merge=lfs -text
