@@ -177,6 +177,12 @@ def test_itrf93_pck(spice_test_data_path):
     return spice_test_data_path / "earth_000101_211220_210926.bpc"
 
 
+@pytest.fixture
+def test_scene_id(test_data_path):
+    """Path to folder containing scene ID integration test files"""
+    return test_data_path / "scene_id"
+
+
 # Test configuration files
 # ------------------------
 @pytest.fixture

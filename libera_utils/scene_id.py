@@ -13,17 +13,13 @@ from dataclasses import dataclass
 
 import netCDF4 as nc
 import numpy as np
-import pandas as pd
 import xarray as xr
 from numpy.typing import NDArray
 
 from libera_utils.config import config
-from libera_utils.io.smart_open import smart_open
+from libera_utils.scene_definitions import SceneDefinition
 
 logger = logging.getLogger(__name__)
-
-TRMM_SCENE_DEFINITION = config.get("TRMM_SCENE_DEFINITION")
-ERBE_SCENE_DEFINITION = config.get("ERBE_SCENE_DEFINITION")
 
 
 class TRMMSurfaceType(enum.IntEnum):
@@ -98,12 +94,12 @@ class IGBPSurfaceType(enum.IntEnum):
 
         Examples
         --------
-        >>> TRMMSurfaceType.TRMM_1.igbp_surface_type
+        >>> IGBPSurfaceType.EVERGREEN_NEEDLELEAF_FOREST.trmm_surface_type
         <TRMMSurfaceType.HI_SHRUB: 1>
-        >>> TRMMSurfaceType.TRMM_17.igbp_surface_type
+        >>> IGBPSurfaceType.WATER_BODIES.trmm_surface_type
         <TRMMSurfaceType.OCEAN: 0>
         """
-        IGBP_TO_TRMM_MAP = {
+        igbp_to_trmm_map = {
             1: TRMMSurfaceType.HI_SHRUB,
             2: TRMMSurfaceType.HI_SHRUB,
             3: TRMMSurfaceType.HI_SHRUB,
@@ -125,7 +121,7 @@ class IGBPSurfaceType(enum.IntEnum):
             19: TRMMSurfaceType.SNOW,
             20: TRMMSurfaceType.SNOW,
         }
-        return IGBP_TO_TRMM_MAP[self.value]
+        return igbp_to_trmm_map[self.value]
 
 
 # Scene Property Calculations
@@ -151,9 +147,9 @@ def calculate_cloud_fraction(clear_area: float | NDArray[np.floating]) -> float 
 
     Examples
     --------
-    >>> cloud_fraction(30.0)
+    >>> calculate_cloud_fraction(30.0)
     70.0
-    >>> cloud_fraction(np.array([10, 25, 90]))
+    >>> calculate_cloud_fraction(np.array([10, 25, 90]))
     array([90, 75, 10])
     """
     # Check if input is within valid range
@@ -188,9 +184,9 @@ def calculate_surface_wind(
 
     Examples
     --------
-    >>> surface_wind(3.0, 4.0)
+    >>> calculate_surface_wind(3.0, 4.0)
     5.0
-    >>> surface_wind(np.array([3, np.nan]), np.array([4, 5]))
+    >>> calculate_surface_wind(np.array([3, np.nan]), np.array([4, 5]))
     array([5., nan])
     """
     surface_wind = np.sqrt(surface_wind_u**2 + surface_wind_v**2)
@@ -260,84 +256,6 @@ def calculate_trmm_surface_type(igbp_surface_type: int | NDArray[np.integer]) ->
     return result
 
 
-def calculate_cloud_fraction_weighted_property_for_layer(
-    property_lower: float | NDArray[np.floating],
-    property_upper: float | NDArray[np.floating],
-    cloud_fraction_lower: float | NDArray[np.floating],
-    cloud_fraction_upper: float | NDArray[np.floating],
-    cloud_fraction: float | NDArray[np.floating],
-) -> float | NDArray[np.floating]:
-    """Calculate cloud fraction weighted property from upper and lower layers.
-
-    Computes a weighted average of a cloud property across two atmospheric layers, where the weights are determined by
-    each layer's contribution to total cloud fraction.
-
-    Parameters
-    ----------
-    property_lower : float or ndarray
-        Property values for the lower cloud layer
-    property_upper : float or ndarray
-        Property values for the upper cloud layer
-    cloud_fraction_lower : float or ndarray
-        Cloud fraction for the lower cloud layer (0-100)
-    cloud_fraction_upper : float or ndarray
-        Cloud fraction for the upper cloud layer (0-100)
-    cloud_fraction : float or ndarray
-        Total cloud fraction (0-100)
-
-    Returns
-    -------
-    float or ndarray
-        Property weighted by cloud fraction and summed across layers,
-        or np.nan if no valid data or zero total cloud fraction
-
-    Notes
-    -----
-    The weighting formula is:
-        result = (property_lower * cloud_fraction_lower / cloud_fraction) +
-                 (property_upper * cloud_fraction_upper / cloud_fraction)
-
-    Returns NaN when:
-    - Total cloud fraction is zero or NaN
-    - Both layers have invalid (NaN) property values
-    - All cloud fractions are NaN
-
-    Examples
-    --------
-    >>> calculate_cloud_fraction_weighted_property_for_layer(
-    ...     property_lower=10.0, property_upper=20.0,
-    ...     cloud_fraction_lower=30.0, cloud_fraction_upper=70.0,
-    ...     cloud_fraction=100.0
-    ... )
-    17.0  # (10*30 + 20*70)/100
-    """
-    # Handle zero total cloud fraction
-    valid_total = ~np.isnan(cloud_fraction) & (cloud_fraction > 0)
-
-    # Create masks for valid data
-    valid_lower = ~np.isnan(property_lower) & ~np.isnan(cloud_fraction_lower) & valid_total
-    valid_upper = ~np.isnan(property_upper) & ~np.isnan(cloud_fraction_upper) & valid_total
-
-    # Safely calculate weights by using np.divide with where parameter
-    # This avoids division by zero warnings/errors
-    weight_lower = np.zeros_like(cloud_fraction_lower, dtype=float)
-    weight_upper = np.zeros_like(cloud_fraction_upper, dtype=float)
-
-    # Only divide where valid_total is True (cloud_fraction > 0)
-    np.divide(cloud_fraction_lower, cloud_fraction, out=weight_lower, where=valid_total)
-    np.divide(cloud_fraction_upper, cloud_fraction, out=weight_upper, where=valid_total)
-
-    # Calculate weighted values
-    weighted_lower = np.where(valid_lower, weight_lower * property_lower, 0)
-    weighted_upper = np.where(valid_upper, weight_upper * property_upper, 0)
-
-    # Sum and handle cases with no valid data
-    result = weighted_lower + weighted_upper
-    no_valid_data = ~(valid_lower | valid_upper)
-
-    return np.where(no_valid_data, np.nan, result)
-
-
 def calculate_cloud_fraction_weighted_optical_depth(
     optical_depth_lower: float | NDArray[np.floating],
     optical_depth_upper: float | NDArray[np.floating],
@@ -369,18 +287,32 @@ def calculate_cloud_fraction_weighted_optical_depth(
         Optical depth weighted by cloud fraction and summed across layers,
         or np.nan if no valid data or zero total cloud fraction
 
-    See Also
-    --------
-    calculate_cloud_fraction_weighted_property_for_layer : General weighting function
-
-    Examples
-    --------
-    >>> optical_depth(5.0, 15.0, 40.0, 60.0, 100.0)
-    11.0  # (5*40 + 15*60)/100
     """
-    return calculate_cloud_fraction_weighted_property_for_layer(
-        optical_depth_lower, optical_depth_upper, cloud_fraction_lower, cloud_fraction_upper, cloud_fraction
+    # Initialize result array
+    result = np.zeros_like(optical_depth_lower, dtype=np.float64)
+
+    # Check where cloud_fraction is non-zero
+    no_clouds = cloud_fraction == 0
+
+    # For each point with clouds, calculate weighted optical depth
+    optical_temp_1 = np.where(
+        (np.isnan(optical_depth_lower) | no_clouds), 0.0, (cloud_fraction_lower / cloud_fraction) * optical_depth_lower
     )
+
+    optical_temp_2 = np.where(
+        (np.isnan(optical_depth_upper) | no_clouds), 0.0, (cloud_fraction_upper / cloud_fraction) * optical_depth_upper
+    )
+
+    # Sum contributions
+    weighted_optical_depth = optical_temp_1 + optical_temp_2
+
+    # Set to NaN only if BOTH optical_depth values are NaN
+    both_optical_nan = np.isnan(optical_depth_lower) & np.isnan(optical_depth_upper)
+
+    # Apply the logic: NaN if no clouds OR both optical depths are NaN
+    result = np.where(no_clouds | both_optical_nan, np.nan, weighted_optical_depth)
+
+    return result
 
 
 def calculate_cloud_phase(
@@ -389,6 +321,8 @@ def calculate_cloud_phase(
     cloud_fraction_lower: float | NDArray[np.floating],
     cloud_fraction_upper: float | NDArray[np.floating],
     cloud_fraction: float | NDArray[np.floating],
+    optical_depth_lower: float | NDArray[np.floating],
+    optical_depth_upper: float | NDArray[np.floating],
 ) -> float | NDArray[np.floating]:
     """Calculate weighted cloud phase from upper and lower cloud layers.
 
@@ -407,37 +341,41 @@ def calculate_cloud_phase(
         Cloud fraction for upper layer (0-100)
     cloud_fraction : float or ndarray
         Total cloud fraction (0-100)
+    optical_depth_lower : float or ndarray
+        Optical depth for lower layer (used for NaN check)
+    optical_depth_upper : float or ndarray
+        Optical depth for upper layer (used for NaN check)
 
     Returns
     -------
     float or ndarray
         Cloud phase weighted by cloud fraction and rounded to nearest integer
         (1=liquid, 2=ice), or np.nan if no valid data
-
-    Notes
-    -----
-    The weighted average is rounded to the nearest integer to provide a discrete phase classification. Values between
-    1 and 2 are rounded to either 1 or 2, with 1.5 rounding to 2.
-
-    Examples
-    --------
-    >>> cloud_phase(1.0, 2.0, 30.0, 70.0, 100.0)
-    2.0  # (1*30 + 2*70)/100 = 1.7, rounds to 2
-    >>> cloud_phase(1.0, 1.0, 50.0, 50.0, 100.0)
-    1.0  # All liquid
     """
-    weighted_cloud_phase = calculate_cloud_fraction_weighted_property_for_layer(
-        cloud_phase_lower, cloud_phase_upper, cloud_fraction_lower, cloud_fraction_upper, cloud_fraction
-    )
+    # Initialize result array
+    result = np.zeros_like(cloud_phase_lower, dtype=np.float64)
 
-    # Handle both scalar and array cases
-    is_nan = np.isnan(weighted_cloud_phase)
-    if np.isscalar(is_nan):
-        if is_nan:
-            return np.nan
-        return np.round(weighted_cloud_phase, 0)
-    else:
-        return np.where(is_nan, np.nan, np.round(weighted_cloud_phase, 0))
+    # Check where cloud_fraction is non-zero
+    no_clouds = cloud_fraction == 0
+
+    # For each point with clouds, calculate weighted phase
+    phase_temp_1 = np.where(
+        np.isnan(cloud_phase_lower) | no_clouds, 0.0, (cloud_fraction_lower * cloud_phase_lower) / cloud_fraction
+    )
+    phase_temp_2 = np.where(
+        np.isnan(cloud_phase_upper) | no_clouds, 0.0, (cloud_fraction_upper * cloud_phase_upper) / cloud_fraction
+    )
+    weighted_phase = phase_temp_1 + phase_temp_2
+
+    # Set to NaN only if BOTH optical_depth values are NaN
+    both_optical_nan = np.isnan(optical_depth_lower) & np.isnan(optical_depth_upper)
+    result = np.where(no_clouds | both_optical_nan, np.nan, weighted_phase)
+    rounded_phase = np.round(result)
+
+    # Final validation: cloud phase must be 1 or 2 (or NaN)
+    result = np.where((rounded_phase < 0.5) | (rounded_phase > 2.5) | np.isnan(rounded_phase), np.nan, rounded_phase)
+
+    return result
 
 
 # Scene Property Column Names and Relationships
@@ -507,7 +445,7 @@ class FootprintVariables(enum.StrEnum):
 class CalculationSpec:
     """Specification for calculating a derived variable.
 
-    Defines the parameters needed to calculate a derived variable from input data,  including the calculation function,
+    Defines the parameters needed to calculate a derived variable from input data, including the calculation function,
     required inputs, and any dependencies on other calculated variables.
 
     Attributes
@@ -528,7 +466,7 @@ class CalculationSpec:
     --------
     >>> spec = CalculationSpec(
     ...     output_var="cloud_fraction",
-    ...     function=cloud_fraction,
+    ...     function=calculate_cloud_fraction,
     ...     input_vars=["clear_area"],
     ...     output_datatype=float
     ... )
@@ -584,467 +522,13 @@ _CALCULATED_VARIABLE_MAP = {
             FootprintVariables.CLOUD_FRACTION_LOWER,
             FootprintVariables.CLOUD_FRACTION_UPPER,
             FootprintVariables.CLOUD_FRACTION,
+            FootprintVariables.OPTICAL_DEPTH_LOWER,
+            FootprintVariables.OPTICAL_DEPTH_UPPER,
         ],
         output_datatype=float,
         dependent_calculations=[FootprintVariables.CLOUD_FRACTION],
     ),
 }
-
-# Scene Definitions
-
-
-@dataclass
-class Scene:
-    """Represents a single scene with its variable bin definitions.
-
-    A scene defines a specific atmospheric state characterized by ranges of multiple variables (e.g., cloud fraction,
-    optical depth, surface type). Data points are classified into scenes when all their variable values fall within the
-    scene's defined ranges.
-
-    Attributes
-    ----------
-    scene_id : int
-        Unique identifier for this scene
-    variable_ranges : dict of str to tuple of (float, float)
-        Dictionary mapping variable names to (min, max) tuples defining
-        the acceptable range for each variable. None values indicate
-        unbounded ranges (no min or no max constraint).
-
-    Methods
-    -------
-    matches(data_point)
-        Check if a data point belongs to this scene
-
-    Examples
-    --------
-    >>> scene = Scene(
-    ...     scene_id=1,
-    ...     variable_ranges={
-    ...         "cloud_fraction": (0.0, 50.0),
-    ...         "optical_depth": (0.0, 10.0)
-    ...     }
-    ... )
-    >>> scene.matches({"cloud_fraction": 30.0, "optical_depth": 5.0})
-    True
-    >>> scene.matches({"cloud_fraction": 60.0, "optical_depth": 5.0})
-    False
-    """
-
-    scene_id: int
-    variable_ranges: dict[str, tuple[float, float]]
-
-    def matches(self, data_point: dict[str, float]) -> bool:
-        """Check if a data point falls within all variable ranges for this scene.
-
-        Parameters
-        ----------
-        data_point : dict of str to float
-            Dictionary of variable names to values
-
-        Returns
-        -------
-        bool
-            True if data point matches all variable ranges, False otherwise
-
-        Notes
-        -----
-        A data point matches when:
-        - All required variables are present in the data point
-        - All variable values are within their specified ranges (inclusive)
-        - No variable values are NaN
-
-        Range boundaries:
-        - None for min_val means no lower bound
-        - None for max_val means no upper bound
-        - Both bounds are inclusive when specified
-
-        Examples
-        --------
-        >>> scene = Scene(
-        ...     scene_id=1,
-        ...     variable_ranges={"temp": (0.0, 100.0), "pressure": (None, 1000.0)}
-        ... )
-        >>> scene.matches({"temp": 50.0, "pressure": 900.0})
-        True
-        >>> scene.matches({"temp": 150.0, "pressure": 900.0})
-        False
-        >>> scene.matches({"temp": np.nan, "pressure": 900.0})
-        False
-        """
-        for var_name, (min_val, max_val) in self.variable_ranges.items():
-            if var_name not in data_point:
-                return False
-
-            value = data_point[var_name]
-
-            # Handle NaN values
-            if np.isnan(value):
-                return False
-
-            # Check if value is within range (inclusive on both ends)
-            # Handle None for unbounded ranges
-            if min_val is not None and value < min_val:
-                return False
-            if max_val is not None and value > max_val:
-                return False
-
-        return True
-
-
-class SceneDefinition:
-    """Defines scenes and their classification rules from CSV configuration.
-
-    Loads and manages scene definitions from a CSV file, providing functionality to identify which scene a given set of
-    atmospheric measurements belongs to.
-
-    Attributes
-    ----------
-    type : str
-        Type of scene definition (e.g., 'TRMM', 'ERBE'), derived from filename
-    scenes : list of Scene
-        List of scene definitions with their variable ranges
-    required_columns : list of str
-        List of variable names required for scene identification
-
-    Methods
-    -------
-    identify(data)
-        Identify scene IDs for all data points in a dataset
-    validate_input_data_columns(data)
-        Validate that dataset contains all required variables
-
-    Notes
-    -----
-    Expected CSV format:
-        scene_id,variable1_min,variable1_max,variable2_min,variable2_max,...
-        1,0.0,10.0,20.0,30.0,...
-        2,10.0,20.0,30.0,40.0,...
-
-    Each variable must have both a _min and _max column. NaN or empty values
-    indicate unbounded ranges.
-
-    Examples
-    --------
-    >>> scene_def = SceneDefinition(Path("trmm.csv"))
-    >>> print(scene_def.type)
-    'TRMM'
-    >>> print(len(scene_def.scenes))
-    42
-    """
-
-    def __init__(self, definition_path: pathlib.Path):
-        """Initialize scene definition from CSV file.
-
-        Parameters
-        ----------
-        definition_path : pathlib.Path
-            Path to CSV file containing scene definitions
-
-        Raises
-        ------
-        FileNotFoundError
-            If the definition file does not exist
-        ValueError
-            If the CSV format is invalid or missing required columns
-
-        Notes
-        -----
-        The CSV file must contain:
-        - A 'scene_id' column with unique integer identifiers
-        - Pairs of columns for each variable: {var}_min and {var}_max
-        - At least one variable pair
-        """
-        self.type = definition_path.stem.upper()
-
-        # Read CSV with scene definitions
-        scene_df = pd.read_csv(definition_path)
-
-        # TODO: LIBSDC-589 Add validation for definition file contents
-        # self.validate_scene_definition_file()
-
-        # Parse variable names from column headers
-        # Columns should be: scene_id, var1_min, var1_max, var2_min, var2_max, etc.
-        self.required_columns = self._extract_variable_names(scene_df.columns)
-
-        # Create SceneBin objects for each row
-        self.scenes = []
-        for _, row in scene_df.iterrows():
-            scene_id = int(row["scene_id"])
-            variable_ranges = self._parse_row_to_ranges(row, self.required_columns)
-            self.scenes.append(Scene(scene_id, variable_ranges))
-
-        logger.info(f"Loaded {len(self.scenes)} scenes from {definition_path}")
-        logger.info(f"Required variables: {self.required_columns}")
-
-    def _extract_variable_names(self, columns: pd.Index) -> list[str]:
-        """Extract unique variable names from min/max column pairs.
-
-        Parameters
-        ----------
-        columns : pd.Index
-            Column names from the CSV
-
-        Returns
-        -------
-        list of str
-            Sorted list of unique variable names
-
-        Notes
-        -----
-        Variable names are extracted by removing the '_min' or '_max' suffix from column names. Only columns with these
-        suffixes are considered as variable definitions.
-
-        Examples
-        --------
-        >>> cols = pd.Index(['scene_id', 'temp_min', 'temp_max', 'pressure_min', 'pressure_max'])
-        >>> scene_def._extract_variable_names(cols)
-        ['pressure', 'temp']
-        """
-        variable_names = set()
-        for col in columns:
-            if col == "scene_id":
-                continue
-
-            # Remove _min or _max suffix to get variable name
-            if col.endswith("_min"):
-                var_name = col[:-4]  # Remove '_min'
-                variable_names.add(var_name)
-            elif col.endswith("_max"):
-                var_name = col[:-4]  # Remove '_max'
-                variable_names.add(var_name)
-
-        return sorted(list(variable_names))
-
-    def _parse_row_to_ranges(
-        self, row: pd.Series, variable_names: list[str]
-    ) -> dict[str, tuple[float | None, float | None]]:
-        """Parse a CSV row into variable ranges.
-
-        Parameters
-        ----------
-        row : pd.Series
-            Row from the scene definition DataFrame containing scene_id and
-            variable min/max values
-        variable_names : list of str
-            List of variable names to extract ranges for
-
-        Returns
-        -------
-        dict of str to tuple of (float or None, float or None)
-            Dictionary mapping variable names to (min, max) tuples.
-            None values indicate unbounded ranges (no constraint).
-
-        Notes
-        -----
-        For each variable, looks for columns named {variable}_min and
-        {variable}_max. NaN values in the CSV are converted to None to
-        indicate unbounded ranges.
-
-        Examples
-        --------
-        >>> row = pd.Series({'scene_id': 1, 'temp_min': 0.0, 'temp_max': 100.0,
-        ...                  'pressure_min': np.nan, 'pressure_max': 1000.0})
-        >>> scene_def._parse_row_to_ranges(row, ['temp', 'pressure'])
-        {'temp': (0.0, 100.0), 'pressure': (None, 1000.0)}
-        """
-        ranges = {}
-        for var_name in variable_names:
-            min_col = f"{var_name}_min"
-            max_col = f"{var_name}_max"
-
-            min_val = row.get(min_col, None)
-            max_val = row.get(max_col, None)
-
-            # Convert NaN to None for unbounded ranges
-            if pd.isna(min_val):
-                min_val = None
-            else:
-                min_val = float(min_val)
-
-            if pd.isna(max_val):
-                max_val = None
-            else:
-                max_val = float(max_val)
-
-            ranges[var_name] = (min_val, max_val)
-
-        return ranges
-
-    def identify(self, data: xr.Dataset) -> xr.DataArray:
-        """Identify scene IDs for all data points in the dataset.
-
-        Classifies each data point in the dataset by finding the first scene whose variable ranges match all the data
-        point's variable values.
-
-        Parameters
-        ----------
-        data : xr.Dataset
-            Dataset containing all required variables for scene identification
-
-        Returns
-        -------
-        xr.DataArray
-            Array of scene IDs with the same dimensions as the input data.
-            Scene ID of -1 indicates no matching scene was found for that point.
-
-        Raises
-        ------
-        ValueError
-            If the dataset is missing required variables
-
-        Notes
-        -----
-        - Scene matching uses first-match priority: if multiple scenes could
-          match a data point, the first one in the definition list is assigned
-        - Data points with NaN values in any required variable are not matched
-        - The method logs statistics about matched/unmatched points and the
-          distribution of scene IDs
-
-        Examples
-        --------
-        >>> data = xr.Dataset({
-        ...     'cloud_fraction': ([('x',)], [20.0, 60.0, 85.0]),
-        ...     'optical_depth': ([('x',)], [5.0, 15.0, 25.0])
-        ... })
-        >>> scene_def = SceneDefinition(Path("scenes.csv"))
-        >>> scene_ids = scene_def.identify(data)
-        >>> print(scene_ids.values)
-        array([1, 2, -1])  # Last point didn't match any scene
-        """
-        self.validate_input_data_columns(data)
-
-        # Get the dimensions and shape
-        dims = list(data.dims.keys())
-        shape = tuple(data.dims[dim] for dim in dims)
-
-        # Initialize result array with -1 (no match)
-        scene_ids = np.full(shape, -1, dtype=np.int32)
-
-        # Vectorized approach for better performance
-        scene_ids = self._identify_vectorized(data, dims, shape)
-
-        # Create DataArray with same dimensions as input
-        result = xr.DataArray(
-            scene_ids,
-            dims=dims,
-            coords={dim: data.coords[dim] for dim in dims if dim in data.coords},
-            name=f"scene_id_{self.type.lower()}",
-        )
-
-        # Log statistics
-        unique_scenes, counts = np.unique(scene_ids[scene_ids != -1], return_counts=True)
-        unmatched = np.sum(scene_ids == -1)
-        logger.info(f"{self.type} scene identification complete:")
-        logger.info(f"  Matched: {np.sum(scene_ids != -1)} points")
-        logger.info(f"  Unmatched: {unmatched} points")
-        for scene_id, count in zip(unique_scenes, counts):
-            logger.info(f"  Scene {scene_id}: {count} points")
-
-        return result
-
-    def _identify_vectorized(self, data: xr.Dataset, dims: list[str], shape: tuple[int, ...]) -> np.ndarray:
-        """Vectorized scene identification for better performance.
-
-        Uses NumPy array operations to efficiently classify all data points simultaneously rather than iterating
-        point-by-point.
-
-        Parameters
-        ----------
-        data : xr.Dataset
-            Dataset containing all required variables
-        dims : list of str
-            List of dimension names
-        shape : tuple of int
-            Shape of the output array
-
-        Returns
-        -------
-        np.ndarray
-            Array of scene IDs with shape matching input dimensions
-
-        Notes
-        -----
-        For each scene, creates a boolean mask identifying all matching points, then assigns the scene ID to those
-        points. Earlier scenes in the list have priority for overlapping classifications.
-        """
-        # Initialize result array
-        scene_ids = np.full(shape, -1, dtype=np.int32)
-
-        # For each scene, create a mask of matching points
-        for scene in self.scenes:
-            # Start with all True mask
-            mask = np.ones(shape, dtype=bool)
-
-            # Apply each variable range constraint
-            for var_name, (min_val, max_val) in scene.variable_ranges.items():
-                var_data = data[var_name].values
-
-                # Update mask with this variable's constraints
-                if min_val is not None:
-                    mask &= var_data >= min_val
-                if max_val is not None:
-                    mask &= var_data <= max_val
-
-                # Exclude NaN values
-                mask &= ~np.isnan(var_data)
-
-            # Assign scene ID to matching points (only if not already assigned)
-            # This gives priority to earlier scenes in the list
-            scene_ids = np.where((mask) & (scene_ids == -1), scene.scene_id, scene_ids)
-
-        return scene_ids
-
-    def validate_input_data_columns(self, data: xr.Dataset):
-        """Ensure input data contains all required FootprintVariables.
-
-        Parameters
-        ----------
-        data : xr.Dataset
-            Dataset to validate
-
-        Raises
-        ------
-        ValueError
-            If required variables are missing from the dataset, with a message
-            listing all missing variables
-
-        Examples
-        --------
-        >>> scene_def = SceneDefinition(Path("scenes.csv"))
-        >>> scene_def.required_columns = ['cloud_fraction', 'optical_depth']
-        >>> data = xr.Dataset({'cloud_fraction': [10, 20]})
-        >>> scene_def.validate_input_data_columns(data)
-        ValueError: Required columns ['optical_depth'] not in input data for TRMM scene identification.
-        """
-        missing_columns = []
-        for column in self.required_columns:
-            if column not in data.data_vars:
-                missing_columns.append(column)
-
-        if missing_columns:
-            raise ValueError(
-                f"Required columns {missing_columns} not in input data for {self.type} scene identification."
-            )
-
-    def validate_scene_definition_file(self):
-        """Ensure scene definition file contains valid column names, bin ranges, that classification parameters are not
-        duplicated across IDs, and that there are no gaps in classification bins.
-
-        Raises
-        ------
-        NotImplementedError
-            This validation is not yet implemented
-
-        Notes
-        -----
-        TODO: LIBSDC-589 Implement validation checks for:
-        - Valid column naming conventions
-        - Non-overlapping scene definitions
-        - Complete coverage of parameter space (no gaps)
-        - Consistent min/max value ordering
-        """
-        raise NotImplementedError()
-
 
 # Scene Identification Data Processing
 
@@ -1089,7 +573,7 @@ class FootprintData:
         self._data = data
 
     @classmethod
-    def from_ceres_ssf(cls, ssf_path: pathlib.Path, scene_definitions: list[SceneDefinition]):
+    def from_ceres_ssf(cls, ssf_path: pathlib.Path):
         """Process SSF (Single Scanner Footprint) and camera data to identify scenes.
 
         Reads CERES SSF data, extracts relevant variables, calculates derived fields, and identifies scene
@@ -1105,7 +589,8 @@ class FootprintData:
         Returns
         -------
         FootprintData
-            Processed dataset containing original variables and calculated fields ready for scene identification.
+            Processed footprint data object containing original variables, calculated
+            derived fields, and scene IDs.
 
         Raises
         ------
@@ -1118,7 +603,7 @@ class FootprintData:
         1. Extract variables from SSF NetCDF groups
         2. Apply maximum value thresholds to cloud properties
         3. Calculate derived fields (cloud fraction, optical depth, wind speed, etc.)
-        4. Match footprints to scene IDs
+        4. Match footprints to scene IDs using provided scene definitions
 
         Maximum value thresholds applied:
         - Cloud fraction: 100%
@@ -1127,20 +612,18 @@ class FootprintData:
 
         Examples
         --------
-        >>> footprint = FootprintData()
         >>> scene_defs = [SceneDefinition(Path("trmm.csv"))]
-        >>> data = footprint.process_ssf_and_camera(
+        >>> footprint_data = FootprintData.from_ceres_ssf(
         ...     Path("CERES_SSF_NOAA20_2024001.nc"),
         ...     scene_defs
         ... )
         """
         try:
-            with smart_open(ssf_path) as file:
-                with nc.Dataset(file) as dataset:
-                    footprint_data = cls(cls()._extract_data_from_CeresSSFNOAA20FM6Ed1C(dataset))
+            with nc.Dataset(ssf_path) as file:
+                extracted_data = cls._extract_data_from_CeresSSFNOAA20FM6Ed1C(file)
         except FileNotFoundError:
             raise FileNotFoundError(f"Unable to parse input file: {ssf_path}")
-
+        footprint_data = cls(extracted_data)
         # Format extracted data
         max_cloud_fraction = 100.0
         max_cloud_phase = 2.0
@@ -1157,13 +640,6 @@ class FootprintData:
         for column_name, threshold in columns_with_max_value:
             footprint_data._fill_column_above_max_value(column_name, threshold)
 
-        # Calculate required fields for each scene
-        required_calculated_fields = []
-        for scene_definition in scene_definitions:
-            required_calculated_fields.append(scene_definition.required_calculated_fields)
-
-        footprint_data._calculate_required_fields(required_calculated_fields)
-        footprint_data.identify_scenes(scene_definitions)
         return footprint_data
 
     @classmethod
@@ -1203,34 +679,62 @@ class FootprintData:
         """
         raise NotImplementedError("Calculating scene IDs not implemented for clouds/ground scene data format.")
 
-    def identify_scenes(self, additional_scene_definitions: list[pathlib.Path] | None = None):
-        """Calculate scene IDs for all data points.
+    def identify_scenes(
+        self,
+        scene_definitions: list[SceneDefinition] = [
+            SceneDefinition(pathlib.Path(config.get("TRMM_SCENE_DEFINITION"))),
+            SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
+        ],
+        additional_scene_definitions_files: list[pathlib.Path] | None = None,
+    ):
+        """Identify and assign scene IDs to all footprints based on scene definitions.
 
-        This method performs the actual scene identification algorithm on the
-        processed footprint data. Currently a placeholder implementation that
-        should be updated with the actual scene classification logic.
+        Applies scene classification rules from one or more SceneDefinition objects to assign scene IDs to each
+        footprint in the dataset.
 
-        additional_scene_definitions : list of pathlib.Path or None, optional
-            Additional scene definition CSV files to apply beyond the default
-            TRMM and ERBE definitions. Default is None.
+        Parameters
+        ----------
+        scene_definitions : list[SceneDefinition]
+            List of SceneDefinition objects from standard libera_utils definitions
+        additional_scene_definitions_files : list of pathlib.Path or None
+            List of scene definition files containing classification rules for custom analysis.
 
         Notes
         -----
-        Default scene definitions used:
-        - TRMM: Tropical Rainfall Measuring Mission scenes
-        - ERBE: Earth Radiation Budget Experiment scenes
-        TODO: LIBSDC-674 Add unfiltering scene ID algorithm
+        This method modifies self._data in place by adding scene IDs for each row of footprint data.
 
-        TODO: LIBSDC-589 Implement the scene ID matching algorithm. Scene identification
+        For each SceneDefinition provided:
+        1. Validates that all required variables exist in the footprint data
+        2. Matches each footprint to a scene based on variable ranges
+        3. Adds a new variable to the dataset with the scene IDs
 
-        The implementation should:
-        1. Assign scene IDs to footprint based on variable ranges in scene definitions (default and custom)
-        2. Add scene ID variables as columns to self._data
-        3. Handle unmatched footprints appropriately
+        Footprints that don't match any scene are assigned a scene ID of 0.
+
+        TODO: LIBSDC-674 - Add unfiltering scene ID algorithm
+
+        Examples
+        --------
+        >>> footprint_data = FootprintData(dataset)
+        >>> footprint_data.identify_scenes()
         """
-        # Placeholder implementation - to be replaced with actual scene ID logic. Scene Identification will be a
-        # standalone function that utilizes this function once input data has been preprocessed into this FootprintData.
-        pass
+        if scene_definitions is None:
+            raise ValueError("No scene definitions provided.")
+        if len(scene_definitions) == 0:
+            raise ValueError("Scene definitions list is empty.")
+
+        # Calculate required fields for each scene
+        required_calculated_fields = list()
+        if additional_scene_definitions_files:
+            for additional_scene_definition in additional_scene_definitions_files:
+                scene_definitions.append(SceneDefinition(additional_scene_definition))
+        for scene_definition in scene_definitions:
+            required_calculated_fields += scene_definition.required_columns
+
+        self._calculate_required_fields(required_calculated_fields)
+        for scene_definition in scene_definitions:
+            logger.info(f"Identifying {scene_definition.type} scenes...")
+            self._data = scene_definition.identify_and_update(self._data)
+            logger.info(f"Added scene_id_{scene_definition.type.lower()} to dataset")
 
     def _calculate_required_fields(self, result_fields: list[str]):
         """Calculate necessary derived fields on data from input FootprintVariables.
@@ -1263,7 +767,7 @@ class FootprintData:
         # We could copy _data here, but instead we are modifying in place to save memory
 
         # Track calculated fields to handle dependencies
-        calculated = set(self._data.data_vars.keys())
+        calculated = set(self._data.variables)
 
         # Keep calculating until all requested fields are done
         remaining = set(result_fields) - calculated
@@ -1318,16 +822,17 @@ class FootprintData:
             If required input variables are not available in the dataset
 
         """
-        # Check if all input variables are available
         if all(var in calculated for var in spec.input_vars):
-            # Extract input arrays
             inputs = [self._data[var] for var in spec.input_vars]
 
-            self._data[spec.output_var] = xr.apply_ufunc(
+            # Calculate using xarray's apply_ufunc with proper output dtype specification
+            result = xr.apply_ufunc(
                 spec.function,
                 *inputs,
                 output_dtypes=[spec.output_datatype],
+                keep_attrs=True,
             )
+            self._data[spec.output_var] = result
         else:
             raise ValueError(f"Cannot calculate fields - missing dependencies {spec.input_vars}")
 
@@ -1393,61 +898,110 @@ class FootprintData:
         if column_name not in self._data.variables:
             raise ValueError(f"Column {column_name} not found in input data")
         else:
-            self._data[column_name] = self._data[column_name].where(self._data[column_name] < threshold, fill_value)
+            self._data[column_name] = self._data[column_name].where(self._data[column_name] <= threshold, fill_value)
 
     @staticmethod
-    def _extract_data_from_CeresSSFNOAA20FM6Ed1C(dataset: xr.Dataset) -> xr.Dataset:
-        """Extract data from CERES SSF NOAA-20 FM6 Edition 1C NetCDF file.
-
-        Reads specific variables from the hierarchical group structure of CERES SSF (Single Scanner Footprint) files
-        and organizes them into a flat xarray Dataset with standardized variable names.
+    def _extract_data_from_CeresSSFNOAA20FM6Ed1C(dataset: nc.Dataset) -> xr.Dataset:
+        """Extract data from CERES SSF file (using numpy arrays).
 
         Parameters
         ----------
-        dataset : xr.Dataset
-            Open NetCDF dataset in CeresSSFNOAA20FM6Ed1C format
+        dataset : netCDF4.Dataset
+            Open NetCDF4 dataset in CeresSSFNOAA20FM6Ed1C format
+        chunk_size : int, optional
+            Number of footprints per chunk along the first dimension (parameter kept for compatibility but not used)
 
-        Notes
-        -----
-        Data is extracted from NetCDF groups:
-        - Surface_Map: Surface type information
-        - Cloudy_Footprint_Area: Cloud properties (fraction, phase, optical depth)
-        - Full_Footprint_Area: Wind vectors
-        - Clear_Footprint_Area: Clear sky coverage
+        Returns
+        -------
+        xr.Dataset
+            Dataset containing extracted footprint variables as numpy arrays
 
-        Array indexing:
-        - surface_igbp_type[:,0]: First surface type estimate
-        - layers_coverages[:,1] and [:,2]: Lower and upper cloud layers
-        - cloud_*[:,0] and [:,1]: Lower and upper cloud layers
         """
-        cloud_fraction = np.array(dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"])
-        igbp_surface_type = np.array(dataset.groups["Surface_Map"].variables["surface_igbp_type"])
-        cloud_phase = np.array(dataset.groups["Cloudy_Footprint_Area"].variables["cloud_particle_phase_37um_mean"])
-        optical_depth = np.array(dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"])
-        surface_wind_u = np.array(dataset.groups["Full_Footprint_Area"].variables["surface_wind_u_vector"])
-        surface_wind_v = np.array(dataset.groups["Full_Footprint_Area"].variables["surface_wind_v_vector"])
-        clear_area = np.array(dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"])
 
-        igbp_surface_type = igbp_surface_type[:, 0]
-        cloud_fraction_1 = cloud_fraction[:, 1]
-        cloud_fraction_2 = cloud_fraction[:, 2]
-        cloud_phase_1 = cloud_phase[:, 0]
-        cloud_phase_2 = cloud_phase[:, 1]
-        optical_depth_1 = optical_depth[:, 0]
-        optical_depth_2 = optical_depth[:, 1]
+        try:
+            logger.info("Reading NetCDF data...")
+
+            # Extract 2D arrays - read to numpy first
+            cloud_fraction_np = np.array(dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"][:])
+            logger.debug(f"Cloud fraction shape: {cloud_fraction_np.shape}")
+
+            igbp_surface_type_np = np.array(dataset.groups["Surface_Map"].variables["surface_igbp_type"][:])
+            logger.debug(f"IGBP surface type shape: {igbp_surface_type_np.shape}")
+
+            cloud_phase_var = dataset.groups["Cloudy_Footprint_Area"].variables["cloud_particle_phase_37um_mean"]
+            cloud_phase_np = np.array(cloud_phase_var[:])
+            cloud_phase_fill_value = cloud_phase_var._FillValue if hasattr(cloud_phase_var, "_FillValue") else None
+            logger.debug(f"Cloud phase shape: {cloud_phase_np.shape}")
+            logger.debug(f"Cloud phase fill value: {cloud_phase_fill_value}")
+
+            optical_depth_np = np.array(
+                dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"][:]
+            )
+            logger.debug(f"Optical depth shape: {optical_depth_np.shape}")
+
+            # Extract 1D arrays - read to numpy first
+            surface_wind_u_np = np.array(dataset.groups["Full_Footprint_Area"].variables["surface_wind_u_vector"][:])
+            logger.debug(f"Surface wind U shape: {surface_wind_u_np.shape}")
+
+            surface_wind_v_np = np.array(dataset.groups["Full_Footprint_Area"].variables["surface_wind_v_vector"][:])
+            logger.debug(f"Surface wind V shape: {surface_wind_v_np.shape}")
+
+            clear_area_np = np.array(dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"][:])
+            logger.debug(f"Clear area shape: {clear_area_np.shape}")
+
+            logger.info("NetCDF data read successfully")
+
+        except KeyError as e:
+            raise ValueError(f"Required variable or group not found in NetCDF file: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Error reading NetCDF file: {e}")
+
+        # Slice 2D arrays to extract specific layers/estimates
+        logger.info("Extracting layers from 2D arrays...")
+
+        igbp_surface_type = igbp_surface_type_np[:, 0]
+        cloud_fraction_lower = cloud_fraction_np[:, 1]
+        cloud_fraction_upper = cloud_fraction_np[:, 2]
+        cloud_phase_lower = cloud_phase_np[:, 0]
+        cloud_phase_upper = cloud_phase_np[:, 1]
+        optical_depth_lower = optical_depth_np[:, 0]
+        optical_depth_upper = optical_depth_np[:, 1]
+
+        # Process cloud phase arrays: replace fill values with NaN
+        if cloud_phase_fill_value is not None:
+            cloud_phase_lower = np.where(cloud_phase_lower == cloud_phase_fill_value, np.nan, cloud_phase_lower)
+            cloud_phase_upper = np.where(cloud_phase_upper == cloud_phase_fill_value, np.nan, cloud_phase_upper)
+
+        # Force all non-NaN values to be either 1 or 2 (whichever is closer)
+        # Round to nearest integer (1 or 2)
+        cloud_phase_lower = np.where(
+            ~np.isnan(cloud_phase_lower), np.round(np.clip(cloud_phase_lower, 1, 2)), cloud_phase_lower
+        )
+        cloud_phase_upper = np.where(
+            ~np.isnan(cloud_phase_upper), np.round(np.clip(cloud_phase_upper, 1, 2)), cloud_phase_upper
+        )
+
+        # Create xarray Dataset with numpy arrays
+        logger.info("Creating xarray Dataset...")
 
         parsed_dataset = xr.Dataset(
             {
-                FootprintVariables.IGBP_SURFACE_TYPE: igbp_surface_type,
-                FootprintVariables.SURFACE_WIND_U: surface_wind_u,
-                FootprintVariables.SURFACE_WIND_V: surface_wind_v,
-                FootprintVariables.CLEAR_AREA: clear_area,
-                FootprintVariables.OPTICAL_DEPTH_LOWER: optical_depth_1,
-                FootprintVariables.OPTICAL_DEPTH_UPPER: optical_depth_2,
-                FootprintVariables.CLOUD_FRACTION_LOWER: cloud_fraction_1,
-                FootprintVariables.CLOUD_FRACTION_UPPER: cloud_fraction_2,
-                FootprintVariables.CLOUD_PHASE_LOWER: cloud_phase_1,
-                FootprintVariables.CLOUD_PHASE_UPPER: cloud_phase_2,
+                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], igbp_surface_type),
+                FootprintVariables.SURFACE_WIND_U: (["footprint"], surface_wind_u_np),
+                FootprintVariables.SURFACE_WIND_V: (["footprint"], surface_wind_v_np),
+                FootprintVariables.CLEAR_AREA: (["footprint"], clear_area_np),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], optical_depth_lower),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], optical_depth_upper),
+                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], cloud_fraction_lower),
+                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], cloud_fraction_upper),
+                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], cloud_phase_lower),
+                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], cloud_phase_upper),
             }
         )
+
+        logger.info(f"Dataset created successfully with {len(parsed_dataset.footprint)} footprints")
+
         return parsed_dataset
+
+    def export_to_netcdf(self, netcdf_path):
+        self._data.to_netcdf(path=netcdf_path, mode="w")

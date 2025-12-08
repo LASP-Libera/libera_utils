@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.3.0
+
+- FEAT: scene_id module alpha release capable of identifying scenes from footprint data in Ceres SSF files.
+
 ## 5.2.2
 
 - Updated the Curryer version pin to use at least 0.2.0, which is when the problematic subdependencies were removed
