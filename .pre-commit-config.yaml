@@ -41,7 +41,7 @@ repos:
     rev: v1.0.0
     hooks:
       - id: prevent-dangling-todos
-        args: ["-t", "LIBSDC", "-c", "TODO", "-c", "FIXME", "--check-unstaged"]
+        args: ["-t", "LIBSDC", "-c", "TODO,FIXME", "--check-unstaged"]
         exclude: ".pre-commit-config.yaml"
         verbose: true
         always_run: true
