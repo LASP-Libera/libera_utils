@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class NetcdfEngine(StrEnum):
-    """String enum class for our allowed NetCDF engines for xarray"""
+    """String enum class for our allowed NetCDF engines for xarray
+
+    The netcdf4 engine does not support writing to filelike objects (e.g. S3 objects via cloudpathlib).
+    The h5netcdf engine does support writing to filelike objects.
+    """
 
     netcdf4 = "netcdf4"
     h5netcdf = "h5netcdf"
@@ -78,5 +82,6 @@ def write_libera_data_product(
     data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
 
     netcdf4_engine = NetcdfEngine.get_from_config()
-    dataset.to_netcdf(data_product_filename.path, engine=netcdf4_engine)
+    with data_product_filename.path.open("wb") as fh:
+        dataset.to_netcdf(fh, engine=netcdf4_engine)
     return data_product_filename

@@ -5,7 +5,7 @@
   "LIBERA_UTILS_DATA_DIR": "{PKG_ROOT}/data",
   "DROPBOX_PATH": null,
   "METADATA_DDB_TABLE_NAME": null,
-  "XARRAY_NETCDF_ENGINE": "netcdf4",
+  "XARRAY_NETCDF_ENGINE": "h5netcdf",
   "JPSS_SCLK": "{LIBERA_UTILS_DATA_DIR}/spice/jpss_sclk_v01.tsc",
   "LIBERA_FK": "{LIBERA_UTILS_DATA_DIR}/spice/libera_fk_v01.tf",
   "EARTH_ASSOC_ITRF93_FK": "{LIBERA_UTILS_DATA_DIR}/spice/earth_assoc_itrf93.tf",
