@@ -358,8 +358,13 @@ def make_kernel(
     config_file = Path(config_file)  # This is always a local path because the configs are package data
 
     # Load meta kernel details. Required to auto-map frame IDs.
-    meta_kernel_file = Path(str(config.get("LIBERA_KERNEL_META")))
-    _ = meta.MetaKernel.from_json(meta_kernel_file, relative=True)
+    meta_kernel_file = Path(config.get("LIBERA_KERNEL_META"))
+    _ = meta.MetaKernel.from_json(
+        meta_kernel_file,
+        relative=False,
+        sds_dir=config.get("GENERIC_KERNEL_DIR"),
+        mission_dir=config.get("LIBERA_KERNEL_DIR"),
+    )
 
     # Create the kernels from the JSONs definitions.
     creator = kernels.create.KernelCreator(overwrite=overwrite, append=bool(append))

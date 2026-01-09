@@ -45,7 +45,7 @@ def noaa20_expected(test_data_path):
     return input_data
 
 
-def test_geolocate_noaa20(curryer_lsk, noaa20_kernels, noaa20_expected, spice_test_data_path):
+def test_geolocate_noaa20(noaa20_environment, curryer_lsk, noaa20_kernels, noaa20_expected, spice_test_data_path):
     """Tier-0 test for geolocating points from kernels."""
     # Load meta kernel details.
     mkrn = meta.MetaKernel.from_json(
