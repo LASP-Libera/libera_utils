@@ -1,7 +1,7 @@
 """Unit tests for netcdf.py module"""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -74,32 +74,21 @@ class TestWriteLiberaDataProduct:
         assert "q_flag" in ds.data_vars
         ds.close()
 
-    def test_write_libera_data_product_with_s3_path(self, test_product_definition, test_data_dict):
+    def test_write_libera_data_product_with_s3_path(self, test_product_definition, test_data_dict, create_mock_bucket):
         """Test writing to an S3 path (mocked)"""
-        with patch("libera_utils.io.netcdf.AnyPath") as mock_anypath:
-            # Set up mocks
-            mock_s3_path = MagicMock(spec=S3Path)
-            mock_output_file = MagicMock(spec=S3Path)
-            mock_output_file.name = "LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T235959_R25280215327.nc"
+        mock_bucket = create_mock_bucket()
+        output_path = S3Path(f"s3://{mock_bucket.name}/test-prefix")
 
-            mock_anypath.return_value = mock_s3_path
-            mock_s3_path.__truediv__.return_value = mock_output_file
+        result = write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_data_dict,
+            output_path=output_path,
+            time_variable="time",
+        )
 
-            # Mock dataset to_netcdf
-            with patch("xarray.Dataset.to_netcdf") as mock_to_netcdf:
-                result = write_libera_data_product(
-                    data_product_definition=test_product_definition,
-                    data=test_data_dict,
-                    output_path="s3://test-bucket/test-prefix",
-                    time_variable="time",
-                )
-
-                # Verify S3 path was used
-                mock_anypath.assert_called_with("s3://test-bucket/test-prefix")
-                mock_to_netcdf.assert_called_once()
-
-                # Verify result has correct path
-                assert result.path == mock_output_file
+        # Verify result has correct path
+        assert result.path.name.startswith("LIBERA_L1B_RAD-4CH_V0-0-1_")
+        assert result.path.name.endswith(".nc")
 
     def test_write_libera_data_product_creates_correct_filename(
         self, test_product_definition, test_data_dict, tmp_path

@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.4.2
+
+- Change xarray netcdf engine to h5netcdf because netcdf4 does not support writing to filelike objects (e.g. opened files).
+
 ## 5.4.1
 
 - Added a KernelManager class to handle SPICE kernel caching and retrieval
