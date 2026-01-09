@@ -1,5 +1,7 @@
 # Match all files in any test_data directory with the following extensions
 # This should cover all "big" (> ~1MB) files in the test_data directory
+# Binary Earth Kernel
+**/data/spice/earth*bpc filter=lfs diff=lfs merge=lfs -text
 
 # Binary data files
 **/test_data/**/*.nc filter=lfs diff=lfs merge=lfs -text
