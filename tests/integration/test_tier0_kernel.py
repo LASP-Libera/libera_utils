@@ -76,7 +76,7 @@ def noaa20_azel_data(test_data_path):
     return input_azel_data
 
 
-def test_make_static_kernels(curryer_lsk, short_tmp_path, spice_test_data_path):
+def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path):
     """Tier-0 test for creating static kernels"""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("mkspk")
@@ -133,7 +133,9 @@ def test_make_static_kernels(curryer_lsk, short_tmp_path, spice_test_data_path):
             assert (xyz.values == 0).all(), (from_obj, to_obj)
 
 
-def test_make_spacecraft_kernels(curryer_lsk, noaa20_spacecraft_data, short_tmp_path, spice_test_data_path):
+def test_make_spacecraft_kernels(
+    noaa20_environment, curryer_lsk, noaa20_spacecraft_data, short_tmp_path, spice_test_data_path
+):
     """Tier-0 test for creating spacecraft kernels"""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("mkspk")
@@ -198,7 +200,9 @@ def test_make_spacecraft_kernels(curryer_lsk, noaa20_spacecraft_data, short_tmp_
         npt.assert_allclose(exp_data, rot_data)
 
 
-def test_make_spacecraft_azel_kernels(curryer_lsk, noaa20_azel_data, short_tmp_path, spice_test_data_path):
+def test_make_spacecraft_azel_kernels(
+    noaa20_environment, curryer_lsk, noaa20_azel_data, short_tmp_path, spice_test_data_path
+):
     """Tier-0 test for creating pointing kernels"""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")

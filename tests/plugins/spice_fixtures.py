@@ -30,6 +30,15 @@ def curryer_lsk(test_lsk, monkeypatch):
     return test_lsk
 
 
+@pytest.fixture
+def noaa20_environment(monkeypatch):
+    # Set environment variables to point to the NOAA 20 older kernel definitions.
+    monkeypatch.setenv("LIBERA_KERNEL_DIR", "{LIBERA_UTILS_DATA_DIR}/spice/noaa20")
+    monkeypatch.setenv("LIBERA_KERNEL_CLOCK", "{LIBERA_KERNEL_DIR}/noaa20_v01.fakeclock.sclk.tsc")
+    monkeypatch.setenv("LIBERA_KERNEL_SC_SPK_CONFIG", "{LIBERA_KERNEL_DIR}/noaa20_sc_v01.ephemeris.spk.json")
+    monkeypatch.setenv("LIBERA_KERNEL_SC_CK_CONFIG", "{LIBERA_KERNEL_DIR}/noaa20_sc_v01.attitude.ck.json")
+
+
 # Furnishing fixtures for testing kernels
 # ---------------------------------------
 @pytest.fixture(autouse=True)

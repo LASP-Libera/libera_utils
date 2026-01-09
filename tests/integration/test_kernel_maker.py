@@ -19,7 +19,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, sh
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
-        "libera_utils.spice_utils.KernelFileCache.cache_dir",
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
         return_value=short_tmp_path,
     ):
@@ -74,7 +74,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_jpss1_pds_file_1, sho
     """Test creating a CK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
-        "libera_utils.spice_utils.KernelFileCache.cache_dir",
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
         return_value=short_tmp_path,
     ):
@@ -129,7 +129,7 @@ def test_make_az_ck(
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
-        "libera_utils.spice_utils.KernelFileCache.cache_dir",
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
         return_value=short_tmp_path,
     ):
@@ -186,7 +186,7 @@ def test_make_el_ck(
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
     with mock.patch(
-        "libera_utils.spice_utils.KernelFileCache.cache_dir",
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
         return_value=short_tmp_path,
     ):

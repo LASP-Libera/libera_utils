@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.4.1
+
+- Added a KernelManager class to handle SPICE kernel caching and retrieval
+
 ## 5.4.0
 
 - REFACTOR: Refactor kernel_maker to use L1a Dataset object. Packet-based kernel creation is still possible via `create_kernels_from_packets`, which runs L1a processing internally

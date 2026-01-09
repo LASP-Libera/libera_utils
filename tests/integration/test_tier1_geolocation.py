@@ -23,6 +23,7 @@ from libera_utils.config import config
 pytestmark = pytest.mark.integration
 
 
+# TODO LIBSDC-703 This needs to be updated to match the production tools.
 def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_time_fields=None, kernel_identifier=None):
     """Preprocess input CSVs provided by Jake."""
     input_data_file = Path(input_data_file)
@@ -95,13 +96,6 @@ def test_geolocate_earth_target(
     mock_open_dataset, curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch
 ):
     """Integration test for an Earth Target scenario."""
-
-    # Force the config gets to use alternative configuration files for JPSS-4.
-    monkeypatch.setenv("LIBERA_KERNEL_DIR", "{LIBERA_UTILS_DATA_DIR}/spice/jpss4")
-    monkeypatch.setenv("LIBERA_KERNEL_CLOCK", "{LIBERA_KERNEL_DIR}/jpss4_v01.fakeclock.sclk.tsc")
-    monkeypatch.setenv("LIBERA_KERNEL_SC_SPK_CONFIG", "{LIBERA_KERNEL_DIR}/jpss4_sc_v01.ephemeris.spk.json")
-    monkeypatch.setenv("LIBERA_KERNEL_SC_CK_CONFIG", "{LIBERA_KERNEL_DIR}/jpss4_sc_v01.attitude.ck.json")
-
     # Generate static SPK offset kernels.
     generated_kernels = []
     for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
@@ -138,11 +132,11 @@ def test_geolocate_earth_target(
     az_utc_times = spicetime.adapt(az_dataset["AXIS_SAMPLE_ICIE_ET"], "et", "dt64")
     ugps_times = spicetime.adapt(pd.date_range(az_utc_times[1], az_utc_times[-2], freq="10ms", inclusive="left"), "iso")
 
-    # Load meta kernel details.
+    # Load meta kernel details that is defined from the libera_utils package not the test data.
     mkrn = meta.MetaKernel.from_json(
         config.get("LIBERA_KERNEL_META"),
         relative=True,
-        sds_dir=spice_test_data_path,
+        sds_dir=config.get("GENERIC_KERNEL_DIR"),
     )
 
     with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, generated_kernels]):
