@@ -110,6 +110,22 @@ class TestWriteLiberaDataProduct:
         filename = result.path.name
         assert filename.startswith("LIBERA_L1B_RAD-4CH_V0-0-1_")
 
+    def test_write_libera_data_product_add_archive_path_prefix(self, test_product_definition, test_data_dict, tmp_path):
+        """Test that archive path prefix is added when specified"""
+        # Mock config to return an archive path prefix
+        result = write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_data_dict,
+            output_path=tmp_path,
+            time_variable="time",
+            add_archive_path_prefix=True,
+        )
+        print(result.path)
+
+        # Verify that the output path includes the archive prefix
+        expected_parent = tmp_path / "RAD-4CH/2024/01/01"
+        assert result.path.parent == expected_parent
+
     def test_write_libera_data_product_strict_mode_valid(self, test_product_definition, test_data_dict, tmp_path):
         """Test that strict mode passes with valid data"""
         # Should not raise any exception

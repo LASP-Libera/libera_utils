@@ -81,7 +81,7 @@ def test_data_dict():
     end_us = np.datetime64("2024-01-01 23:59:59.999999").astype("datetime64[us]").astype(np.int64)
     random_us = np.random.randint(start_us, end_us, size=n_times)
     random_us.sort()
-    times = random_us.astype("datetime64[ns]")
+    times = random_us.astype("datetime64[us]").astype("datetime64[ns]")
 
     return {
         "time": times,
