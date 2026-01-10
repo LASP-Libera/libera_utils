@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.4.3
+
+- FEAT: Allow adding the archive prefix to the path when calling write_libera_data_product
+
 ## 5.4.2
 
 - Change xarray netcdf engine to h5netcdf because netcdf4 does not support writing to filelike objects (e.g. opened files).

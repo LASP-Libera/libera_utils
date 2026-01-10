@@ -40,6 +40,7 @@ def write_libera_data_product(
     output_path: str | PathType,
     time_variable: str,
     strict: bool = True,
+    add_archive_path_prefix: bool = False,
 ) -> LiberaDataProductFilename:
     """Write a Libera data product NetCDF4 file that conforms to data product definition requirements
 
@@ -55,6 +56,9 @@ def write_libera_data_product(
         Name of variable that indicates time. This is used to generate the start and end time for the filename.
     strict : bool
         Default True. Raises an exception if the final Dataset doesn't conform to the data product definition.
+    add_archive_path_prefix : bool
+        Note: do not use this to write to a processing dropbox! L2 devs do not need this kwarg.
+        Default False. If True, adds the archive path prefix to the output path when generating the full output path.
 
     Returns
     -------
@@ -79,7 +83,13 @@ def write_libera_data_product(
         raise ValueError(f"Specified time variable {time_variable} does not have dtype datetime64.")
 
     data_product_filename = definition.generate_data_product_filename(dataset, time_variable)
-    data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
+
+    if add_archive_path_prefix:
+        prefixed_path = AnyPath(output_path) / data_product_filename.archive_prefix
+        prefixed_path.mkdir(parents=True, exist_ok=True)
+        data_product_filename.path = prefixed_path / data_product_filename.path.name
+    else:
+        data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
 
     netcdf4_engine = NetcdfEngine.get_from_config()
     with data_product_filename.path.open("wb") as fh:
