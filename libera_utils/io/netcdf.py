@@ -2,7 +2,7 @@
 
 import logging
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 import xarray as xr
 from cloudpathlib import AnyPath
@@ -35,10 +35,11 @@ class NetcdfEngine(StrEnum):
 
 # TODO[LIBSDC-681]: Add UMM-G metadata file generation to this function call
 def write_libera_data_product(
-    data_product_definition: str | PathType,
+    data_product_definition: str | PathType | LiberaDataProductDefinition,
     data: dict[str, NDArray] | xr.Dataset,
     output_path: str | PathType,
     time_variable: str,
+    dynamic_product_attributes: dict[str, Any] | None = None,
     strict: bool = True,
     add_archive_path_prefix: bool = False,
 ) -> LiberaDataProductFilename:
@@ -46,7 +47,7 @@ def write_libera_data_product(
 
     Parameters
     ----------
-    data_product_definition : str | PathType
+    data_product_definition : str | PathType | LiberaDataProductDefinition
         Path to the data product definition against which to verify conformance
     data : dict[str, NDarray] | xr.Dataset
         Data mapping variable names to numpy data arrays or a fully formed L1A xarray Dataset.
@@ -54,6 +55,8 @@ def write_libera_data_product(
         Base path (directory or S3 prefix) at which to write the product file
     time_variable : str
         Name of variable that indicates time. This is used to generate the start and end time for the filename.
+    dynamic_product_attributes : dict[str, Any] | None
+        Optional dictionary of additional global attributes to add to the data product file. Must conform to the data product definition.
     strict : bool
         Default True. Raises an exception if the final Dataset doesn't conform to the data product definition.
     add_archive_path_prefix : bool
@@ -65,9 +68,22 @@ def write_libera_data_product(
     : LiberaDataProductFilename
         Filename object containing the full path to the written NetCDF4 data product file.
     """
-    logger.info(f"Writing Libera data product following definition {data_product_definition}")
-    definition = LiberaDataProductDefinition.from_yaml(data_product_definition)
+    logger.info("Writing Libera data product")
+
+    if isinstance(data_product_definition, LiberaDataProductDefinition):
+        logger.info("Using provided LiberaDataProductDefinition object")
+        definition = data_product_definition
+    else:
+        logger.info(f"Loading data product definition from {data_product_definition}")
+        definition = LiberaDataProductDefinition.from_yaml(data_product_definition)
+
+    logger.info(f"Product definition defines product level attributes: {definition.attributes}")
+
     if isinstance(data, xr.Dataset):
+        if dynamic_product_attributes is not None:
+            raise ValueError(
+                "dynamic_product_attributes is invalid when passing in a Dataset. To set dynamic attributes for a dataset, modify the Dataset attrs before passing it in."
+            )
         # This is how L1A products are typically created (starting as a Dataset)
         logger.info(
             f"Checking Dataset with variables: {list(data.keys())} and coordinates: {list(data.coords.keys())} for conformance"
@@ -77,7 +93,9 @@ def write_libera_data_product(
     else:
         # This is the expectation for L2 product creation (from numpy arrays)
         logger.info(f"Creating Dataset from data arrays with variables: {list(data.keys())}")
-        dataset, _errors = definition.create_conforming_dataset(data, strict=strict)
+        dataset, _errors = definition.create_conforming_dataset(
+            data, dynamic_product_attributes=dynamic_product_attributes, strict=strict
+        )
 
     if "datetime64" not in str(dataset[time_variable].dtype):
         raise ValueError(f"Specified time variable {time_variable} does not have dtype datetime64.")

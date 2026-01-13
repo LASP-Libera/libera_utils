@@ -74,6 +74,91 @@ class TestWriteLiberaDataProduct:
         assert "q_flag" in ds.data_vars
         ds.close()
 
+    def test_write_libera_data_product_from_arrays_with_dynamic_product_attribute(
+        self, test_product_definition, test_data_dict, tmp_path
+    ):
+        """Test writing a data product from Dataset with dynamically set product level attributes"""
+        # Modify data product definition to set algorithm_version as dynamic (required but set to null in product definition yaml)
+        modified_product_definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        # Indicate this attribute is required but dynamic (set it to None in the definition object)
+        modified_product_definition.attributes["algorithm_version"] = None
+
+        # Write the data product
+        result = write_libera_data_product(
+            data_product_definition=modified_product_definition,
+            data=test_data_dict,
+            output_path=tmp_path,
+            time_variable="time",
+            dynamic_product_attributes={"algorithm_version": "1.2.3"},  # Dynamically set algorithm version
+        )
+
+        # Verify return type
+        assert isinstance(result, LiberaDataProductFilename)
+
+        # Verify file was created
+        assert result.path.exists()
+        assert result.path.parent == tmp_path
+
+        # Verify filename format
+        assert result.path.name.startswith("LIBERA_L1B_RAD-4CH_V1-2-3_")
+        assert result.path.name.endswith(".nc")
+
+        # Read back the file and verify basic structure
+        ds = xr.open_dataset(result.path)
+        assert "time" in ds.coords
+        assert "fil_rad" in ds.data_vars
+        assert "q_flag" in ds.data_vars
+        assert ds.attrs["algorithm_version"] == "1.2.3"
+        ds.close()
+
+    def test_write_libera_data_product_from_dataset_with_dynamic_product_attribute(
+        self, test_product_definition, test_dataset, tmp_path
+    ):
+        """Test writing a data product from Dataset with dynamically set product level attributes"""
+        # Modify data product definition to set algorithm_version as dynamic (required but set to null in product definition yaml)
+        modified_product_definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        # Indicate this attribute is required but dynamic (set it to None in the definition object)
+        modified_product_definition.attributes["algorithm_version"] = None
+        # The test dataset fixture already contains the algorithm_version attribute
+
+        # Write the data product
+        with pytest.raises(ValueError, match="dynamic_product_attributes is invalid when passing in a Dataset"):
+            _ = write_libera_data_product(
+                data_product_definition=modified_product_definition,
+                data=test_dataset,
+                output_path=tmp_path,
+                time_variable="time",
+                dynamic_product_attributes={
+                    "algorithm_version": "1.2.3"
+                },  # Invalid usage because attribute is already dynamically set on the Dataset
+            )
+
+        result = write_libera_data_product(
+            data_product_definition=modified_product_definition,
+            data=test_dataset,
+            output_path=tmp_path,
+            time_variable="time",
+        )
+
+        # Verify return type
+        assert isinstance(result, LiberaDataProductFilename)
+
+        # Verify file was created
+        assert result.path.exists()
+        assert result.path.parent == tmp_path
+
+        # Verify filename format
+        assert result.path.name.startswith("LIBERA_L1B_RAD-4CH_V0-0-1_")
+        assert result.path.name.endswith(".nc")
+
+        # Read back the file and verify basic structure
+        ds = xr.open_dataset(result.path)
+        assert "time" in ds.coords
+        assert "fil_rad" in ds.data_vars
+        assert "q_flag" in ds.data_vars
+        assert ds.attrs["algorithm_version"] == "0.0.1"
+        ds.close()
+
     def test_write_libera_data_product_with_s3_path(self, test_product_definition, test_data_dict, create_mock_bucket):
         """Test writing to an S3 path (mocked)"""
         mock_bucket = create_mock_bucket()

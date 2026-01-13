@@ -1,5 +1,9 @@
 # Version Changes
 
+# 5.4.4
+
+- FEAT: Allow passing dynamic product level attributes to data product writer
+
 ## 5.4.3
 
 - FEAT: Allow adding the archive prefix to the path when calling write_libera_data_product
