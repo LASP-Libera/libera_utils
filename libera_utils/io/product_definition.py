@@ -269,7 +269,7 @@ class LiberaVariableDefinition(BaseModel):
         return data_array, validation_errors
 
     def create_conforming_data_array(
-        self, data: np.ndarray, variable_name: str, user_variable_attributes: dict[str, Any] | None = None
+        self, data: np.ndarray, variable_name: str, dynamic_variable_attributes: dict[str, Any] | None = None
     ) -> DataArray:
         """Create a DataArray for a single variable that is valid against the data product definition.
 
@@ -282,7 +282,7 @@ class LiberaVariableDefinition(BaseModel):
             Data for the variable DataArray.
         variable_name : str
             Name of the variable. Used for log messages and warnings.
-        user_variable_attributes : dict[str, Any] | None
+        dynamic_variable_attributes : dict[str, Any] | None
             *Algorithm developers should not need to use this kwarg.*
             Variable level attributes defined by the user. This allows a user to specify dynamic attributes
             that may be required by the definition but not statically defined in yaml.
@@ -292,8 +292,8 @@ class LiberaVariableDefinition(BaseModel):
         DataArray
             A valid DataArray for the specified variable
         """
-        if user_variable_attributes is not None:
-            variable_attrs = {**self.attributes, **user_variable_attributes}
+        if dynamic_variable_attributes is not None:
+            variable_attrs = {**self.attributes, **dynamic_variable_attributes}
         else:
             variable_attrs = self.attributes
 
@@ -649,8 +649,8 @@ class LiberaDataProductDefinition(BaseModel):
     def create_conforming_dataset(
         self,
         data: dict[str, np.ndarray],
-        user_product_attributes: dict[str, Any] | None = None,
-        user_variable_attributes: dict[str, dict[str, Any]] | None = None,
+        dynamic_product_attributes: dict[str, Any] | None = None,
+        dynamic_variable_attributes: dict[str, dict[str, Any]] | None = None,
         strict: bool = True,
     ) -> tuple[Dataset, list[str]]:
         """Create a Dataset from numpy arrays that is valid against the data product definition
@@ -659,11 +659,11 @@ class LiberaDataProductDefinition(BaseModel):
         ----------
         data : dict[str, np.ndarray]
             Dictionary of variable/coordinate data keyed by variable/coordinate name.
-        user_product_attributes : dict[str, Any] | None
+        dynamic_product_attributes : dict[str, Any] | None
             *Algorithm developers should not need to use this kwarg.*
             Product level attributes for the data product. This allows the user to specify product level attributes that are required but
             not statically specified in the product definition (e.g. the algorithm version used to generate the product)
-        user_variable_attributes : dict[str, dict[str, Any]] | None
+        dynamic_variable_attributes : dict[str, dict[str, Any]] | None
             *Algorithm developers should not need to use this kwarg.*
             Per-variable attributes for each variable's DataArray. Key is variable name, value is an attributes dict.
             This allows the user to specify variable level attributes that
@@ -684,8 +684,8 @@ class LiberaDataProductDefinition(BaseModel):
         - This method is not responsible for primary validation or error reporting.
           We call out to check_dataset_conformance at the end for that.
         """
-        if user_product_attributes is not None:
-            product_attrs = {**self.attributes, **user_product_attributes}
+        if dynamic_product_attributes is not None:
+            product_attrs = {**self.attributes, **dynamic_product_attributes}
         else:
             product_attrs = self.attributes
 
@@ -694,20 +694,20 @@ class LiberaDataProductDefinition(BaseModel):
         data_vars_dict = {}
 
         for var_name, var_data in data.items():
-            if user_variable_attributes is not None and var_name in user_variable_attributes:
-                var_attrs = user_variable_attributes[var_name]
+            if dynamic_variable_attributes is not None and var_name in dynamic_variable_attributes:
+                var_attrs = dynamic_variable_attributes[var_name]
             else:
                 var_attrs = None
 
             if var_name in self.coordinates:
                 var_def = self.coordinates[var_name]
                 coords_dict[var_name] = var_def.create_conforming_data_array(
-                    var_data, var_name, user_variable_attributes=var_attrs
+                    var_data, var_name, dynamic_variable_attributes=var_attrs
                 )
             elif var_name in self.variables:
                 var_def = self.variables[var_name]
                 data_vars_dict[var_name] = var_def.create_conforming_data_array(
-                    var_data, var_name, user_variable_attributes=var_attrs
+                    var_data, var_name, dynamic_variable_attributes=var_attrs
                 )
             else:
                 raise ValueError(f"Unknown variable/coordinate name {var_name}.")
