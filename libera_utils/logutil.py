@@ -20,17 +20,104 @@ from libera_utils.io.smart_open import smart_open
 logger = logging.getLogger(__name__)
 
 
-def _json_serialize_default(o: Any) -> str:
+class JsonLogEncoder(json.JSONEncoder):
     """
-    A standard 'default' json serializer function.
+    Custom JSON encoder for logging that can handle arbitrary Python objects.
 
-    - Serializes datetime objects using their .isoformat() method.
-
-    - Serializes all other objects using repr().
+    This encoder is designed to be absolutely robust and never raise exceptions,
+    since it runs inside logging infrastructure. It handles:
+    - datetime/date objects → ISO format strings
+    - Non-string dictionary keys → converted to strings
+    - Nested structures with arbitrary objects
+    - Any other Python object → repr() fallback
     """
-    if isinstance(o, date | datetime):
-        return o.isoformat()
-    return repr(o)
+
+    def encode(self, o: Any) -> str:
+        """
+        Override encode to preprocess the entire object tree before JSON serialization.
+
+        This is necessary to handle non-string dictionary keys, which json.dumps
+        cannot handle even with a custom default() method.
+        """
+        try:
+            return super().encode(self._preprocess(o))
+        except Exception:
+            # Absolute fallback - should never happen, but ensures logging never crashes
+            return json.dumps({"msg": "LogEncoder failed to serialize log message", "repr": repr(o)})
+
+    def _preprocess(self, o: Any, _depth: int = 0) -> Any:
+        """
+        Recursively preprocess objects to make them JSON-serializable.
+
+        - Converts non-string dict keys to strings
+        - Recursively processes nested dicts and lists
+        - Converts datetime/date objects to ISO format
+        - Uses repr() for any other non-serializable objects
+        - Prevents infinite recursion with depth limit
+
+        Parameters
+        ----------
+        o : Any
+            Object to preprocess
+        _depth : int
+            Internal recursion depth counter (default 0)
+        """
+        # Prevent infinite recursion from circular references
+        MAX_DEPTH = 20
+        if _depth > MAX_DEPTH:
+            return f"<max depth {MAX_DEPTH} exceeded, possible circular reference>"
+
+        try:
+            if isinstance(o, dict | Mapping):
+                # Convert all keys to strings and recursively process values
+                return {self._serialize_key(k): self._preprocess(v, _depth + 1) for k, v in o.items()}
+            elif isinstance(o, list | tuple | set):
+                # Recursively process list/tuple items
+                return [self._preprocess(item, _depth + 1) for item in o]
+            elif isinstance(o, date | datetime):
+                # Convert datetime/date to ISO format string
+                return o.isoformat()
+            elif isinstance(o, str | int | float | bool) or o is None:
+                # Already JSON-serializable
+                return o
+            else:
+                # Fallback to repr for any other type
+                return repr(o)
+        except Exception:
+            # Ultra-safe fallback for preprocessing errors
+            return repr(o)
+
+    def _serialize_key(self, key: Any) -> str | int | float | bool | None:
+        """
+        Convert a dictionary key to a string.
+
+        Handles datetime/date keys specially to use ISO format.
+        """
+        if isinstance(key, str | int | float | bool | type(None)):
+            return key  # These types are allowed as JSON keys by the default json serializer
+
+        try:
+            if isinstance(key, date | datetime):
+                return key.isoformat()
+            else:
+                return str(key)
+        except Exception:
+            # Emergency fallback
+            return repr(key)
+
+    def default(self, o: Any) -> str:
+        """
+        Fallback for objects that make it past preprocessing.
+
+        This should rarely be called since encode() preprocesses everything,
+        but we keep it as an additional safety layer.
+        """
+        try:
+            if isinstance(o, date | datetime):
+                return o.isoformat()
+            return repr(o)
+        except Exception:
+            return f"<unserializable: {type(o).__name__}>"
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -51,50 +138,85 @@ class JsonLogFormatter(logging.Formatter):
         ----------
         add_log_record_attrs : Optional, tuple
             Tuple of log record attributes to add to the resulting structured JSON structure that comes out of the
-            logging formatter.
+            logging formatter. To omit all, pass a empty tuple. Default None, which adds a default set of useful attributes.
         add_asctime : bool
             If True, adds an ASCII (ISO 8601-like) timestamp to the log record. Default True.
         """
         super().__init__(*args, **kwargs)
-        self.add_log_record_attrs = add_log_record_attrs or self._default_log_record_attrs
-
+        self.add_log_record_attrs = (
+            add_log_record_attrs if add_log_record_attrs is not None else self._default_log_record_attrs
+        )
         self.add_asctime = add_asctime
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log message to a string
+        """Format log message to a JSON string
 
         Parameters
         ----------
         record : logging.LogRecord
-            Log record object containing the logged message, which may be a dict (Mapping) or a string
+            Log record object containing the logged message, which may be a dict or a string
+
+        Returns
+        -------
+        str
+            JSON formatted log message string
         """
-        # Perform %-style string interpolation before we make the message into a dict
-        # This allows logging in the `log.info("%s incomplete %s", 1, "message")` style
-        if isinstance(record.msg, str) and record.args:
-            record.msg = record.msg % record.args
-            record.args = None
+        # Ultra safe fallback to ensure we have a fallback message to present to the user
+        # in the event of log formatting failure
+        try:
+            fallback_message_string = str(record.msg)
+        except Exception:
+            try:
+                fallback_message_string = repr(record.msg)
+            except Exception:
+                fallback_message_string = "<unrepresentable>"
 
-        # If a dict was passed in, we don't want to mutate it as a side effect so we deepcopy it
-        # This is a huge performance hit, but otherwise we are mutating our users' data and that's not cool
-        msg = copy.deepcopy(record.msg) if isinstance(record.msg, Mapping) else {"msg": record.msg}
+        try:
+            if isinstance(record.msg, str) and record.args:
+                # Perform %-style string interpolation before we make the message into a dict
+                # This allows logging in the `log.info("%s incomplete %s", 1, "message")` style
+                record.msg = record.msg % record.args
+                record.args = None
+                msg_dict = {"msg": record.msg}
+            elif isinstance(record.msg, dict):
+                # If a dict was passed in, we don't know what is in it and we don't want
+                # to mutate it as a side effect so we deepcopy it before we add attributes to the JSON log message
+                # This is a huge performance hit, but otherwise we are mutating our users' data and that's not cool
+                try:
+                    msg_dict = copy.deepcopy(record.msg)
+                except Exception:
+                    # If deepcopy fails for some reason, fall back to a string representation so we never mutate input
+                    record.msg = {"msg": str(record.msg)}
+                    return json.dumps(record.msg, cls=JsonLogEncoder)
+            else:
+                # If we got any other object, there's no obvious path to turning it into JSON,
+                # so just convert it to string and put it in a dict so we can add attributes
+                msg_dict = {"msg": record.msg}
 
-        if self.add_asctime:
-            msg["asctime"] = self.formatTime(record)
+            if self.add_asctime:
+                msg_dict["asctime"] = self.formatTime(record)
 
-        # Add additional attributes from the logging system to the msg dict
-        if self.add_log_record_attrs:
-            for field in self.add_log_record_attrs:
-                if field != "msg":
-                    msg[field] = getattr(record, field)
+            # Add additional attributes from the logging system to the msg dict
+            if self.add_log_record_attrs:
+                for field in self.add_log_record_attrs:
+                    if field != "msg":
+                        msg_dict[field] = getattr(record, field)
 
-        # If we logged an exception, add the formatted traceback to the msg dict
-        if record.exc_info:
-            formatted_traceback = "".join(traceback.format_exception(*record.exc_info))
-            msg["traceback"] = formatted_traceback
+            # If we logged an exception, add the formatted traceback to the msg dict
+            if record.exc_info:
+                formatted_traceback = "".join(traceback.format_exception(*record.exc_info))
+                msg_dict["traceback"] = formatted_traceback
 
-        # Modify the record itself with the new msg dict
-        record.msg = msg
-        return json.dumps(record.msg, default=_json_serialize_default)  # Serialize the msg dict
+            # Modify the record itself with the new msg dict
+            record.msg = json.dumps(msg_dict, cls=JsonLogEncoder)  # Serialize the msg dict
+            return record.msg
+        except Exception:
+            # Absolute fallback - should never happen, but ensures logging never crashes
+            # Print the full traceback to stderr if configured to raise exceptions
+            # This respects the standard library's logging.raiseExceptions setting
+            if logging.raiseExceptions:
+                traceback.print_exc()
+            return fallback_message_string
 
 
 def configure_static_logging(config_file: str | Path | S3Path):

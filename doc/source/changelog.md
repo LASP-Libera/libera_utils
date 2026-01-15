@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.5.2
+
+- BUGFIX: Improve resiliency of JSON logging system for cloudwatch logs
+
 ## 5.5.1
 
 - BUGFIX: Fixed the netcdf writing needed for L1B camera product and clarifying netcdf engine usage
