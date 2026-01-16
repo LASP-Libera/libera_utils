@@ -19,7 +19,7 @@ class ConfigurationFormatter(string.Formatter):
 
     def get_value(self, key: str, *args, **kwargs):
         """Overrides the default get_value method in the python formatter. This will
-        return the value from the emus configuration with the specified key."""
+        return the value from the package configuration with the specified key."""
         return config.get(key)
 
 

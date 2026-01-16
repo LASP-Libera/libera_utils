@@ -1,8 +1,11 @@
 """Unit tests for packet configurations for L1A processing"""
 
+import pytest
+
 from libera_utils.constants import LiberaApid
+from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import l1a_packet_configs
-from libera_utils.l1a.l1a_packet_configs import get_packet_config
+from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
 
 
 class TestPacketConfiguration:
@@ -93,3 +96,22 @@ class TestPacketConfiguration:
         assert len(sc_pos_config.sample_groups) == 2
         assert sc_pos_config.sample_groups[0].name == "ADGPS"
         assert sc_pos_config.sample_groups[1].name == "ADCFA"
+
+
+@pytest.mark.parametrize(
+    "apid",
+    [
+        LiberaApid.icie_axis_sample,
+        LiberaApid.icie_crit_hk,
+        LiberaApid.icie_nom_hk,
+        LiberaApid.icie_temp_hk,
+        LiberaApid.icie_wfov_sci,
+        LiberaApid.icie_rad_sample,
+        LiberaApid.jpss_sc_pos,
+    ],
+)
+def test_get_l1a_product_definition_by_apid(apid):
+    """Test retrieval of L1A product definitions by APID from config."""
+    product_def = get_l1a_product_definition_path(apid)
+    # Check that we can create a product definition object from the yaml path
+    LiberaDataProductDefinition.from_yaml(product_def)

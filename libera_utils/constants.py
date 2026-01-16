@@ -207,6 +207,28 @@ class DataProductIdentifier(StrEnum):
         """
         return self._level
 
+    @property
+    def associated_apid(self) -> Union["LiberaApid", None]:
+        """Get the associated LiberaApid for L0 and L1A data products.
+
+        This relies on the strict naming convention that the packet name is part of the L0 and L1A data product ID name.
+
+        Returns
+        -------
+        LiberaApid | None
+            The associated LiberaApid for L0 and L1A data products, or None if not applicable
+        """
+        if self.data_level not in (DataLevel.L0, DataLevel.L1A):
+            return None
+
+        for apid in LiberaApid:
+            # Use the naming convention for L1a products and APID packet names to determine the APID associated with
+            # an L1A file
+            if apid.name in self.name.lower():
+                return apid
+
+        return None
+
     def get_partial_archive_bucket_name(self) -> str:
         """Gets the archive bucket name from the data product identifier .
 
@@ -468,33 +490,3 @@ class LiberaApid(IntEnum):
         raise ValueError(
             f"Unable to find PDS DataProductIdentifier associated with {self}. This may mean the DPI enum name does not match our convention."
         )
-
-
-def get_l1a_apid(data_product: DataProductIdentifier) -> LiberaApid:
-    """Get the LiberaApid for an L1A decoded data product
-
-    Parameters
-    ----------
-    data_product : DataProductIdentifier
-        The L1A decoded data product to get the APID for
-
-    Returns
-    -------
-    LiberaApid
-        The APID associated with the L1A decoded data product
-
-    Raises
-    ------
-    ValueError
-        If the data product is not an L1A decoded product or if no APID is found
-    """
-    if data_product.data_level != DataLevel.L1A:
-        raise ValueError(f"Data product {data_product} is not an L1A decoded product")
-
-    for apid in LiberaApid:
-        # Use the naming convention for L1a products and APID packet names to determine the APID associated with
-        # an L1A file
-        if apid.name in data_product.name.lower():
-            return apid
-
-    raise ValueError(f"Unable to find APID associated with L1A data product {data_product}")

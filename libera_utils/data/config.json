@@ -37,6 +37,16 @@
   "LIBERA_PRODUCT_DEFINITIONS_PATH": "{LIBERA_UTILS_DATA_DIR}/product_definitions",
   "LIBERA_DIMENSIONS_DEFINITION_PATH": "{LIBERA_UTILS_DATA_DIR}/libera_dimensions.yml",
   "LIBERA_GLOBAL_PRODUCT_ATTRIBUTES_PATH": "{LIBERA_UTILS_DATA_DIR}/static_project_metadata.yml",
+  "LIBERA_L1A_PROCESSING_CONFIGS_PATH": "{LIBERA_UTILS_DATA_DIR}/l1a_processing_configs.yml",
+  "LIBERA_L1A_PRODUCT_DEFINITIONS_BY_APID": {
+    "1048": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_axis_sample_l1a.yml",
+    "1051": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_crit_hk_l1a.yml",
+    "1057": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_nom_hk_l1a.yml",
+    "1036": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_rad_sample_l1a.yml",
+    "1060": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_temp_hk_l1a.yml",
+    "1040": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_wfov_sci_l1a.yml",
+    "11": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/jpss_sc_pos_l1a.yml"
+  },
   "TEST_KEY": -999,
   "TRMM_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/trmm.csv",
   "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/erbe.csv"
