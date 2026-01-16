@@ -14,7 +14,7 @@ from xarray import DataArray, Dataset
 
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.filenaming import LiberaDataProductFilename, PathType, format_semantic_version
+from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
 from libera_utils.version import ALGORITHM_VERSION_REGEX
 
 logger = logging.getLogger(__name__)
@@ -458,7 +458,7 @@ class LiberaDataProductDefinition(BaseModel):
 
         return LiberaDataProductFilename.from_filename_parts(
             product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
-            version=format_semantic_version(dataset.attrs["algorithm_version"]),
+            version=dataset.attrs["algorithm_version"],
             utc_start=utc_start,
             utc_end=utc_end,
         )

@@ -14,7 +14,7 @@ pytestmark = pytest.mark.integration
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
@@ -36,7 +36,7 @@ def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, sh
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_jpss_spk_aws(
     mocked_get_current_version_str,
     test_jpss1_pds_file_1,
@@ -69,7 +69,7 @@ def test_make_jpss_spk_aws(
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_jpss_ck(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
     """Test creating a CK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
@@ -91,7 +91,7 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_jpss1_pds_file_1, sho
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_jpss_ck_aws(
     mocked_get_current_version_str,
     test_jpss1_pds_file_1,
@@ -121,7 +121,7 @@ def test_make_jpss_ck_aws(
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_az_ck(
     mocked_get_current_version_str, test_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk, monkeypatch
 ):
@@ -146,7 +146,7 @@ def test_make_az_ck(
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_az_ck_aws(
     mocked_get_current_version_str,
     test_ccsds_2025_218_18_37_32,
@@ -178,7 +178,7 @@ def test_make_az_ck_aws(
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_el_ck(
     mocked_get_current_version_str, test_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk, monkeypatch
 ):
@@ -203,7 +203,7 @@ def test_make_el_ck(
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_el_ck_aws(
     mocked_get_current_version_str,
     test_ccsds_2025_218_18_37_32,
@@ -238,7 +238,7 @@ def test_make_el_ck_aws(
 
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_jpss_kernels_from_manifest(
     mocked_get_current_version_str, setup_jpss1_kernel_maker_environment_with_manifest, curryer_lsk
 ):
@@ -260,7 +260,7 @@ def test_make_jpss_kernels_from_manifest(
 
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_azel_kernels_from_manifest(
     mocked_get_current_version_str, setup_azel_kernel_maker_environment_with_manifest, curryer_lsk, monkeypatch
 ):

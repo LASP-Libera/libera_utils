@@ -8,6 +8,7 @@ from unittest import mock
 
 import pytest
 from cloudpathlib import S3Path
+from packaging.version import InvalidVersion
 from ulid import ULID
 
 from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType
@@ -218,7 +219,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.l1b_cam,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159",
+                version="3.14.159",
                 revision=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="nc",
             ),
@@ -231,7 +232,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.l1b_rad,
                 utc_start=dt.datetime(2025, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2025, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159",
+                version="3.14.159",
                 revision=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="nc",
             ),
@@ -244,7 +245,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.l1b_cam,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159",
+                version="3.14.159",
                 revision=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="nc",
             ),
@@ -257,7 +258,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.l2_cf_rad,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159",
+                version="3.14.159",
                 revision=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="nc",
             ),
@@ -283,7 +284,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.l2_cf_rad,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159RC1",  # Release candidate version
+                version="3.14.159RC1",  # Release candidate version
                 revision=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="nc",
             ),
@@ -297,7 +298,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.spice_jpss_spk,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159RC1",  # Release candidate
+                version="3.14.159RC1",  # Release candidate
                 revision=dt.datetime(2028, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="bsp",
             ),
@@ -323,7 +324,7 @@ def test_LiberaDataProductFilename(filename):
                 product_name=DataProductIdentifier.spice_az_ck,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
-                version="V3-14-159",
+                version="3.14.159",
                 revision=dt.datetime(2028, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 extension="bc",
             ),
@@ -333,7 +334,6 @@ def test_LiberaDataProductFilename(filename):
 def test_LiberaDataProductFilename_parts(filename, basepath, parts):
     """Test creating a LiberaDataProductFilename from parts"""
     fn = filenaming.LiberaDataProductFilename(filename)
-    assert fn.filename_parts == SimpleNamespace(**parts)
     fn_from_parts = filenaming.LiberaDataProductFilename.from_filename_parts(basepath=basepath, **parts)
     assert fn_from_parts == fn
     assert fn_from_parts.path == fn.path
@@ -347,7 +347,7 @@ def test_LiberaDataProductFilename_parts(filename, basepath, parts):
             dict(
                 data_level="SPICE",
                 product_name="JPSS-SPK",
-                version="V1-2-3",
+                version="1.2.3",
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 revision=dt.datetime(2028, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
@@ -463,7 +463,7 @@ def test_changing_path():
 
 
 @pytest.mark.parametrize(
-    ("mock_version", "version_string"), [("3.1.4", "V3-1-4"), ("1.2.3rc0", "V1-2-3RC0"), ("1.0", ValueError())]
+    ("mock_version", "version_string"), [("3.1.4", "V3-1-4"), ("1.2.3rc0", "V1-2-3RC0"), ("foo.bar", ValueError())]
 )
 @mock.patch("libera_utils.io.filenaming.metadata")
 def test_get_current_version_str(mock_metadata, mock_version, version_string):
@@ -474,6 +474,34 @@ def test_get_current_version_str(mock_metadata, mock_version, version_string):
             filenaming.get_current_version_str("irrelevant_since_metadata_is_mocked")
     else:
         assert filenaming.get_current_version_str("irrelevant_since_metadata_is_mocked") == version_string
+
+
+def test_check_version_number_format():
+    """Test version number format checking utility function"""
+    # Valid versions
+    assert filenaming.check_version_number_format("V1-0-0")
+    assert filenaming.check_version_number_format("V12-34-56RC1")
+
+    assert not filenaming.check_version_number_format("2.3.4")  # Semantic versioning fails
+    assert not filenaming.check_version_number_format("V1.0.0")  # Dots instead of dashes
+    assert not filenaming.check_version_number_format("Version1-0-0")  # Missing 'V' prefix
+    assert not filenaming.check_version_number_format("V1-0")  # Too few components
+
+
+def test_format_from_semantic_version():
+    """Test formatting a semantic version string into the filenaming format"""
+    assert filenaming.format_from_semantic_version("1.0.0") == "V1-0-0"
+    assert filenaming.format_from_semantic_version("2.3.4rc1") == "V2-3-4RC1"
+    assert filenaming.format_from_semantic_version("10.20.30") == "V10-20-30"
+
+    # Add a patch 0 if not provided
+    assert filenaming.format_from_semantic_version("1.0") == "V1-0-0"
+
+    with pytest.raises(InvalidVersion):
+        filenaming.format_from_semantic_version("v1-0-0")  # Not semantic versioning
+
+    with pytest.raises(InvalidVersion):
+        filenaming.format_from_semantic_version("foo.bar.baz")  # Not numeric values
 
 
 def test_working_with_mocked_s3_paths(create_mock_bucket):

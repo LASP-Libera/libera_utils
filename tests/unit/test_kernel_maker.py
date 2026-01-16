@@ -62,7 +62,7 @@ def test_create_kernel_from_packets(
         ("ELSCAN-CK", "LIBERA_KERNEL_EL_CK_CONFIG", "bc"),
     ],
 )
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="v2-5-2")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V2-5-2")
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch(
     "libera_utils.kernel_maker.create_kernel_dataframe_from_l1a",
