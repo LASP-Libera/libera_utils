@@ -11,6 +11,7 @@ from typing import Any, cast
 
 import ulid
 from cloudpathlib import AnyPath, CloudPath, S3Path
+from packaging.version import Version
 
 from libera_utils.constants import (
     DataLevel,
@@ -86,6 +87,8 @@ MANIFEST_FILE_REGEX = re.compile(
     r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
     r"\.json"
 )
+
+LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 
 
 class AbstractValidFilename(ABC):
@@ -359,7 +362,7 @@ class L0Filename(AbstractDataProductFilename):
 
     @classmethod
     def _format_filename_parts(
-        cls,  # pylint: disable=arguments-differ
+        cls,
         *,  # No positional arguments
         id_char: str,
         scid: int,
@@ -592,10 +595,13 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         : str
             Formatted filename
         """
+        if not check_version_number_format(version):
+            version = format_from_semantic_version(version)
+
         return cls._fmt.format(
             data_level=data_level.upper(),
             product_name=product_name.upper(),
-            version=version.upper(),
+            version=version,
             utc_start=_ensure_utc_timezone(utc_start).strftime(PRINTABLE_TS_FORMAT),
             utc_end=_ensure_utc_timezone(utc_end).strftime(PRINTABLE_TS_FORMAT),
             revision=_ensure_utc_timezone(revision).strftime(REVISION_TS_FORMAT),
@@ -666,7 +672,7 @@ class ManifestFilename(AbstractValidFilename):
 
     @classmethod
     def _format_filename_parts(
-        cls,  # pylint: disable=arguments-differ
+        cls,
         manifest_type: ManifestType,
         ulid_code: ulid.ULID,
     ):
@@ -700,7 +706,26 @@ class ManifestFilename(AbstractValidFilename):
         return SimpleNamespace(**d)
 
 
-def format_semantic_version(semantic_version: str) -> str:
+def check_version_number_format(version: str) -> bool:
+    """Ensures that a version string is in VM-m-p format for Libera filenaming. M, m, and p are integers
+    representing Major, minor, and patch respectively.
+
+    Parameters
+    ----------
+    version : str
+        Version string to validate
+
+    Returns
+    -------
+    : bool
+        True if version string is in VM-m-p format, False otherwise
+    """
+    if LIBERA_SEM_VER_REGEX.match(version) is None:
+        return False
+    return True
+
+
+def format_from_semantic_version(semantic_version: str) -> str:
     """Formats a semantic version string X.Y.Z into a filename-compatible string like VX-Y-Z, for X = major version,
     Y = minor version, Z = patch.
 
@@ -717,7 +742,16 @@ def format_semantic_version(semantic_version: str) -> str:
     -------
     : str
     """
-    major, minor, patch = semantic_version.split(".")
+    # Use packaging's version class to handle more complex versions
+    ver_object = Version(semantic_version)
+    # We only want a major, minor, and patch style version string
+    major = ver_object.major
+    minor = ver_object.minor
+    patch = ver_object.micro
+
+    # Allow an option for pre-release notations like rc1
+    if ver_object.is_prerelease:
+        patch = str(patch) + ver_object.pre[0] + str(ver_object.pre[1])
     return f"V{major}-{minor}-{patch}".upper()
 
 
@@ -733,7 +767,7 @@ def get_current_version_str(package_name: str) -> str:
     Returns
     -------
     : str
-        Version string in format vM1m2p3
+        Version string in format V1-2-3
     """
     semver = metadata.version(package_name)
-    return format_semantic_version(semver)
+    return format_from_semantic_version(semver)
