@@ -15,7 +15,7 @@ from cloudpathlib import AnyPath
 from curryer import kernels, meta, spicetime
 
 from libera_utils.config import config
-from libera_utils.constants import DataLevel, DataProductIdentifier, get_l1a_apid
+from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import smart_copy_file
@@ -432,7 +432,11 @@ def create_kernel_from_l1a(
 
     # Get the APID and sample group name within the L1A packet config required for finding the kernel data
     # in the L1A file
-    apid = get_l1a_apid(l1a_dpi)
+    apid = l1a_dpi.associated_apid
+    if apid is None:
+        raise ValueError(
+            f"No associated APID found for DPI {l1a_dpi} required for kernel {kernel_identifier}. Is this an L1A data product ID?"
+        )
     sample_group_name = SPICE_DPI_TO_L1A_SAMPLE_GROUP_MAP[kernel_identifier]
 
     # Create Curryer-compatible kernel DataFrame from L1A dataset
@@ -524,7 +528,13 @@ def create_kernel_from_packets(
     logger.info("Generating SPICE kernel %s from packet files: %s", kernel_identifier, input_data_files)
 
     # Get the APID required to generate the requested kernel type
-    apid = get_l1a_apid(SPICE_DPI_TO_L1A_DPI_MAP[kernel_identifier])
+
+    l1a_dpi = SPICE_DPI_TO_L1A_DPI_MAP[kernel_identifier]
+    apid = l1a_dpi.associated_apid
+    if apid is None:
+        raise ValueError(
+            f"No associated APID found for DPI {l1a_dpi} required for kernel {kernel_identifier}. Is this an L1A data product ID?"
+        )
 
     logger.info("Using L1A data for APID %s to generate kernel type %s", apid, kernel_identifier)
 

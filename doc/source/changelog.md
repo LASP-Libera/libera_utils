@@ -1,5 +1,9 @@
 # Version Changes
 
+# 5.4.8
+
+- FEAT: Add lookups between L1a, APID, and L1a product definitions
+
 ## 5.4.7
 
 - FEAT: Update Space Packet Parser dependency to take advantage of packet filtering functionality

@@ -15,6 +15,7 @@ import numpy as np
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 
 # Registry for PacketConfiguration instances
@@ -50,14 +51,15 @@ def get_packet_config(apid: LiberaApid | int) -> "PacketConfiguration":
 
 def _load_configs_from_yaml():
     """Load all packet configurations from YAML file and populate the registry."""
-    yaml_path = Path(__file__).parent.parent / "data" / "l1a_processing_configs.yml"
+    l1a_packet_configs_path = str(config.get("LIBERA_L1A_PROCESSING_CONFIGS_PATH"))
+    yaml_path = Path(l1a_packet_configs_path)
 
     with open(yaml_path) as f:
         yaml_data = yaml.safe_load(f)
 
     for apid_name, config_data in yaml_data.items():
-        config = PacketConfiguration(**config_data)
-        _PACKET_CONFIG_REGISTRY[config.packet_apid] = config
+        packet_config = PacketConfiguration(**config_data)
+        _PACKET_CONFIG_REGISTRY[packet_config.packet_apid] = packet_config
 
 
 class TimeFieldMapping(BaseModel):
@@ -365,3 +367,28 @@ class PacketConfiguration(BaseModel):
             if sg.name == name:
                 return sg
         raise KeyError(f"No sample group with name {name}")
+
+
+def get_l1a_product_definition_path(apid: int) -> str:
+    """Get the L1A product definition file path for a given APID.
+
+    Parameters
+    ----------
+    apid : int
+        The APID to look up the product definition for
+
+    Returns
+    -------
+    str
+        The file path to the L1A product definition YAML
+
+    Raises
+    ------
+    KeyError
+        If no product definition is registered for the given APID
+    """
+    l1a_product_definitions_by_apid: dict[str, str] = config.get("LIBERA_L1A_PRODUCT_DEFINITIONS_BY_APID")
+    try:
+        return l1a_product_definitions_by_apid[str(apid)]
+    except KeyError:
+        raise KeyError(f"No L1A product definition registered for APID {apid}") from None

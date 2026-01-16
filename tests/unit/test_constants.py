@@ -183,6 +183,21 @@ class TestDataProductIdentifier:
             assert isinstance(level, DataLevel)
             assert level in DataLevel
 
+    def test_associated_apid_property(self):
+        """Test associated_apid property for L0 and L1A products"""
+        for product in DataProductIdentifier:
+            apid = product.associated_apid
+            # L0 and L1A products should have an associated APID, others should be None
+            # L0 PDS CR is a special case and should be None
+            if (
+                product.data_level == DataLevel.L1A
+                or product.data_level == DataLevel.L0
+                and product != DataProductIdentifier.l0_pds_cr
+            ):
+                assert isinstance(apid, LiberaApid)
+            else:
+                assert apid is None
+
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
         product = DataProductIdentifier.l1b_rad

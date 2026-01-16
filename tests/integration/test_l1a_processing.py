@@ -7,12 +7,11 @@ import pytest
 import xarray as xr
 from cfchecker import cfchecks
 
-from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
-from libera_utils.l1a.l1a_packet_configs import get_packet_config
+from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -48,7 +47,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
 
 
 @pytest.mark.parametrize(
-    ("packet_file_fixtures", "apid", "product_definition_file", "time_dimension", "skip_header_bytes"),
+    ("packet_file_fixtures", "apid", "time_dimension", "skip_header_bytes"),
     [
         (
             [
@@ -57,42 +56,37 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
                 "test_jpss1_pds_file_3",
             ],
             LiberaApid.jpss_sc_pos,
-            "jpss_sc_pos_l1a.yml",
             "PACKET_JPSS_TIME",
             0,
         ),
         (
             ["test_jpss4_pds_file_1"],
             LiberaApid.jpss_sc_pos,
-            "jpss_sc_pos_l1a.yml",
             "PACKET_JPSS_TIME",
             0,
         ),
         (
             ["test_ccsds_2025_221_17_17_58"],
             LiberaApid.icie_axis_sample,
-            "icie_axis_sample_l1a.yml",
             "PACKET_ICIE_TIME",
             8,
         ),
         (
             ["test_ccsds_2025_221_16_56_48"],
             LiberaApid.icie_rad_sample,
-            "icie_rad_sample_l1a.yml",
             "PACKET_ICIE_TIME",
             8,
         ),
         (
             ["test_ccsds_2025_221_17_17_58"],
             LiberaApid.icie_rad_sample,
-            "icie_rad_sample_l1a.yml",
             "PACKET_ICIE_TIME",
             8,
         ),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "icie_wfov_sci_l1a.yml", "PACKET_ICIE_TIME", 8),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "icie_nom_hk_l1a.yml", "PACKET_ICIE_TIME", 8),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "icie_crit_hk_l1a.yml", "PACKET_ICIE_TIME", 8),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "icie_temp_hk_l1a.yml", "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
     ],
     ids=(
         "JPSS1_SC_POS",
@@ -109,7 +103,6 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
 def test_process_packets_to_l1a_product(
     packet_file_fixtures,
     apid,
-    product_definition_file,
     time_dimension,
     skip_header_bytes,
     request,
@@ -161,7 +154,7 @@ def test_process_packets_to_l1a_product(
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
     # Create LiberaDataProductDefinition from product definition file
-    product_definition_path = Path(str(config.get("LIBERA_PRODUCT_DEFINITIONS_PATH"))) / product_definition_file
+    product_definition_path = get_l1a_product_definition_path(apid)
     product_config = LiberaDataProductDefinition.from_yaml(product_definition_path)
 
     # Coerce dataset to match product definition configuration
