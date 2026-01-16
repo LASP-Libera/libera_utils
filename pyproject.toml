@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.4.5"
+version = "5.4.6"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -50,7 +50,7 @@ dependencies = [
     "spiceypy>=5.0.0",
     "urllib3<2.0",  # This pin speeds up solving boto dependencies, which require urllib3<2.0
     "watchtower>=3.0.0,<4.0",
-    "xarray>=2023.1.0",
+    "xarray>=2025.10.1",
     "botocore",
     "docker>=7.1.0,<8",
     "importlib-metadata>=4.8.1,<5",

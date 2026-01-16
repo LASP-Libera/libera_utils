@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.4.6
+
+- BUGFIX: update xarray version due to breaking change in netcdf writing
+
 ## 5.4.3
 
 - FEAT: Add enforcement of valid versioning in Filename classes
