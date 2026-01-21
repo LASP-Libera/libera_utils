@@ -1,10 +1,14 @@
 # Version Changes
 
+## 5.4.7
+
+- FEAT: Update Space Packet Parser dependency to take advantage of packet filtering functionality
+
 ## 5.4.6
 
 - BUGFIX: update xarray version due to breaking change in netcdf writing
 
-## 5.4.3
+## 5.4.5
 
 - FEAT: Add enforcement of valid versioning in Filename classes
 

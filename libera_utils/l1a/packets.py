@@ -9,6 +9,7 @@ from typing import cast
 import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath
+from space_packet_parser.generators.ccsds import CCSDSPacketBytes
 from space_packet_parser.xarr import create_dataset
 
 from libera_utils.config import config
@@ -57,11 +58,15 @@ def parse_packets_to_dataset(
     """
     logger.info("Parsing packets (APID %d) from %d file(s)", apid, len(packet_files))
 
+    def _packet_filter(packet_bytes: CCSDSPacketBytes) -> bool:
+        return packet_bytes.apid == apid
+
     # Parse packets using space_packet_parser
     dataset_dict = create_dataset(
         packet_files=[AnyPath(f) for f in packet_files],
         xtce_packet_definition=packet_definition,
         generator_kwargs=generator_kwargs,
+        packet_filter=_packet_filter,
     )
 
     # Filter by APID
