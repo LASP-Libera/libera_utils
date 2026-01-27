@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.5.1
+
+- BUGFIX: Fixed the netcdf writing needed for L1B camera product and clarifying netcdf engine usage
+
 ## 5.5.0
 
 - REFACTOR: Adjusted CLI interface for AWS tools to improve usability and consistency

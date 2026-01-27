@@ -642,3 +642,49 @@ class TestNetCDFSupport:
         assert "q_flag" in ds_read.data_vars
         np.testing.assert_array_almost_equal(ds_read["fil_rad"].values, test_dataset["fil_rad"].values)
         ds_read.close()
+
+
+class TestNetcdfEngineConfig:
+    """Tests for NetcdfEngine configuration handling in write_libera_data_product"""
+
+    def test_write_libera_data_netcdf4_local(self, monkeypatch, test_product_definition, test_data_dict, tmp_path):
+        """
+        Test that when config is set to 'netcdf4', the code writes using the file path directly.
+        We use monkeypatch to set the environment variable, which overrides config.json.
+        """
+        # Force the configuration to be 'netcdf4'
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", "netcdf4")
+
+        result = write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_data_dict,
+            output_path=tmp_path,
+            time_variable="time",
+        )
+
+        assert result.path.exists()
+
+        # Verify we can read it back using the engine we insisted on
+        with xr.open_dataset(result.path, engine="netcdf4") as ds:
+            assert "fil_rad" in ds
+
+    def test_write_libera_data_netcdf4_s3_fails(
+        self, monkeypatch, test_product_definition, test_data_dict, create_mock_bucket
+    ):
+        """
+        CRITICAL TEST: Verifies that the 'netcdf4' engine path is actually taken and
+        correctly fails on S3 paths (proving the branching logic works).
+        """
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", "netcdf4")
+
+        mock_bucket = create_mock_bucket()
+        output_path = S3Path(f"s3://{mock_bucket.name}/test-prefix")
+
+        # Expect OSError/FileNotFoundError because netcdf4 cannot handle S3 URIs
+        with pytest.raises((OSError, FileNotFoundError)):
+            write_libera_data_product(
+                data_product_definition=test_product_definition,
+                data=test_data_dict,
+                output_path=output_path,
+                time_variable="time",
+            )
