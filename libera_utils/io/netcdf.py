@@ -110,6 +110,10 @@ def write_libera_data_product(
         data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
 
     netcdf4_engine = NetcdfEngine.get_from_config()
-    with data_product_filename.path.open("wb") as fh:
-        dataset.to_netcdf(fh, engine=netcdf4_engine)
+    if netcdf4_engine == NetcdfEngine.netcdf4:
+        logger.info("Using netcdf4 engine to write data product, this will not work for S3 paths")
+        dataset.to_netcdf(data_product_filename.path, engine=NetcdfEngine.netcdf4)
+    else:
+        with data_product_filename.path.open("w+b") as fh:
+            dataset.to_netcdf(fh, engine=NetcdfEngine.h5netcdf)
     return data_product_filename
