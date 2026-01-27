@@ -13,10 +13,13 @@ from libera_utils.constants import ProcessingStepIdentifier
 
 
 @pytest.mark.parametrize(
-    ("algorithm_name", "applicable_day", "wait_time"), [("l1b-cam", "2025-01-01", 0), ("l1b-rad", "2025-01-01", 5)]
+    ("algorithm_name", "applicable_day", "wait_time", "profile"),
+    [("l1b-cam", "2025-01-01", 0, None), ("l1b-rad", "2025-01-01", 5, "test-profile")],
 )
 @patch("libera_utils.aws.processing_step_function_trigger.step_function_trigger")
-def test_step_function_trigger_cli_handler(mock_step_function_trigger, algorithm_name, applicable_day, wait_time):
+def test_step_function_trigger_cli_handler(
+    mock_step_function_trigger, algorithm_name, applicable_day, wait_time, profile
+):
     """Test the ECR upload CLI handler for file upload."""
     # Make the input namespace object
     args = argparse.Namespace(
@@ -24,13 +27,16 @@ def test_step_function_trigger_cli_handler(mock_step_function_trigger, algorithm
         algorithm_name=algorithm_name,
         applicable_day=applicable_day,
         wait_time=wait_time,
+        profile=profile,
     )
 
     psfn.step_function_trigger_cli_handler(args)
 
     expected_algorithm = ProcessingStepIdentifier(algorithm_name)
     expected_date = datetime.fromisoformat(applicable_day)
-    mock_step_function_trigger.assert_called_once_with(expected_algorithm, expected_date, wait_time=wait_time)
+    mock_step_function_trigger.assert_called_once_with(
+        expected_algorithm, expected_date, wait_time=wait_time, profile_name=profile
+    )
 
 
 @mock_aws()

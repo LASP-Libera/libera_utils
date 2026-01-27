@@ -3,9 +3,9 @@
 import argparse
 
 from libera_utils import kernel_maker
-from libera_utils.aws import constants, ecr_upload, s3_utilities
+from libera_utils.aws import ecr_upload, s3_utilities
 from libera_utils.aws import processing_step_function_trigger as psfn
-from libera_utils.constants import ProcessingStepIdentifier
+from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.version import version as libera_utils_version
 
 
@@ -73,7 +73,7 @@ def parse_cli_args(cli_args: list):
     # ==============
     steps_with_ecrs = [f"{name}" for name in ProcessingStepIdentifier if name.ecr_name]
     processing_steps = [f"{name}" for name in ProcessingStepIdentifier]
-    account_suffixes = [f"{name}" for name in constants.LiberaAccountSuffix]
+    dpis = [f"{name}" for name in DataProductIdentifier]
 
     # ==========
     # ECR UPLOAD
@@ -110,6 +110,11 @@ def parse_cli_args(cli_args: list):
         action="store_true",
         help="Ignore the standard docker config.json to bypass the credential store",
     )
+    ecr_upload_parser.add_argument(
+        "--profile",
+        type=str,
+        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+    )
 
     # ============================
     # STEP FUNCTION MANUAL TRIGGER
@@ -130,6 +135,11 @@ def parse_cli_args(cli_args: list):
     sfn_trigger_parser.add_argument(
         "--wait-time", type=float, default=5, help="Time in seconds to wait for step function completes "
     )
+    sfn_trigger_parser.add_argument(
+        "--profile",
+        type=str,
+        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+    )
 
     # ============================
     # S3 UTILITIES
@@ -137,27 +147,22 @@ def parse_cli_args(cli_args: list):
     s3_utilities_parser = subparsers.add_parser(
         "s3-utils", help="Utilities for working with S3 archives for processing steps"
     )
+    s3_utilities_parser.add_argument(
+        "--profile",
+        type=str,
+        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+    )
     s3_utilities_subparser = s3_utilities_parser.add_subparsers(description="sub-commands for s3-utils sub-command")
 
     # ============================
     # S3 PUT
     # ============================
     s3_put_parser = s3_utilities_subparser.add_parser(
-        "put", help="Upload tool for putting files into S3 archives for designated processing steps"
+        "put", help="Upload tool for putting files into S3 archives for use by a single processing step"
     )
     s3_put_parser.set_defaults(func=s3_utilities.s3_put_cli_handler)
     s3_put_parser.add_argument(
-        "algorithm_name",
-        type=str,
-        choices=processing_steps,
-        help=f"Algorithm name string. Used to determine the S3 archive bucket name. Options are: {processing_steps}",
-    )
-    s3_put_parser.add_argument("file_path", type=str, help="Path to the file to upload")
-    s3_put_parser.add_argument(
-        "--account-suffix",
-        type=str,
-        default="-stage",
-        help=f"Account suffix for the bucket name. Default is -stage. Common options are: {account_suffixes}",
+        "file_path", type=str, help="Path to the file to upload. This must be aproperly named Libera data product file."
     )
 
     # ============================
@@ -168,16 +173,10 @@ def parse_cli_args(cli_args: list):
     )
     s3_list_parser.set_defaults(func=s3_utilities.s3_list_cli_handler)
     s3_list_parser.add_argument(
-        "algorithm_name",
+        "product_name",
         type=str,
-        choices=processing_steps,
-        help=f"Algorithm name string. Used to determine the S3 archive bucket name.Options are: {processing_steps}",
-    )
-    s3_list_parser.add_argument(
-        "--account-suffix",
-        type=str,
-        default="-stage",
-        help=f"Account suffix for the bucket name. Default is -stage. Common options are: {account_suffixes}",
+        choices=dpis,
+        help=f"The data product name string. Used to determine the S3 archive bucket name. Options are: {dpis}",
     )
 
     # ============================
