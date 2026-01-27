@@ -58,6 +58,7 @@ def _push_single_tag(
     full_ecr_tag: str,
     region_name: str,
     max_retries: int = 3,
+    profile_name: str = None,
 ) -> None:
     """Push a single tagged image to ECR with retry logic and fresh authentication.
 
@@ -73,11 +74,13 @@ def _push_single_tag(
         AWS region name
     max_retries : int
         Maximum retry attempts
+    profile_name : str, optional
+        AWS profile name to use for the session
     """
     for attempt in range(max_retries + 1):
         try:
             # Get fresh ECR credentials for this push attempt
-            auth_config = _get_fresh_ecr_auth(region_name)
+            auth_config = _get_fresh_ecr_auth(region_name, profile_name=profile_name)
 
             # Tag the local image
             local_image.tag(full_ecr_tag)
@@ -113,13 +116,15 @@ def _push_single_tag(
                 raise
 
 
-def _get_fresh_ecr_auth(region_name: str) -> dict:
+def _get_fresh_ecr_auth(region_name: str, profile_name: str = None) -> dict:
     """Get fresh ECR authentication configuration.
 
     Parameters
     ----------
     region_name : str
         AWS region name
+    profile_name : str, optional
+        AWS profile name to use for the session
 
     Returns
     -------
@@ -127,7 +132,8 @@ def _get_fresh_ecr_auth(region_name: str) -> dict:
         Authentication configuration for Docker API
     """
     try:
-        ecr_client = boto3.client("ecr", region_name=region_name)
+        session = boto3.Session(profile_name=profile_name)
+        ecr_client = session.client("ecr", region_name=region_name)
         token_response = ecr_client.get_authorization_token()
 
         auth_data = token_response["authorizationData"][0]
@@ -219,12 +225,14 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     image_tag = parsed_args.image_tag
     algorithm_name = ProcessingStepIdentifier(parsed_args.algorithm_name)
     ecr_tags = parsed_args.ecr_tags
+    profile_name = parsed_args.profile
     push_image_to_ecr(
         image_name,
         image_tag,
         algorithm_name,
         ecr_image_tags=ecr_tags,
         ignore_docker_config=parsed_args.ignore_docker_config,
+        profile_name=profile_name,
     )
 
 
@@ -237,6 +245,7 @@ def push_image_to_ecr(
     region_name: str = "us-west-2",
     ignore_docker_config: bool = False,
     max_retries: int = 1,
+    profile_name: str = None,
 ) -> None:
     """Push a Docker image to Amazon ECR with robust authentication handling.
 
@@ -262,6 +271,8 @@ def push_image_to_ecr(
         If True, creates a temporary Docker config to prevent using stored credentials
     max_retries : int, default 3
         Maximum number of retry attempts for failed push operations
+    profile_name : Optional[str], default None
+        AWS profile name to use for the session
 
     Raises
     ------
@@ -288,7 +299,7 @@ def push_image_to_ecr(
         logger.info(f"Starting ECR push for image {image_name}:{image_tag}")
 
         # Get AWS account and ECR repository information
-        account_id = aws_utils.get_aws_account_number()
+        account_id = aws_utils.get_aws_account_number(profile_name=profile_name)
         ecr_name = processing_step_id.ecr_name
 
         if ecr_name is None:
@@ -319,6 +330,7 @@ def push_image_to_ecr(
                     full_ecr_tag=full_ecr_tag,
                     region_name=region_name,
                     max_retries=max_retries,
+                    profile_name=profile_name,
                 )
                 successful_pushes.append(remote_tag)
                 logger.info(f"Successfully pushed tag: {remote_tag}")

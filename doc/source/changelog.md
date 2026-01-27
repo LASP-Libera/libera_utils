@@ -1,6 +1,12 @@
 # Version Changes
 
-# 5.4.8
+## 5.5.0
+
+- REFACTOR: Adjusted CLI interface for AWS tools to improve usability and consistency
+- FEAT: Allows the usage of the profile argument in the cli tools for specifying AWS credentials profiles
+- REFACTOR: Changing the s3 utilities for list and put to use the new constants tools more effectively
+
+## 5.4.8
 
 - FEAT: Add lookups between L1a, APID, and L1a product definitions
 

@@ -2,19 +2,33 @@
 
 import argparse
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
 from cloudpathlib import AnyPath, S3Path
 
-from libera_utils.aws.constants import LiberaAccountSuffix as AccountSuffix
-from libera_utils.constants import ProcessingStepIdentifier
-from libera_utils.io.filenaming import AbstractValidFilename
+from libera_utils.constants import DataProductIdentifier
+from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
+
+
+def find_bucket_in_account_by_partial_name(boto_session, partial_name: str):
+    """Finds a Bucket by substring match to the bucket name"""
+    s3 = boto_session.client("s3")
+    response = s3.list_buckets()
+
+    name_pattern = re.compile(partial_name)
+    matches = [b["Name"] for b in response["Buckets"] if name_pattern.search(b["Name"])]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Error finding a single bucket matching name {partial_name}. Found {len(matches)} buckets: {matches}"
+        )
+    return matches.pop()
 
 
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
@@ -24,18 +38,15 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     logger.debug(f"CLI args: {parsed_args}")
 
     # The other two subcommands have more complex logic as functions with some shared arguments
-    algorithm_name_string = parsed_args.algorithm_name
-    processing_step = ProcessingStepIdentifier(algorithm_name_string)
-    account_suffix = parsed_args.account_suffix
+    profile_name = parsed_args.profile
     local_file_path = AnyPath(parsed_args.file_path)
-    s3_put_in_archive_for_processing_step(local_file_path, processing_step, account_suffix=account_suffix)
+    s3_put_in_archive_for_processing_step(local_file_path, profile_name=profile_name)
 
 
 def s3_put_in_archive_for_processing_step(
     path_to_file: Path | S3Path,
-    processing_step: str | ProcessingStepIdentifier,
     *,
-    account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
+    profile_name: str = None,
 ):
     """Upload a file to the archive S3 bucket associated with a given processing step.
 
@@ -43,21 +54,18 @@ def s3_put_in_archive_for_processing_step(
     ----------
     path_to_file : Path
         Local path to the file to upload
-    processing_step : str
-        processing_step : Union[str, ProcessingStepIdentifier]
-        Processing step ID string or object. Used to infer the S3 archive bucket name.
-    account_suffix : Union[str, LiberaAccountSuffix], optional
-        Account suffix for the bucket name, by default LiberaAccountSuffix.STAGE
+    profile_name : str, optional
+        Boto3 profile name to use for authentication, by default None
     """
-    if isinstance(processing_step, str):
-        processing_step = ProcessingStepIdentifier(processing_step)
-    # Don't convert string account_suffix to enum - pass it directly to get_archive_bucket_name
+    libera_filename = LiberaDataProductFilename.from_file_path(path_to_file)
 
-    bucket_name = ProcessingStepIdentifier.get_archive_bucket_name(processing_step, account_suffix=account_suffix)
-    bucket_path = S3Path(f"s3://{bucket_name}")
-    filename_object = AbstractValidFilename.from_file_path(path_to_file)
+    boto_session = boto3.Session(profile_name=profile_name)
+    archive_bucket_name = find_bucket_in_account_by_partial_name(
+        boto_session, libera_filename.data_product_id.data_level.archive_bucket_name
+    )
+    bucket_path = S3Path(f"s3://{archive_bucket_name}")
 
-    upload_path = filename_object.generate_prefixed_path(bucket_path)
+    upload_path = libera_filename.generate_prefixed_path(bucket_path)
     smart_copy_file(path_to_file, upload_path)
 
 
@@ -68,43 +76,27 @@ def s3_list_cli_handler(parsed_args: argparse.Namespace) -> None:
     logger.debug(f"CLI args: {parsed_args}")
 
     # The other two subcommands have more complex logic as functions with some shared arguments
-    algorithm_name_string = parsed_args.algorithm_name
-    processing_step = ProcessingStepIdentifier(algorithm_name_string)
-    account_suffix = parsed_args.account_suffix
-    s3_list_archive_files(processing_step, account_suffix=account_suffix)
+    dpi_string = parsed_args.product_name
+    processing_step = DataProductIdentifier(dpi_string)
+    s3_list_archive_files(processing_step, profile_name=parsed_args.profile)
 
 
-def s3_list_archive_files(
-    processing_step: str | ProcessingStepIdentifier,
-    *,
-    account_suffix: str | AccountSuffix | None = AccountSuffix.STAGE,
-) -> list:
-    """List all files in an archive S3 bucket for a given processing step.
+def s3_list_archive_files(data_product_id: str | DataProductIdentifier, *, profile_name: str = None) -> list:
+    """List all files in an archive S3 bucket for a given processing step."""
+    if isinstance(data_product_id, str):
+        data_product_id = DataProductIdentifier(data_product_id)
 
-    Parameters
-    ----------
-    processing_step : str
-        Processing step ID string. Used to infer the S3 archive bucket name.
-    account_suffix : Union[str, LiberaAccountSuffix], optional
-        Account suffix for the bucket name, by default LiberaAccountSuffix.STAGE
-    print_out : bool, optional
-        Print the list of files to the console, by default False
+    boto_session = boto3.Session(profile_name=profile_name)
+    bucket_name = find_bucket_in_account_by_partial_name(boto_session, data_product_id.data_level.archive_bucket_name)
 
-    Returns
-    -------
-    bucket_objects : list
-        S3Path objects for each file in the bucket
-    """
-    if isinstance(processing_step, str):
-        processing_step = ProcessingStepIdentifier(processing_step)
-    # Don't convert string account_suffix to enum - pass it directly to get_archive_bucket_name
+    prefix = data_product_id
 
-    bucket_name = ProcessingStepIdentifier.get_archive_bucket_name(processing_step, account_suffix=account_suffix)
-    client = boto3.client("s3")
+    # 3. Create client FROM the session
+    client = boto_session.client("s3")
 
     bucket_objects = [
         S3Path(f"s3://{bucket_name}/{obj['Key']}")
-        for obj in client.list_objects_v2(Bucket=bucket_name).get("Contents", [])
+        for obj in client.list_objects_v2(Bucket=bucket_name, Prefix=prefix).get("Contents", [])
     ]
 
     for obj in bucket_objects:
@@ -121,6 +113,8 @@ def s3_copy_cli_handler(parsed_args: argparse.Namespace) -> None:
     # The other two subcommands have more complex logic as functions with some shared arguments
     current_path = AnyPath(parsed_args.source_path)
     destination_path = AnyPath(parsed_args.dest_path)
+    profile_name = parsed_args.profile
+    boto3.Session(profile_name=profile_name)
     delete = parsed_args.delete
     s3_copy_file(current_path, destination_path, delete=delete)
 

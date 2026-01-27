@@ -34,12 +34,16 @@ def step_function_trigger_cli_handler(parsed_args: argparse.Namespace):
 
     algorithm_name = ProcessingStepIdentifier(parsed_args.algorithm_name)
     applicable_day = datetime.fromisoformat(parsed_args.applicable_day)
+    profile_name = parsed_args.profile
 
-    step_function_trigger(algorithm_name, applicable_day, wait_time=parsed_args.wait_time)
+    step_function_trigger(algorithm_name, applicable_day, wait_time=parsed_args.wait_time, profile_name=profile_name)
 
 
 def step_function_trigger(
-    algorithm_name: str | ProcessingStepIdentifier, applicable_day: str | datetime, wait_time: int = 0
+    algorithm_name: str | ProcessingStepIdentifier,
+    applicable_day: str | datetime,
+    wait_time: int = 0,
+    profile_name: str = None,
 ) -> str:
     """Start a stepfunction to process a certain days data
     Parameters
@@ -51,6 +55,8 @@ def step_function_trigger(
     wait_time : int, optional
         The time to wait between checking the status of the step function, default is 5 seconds for a maximum of
         ~30 second total wait time
+    profile_name : str, optional
+        The AWS profile name to use for the session, by default None
     Returns
     -------
     str
@@ -63,15 +69,18 @@ def step_function_trigger(
 
     region_name = "us-west-2"
 
-    account_id = utils.get_aws_account_number()
+    # Update account ID fetch
+    account_id = utils.get_aws_account_number(profile_name=profile_name)
     logger.debug(f"Account id is : {account_id}")
+
+    session = boto3.Session(profile_name=profile_name)
 
     state_machine_arn = f"arn:aws:states:{region_name}:{account_id}:stateMachine:{algorithm_name.step_function_name}"
     logger.debug(f"State machine is: {state_machine_arn}")
 
     ulid_timestamp = ULID.from_datetime(datetime.now(UTC))
 
-    step_function_client = boto3.client("stepfunctions", region_name)
+    step_function_client = session.client("stepfunctions", region_name)
     input_object = json.dumps(
         {
             "detail": {

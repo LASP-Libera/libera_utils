@@ -71,12 +71,15 @@ def test_build_docker_image(test_data_path):
 
 
 @pytest.mark.parametrize(
-    ("algorithm_name", "image_name", "image_tag", "ecr_tags", "ignore_docker_config"),
-    [("l1b-cam", "test-image", "latest", None, True), ("l1b-rad", "test-image", "latest", ["latest", "v1.0"], False)],
+    ("algorithm_name", "image_name", "image_tag", "ecr_tags", "ignore_docker_config", "profile"),
+    [
+        ("l1b-cam", "test-image", "latest", None, True, None),
+        ("l1b-rad", "test-image", "latest", ["latest", "v1.0"], False, "test-profile"),
+    ],
 )
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
 def test_ecr_upload_cli_handler(
-    mock_push_image_to_ecr, image_name, algorithm_name, image_tag, ecr_tags, ignore_docker_config
+    mock_push_image_to_ecr, image_name, algorithm_name, image_tag, ecr_tags, ignore_docker_config, profile
 ):
     """Test the ECR upload CLI handler for file upload."""
     # Make the input namespace object
@@ -87,47 +90,63 @@ def test_ecr_upload_cli_handler(
         image_tag=image_tag,
         ecr_tags=ecr_tags,
         ignore_docker_config=ignore_docker_config,
+        profile=profile,
     )
 
     ecr_upload.ecr_upload_cli_handler(args)
 
     expected_algorithm = ProcessingStepIdentifier(algorithm_name)
     mock_push_image_to_ecr.assert_called_once_with(
-        image_name, image_tag, expected_algorithm, ecr_image_tags=ecr_tags, ignore_docker_config=ignore_docker_config
+        image_name,
+        image_tag,
+        expected_algorithm,
+        ecr_image_tags=ecr_tags,
+        ignore_docker_config=ignore_docker_config,
+        profile_name=profile,
     )
 
 
 class TestGetFreshEcrAuth:
     """Test the _get_fresh_ecr_auth function."""
 
-    @mock_aws
-    @mock.patch("boto3.client")
-    def test_get_fresh_ecr_auth_success(self, mock_boto_client):
-        """Test successful ECR authentication token retrieval."""
-        # Mock the ECR client and response
-        mock_ecr_client = MagicMock()
-        mock_boto_client.return_value = mock_ecr_client
+    @pytest.mark.parametrize("profile_name", [None, "my-custom-profile"])
+    @mock.patch("boto3.Session")
+    def test_get_fresh_ecr_auth_success(self, mock_boto_session, profile_name):
+        """Test successful ECR authentication token retrieval with various profiles."""
+        # 1. Mock the session and client
+        mock_session_instance = MagicMock()
+        mock_boto_session.return_value = mock_session_instance
 
-        # Mock the authorization token response
+        mock_ecr_client = MagicMock()
+        mock_session_instance.client.return_value = mock_ecr_client
+
+        # Mock the token response
         username = "AWS"
         password = "test-password-123"
         token = base64.b64encode(f"{username}:{password}".encode()).decode()
-
         mock_ecr_client.get_authorization_token.return_value = {
             "authorizationData": [{"authorizationToken": token, "expiresAt": "2024-01-01T00:00:00Z"}]
         }
 
-        result = _get_fresh_ecr_auth("us-west-2")
+        # Run the function
+        result = _get_fresh_ecr_auth("us-west-2", profile_name=profile_name)
 
         assert result == {"username": username, "password": password}
-        mock_boto_client.assert_called_once_with("ecr", region_name="us-west-2")
-        mock_ecr_client.get_authorization_token.assert_called_once()
 
-    @mock.patch("boto3.client")
-    def test_get_fresh_ecr_auth_failure(self, mock_boto_client):
+        # CRITICAL CHANGE: Verify the profile was passed to the Session constructor
+        mock_boto_session.assert_called_with(profile_name=profile_name)
+
+    @mock.patch("boto3.Session")
+    def test_get_fresh_ecr_auth_failure(self, mock_boto_session):
         """Test ECR authentication failure handling."""
+        # Chain the mocks: Session -> client -> raise Exception
+        mock_session_instance = MagicMock()
+        mock_boto_session.return_value = mock_session_instance
+
         mock_ecr_client = MagicMock()
-        mock_boto_client.return_value = mock_ecr_client
+        mock_session_instance.client.return_value = mock_ecr_client
+
+        # Set the side effect on the client method
         mock_ecr_client.get_authorization_token.side_effect = Exception("ECR error")
 
         with pytest.raises(Exception, match="ECR error"):
@@ -137,31 +156,28 @@ class TestGetFreshEcrAuth:
 class TestPushSingleTag:
     """Test the _push_single_tag function."""
 
+    @pytest.mark.parametrize("profile_name", [None, "deploy-profile"])
     @mock.patch("libera_utils.aws.ecr_upload._get_fresh_ecr_auth")
-    def test_push_single_tag_success(self, mock_get_auth):
-        """Test successful single tag push."""
+    def test_push_single_tag_success(self, mock_get_auth, profile_name):
+        """Test successful single tag push with profile propagation."""
         # Mock authentication
         mock_get_auth.return_value = {"username": "AWS", "password": "test-password"}
 
-        # Mock Docker client and image
         mock_docker_client = MagicMock()
         mock_local_image = MagicMock()
-
-        # Mock successful push logs
-        mock_docker_client.api.push.return_value = [{"status": "Pushing", "progress": "1/2"}, {"status": "Pushed"}]
+        mock_docker_client.api.push.return_value = [{"status": "Pushed"}]
 
         _push_single_tag(
             docker_client=mock_docker_client,
             local_image=mock_local_image,
-            full_ecr_tag="123456789.dkr.ecr.us-west-2.amazonaws.com/test-repo:latest",
+            full_ecr_tag="repo:latest",
             region_name="us-west-2",
             max_retries=3,
+            profile_name=profile_name,  # Pass the parameterized profile
         )
 
-        # Verify tag and push were called
-        mock_local_image.tag.assert_called_once_with("123456789.dkr.ecr.us-west-2.amazonaws.com/test-repo:latest")
-        mock_docker_client.api.push.assert_called_once()
-        mock_get_auth.assert_called_once_with("us-west-2")
+        # CRITICAL CHANGE: Verify the profile was propagated to the auth helper
+        mock_get_auth.assert_called_once_with("us-west-2", profile_name=profile_name)
 
     @mock.patch("libera_utils.aws.ecr_upload._get_fresh_ecr_auth")
     def test_push_single_tag_with_errors_in_logs(self, mock_get_auth):

@@ -59,6 +59,7 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
                 algorithm_name="l1b-rad",
                 applicable_day="2030-01-01",
                 wait_time=5,
+                profile=None,
             ),
         ),
         (
@@ -67,12 +68,14 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
                 "l1b-cam",
                 "2030-01-01",
                 "--wait-time=5",
+                "--profile=test-profile",
             ],
             argparse.Namespace(
                 func=psfn.step_function_trigger_cli_handler,
                 algorithm_name="l1b-cam",
                 applicable_day="2030-01-01",
                 wait_time=5,
+                profile="test-profile",
             ),
         ),
     ],
@@ -98,6 +101,7 @@ def test_step_function_trigger_parse_cli_args(cli_args, parsed):
                 image_tag="latest",
                 ecr_tags=None,
                 ignore_docker_config=False,
+                profile=None,
             ),
         ),
         (
@@ -109,6 +113,7 @@ def test_step_function_trigger_parse_cli_args(cli_args, parsed):
                 image_tag="tag1.2",
                 ecr_tags=None,
                 ignore_docker_config=True,
+                profile=None,
             ),
         ),
         (
@@ -120,10 +125,11 @@ def test_step_function_trigger_parse_cli_args(cli_args, parsed):
                 image_tag="latest",
                 ecr_tags=None,
                 ignore_docker_config=False,
+                profile=None,
             ),
         ),
         (
-            ["ecr-upload", "l1b-rad", "test-image", "--ecr-tags", "latest", "tag2"],
+            ["ecr-upload", "l1b-rad", "test-image", "--ecr-tags", "latest", "tag2", "--profile", "test-profile"],
             argparse.Namespace(
                 func=ecr_upload.ecr_upload_cli_handler,
                 algorithm_name="l1b-rad",
@@ -131,6 +137,7 @@ def test_step_function_trigger_parse_cli_args(cli_args, parsed):
                 image_tag="latest",
                 ecr_tags=["latest", "tag2"],
                 ignore_docker_config=False,
+                profile="test-profile",
             ),
         ),
     ],
@@ -148,32 +155,28 @@ def test_ecr_upload_cli_args(cli_args, parsed):
     ("cli_args", "parsed"),
     [
         (
-            ["s3-utils", "put", "l1b-cam", "some/file/path.nc"],
+            ["s3-utils", "put", "some/file/path.nc"],
             argparse.Namespace(
                 func=s3_utilities.s3_put_cli_handler,
                 file_path="some/file/path.nc",
-                algorithm_name="l1b-cam",
-                account_suffix="-stage",
+                profile=None,
             ),
         ),
         (
-            ["s3-utils", "put", "l1b-cam", "some/file/path.nc", "--account-suffix=-test"],
+            ["s3-utils", "--profile=test", "put", "some/file/path.nc"],
             argparse.Namespace(
                 func=s3_utilities.s3_put_cli_handler,
                 file_path="some/file/path.nc",
-                algorithm_name="l1b-cam",
-                account_suffix="-test",
+                profile="test",
             ),
         ),
         (
-            ["s3-utils", "ls", "l1b-cam"],
-            argparse.Namespace(
-                func=s3_utilities.s3_list_cli_handler, algorithm_name="l1b-cam", account_suffix="-stage"
-            ),
+            ["s3-utils", "ls", "CAM"],
+            argparse.Namespace(func=s3_utilities.s3_list_cli_handler, product_name="CAM", profile=None),
         ),
         (
-            ["s3-utils", "ls", "l1b-cam", "--account-suffix=-test"],
-            argparse.Namespace(func=s3_utilities.s3_list_cli_handler, algorithm_name="l1b-cam", account_suffix="-test"),
+            ["s3-utils", "--profile=test", "ls", "CAM"],
+            argparse.Namespace(func=s3_utilities.s3_list_cli_handler, product_name="CAM", profile="test"),
         ),
         (
             ["s3-utils", "cp", "s3://somebucket/with/file/path.nc", "."],
@@ -182,15 +185,24 @@ def test_ecr_upload_cli_args(cli_args, parsed):
                 source_path="s3://somebucket/with/file/path.nc",
                 dest_path=".",
                 delete=False,
+                profile=None,
             ),
         ),
         (
-            ["s3-utils", "cp", "s3://somebucket/with/file/path.nc", "some/local/path.nc", "--delete"],
+            [
+                "s3-utils",
+                "--profile=test-profile",
+                "cp",
+                "s3://somebucket/with/file/path.nc",
+                "some/local/path.nc",
+                "--delete",
+            ],
             argparse.Namespace(
                 func=s3_utilities.s3_copy_cli_handler,
                 source_path="s3://somebucket/with/file/path.nc",
                 dest_path="some/local/path.nc",
                 delete=True,
+                profile="test-profile",
             ),
         ),
     ],
@@ -199,3 +211,16 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
     print(f"CLI ARGS \n{cli_args}\n")
     print(f"Parsed args: {parsed} \n")
     assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    "cli_args",
+    [
+        ["s3-utils", "ls", "NOT-A-PRODUCT"],
+        ["ecr-upload", "not-an-alg", "test-image"],
+        ["step-function-trigger", "not-an-alg", "2030-01-01"],
+    ],
+)
+def test_wrong_libera_ids(cli_args):
+    with pytest.raises(SystemExit):
+        cli.parse_cli_args(cli_args)

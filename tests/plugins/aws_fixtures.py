@@ -20,7 +20,6 @@ def mock_aws_credentials(monkeypatch_session):
     monkeypatch_session.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch_session.setenv("AWS_SECURITY_TOKEN", "testing")
     monkeypatch_session.setenv("AWS_SESSION_TOKEN", "testing")
-    monkeypatch_session.delenv("AWS_PROFILE", raising=False)
     monkeypatch_session.delenv("AWS_REGION", raising=False)
     monkeypatch_session.delenv("AWS_DEFAULT_REGION", raising=False)
 
@@ -50,27 +49,46 @@ def set_up_cloudpathlib_s3client(mock_aws_credentials, monkeypatch_session):
 
 
 @pytest.fixture
-def mock_s3_context():
-    """Everything under/inherited by this runs in the mock_s3 context manager
+def mock_s3_context(mock_aws_credentials):
+    """Simple S3 context using default environment creds"""
+    with mock_aws():
+        session = boto3.Session()
+        yield session.resource("s3", region_name="us-east-1")
 
-    This fixture is function scoped so that S3 buckets get cleared between tests.
+
+@pytest.fixture
+def mock_s3_context_with_profile(mock_aws_credentials, monkeypatch, tmp_path):
     """
+    S3 context that sets up a specific 'test-profile' in a config file.
+    Use this when testing code that specifically requests profile_name='test-profile'.
+    """
+    config_file = tmp_path / "fake_config"
+    config_file.write_text("[profile test-profile]\nregion=us-east-1")
+    monkeypatch.setenv("AWS_CONFIG_FILE", str(config_file))
+
+    creds_file = tmp_path / "fake_credentials"
+    creds_file.write_text(
+        "[test-profile]\naws_access_key_id=testing\naws_secret_access_key=testing\naws_session_token=testing\n"
+    )
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", str(creds_file))
+
     with mock_aws():
         # Yield the (mocked) s3 Resource object
         # (see boto3 docs: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/resources.html)
         # We specify the region because S3 requires us-east-1 to be used for bucket
         # creation requests. If the machine running the tests provides default regions,
         # it can cause tests to fail.
-        yield boto3.resource("s3", region_name="us-east-1")
+        session = boto3.Session(profile_name="test-profile")
+        yield session.resource("s3", region_name="us-east-1")
 
 
 @pytest.fixture
-def create_mock_bucket(mock_s3_context):
+def create_mock_bucket(mock_s3_context_with_profile):
     """Returns a function that allows dynamic creation of s3 buckets with option to specify the name.
 
     Note: if the bucket already exists, this doesn't overwrite it. Previous contents will remain.
     Caution: If you create multiple objects at the same location, you may get conflicts"""
-    s3 = mock_s3_context
+    s3 = mock_s3_context_with_profile
 
     # The following call to Random() creates a locally seeded random generator. This prevents the pytest-randomly
     # seeded global PRN generator from creating the same "random" bucket names for every test.
