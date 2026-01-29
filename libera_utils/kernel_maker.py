@@ -361,14 +361,6 @@ def make_kernel(
     output_kernel = cast(filenaming.PathType, AnyPath(output_kernel))
     config_file = Path(config_file)  # This is always a local path because the configs are package data
 
-    # # Load meta kernel details. Required to auto-map frame IDs.
-    meta_kernel_file = Path(config.get("LIBERA_KERNEL_META"))
-    _ = meta.MetaKernel.from_json(
-        meta_kernel_file,
-        relative=False,
-        sds_dir=config.get("GENERIC_KERNEL_DIR"),
-        mission_dir=config.get("LIBERA_KERNEL_DIR"),
-    )
     if kernel_manager is None:
         kernel_manager = KernelManager()
         kernel_manager.load_static_kernels()
