@@ -22,6 +22,7 @@ from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.l1a import packets as libera_packets
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.logutil import configure_task_logging
+from libera_utils.libera_spice.kernel_manager import KernelManager
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +328,7 @@ def create_jpss_kernel_dataframe_from_csv(
 def make_kernel(
     config_file: str | Path,
     output_kernel: str | filenaming.PathType,
+    kernel_manager: KernelManager | None = None,
     input_data: pd.DataFrame | None = None,
     overwrite: bool = False,
     append: bool | int = False,
@@ -341,6 +343,8 @@ def make_kernel(
         Output directory or file to create the kernel. If a directory, the
         file name will be based on the config_file, but with the SPICE file
         extension.
+    kernel_manager : KernelManager | None
+        Optional KernelManager instance to use for managing known kernels.
     input_data : pd.DataFrame | None
         pd.DataFrame containing kernel input data. If not supplied, the config is assumed to reference an input data file.
     overwrite : bool
@@ -357,7 +361,7 @@ def make_kernel(
     output_kernel = cast(filenaming.PathType, AnyPath(output_kernel))
     config_file = Path(config_file)  # This is always a local path because the configs are package data
 
-    # Load meta kernel details. Required to auto-map frame IDs.
+    # # Load meta kernel details. Required to auto-map frame IDs.
     meta_kernel_file = Path(config.get("LIBERA_KERNEL_META"))
     _ = meta.MetaKernel.from_json(
         meta_kernel_file,
@@ -365,6 +369,10 @@ def make_kernel(
         sds_dir=config.get("GENERIC_KERNEL_DIR"),
         mission_dir=config.get("LIBERA_KERNEL_DIR"),
     )
+    if kernel_manager is None:
+        kernel_manager = KernelManager()
+        kernel_manager.load_static_kernels()
+    kernel_manager.ensure_known_kernels_are_furnished()
 
     # Create the kernels from the JSONs definitions.
     creator = kernels.create.KernelCreator(overwrite=overwrite, append=bool(append))
@@ -439,6 +447,10 @@ def create_kernel_from_l1a(
         )
     sample_group_name = SPICE_DPI_TO_L1A_SAMPLE_GROUP_MAP[kernel_identifier]
 
+    # Create a KernelManager to handle known kernels
+    km = KernelManager()
+    km.load_static_kernels()
+
     # Create Curryer-compatible kernel DataFrame from L1A dataset
     kernel_df, utc_range = create_kernel_dataframe_from_l1a(
         l1a_dataset=l1a_dataset,
@@ -476,6 +488,7 @@ def create_kernel_from_l1a(
     output_kernel = make_kernel(
         config_file=kernel_config_file,
         output_kernel=output_full_path,
+        kernel_manager=km,
         input_data=input_dataframe,
         overwrite=overwrite,
         append=False,

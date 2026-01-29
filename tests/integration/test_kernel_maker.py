@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
-def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
+def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, noaa20_environment, curryer_lsk):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
