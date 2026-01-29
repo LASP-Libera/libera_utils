@@ -153,7 +153,7 @@ class KernelManager:
                 shutil.copy(config_path, temp_path / config_path.name)
 
                 # Generate kernel
-                kernel_maker.make_kernel(temp_path / config_path.name, temp_path, input_data=None)
+                kernel_maker.make_kernel(temp_path / config_path.name, temp_path, kernel_manager=self, input_data=None)
 
             # Verify kernels were created
             created_files = list(temp_path.iterdir())
