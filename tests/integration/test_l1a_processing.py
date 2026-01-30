@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 import xarray as xr
 from cfchecker import cfchecks
+from space_packet_parser.xtce.validation import validate_xtce
 
+from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -195,3 +197,20 @@ def test_process_packets_to_l1a_product(
             )
 
     print("   ✓ NetCDF file verification complete")
+
+
+@pytest.mark.parametrize(
+    "packet_definition",
+    [
+        pytest.param(
+            config.get("LIBERA_PACKET_DEFINITION"),
+            marks=pytest.mark.xfail(
+                reason="Libera XTCE definition has incorrect namespace declarations and unused parameter definitions"
+            ),
+        ),
+        config.get("JPSS_GEOLOCATION_PACKET_DEFINITION"),
+    ],
+)
+def test_packet_definition_validity(packet_definition):
+    """Test that the XTCE packet definitions are valid"""
+    validate_xtce(packet_definition, level="all")
