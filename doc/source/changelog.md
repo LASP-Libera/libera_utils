@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.5.5
+
+- CONFIG: Update the ICIE TLM XTCE to latest version
+
 ## 5.5.4
 
 - BUGFIX: Implement KernelManager for Make_Kernel, furnishing necessary kernels

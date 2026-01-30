@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <xtce:SpaceSystem xmlns:xtce="http://www.omg.org/space/xtce" name="icie">
-  <xtce:Header date="Created=2025/07/25 16:58:18" version="LASPXTCESchemaVersion=1.2"/>
+  <xtce:Header date="Created=2026/01/15 11:57:54" version="LASPXTCESchemaVersion=1.2"/>
   <xtce:TelemetryMetaData>
     <xtce:ParameterTypeSet>
       <xtce:IntegerParameterType name="REUSABLE_SPARE_1_Type">
@@ -31074,13 +31074,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-5.969000e+00"/>
-              <xtce:Term exponent="1" coefficient="2.563000e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.298000e-04"/>
-              <xtce:Term exponent="3" coefficient="1.959000e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.316000e-11"/>
-              <xtce:Term exponent="5" coefficient="1.062000e-14"/>
-              <xtce:Term exponent="6" coefficient="-7.368000e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31092,13 +31091,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-5.969000e+00"/>
-              <xtce:Term exponent="1" coefficient="2.563000e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.298000e-04"/>
-              <xtce:Term exponent="3" coefficient="1.959000e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.316000e-11"/>
-              <xtce:Term exponent="5" coefficient="1.062000e-14"/>
-              <xtce:Term exponent="6" coefficient="-7.368000e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31110,13 +31108,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-5.969000e+00"/>
-              <xtce:Term exponent="1" coefficient="2.563000e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.298000e-04"/>
-              <xtce:Term exponent="3" coefficient="1.959000e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.316000e-11"/>
-              <xtce:Term exponent="5" coefficient="1.062000e-14"/>
-              <xtce:Term exponent="6" coefficient="-7.368000e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31128,13 +31125,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-5.969000e+00"/>
-              <xtce:Term exponent="1" coefficient="2.563000e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.298000e-04"/>
-              <xtce:Term exponent="3" coefficient="1.959000e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.316000e-11"/>
-              <xtce:Term exponent="5" coefficient="1.062000e-14"/>
-              <xtce:Term exponent="6" coefficient="-7.368000e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31146,13 +31142,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-5.969000e+00"/>
-              <xtce:Term exponent="1" coefficient="2.563000e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.298000e-04"/>
-              <xtce:Term exponent="3" coefficient="1.959000e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.316000e-11"/>
-              <xtce:Term exponent="5" coefficient="1.062000e-14"/>
-              <xtce:Term exponent="6" coefficient="-7.368000e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31164,13 +31159,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-5.969000e+00"/>
-              <xtce:Term exponent="1" coefficient="2.563000e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.298000e-04"/>
-              <xtce:Term exponent="3" coefficient="1.959000e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.316000e-11"/>
-              <xtce:Term exponent="5" coefficient="1.062000e-14"/>
-              <xtce:Term exponent="6" coefficient="-7.368000e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31182,13 +31176,13 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.525006e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.698942e-01"/>
+              <xtce:Term exponent="2" coefficient="1.353067e-04"/>
+              <xtce:Term exponent="3" coefficient="-6.859021e-08"/>
+              <xtce:Term exponent="4" coefficient="1.928264e-11"/>
+              <xtce:Term exponent="5" coefficient="-2.729847e-15"/>
+              <xtce:Term exponent="6" coefficient="1.406447e-19"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31200,13 +31194,13 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.525006e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.698942e-01"/>
+              <xtce:Term exponent="2" coefficient="1.353067e-04"/>
+              <xtce:Term exponent="3" coefficient="-6.859021e-08"/>
+              <xtce:Term exponent="4" coefficient="1.928264e-11"/>
+              <xtce:Term exponent="5" coefficient="-2.729847e-15"/>
+              <xtce:Term exponent="6" coefficient="1.406447e-19"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31218,13 +31212,13 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.525006e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.698942e-01"/>
+              <xtce:Term exponent="2" coefficient="1.353067e-04"/>
+              <xtce:Term exponent="3" coefficient="-6.859021e-08"/>
+              <xtce:Term exponent="4" coefficient="1.928264e-11"/>
+              <xtce:Term exponent="5" coefficient="-2.729847e-15"/>
+              <xtce:Term exponent="6" coefficient="1.406447e-19"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31236,13 +31230,13 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.525006e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.698942e-01"/>
+              <xtce:Term exponent="2" coefficient="1.353067e-04"/>
+              <xtce:Term exponent="3" coefficient="-6.859021e-08"/>
+              <xtce:Term exponent="4" coefficient="1.928264e-11"/>
+              <xtce:Term exponent="5" coefficient="-2.729847e-15"/>
+              <xtce:Term exponent="6" coefficient="1.406447e-19"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31254,13 +31248,13 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.525006e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.698942e-01"/>
+              <xtce:Term exponent="2" coefficient="1.353067e-04"/>
+              <xtce:Term exponent="3" coefficient="-6.859021e-08"/>
+              <xtce:Term exponent="4" coefficient="1.928264e-11"/>
+              <xtce:Term exponent="5" coefficient="-2.729847e-15"/>
+              <xtce:Term exponent="6" coefficient="1.406447e-19"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31272,13 +31266,13 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.525006e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.698942e-01"/>
+              <xtce:Term exponent="2" coefficient="1.353067e-04"/>
+              <xtce:Term exponent="3" coefficient="-6.859021e-08"/>
+              <xtce:Term exponent="4" coefficient="1.928264e-11"/>
+              <xtce:Term exponent="5" coefficient="-2.729847e-15"/>
+              <xtce:Term exponent="6" coefficient="1.406447e-19"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31356,10 +31350,19 @@
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
       </xtce:FloatParameterType>
-      <xtce:IntegerParameterType name="ICIE__LWC_PWBA_TEMP_Type">
-        <xtce:UnitSet/>
-        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned"/>
-      </xtce:IntegerParameterType>
+      <xtce:FloatParameterType name="ICIE__LWC_PWBA_TEMP_Type">
+        <xtce:UnitSet>
+          <xtce:Unit>any</xtce:Unit>
+        </xtce:UnitSet>
+        <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
+          <xtce:DefaultCalibrator>
+            <xtce:PolynomialCalibrator>
+              <xtce:Term exponent="0" coefficient="-2.731500e+02"/>
+              <xtce:Term exponent="1" coefficient="1.221000e+00"/>
+            </xtce:PolynomialCalibrator>
+          </xtce:DefaultCalibrator>
+        </xtce:IntegerDataEncoding>
+      </xtce:FloatParameterType>
       <xtce:FloatParameterType name="ICIE__LWC_BB1_TEMP_Type">
         <xtce:UnitSet>
           <xtce:Unit>any</xtce:Unit>
@@ -31367,8 +31370,9 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="0.000000e+00"/>
-              <xtce:Term exponent="1" coefficient="1.953125e-03"/>
+              <xtce:Term exponent="0" coefficient="-2.444147e+02"/>
+              <xtce:Term exponent="1" coefficient="4.568211e-03"/>
+              <xtce:Term exponent="2" coefficient="4.083706e-09"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -31380,8 +31384,9 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="0.000000e+00"/>
-              <xtce:Term exponent="1" coefficient="1.953125e-03"/>
+              <xtce:Term exponent="0" coefficient="-2.444147e+02"/>
+              <xtce:Term exponent="1" coefficient="4.568211e-03"/>
+              <xtce:Term exponent="2" coefficient="4.083706e-09"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -36098,7 +36103,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP2_Type">
@@ -36109,7 +36113,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP1_Type">
@@ -36120,7 +36123,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP0_Type">
@@ -36131,7 +36133,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP7_Type">
@@ -36142,7 +36143,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP6_Type">
@@ -36153,7 +36153,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP5_Type">
@@ -36164,7 +36163,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_ST_OP4_Type">
@@ -36175,7 +36173,6 @@
           <xtce:Enumeration value="1" label="ACTIVE"/>
           <xtce:Enumeration value="2" label="SUSPEND"/>
           <xtce:Enumeration value="3" label="PAUSE"/>
-          <xtce:Enumeration value="4" label="STALE"/>
         </xtce:EnumerationList>
       </xtce:EnumeratedParameterType>
       <xtce:EnumeratedParameterType name="ICIE__SW_SEQ_STOP_CD_OP1_Type">
@@ -37760,13 +37757,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -37778,13 +37774,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
@@ -37796,13 +37791,12 @@
         <xtce:IntegerDataEncoding sizeInBits="16" encoding="unsigned">
           <xtce:DefaultCalibrator>
             <xtce:PolynomialCalibrator>
-              <xtce:Term exponent="0" coefficient="-3.441833e+00"/>
-              <xtce:Term exponent="1" coefficient="2.549863e-01"/>
-              <xtce:Term exponent="2" coefficient="-3.369956e-04"/>
-              <xtce:Term exponent="3" coefficient="2.048983e-07"/>
-              <xtce:Term exponent="4" coefficient="-6.762655e-11"/>
-              <xtce:Term exponent="5" coefficient="1.164147e-14"/>
-              <xtce:Term exponent="6" coefficient="-8.262424e-19"/>
+              <xtce:Term exponent="0" coefficient="1.478000e+02"/>
+              <xtce:Term exponent="1" coefficient="-1.457000e-01"/>
+              <xtce:Term exponent="2" coefficient="9.805000e-05"/>
+              <xtce:Term exponent="3" coefficient="-4.123000e-08"/>
+              <xtce:Term exponent="4" coefficient="8.962700e-12"/>
+              <xtce:Term exponent="5" coefficient="-7.998200e-16"/>
             </xtce:PolynomialCalibrator>
           </xtce:DefaultCalibrator>
         </xtce:IntegerDataEncoding>
