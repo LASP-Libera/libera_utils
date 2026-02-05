@@ -142,7 +142,7 @@ class KernelManager:
             instrument_kernel_path = Path(config.get("LIBERA_KERNEL_INSTRUMENT"))
             validate_path_length(temp_path / instrument_kernel_path.name, KernelManager._max_path_length)
 
-            # # Load meta kernel details. Required to auto-map frame IDs.
+            # Load meta kernel details. Required to auto-map frame IDs.
             meta_kernel_file = Path(config.get("LIBERA_KERNEL_META"))
             _ = meta.MetaKernel.from_json(
                 meta_kernel_file,
