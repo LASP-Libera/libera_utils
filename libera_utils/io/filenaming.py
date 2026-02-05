@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import ulid
 from cloudpathlib import AnyPath, CloudPath, S3Path
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 from libera_utils.constants import (
     DataLevel,
@@ -743,7 +743,10 @@ def format_from_semantic_version(semantic_version: str) -> str:
     : str
     """
     # Use packaging's version class to handle more complex versions
-    ver_object = Version(semantic_version)
+    try:
+        ver_object = Version(semantic_version)
+    except InvalidVersion as e:
+        raise ValueError(f"Invalid semantic version string: {semantic_version}") from e
     # We only want a major, minor, and patch style version string
     major = ver_object.major
     minor = ver_object.minor

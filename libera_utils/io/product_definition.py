@@ -2,6 +2,7 @@
 
 import logging
 import warnings
+from os import PathLike
 from pathlib import Path
 from typing import Any, ClassVar, cast
 
@@ -21,7 +22,22 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_ENCODING = {"zlib": True, "complevel": 4}
 
-# TODO[LIBSDC-623]: Add a global Dimensions cache that gets populated on first request for a dimension by name
+
+class LiberaDimensionDefinition(BaseModel):
+    """Pydantic model describing rules for a Libera dimension definition.
+
+    Attributes
+    ----------
+    size: int | None
+        The size of the dimension. If None, the dimension is dynamic.
+    long_name: str
+        A descriptive human-readable name for the dimension.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    size: int | None = Field(default=None, description="The size of the dimension. If None, the dimension is dynamic.")
+    long_name: str = Field(..., description="A descriptive human-readable name for the dimension.")
 
 
 class LiberaVariableDefinition(BaseModel):
@@ -35,13 +51,15 @@ class LiberaVariableDefinition(BaseModel):
         The data type of the variable's data array, specified as a string
     attributes: VariableAttributes
         The attribute metadata for the variable, containing specific key value pairs for CF metadata compliance
-    dimensions: list[LiberaDimension]
-        A list of dimensions that the variable's data array references. These should be instances of LiberaDimension.
+    dimensions: list[LiberaDimensionDefinition]
+        A list of dimensions that the variable's data array references. These should be instances of LiberaDimensionDefinition.
     encoding: dict
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
     """
 
     model_config = ConfigDict(frozen=True)
+
+    _standard_allowed_dimensions: ClassVar[dict[str, LiberaDimensionDefinition]] = dict()
 
     dtype: str = Field(description="The data type of the variable's data array, specified as a string")
     attributes: dict[str, Any] = Field(default=dict(), description="Attribute metadata for the variable")
@@ -51,6 +69,85 @@ class LiberaVariableDefinition(BaseModel):
         description="Encoding settings for the variable, determining how it is stored on disk",
     )
 
+    @staticmethod
+    def _get_standard_dimensions(
+        file_path: PathLike | None = None,
+    ) -> dict[str, LiberaDimensionDefinition]:
+        """Loads standard dimension metadata from a YAML file.
+
+        These standard dimensions are expected to be used in every Libera data product so we store them in a global config.
+
+        Parameters
+        ----------
+        file_path: PathLike | None
+            The path to the standard dimension metadata YAML file.
+
+        Returns
+        -------
+        dict[str, LiberaDimension]
+            Dictionary of dimension name to LiberaDimension instances.
+        """
+        if file_path is None:
+            file_path = Path(str(config.get("LIBERA_DIMENSIONS_DEFINITION_PATH")))
+        with AnyPath(file_path).open("r", encoding="utf-8") as f:
+            dim_dict = yaml.safe_load(f)
+            return {k: LiberaDimensionDefinition.model_validate(v) for k, v in dim_dict.items()}
+
+    @field_validator("dimensions", mode="before")
+    @classmethod
+    def _check_allowed_dimensions(cls, raw_dimensions: list[str]) -> list[str]:
+        """Validates that all dimensions used in coordinates and variables are defined in the global standard dimensions.
+
+        This is just an early preliminary check and does not check anything related to data.
+        Verification of dimension size is done when checking conformance once data is provided.
+
+        Parameters
+        ----------
+        raw_dimensions : list[str]
+            The raw dimensions specification in the product definition.
+
+        Returns
+        -------
+        list[str]
+            The validated dimensions list, unchanged.
+        """
+        if not cls._standard_allowed_dimensions:
+            cls._standard_allowed_dimensions = cls._get_standard_dimensions()
+
+        for dimension in raw_dimensions:
+            if dimension not in cls._standard_allowed_dimensions.keys():
+                raise ValueError(
+                    f"Undefined dimension name '{dimension}' used in product definition. "
+                    "All dimensions must be defined in the global standard dimensions. "
+                    "If you need a new dimension name added to the global standard list, you must work with the SDC "
+                    "team to add it.",
+                )
+
+        return raw_dimensions
+
+    @field_validator("dtype", mode="before")
+    @classmethod
+    def _validate_dtype(cls, dtype: str) -> str:
+        """Validates that the dtype specified in the product definition is a valid numpy dtype string.
+
+        Parameters
+        ----------
+        dtype : str
+            The raw dtype specification in the product definition.
+
+        Returns
+        -------
+        str
+            The validated dtype string, unchanged.
+        """
+        try:
+            np.dtype(dtype)
+        except TypeError as e:
+            raise ValueError(
+                f"Invalid dtype '{dtype}' specified in product definition. The dtype must be a valid numpy dtype string."
+            ) from e
+        return dtype
+
     @field_validator("encoding", mode="before")
     @classmethod
     def _set_encoding(cls, encoding: dict | None):
@@ -59,28 +156,45 @@ class LiberaVariableDefinition(BaseModel):
             return DEFAULT_ENCODING.copy()
         for k, v in DEFAULT_ENCODING.items():
             if k in encoding and encoding[k] != v:
+                # This is only a warning because the SDC reserves the right to change the required encoding settings
+                # in order to improve data compression without requiring an update to every single product definition.
+                # This automatic override feature was specifically requested by Heather
                 warnings.warn(
-                    f"Overwriting encoding '{k}': replacing '{encoding[k]}' with '{v}' from defaults", UserWarning
+                    f"Overwriting encoding '{k}': replacing '{encoding[k]}' with '{v}' from defaults. To suppress "
+                    f"this warning, set the encoding value to '{v}' in your product definition.",
+                    UserWarning,
                 )
         return {**encoding, **DEFAULT_ENCODING}
 
     @property
-    def static_attributes(self):
-        """Return attributes for a variable that are statically defined (have values) in the data product definition"""
+    def static_attributes(self) -> dict:
+        """Variable level attributes defined with non-null values in the product definition YAML
+
+        Returns
+        -------
+        dict
+            Dictionary of static variable level attributes with their defined values
+        """
         return {k: v for k, v in self.attributes.items() if v is not None}
 
     @property
-    def dynamic_attributes(self):
-        """Return attributes for a variable that are dynamically defined (null values) in the data product definition
+    def dynamic_attributes(self) -> dict:
+        """Variable level attributes defined with null values in the product definition YAML.
 
-        These attributes are _required_ but are expected to be defined externally to the data product definition
+        These attributes are _required_ but are expected to be passed explicitly during data product creation.
+
+        Returns
+        -------
+        dict
+            Dictionary of dynamic variable level attributes with null values that must be set during product creation.
         """
         return {k: v for k, v in self.attributes.items() if v is None}
 
     def _check_data_array_attributes(self, data_array_attrs: dict[str, Any], variable_name: str) -> list[str]:
         """Validate the variable level attributes of a DataArray against the product definition
 
-        Attributes must match exactly
+        All attributes must have values. Static attributes defined in the product definition must match exactly. Dynamic
+        attributes defined in the product definition may have any value but must be present.
 
         Parameters
         ----------
@@ -103,20 +217,26 @@ class LiberaVariableDefinition(BaseModel):
 
         if missing_variable_attributes:
             for attr in missing_variable_attributes:
-                error_messages.append(f"{variable_name}: missing attribute - Expected attribute '{attr}' not found")
-            logger.warning(f"Missing variable attributes: {missing_variable_attributes}")
+                _err_msg = f"{variable_name}: missing attribute - Expected attribute '{attr}' not found"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         if extra_variable_attributes:
             for attr in extra_variable_attributes:
-                error_messages.append(f"{variable_name}: extra attribute - Unexpected attribute '{attr}' found")
-            logger.warning(f"Extra variable attributes: {extra_variable_attributes}")
+                _err_msg = f"{variable_name}: extra attribute - Unexpected attribute '{attr}' found"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         if null_variable_attributes:
             for attr in null_variable_attributes:
-                error_messages.append(f"{variable_name}: null attribute - Attribute '{attr}' has null value")
-            logger.warning(f"Some variable attributes are not set: {null_variable_attributes}")
+                _err_msg = (
+                    f"{variable_name}: null attribute - Attribute '{attr}' has null value. This probably means "
+                    "you forgot to pass a required dynamic attribute during product creation."
+                )
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
-        # Check for value mismatches (only check static attributes from definition, allow overrides from user)
+        # Check for value mismatches (only check static attributes from definition, allow dynamic attributes from user)
         for k, v in self.attributes.items():
             if (
                 v is not None
@@ -124,20 +244,23 @@ class LiberaVariableDefinition(BaseModel):
                 and type(data_array_attrs[k]) is type(v)
                 and data_array_attrs[k] != v
             ):
-                error_messages.append(
-                    f"{variable_name}: attribute value mismatch - Expected {k}={v} but got {data_array_attrs[k]}"
-                )
-                logger.warning(f"Variable attribute value mismatch for {k}. Expected {v} but got {data_array_attrs[k]}")
+                _err_msg = f"{variable_name}: attribute value mismatch - Expected {k}={v} but got {data_array_attrs[k]}"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         return error_messages
 
     def check_data_array_conformance(self, data_array: DataArray, variable_name: str) -> list[str]:
-        """Validate variable data array based on product definition.
+        """Check the conformance of a DataArray object against a data variable definition.
 
-        This does not verify that all required coordinate data exists on the DataArray.
-        Dimensions lacking coordinates are treated as index dimensions. If coordinate data
-        is later added to a Dataset under a dimension of the same name,
-        the dimension will reference that coordinate data.
+        This method is responsible only for finding errors, not fixing them. It warns on every violation and returns a
+        list of error messages.
+
+        Notes
+        -----
+        This does not verify that all required coordinate data exists on the DataArray. Dimensions lacking coordinates
+        are treated as index dimensions. If coordinate data is later added to a Dataset under a dimension of the same
+        name, the dimension will reference that coordinate data.
 
         Parameters
         ----------
@@ -158,49 +281,56 @@ class LiberaVariableDefinition(BaseModel):
         error_messages.extend(attrs_errors)
 
         # Check dimension names and ordering match product definition
-        if list(self.dimensions) != list(data_array.dims):
-            # TODO[LIBSDC-623]: Add validation that dimension name exists in the global cache and
-            #   for fixed dimensions, the size of the variable data matches the dimension size
-            #   along the correct index
-            error_messages.append(
-                f"{variable_name}: dimension mismatch - Expected dimensions {self.dimensions} but got {list(data_array.dims)}"
-            )
-            warnings.warn(
-                f"The provided data has dimensions {data_array.dims} but was expected to have "
-                f"dimensions {self.dimensions}. Order matters too!"
-            )
+        if list(self.dimensions) == list(data_array.sizes.keys()):
+            for dim in self.dimensions:
+                if dim not in LiberaVariableDefinition._standard_allowed_dimensions:
+                    _err_msg = f"{variable_name}: undefined dimension '{dim}' - Dimension '{dim}' is not defined in the global standard dimensions"
+                    warnings.warn(_err_msg)
+                    error_messages.append(_err_msg)
+                    continue
+                expected_size = LiberaVariableDefinition._standard_allowed_dimensions[dim].size
+                actual_size = data_array.sizes[dim]
+                if expected_size is not None and expected_size != actual_size:
+                    _err_msg = f"{variable_name}: dimension size mismatch for dimension '{dim}' - Expected size {expected_size} but got {actual_size}"
+                    warnings.warn(_err_msg)
+                    error_messages.append(_err_msg)
+        else:
+            _err_msg = f"{variable_name}: dimension mismatch - Expected dimensions {self.dimensions} but got {list(data_array.dims)}. Order matters too!"
+            warnings.warn(_err_msg)
+            error_messages.append(_err_msg)
 
-        # Check encoding specification matches product definition
+        # Check encoding specification contains the specification from the product definition Because encodings are very
+        # complex, we don't require every encoding setting to be specified in the product definition but any that are
+        # specified must match exactly. We allow extra encoding settings on the DataArray that may not be present in the
+        # product definition.
         encoding_mismatches = [
             k for k, v in self.encoding.items() if k not in data_array.encoding or data_array.encoding[k] != v
         ]
-        if encoding_mismatches:
-            expected = {k: v for k, v in self.encoding.items() if k in encoding_mismatches}
-            found = {k: v for k, v in data_array.encoding.items() if k in encoding_mismatches}
-            for field in encoding_mismatches:
-                expected_val = self.encoding.get(field)
-                found_val = data_array.encoding.get(field, "not set")
-                error_messages.append(
-                    f"{variable_name}: encoding mismatch - Expected encoding['{field}']={expected_val} but got {found_val}"
-                )
-            warnings.warn(
-                f"Detected encoding mismatches on data array in fields {encoding_mismatches}. "
-                f"Expected {expected} but found {found}"
+        for field in encoding_mismatches:
+            expected_val = self.encoding.get(field)
+            found_val = data_array.encoding.get(field, "not set")
+            _err_msg = (
+                f"{variable_name}: encoding mismatch - Expected encoding['{field}']={expected_val} but got {found_val}"
             )
+            warnings.warn(_err_msg)
+            error_messages.append(_err_msg)
 
         # Check data dtype matches product definition
         if str(data_array.dtype) != str(self.dtype):
-            error_messages.append(f"{variable_name}: dtype mismatch - Expected {self.dtype} but got {data_array.dtype}")
-            warnings.warn(
-                f"The provided data has dtype {data_array.dtype} but was expected to have "
-                f"dtype {self.dtype}. "
-                f"Data type matters for proper NetCDF storage!"
-            )
+            _err_msg = f"{variable_name}: dtype mismatch - Expected {self.dtype} but got {data_array.dtype}. Data type matters for proper NetCDF storage!"
+            warnings.warn(_err_msg)
+            error_messages.append(_err_msg)
 
         return error_messages
 
-    def enforce_data_array_conformance(self, data_array: DataArray, variable_name: str) -> tuple[DataArray, list[str]]:
-        """Analyze and fix a DataArray to conform to variable specifications in data product definition
+    def enforce_data_array_conformance(self, data_array: DataArray, variable_name: str) -> DataArray:
+        """Update a variable or coordinate DataArray to conform to specifications in data product definition.
+
+        This method attempts to bring a DataArray into conformance with a variable definition. When making changes, the
+        data variable definition takes precedence over any existing metadata or settings on the DataArray. Logs are
+        emitted for all changed made. When the DataArray configuration contradicts the data product definition, warnings
+        are also issued. This method is not responsible for validating the final result and does not guarantee that the
+        resulting DataArray will pass the validation checks because some problems simply can't be fixed.
 
         Parameters
         ----------
@@ -211,70 +341,148 @@ class LiberaVariableDefinition(BaseModel):
 
         Returns
         -------
-        tuple[DataArray, list[str]]
-            Tuple of (updated DataArray, error_messages) where error_messages contains any problems
-            that could not be fixed. Empty list if all problems were fixed.
+        DataArray
+            The updated DataArray. This DataArray is not guaranteed to be fully conformant and should be checked with
+            `check_data_array_conformance` after enforcement to verify.
+
+        Warns
+        -----
+        UserWarning
+            If any conflicts are found between the DataArray and the product definition attributes or encoding settings.
+
+        Raises
+        ------
+        ValueError
+            Raise for problems that can't be fixed.
         """
-        # Fix static variable attributes (can't fix dynamic attributes but those are checked in check_data_array_conformance)
+        logger.info(f"Enforcing DataArray conformance to variable definition for variable '{variable_name}'")
+        # Ensure all static variable attributes match product definition
         for key, value in self.static_attributes.items():
             if key not in data_array.attrs:
                 logger.debug(f"Added missing static attribute to '{variable_name}' as '{key}:{value}'")
                 data_array.attrs[key] = value
             elif data_array.attrs[key] != value:
+                # This is fixable but should be fixed by the user because because they have attempted to set a static
+                # attribute with the incorrect value. Issue a warning and a warning level log message.
                 old_value = data_array.attrs[key]
                 data_array.attrs[key] = value
-                logger.debug(
+                warnings.warn(
+                    f"Variable {variable_name} attribute value mismatch for '{key}': Expected '{value}' but got '{old_value}'. "
+                    "Fix this attribute value in the input DataArray or update your product definition."
+                )
+                logger.warning(
                     f"Updated static variable attribute '{key}' of '{variable_name}' from '{old_value}' to '{value}'"
                 )
 
         # Remove extra attributes
         extra_attrs = [k for k in data_array.attrs.keys() if k not in self.attributes]
         for key in extra_attrs:
+            # This is fixable but should be fixed by the user because they have attempted to set an attribute that is
+            # not defined in the product definition. Issue a warning and a warning level log message.
             old_value = data_array.attrs[key]
             del data_array.attrs[key]
-            logger.debug(f"Removed unexpected attribute '{key}' from '{variable_name}' with value '{old_value}'")
+            warnings.warn(
+                f"Variable {variable_name} has unexpected extra attribute '{key}' with value '{old_value}' that is not "
+                "defined in the product definition. Remove this attribute from the input DataArray or update your product definition."
+            )
+            logger.warning(f"Removed unexpected attribute '{key}' from '{variable_name}' with value '{old_value}'")
 
-        # Fix dtype if needed
-        current_dtype = str(data_array.dtype)
-        expected_dtype = str(self.dtype)
+        # Allow conservative automatic type casting
+        # We allow automatic conversion of dtypes when the conversion is between dtypes of the same 'kind' and it is
+        # safe to cast from the array dtype to the product definition dtype. This is either allowed quietly or raises
+        # an exception
+        current_dtype = np.dtype(data_array.dtype)
+        expected_dtype = np.dtype(self.dtype)
         if current_dtype != expected_dtype:
-            try:
-                logger.debug(f"Converting dtype of '{variable_name}' from {current_dtype} to {expected_dtype}")
-                data_array = data_array.astype(expected_dtype)
-            except Exception as e:
-                logger.warning(
-                    f"Could not convert dtype of '{variable_name}' from {current_dtype} to {expected_dtype}: {e}"
+            # Only permit automatic dtype conversions for safe castings within the same kind type.
+            # e.g. float to int is forbidden but datetime64[us] to datetime64[us] is allowed.
+            safe_casting = bool(
+                np.can_cast(current_dtype, expected_dtype, casting="safe")
+                and np.can_cast(current_dtype, expected_dtype, casting="same_kind")
+            )
+            if not safe_casting:
+                raise ValueError(
+                    f"Variable array for {variable_name} has dtype '{current_dtype}' that cannot be safely "
+                    f"converted to expected dtype '{expected_dtype}' defined in the product definition. "
+                    "Allowed conversions are limited to safe castings within the same kind type. e.g. float32->float64 "
+                    "is allowed but int8->float64 is not. "
+                    "Fix the dtype of this variable in the input DataArray (or numpy array) or update your product definition."
                 )
 
-        # Update encoding configuration
-        for key, value in self.encoding.items():
-            if key not in data_array.encoding or data_array.encoding[key] != value:
-                old_value = data_array.encoding.get(key, "not set")
-                data_array.encoding[key] = value
-                logger.debug(f"Updated encoding '{key}' of '{variable_name}' from '{old_value}' to '{value}'")
+            logger.info(f"Safely casting dtype of '{variable_name}' from {current_dtype} to {expected_dtype}.")
+            try:
+                previous_encoding = data_array.encoding.copy()
+                data_array = data_array.astype(expected_dtype)
+                # After conversion, re-apply encoding from product definition because dtype conversion may have changed it
+                data_array.encoding = previous_encoding
+            except Exception as e:
+                raise ValueError(
+                    f"Could not convert dtype of '{variable_name}' from {current_dtype} to {expected_dtype}"
+                ) from e
 
-        for key, value in data_array.encoding.items():
-            if key not in self.encoding:
-                del data_array.encoding[key]
-                logger.debug(f"Removed unexpected encoding item: {key} with value {value}")
-
-        # Run check_data_array_conformance to validate the modifications and report any unfixable errors
-        validation_errors = self.check_data_array_conformance(data_array, variable_name)
-        if validation_errors:
+        # Update encoding configuration to match product definition
+        # Settings that are set on the DataArray but not in the product definition are removed and cause warnings
+        extra_encoding_settings = [k for k in data_array.encoding if k not in self.encoding]
+        for key in extra_encoding_settings:
+            old_value = data_array.encoding[key]
+            del data_array.encoding[key]
+            warnings.warn(
+                f"Variable {variable_name} has unexpected extra encoding setting '{key}' with value '{old_value}' that is not "
+                "defined in the product definition. Remove this encoding setting from the input DataArray or update your product definition."
+            )
             logger.warning(
-                f"Some problems could not be fixed! Variable DataArray validation errors after enforcement:\n"
-                + "\n".join(validation_errors)
+                f"Removed unexpected encoding setting '{key}' from '{variable_name}' with value '{old_value}'"
             )
 
-        return data_array, validation_errors
+        # Settings that are different in the DataArray and product definition are overwritten by product definition
+        # and warnings are issued
+        conflicting_encoding_settings = [
+            k for k, v in self.encoding.items() if k in data_array.encoding and data_array.encoding[k] != v
+        ]
+        for key in conflicting_encoding_settings:
+            expected_value = self.encoding[key]
+            old_value = data_array.encoding[key]
+            data_array.encoding[key] = expected_value
+            warnings.warn(
+                f"Variable {variable_name} has encoding setting '{key}' with value '{old_value}' that conflicts with "
+                f"the expected value '{expected_value}' defined in the product definition. "
+                "Fix this encoding setting in the input DataArray or update your product definition."
+            )
+            logger.warning(
+                f"Updated encoding setting '{key}' of '{variable_name}' from '{old_value}' to '{expected_value}'"
+            )
 
-    def create_conforming_data_array(
+        # Settings that are in the product definition but not the DataArray are simply added without warning
+        # because encodings are complicated and adding them explicitly on every variable is extremely onerous
+        data_array.encoding.update(self.encoding)
+
+        # Check dimensions. We can't fix this so we just raise.
+        if undefined_dims := [d for d in data_array.sizes.keys() if d not in self._standard_allowed_dimensions]:
+            raise ValueError(
+                f"Variable {variable_name} has undefined dimensions {undefined_dims} that are not in the standard "
+                f"allowed dimensions {list(self._standard_allowed_dimensions)}. "
+                "Fix the dimensions of this variable in the input DataArray."
+            )
+
+        if list(self.dimensions) != list(data_array.sizes.keys()):
+            raise ValueError(
+                f"Variable dimensions do not match product definition and cannot be automatically fixed. "
+                f"Expected dimensions {list(self.dimensions)}, got {list(data_array.sizes.keys())}. "
+                "Fix the dimensions of this variable in the input DataArray or update your product definition."
+            )
+
+        return data_array
+
+    def create_variable_data_array(
         self, data: np.ndarray, variable_name: str, dynamic_variable_attributes: dict[str, Any] | None = None
     ) -> DataArray:
-        """Create a DataArray for a single variable that is valid against the data product definition.
+        """Create a DataArray for a single variable from a numpy array.
+
+        Sets encoding and attributes from product definition, adding dynamic attributes if provided.
 
         Coordinate data is not required. Dimensions that reference coordinate dimensions are created as index
-        dimensions. If coordinate data is added later (e.g. to a Dataset), these dimensions will reference the coordinates.
+        dimensions. If coordinate data is added later (e.g. to a Dataset), these dimensions will reference the
+        coordinates based on dimension name matching coordinate name.
 
         Parameters
         ----------
@@ -283,15 +491,18 @@ class LiberaVariableDefinition(BaseModel):
         variable_name : str
             Name of the variable. Used for log messages and warnings.
         dynamic_variable_attributes : dict[str, Any] | None
-            *Algorithm developers should not need to use this kwarg.*
-            Variable level attributes defined by the user. This allows a user to specify dynamic attributes
-            that may be required by the definition but not statically defined in yaml.
+            *Algorithm developers should not need to use this kwarg.* Variable level attributes defined by the user.
+            This allows a user to specify dynamic attributes that may be required by the definition but not statically
+            defined in yaml.
 
         Returns
         -------
         DataArray
-            A valid DataArray for the specified variable
+            A minimal DataArray for the specified variable. This DataArray may not be fully comformant to the product
+            definition. To bring it into conformance, use `enforce_dataset_conformance` on a Dataset containing this
+            DataArray.
         """
+        # Use product definition to set variable attributes
         if dynamic_variable_attributes is not None:
             variable_attrs = {**self.attributes, **dynamic_variable_attributes}
         else:
@@ -299,22 +510,9 @@ class LiberaVariableDefinition(BaseModel):
 
         da = DataArray(data=data, dims=self.dimensions, attrs=variable_attrs)
 
-        # Set encoding on the DataArray
+        # Use product definition to set encoding on the DataArray
         da.encoding = self.encoding.copy()
-
-        # Only validate dimensions and data type
-        if str(da.dtype) != str(self.dtype):
-            try:
-                old_dtype = da.dtype
-                da = da.astype(self.dtype)
-                warnings.warn(
-                    f"Coerced variable data for {variable_name} from {old_dtype} to {self.dtype}. "
-                    "If the incoming dtype was incorrect, this may not convert as you expect! "
-                    "This especially affects conversions to datetime64 types. "
-                    "Make sure your data dtypes match your product definition."
-                )
-            except Exception as e:
-                raise ValueError(f"Could not convert data for {variable_name} to required dtype {self.dtype}: {e}")
+        logger.debug(f"Created DataArray for variable {variable_name} from numpy array.")
 
         return da
 
@@ -344,7 +542,7 @@ class LiberaDataProductDefinition(BaseModel):
     @staticmethod
     def _get_static_project_attributes(
         file_path=None,
-    ):
+    ) -> dict[str, Any]:
         """Loads project-wide consistent product-level attribute metadata from a YAML file.
 
         These global attributes are expected on every Libera data product so we store them in a global config.
@@ -356,11 +554,11 @@ class LiberaDataProductDefinition(BaseModel):
 
         Returns
         -------
-        dict
+        dict[str, Any]
             Dictionary of key-value pairs for static product attributes.
         """
         if file_path is None:
-            file_path = Path(str(config.get("LIBERA_UTILS_DATA_DIR"))) / "static_project_metadata.yml"
+            file_path = Path(str(config.get("LIBERA_GLOBAL_PRODUCT_ATTRIBUTES_PATH")))
         with AnyPath(file_path).open("r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
@@ -384,6 +582,8 @@ class LiberaDataProductDefinition(BaseModel):
         """
         if not cls._standard_product_attributes:
             cls._standard_product_attributes = cls._get_static_project_attributes()
+
+        # Check for value conflicts between standard attributes and product definition attributes. This is an error.
         conflicts = [
             # For standard global attributes *that have non-null values*, check that values match
             k
@@ -391,15 +591,31 @@ class LiberaDataProductDefinition(BaseModel):
             if v and k in raw_attributes and v != raw_attributes[k]
         ]
         if conflicts:
+            # This is an exception because the user is hard-coding conflicting standard attribute values in their
+            # product definition YAML.
+            conflicts_expected = {k: v for k, v in cls._standard_product_attributes.items() if k in conflicts}
+            conflicts_provided = {k: v for k, v in raw_attributes.items() if k in conflicts}
             raise ValueError(
-                f"Conflicting standard product metadata. These keys are reserved for standard attributes: {conflicts}"
+                "Conflicting standard product attributes detected. "
+                f"Expected {conflicts_expected} but got {conflicts_provided}. "
+                "Simply remove the conflicting attributes from your product definition YAML. "
+                "Standard values will be automatically populated."
             )
         # Standard attributes with null values are required but must be set by the user
         null_standard_attributes = {k: v for k, v in cls._standard_product_attributes.items() if v is None}
-        # Standard attributes with non-null values are required exactly
+        # Standard attributes with non-null values are required exactly (conflicts checked above)
         non_null_standard_attributes = {k: v for k, v in cls._standard_product_attributes.items() if v is not None}
-        # Null standard attributes are overridden by user-specified attributes if provided and further overridden by statically defined attribute values
-        return {**null_standard_attributes, **raw_attributes, **non_null_standard_attributes}
+        # Null standard attributes are overridden by user-specified attributes if provided in the product definition
+        # and further overridden by non-null statically defined attribute values. Any attributes that still have
+        # null values at this point are dynamic attributes and must be set during product creation.
+        final_attributes = {**null_standard_attributes, **raw_attributes, **non_null_standard_attributes}
+        dynamic_attributes = [k for k, v in final_attributes.items() if v is None]
+        if dynamic_attributes:
+            logger.info(
+                f"Dynamic attributes: {dynamic_attributes}. These attribute value must be set explicitly "
+                "during product creation, otherwise subsequent conformance checks will fail. This is just a reminder!"
+            )
+        return final_attributes
 
     @classmethod
     def from_yaml(
@@ -453,8 +669,12 @@ class LiberaDataProductDefinition(BaseModel):
             Properly formatted filename object
         """
         # Convert numpy.datetime64 to Python datetime for filename generation
-        utc_start = pd.Timestamp(dataset[time_variable].values[0]).to_pydatetime()
-        utc_end = pd.Timestamp(dataset[time_variable].values[-1]).to_pydatetime()
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", category=UserWarning, message=r"Discarding nonzero nanoseconds in conversion"
+            )
+            utc_start = pd.Timestamp(dataset[time_variable].values[0]).to_pydatetime()
+            utc_end = pd.Timestamp(dataset[time_variable].values[-1]).to_pydatetime()
 
         return LiberaDataProductFilename.from_filename_parts(
             product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
@@ -487,46 +707,47 @@ class LiberaDataProductDefinition(BaseModel):
 
         if missing_product_level_attributes:
             for attr in missing_product_level_attributes:
-                error_messages.append(f"PRODUCT: missing attribute - Expected attribute '{attr}' not found")
-            logger.warning(f"Missing product level attributes: {missing_product_level_attributes}")
+                _err_msg = f"PRODUCT: missing attribute - Expected attribute '{attr}' not found in dataset attributes"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         if extra_product_level_attributes:
             for attr in extra_product_level_attributes:
-                error_messages.append(f"PRODUCT: extra attribute - Unexpected attribute '{attr}' found")
-            logger.warning(f"Extra product level attributes: {extra_product_level_attributes}")
+                _err_msg = f"PRODUCT: extra attribute - Unexpected attribute '{attr}' found in dataset attributes"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         if null_product_level_attributes:
             for attr in null_product_level_attributes:
-                error_messages.append(f"PRODUCT: null attribute - Attribute '{attr}' has null value")
-            logger.warning(f"Some product level attributes not set: {null_product_level_attributes}")
+                _err_msg = f"PRODUCT: null attribute - Attribute '{attr}' has null value"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         # Check for value mismatches
         for k, v in self.attributes.items():
             if v and k in dataset_attrs and type(dataset_attrs[k]) is type(v) and dataset_attrs[k] != v:
-                error_messages.append(
-                    f"PRODUCT: attribute value mismatch - Expected {k}={v} but got {dataset_attrs[k]}"
-                )
-                logger.warning(f"Attribute value mismatch for {k}. Expected {v} but got {dataset_attrs[k]}")
+                _err_msg = f"PRODUCT: attribute value mismatch - Expected {k}={v} but got {dataset_attrs[k]}"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         # Check some attribute values for validity using custom logic
         # NOTE: If we find that we are adding code here frequently to do validation on attribute values,
         # refactor this into a more generic system.
-        if "algorithm_version" in dataset_attrs:
+        if "algorithm_version" in dataset_attrs and dataset_attrs["algorithm_version"] is not None:
             # Check that algorithm_version strictly follows semantic versioning
             if not ALGORITHM_VERSION_REGEX.match(dataset_attrs["algorithm_version"]):
-                error_messages.append(
-                    f"PRODUCT: algorithm_version: invalid format - Expected semantic versioning (e.g., 1.0.0), got {dataset_attrs['algorithm_version']}"
-                )
-                logger.warning(
-                    f"Invalid algorithm_version format: Expected semantic versioning (e.g., 1.0.0), got {dataset_attrs['algorithm_version']}"
-                )
+                _err_msg = f"PRODUCT: algorithm_version: invalid format - Expected semantic versioning (e.g., 1.0.0), got {dataset_attrs['algorithm_version']}"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
 
         return error_messages
 
     def check_dataset_conformance(self, dataset: Dataset, strict: bool = True) -> list[str]:
-        """Check the conformance of a Dataset object against a DataProductDefinition
+        """Check the conformance of a Dataset object against a data product definition.
 
-        This method is responsible only for finding errors, not fixing them.
+        This method is responsible only for finding errors, not fixing them. It warns on every violation and logs all
+        errors it finds at the end. If strict is True, it raises an exception if any errors are found. If strict is
+        False, it just returns the list of error messages.
 
         Parameters
         ----------
@@ -547,48 +768,47 @@ class LiberaDataProductDefinition(BaseModel):
         error_messages.extend(attrs_errors)
 
         # Check each coordinate
+        logger.info("Checking Dataset coordinates against product definition.")
         for coord_name, coord_def in self.coordinates.items():
             if coord_name not in dataset.coords:
-                error_messages.append(
-                    f"{coord_name}: missing coordinate - Expected coordinate '{coord_name}' not found in dataset"
-                )
-                logger.warning(f"Missing coordinate '{coord_name}' during validation")
+                _err_msg = f"{coord_name}: missing coordinate - Expected coordinate '{coord_name}' not found in dataset"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
                 continue
-            logger.debug(f"Validating coordinate data for '{coord_name}")
             coord_errors = coord_def.check_data_array_conformance(dataset[coord_name], coord_name)
-            if coord_errors:
-                logger.warning(f"Validation failed for coordinate {coord_name}")
             error_messages.extend(coord_errors)
 
         # Check each variable
+        logger.info("Checking Dataset variables against product definition.")
         for var_name, var_def in self.variables.items():
             if var_name not in dataset.data_vars:
-                error_messages.append(
-                    f"{var_name}: missing variable - Expected variable '{var_name}' not found in dataset"
-                )
-                logger.warning(f"Missing variable '{var_name}' during validation")
+                _err_msg = f"{var_name}: missing variable - Expected variable '{var_name}' not found in dataset"
+                warnings.warn(_err_msg)
+                error_messages.append(_err_msg)
                 continue
-            logger.debug(f"Validating variable data for '{var_name}'")
             var_errors = var_def.check_data_array_conformance(dataset[var_name], var_name)
-            if var_errors:
-                logger.warning(f"Validation failed for variable {var_name}")
             error_messages.extend(var_errors)
 
         if error_messages:
-            logger.error(f"Errors detected during conformance check: {', '.join(error_messages)}")
-        if strict and error_messages:
-            raise ValueError(
-                "Errors detected during dataset conformance check. See logs for failures. "
-                "For testing you can run with strict=False to return error messages instead of raising."
-            )
+            for msg in error_messages:
+                logger.error(msg)
+            if strict:
+                raise ValueError(
+                    "Errors detected during dataset conformance check. See previous logs and warnings for violations. "
+                    "For testing you can run with strict=False to prevent this exception from raising and instead return a list of error messages."
+                )
 
         return error_messages
 
-    def enforce_dataset_conformance(self, dataset: Dataset) -> tuple[Dataset, list[str]]:
+    def enforce_dataset_conformance(self, dataset: Dataset) -> Dataset:
         """Analyze and update a Dataset to conform to the expectations of the DataProductDefinition
 
-        This method is for modifying an existing xarray Dataset.
-        If you are creating a Dataset from scratch with numpy arrays, consider using `create_conforming_dataset` instead.
+        This method attempts to bring a Dataset into conformance with a product definition, including enforcing
+        conformance of variable DataArrays. When making changes, the data product definition takes precedence over any
+        existing metadata or settings on the Dataset. Logs are emitted for all changed made. When the Dataset
+        configuration contradicts the data product definition, warnings are also issued. This method is not responsible
+        for validating the final result and does not guarantee that the resulting Dataset will pass the validation
+        checks because some problems simply can't be fixed.
 
         Parameters
         ----------
@@ -597,32 +817,38 @@ class LiberaDataProductDefinition(BaseModel):
 
         Returns
         -------
-        tuple[Dataset, list[str]]
-            Tuple of (updated Dataset, error_messages) where error_messages contains any problems
-            that could not be fixed. Empty list if all problems were fixed.
-
-        Notes
-        -----
-        - This method is responsible for trying (and possibly failing) to coerce a Dataset
-          into a valid form with attributes and encodings. We use check_dataset_conformance to check for validation errors.
+        Dataset
+            The updated Dataset. This Dataset is not guaranteed to be fully
+            conformant and should be checked with check_dataset_conformance to verify.
         """
+        logger.info("Enforcing dataset conformance to product definition.")
         # Enforce global static attributes
         # We can't enforce global dynamic attributes (they are simply checked in check_dataset_conformance)
         for key, value in self.static_attributes.items():
             if key not in dataset.attrs:
                 dataset.attrs[key] = value
-                logger.info(f"Added missing global static attribute '{key}': {value}")
+                # This is acceptable without a warning because it is reasonable to populate static attributes directly
+                # from the product definition if they are missing from the input Dataset.
+                logger.debug(f"Added missing global static attribute '{key}': {value}")
             elif dataset.attrs[key] != value:
                 old_value = dataset.attrs[key]
                 dataset.attrs[key] = value
-                logger.info(f"Overwrote global static attribute '{key}' from '{old_value}' to '{value}'")
+                warnings.warn(
+                    f"Dataset attribute value mismatch for '{key}': Expected '{value}' but got '{old_value}'. "
+                    "Fix this attribute value in the input Dataset or update your product definition."
+                )
+                logger.warning(f"Overwrote global static attribute '{key}' from '{old_value}' to '{value}'")
 
         # Remove extra attributes
         extra_attrs = [k for k in dataset.attrs.keys() if k not in self.attributes]
         for key in extra_attrs:
             old_value = dataset.attrs[key]
             del dataset.attrs[key]
-            logger.info(f"Removed unexpected global attribute '{key}' with value '{old_value}'")
+            warnings.warn(
+                f"Dataset has unexpected attribute '{key}' with value '{old_value}' that is not defined in the "
+                "product definition. Remove this attribute from the input Dataset or update your product definition."
+            )
+            logger.warning(f"Removed unexpected global attribute '{key}' with value '{old_value}'")
 
         # Process all coordinates and variables with same logic
         all_vars = {**self.coordinates, **self.variables}
@@ -633,57 +859,50 @@ class LiberaDataProductDefinition(BaseModel):
                 continue
 
             # Use the Variable class method to enforce conformance for each variable
-            dataset[name], _ = var_def.enforce_data_array_conformance(dataset[name], name)
-
-        # Run check_dataset_conformance to validate the modifications and report any unfixable errors
-        validation_errors = self.check_dataset_conformance(dataset, strict=False)
-        if validation_errors:
-            logger.warning(
-                f"Some problems could not be fixed! Dataset validation errors after enforcement:\n"
-                + "\n".join(validation_errors)
-            )
+            dataset[name] = var_def.enforce_data_array_conformance(dataset[name], name)
 
         # Return dataset and validation errors
-        return dataset, validation_errors
+        return dataset
 
-    def create_conforming_dataset(
+    def create_product_dataset(
         self,
         data: dict[str, np.ndarray],
         dynamic_product_attributes: dict[str, Any] | None = None,
         dynamic_variable_attributes: dict[str, dict[str, Any]] | None = None,
-        strict: bool = True,
-    ) -> tuple[Dataset, list[str]]:
-        """Create a Dataset from numpy arrays that is valid against the data product definition
+    ) -> Dataset:
+        """Create a product Dataset from numpy arrays.
+
+        This method creates a Dataset from numpy arrays, setting attributes and encodings according to the product
+        definition. This does not guarantee a fully conformant Dataset. To bring the Dataset into conformance, use
+        `enforce_dataset_conformance` on the resulting Dataset and check the result with `check_dataset_conformance`.
 
         Parameters
         ----------
         data : dict[str, np.ndarray]
             Dictionary of variable/coordinate data keyed by variable/coordinate name.
         dynamic_product_attributes : dict[str, Any] | None
-            *Algorithm developers should not need to use this kwarg.*
-            Product level attributes for the data product. This allows the user to specify product level attributes that are required but
-            not statically specified in the product definition (e.g. the algorithm version used to generate the product)
+            *Algorithm developers should not need to use this kwarg.* Product level attributes for the data product.
+            This allows the user to specify product level attributes that are required but not statically specified in
+            the product definition (e.g. the algorithm version used to generate the product)
         dynamic_variable_attributes : dict[str, dict[str, Any]] | None
-            *Algorithm developers should not need to use this kwarg.*
-            Per-variable attributes for each variable's DataArray. Key is variable name, value is an attributes dict.
-            This allows the user to specify variable level attributes that
-            are required but not statically defined in the product definition.
-        strict : bool
-            Default True. Raises an exception for nonconformance.
+            *Algorithm developers should not need to use this kwarg.* Per-variable attributes for each variable's
+            DataArray. Key is variable name, value is an attributes dict. This allows the user to specify variable level
+            attributes that are required but not statically defined in the product definition.
 
         Returns
         -------
-        tuple[Dataset, list[str]]
-            Tuple of (Dataset, error_messages) where error_messages contains any validation problems.
-            Empty list if the dataset is fully valid.
+        Dataset
+            The created Dataset. This Dataset is not guaranteed to be conformant and should be checked with
+            `check_dataset_conformance`.
 
         Notes
         -----
-        - We make no distinction between coordinate and data variable input data and assume that we can
-          determine which is which based on coordinate/variable names the product definition.
-        - This method is not responsible for primary validation or error reporting.
-          We call out to check_dataset_conformance at the end for that.
+        - We make no distinction between coordinate and data variable input data and determine which
+          is which based on coordinate/variable sections in the product definition.
+        - This method is not responsible for primary validation or error reporting. The caller is responsible for
+          checking the result with `check_dataset_conformance` and fixing any errors that arise.
         """
+        logger.info("Creating product Dataset from numpy data arrays.")
         if dynamic_product_attributes is not None:
             product_attrs = {**self.attributes, **dynamic_product_attributes}
         else:
@@ -701,20 +920,22 @@ class LiberaDataProductDefinition(BaseModel):
 
             if var_name in self.coordinates:
                 var_def = self.coordinates[var_name]
-                coords_dict[var_name] = var_def.create_conforming_data_array(
+                coords_dict[var_name] = var_def.create_variable_data_array(
                     var_data, var_name, dynamic_variable_attributes=var_attrs
                 )
             elif var_name in self.variables:
                 var_def = self.variables[var_name]
-                data_vars_dict[var_name] = var_def.create_conforming_data_array(
+                data_vars_dict[var_name] = var_def.create_variable_data_array(
                     var_data, var_name, dynamic_variable_attributes=var_attrs
                 )
             else:
-                raise ValueError(f"Unknown variable/coordinate name {var_name}.")
+                # This is such an obvious error that we raise immediately.
+                raise ValueError(
+                    f"Unknown variable/coordinate name {var_name}. Unable to create Dataset. "
+                    "Check your product definition and input data variable names."
+                )
 
         # Create Dataset with coords and data_vars properly separated
         ds = Dataset(data_vars=data_vars_dict, coords=coords_dict, attrs=product_attrs)
 
-        error_messages = self.check_dataset_conformance(ds, strict=strict)
-
-        return ds, error_messages
+        return ds
