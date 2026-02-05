@@ -8,7 +8,6 @@ from unittest import mock
 
 import pytest
 from cloudpathlib import S3Path
-from packaging.version import InvalidVersion
 from ulid import ULID
 
 from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType
@@ -497,10 +496,10 @@ def test_format_from_semantic_version():
     # Add a patch 0 if not provided
     assert filenaming.format_from_semantic_version("1.0") == "V1-0-0"
 
-    with pytest.raises(InvalidVersion):
+    with pytest.raises(ValueError, match="Invalid semantic version string"):
         filenaming.format_from_semantic_version("v1-0-0")  # Not semantic versioning
 
-    with pytest.raises(InvalidVersion):
+    with pytest.raises(ValueError, match="Invalid semantic version string"):
         filenaming.format_from_semantic_version("foo.bar.baz")  # Not numeric values
 
 

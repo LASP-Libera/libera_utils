@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 # SPP always creates Datasets with a non-coordinate "packet" dimension
 # This is a constant and is not expected to change in SPP
-SPP_PACKET_DIMENSION = "packet"
+SDC_PACKET_DIMENSION = "PACKET"
+SPP_PACKET_DIMENSION = "packet"  # The original dimension name from SPP before we swap it to uppercase
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
@@ -69,15 +70,17 @@ def parse_packets_to_dataset(
         packet_filter=_packet_filter,
     )
 
-    # Filter by APID
-    try:
-        ds = dataset_dict[apid]
-    except KeyError as ke:
-        raise KeyError(
-            f"Requested APID {apid} not found in parsed packets. Available APIDs: {list(dataset_dict.keys())}"
-        ) from ke
+    if set(dataset_dict.keys()) != {apid}:
+        raise ValueError(
+            f"Expected only APID {apid} in parsed dataset, but found APIDs: {list(dataset_dict.keys())}. "
+            f"This probably means the packet filter function is not working."
+        )
 
-    return ds
+    # Swap standard SPP "packet" dimension to uppercase "PACKET" to align with config naming
+    if SPP_PACKET_DIMENSION in dataset_dict[apid].dims:
+        dataset_dict[apid] = dataset_dict[apid].swap_dims({SPP_PACKET_DIMENSION: SDC_PACKET_DIMENSION})
+
+    return dataset_dict[apid]
 
 
 def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) -> xr.Dataset:
@@ -115,10 +118,10 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
     packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)
 
-    # Set packet time as a non-dimension coordinate with "packet" dimension
-    # The packet dimension remains as-is from SPP to enable sample-to-packet tracing
+    # Set packet time as a non-dimension coordinate with "PACKET" dimension
+    # The packet dimension remains "PACKET" to enable sample-to-packet tracing
     packet_time_coordinate = packet_config.packet_time_coordinate
-    packet_ds = packet_ds.assign_coords({packet_time_coordinate: (SPP_PACKET_DIMENSION, packet_times_us)})
+    packet_ds = packet_ds.assign_coords({packet_time_coordinate: (SDC_PACKET_DIMENSION, packet_times_us)})
 
     # Drop duplicates from the packet dataset before we process samples
     # This drops full duplicate packets based on identical packet timestamps
@@ -146,7 +149,7 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
             )
 
         # Create packet_index variable to map samples back to their originating packets
-        n_packets = packet_ds.sizes[SPP_PACKET_DIMENSION]
+        n_packets = packet_ds.sizes[SDC_PACKET_DIMENSION]
         n_samples = sample_group.sample_count
         # Create an array that repeats each packet index n_samples times
         # e.g., for 3 packets with 2 samples each: [0, 0, 1, 1, 2, 2]
@@ -183,8 +186,8 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
         # Add aggregated variable to packet dataset with packet dimension
         packet_ds[agg_group.name] = xr.DataArray(
             data=aggregated_data,
-            dims=[SPP_PACKET_DIMENSION],
-            coords={packet_time_coordinate: (SPP_PACKET_DIMENSION, packet_times_us)},
+            dims=[SDC_PACKET_DIMENSION],
+            coords={packet_time_coordinate: (SDC_PACKET_DIMENSION, packet_times_us)},
         )
 
         # Track aggregated fields to remove from main array
@@ -198,11 +201,18 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     # coordinates and dimensions in packet_ds
     packet_ds = packet_ds.merge(sample_ds)
 
-    # The "packet" dimension is retained to enable sample-to-packet traceability
+    # The "PACKET" dimension is retained to enable sample-to-packet traceability
     # packet_time_dimension remains as a non-dimension coordinate
 
     # Sort the resulting Dataset by the packet time coordinate to ensure data is properly ordered
     packet_ds = packet_ds.sortby(packet_time_coordinate)
+
+    # Force any Unicode (U-type) string variables to byte (S-type) strings. We know all the FSW strings
+    # are ASCII and sticking to bytes preserves better compatibility in NetCDF (i.e. doesn't rely on the NC_STRING
+    # type).
+    for var_name, var in packet_ds.data_vars.items():
+        if var.dtype.kind == "U":
+            packet_ds[var_name] = var.astype("S")
 
     # Add global dynamic attributes that are required per the data product configs but do not have static values
     global_attrs: dict[str, str | list | set] = {
@@ -457,7 +467,7 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
     np.ndarray
         Array of aggregated binary data with dtype matching group.dtype.
     """
-    n_packets = dataset.sizes[SPP_PACKET_DIMENSION]
+    n_packets = dataset.sizes[SDC_PACKET_DIMENSION]
 
     # Extract all field arrays at once (fail fast if any missing)
     field_arrays = []

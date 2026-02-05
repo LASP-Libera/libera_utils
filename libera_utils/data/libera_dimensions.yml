@@ -1,11 +1,31 @@
-n_samples:
-  long_name: "A running count for daily data for the number of samples"
-camera_pixel_count_x:
+# ===============================================
+# Standard dimensions for all Libera data products
+# Every dimension in any product must be defined here, even if it is only a scalar dimension (size 1).
+# The long_name for dimensions here is only for documentation purposes; it is not used in validation
+# nor will it appear in data products. A dimension is simply a name in NetCDF and xarray. Other
+# attributes, such as size are used to validate the data inside a data product during conformance checking.
+# ===============================================
+N_HOURS:
+  size: 24
+  long_name: "Hour within a day"
+EUCLIDEAN_DIM:
+  size: 3
+  long_name: "3D Euclidean space dimension"
+QUATERNION_DIM:
+  size: 4
+  long_name: "Quaternion dimension"
+CAMERA_PIXEL_COUNT_X:
   size: 2048
   long_name: "The X-axis dimension of the camera images"
-camera_pixel_count_y:
+CAMERA_PIXEL_COUNT_Y:
   size: 2048
   long_name: "The Y-axis dimension of the camera images"
+RADIOMETER_TIME:
+  long_name: "Radiometer time dimension"
+CAMERA_TIME:
+  long_name: "Camera time dimension"
+PACKET:
+  long_name: "Packet index for all packets in the data product"
 PACKET_JPSS_TIME:
   long_name: "Packet creation time from spacecraft clock"
 ADGPS_JPSS_TIME:

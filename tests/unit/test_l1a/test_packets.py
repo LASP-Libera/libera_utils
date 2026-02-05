@@ -30,7 +30,7 @@ def test_parse_packets_to_dataset_with_single_apid(mock_create_dataset):
             "DATA_FIELD": [1.1, 2.2],
         }
     )
-    mock_df.index.name = "packet"
+    mock_df.index.name = "PACKET"
     mock_dataset = mock_df.to_xarray()
 
     mock_create_dataset.return_value = {1048: mock_dataset}
@@ -45,10 +45,10 @@ def test_parse_packets_to_dataset_with_single_apid(mock_create_dataset):
 def test_parse_packets_to_dataset_apid_not_found(mock_create_dataset):
     """Test parse_packets_to_dataset raises ValueError when APID not in dataset"""
     mock_df = pd.DataFrame({"PKT_APID": [1048]})
-    mock_df.index.name = "packet"
+    mock_df.index.name = "PACKET"
     mock_create_dataset.return_value = {1048: mock_df.to_xarray()}
 
-    with pytest.raises(KeyError, match="Requested APID 9999 not found"):
+    with pytest.raises(ValueError, match="Expected only APID 9999 in parsed dataset"):
         libera_packets.parse_packets_to_dataset(packet_files=["fake.bin"], packet_definition="fake.xml", apid=9999)
 
 
@@ -89,9 +89,9 @@ def test_drop_duplicates_with_duplicates():
 
 def test_drop_duplicates_non_dimension_coordinate():
     """Test _drop_duplicates with a non-dimension coordinate bound to a dimension"""
-    ds = xr.Dataset({"data": (["packet"], [10, 20, 30, 40, 50, 60])})
-    # Add non-dimension coordinate bound to "packet" dimension with duplicates
-    ds = ds.assign_coords({"packet_time": (["packet"], [1, 2, 5, 8, 8, 8])})
+    ds = xr.Dataset({"data": (["PACKET"], [10, 20, 30, 40, 50, 60])})
+    # Add non-dimension coordinate bound to "PACKET" dimension with duplicates
+    ds = ds.assign_coords({"packet_time": (["PACKET"], [1, 2, 5, 8, 8, 8])})
 
     result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "packet_time")
 
@@ -109,7 +109,7 @@ def test_drop_duplicates_non_dimension_coordinate():
 def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
     """Test _expand_sample_times with single sample per packet"""
     # Create mock dataset
-    ds = xr.Dataset({"SEC_FIELD": (["packet"], [10, 20]), "USEC_FIELD": (["packet"], [100, 200])})
+    ds = xr.Dataset({"SEC_FIELD": (["PACKET"], [10, 20]), "USEC_FIELD": (["PACKET"], [100, 200])})
 
     # Mock the multipart_to_dt64 function
     mock_times = pd.Series([np.datetime64("2025-01-01T00:00:10.000100"), np.datetime64("2025-01-01T00:00:20.000200")])
@@ -129,12 +129,12 @@ def test_expand_sample_times_multi_sample(mock_multipart_to_dt64):
     # Create mock dataset with 2 packets, 3 samples each
     ds = xr.Dataset(
         {
-            "SEC_FIELD0": (["packet"], [10, 20]),
-            "SEC_FIELD1": (["packet"], [11, 21]),
-            "SEC_FIELD2": (["packet"], [12, 22]),
-            "USEC_FIELD0": (["packet"], [100, 200]),
-            "USEC_FIELD1": (["packet"], [110, 210]),
-            "USEC_FIELD2": (["packet"], [120, 220]),
+            "SEC_FIELD0": (["PACKET"], [10, 20]),
+            "SEC_FIELD1": (["PACKET"], [11, 21]),
+            "SEC_FIELD2": (["PACKET"], [12, 22]),
+            "USEC_FIELD0": (["PACKET"], [100, 200]),
+            "USEC_FIELD1": (["PACKET"], [110, 210]),
+            "USEC_FIELD2": (["PACKET"], [120, 220]),
         }
     )
 
@@ -164,9 +164,9 @@ def test_get_expanded_field_names_single_sample():
 
     ds = xr.Dataset(
         {
-            "DATA_FIELD": (["packet"], [1.0, 2.0]),
-            "SEC_FIELD": (["packet"], [10, 20]),
-            "USEC_FIELD": (["packet"], [100, 200]),
+            "DATA_FIELD": (["PACKET"], [1.0, 2.0]),
+            "SEC_FIELD": (["PACKET"], [10, 20]),
+            "USEC_FIELD": (["PACKET"], [100, 200]),
         }
     )
 
@@ -187,12 +187,12 @@ def test_get_expanded_field_names_multi_sample():
     """Test _get_expanded_field_names for multiple samples per packet"""
     ds = xr.Dataset(
         {
-            "DATA_FIELD0": (["packet"], [1.0, 2.0]),
-            "DATA_FIELD1": (["packet"], [1.1, 2.1]),
-            "SEC_FIELD0": (["packet"], [10, 20]),
-            "SEC_FIELD1": (["packet"], [11, 21]),
-            "USEC_FIELD0": (["packet"], [100, 200]),
-            "USEC_FIELD1": (["packet"], [110, 210]),
+            "DATA_FIELD0": (["PACKET"], [1.0, 2.0]),
+            "DATA_FIELD1": (["PACKET"], [1.1, 2.1]),
+            "SEC_FIELD0": (["PACKET"], [10, 20]),
+            "SEC_FIELD1": (["PACKET"], [11, 21]),
+            "USEC_FIELD0": (["PACKET"], [100, 200]),
+            "USEC_FIELD1": (["PACKET"], [110, 210]),
         }
     )
 
@@ -214,10 +214,10 @@ def test_get_expanded_field_names_with_epoch():
     """Test _get_expanded_field_names with epoch time fields"""
     ds = xr.Dataset(
         {
-            "DATA_FIELD0": (["packet"], [1.0, 2.0]),
-            "DATA_FIELD1": (["packet"], [1.1, 2.1]),
-            "EPOCH_SEC": (["packet"], [10, 20]),
-            "EPOCH_USEC": (["packet"], [100, 200]),
+            "DATA_FIELD0": (["PACKET"], [1.0, 2.0]),
+            "DATA_FIELD1": (["PACKET"], [1.1, 2.1]),
+            "EPOCH_SEC": (["PACKET"], [10, 20]),
+            "EPOCH_USEC": (["PACKET"], [100, 200]),
         }
     )
 
@@ -242,12 +242,12 @@ def test_expand_sample_group_multi_sample(mock_multipart_to_dt64):
     # 2 packets, 3 samples each
     ds = xr.Dataset(
         {
-            "DATA0": (["packet"], [1.0, 4.0]),
-            "DATA1": (["packet"], [2.0, 5.0]),
-            "DATA2": (["packet"], [3.0, 6.0]),
-            "SEC0": (["packet"], [10, 20]),
-            "SEC1": (["packet"], [11, 21]),
-            "SEC2": (["packet"], [12, 22]),
+            "DATA0": (["PACKET"], [1.0, 4.0]),
+            "DATA1": (["PACKET"], [2.0, 5.0]),
+            "DATA2": (["PACKET"], [3.0, 6.0]),
+            "SEC0": (["PACKET"], [10, 20]),
+            "SEC1": (["PACKET"], [11, 21]),
+            "SEC2": (["PACKET"], [12, 22]),
         }
     )
 
@@ -290,10 +290,10 @@ def test_expand_sample_group_with_epoch_and_period(mock_multipart_to_dt64):
     # 2 packets, 3 samples each
     ds = xr.Dataset(
         {
-            "DATA0": (["packet"], [1.0, 4.0]),
-            "DATA1": (["packet"], [2.0, 5.0]),
-            "DATA2": (["packet"], [3.0, 6.0]),
-            "EPOCH_SEC": (["packet"], [10, 20]),
+            "DATA0": (["PACKET"], [1.0, 4.0]),
+            "DATA1": (["PACKET"], [2.0, 5.0]),
+            "DATA2": (["PACKET"], [3.0, 6.0]),
+            "EPOCH_SEC": (["PACKET"], [10, 20]),
         }
     )
 
@@ -340,9 +340,9 @@ def test_aggregate_fields_uint8s():
     # Create dataset with 2 packets, each with 3 sequential byte fields
     ds = xr.Dataset(
         {
-            "FIELD_0": (["packet"], np.array([65, 97], dtype=np.uint8)),  # 'A', 'a'
-            "FIELD_1": (["packet"], np.array([66, 98], dtype=np.uint8)),  # 'B', 'b'
-            "FIELD_2": (["packet"], np.array([67, 99], dtype=np.uint8)),  # 'C', 'c'
+            "FIELD_0": (["PACKET"], np.array([65, 97], dtype=np.uint8)),  # 'A', 'a'
+            "FIELD_1": (["PACKET"], np.array([66, 98], dtype=np.uint8)),  # 'B', 'b'
+            "FIELD_2": (["PACKET"], np.array([67, 99], dtype=np.uint8)),  # 'C', 'c'
         }
     )
 
@@ -361,9 +361,9 @@ def test_aggregate_fields_bytes():
     # Create dataset with 2 packets, each with 3 sequential bytestring fields
     ds = xr.Dataset(
         {
-            "FIELD_0": (["packet"], np.array([b"ABC", b"abc"])),
-            "FIELD_1": (["packet"], np.array([b"DEF", b"def"])),
-            "FIELD_2": (["packet"], np.array([b"GHI", b"ghi"])),
+            "FIELD_0": (["PACKET"], np.array([b"ABC", b"abc"])),
+            "FIELD_1": (["PACKET"], np.array([b"DEF", b"def"])),
+            "FIELD_2": (["PACKET"], np.array([b"GHI", b"ghi"])),
         }
     )
 
@@ -381,9 +381,9 @@ def test_aggregate_fields_size_mismatch():
     """Test _aggregate_fields raises ValueError on size mismatch"""
     ds = xr.Dataset(
         {
-            "FIELD_0": (["packet"], np.array([1, 2], dtype=np.uint16)),
-            "FIELD_1": (["packet"], np.array([3, 4], dtype=np.uint16)),
-            "FIELD_2": (["packet"], np.array([5, 6], dtype=np.uint16)),
+            "FIELD_0": (["PACKET"], np.array([1, 2], dtype=np.uint16)),
+            "FIELD_1": (["PACKET"], np.array([3, 4], dtype=np.uint16)),
+            "FIELD_2": (["PACKET"], np.array([5, 6], dtype=np.uint16)),
         }
     )
 
@@ -401,8 +401,8 @@ def test_aggregate_fields_missing_field():
     """Test _aggregate_fields raises KeyError when field is missing"""
     ds = xr.Dataset(
         {
-            "FIELD_0": (["packet"], np.array([1, 2], dtype=np.dtype("S1"))),
-            "FIELD_1": (["packet"], np.array([3, 4], dtype=np.dtype("S1"))),
+            "FIELD_0": (["PACKET"], np.array([1, 2], dtype=np.dtype("S1"))),
+            "FIELD_1": (["PACKET"], np.array([3, 4], dtype=np.dtype("S1"))),
             # FIELD_2 is missing
         }
     )
@@ -417,10 +417,10 @@ def test_get_aggregated_field_names():
     """Test _get_aggregated_field_names returns all aggregated field names"""
     ds = xr.Dataset(
         {
-            "DATA_0": (["packet"], [1, 2]),
-            "DATA_1": (["packet"], [3, 4]),
-            "DATA_2": (["packet"], [5, 6]),
-            "OTHER_FIELD": (["packet"], [7, 8]),
+            "DATA_0": (["PACKET"], [1, 2]),
+            "DATA_1": (["PACKET"], [3, 4]),
+            "DATA_2": (["PACKET"], [5, 6]),
+            "OTHER_FIELD": (["PACKET"], [7, 8]),
         }
     )
 
@@ -461,12 +461,12 @@ def test_parse_packets_to_l1a_dataset_basic(
     # Create mock packet dataset
     packet_ds = xr.Dataset(
         {
-            "PKT_DAY": (["packet"], [1000, 1001]),
-            "PKT_MS": (["packet"], [0, 1000]),
-            "SAMPLE_DAY": (["packet"], [1000, 1001]),
-            "SAMPLE_MS": (["packet"], [500, 1500]),
-            "SAMPLE_DATA": (["packet"], [1.5, 2.5]),
-            "OTHER_FIELD": (["packet"], [100, 200]),
+            "PKT_DAY": (["PACKET"], [1000, 1001]),
+            "PKT_MS": (["PACKET"], [0, 1000]),
+            "SAMPLE_DAY": (["PACKET"], [1000, 1001]),
+            "SAMPLE_MS": (["PACKET"], [500, 1500]),
+            "SAMPLE_DATA": (["PACKET"], [1.5, 2.5]),
+            "OTHER_FIELD": (["PACKET"], [100, 200]),
         }
     )
 
@@ -488,7 +488,7 @@ def test_parse_packets_to_l1a_dataset_basic(
 
     # Verify result structure
     assert isinstance(result, xr.Dataset)
-    assert "packet" in result.dims
+    assert "PACKET" in result.dims
     assert "PACKET_ICIE_TIME" in result.coords
     assert "TEST_SAMPLE_ICIE_TIME" in result.coords
     assert "TEST_SAMPLE_ICIE_TIME" in result.dims

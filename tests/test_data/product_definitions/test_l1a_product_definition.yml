@@ -9,13 +9,13 @@
 # AXIS_SAMPLE_ICIE_TIME as their dimension
 
 attributes:
-  ProductID: TEST-AXIS-SAMPLE-L1A
+  ProductID: AXIS-SAMPLE-DECODED
   algorithm_version: 1.0.0
 
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Packet timestamp from ICIE main processor
     encoding:
