@@ -2,7 +2,7 @@
 
 import logging
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -55,21 +55,21 @@ LongitudeType = Annotated[
 ]
 
 
-class ProviderDateTypeEnum(str, Enum):
+class ProviderDateTypeEnum(StrEnum):
     CREATE = "Create"
     INSERT = "Insert"
     UPDATE = "Update"
     DELETE = "Delete"
 
 
-class DayNightFlagEnum(str, Enum):
+class DayNightFlagEnum(StrEnum):
     DAY = "Day"
     NIGHT = "Night"
     BOTH = "Both"
     UNSPECIFIED = "Unspecified"
 
 
-class FileSizeUnitEnum(str, Enum):
+class FileSizeUnitEnum(StrEnum):
     KB = "KB"
     MB = "MB"
     GB = "GB"
@@ -78,7 +78,7 @@ class FileSizeUnitEnum(str, Enum):
     NA = "NA"
 
 
-class ChecksumAlgorithmEnum(str, Enum):
+class ChecksumAlgorithmEnum(StrEnum):
     ADLER_32 = "Adler-32"
     BSD_CHECKSUM = "BSD checksum"
     FLETCHER_32 = "Fletcher-32"
@@ -94,13 +94,13 @@ class ChecksumAlgorithmEnum(str, Enum):
     SYSV = "SYSV"
 
 
-class FormatTypeEnum(str, Enum):
+class FormatTypeEnum(StrEnum):
     NATIVE = "Native"
     SUPPORTED = "Supported"
     NA = "NA"
 
 
-class IdentifierTypeEnum(str, Enum):
+class IdentifierTypeEnum(StrEnum):
     PRODUCER_GRANULE_ID = "ProducerGranuleId"
     LOCAL_VERSION_ID = "LocalVersionId"
     FEATURE_ID = "FeatureId"
@@ -108,19 +108,19 @@ class IdentifierTypeEnum(str, Enum):
     OTHER = "Other"
 
 
-class OrbitDirectionEnum(str, Enum):
+class OrbitDirectionEnum(StrEnum):
     ASCENDING = "A"
     DESCENDING = "D"
 
 
-class VerticalSpatialDomainTypeEnum(str, Enum):
+class VerticalSpatialDomainTypeEnum(StrEnum):
     ATMOSPHERE_LAYER = "Atmosphere Layer"
     PRESSURE = "Pressure"
     ALTITUDE = "Altitude"
     DEPTH = "Depth"
 
 
-class VerticalUnitEnum(str, Enum):
+class VerticalUnitEnum(StrEnum):
     FATHOMS = "Fathoms"
     FEET = "Feet"
     HECTOPASCALS = "HectoPascals"
@@ -133,14 +133,14 @@ class VerticalUnitEnum(str, Enum):
     INCHES_OF_WATER = "InchesOfWater"
 
 
-class QualityFlagEnum(str, Enum):
+class QualityFlagEnum(StrEnum):
     PASSED = "Passed"
     FAILED = "Failed"
     SUSPECT = "Suspect"
     UNDETERMINED = "Undetermined"
 
 
-class OperationalFlagEnum(str, Enum):
+class OperationalFlagEnum(StrEnum):
     PASSED = "Passed"
     FAILED = "Failed"
     BEING_INVESTIGATED = "Being Investigated"
@@ -151,7 +151,7 @@ class OperationalFlagEnum(str, Enum):
     UNDETERMINED = "Undetermined"
 
 
-class ScienceFlagEnum(str, Enum):
+class ScienceFlagEnum(StrEnum):
     PASSED = "Passed"
     FAILED = "Failed"
     BEING_INVESTIGATED = "Being Investigated"
@@ -163,7 +163,7 @@ class ScienceFlagEnum(str, Enum):
     UNDETERMINED = "Undetermined"
 
 
-class TilingSystemNameEnum(str, Enum):
+class TilingSystemNameEnum(StrEnum):
     CALIPSO = "CALIPSO"
     MISR = "MISR"
     MODIS_TILE_EASE = "MODIS Tile EASE"
@@ -175,7 +175,7 @@ class TilingSystemNameEnum(str, Enum):
     WRS_2 = "WRS-2"
 
 
-class ProjectionNameEnum(str, Enum):
+class ProjectionNameEnum(StrEnum):
     GEOGRAPHIC = "Geographic"
     MERCATOR = "Mercator"
     SPHERICAL_MERCATOR = "Spherical Mercator"
@@ -203,7 +203,7 @@ class ProjectionNameEnum(str, Enum):
     CYLINDRICAL = "Cylindrical"
 
 
-class RelatedUrlTypeEnum(str, Enum):
+class RelatedUrlTypeEnum(StrEnum):
     DOWNLOAD_SOFTWARE = "DOWNLOAD SOFTWARE"
     EXTENDED_METADATA = "EXTENDED METADATA"
     GET_DATA = "GET DATA"
@@ -215,7 +215,7 @@ class RelatedUrlTypeEnum(str, Enum):
     VIEW_RELATED_INFORMATION = "VIEW RELATED INFORMATION"
 
 
-class RelatedUrlSubTypeEnum(str, Enum):
+class RelatedUrlSubTypeEnum(StrEnum):
     BROWSE_IMAGE_SOURCE = "BROWSE IMAGE SOURCE"
     MOBILE_APP = "MOBILE APP"
     APPEARS = "APPEARS"
@@ -287,7 +287,7 @@ class RelatedUrlSubTypeEnum(str, Enum):
     DMR_PLUS_PLUS_MISSING_DATA = "DMR++ MISSING DATA"
 
 
-class MimeTypeEnum(str, Enum):
+class MimeTypeEnum(StrEnum):
     APPLICATION_JSON = "application/json"
     APPLICATION_XML = "application/xml"
     APPLICATION_X_NETCDF = "application/x-netcdf"
