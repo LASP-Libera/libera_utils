@@ -1,5 +1,11 @@
 # Version Changes
 
+## 5.6.0
+
+- FEAT: Add dimension validation to data product definition
+- Support safer enforcement of product definition specs on data products
+- Improve logging and warning visibility in data product writer
+
 ## 5.5.5
 
 - CONFIG: Update the ICIE TLM XTCE to latest version

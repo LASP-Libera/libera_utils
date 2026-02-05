@@ -33,7 +33,6 @@ class NetcdfEngine(StrEnum):
         return cls(config.get("XARRAY_NETCDF_ENGINE"))  # type: ignore[return-value]
 
 
-# TODO[LIBSDC-681]: Add UMM-G metadata file generation to this function call
 def write_libera_data_product(
     data_product_definition: str | PathType | LiberaDataProductDefinition,
     data: dict[str, NDArray] | xr.Dataset,
@@ -44,6 +43,14 @@ def write_libera_data_product(
     add_archive_path_prefix: bool = False,
 ) -> LiberaDataProductFilename:
     """Write a Libera data product NetCDF4 file that conforms to data product definition requirements
+
+    Steps:
+
+    1. (Numpy array input only) Create a product Dataset from the input arrays and optional dynamic attributes, using the product definition to determine the expected structure and metadata.
+    2. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
+    3. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
+    4. Generate the data product filename using the product definition and the specified time variable.
+    5. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
     Parameters
     ----------
@@ -56,12 +63,13 @@ def write_libera_data_product(
     time_variable : str
         Name of variable that indicates time. This is used to generate the start and end time for the filename.
     dynamic_product_attributes : dict[str, Any] | None
-        Optional dictionary of additional global attributes to add to the data product file. Must conform to the data product definition.
+        Optional dictionary of additional global attributes to add to the data product file. Must conform to the data
+        product definition.
     strict : bool
         Default True. Raises an exception if the final Dataset doesn't conform to the data product definition.
     add_archive_path_prefix : bool
-        Note: do not use this to write to a processing dropbox! L2 devs do not need this kwarg.
-        Default False. If True, adds the archive path prefix to the output path when generating the full output path.
+        Note: do not use this to write to a processing dropbox! L2 devs do not need this kwarg. Default False. If True,
+        adds the archive path prefix to the output path when generating the full output path.
 
     Returns
     -------
@@ -85,17 +93,17 @@ def write_libera_data_product(
                 "dynamic_product_attributes is invalid when passing in a Dataset. To set dynamic attributes for a dataset, modify the Dataset attrs before passing it in."
             )
         # This is how L1A products are typically created (starting as a Dataset)
-        logger.info(
-            f"Checking Dataset with variables: {list(data.keys())} and coordinates: {list(data.coords.keys())} for conformance"
-        )
-        dataset, _unfixed_errors = definition.enforce_dataset_conformance(data)
-        _errors = definition.check_dataset_conformance(dataset, strict=strict)
+        dataset = data
     else:
         # This is the expectation for L2 product creation (from numpy arrays)
         logger.info(f"Creating Dataset from data arrays with variables: {list(data.keys())}")
-        dataset, _errors = definition.create_conforming_dataset(
-            data, dynamic_product_attributes=dynamic_product_attributes, strict=strict
-        )
+        dataset = definition.create_product_dataset(data, dynamic_product_attributes=dynamic_product_attributes)
+
+    logger.info(f"Bringing Dataset into conformance with product definition")
+    dataset = definition.enforce_dataset_conformance(dataset)
+
+    logger.info("Checking final Dataset conformance against the product definition")
+    definition.check_dataset_conformance(dataset, strict=strict)
 
     if "datetime64" not in str(dataset[time_variable].dtype):
         raise ValueError(f"Specified time variable {time_variable} does not have dtype datetime64.")

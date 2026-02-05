@@ -18,7 +18,7 @@ def test_dataset():
     end_us = np.datetime64("2024-01-01 23:59:59.999999").astype("datetime64[us]")
     times = pd.date_range(start_us, end_us, periods=n_times)
     times = times.astype("datetime64[ns]")
-    time = DataArray(times, dims=["time"], attrs={"long_name": "Time of sample collection"})
+    time = DataArray(times, dims=["radiometer_time"], attrs={"long_name": "Time of sample collection"})
     time.encoding = {
         "units": "nanoseconds since 1958-01-01",
         "calendar": "standard",
@@ -28,34 +28,42 @@ def test_dataset():
     }
     lat = DataArray(
         np.linspace(-90, 90, num=n_times),
-        dims=["time"],
+        dims=["radiometer_time"],
         attrs={"long_name": "Geolocation latitude", "units": "degrees", "valid_range": [-90, 90]},
     )
     lat.encoding = {"zlib": True, "complevel": 4}
 
     lon = DataArray(
         np.linspace(-180, 180, num=n_times),
-        dims=["time"],
+        dims=["radiometer_time"],
         attrs={"long_name": "Geolocation longitude", "units": "degrees", "valid_range": [-180, 180]},
     )
     lon.encoding = {"zlib": True, "complevel": 4}
 
     fil_rad = DataArray(
         np.random.rand(n_times),
-        dims=["time"],
+        dims=["radiometer_time"],
         attrs={"long_name": "Filtered Radiance", "units": "W/(m^2*sr*nm)", "valid_range": [0, 1000]},
     )
     fil_rad.encoding = {"zlib": True, "complevel": 4}
 
     q_flag = DataArray(
         np.random.randint(2147483647, size=n_times, dtype=np.int32),
-        dims=["time"],
+        dims=["radiometer_time"],
         attrs={"long_name": "Quality Flags", "valid_range": [0, 2147483647]},
     )
     q_flag.encoding = {"zlib": True, "complevel": 4}
+
+    cartesian_position = DataArray(
+        np.zeros((n_times, 3), dtype=np.float32),
+        dims=["radiometer_time", "euclidean_dim"],
+        attrs={"long_name": "Cartesian SC position", "units": "km", "valid_range": [-100000, 100000]},
+    )
+    cartesian_position.encoding = {"zlib": True, "complevel": 4}
+
     ds = Dataset(
-        data_vars={"fil_rad": fil_rad, "q_flag": q_flag},
-        coords={"time": time, "lat": lat, "lon": lon},
+        data_vars={"fil_rad": fil_rad, "q_flag": q_flag, "cartesian_position": cartesian_position},
+        coords={"radiometer_time": time, "lat": lat, "lon": lon},
         attrs={
             "ProductID": "RAD-4CH",
             "algorithm_version": "0.0.1",
@@ -81,31 +89,14 @@ def test_data_dict():
     end_us = np.datetime64("2024-01-01 23:59:59.999999").astype("datetime64[us]").astype(np.int64)
     random_us = np.random.randint(start_us, end_us, size=n_times)
     random_us.sort()
+    positions = np.zeros((n_times, 3), dtype=np.float32)
     times = random_us.astype("datetime64[us]").astype("datetime64[ns]")
 
     return {
-        "time": times,
+        "radiometer_time": times,
         "lat": np.linspace(-90, 90, num=n_times),
         "lon": np.linspace(-180, 180, num=n_times),
         "fil_rad": np.random.rand(n_times),
         "q_flag": np.random.randint(2147483647, size=n_times, dtype=np.int32),
-    }
-
-
-@pytest.fixture
-def test_data_dict_missing_variable():
-    """Dictionary missing required variables for testing strict mode"""
-    n_times = 20
-    start_us = np.datetime64("2024-01-01 00:00:00.000000").astype("datetime64[us]").astype(np.int64)
-    end_us = np.datetime64("2024-01-01 23:59:59.999999").astype("datetime64[us]").astype(np.int64)
-    random_us = np.random.randint(start_us, end_us, size=n_times)
-    random_us.sort()
-    times = random_us.astype("datetime64[ns]")
-
-    return {
-        "time": times,
-        "lat": np.linspace(-90, 90, num=n_times),
-        "lon": np.linspace(-180, 180, num=n_times),
-        "fil_rad": np.random.rand(n_times),
-        # Missing q_flag variable
+        "cartesian_position": positions,
     }

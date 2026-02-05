@@ -48,6 +48,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
     return checker
 
 
+@pytest.mark.filterwarnings("error")
 @pytest.mark.parametrize(
     ("packet_file_fixtures", "apid", "time_dimension", "skip_header_bytes"),
     [
@@ -158,12 +159,6 @@ def test_process_packets_to_l1a_product(
     # Create LiberaDataProductDefinition from product definition file
     product_definition_path = get_l1a_product_definition_path(apid)
     product_config = LiberaDataProductDefinition.from_yaml(product_definition_path)
-
-    # Coerce dataset to match product definition configuration
-    dataset, errors = product_config.enforce_dataset_conformance(dataset)
-    if errors:
-        print(errors)
-        raise ValueError("After conformance enforcement, dataset is still not valid")
 
     # Write NetCDF for round trip testing
     output_filename = write_libera_data_product(
