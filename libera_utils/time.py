@@ -12,17 +12,12 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 """
 
 import re
-from collections.abc import Collection
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
-import spiceypy as spice
 import xarray as xr
 
-from libera_utils.config import config
-from libera_utils.libera_spice.spice_utils import ensure_spice
 
 ISOT_REGEX = re.compile(
     r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
@@ -45,153 +40,37 @@ NUMERIC_DOY_TS_FORMAT = "%y%j%H%M%S"
 CCSDS_EPOCH = datetime.fromisoformat("1958-01-01")
 
 
-def et_2_timestamp(et: float | Collection[float] | np.ndarray, fmt: str = "%Y%m%dT%H%M%S.%f") -> str | Collection[str]:
-    """
-    Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
+# ============================================================================
+# SPICE Time Conversion Functions
+# These have been moved to libera_spice.spice_utils to avoid circular imports.
+# Re-exported here for backwards compatibility.
+# ============================================================================
 
-    Parameters
-    ----------
-    et: Union[float, Collection[float], numpy.ndarray]
-        Ephemeris Time to be converted.
-    fmt: str, Optional
-        Format string as defined by the datetime.strftime() function.
+from libera_utils.libera_spice.spice_utils import (  # noqa: E402
+    et_2_datetime,
+    et_2_timestamp,
+    et2utc_wrapper,
+    sce2s_wrapper,
+    scs2e_wrapper,
+    utc2et_wrapper,
+)
 
-    Returns
-    -------
-    : Union[str, Collection[str]]
-        Formatted timestamps
-    """
-    datetime_objs = et_2_datetime(et)
-
-    if isinstance(datetime_objs, Collection):
-        time_out = np.array([t.strftime(fmt) for t in datetime_objs])
-    else:
-        time_out = datetime_objs.strftime(fmt)
-
-    return time_out
-
-
-def et_2_datetime(et: float | Collection[float] | np.ndarray) -> datetime | np.ndarray:
-    """
-    Convert ephemeris time to a python datetime object by first converting it to a UTC timestamp.
-
-    Parameters
-    ----------
-    et: float or Collection or numpy.ndarray
-        Ephemeris times to be converted.
-
-    Returns
-    -------
-    : datetime.datetime or numpy.ndarray
-        Object representation of ephemeris times.
-    """
-    isoc_fmt = "%Y-%m-%dT%H:%M:%S.%f"
-    isoc_prec = 6
-
-    isoc_timestamp = et2utc_wrapper(et, "ISOC", isoc_prec)
-    if isinstance(et, Collection):
-        return np.array([datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
-
-    return datetime.strptime(isoc_timestamp, isoc_fmt)
-
-
-@ensure_spice(time_kernels_only=True)
-def et2utc_wrapper(et: float | Collection[float] | np.ndarray, fmt: str, prec: int) -> str | Collection[str]:
-    """
-    Convert ephemeris times to UTC ISO strings.
-    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/et2utc_c.html
-    Decorated wrapper for spiceypy.et2utc that will automatically furnish the latest metakernel and retry
-    if the first call raises an exception.
-
-    Parameters
-    ----------
-    et: Union[float, Collection[float], numpy.ndarray]
-        The ephemeris time value to be converted to UTC.
-    fmt: str
-        Format string defines the format of the output time string. See CSPICE docs.
-    prec: int
-        Number of digits of precision for fractional seconds.
-
-    Returns
-    -------
-    : Union[numpy.ndarray, str]
-        UTC time string(s)
-    """
-    return spice.et2utc(et, fmt, prec)
-
-
-@ensure_spice(time_kernels_only=True)
-def utc2et_wrapper(iso_str: str | Collection[str]) -> float | np.ndarray:
-    """
-    Convert UTC ISO strings to ephemeris times.
-    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/utc2et_c.html
-    Decorated wrapper for spiceypy.utc2et that will automatically furnish the latest metakernel and retry
-    if the first call raises an exception.
-
-    Parameters
-    ----------
-    iso_str: Union[str, Collection[str]]
-        The UTC to convert to ephemeris time
-
-    Returns
-    -------
-    : float or numpy.ndarray
-        Ephemeris time
-    """
-    if isinstance(iso_str, str):
-        return spice.utc2et(iso_str)
-
-    return np.array([spice.utc2et(s) for s in iso_str])
-
-
-@ensure_spice(time_kernels_only=True)
-def scs2e_wrapper(sclk_str: str | Collection[str]) -> float | np.ndarray:
-    """
-    Convert SCLK strings to ephemeris time.
-    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/scs2e_c.html
-    Decorated wrapper for spiceypy.scs2e that will automatically furnish the latest metakernel and retry
-    if the first call raises an exception.
-
-    Parameters
-    ----------
-    sclk_str: Union[str, Collection[str]]
-        Spacecraft clock string
-
-    Returns
-    -------
-    : Union[float, numpy.ndarray]
-        Ephemeris time
-    """
-    sc_id = config.get("JPSS_SC_ID")
-    if isinstance(sclk_str, str):
-        return spice.scs2e(sc_id, sclk_str)
-
-    return np.array([spice.scs2e(sc_id, s) for s in sclk_str])
-
-
-@ensure_spice(time_kernels_only=True)
-def sce2s_wrapper(et: float | Collection[float] | np.ndarray) -> str | np.ndarray:
-    """
-    Convert ephemeris times to SCLK string
-    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sce2s_c.html
-    Decorated wrapper for spiceypy.sce2s that will automatically furnish the latest metakernel and retry
-    if the first call raises an exception.
-
-    Parameters
-    ----------
-    et: Union[float, Collection[float], numpy.ndarray]
-        Ephemeris time
-
-    Returns
-    -------
-    : Union[str, Collection[str]]
-        SCLK string
-    """
-    sc_id = config.get("JPSS_SC_ID")
-    if isinstance(et, Collection):
-        return np.array([spice.sce2s(sc_id, t) for t in et])
-
-    return spice.sce2s(sc_id, et)
+# Explicitly export all public functions
+__all__ = [
+    "et_2_datetime",
+    "et_2_timestamp",
+    "et2utc_wrapper",
+    "sce2s_wrapper",
+    "scs2e_wrapper",
+    "utc2et_wrapper",
+    "convert_cds_integer_to_datetime",
+    "multipart_to_dt64",
+    "CCSDS_EPOCH",
+    "ISOT_REGEX",
+    "PRINTABLE_TS_REGEX",
+    "PRINTABLE_TS_FORMAT",
+    "NUMERIC_DOY_TS_FORMAT",
+]
 
 
 def convert_cds_integer_to_datetime(satellite_time: int):
