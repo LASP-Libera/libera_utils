@@ -71,7 +71,7 @@ def test_create_kernel_from_packets(
         (datetime.fromisoformat("2020-01-01T00:00:00"), datetime.fromisoformat("2020-01-01T23:59:59")),
     ),
 )
-@mock.patch("libera_utils.kernel_maker.make_kernel", return_value=AnyPath("/fake/kernel.spk"))
+@mock.patch("libera_utils.libera_spice.spice_utils.make_kernel", return_value=AnyPath("/fake/kernel.spk"))
 def test_create_kernel_from_l1a(
     mock_make_kernel, mock_create_kernel_dataframe_from_l1a, mock_version, kernel_dpi, config_key, out_ext
 ):
