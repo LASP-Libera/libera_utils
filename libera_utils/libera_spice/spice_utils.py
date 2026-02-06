@@ -5,19 +5,25 @@ import functools
 import logging
 import os
 import re
+import tempfile
 import time
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
+import pandas as pd
 import requests
 import spiceypy as spice
-from cloudpathlib import S3Path
+from cloudpathlib import AnyPath, CloudPath, S3Path
+from curryer import kernels
 from spiceypy.utils.exceptions import NotFoundError, SpiceyError
 
 from libera_utils.config import config
 from libera_utils.io import caching, smart_open
+
+# Type alias for paths (same as filenaming.PathType but defined here to avoid circular import)
+PathType = CloudPath | Path
 
 NAIF_PCK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/"
 NAIF_LSK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/"
