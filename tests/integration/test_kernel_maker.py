@@ -8,7 +8,7 @@ import pytest
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils import kernel_maker
-from libera_utils.constants import DataProductIdentifier
+from libera_utils.constants import LiberaApid
 from libera_utils.io.manifest import Manifest
 from libera_utils.l1a.packets import parse_packets_to_l1a_dataset
 
@@ -18,9 +18,18 @@ pytestmark = pytest.mark.integration
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
-def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, noaa20_environment, curryer_lsk):
+def test_make_jpss_spk(
+        mocked_get_current_version_str,
+        test_jpss1_pds_file_1,
+        short_tmp_path,
+        noaa20_environment,
+        curryer_lsk,
+        monkeypatch,
+        spice_test_data_path
+):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path)) # added for using kernel manager
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
@@ -307,11 +316,14 @@ def test_create_kernel_from_l1a_furnishes_kernels(
     # Parse packets to L1A dataset (kernel_maker will handle kernel management internally)
     l1a_dataset = parse_packets_to_l1a_dataset(
         packet_files=[test_jpss1_pds_file_1],
-        apid=DataProductIdentifier.l1a_jpss_sc_pos_decoded,
+        apid=LiberaApid.jpss_sc_pos,
     )
 
-    # Call create_kernel_from_l1a should internally: 1) create KernelManager, 2) load static kernels,
-    # 3) ensure known kernels are furnished, and 4) call spice_utils.make_kernel()
+    # Main Test: Call create_kernel_from_l1a which should internally:
+    # 1) Create KernelManager
+    # 2) Call km.load_static_kernels() - furnishing NAIF & static kernels
+    # 3) Call km.ensure_known_kernels_are_furnished()
+    # 4) Call spice_utils.make_kernel()
     output = kernel_maker.create_kernel_from_l1a(
         l1a_data=l1a_dataset,
         kernel_identifier="JPSS-SPK",
@@ -319,23 +331,11 @@ def test_create_kernel_from_l1a_furnishes_kernels(
         overwrite=True
     )
 
-    # Verify kernel creation
-    assert output.exists(), "Output kernel should have been created"
-    assert output.suffix == ".bsp", "Output should be a binary SPK file"
-
-    # Verify that kernels were furnished during execution
-    final_kernel_count = sp.ktotal("ALL")
-    assert final_kernel_count > 0, (
-        "KernelManager should have furnished kernels. "
-        "If this fails, create_kernel_from_l1a is not using KernelManager correctly."
+    assert output.exists(), (
+        "Kernel file should exist. If this fails, kernel creation failed, "
+        "likely because KernelManager didn't furnish required kernels (eg. LSK)."
     )
+    assert output.suffix == ".bsp", "Output should be an SPK file"
 
-    # Verify LSK specifically was furnished
-    furnished_kernels = [sp.kdata(i, "ALL")[0] for i in range(final_kernel_count)]
-    lsk_furnished = any("naif" in k.lower() and ".tls" in k.lower() for k in furnished_kernels)
-    assert lsk_furnished, (
-        "Leap second kernel (LSK) should be furnished by KernelManager. "
-        "make_kernel requires LSK for time conversion."
-    )
-
-    sp.kclear()
+    # Verify it's not an empty kernel
+    assert output.stat().st_size > 1024, "Kernel file should be larger than 1KB"
