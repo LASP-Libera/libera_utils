@@ -3,7 +3,6 @@
 import argparse
 import logging
 import os
-import tempfile
 import warnings
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,18 +11,17 @@ from typing import cast
 import pandas as pd
 import xarray as xr
 from cloudpathlib import AnyPath
-from curryer import kernels, meta, spicetime
+from curryer import spicetime
 
 from libera_utils.config import config
 from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest
-from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.l1a import packets as libera_packets
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
-from libera_utils.logutil import configure_task_logging
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
+from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
@@ -326,7 +324,6 @@ def create_jpss_kernel_dataframe_from_csv(
     return df, utc_range_tuple
 
 
-
 def create_kernel_from_l1a(
     l1a_data: str | filenaming.PathType | xr.Dataset,
     kernel_identifier: str | DataProductIdentifier,
@@ -418,7 +415,6 @@ def create_kernel_from_l1a(
 
     # Get the kernel config file from the environment config
     kernel_config_file = Path(str(config.get(SPICE_DPI_TO_KERNEL_CONFIG_KEY_MAP[kernel_identifier])))
-
 
     # Create the kernel (kernels are already furnished by km.load_static_kernels() above)
     output_kernel = spice_utils.make_kernel(

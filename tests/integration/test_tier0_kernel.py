@@ -30,7 +30,7 @@ import pytest
 from curryer import meta, spicetime
 from curryer import spicierpy as sp
 
-from libera_utils import kernel_maker, time
+from libera_utils import time
 from libera_utils.config import config
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
