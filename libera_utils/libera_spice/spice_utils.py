@@ -7,11 +7,12 @@ import os
 import re
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from enum import Enum
 from pathlib import Path
 from typing import NamedTuple, cast
 
+import numpy as np
 import pandas as pd
 import requests
 import spiceypy as spice
@@ -608,9 +609,12 @@ def make_kernel(
     return output_kernel
 
 
-# SPICE Time Conversion Functions (moved from time.py to avoid circular imports)
+# SPICE Time Conversion Functions (moved from time.py)
 
-def et_2_timestamp(et: "float | Collection[float] | np.ndarray", fmt: str = "%Y%m%dT%H%M%S.%f") -> "str | Collection[str]":
+
+def et_2_timestamp(
+    et: "float | Collection[float] | np.ndarray", fmt: str = "%Y%m%dT%H%M%S.%f"
+) -> "str | Collection[str]":
     """
     Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
 
@@ -626,9 +630,6 @@ def et_2_timestamp(et: "float | Collection[float] | np.ndarray", fmt: str = "%Y%
     : Union[str, Collection[str]]
         Formatted timestamps
     """
-    from collections.abc import Collection
-    from datetime import datetime
-    import numpy as np
 
     datetime_objs = et_2_datetime(et)
 
@@ -654,18 +655,15 @@ def et_2_datetime(et: "float | Collection[float] | np.ndarray") -> "datetime | n
     : datetime.datetime or numpy.ndarray
         Object representation of ephemeris times.
     """
-    from collections.abc import Collection
-    from datetime import datetime
-    import numpy as np
 
     isoc_fmt = "%Y-%m-%dT%H:%M:%S.%f"
     isoc_prec = 6
 
     isoc_timestamp = et2utc_wrapper(et, "ISOC", isoc_prec)
     if isinstance(et, Collection):
-        return np.array([datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
+        return np.array([datetime.datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
 
-    return datetime.strptime(isoc_timestamp, isoc_fmt)
+    return datetime.datetime.strptime(isoc_timestamp, isoc_fmt)
 
 
 @ensure_spice(time_kernels_only=True)
@@ -711,7 +709,6 @@ def utc2et_wrapper(iso_str: "str | Collection[str]") -> "float | np.ndarray":
     : float or numpy.ndarray
         Ephemeris time
     """
-    import numpy as np
 
     if isinstance(iso_str, str):
         return spice.utc2et(iso_str)
@@ -737,7 +734,6 @@ def scs2e_wrapper(sclk_str: "str | Collection[str]") -> "float | np.ndarray":
     : Union[float, numpy.ndarray]
         Ephemeris time
     """
-    import numpy as np
 
     sc_id = config.get("JPSS_SC_ID")
     if isinstance(sclk_str, str):
@@ -764,13 +760,9 @@ def sce2s_wrapper(et: "float | Collection[float] | np.ndarray") -> "str | np.nda
     : Union[str, Collection[str]]
         SCLK string
     """
-    import numpy as np
-    from collections.abc import Collection
 
     sc_id = config.get("JPSS_SC_ID")
     if isinstance(et, Collection):
         return np.array([spice.sce2s(sc_id, t) for t in et])
 
     return spice.sce2s(sc_id, et)
-
-

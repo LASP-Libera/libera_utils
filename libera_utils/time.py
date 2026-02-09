@@ -18,7 +18,6 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import xarray as xr
 
-
 ISOT_REGEX = re.compile(
     r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
     r"[T|t]"
@@ -47,9 +46,9 @@ CCSDS_EPOCH = datetime.fromisoformat("1958-01-01")
 # ============================================================================
 
 from libera_utils.libera_spice.spice_utils import (  # noqa: E402
+    et2utc_wrapper,
     et_2_datetime,
     et_2_timestamp,
-    et2utc_wrapper,
     sce2s_wrapper,
     scs2e_wrapper,
     utc2et_wrapper,

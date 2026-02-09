@@ -150,7 +150,7 @@ class KernelManager:
                 sds_dir=config.get("GENERIC_KERNEL_DIR"),
                 mission_dir=config.get("LIBERA_KERNEL_DIR"),
             )
-            
+
             # Generate kernels from configuration files
             for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
                 config_path = Path(kernel_config_file)

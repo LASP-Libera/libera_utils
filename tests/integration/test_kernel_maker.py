@@ -19,17 +19,17 @@ pytestmark = pytest.mark.integration
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_make_jpss_spk(
-        mocked_get_current_version_str,
-        test_jpss1_pds_file_1,
-        short_tmp_path,
-        noaa20_environment,
-        curryer_lsk,
-        monkeypatch,
-        spice_test_data_path
+    mocked_get_current_version_str,
+    test_jpss1_pds_file_1,
+    short_tmp_path,
+    noaa20_environment,
+    curryer_lsk,
+    monkeypatch,
+    spice_test_data_path,
 ):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
-    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path)) # added for using kernel manager
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))  # added for using kernel manager
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
@@ -298,7 +298,12 @@ def test_make_azel_kernels_from_manifest(
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
 def test_create_kernel_from_l1a_furnishes_kernels(
-    mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, noaa20_environment, monkeypatch, spice_test_data_path
+    mocked_get_current_version_str,
+    test_jpss1_pds_file_1,
+    short_tmp_path,
+    noaa20_environment,
+    monkeypatch,
+    spice_test_data_path,
 ):
     """
     Test that create_kernel_from_l1a properly furnishes kernels via KernelManager: validating that kernel_maker uses
@@ -325,10 +330,7 @@ def test_create_kernel_from_l1a_furnishes_kernels(
     # 3) Call km.ensure_known_kernels_are_furnished()
     # 4) Call spice_utils.make_kernel()
     output = kernel_maker.create_kernel_from_l1a(
-        l1a_data=l1a_dataset,
-        kernel_identifier="JPSS-SPK",
-        output_dir=short_tmp_path,
-        overwrite=True
+        l1a_data=l1a_dataset, kernel_identifier="JPSS-SPK", output_dir=short_tmp_path, overwrite=True
     )
 
     assert output.exists(), (
