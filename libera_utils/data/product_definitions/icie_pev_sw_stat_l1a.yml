@@ -478,5 +478,3 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: Packet checksum
-
-
