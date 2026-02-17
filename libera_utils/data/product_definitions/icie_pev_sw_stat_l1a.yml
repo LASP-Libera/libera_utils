@@ -1,0 +1,482 @@
+attributes:
+  ProductID: PEV-SW-STAT-DECODED
+  algorithm_version: null
+  date_created: null
+  input_files: null
+coordinates:
+  PACKET_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp from ICIE main processor
+      valid_range: ["1900-01-01T00:00:00", "2100-01-01T00:00:00"]
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+variables:
+  VERSION:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet version
+      valid_range: [0, 7]
+  TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet type
+      valid_range: [0, 1]
+  SEC_HDR_FLAG:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Secondary header flag
+      valid_range: [0, 1]
+  PKT_APID:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet application ID
+      valid_range: [0, 2047]
+  SEQ_FLGS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Sequence flags
+      valid_range: [0, 3]
+  SRC_SEQ_CTR:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Source sequence counter
+      valid_range: [0, 16383]
+  PKT_LEN:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet length
+      units: bytes
+  PEV__TM_DAY_SW_STAT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Time Day
+  PEV__TM_MS_SW_STAT:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Time Ms
+  PEV__TM_US_SW_STAT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Time Us
+  PEV__REUSABLE_SPARE_8:
+    dtype: uint8
+    dimensions: ["packet"]
+  PEV__SW_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of successful commands
+  PEV__SW_CMD_RJCT_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of Commands Rejected by Libera PE - Vorago Processor
+  PEV__SW_CMD_RCV_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of received commands
+  PEV__SW_CMD_FMT_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of Bad Format Commands Received by Libera PE - Vorago Processor
+  PEV__SW_CMD_SUCC_OP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Last successful command opcode
+  PEV__SW_CMD_RJCT_OP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Last rejected command opcode
+  PEV__SW_CMD_FAIL_CODE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Command failure code
+  PEV__SW_DES_OVR_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of DES tasks that Overran in Libera PE - Vorago Processor
+  PEV__REUSABLE_SPARE_2:
+    dtype: uint8
+    dimensions: ["packet"]
+  PEV__SW_BD_PASS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Indication of Board Passivation for Libera PE - Vorago Processor
+  PEV__SW_IMG_IDX:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Current image index from flash
+  PEV__SW_TIME_FREE_ST:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Indication of Bad Time Sync by Libera PE - Vorago Processor
+  PEV__SW_TBL_LD_ST:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Table loading state
+  PEV__SW_MEM_OP_TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Operation Type
+  PEV__REUSABLE_SPARE_1:
+    dtype: uint8
+    dimensions: ["packet"]
+  PEV__SW_PWR_ST_WFOV:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Power States wfov
+  PEV__SW_PWR_ST_CFPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Power States cfpe
+  PEV__SW_PWR_ST_FPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Power States fpe
+  PEV__SW_PWR_ST_LWC:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Power States lwc
+  PEV__SW_AXIS_AWU_ST_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD AWU loop state
+  PEV__SW_AXIS_AWU_ST_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM AWU loop state
+  PEV__SW_AXIS_ENC_MD_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Encoder Query Mode
+  PEV__SW_AXIS_ENC_MD_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Encoder Query Mode
+  PEV__SW_AXIS_ENC_ST_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Encoder State
+  PEV__SW_AXIS_ENC_ST_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Encoder State
+  PEV__SW_AXIS_MTR_ST_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Motor State
+  PEV__SW_AXIS_MTR_ST_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Motor State
+  PEV__SW_STEP_POS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Stepper Motor Position (Flag Over/Under Counts)
+  PEV__SW_LWC_BB_SEL:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Black Body Selection
+  PEV__SW_LWC_HTR_ST:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Heater Enable
+  PEV__SW_STEP_CYCLE_ST:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Stepper Duty Cycle State Machine
+  PEV__SW_HALL_POS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Monitors on Hall Effects Sesnsor for Solar Shutter
+  PEV__SW_STEP_INIT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Init State
+  PEV__SW_MSG_RCV_CNT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of received time messages
+  PEV__SW_PPS_RCV_CNT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of received time pulses
+  PEV__SW_MEM_XSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Running memory checksum
+  PEV__ADC_SD_MTR1_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Solar Diffuser Temp 1
+      units: C
+  PEV__ADC_SD_MTR2_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Solar Diffuser Temp 2
+      units: C
+  PEV__ADC_RSM_MTR1_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Temp 1
+      units: C
+  PEV__ADC_RSM_MTR2_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Temp 2
+      units: C
+  PEV__ADC_SS_MTR1_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Solar Shutter Temp 1
+      units: C
+  PEV__ADC_SS_MTR2_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Solar Shutter Temp 2
+      units: C
+  PEV__ADC_GND1:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE Ground Vmon 1
+  PEV__ADC_GND2:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE Ground Vmon 2
+  PEV__ADC_VOR_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Vorago Temp
+      units: C
+  PEV__REUSABLE_SPARE_16:
+    dtype: uint16
+    dimensions: ["packet"]
+  PEV__SW_AXIS_CMD_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Axis Command Mode
+  PEV__SW_AXIS_CMD_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Axis Command Mode
+  PEV__REUSABLE_SPARE_4:
+    dtype: uint8
+    dimensions: ["packet"]
+  PEV__SW_LWC_ALIVE_ST:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Aliveness
+  PEV__SW_AXIS_FAULT_ST_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Solar Diffuser Fault
+  PEV__SW_AXIS_FAULT_ST_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Fault
+  PEV__SW_AXIS_FLT_ERR_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Angle Error Fault
+  PEV__SW_AXIS_FLT_TQ_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Torque Fault
+  PEV__SW_AXIS_FLT_RT_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Rate Fault
+  PEV__SW_AXIS_FLT_ANG_SD:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Angle Fault
+  PEV__SW_AXIS_FLT_ERR_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Angle Error Fault
+  PEV__SW_AXIS_FLT_TQ_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Torque Fault
+  PEV__SW_AXIS_FLT_RT_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Rate Fault
+  PEV__SW_AXIS_FLT_ANG_RSM:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Angle Fault
+  PEV__SW_AXIS_CMD_PCG0_RSM:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM PCG Command 0
+  PEV__SW_AXIS_CMD_PCG1_RSM:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM PCG Command 1
+  PEV__SW_AXIS_CMD_PCG0_SD:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD PCG Command 0
+  PEV__SW_AXIS_CMD_PCG1_SD:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD PCG Command 1
+  PEV__SW_AXIS_ANG_MEAS_RSM:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Measured Angle Unwrapped (deg)
+      units: deg
+  PEV__SW_AXIS_RT_MEAS_RSM:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: RSM Measured Rate (deg)
+  PEV__SW_AXIS_ANG_MEAS_SD:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Measured Angle Unwrapped (deg)
+      units: deg
+  PEV__SW_AXIS_RT_MEAS_SD:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: SD Measured Rate (deg)
+  PEV__SW_LWC_HTR_PWM:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Open Loop PWM
+  PEV__SW_LWC_BB1_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC BB1 PRT
+      units: C
+  PEV__SW_LWC_BB2_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC BB2 PRT
+      units: C
+  PEV__SW_LWC_HTR_SETPNT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Heater Setpoint
+  PEV__SW_LWC_CMD_SUCC_CNT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Cmd Succ Cnt
+  PEV__SW_LWC_PWBA_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Long Wave Calibration FPGA Temperature
+  PEV__SW_LWC_HTR_PWM_DUTY:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: LWC Heater PWM Duty Cycle
+  PEV__SW_AXIS_EN_CSEC_RSM:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Counter for consecutive encoder responses with errors
+  PEV__SW_AXIS_EN_CSEC_SD:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Counter for consecutive encoder responses with errors
+  PEV__PL_ALIVE_CNT_LWC:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Dead to Alive Count for LWC
+  PEV__PL_DEAD_CNT_LWC:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Alive to Dead Count for LWC
+  PEV__SW_STAT_CHECKSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet checksum
+
+
