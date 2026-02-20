@@ -469,12 +469,12 @@ class LiberaApid(IntEnum):
     icie_seq_hk = 1017
     icie_fp_hk = 1019
     icie_log_msg = 1026
-    icie_rad_full = 1035 #TODO ADD THIS
+    icie_rad_full = 1035
     icie_rad_sample = 1036
     icie_axis_hk = 1037
     icie_wfov_hk = 1038
     icie_wfov_sci = 1040
-    icie_cal_full = 1043 #TODO ADD THIS
+    icie_cal_full = 1043
     icie_cal_sample = 1044
     icie_axis_sample = 1048
     icie_wfov_resp = 1049
