@@ -39,8 +39,8 @@
   "LIBERA_GLOBAL_PRODUCT_ATTRIBUTES_PATH": "{LIBERA_UTILS_DATA_DIR}/static_project_metadata.yml",
   "LIBERA_L1A_PROCESSING_CONFIGS_PATH": "{LIBERA_UTILS_DATA_DIR}/l1a_processing_configs.yml",
   "LIBERA_L1A_PRODUCT_DEFINITIONS_BY_APID": {
-    "1000": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_pev_sw_stat_l1a.yml",
-    "1002": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_pec_sw_stat_l1a.yml",
+    "1000": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/pev_sw_stat_l1a.yml",
+    "1002": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/pec_sw_stat_l1a.yml",
     "1048": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_axis_sample_l1a.yml",
     "1051": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_crit_hk_l1a.yml",
     "1057": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_nom_hk_l1a.yml",

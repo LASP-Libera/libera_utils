@@ -74,7 +74,7 @@
 
 # PEV Software Status Packet: Calibration and status telemetry
 pev_sw_stat:
-  packet_apid: "icie_pev_sw_stat"
+  packet_apid: "pev_sw_stat"
   packet_time_fields:
     day_field: "PEV__TM_DAY_SW_STAT"
     ms_field: "PEV__TM_MS_SW_STAT"
@@ -84,7 +84,7 @@ pev_sw_stat:
 
 # PEC Software Status Packet: Calibration and status telemetry
 pec_sw_stat:
-  packet_apid: "icie_pec_sw_stat"
+  packet_apid: "pec_sw_stat"
   packet_time_fields:
     day_field: "PEC__TM_DAY_SW_STAT"
     ms_field: "PEC__TM_MS_SW_STAT"

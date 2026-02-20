@@ -110,8 +110,8 @@ class DataProductIdentifier(StrEnum):
     l0_icie_wfov_sci_pds = ("WFOV-SCI-PDS", DataLevel.L0)
     # Azimuth and Elevation encoder sample data in 4Hz packets with 50 samples per packet for 200Hz samples
     l0_icie_axis_sample_pds = ("AXIS-SAMPLE-PDS", DataLevel.L0)
-    l0_icie_pev_sw_stat_pds = ("PEV-SW-STAT-PDS", DataLevel.L0)
-    l0_icie_pec_sw_stat_pds = ("PEC-SW-STAT-PDS", DataLevel.L0)
+    l0_pev_sw_stat_pds = ("PEV-SW-STAT-PDS", DataLevel.L0)
+    l0_pec_sw_stat_pds = ("PEC-SW-STAT-PDS", DataLevel.L0)
     l0_icie_sw_stat_pds = ("SW-STAT-PDS", DataLevel.L0)
     l0_icie_seq_hk_pds = ("SEQ-HK-PDS", DataLevel.L0)
     l0_icie_fp_hk_pds = ("FP-HK-PDS", DataLevel.L0)
@@ -136,8 +136,8 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_rad_sample_decoded = ("RAD-SAMPLE-DECODED", DataLevel.L1A)
     l1a_icie_wfov_sci_decoded = ("WFOV-SCI-DECODED", DataLevel.L1A)
     l1a_icie_axis_sample_decoded = ("AXIS-SAMPLE-DECODED", DataLevel.L1A)
-    l1a_icie_pev_sw_stat_decoded = ("PEV-SW-STAT-DECODED", DataLevel.L1A)
-    l1a_icie_pec_sw_stat_decoded = ("PEC-SW-STAT-DECODED", DataLevel.L1A)
+    l1a_pev_sw_stat_decoded = ("PEV-SW-STAT-DECODED", DataLevel.L1A)
+    l1a_pec_sw_stat_decoded = ("PEC-SW-STAT-DECODED", DataLevel.L1A)
     l1a_icie_sw_stat_decoded = ("SW-STAT-DECODED", DataLevel.L1A)
     l1a_icie_seq_hk_decoded = ("SEQ-HK-DECODED", DataLevel.L1A)
     l1a_icie_fp_hk_decoded = ("FP-HK-DECODED", DataLevel.L1A)
@@ -463,18 +463,18 @@ class LiberaApid(IntEnum):
     jpss_sc_pos = 11
 
     # Libera packets. Enum names are uppercased versions of the FSW
-    icie_pev_sw_stat = 1000
-    icie_pec_sw_stat = 1002
+    pev_sw_stat = 1000
+    pec_sw_stat = 1002
     icie_sw_stat = 1013
     icie_seq_hk = 1017
     icie_fp_hk = 1019
     icie_log_msg = 1026
-    icie_rad_full = 1035
+    icie_rad_full = 1035 #TODO ADD THIS
     icie_rad_sample = 1036
     icie_axis_hk = 1037
     icie_wfov_hk = 1038
     icie_wfov_sci = 1040
-    icie_cal_full = 1043
+    icie_cal_full = 1043 #TODO ADD THIS
     icie_cal_sample = 1044
     icie_axis_sample = 1048
     icie_wfov_resp = 1049
