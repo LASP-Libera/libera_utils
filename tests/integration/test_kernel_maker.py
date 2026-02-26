@@ -15,9 +15,17 @@ pytestmark = pytest.mark.integration
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
-def test_make_jpss_spk(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
+def test_make_jpss_spk(
+    mocked_get_current_version_str,
+    test_jpss1_pds_file_1,
+    short_tmp_path,
+    curryer_lsk,
+    monkeypatch,
+    spice_test_data_path,
+):
     """Test creating a SPK from packets"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))  # added for using kernel manager
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
@@ -281,3 +289,38 @@ def test_make_azel_kernels_from_manifest(
     assert (output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250809T171756_20250809T171904_R25056154513.bc").exists()
     assert (output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250809T171756_20250809T171904_R25056154513.bc").exists()
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
+
+
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_create_kernel_from_l1a_furnishes_kernels(
+    mocked_get_current_version_str,
+    test_l1a_sc_pos_product_file,
+    short_tmp_path,
+    monkeypatch,
+    spice_test_data_path,
+):
+    """
+    Test that create_kernel_from_l1a properly furnishes kernels via KernelManager: validating that kernel_maker uses
+    kernel_manager to furnish required kernels before calling spice_utils.make_kernel().
+    """
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+
+    # Main Test: Create Kernel from existing L1A, which should internally:
+    # 1) Create KernelManager
+    # 2) Call km.load_static_kernels() - furnishing NAIF & static kernels
+    # 3) Call km.ensure_known_kernels_are_furnished()
+    # 4) Call spice_utils.make_kernel()
+    output = kernel_maker.create_kernel_from_l1a(
+        l1a_data=test_l1a_sc_pos_product_file, kernel_identifier="JPSS-SPK", output_dir=short_tmp_path, overwrite=True
+    )
+
+    assert output.exists(), (
+        "Kernel file should exist. If this fails, kernel creation failed, "
+        "likely because KernelManager didn't furnish required kernels (e.g. LSK)."
+    )
+    assert output.suffix == ".bsp", "Output should be an SPK file"
+
+    # Verify it's not an empty kernel
+    assert output.stat().st_size > 1024, "Kernel file should be larger than 1KB"

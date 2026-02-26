@@ -18,9 +18,9 @@ from cloudpathlib import AnyPath
 from curryer import meta
 from curryer import spicierpy as sp
 
-from libera_utils import kernel_maker
 from libera_utils.config import config
 from libera_utils.io.caching import get_local_short_temp_dir, validate_path_length
+from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.spice_utils import (
     NAIF_DE_REGEX,
     NAIF_HIGH_PREC_PCK_REGEX,
@@ -142,6 +142,15 @@ class KernelManager:
             instrument_kernel_path = Path(config.get("LIBERA_KERNEL_INSTRUMENT"))
             validate_path_length(temp_path / instrument_kernel_path.name, KernelManager._max_path_length)
 
+            # Load meta kernel details. Required to auto-map frame IDs.
+            meta_kernel_file = Path(config.get("LIBERA_KERNEL_META"))
+            _ = meta.MetaKernel.from_json(
+                meta_kernel_file,
+                relative=False,
+                sds_dir=config.get("GENERIC_KERNEL_DIR"),
+                mission_dir=config.get("LIBERA_KERNEL_DIR"),
+            )
+
             # Generate kernels from configuration files
             for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
                 config_path = Path(kernel_config_file)
@@ -152,8 +161,8 @@ class KernelManager:
                 logger.debug(f"Copying kernel config {config_path} to temp directory {temp_path}")
                 shutil.copy(config_path, temp_path / config_path.name)
 
-                # Generate kernel
-                kernel_maker.make_kernel(temp_path / config_path.name, temp_path, input_data=None)
+                # Generate kernel (kernels furnished by load_naif_kernels above)
+                spice_utils.make_kernel(temp_path / config_path.name, temp_path, input_data=None)
 
             # Verify kernels were created
             created_files = list(temp_path.iterdir())

@@ -71,12 +71,23 @@ def test_create_kernel_from_packets(
         (datetime.fromisoformat("2020-01-01T00:00:00"), datetime.fromisoformat("2020-01-01T23:59:59")),
     ),
 )
-@mock.patch("libera_utils.kernel_maker.make_kernel", return_value=AnyPath("/fake/kernel.spk"))
+@mock.patch("libera_utils.libera_spice.spice_utils.make_kernel", return_value=AnyPath("/fake/kernel.spk"))
+@mock.patch("libera_utils.kernel_maker.KernelManager")
 def test_create_kernel_from_l1a(
-    mock_make_kernel, mock_create_kernel_dataframe_from_l1a, mock_version, kernel_dpi, config_key, out_ext
+    mock_kernel_manager_class,
+    mock_make_kernel,
+    mock_create_kernel_dataframe_from_l1a,
+    mock_version,
+    kernel_dpi,
+    config_key,
+    out_ext,
 ):
     """Test the kernel maker create from L1A function"""
     kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+
+    # Mock KernelManager instance
+    mock_km_instance = mock.Mock()
+    mock_kernel_manager_class.return_value = mock_km_instance
 
     out = kernel_maker.create_kernel_from_l1a(
         l1a_data=xr.Dataset(),
@@ -84,6 +95,12 @@ def test_create_kernel_from_l1a(
         output_dir="/fake/dropbox",
         overwrite=False,
     )
+
+    # Assert KernelManager was instantiated and methods were called
+    mock_kernel_manager_class.assert_called_once()
+    mock_km_instance.load_static_kernels.assert_called_once()
+    mock_km_instance.ensure_known_kernels_are_furnished.assert_called_once()
+
     # Assert call to create the Curryer data frame
     mock_create_kernel_dataframe_from_l1a.assert_called_once()
     # Assert call to make the kernel (call out to Curryer)

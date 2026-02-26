@@ -18,6 +18,8 @@ from curryer.compute import spatial
 
 from libera_utils import kernel_maker
 from libera_utils.config import config
+from libera_utils.libera_spice import spice_utils
+from libera_utils.libera_spice.kernel_manager import KernelManager
 
 # Mark test module as integration tests
 pytestmark = pytest.mark.integration
@@ -93,14 +95,24 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
 
 @mock.patch.object(kernel_maker.xr, "open_dataset", return_value=mock.MagicMock())
 def test_geolocate_earth_target(
-    mock_open_dataset, curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch
+    mock_open_dataset,
+    curryer_lsk,
+    short_tmp_path,
+    spice_test_data_path,
+    test_data_path,
+    monkeypatch,
 ):
     """Integration test for an Earth Target scenario."""
+    # Point GENERIC_KERNEL_DIR at test data so load_static_kernels() can find sds_kernels.
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    km = KernelManager()
+    km.load_static_kernels()
+
     # Generate static SPK offset kernels.
     generated_kernels = []
     for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
         assert Path(kernel_config_file).is_file(), kernel_config_file
-        generated_kernels.append(kernel_maker.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
+        generated_kernels.append(spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
 
     # Generate dynamic kernels from non-standard input files.
     input_sc_file = test_data_path / "tier1_geo" / "JPSS-4_Fixed_Ephemeris_And_Attitude.csv"

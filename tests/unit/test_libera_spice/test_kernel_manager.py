@@ -110,7 +110,7 @@ class TestTemporaryDirectoryManagement:
         km._delete_temporary_static_kernels()
 
     @patch("libera_utils.config.config.get")
-    @patch("libera_utils.kernel_maker.make_kernel")
+    @patch("libera_utils.libera_spice.spice_utils.make_kernel")
     def test_cleanup_on_failed_kernel_creation(self, mock_make_kernel, mock_config_get, tmp_path):
         """Should clean up temp directory if kernel creation fails."""
         km = KernelManager(temp_dir_base=tmp_path)
@@ -245,7 +245,7 @@ class TestStaticKernelLoading:
         mock_create.assert_not_called()
 
     @patch("libera_utils.config.config.get")
-    @patch("libera_utils.kernel_maker.make_kernel")
+    @patch("libera_utils.libera_spice.spice_utils.make_kernel")
     def test_load_static_cleans_up_on_failure(self, mock_make_kernel, mock_config_get, tmp_path):
         """Should clean up temp directory if loading fails."""
         km = KernelManager(temp_dir_base=tmp_path)
