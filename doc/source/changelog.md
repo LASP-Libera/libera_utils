@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.5.4
+
+- BUGFIX: Implement KernelManager for Make_Kernel, furnishing necessary kernels
+- REFACTOR: Port Make_Kernel and SPICE-based time conversions to spice_utils to avoid circular imports
+
 ## 5.5.2
 
 - BUGFIX: Improve resiliency of JSON logging system for cloudwatch logs

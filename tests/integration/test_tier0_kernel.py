@@ -30,8 +30,10 @@ import pytest
 from curryer import meta, spicetime
 from curryer import spicierpy as sp
 
-from libera_utils import kernel_maker, time
+from libera_utils import time
 from libera_utils.config import config
+from libera_utils.libera_spice import spice_utils
+from libera_utils.libera_spice.kernel_manager import KernelManager
 
 # Mark test module as integration tests
 pytestmark = pytest.mark.integration
@@ -76,10 +78,15 @@ def noaa20_azel_data(test_data_path):
     return input_azel_data
 
 
-def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path):
+def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path, monkeypatch):
     """Tier-0 test for creating static kernels"""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("mkspk")
+
+    # Point GENERIC_KERNEL_DIR at test data so load_static_kernels() can find sds_kernels.
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    km = KernelManager()
+    km.load_static_kernels()
 
     # Create the static kernels from the JSONs definitions.
     fixed_kernel_configs = config.get("LIBERA_KERNEL_STATIC_CONFIGS")
@@ -88,7 +95,7 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
     generated_kernels = []
     for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
         assert Path(kernel_config_file).is_file(), kernel_config_file
-        generated_kernels.append(kernel_maker.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
+        generated_kernels.append(spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
 
     found_kernels = sorted(short_tmp_path.glob("*"))
     assert len(found_kernels) == 8
@@ -134,19 +141,29 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
 
 
 def test_make_spacecraft_kernels(
-    noaa20_environment, curryer_lsk, noaa20_spacecraft_data, short_tmp_path, spice_test_data_path
+    noaa20_environment,
+    curryer_lsk,
+    noaa20_spacecraft_data,
+    short_tmp_path,
+    spice_test_data_path,
+    monkeypatch,
 ):
     """Tier-0 test for creating spacecraft kernels"""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("mkspk")
     assert shutil.which("msopck")
 
+    # Point GENERIC_KERNEL_DIR at test data so load_static_kernels() can find sds_kernels.
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    km = KernelManager()
+    km.load_static_kernels()
+
     # Create the dynamic kernel from the JSONs definition and given data.
     generated_kernels = []
     for kernel_config_file in [config.get("LIBERA_KERNEL_SC_SPK_CONFIG"), config.get("LIBERA_KERNEL_SC_CK_CONFIG")]:
         assert Path(kernel_config_file).is_file(), kernel_config_file
         generated_kernels.append(
-            kernel_maker.make_kernel(kernel_config_file, short_tmp_path, input_data=noaa20_spacecraft_data)
+            spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=noaa20_spacecraft_data)
         )
     assert len(sorted(short_tmp_path.glob("*"))) == 2
 
@@ -201,18 +218,28 @@ def test_make_spacecraft_kernels(
 
 
 def test_make_spacecraft_azel_kernels(
-    noaa20_environment, curryer_lsk, noaa20_azel_data, short_tmp_path, spice_test_data_path
+    noaa20_environment,
+    curryer_lsk,
+    noaa20_azel_data,
+    short_tmp_path,
+    spice_test_data_path,
+    monkeypatch,
 ):
     """Tier-0 test for creating pointing kernels"""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
+
+    # Point GENERIC_KERNEL_DIR at test data so load_static_kernels() can find sds_kernels.
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    km = KernelManager()
+    km.load_static_kernels()
 
     # Create the dynamic kernel from the JSONs definition and given data.
     generated_kernels = []
     for kernel_config_file in [config.get("LIBERA_KERNEL_AZ_CK_CONFIG"), config.get("LIBERA_KERNEL_EL_CK_CONFIG")]:
         assert Path(kernel_config_file).is_file(), kernel_config_file
         generated_kernels.append(
-            kernel_maker.make_kernel(kernel_config_file, short_tmp_path, input_data=noaa20_azel_data)
+            spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=noaa20_azel_data)
         )
     assert len(sorted(short_tmp_path.glob("*"))) == 2
 

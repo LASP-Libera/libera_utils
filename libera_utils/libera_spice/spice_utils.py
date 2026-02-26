@@ -1,23 +1,35 @@
-"""Modules for SPICE kernel creation, management, and usage"""
+"""Core SPICE utilities for kernel creation, inspection, and time conversions.
+
+This module is home to the core SPICE and kernel utilities in libera_utils, providing the ``make_kernel()``
+wrapper around Curryer's KernelCreator, kernel file caching and furnishing via ``KernelFileCache``,
+the ``ensure_spice`` decorator, SPICE-based time conversion wrappers, and kernel inspection helpers.
+"""
 
 import datetime
 import functools
 import logging
 import os
 import re
+import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
+import numpy as np
+import pandas as pd
 import requests
 import spiceypy as spice
-from cloudpathlib import S3Path
+from cloudpathlib import AnyPath, CloudPath, S3Path
+from curryer import kernels
 from spiceypy.utils.exceptions import NotFoundError, SpiceyError
 
 from libera_utils.config import config
 from libera_utils.io import caching, smart_open
+
+# Type alias for paths (same as filenaming.PathType but defined here to avoid circular import)
+PathType = CloudPath | Path
 
 NAIF_PCK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/"
 NAIF_LSK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/"
@@ -538,3 +550,232 @@ def ls_all_kernel_coverage(as_datetime: bool = True, verbose: bool = False) -> d
                 utc_tuples.append((left_utc, right_utc))
             result[file] = utc_tuples
     return result
+
+
+def make_kernel(
+    config_file: str | Path,
+    output_kernel: str | PathType,
+    input_data: pd.DataFrame | None = None,
+    overwrite: bool = False,
+    append: bool | int = False,
+) -> PathType:
+    """Create a binary SPICE kernel (CK or SPK) from a JSON configuration file and input data.
+
+    This is a low-level utility that wraps Curryer's KernelCreator, which drives the
+    NAIF command-line tools ``mkspk`` (for SPK ephemeris kernels) and ``msopck``
+    (for CK attitude kernels). It is used for creating binary CK and SPK kernels,
+    including fixed-offset static SPKs and dynamic CK/SPK kernels.
+
+    This function does NOT create text kernels such as LSKs (.tls), PCKs (.tpc),
+    frame kernels (.tf), instrument kernels (.ti), or clock kernels (.tsc). Those
+    are plain-text files managed separately.
+
+    Callers are responsible for ensuring required kernels (especially LSK and any
+    relevant frame kernels) are furnished before calling this function.
+
+    Parameters
+    ----------
+    config_file : str | Path
+        JSON configuration file defining how to create the kernel.
+    output_kernel : str | PathType
+        Output directory or file to create the kernel. If a directory, the
+        file name will be based on the config_file, but with the SPICE file
+        extension.
+    input_data : pd.DataFrame | None
+        pd.DataFrame containing kernel input data. If not supplied, the config
+        is assumed to reference an input data file.
+    overwrite : bool
+        Option to overwrite an existing file.
+    append : bool | int
+        Option to append to an existing file. Anything truthy will be treated as True.
+
+    Returns
+    -------
+    PathType
+        Output kernel file path
+
+    Notes
+    -----
+    This function requires a leap second kernel (LSK) to be furnished by SPICE
+    before it can convert times. Callers should use KernelManager.load_naif_kernels()
+    or similar to ensure kernels are ready before calling this function.
+    """
+    output_kernel = cast(PathType, AnyPath(output_kernel))
+    config_file = Path(config_file)  # This is always a local path because the configs are package data
+
+    # Create the kernels from the JSONs definitions.
+    creator = kernels.create.KernelCreator(overwrite=overwrite, append=bool(append))
+
+    with tempfile.TemporaryDirectory(prefix="/tmp/") as tmp_dir:  # nosec B108
+        tmp_path = Path(tmp_dir)
+        if output_kernel.is_file():
+            tmp_path = tmp_path / output_kernel.name
+
+        out_fn = creator.write_from_json(config_file, output_kernel=tmp_path, input_data=input_data)
+
+        # Use smart copy here to avoiding using two nested smart_open calls
+        # one call would be to open the newly created file, and one to open the desired location
+        if output_kernel.is_dir():
+            output_kernel = output_kernel / out_fn.name
+        smart_open.smart_copy_file(out_fn, output_kernel)
+        logger.info("Kernel copied to %s", output_kernel)
+    return output_kernel
+
+
+# SPICE Time Conversion Functions (moved from time.py)
+
+
+def et_2_timestamp(
+    et: "float | Collection[float] | np.ndarray", fmt: str = "%Y%m%dT%H%M%S.%f"
+) -> "str | Collection[str]":
+    """
+    Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
+
+    Parameters
+    ----------
+    et: Union[float, Collection[float], numpy.ndarray]
+        Ephemeris Time to be converted.
+    fmt: str, Optional
+        Format string as defined by the datetime.strftime() function.
+
+    Returns
+    -------
+    : Union[str, Collection[str]]
+        Formatted timestamps
+    """
+
+    datetime_objs = et_2_datetime(et)
+
+    if isinstance(datetime_objs, Collection):
+        time_out = np.array([t.strftime(fmt) for t in datetime_objs])
+    else:
+        time_out = datetime_objs.strftime(fmt)
+
+    return time_out
+
+
+def et_2_datetime(et: "float | Collection[float] | np.ndarray") -> "datetime | np.ndarray":
+    """
+    Convert ephemeris time to a python datetime object by first converting it to a UTC timestamp.
+
+    Parameters
+    ----------
+    et: float or Collection or numpy.ndarray
+        Ephemeris times to be converted.
+
+    Returns
+    -------
+    : datetime.datetime or numpy.ndarray
+        Object representation of ephemeris times.
+    """
+
+    isoc_fmt = "%Y-%m-%dT%H:%M:%S.%f"
+    isoc_prec = 6
+
+    isoc_timestamp = et2utc_wrapper(et, "ISOC", isoc_prec)
+    if isinstance(et, Collection):
+        return np.array([datetime.datetime.strptime(s, isoc_fmt) for s in isoc_timestamp])
+
+    return datetime.datetime.strptime(isoc_timestamp, isoc_fmt)
+
+
+@ensure_spice(time_kernels_only=True)
+def et2utc_wrapper(et: "float | Collection[float] | np.ndarray", fmt: str, prec: int) -> "str | Collection[str]":
+    """
+    Convert ephemeris times to UTC ISO strings.
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/et2utc_c.html
+    Decorated wrapper for spiceypy.et2utc that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    et: Union[float, Collection[float], numpy.ndarray]
+        The ephemeris time value to be converted to UTC.
+    fmt: str
+        Format string defines the format of the output time string. See CSPICE docs.
+    prec: int
+        Number of digits of precision for fractional seconds.
+
+    Returns
+    -------
+    : Union[numpy.ndarray, str]
+        UTC time string(s)
+    """
+    return spice.et2utc(et, fmt, prec)
+
+
+@ensure_spice(time_kernels_only=True)
+def utc2et_wrapper(iso_str: "str | Collection[str]") -> "float | np.ndarray":
+    """
+    Convert UTC ISO strings to ephemeris times.
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/utc2et_c.html
+    Decorated wrapper for spiceypy.utc2et that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    iso_str: Union[str, Collection[str]]
+        The UTC to convert to ephemeris time
+
+    Returns
+    -------
+    : float or numpy.ndarray
+        Ephemeris time
+    """
+
+    if isinstance(iso_str, str):
+        return spice.utc2et(iso_str)
+
+    return np.array([spice.utc2et(s) for s in iso_str])
+
+
+@ensure_spice(time_kernels_only=True)
+def scs2e_wrapper(sclk_str: "str | Collection[str]") -> "float | np.ndarray":
+    """
+    Convert SCLK strings to ephemeris time.
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/scs2e_c.html
+    Decorated wrapper for spiceypy.scs2e that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    sclk_str: Union[str, Collection[str]]
+        Spacecraft clock string
+
+    Returns
+    -------
+    : Union[float, numpy.ndarray]
+        Ephemeris time
+    """
+
+    sc_id = config.get("JPSS_SC_ID")
+    if isinstance(sclk_str, str):
+        return spice.scs2e(sc_id, sclk_str)
+
+    return np.array([spice.scs2e(sc_id, s) for s in sclk_str])
+
+
+@ensure_spice(time_kernels_only=True)
+def sce2s_wrapper(et: "float | Collection[float] | np.ndarray") -> "str | np.ndarray":
+    """
+    Convert ephemeris times to SCLK string
+    https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sce2s_c.html
+    Decorated wrapper for spiceypy.sce2s that will automatically furnish the latest metakernel and retry
+    if the first call raises an exception.
+
+    Parameters
+    ----------
+    et: Union[float, Collection[float], numpy.ndarray]
+        Ephemeris time
+
+    Returns
+    -------
+    : Union[str, Collection[str]]
+        SCLK string
+    """
+
+    sc_id = config.get("JPSS_SC_ID")
+    if isinstance(et, Collection):
+        return np.array([spice.sce2s(sc_id, t) for t in et])
+
+    return spice.sce2s(sc_id, et)
