@@ -79,7 +79,7 @@ pev_sw_stat:
     day_field: "PEV__TM_DAY_SW_STAT"
     ms_field: "PEV__TM_MS_SW_STAT"
     us_field: "PEV__TM_US_SW_STAT"
-  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_definition_config_key: "LIBERA_PEV_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 
 # PEC Software Status Packet: Calibration and status telemetry
@@ -89,7 +89,7 @@ pec_sw_stat:
     day_field: "PEC__TM_DAY_SW_STAT"
     ms_field: "PEC__TM_MS_SW_STAT"
     us_field: "PEC__TM_US_SW_STAT"
-  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_definition_config_key: "LIBERA_PEC_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 
 # Axis Sample Packet: Azimuth and elevation encoder measurements
