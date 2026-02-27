@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.5.5
+
+- FEAT: Adding support for APID 1000 and 1002 to support calibration packets
+
 ## 5.5.2
 
 - BUGFIX: Improve resiliency of JSON logging system for cloudwatch logs
