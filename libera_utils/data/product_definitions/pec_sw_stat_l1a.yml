@@ -15,6 +15,7 @@ coordinates:
       calendar: standard
       dtype: int64
 variables:
+  # CCSDS Primary Header
   VERSION:
     dtype: uint8
     dimensions: ["packet"]
@@ -57,6 +58,7 @@ variables:
     attributes:
       long_name: Packet length
       units: bytes
+  # Timestamps
   PEC__TM_DAY_SW_STAT:
     dtype: uint16
     dimensions: ["packet"]
@@ -72,9 +74,13 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: Time Us
-  PEC__REUSABLE_SPARE_8:
+
+  # Header Spares
+  REUSABLE_SPARE_8:
     dtype: uint8
     dimensions: ["packet"]
+
+  # Command Statistics
   PEC__SW_CMD_SUCC_CNT:
     dtype: uint8
     dimensions: ["packet"]
@@ -95,33 +101,38 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: Number of Bad Format Commands Received by Libera PE - Cobham Processor
+
+  # Last Command Status (Enumerated)
   PEC__SW_CMD_SUCC_OP:
-    dtype: uint16
+    dtype: "|S7"
     dimensions: ["packet"]
     attributes:
       long_name: Last successful command opcode
   PEC__SW_CMD_RJCT_OP:
-    dtype: uint16
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: Last rejected command opcode
   PEC__SW_CMD_FAIL_CODE:
-    dtype: uint8
+    dtype: "|S7"
     dimensions: ["packet"]
     attributes:
       long_name: Command failure code
+
   PEC__SW_DES_OVR_CNT:
     dtype: uint8
     dimensions: ["packet"]
     attributes:
       long_name: Number of DES tasks that Overran in Libera PE - Cobham Processor
+
+  # Status Flags (Enumerated)
   PEC__SW_SAS_ST:
-    dtype: uint8
+    dtype: "|S5"
     dimensions: ["packet"]
     attributes:
       long_name: SAS Current State
   PEC__SW_BD_PASS:
-    dtype: uint8
+    dtype: "|S2"
     dimensions: ["packet"]
     attributes:
       long_name: Indication of Board Passivation for Libera PE - Cobham Processor
@@ -131,53 +142,60 @@ variables:
     attributes:
       long_name: Current image index from flash
   PEC__SW_TIME_FREE_ST:
-    dtype: uint8
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: Indication of Bad Time Sync by Libera PE - Cobham Processor
   PEC__SW_TBL_LD_ST:
-    dtype: uint8
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: Table loading state
+
+  # Heater Status (Enumerated)
   PEC__SW_HTR_ST_RCM_PX:
-    dtype: uint8
+    dtype: "|S3"
     dimensions: ["packet"]
     attributes:
       long_name: Heater State for RCM P
   PEC__SW_MEM_OP_TYPE:
-    dtype: uint8
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: Operation Type
-  PEC__REUSABLE_SPARE_5:
+
+  REUSABLE_SPARE_5:
     dtype: uint8
     dimensions: ["packet"]
+
+  # More Subsystem States (Enumerated)
   PEC__SW_LED_CYCLE_ST:
-    dtype: uint8
+    dtype: "|S3"
     dimensions: ["packet"]
     attributes:
       long_name: Duty Cycle State Machine
   PEC__SW_HTR_ST_WFOV:
-    dtype: uint8
+    dtype: "|S3"
     dimensions: ["packet"]
     attributes:
       long_name: Heater State for WFOV
   PEC__SW_HTR_ST_RCM_NX:
-    dtype: uint8
+    dtype: "|S3"
     dimensions: ["packet"]
     attributes:
       long_name: Heater State for RCM N
   PEC__SW_LED_BANK_B_ST:
-    dtype: uint8
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: LED Bank B State
   PEC__SW_LED_BANK_A_ST:
-    dtype: uint8
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: LED Bank A State
+
+  # Time Sync Counters
   PEC__SW_MSG_RCV_CNT:
     dtype: uint16
     dimensions: ["packet"]
@@ -188,6 +206,8 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: Number of received time pulses
+
+  # Voltage Monitors (ADCs)
   PEC__SW_P3P3_VMON:
     dtype: uint16
     dimensions: ["packet"]
@@ -219,6 +239,8 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: Solar Avoidance Sensor
+
+  # Hardware Heater Monitors
   PEC__SW_RCM_P_HTR_MON:
     dtype: uint16
     dimensions: ["packet"]
@@ -234,6 +256,8 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: WFOV Heater Monitor
+
+  # Component Temperatures (ADCs)
   PEC__SW_WFOV_LENS_TEMP:
     dtype: uint16
     dimensions: ["packet"]
@@ -270,6 +294,8 @@ variables:
     attributes:
       long_name: WFOV FPA Temp
       units: C
+
+  # Further Voltage Monitors
   PEC__SW_P15_VMON:
     dtype: uint16
     dimensions: ["packet"]
@@ -309,6 +335,8 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: LED V Monitor
+
+  # Current Monitors
   PEC__SW_N15_IMON:
     dtype: uint16
     dimensions: ["packet"]
@@ -333,6 +361,8 @@ variables:
     attributes:
       long_name: P15V Current Monitor
       units: mA
+
+  # Remaining Temps & Monitors
   PEC__SW_PWR_PWB_TEMP:
     dtype: uint16
     dimensions: ["packet"]
@@ -356,6 +386,8 @@ variables:
     dimensions: ["packet"]
     attributes:
       long_name: Ground Monitor
+
+  # Control Loop / Calculated Temperatures
   PEC__SW_HTR_SETPNT_RCM_PX:
     dtype: float32
     dimensions: ["packet"]
@@ -392,11 +424,14 @@ variables:
     attributes:
       long_name: WFOV htr temp using onboard conversion from table, Celsius
       units: C
+
   PEC__SW_MEM_XSUM:
     dtype: uint32
     dimensions: ["packet"]
     attributes:
       long_name: Running memory checksum
+
+  # LED Cycle Status
   PEC__SW_LED_A_LVL:
     dtype: uint16
     dimensions: ["packet"]
@@ -428,15 +463,17 @@ variables:
     attributes:
       long_name: LED Duty Cycle Level for bank B
   PEC__SW_LED_CYCLE_BANK:
-    dtype: uint8
+    dtype: "|S4"
     dimensions: ["packet"]
     attributes:
       long_name: LED Duty Cycle Bank
   PEC__SW_LED_CYCLE_ID:
-    dtype: uint8
+    dtype: "|S7"
     dimensions: ["packet"]
     attributes:
       long_name: LED ID
+
+  # Footer Spare & Checksum
   PEC__PECSWPKT_SPARE:
     dtype: uint16
     dimensions: ["packet"]
