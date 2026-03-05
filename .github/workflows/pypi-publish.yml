@@ -1,0 +1,103 @@
+name: Build and upload to PyPI and create GitHub release
+# https://packaging.python.org/en/latest/guides/publishing-package-distribution-releases-using-github-actions-ci-cd-workflows/
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+*" # Push events for official release tags
+
+jobs:
+  # Call the reusable build workflow to build PyPI artifacts
+  build:
+    name: Build distribution artifacts
+    uses: ./.github/workflows/_build.yml
+
+  # Job that pushes dist artifacts to public PyPI for semver release tags
+  pypi-publish:
+    name: Upload official release to PyPI
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi-publish
+      url: https://pypi.org/p/libera-utils # Public PyPI
+    permissions:
+      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
+
+    steps:
+      # This downloads the build artifacts from the build job
+      - name: Download distribution artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.13.0
+
+  # Job that publishes a release to GitHub
+  create-github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    environment:
+      name: github-release
+    permissions:
+      id-token: write # IMPORTANT: mandatory for sigstore
+      contents: write # IMPORTANT: mandatory for making GitHub Releases
+
+    steps:
+      - name: Determine if the release is a prerelease
+        # Checks the regex form of the tag to see if there is a suffix after the semver
+        # Marks final releases only for tags matching the regex (no version suffixes)
+        # All other releases are marked as prereleases
+        # Sets the behavior by setting the PRE_RELEASE_OPTION environment variable in the GITHUB_ENV file.
+        # Note: This environment variable is only available to later steps via the ${{ env.PRE_RELEASE_OPTION }}
+        # syntax
+        run: |
+          if [[ ${{ github.ref_name }} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "PRE_RELEASE_OPTION=''" >> $GITHUB_ENV  # Not a prerelease
+          else
+            echo "PRE_RELEASE_OPTION=--prerelease" >> $GITHUB_ENV  # Is a prerelease
+          fi
+
+      - name: Get latest non-prerelease release
+        # This fetches the "latest" (non-prerelease) release ref,
+        # so we can generate release notes from that point instead of the most recent prerelease.
+        # Sets LATEST_RELEASE environment variable in the GITHUB_ENV file
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          latest_release=$(gh release list --repo "${{ github.repository }}" --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease == false) | .tagName' | head -n 1)
+          if [ -z "$latest_release" ]; then
+            echo "No non-prerelease release found."
+            exit 1
+          fi
+          echo "LATEST_RELEASE_TAG=$latest_release" >> $GITHUB_ENV
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        # Uses the GitHub CLI to generate the Release and auto-generate the release notes. Also generates
+        # the Release title based on the annotation on the git tag.
+        run: |
+          RELEASE_NAME=$(basename "${{ github.ref_name }}")
+          ARGS=(
+            "${{ github.ref_name }}"
+            --repo "${{ github.repository }}"
+            --title "$RELEASE_NAME"
+          )
+
+          if [ "${{ env.PRE_RELEASE_OPTION }}" = "--prerelease" ]; then
+            ARGS+=(--prerelease)
+          fi
+
+          ARGS+=(
+            --generate-notes
+            --notes-start-tag "${{ env.LATEST_RELEASE_TAG }}"
+          )
+
+          gh release create "${ARGS[@]}"

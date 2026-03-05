@@ -1,0 +1,10 @@
+name: Daily Tests
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-tests:
+    uses: ./.github/workflows/_run-tests.yml
