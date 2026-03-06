@@ -204,6 +204,13 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     # Sort the resulting Dataset by the packet time coordinate to ensure data is properly ordered
     packet_ds = packet_ds.sortby(packet_time_coordinate)
 
+    # Force any Unicode (U-type) string variables to byte (S-type) strings. We know all the FSW strings
+    # are ASCII and sticking to bytes preserves better compatibility in NetCDF (i.e. doesn't rely on the NC_STRING
+    # type).
+    for var_name, var in packet_ds.data_vars.items():
+        if var.dtype.kind == "U":
+            packet_ds[var_name] = var.astype("S")
+
     # Add global dynamic attributes that are required per the data product configs but do not have static values
     global_attrs: dict[str, str | list | set] = {
         "algorithm_version": version(),

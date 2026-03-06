@@ -119,7 +119,7 @@ variables:
     dtype: float64
     dimensions: ["packet"]
   ICIE__LWC_PWBA_TEMP:
-    dtype: uint16
+    dtype: float64
     dimensions: ["packet"]
   ICIE__PE_AUX_LEDDR_TEMP:
     dtype: float64

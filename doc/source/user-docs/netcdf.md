@@ -1,16 +1,12 @@
 # Creating Libera Data Product Files (NetCDF-4)
 
-TODO[LIBSDC-633]: Include discussion here (or in the YAML format description below) of Dimensions, static global attributes, and dynamic attributes.
-
 The Libera SDC provides utilities for creating NetCDF4 data product files that conform to YAML data product definitions and a few global expectations.
 These definitions ensure a degree of consistency across all Libera data products, including proper metadata, coordinate systems, and data types.
 Libera Utils includes a few different ways to work with data product definitions for validation.
 
 ## Product Definition YAML Structure
 
-TODO[LIBSDC-623]: Include discussion of dimension names being in a global namespace.
-
-Product definition files specify the exact structure and metadata for data products:
+Product definition files specify the exact structure and metadata for data products. For example:
 
 ```yaml
 # Product level metadata attributes
@@ -42,6 +38,26 @@ variables:
 ```
 
 The `LiberaDataProductDefinition` system ensures all Libera data products maintain consistent structure, metadata, and quality standards across the mission.
+
+### Dimensions
+
+All dimensions referenced in a product definition must match an existing dimension in the global allowed dimension list in `libera_utils/data/libera_dimensions.yml`.
+Additionally, data referencing a dimension must have the correct size if referencing a dimension with a static size. Most dimensions are considered to be "dynamic size",
+in which case the sizes of all variables/coordinates referencing the dimension must match but no specific size is enforced.
+
+### Attributes
+
+Attributes may be defined at the product (Dataset) level or the variable (DataArray) level. All products must contain a set of expected product level attributes,
+defined in `libera_utils/required_product_attributes.yml` to be valid (these will be added automatically when using `write_libera_data_product`).
+In addition, attributes may be defined in a product definition itself.
+
+Attributes defined as `null` or empty are considered "required dynamic attributes". Their values must be set before the product Dataset is considered valid
+but the value is expected to be dynamic. To include dynamic attribute values when writing a data product, pass the `dynamic_product_attributes` kwarg to `write_libera_data_product`.
+Dynamic attributes are not allowed at the variable level!
+
+The precedence for attribute assignment is: `required_product_attributes.yml` (globally required) < `product_definition_file.yml` (defined in product definition) < `dynamic_product_attributes` kwarg.
+For example, `ProductID` is required by the standard metadata file but it is dynamic (`null` valued). It could be defined with a value in a particular product definition yml file
+or it could be passed via kwarg to `write_libera_data_product`.
 
 ## Basic Usage
 
@@ -79,6 +95,7 @@ filename = write_libera_data_product(
     data=data,
     output_path=output_dir,
     time_variable="time",  # Specify which variable contains time data
+    dynamic_product_attributes={"algorithm_version": "1.2.3"},
     strict=True,  # Enforce strict conformance, raising exceptions on errors
 )
 
