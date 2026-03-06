@@ -1,0 +1,115 @@
+name: Setup Python Environment
+description: >
+  Optionally restore LFS test data from cache, install Poetry, and install
+  project dependencies. Assumes the repository has already been checked out.
+
+inputs:
+  lfs:
+    description: Whether to restore LFS objects (tests/test_data)
+    required: false
+    default: "true"
+  python-version:
+    description: Python version for setup-python
+    required: false
+    default: "3.12"
+
+runs:
+  using: composite
+  steps:
+    - name: Get week stamp for cache keys
+      id: date
+      shell: bash
+      run: echo "week=$(date +'%Y-%W')" >> $GITHUB_OUTPUT
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -y --no-install-recommends \
+          libudunits2-dev libhdf5-dev libnetcdf-dev libgdal-dev \
+          build-essential pkg-config
+
+    - name: Get CSPICE remote metadata
+      # Gets last modified time header of the CSPICE URL to use as a cache key.
+      id: cspice-meta
+      shell: bash
+      run: |
+        CSPICE_URL="https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z"
+        LAST_MOD=$(curl -sI "$CSPICE_URL" | grep -i '^last-modified:' | tr -d '\r\n' | sed 's/[Ll]ast-[Mm]odified: //')
+        # Hash the value to produce a cache-key-safe string
+        HASHED=$(echo "$LAST_MOD" | sha256sum | cut -d' ' -f1)
+        # Fallback to a stable weekly key if the header is absent
+        CACHE_KEY="${HASHED:-week-$(date +'%Y-%W')}"
+        echo "key=${CACHE_KEY}" >> $GITHUB_OUTPUT
+
+    - name: Cache SPICE utilities
+      # Caches spice utils based on the last modified time of the remote file.
+      # If the file changes, the cache key changes, causing a cache miss and re-download.
+      # If the file doesn't change, we get a cache hit and skip the download step.
+      id: cspice-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/cspice
+        key: cspice-${{ runner.os }}-${{ steps.cspice-meta.outputs.key }}
+
+    - name: Install SPICE utilities
+      if: steps.cspice-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        CSPICE_DIR=$HOME/cspice
+        curl -L -o /tmp/cspice.tar.Z https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z
+        mkdir -p $CSPICE_DIR
+        tar -C $CSPICE_DIR -xzf /tmp/cspice.tar.Z cspice/exe
+        rm /tmp/cspice.tar.Z
+
+    - name: Add SPICE utilities to PATH
+      shell: bash
+      run: echo "$HOME/cspice/cspice/exe" >> $GITHUB_PATH
+
+    - name: Restore LFS cache
+      # Cache key is derived from hash of the test_data directory.
+      # On a cache miss, the Pull LFS objects step below downloads the actual binary objects.
+      # On a hit (i.e. nothing in test_data changed), we still run git lfs pull but there should be
+      # nothing to update unless there are LFS files outside of test_data.
+      # The cache is saved as a post-job step after all steps complete, so it always captures
+      # the real file content written by git lfs pull rather than the pointer files.
+      if: inputs.lfs == 'true'
+      uses: actions/cache@v4
+      with:
+        path: tests/test_data
+        key: lfs-${{ runner.os }}-${{ hashFiles('tests/test_data/**') }}
+
+    - name: Pull LFS objects
+      # git lfs pull skips files whose local content already matches the pointer,
+      # so this is safe to run even after a full cache hit.
+      if: inputs.lfs == 'true'
+      shell: bash
+      run: git lfs pull
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Restore virtualenv cache
+      # Key rotates weekly so the cache refreshes with the latest installed packages once per
+      # week. restore-keys ensures a warm restore even on a weekly miss (new key, old prefix).
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ steps.date.outputs.week }}
+        restore-keys: |
+          venv-${{ runner.os }}-${{ inputs.python-version }}-
+
+    - name: Install dependencies
+      # The cache restores the .venv directory, which speeds up dependency installation but
+      # we run poetry update to get the latest versions of any deps that have changed since the last cache save.
+      shell: bash
+      run: poetry update && poetry sync

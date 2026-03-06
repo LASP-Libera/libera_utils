@@ -1,0 +1,39 @@
+name: Run Tests
+
+on:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        # No LFS checkout here so we can use the LFS cache in our setup-env action
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run tests
+        run: |
+          poetry run pytest \
+            --cov=libera_utils \
+            --cov-report=html:htmlcov
+
+      - name: Write coverage summary
+        if: success() || failure() # Skipped if cancelled
+        run: poetry run coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: success() || failure() # Skipped if cancelled
+        with:
+          name: coverage-report-py${{ matrix.python-version }}
+          path: htmlcov/
