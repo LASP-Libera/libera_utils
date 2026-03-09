@@ -97,6 +97,34 @@ class TestPacketConfiguration:
         assert sc_pos_config.sample_groups[0].name == "ADGPS"
         assert sc_pos_config.sample_groups[1].name == "ADCFA"
 
+    def test_new_apid_configs(self):
+        """Test that the new APID configurations (1035, 1043, 1044) are correctly loaded."""
+        from datetime import timedelta
+
+        # APID 1035 - icie_rad_full
+        rad_full_config = get_packet_config(LiberaApid.icie_rad_full)
+        assert rad_full_config.packet_apid == LiberaApid.icie_rad_full
+        assert len(rad_full_config.sample_groups) == 1
+        assert rad_full_config.sample_groups[0].name == "RAD_FULL"
+        assert rad_full_config.sample_groups[0].sample_count == 100
+        assert rad_full_config.sample_groups[0].sample_period == timedelta(microseconds=1000)
+
+        # APID 1043 - icie_cal_full
+        cal_full_config = get_packet_config(LiberaApid.icie_cal_full)
+        assert cal_full_config.packet_apid == LiberaApid.icie_cal_full
+        assert len(cal_full_config.sample_groups) == 1
+        assert cal_full_config.sample_groups[0].name == "CAL_FULL"
+        assert cal_full_config.sample_groups[0].sample_count == 100
+        assert cal_full_config.sample_groups[0].sample_period == timedelta(microseconds=1000)
+
+        # APID 1044 - icie_cal_sample
+        cal_sample_config = get_packet_config(LiberaApid.icie_cal_sample)
+        assert cal_sample_config.packet_apid == LiberaApid.icie_cal_sample
+        assert len(cal_sample_config.sample_groups) == 1
+        assert cal_sample_config.sample_groups[0].name == "CAL_SAMPLE"
+        assert cal_sample_config.sample_groups[0].sample_count == 50
+        assert cal_sample_config.sample_groups[0].sample_period == timedelta(microseconds=5000)
+
 
 @pytest.mark.parametrize(
     "apid",
@@ -107,6 +135,9 @@ class TestPacketConfiguration:
         LiberaApid.icie_temp_hk,
         LiberaApid.icie_wfov_sci,
         LiberaApid.icie_rad_sample,
+        LiberaApid.icie_rad_full,
+        LiberaApid.icie_cal_full,
+        LiberaApid.icie_cal_sample,
         LiberaApid.jpss_sc_pos,
     ],
 )

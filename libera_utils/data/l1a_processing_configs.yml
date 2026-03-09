@@ -135,6 +135,69 @@ icie_rad_sample:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 
+# Radiometer Full Resolution Packet: High-rate science data (1kHz)
+icie_rad_full:
+  packet_apid: "icie_rad_full"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_RAD_FULL"
+    ms_field: "ICIE__TM_MS_RAD_FULL"
+    us_field: "ICIE__TM_US_RAD_FULL"
+  sample_groups:
+    - name: "RAD_FULL"
+      epoch_time_fields:
+        s_field: "ICIE__RAD_FULL_START_HI"
+        us_field: "ICIE__RAD_FULL_START_LO"
+      sample_period: 1000 # 1 millisecond in microseconds
+      data_field_patterns:
+        - "ICIE__RAD_FULL_RES%i_0"
+        - "ICIE__RAD_FULL_RES%i_1"
+        - "ICIE__RAD_FULL_RES%i_2"
+        - "ICIE__RAD_FULL_RES%i_3"
+      sample_count: 100
+      time_source: "FPE"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Calibration Full Resolution Packet: High-rate calibration data (1kHz)
+icie_cal_full:
+  packet_apid: "icie_cal_full"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_CAL_FULL"
+    ms_field: "ICIE__TM_MS_CAL_FULL"
+    us_field: "ICIE__TM_US_CAL_FULL"
+  sample_groups:
+    - name: "CAL_FULL"
+      epoch_time_fields:
+        s_field: "ICIE__CAL_FULL_START_HI"
+        us_field: "ICIE__CAL_FULL_START_LO"
+      sample_period: 1000 # 1 millisecond in microseconds
+      data_field_patterns:
+        - "ICIE__CAL_FULL_RES_%i"
+      sample_count: 100
+      time_source: "FPE"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
+# Calibration Downsampled Packet: Routine calibration data (200Hz)
+icie_cal_sample:
+  packet_apid: "icie_cal_sample"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_CAL_SAMPLE"
+    ms_field: "ICIE__TM_MS_CAL_SAMPLE"
+    us_field: "ICIE__TM_US_CAL_SAMPLE"
+  sample_groups:
+    - name: "CAL_SAMPLE"
+      epoch_time_fields:
+        s_field: "ICIE__CAL_SAMP_START_HI"
+        us_field: "ICIE__CAL_SAMP_START_LO"
+      sample_period: 5000 # 5 milliseconds in microseconds
+      data_field_patterns:
+        - "ICIE__CAL_SAMPLE_%i"
+      sample_count: 50
+      time_source: "FPE"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+
 # Wide Field of View Science Packet: Camera science data as aggregated binary blob
 icie_wfov_sci:
   packet_apid: "icie_wfov_sci"

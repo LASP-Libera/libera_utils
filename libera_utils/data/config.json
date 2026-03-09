@@ -43,6 +43,9 @@
   "LIBERA_L1A_PRODUCT_DEFINITIONS_BY_APID": {
     "1000": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/pev_sw_stat_l1a.yml",
     "1002": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/pec_sw_stat_l1a.yml",
+    "1035": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_rad_full_l1a.yml",
+    "1043": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_cal_full_l1a.yml",
+    "1044": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_cal_sample_l1a.yml",
     "1048": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_axis_sample_l1a.yml",
     "1051": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_crit_hk_l1a.yml",
     "1057": "{LIBERA_PRODUCT_DEFINITIONS_PATH}/icie_nom_hk_l1a.yml",
