@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         # No LFS checkout here so we can use the LFS cache in our setup-env action
 
       - name: Setup environment
