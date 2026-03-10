@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.5.6
+
+- FEAT: Adding support for APID 1000, 1002, 1035, 1044, and 1043 to support calibration packets
+
 ## 5.5.5
 
 - CONFIG: Update the ICIE TLM XTCE to latest version
