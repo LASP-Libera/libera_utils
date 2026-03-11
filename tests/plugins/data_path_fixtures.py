@@ -136,6 +136,23 @@ def test_ccsds_2025_221_17_17_58(test_data_path):
     return test_data_path / "packets/libera_istr_packets/ccsds_2025_221_17_17_58"
 
 
+@pytest.fixture(scope="session")
+def test_istr_gain_event(test_data_path):
+    """ISTR gain calibration event packet file.
+    Contains: icie_rad_full (1035), icie_cal_full (1043), and other standard ICIE packets.
+    """
+    return test_data_path / "packets/libera_istr_packets/ccsds_2025_218_12_10_06"
+
+
+@pytest.fixture(scope="session")
+def test_iov_swc_event(test_data_path):
+    """IOV Short Wave Cal event packet file.
+    Contains: pev_sw_stat (1000), pec_sw_stat (1002), icie_cal_sample (1044),
+              and other standard ICIE packets.
+    """
+    return test_data_path / "packets/libera_iov_packets/ccsds_2025_346_13_29_47"
+
+
 # SPICE test data
 # ---------------
 @pytest.fixture(scope="session")
