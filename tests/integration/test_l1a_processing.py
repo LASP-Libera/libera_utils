@@ -89,12 +89,10 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
-
         # pev_sw_stat (1000) and pec_sw_stat (1002) and icie_cal_sample (1044) - present in IOV SWC event data
         (["test_iov_swc_event"], LiberaApid.pev_sw_stat, "PACKET_ICIE_TIME", 8),
         (["test_iov_swc_event"], LiberaApid.pec_sw_stat, "PACKET_ICIE_TIME", 8),
         (["test_iov_swc_event"], LiberaApid.icie_cal_sample, "PACKET_ICIE_TIME", 8),
-
         # icie_rad_full (1035) and icie_cal_full (1043) - present in ISTR gain calibration event data
         (["test_istr_gain_event"], LiberaApid.icie_rad_full, "PACKET_ICIE_TIME", 8),
         (["test_istr_gain_event"], LiberaApid.icie_cal_full, "PACKET_ICIE_TIME", 8),
