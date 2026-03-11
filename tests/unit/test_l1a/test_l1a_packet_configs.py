@@ -125,10 +125,44 @@ class TestPacketConfiguration:
         assert cal_sample_config.sample_groups[0].sample_count == 50
         assert cal_sample_config.sample_groups[0].sample_period == timedelta(microseconds=5000)
 
+    def test_pev_pec_sw_stat_configs(self):
+        """Test that pev_sw_stat (1000) and pec_sw_stat (1002) configurations are correctly loaded."""
+        # APID 1000 - pev_sw_stat
+        pev_config = get_packet_config(LiberaApid.pev_sw_stat)
+        assert pev_config.packet_apid == LiberaApid.pev_sw_stat
+        # These are housekeeping-style packets with no sample groups
+        assert len(pev_config.sample_groups) == 0
+        assert len(pev_config.aggregation_groups) == 0
+        # Verify packet time fields are correctly configured
+        assert pev_config.packet_time_fields.day_field == "PEV__TM_DAY_SW_STAT"
+        assert pev_config.packet_time_fields.ms_field == "PEV__TM_MS_SW_STAT"
+        assert pev_config.packet_time_fields.us_field == "PEV__TM_US_SW_STAT"
+        # Uses the dedicated PEV packet definition
+        assert pev_config.packet_definition_config_key == "LIBERA_PEV_PACKET_DEFINITION"
+        # Packet time coordinate should follow standard ICIE naming
+        assert pev_config.packet_time_coordinate == "PACKET_ICIE_TIME"
+
+        # APID 1002 - pec_sw_stat
+        pec_config = get_packet_config(LiberaApid.pec_sw_stat)
+        assert pec_config.packet_apid == LiberaApid.pec_sw_stat
+        # These are housekeeping-style packets with no sample groups
+        assert len(pec_config.sample_groups) == 0
+        assert len(pec_config.aggregation_groups) == 0
+        # Verify packet time fields are correctly configured
+        assert pec_config.packet_time_fields.day_field == "PEC__TM_DAY_SW_STAT"
+        assert pec_config.packet_time_fields.ms_field == "PEC__TM_MS_SW_STAT"
+        assert pec_config.packet_time_fields.us_field == "PEC__TM_US_SW_STAT"
+        # Uses the dedicated PEC packet definition
+        assert pec_config.packet_definition_config_key == "LIBERA_PEC_PACKET_DEFINITION"
+        # Packet time coordinate should follow standard ICIE naming
+        assert pec_config.packet_time_coordinate == "PACKET_ICIE_TIME"
+
 
 @pytest.mark.parametrize(
     "apid",
     [
+        LiberaApid.pev_sw_stat,
+        LiberaApid.pec_sw_stat,
         LiberaApid.icie_axis_sample,
         LiberaApid.icie_crit_hk,
         LiberaApid.icie_nom_hk,
