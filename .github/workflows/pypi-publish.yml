@@ -47,6 +47,8 @@ jobs:
   # Job that publishes a release to GitHub
   create-github-release:
     name: Create GitHub Release
+    needs:
+      - run-tests
     runs-on: ubuntu-latest
     environment:
       name: github-release
@@ -84,8 +86,6 @@ jobs:
           echo "LATEST_RELEASE_TAG=$latest_release" >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        needs:
-          - run-tests
         env:
           GITHUB_TOKEN: ${{ github.token }}
         # Uses the GitHub CLI to generate the Release and auto-generate the release notes. Also generates
