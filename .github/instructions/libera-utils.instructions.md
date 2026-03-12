@@ -69,8 +69,10 @@ availability of credentials:
   `git merge`, or any command that modifies repository or remote state.
 - **No package publishing**: Do not run `poetry publish`, `twine upload`, or any command
   that pushes to PyPI or a package registry.
-- **No AWS interactions**: Do not directly execute `ecr-upload`, `step-function-trigger`,
-  `s3-utils put/cp/ls`, or any command or code that makes calls to real AWS endpoints
-  (including direct `boto3`/`botocore` calls). These affect shared cloud infrastructure.
+- **No AWS interactions**: Do not execute `ecr-upload`, `step-function-trigger`, `s3-utils put/cp/ls`,
+  or run any commands or code that would contact real AWS endpoints (for example, unmocked
+  `boto3`/`botocore` calls). Writing or modifying AWS-related code is allowed, but execution
+  must be isolated from real AWS (e.g., via `moto`/`responses`). These affect shared cloud
+  infrastructure.
 - **No credential use**: Do not read, use, or reference AWS credentials or profiles even if
   they appear to be configured in the environment.
