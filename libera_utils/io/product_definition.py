@@ -84,8 +84,8 @@ class LiberaVariableDefinition(BaseModel):
 
         Returns
         -------
-        dict[str, LiberaDimension]
-            Dictionary of dimension name to LiberaDimension instances.
+        dict[str, LiberaDimensionDefinition]
+            Dictionary of dimension name to LiberaDimensionDefinition instances.
         """
         if file_path is None:
             file_path = Path(str(config.get("LIBERA_DIMENSIONS_DEFINITION_PATH")))
@@ -328,7 +328,7 @@ class LiberaVariableDefinition(BaseModel):
 
         This method attempts to bring a DataArray into conformance with a variable definition. When making changes, the
         data variable definition takes precedence over any existing metadata or settings on the DataArray. Logs are
-        emitted for all changed made. When the DataArray configuration contradicts the data product definition, warnings
+        emitted for all changes made. When the DataArray configuration contradicts the data product definition, warnings
         are also issued. This method is not responsible for validating the final result and does not guarantee that the
         resulting DataArray will pass the validation checks because some problems simply can't be fixed.
 
@@ -498,7 +498,7 @@ class LiberaVariableDefinition(BaseModel):
         Returns
         -------
         DataArray
-            A minimal DataArray for the specified variable. This DataArray may not be fully comformant to the product
+            A minimal DataArray for the specified variable. This DataArray may not be fully conformant to the product
             definition. To bring it into conformance, use `enforce_dataset_conformance` on a Dataset containing this
             DataArray.
         """
@@ -805,7 +805,7 @@ class LiberaDataProductDefinition(BaseModel):
 
         This method attempts to bring a Dataset into conformance with a product definition, including enforcing
         conformance of variable DataArrays. When making changes, the data product definition takes precedence over any
-        existing metadata or settings on the Dataset. Logs are emitted for all changed made. When the Dataset
+        existing metadata or settings on the Dataset. Logs are emitted for all changes made. When the Dataset
         configuration contradicts the data product definition, warnings are also issued. This method is not responsible
         for validating the final result and does not guarantee that the resulting Dataset will pass the validation
         checks because some problems simply can't be fixed.
@@ -861,7 +861,7 @@ class LiberaDataProductDefinition(BaseModel):
             # Use the Variable class method to enforce conformance for each variable
             dataset[name] = var_def.enforce_data_array_conformance(dataset[name], name)
 
-        # Return dataset and validation errors
+        # Return the updated dataset; validation should be performed separately
         return dataset
 
     def create_product_dataset(

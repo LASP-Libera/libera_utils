@@ -103,7 +103,7 @@ class TestLiberaDataProductDefinitionConformanceChecking:
     def test_check_dataset_conformance_incorrect_size_dimension(self, test_product_definition, test_dataset):
         """Test validating a dataset with an incorrect dimension size against a product definition object"""
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
-        # Remove one of the columns of the cartesionian_position variable to create a dimension size mismatch
+        # Remove one of the columns of the cartesian_position variable to create a dimension size mismatch
         test_dataset = test_dataset.drop_vars("cartesian_position")
         n_times = test_dataset.sizes["radiometer_time"]
         test_dataset["cartesian_position"] = xr.DataArray(

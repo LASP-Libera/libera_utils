@@ -48,12 +48,11 @@ in which case the sizes of all variables/coordinates referencing the dimension m
 ### Attributes
 
 Attributes may be defined at the product (Dataset) level or the variable (DataArray) level. All products must contain a set of expected product level attributes,
-defined in `libera_utils/required_product_attributes.yml` to be valid (these will be added automatically when using `write_libera_data_product`).
+defined in `libera_utils/data/required_product_attributes.yml` to be valid (these will be added automatically when using `write_libera_data_product`).
 In addition, attributes may be defined in a product definition itself.
 
 Attributes defined as `null` or empty are considered "required dynamic attributes". Their values must be set before the product Dataset is considered valid
 but the value is expected to be dynamic. To include dynamic attribute values when writing a data product, pass the `dynamic_product_attributes` kwarg to `write_libera_data_product`.
-Dynamic attributes are not allowed at the variable level!
 
 The precedence for attribute assignment is: `required_product_attributes.yml` (globally required) < `product_definition_file.yml` (defined in product definition) < `dynamic_product_attributes` kwarg.
 For example, `ProductID` is required by the standard metadata file but it is dynamic (`null` valued). It could be defined with a value in a particular product definition yml file
