@@ -32,7 +32,7 @@ jobs:
         run: poetry run coverage report --format=markdown >> $GITHUB_STEP_SUMMARY
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: success() || failure() # Skipped if cancelled
         with:
           name: coverage-report-py${{ matrix.python-version }}
