@@ -51,8 +51,8 @@ class LiberaVariableDefinition(BaseModel):
         The data type of the variable's data array, specified as a string
     attributes: VariableAttributes
         The attribute metadata for the variable, containing specific key value pairs for CF metadata compliance
-    dimensions: list[LiberaDimensionDefinition]
-        A list of dimensions that the variable's data array references. These should be instances of LiberaDimensionDefinition.
+    dimensions: list[str]
+        A list of dimension names that the variable's data array references.
     encoding: dict
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
     """
