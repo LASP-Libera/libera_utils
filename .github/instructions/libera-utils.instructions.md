@@ -31,7 +31,7 @@ generation, Libera file naming, and AWS pipeline integration.
 
 - **Linter/formatter**: Ruff (line length 120, rules E/W/F/I/S/PT/UP). Run `ruff check` and
   `ruff format` before committing. Do not disable rules inline without justification.
-- **Types**: Type annotations required on all public functions; code must be mypy-compatible.
+- **Types**: Type annotations required on all public functions; code should follow standard typing best practices and satisfy Ruff’s typing-related rules (mypy is not currently run in CI).
 - **Docstrings**: Numpy-style on all public symbols.
 - **Pre-commit**: Hooks are required (`pre-commit install`). Never bypass with `--no-verify`.
 - **To-Do Items**: Must reference a JIRA tag (e.g. `TODO[LIBSDC-1234]` or `TODO[CURRYER-1234]`).
