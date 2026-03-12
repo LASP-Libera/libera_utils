@@ -1,10 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/spec/XTCE/20180204"
-                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-                  xsi:schemaLocation="http://www.omg.org/spec/XTCE/20180204
-                                      https://www.omg.org/spec/XTCE/20180204/SpaceSystem.xsd"
-                  name="pev">
-  <xtce:Header date="Created=2026/01/15 11:59:30" version="LASPXTCESchemaVersion=1.2" validationStatus="Unknown"/>
+<?xml version="1.0" ?>
+<xtce:SpaceSystem xmlns:xtce="http://www.omg.org/space/xtce" name="pev">
+  <xtce:Header date="Created=2026/01/15 11:59:30" version="LASPXTCESchemaVersion=1.2"/>
   <xtce:TelemetryMetaData>
     <xtce:ParameterTypeSet>
       <xtce:IntegerParameterType name="REUSABLE_SPARE_1_Type">
