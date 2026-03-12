@@ -84,6 +84,8 @@ jobs:
           echo "LATEST_RELEASE_TAG=$latest_release" >> $GITHUB_ENV
 
       - name: Create GitHub Release
+        needs:
+          - run-tests
         env:
           GITHUB_TOKEN: ${{ github.token }}
         # Uses the GitHub CLI to generate the Release and auto-generate the release notes. Also generates
