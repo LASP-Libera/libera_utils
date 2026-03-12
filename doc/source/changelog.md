@@ -2,7 +2,7 @@
 
 ## 5.5.6
 
-- FEAT: Adding support for APID 1000, 1002, 1035, 1044, and 1043 to support calibration packets
+- FEAT: Adding support for APIDs 1000, 1002, 1035, 1043, and 1044 to support calibration and status telemetry packets
 
 ## 5.5.5
 
