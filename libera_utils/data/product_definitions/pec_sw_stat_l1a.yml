@@ -1,0 +1,484 @@
+attributes:
+  ProductID: PEC-SW-STAT-DECODED
+  algorithm_version: null
+  date_created: null
+  input_files: null
+coordinates:
+  PACKET_ICIE_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet timestamp from ICIE main processor
+      valid_range: ["1900-01-01T00:00:00", "2100-01-01T00:00:00"]
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+variables:
+  # CCSDS Primary Header
+  VERSION:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet version
+      valid_range: [0, 7]
+  TYPE:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet type
+      valid_range: [0, 1]
+  SEC_HDR_FLAG:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Secondary header flag
+      valid_range: [0, 1]
+  PKT_APID:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet application ID
+      valid_range: [0, 2047]
+  SEQ_FLGS:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Sequence flags
+      valid_range: [0, 3]
+  SRC_SEQ_CTR:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Source sequence counter
+      valid_range: [0, 16383]
+  PKT_LEN:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet length
+      units: bytes
+  # Timestamps
+  PEC__TM_DAY_SW_STAT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Time Day
+  PEC__TM_MS_SW_STAT:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Time Ms
+  PEC__TM_US_SW_STAT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Time Us
+
+  # Header Spares
+  REUSABLE_SPARE_8:
+    dtype: uint8
+    dimensions: ["packet"]
+
+  # Command Statistics
+  PEC__SW_CMD_SUCC_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of successful commands
+  PEC__SW_CMD_RJCT_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of Commands Rejected by Libera PE - Cobham Processor
+  PEC__SW_CMD_RCV_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of received commands
+  PEC__SW_CMD_FMT_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of Bad Format Commands Received by Libera PE - Cobham Processor
+
+  # Last Command Status (Enumerated)
+  PEC__SW_CMD_SUCC_OP:
+    dtype: "|S7"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Last successful command opcode
+  PEC__SW_CMD_RJCT_OP:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Last rejected command opcode
+  PEC__SW_CMD_FAIL_CODE:
+    dtype: "|S7"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Command failure code
+
+  PEC__SW_DES_OVR_CNT:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of DES tasks that Overran in Libera PE - Cobham Processor
+
+  # Status Flags (Enumerated)
+  PEC__SW_SAS_ST:
+    dtype: "|S5"
+    dimensions: ["packet"]
+    attributes:
+      long_name: SAS Current State
+  PEC__SW_BD_PASS:
+    dtype: "|S2"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Indication of Board Passivation for Libera PE - Cobham Processor
+  PEC__SW_IMG_IDX:
+    dtype: uint8
+    dimensions: ["packet"]
+    attributes:
+      long_name: Current image index from flash
+  PEC__SW_TIME_FREE_ST:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Indication of Bad Time Sync by Libera PE - Cobham Processor
+  PEC__SW_TBL_LD_ST:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Table loading state
+
+  # Heater Status (Enumerated)
+  PEC__SW_HTR_ST_RCM_PX:
+    dtype: "|S3"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Heater State for RCM P
+  PEC__SW_MEM_OP_TYPE:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Operation Type
+
+  REUSABLE_SPARE_5:
+    dtype: uint8
+    dimensions: ["packet"]
+
+  # More Subsystem States (Enumerated)
+  PEC__SW_LED_CYCLE_ST:
+    dtype: "|S3"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Duty Cycle State Machine
+  PEC__SW_HTR_ST_WFOV:
+    dtype: "|S3"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Heater State for WFOV
+  PEC__SW_HTR_ST_RCM_NX:
+    dtype: "|S3"
+    dimensions: ["packet"]
+    attributes:
+      long_name: Heater State for RCM N
+  PEC__SW_LED_BANK_B_ST:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Bank B State
+  PEC__SW_LED_BANK_A_ST:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Bank A State
+
+  # Time Sync Counters
+  PEC__SW_MSG_RCV_CNT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of received time messages
+  PEC__SW_PPS_RCV_CNT:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Number of received time pulses
+
+  # Voltage Monitors (ADCs)
+  PEC__SW_P3P3_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE ATOMS P3.3V Voltage Monitor 1
+  PEC__SW_P1P5_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE P1.5V Voltage Monitor
+  PEC__SW_CAL1_FB:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Cal 1 FB
+  PEC__SW_P3P3_VREF:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: P3.3V Ref Monitor
+      units: V
+  PEC__SW_CAL2_FB:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Cal 2 FB
+  PEC__SW_SAS_MON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Solar Avoidance Sensor
+
+  # Hardware Heater Monitors
+  PEC__SW_RCM_P_HTR_MON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: RCM P Heater Monitor
+  PEC__SW_RCM_N_HTR_MON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: RCM N Heater Monitor
+  PEC__SW_WFOV_HTR_MON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: WFOV Heater Monitor
+
+  # Component Temperatures (ADCs)
+  PEC__SW_WFOV_LENS_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: WFOV Lens Temp Monitor
+      units: C
+  PEC__SW_LSA_LED_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Cal LED Temp
+      units: C
+  PEC__SW_AUX_RSMDR_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE Aux Board RSM Drive Temp
+      units: C
+  PEC__SW_RCM_PX_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: RCM +X Temp
+      units: C
+  PEC__SW_RCM_MX_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: RCM -X Temp
+      units: C
+  PEC__SW_WFOV_FPA_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: WFOV FPA Temp
+      units: C
+
+  # Further Voltage Monitors
+  PEC__SW_P15_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: P15V Monitor
+      units: V
+  PEC__SW_P12_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: P12V Monitor
+      units: V
+  PEC__SW_P5_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE P5V Voltage Monitor
+  PEC__SW_P3P3_VMON2:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE P3.3V Voltage Monitor 2
+  PEC__SW_N12_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: N12V Monitor
+      units: V
+  PEC__SW_N15_VMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: N15V Monitor
+      units: V
+  PEC__SW_LED_MON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED V Monitor
+
+  # Current Monitors
+  PEC__SW_N15_IMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: N15V Current Monitor
+      units: mA
+  PEC__SW_P3P3_IMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: P3.3V Current Monitor
+      units: mA
+  PEC__SW_P5_IMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: P5V Current Monitor
+      units: mA
+  PEC__SW_P15_IMON:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: P15V Current Monitor
+      units: mA
+
+  # Remaining Temps & Monitors
+  PEC__SW_PWR_PWB_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE Power Board Temp
+      units: C
+  PEC__SW_PWR_REG_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: PE Power Reg Temp
+      units: C
+  PEC__SW_AUX_LEDDR_TEMP:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Driver Temp
+      units: C
+  PEC__SW_GND:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Ground Monitor
+
+  # Control Loop / Calculated Temperatures
+  PEC__SW_HTR_SETPNT_RCM_PX:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Heater Setpoint for RCM +X, Celsius
+      units: C
+  PEC__SW_HTR_TEMP_RCM_PX:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: RCM +X htr temp using onboard conversion from table, Celsius
+      units: C
+  PEC__SW_HTR_SETPNT_RCM_NX:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Heater Setpoint for RCM -X, Celsius
+      units: C
+  PEC__SW_HTR_TEMP_RCM_NX:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: RCM -X htr temp using onboard conversion from table, Celsius
+      units: C
+  PEC__SW_HTR_SETPNT_WFOV:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Heater Setpoint for WFOV, Celsius
+      units: C
+  PEC__SW_HTR_TEMP_WFOV:
+    dtype: float32
+    dimensions: ["packet"]
+    attributes:
+      long_name: WFOV htr temp using onboard conversion from table, Celsius
+      units: C
+
+  PEC__SW_MEM_XSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Running memory checksum
+
+  # LED Cycle Status
+  PEC__SW_LED_A_LVL:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Level of Bank A LED (0 if LEDs off)
+  PEC__SW_LED_B_LVL:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: Level of Bank B LED (0 if LEDs off)
+  PEC__SW_LED_CYCLE_ON_TM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Duty Cycle On time (ms)
+  PEC__SW_LED_CYCLE_OFF_TM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Duty Cycle Off Time (ms)
+  PEC__SW_LED_CYCLE_LVLA:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Duty Cycle Level for bank A
+  PEC__SW_LED_CYCLE_LVLB:
+    dtype: uint16
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Duty Cycle Level for bank B
+  PEC__SW_LED_CYCLE_BANK:
+    dtype: "|S4"
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED Duty Cycle Bank
+  PEC__SW_LED_CYCLE_ID:
+    dtype: "|S7"
+    dimensions: ["packet"]
+    attributes:
+      long_name: LED ID
+
+  # Footer Spare & Checksum
+  PEC__PECSWPKT_SPARE:
+    dtype: uint16
+    dimensions: ["packet"]
+  PEC__SW_STAT_CHECKSUM:
+    dtype: uint32
+    dimensions: ["packet"]
+    attributes:
+      long_name: Packet checksum

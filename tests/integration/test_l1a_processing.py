@@ -89,6 +89,13 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
+        # pev_sw_stat (1000) and pec_sw_stat (1002) and icie_cal_sample (1044) - present in IOV SWC event data
+        (["test_iov_swc_event"], LiberaApid.pev_sw_stat, "PACKET_ICIE_TIME", 8),
+        (["test_iov_swc_event"], LiberaApid.pec_sw_stat, "PACKET_ICIE_TIME", 8),
+        (["test_iov_swc_event"], LiberaApid.icie_cal_sample, "PACKET_ICIE_TIME", 8),
+        # icie_rad_full (1035) and icie_cal_full (1043) - present in ISTR gain calibration event data
+        (["test_istr_gain_event"], LiberaApid.icie_rad_full, "PACKET_ICIE_TIME", 8),
+        (["test_istr_gain_event"], LiberaApid.icie_cal_full, "PACKET_ICIE_TIME", 8),
     ],
     ids=(
         "JPSS1_SC_POS",
@@ -100,6 +107,11 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
         "NOM_HK",
         "CRIT_HK",
         "TEMP_HK",
+        "PEV_SW_STAT_IOV",
+        "PEC_SW_STAT_IOV",
+        "CAL_SAMPLE_IOV",
+        "RAD_FULL_ISTR",
+        "CAL_FULL_ISTR",
     ),
 )
 def test_process_packets_to_l1a_product(
@@ -209,6 +221,18 @@ def test_process_packets_to_l1a_product(
             ),
         ),
         config.get("JPSS_GEOLOCATION_PACKET_DEFINITION"),
+        pytest.param(
+            config.get("LIBERA_PEV_PACKET_DEFINITION"),
+            marks=pytest.mark.xfail(
+                reason="PEV XTCE definition may have incorrect namespace declarations or unused parameter definitions"
+            ),
+        ),
+        pytest.param(
+            config.get("LIBERA_PEC_PACKET_DEFINITION"),
+            marks=pytest.mark.xfail(
+                reason="PEC XTCE definition may have incorrect namespace declarations or unused parameter definitions"
+            ),
+        ),
     ],
 )
 def test_packet_definition_validity(packet_definition):

@@ -159,9 +159,15 @@ class SampleGroup(BaseModel):
     def sample_data_fields(self) -> list[str]:
         """Return the data field patterns with any %i placeholders removed.
 
-        For example, ICIE__AXIS_EL_FILT%i becomes ICIE__AXIS_EL_FILT
+        Any trailing underscores are also removed to ensure consistent naming
+        when the index is at the end of the field name.
+
+        For example:
+        ICIE__AXIS_EL_FILT%i becomes ICIE__AXIS_EL_FILT
+        ICIE__CAL_SAMPLE_%i becomes ICIE__CAL_SAMPLE
+        ICIE__RAD_SAMPLE%i_0 remains ICIE__RAD_SAMPLE_0
         """
-        return [dfp.replace("%i", "") for dfp in self.data_field_patterns]
+        return [dfp.replace("%i", "").rstrip("_") for dfp in self.data_field_patterns]
 
     @field_validator("sample_period", mode="before")
     @classmethod
