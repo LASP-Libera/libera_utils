@@ -663,7 +663,7 @@ variables:
     dtype: "|S5"
     dimensions: ["packet"]
   ICIE__SW_MEM_OP_TYPE:
-    dtype: "|S3"
+    dtype: "|S5"
     dimensions: ["packet"]
   ICIE__SW_MEM_XSUM:
     dtype: uint32
@@ -810,7 +810,7 @@ variables:
     dtype: "|S11"
     dimensions: ["packet"]
   ICIE__SW_TIME_PPMS_SRC:
-    dtype: "|S6"
+    dtype: "|S8"
     dimensions: ["packet"]
   ICIE__SW_WFOV_CAM_RCV_ERR:
     dtype: "|S3"
