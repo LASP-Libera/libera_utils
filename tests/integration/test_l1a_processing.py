@@ -217,20 +217,26 @@ def test_process_packets_to_l1a_product(
         pytest.param(
             config.get("LIBERA_PACKET_DEFINITION"),
             marks=pytest.mark.xfail(
-                reason="Libera XTCE definition has incorrect namespace declarations and unused parameter definitions"
+                reason="ICIE XTCE definition uses REUSABLE_SPARE_N parameters that are shared across multiple "
+                       "packet definitions. The structural validator flags unused instances as UNUSED_PARAMETER "
+                       "because it checks globally rather than per-packet. This is a known false-positive."
             ),
         ),
         config.get("JPSS_GEOLOCATION_PACKET_DEFINITION"),
         pytest.param(
             config.get("LIBERA_PEV_PACKET_DEFINITION"),
             marks=pytest.mark.xfail(
-                reason="PEV XTCE definition may have incorrect namespace declarations or unused parameter definitions"
+                reason="PEV XTCE definition uses REUSABLE_SPARE_N parameters that are shared across multiple "
+                       "packet definitions. The structural validator flags unused instances as UNUSED_PARAMETER "
+                       "because it checks globally rather than per-packet. This is a known false-positive."
             ),
         ),
         pytest.param(
             config.get("LIBERA_PEC_PACKET_DEFINITION"),
             marks=pytest.mark.xfail(
-                reason="PEC XTCE definition may have incorrect namespace declarations or unused parameter definitions"
+                reason="PEC XTCE definition uses REUSABLE_SPARE_N parameters that are shared across multiple "
+                       "packet definitions. The structural validator flags unused instances as UNUSED_PARAMETER "
+                       "because it checks globally rather than per-packet. This is a known false-positive."
             ),
         ),
     ],
