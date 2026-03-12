@@ -11,9 +11,14 @@ on:
       - "[0-9]+.[0-9]+.[0-9]+*" # Push events for official release tags
 
 jobs:
+  run-tests:
+    uses: ./.github/workflows/_run-tests.yml
+
   # Call the reusable build workflow to build PyPI artifacts
   build:
     name: Build distribution artifacts
+    needs:
+      - run-tests
     uses: ./.github/workflows/_build.yml
 
   # Job that pushes dist artifacts to public PyPI for semver release tags
