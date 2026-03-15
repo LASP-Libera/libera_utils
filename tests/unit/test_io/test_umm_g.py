@@ -7,6 +7,7 @@ import pytest
 import xarray as xr
 from pydantic import ValidationError
 
+from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.umm_g import (
     BaseFileType,
     DataGranuleType,
@@ -19,18 +20,21 @@ from libera_utils.io.umm_g import (
     QAStatsType,
     QualityFlagEnum,
     TemporalExtentType,
+    UMMGDatasetTransformer,
     UMMGranule,
     VerticalSpatialDomainType,
     VerticalSpatialDomainTypeEnum,
     validate_iso_datetime,
 )
 
+# Valid LiberaDataProductFilename used across UMMGDatasetTransformer tests.
+# GranuleUR is derived from filepath.path.stem, so assertions should reference this constant.
+_TEST_FILEPATH = LiberaDataProductFilename("LIBERA_L1B_RAD-4CH_V1-0-0_20240101T000000_20240101T235959_R24001120000.nc")
 
-# TODO[LIBSDC-675]: Replace this function with a test fixture.
+
 def create_test_libera_dataset(
     n_samples: int = 100,
     include_all_metadata: bool = True,
-    granule_id: str | None = None,
     collection_short_name: str | None = None,
     collection_version: str | None = None,
 ) -> xr.Dataset:
@@ -44,8 +48,6 @@ def create_test_libera_dataset(
     include_all_metadata : bool, optional
         If True, includes all metadata fields. If False, creates minimal dataset
         to test warning generation, by default True
-    granule_id : str | None, optional
-        Granule identifier for the dataset, by default None (generates one)
     collection_short_name : str | None, optional
         Collection short name, by default "LIBERA_L1A_RAD"
     collection_version : str | None, optional
@@ -61,7 +63,7 @@ def create_test_libera_dataset(
     This function generates a dataset structure that follows the Libera data product
     conventions defined in netcdf.py, including:
     - Static project metadata (Format, Conventions, Platform, Project info)
-    - Dynamic product metadata (GranuleID, input_files)
+    - Dynamic product metadata (input_files)
     - Dynamic spatiotemporal metadata (temporal ranges, geolocation)
     - Science data variables (time_stamp, radiance, lat, lon, quality flags)
     """
@@ -134,10 +136,6 @@ def create_test_libera_dataset(
         ds.attrs["PlatformShortName"] = "NOAA-22"
 
         # Dynamic Product Metadata (from DynamicProductMetadata)
-        if granule_id:
-            ds.attrs["GranuleID"] = granule_id
-        else:
-            ds.attrs["GranuleID"] = f"LIBERA_L1A_RAD-4CH_V1-0-0_{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.nc"
         ds.attrs["input_files"] = ["LIBERA_L0_PKT_V1-0-0_20240101T000000_20240101T235959_R20240102T120000.nc"]
 
         # Dynamic Spatiotemporal Metadata (from DynamicSpatioTemporalMetadata)
@@ -362,24 +360,22 @@ def test_ummgranule_serialization_roundtrip():
 
 def test_umm_g_dataset_transformer_basic():
     """Test UMMGDatasetTransformer with a complete test dataset."""
-    from libera_utils.io.umm_g import UMMGDatasetTransformer
 
     # Create a test dataset with complete metadata
     test_dataset = create_test_libera_dataset(
         n_samples=50,
-        granule_id="TEST_GRANULE_001",
         collection_short_name="TEST_COLLECTION",
         collection_version="1.0",
     )
 
     # Create transformer
-    transformer = UMMGDatasetTransformer(test_dataset, log_warnings=False)
+    transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
 
     # Transform to UMM granule
     umm_granule = transformer.umm_granule
 
     # Verify basic fields
-    assert umm_granule.GranuleUR == "TEST_GRANULE_001"
+    assert umm_granule.GranuleUR == _TEST_FILEPATH.path.stem
     assert umm_granule.CollectionReference.ShortName == "TEST_COLLECTION"
     assert umm_granule.CollectionReference.Version == "1.0"
     assert len(umm_granule.ProviderDates) > 0
@@ -391,28 +387,26 @@ def test_umm_g_dataset_transformer_from_dataset_classmethod():
     """Test UMMGranule.from_dataset() classmethod."""
     # Create a test dataset
     test_dataset = create_test_libera_dataset(
-        granule_id="TEST_GRANULE_002",
         collection_short_name="LIBERA_L1A_RAD",
     )
 
     # Use the classmethod
-    umm_granule = UMMGranule.from_dataset(test_dataset, log_warnings=True)
+    umm_granule = UMMGranule.from_dataset(test_dataset, _TEST_FILEPATH, log_warnings=True)
 
     # Verify the granule was created correctly
     assert isinstance(umm_granule, UMMGranule)
-    assert umm_granule.GranuleUR == "TEST_GRANULE_002"
+    assert umm_granule.GranuleUR == _TEST_FILEPATH.path.stem
     assert umm_granule.CollectionReference.ShortName == "LIBERA_L1A_RAD"
 
 
 def test_umm_g_dataset_transformer_minimal_metadata():
     """Test UMMGDatasetTransformer with minimal metadata triggers warnings."""
-    from libera_utils.io.umm_g import UMMGDatasetTransformer
 
     # Create a minimal dataset
     test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
 
     # Create transformer
-    transformer = UMMGDatasetTransformer(test_dataset, log_warnings=False)
+    transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
 
     # Transform to UMM granule
     umm_granule = transformer.umm_granule
@@ -428,17 +422,26 @@ def test_umm_g_dataset_transformer_minimal_metadata():
 def test_umm_g_dataset_transformer_json_output():
     """Test that UMMGDatasetTransformer produces valid JSON output."""
     # Create a test dataset
-    test_dataset = create_test_libera_dataset(granule_id="TEST_GRANULE_JSON", collection_short_name="TEST_JSON")
+    test_dataset = create_test_libera_dataset(collection_short_name="TEST_JSON")
 
     # Transform to UMM granule
-    umm_granule = UMMGranule.from_dataset(test_dataset)
+    umm_granule = UMMGranule.from_dataset(test_dataset, _TEST_FILEPATH)
 
     # Verify JSON serialization works
     json_output = umm_granule.model_dump_json(indent=2)
     assert isinstance(json_output, str)
-    assert "TEST_GRANULE_JSON" in json_output
+    assert _TEST_FILEPATH.path.stem in json_output
     assert "TEST_JSON" in json_output
 
     # Verify we can parse it back
     parsed = UMMGranule.model_validate_json(json_output)
-    assert parsed.GranuleUR == "TEST_GRANULE_JSON"
+    assert parsed.GranuleUR == _TEST_FILEPATH.path.stem
+
+
+def test_granule_ur_equals_filename_stem():
+    """Test that GranuleUR is set to the data product filename stem (i.e. filename without extension)."""
+
+    test_dataset = create_test_libera_dataset()
+    transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
+
+    assert transformer.umm_granule.GranuleUR == _TEST_FILEPATH.path.stem

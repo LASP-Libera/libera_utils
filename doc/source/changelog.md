@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.7.0
+
+- FEAT: Added metadata writer to make UMM-G metadata files from NetCDF-4 data files
+
 ## 5.6.0
 
 - FEAT: Add dimension validation to data product definition
