@@ -9,7 +9,6 @@ coordinates:
     dimensions: ["packet"]
     attributes:
       long_name: Packet timestamp from ICIE main processor
-      valid_range: ["1900-01-01T00:00:00", "2100-01-01T00:00:00"]
     encoding:
       units: nanoseconds since 1958-01-01
       calendar: standard
