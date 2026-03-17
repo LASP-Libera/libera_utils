@@ -1,19 +1,25 @@
 """Unit tests for packet configurations for L1A processing"""
 
+from datetime import timedelta
+
+import numpy as np
 import pytest
 
 from libera_utils.constants import LiberaApid
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import l1a_packet_configs
-from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
+from libera_utils.l1a.l1a_packet_configs import (
+    SampleTimeSource,
+    get_l1a_product_definition_path,
+    get_packet_config,
+)
 
 
 class TestPacketConfiguration:
-    """Test the PacketConfiguration class and its pre-configured instances."""
+    """Test the PacketConfiguration class mechanics — construction, validators, and properties."""
 
     def test_packet_configuration_creation(self):
         """Test that PacketConfiguration can be instantiated with required fields."""
-
         config = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.icie_axis_sample,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(
@@ -43,9 +49,7 @@ class TestPacketConfiguration:
         assert config.sample_groups[0].time_source == l1a_packet_configs.SampleTimeSource.ICIE
 
     def test_sample_group_dimension_name(self):
-        """Test that the dimension_name property works correctly for SampleGroup."""
-        from datetime import timedelta
-
+        """Test that the sample_time_dimension property produces the correct name for each time source."""
         group_icie = l1a_packet_configs.SampleGroup(
             name="TEST_GROUP",
             sample_count=1,
@@ -74,88 +78,236 @@ class TestPacketConfiguration:
         )
         assert group_jpss.sample_time_dimension == "ADGPS_JPSS_TIME"
 
-    def test_predefined_configs(self):
-        """Test that predefined configurations are properly structured."""
-        # Test AXIS_SAMPLE_CONFIG
-        axis_config = get_packet_config(LiberaApid.icie_axis_sample)
-        assert axis_config.packet_apid == LiberaApid.icie_axis_sample
-        assert len(axis_config.sample_groups) == 1
-        assert axis_config.sample_groups[0].name == "AXIS_SAMPLE"
-        assert axis_config.sample_groups[0].sample_count == 50
+    def test_packet_time_coordinate_property(self):
+        """Test that packet_time_coordinate derives its name from packet_time_source."""
+        config_icie = l1a_packet_configs.PacketConfiguration(
+            packet_apid=LiberaApid.icie_nom_hk,
+            packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
+            packet_time_source=l1a_packet_configs.SampleTimeSource.ICIE,
+        )
+        assert config_icie.packet_time_coordinate == "PACKET_ICIE_TIME"
 
-        # Test RAD_SAMPLE_CONFIG
-        rad_config = get_packet_config(LiberaApid.icie_rad_sample)
-        assert rad_config.packet_apid == LiberaApid.icie_rad_sample
-        assert len(rad_config.sample_groups) == 1
-        assert rad_config.sample_groups[0].name == "RAD_SAMPLE"
-        assert rad_config.sample_groups[0].sample_count == 50
+        config_jpss = l1a_packet_configs.PacketConfiguration(
+            packet_apid=LiberaApid.jpss_sc_pos,
+            packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
+            packet_time_source=l1a_packet_configs.SampleTimeSource.JPSS,
+        )
+        assert config_jpss.packet_time_coordinate == "PACKET_JPSS_TIME"
 
-        # Test SC_POS_CONFIG
-        sc_pos_config = get_packet_config(LiberaApid.jpss_sc_pos)
-        assert sc_pos_config.packet_apid == LiberaApid.jpss_sc_pos
-        assert len(sc_pos_config.sample_groups) == 2
-        assert sc_pos_config.sample_groups[0].name == "ADGPS"
-        assert sc_pos_config.sample_groups[1].name == "ADCFA"
 
-    def test_new_apid_configs(self):
-        """Test that the new APID configurations (1035, 1043, 1044) are correctly loaded."""
-        from datetime import timedelta
+class TestL1aConfigYaml:
+    """Regression tests for the L1A packet processing YAML configurations.
 
-        # APID 1035 - icie_rad_full
-        rad_full_config = get_packet_config(LiberaApid.icie_rad_full)
-        assert rad_full_config.packet_apid == LiberaApid.icie_rad_full
-        assert len(rad_full_config.sample_groups) == 1
-        assert rad_full_config.sample_groups[0].name == "RAD_FULL"
-        assert rad_full_config.sample_groups[0].sample_count == 100
-        assert rad_full_config.sample_groups[0].sample_period == timedelta(microseconds=1000)
+    Each test covers a single APID config to catch accidental changes to field names,
+    sample counts, time sources, or packet definition keys.
+    """
 
-        # APID 1043 - icie_cal_full
-        cal_full_config = get_packet_config(LiberaApid.icie_cal_full)
-        assert cal_full_config.packet_apid == LiberaApid.icie_cal_full
-        assert len(cal_full_config.sample_groups) == 1
-        assert cal_full_config.sample_groups[0].name == "CAL_FULL"
-        assert cal_full_config.sample_groups[0].sample_count == 100
-        assert cal_full_config.sample_groups[0].sample_period == timedelta(microseconds=1000)
+    def test_pev_sw_stat_config(self):
+        """APID 1000 — PEV software status, housekeeping-style, no sample groups."""
+        cfg = get_packet_config(LiberaApid.pev_sw_stat)
+        assert cfg.packet_apid == LiberaApid.pev_sw_stat
+        assert cfg.packet_time_fields.day_field == "PEV__TM_DAY_SW_STAT"
+        assert cfg.packet_time_fields.ms_field == "PEV__TM_MS_SW_STAT"
+        assert cfg.packet_time_fields.us_field == "PEV__TM_US_SW_STAT"
+        assert cfg.packet_definition_config_key == "LIBERA_PEV_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert cfg.sample_groups == []
+        assert cfg.aggregation_groups == []
 
-        # APID 1044 - icie_cal_sample
-        cal_sample_config = get_packet_config(LiberaApid.icie_cal_sample)
-        assert cal_sample_config.packet_apid == LiberaApid.icie_cal_sample
-        assert len(cal_sample_config.sample_groups) == 1
-        assert cal_sample_config.sample_groups[0].name == "CAL_SAMPLE"
-        assert cal_sample_config.sample_groups[0].sample_count == 50
-        assert cal_sample_config.sample_groups[0].sample_period == timedelta(microseconds=5000)
+    def test_pec_sw_stat_config(self):
+        """APID 1002 — PEC software status, housekeeping-style, no sample groups."""
+        cfg = get_packet_config(LiberaApid.pec_sw_stat)
+        assert cfg.packet_apid == LiberaApid.pec_sw_stat
+        assert cfg.packet_time_fields.day_field == "PEC__TM_DAY_SW_STAT"
+        assert cfg.packet_time_fields.ms_field == "PEC__TM_MS_SW_STAT"
+        assert cfg.packet_time_fields.us_field == "PEC__TM_US_SW_STAT"
+        assert cfg.packet_definition_config_key == "LIBERA_PEC_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert cfg.sample_groups == []
+        assert cfg.aggregation_groups == []
 
-    def test_pev_pec_sw_stat_configs(self):
-        """Test that pev_sw_stat (1000) and pec_sw_stat (1002) configurations are correctly loaded."""
-        # APID 1000 - pev_sw_stat
-        pev_config = get_packet_config(LiberaApid.pev_sw_stat)
-        assert pev_config.packet_apid == LiberaApid.pev_sw_stat
-        # These are housekeeping-style packets with no sample groups
-        assert len(pev_config.sample_groups) == 0
-        assert len(pev_config.aggregation_groups) == 0
-        # Verify packet time fields are correctly configured
-        assert pev_config.packet_time_fields.day_field == "PEV__TM_DAY_SW_STAT"
-        assert pev_config.packet_time_fields.ms_field == "PEV__TM_MS_SW_STAT"
-        assert pev_config.packet_time_fields.us_field == "PEV__TM_US_SW_STAT"
-        # Uses the dedicated PEV packet definition
-        assert pev_config.packet_definition_config_key == "LIBERA_PEV_PACKET_DEFINITION"
-        # Packet time coordinate should follow standard ICIE naming
-        assert pev_config.packet_time_coordinate == "PACKET_ICIE_TIME"
+    def test_icie_axis_sample_config(self):
+        """APID 1048 — azimuth/elevation encoder samples, 50 samples per packet, ICIE timestamps."""
+        cfg = get_packet_config(LiberaApid.icie_axis_sample)
+        assert cfg.packet_apid == LiberaApid.icie_axis_sample
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_AXIS_SAMPLE"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_AXIS_SAMPLE"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_AXIS_SAMPLE"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert len(cfg.sample_groups) == 1
+        grp = cfg.sample_groups[0]
+        assert grp.name == "AXIS_SAMPLE"
+        assert grp.sample_count == 50
+        assert grp.time_source == SampleTimeSource.ICIE
+        assert grp.sample_time_dimension == "AXIS_SAMPLE_ICIE_TIME"
+        assert grp.time_field_patterns is not None
+        assert grp.time_field_patterns.s_field == "ICIE__AXIS_SAMPLE_TM_SEC%i"
+        assert grp.time_field_patterns.us_field == "ICIE__AXIS_SAMPLE_TM_SUB%i"
 
-        # APID 1002 - pec_sw_stat
-        pec_config = get_packet_config(LiberaApid.pec_sw_stat)
-        assert pec_config.packet_apid == LiberaApid.pec_sw_stat
-        # These are housekeeping-style packets with no sample groups
-        assert len(pec_config.sample_groups) == 0
-        assert len(pec_config.aggregation_groups) == 0
-        # Verify packet time fields are correctly configured
-        assert pec_config.packet_time_fields.day_field == "PEC__TM_DAY_SW_STAT"
-        assert pec_config.packet_time_fields.ms_field == "PEC__TM_MS_SW_STAT"
-        assert pec_config.packet_time_fields.us_field == "PEC__TM_US_SW_STAT"
-        # Uses the dedicated PEC packet definition
-        assert pec_config.packet_definition_config_key == "LIBERA_PEC_PACKET_DEFINITION"
-        # Packet time coordinate should follow standard ICIE naming
-        assert pec_config.packet_time_coordinate == "PACKET_ICIE_TIME"
+    def test_icie_rad_sample_config(self):
+        """APID 1056 — radiometer 200 Hz samples, FPE epoch+period timestamps."""
+        cfg = get_packet_config(LiberaApid.icie_rad_sample)
+        assert cfg.packet_apid == LiberaApid.icie_rad_sample
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_RAD_SAMPLE"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_RAD_SAMPLE"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_RAD_SAMPLE"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert len(cfg.sample_groups) == 1
+        grp = cfg.sample_groups[0]
+        assert grp.name == "RAD_SAMPLE"
+        assert grp.sample_count == 50
+        assert grp.time_source == SampleTimeSource.FPE
+        assert grp.sample_period == timedelta(microseconds=5000)
+        assert grp.sample_time_dimension == "RAD_SAMPLE_FPE_TIME"
+        assert grp.epoch_time_fields is not None
+        assert grp.epoch_time_fields.s_field == "ICIE__RAD_SAMP_START_HI"
+        assert grp.epoch_time_fields.us_field == "ICIE__RAD_SAMP_START_LO"
+
+    def test_icie_rad_full_config(self):
+        """APID 1035 — radiometer 1 kHz full-resolution samples, FPE epoch+period timestamps."""
+        cfg = get_packet_config(LiberaApid.icie_rad_full)
+        assert cfg.packet_apid == LiberaApid.icie_rad_full
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_RAD_FULL"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_RAD_FULL"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_RAD_FULL"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert len(cfg.sample_groups) == 1
+        grp = cfg.sample_groups[0]
+        assert grp.name == "RAD_FULL"
+        assert grp.sample_count == 100
+        assert grp.time_source == SampleTimeSource.FPE
+        assert grp.sample_period == timedelta(microseconds=1000)
+        assert grp.sample_time_dimension == "RAD_FULL_FPE_TIME"
+        assert grp.epoch_time_fields is not None
+        assert grp.epoch_time_fields.s_field == "ICIE__RAD_FULL_START_HI"
+        assert grp.epoch_time_fields.us_field == "ICIE__RAD_FULL_START_LO"
+
+    def test_icie_cal_full_config(self):
+        """APID 1043 — calibration 1 kHz full-resolution samples, FPE epoch+period timestamps."""
+        cfg = get_packet_config(LiberaApid.icie_cal_full)
+        assert cfg.packet_apid == LiberaApid.icie_cal_full
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_CAL_FULL"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_CAL_FULL"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_CAL_FULL"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert len(cfg.sample_groups) == 1
+        grp = cfg.sample_groups[0]
+        assert grp.name == "CAL_FULL"
+        assert grp.sample_count == 100
+        assert grp.time_source == SampleTimeSource.FPE
+        assert grp.sample_period == timedelta(microseconds=1000)
+        assert grp.sample_time_dimension == "CAL_FULL_FPE_TIME"
+        assert grp.epoch_time_fields is not None
+        assert grp.epoch_time_fields.s_field == "ICIE__CAL_FULL_START_HI"
+        assert grp.epoch_time_fields.us_field == "ICIE__CAL_FULL_START_LO"
+
+    def test_icie_cal_sample_config(self):
+        """APID 1044 — calibration 200 Hz downsampled, FPE epoch+period timestamps."""
+        cfg = get_packet_config(LiberaApid.icie_cal_sample)
+        assert cfg.packet_apid == LiberaApid.icie_cal_sample
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_CAL_SAMPLE"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_CAL_SAMPLE"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_CAL_SAMPLE"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert len(cfg.sample_groups) == 1
+        grp = cfg.sample_groups[0]
+        assert grp.name == "CAL_SAMPLE"
+        assert grp.sample_count == 50
+        assert grp.time_source == SampleTimeSource.FPE
+        assert grp.sample_period == timedelta(microseconds=5000)
+        assert grp.sample_time_dimension == "CAL_SAMPLE_FPE_TIME"
+        assert grp.epoch_time_fields is not None
+        assert grp.epoch_time_fields.s_field == "ICIE__CAL_SAMP_START_HI"
+        assert grp.epoch_time_fields.us_field == "ICIE__CAL_SAMP_START_LO"
+
+    def test_icie_wfov_sci_config(self):
+        """APID 1060 — WFOV camera science data as a single aggregated binary blob per packet."""
+        cfg = get_packet_config(LiberaApid.icie_wfov_sci)
+        assert cfg.packet_apid == LiberaApid.icie_wfov_sci
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_WFOV_SCI"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_WFOV_SCI"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_WFOV_SCI"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert cfg.sample_groups == []
+        assert len(cfg.aggregation_groups) == 1
+        agg = cfg.aggregation_groups[0]
+        assert agg.name == "ICIE__WFOV_DATA"
+        assert agg.field_pattern == "ICIE__WFOV_DATA_%i"
+        assert agg.field_count == 972
+        assert agg.dtype == np.dtype("|S972")
+
+    def test_icie_nom_hk_config(self):
+        """APID 1064 — nominal housekeeping, no sample groups."""
+        cfg = get_packet_config(LiberaApid.icie_nom_hk)
+        assert cfg.packet_apid == LiberaApid.icie_nom_hk
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_NOM_HK"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_NOM_HK"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_NOM_HK"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert cfg.sample_groups == []
+        assert cfg.aggregation_groups == []
+
+    def test_icie_crit_hk_config(self):
+        """APID 1065 — critical housekeeping, no sample groups."""
+        cfg = get_packet_config(LiberaApid.icie_crit_hk)
+        assert cfg.packet_apid == LiberaApid.icie_crit_hk
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_CRIT_HK"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_CRIT_HK"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_CRIT_HK"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert cfg.sample_groups == []
+        assert cfg.aggregation_groups == []
+
+    def test_icie_temp_hk_config(self):
+        """APID 1066 — temperature housekeeping, no sample groups."""
+        cfg = get_packet_config(LiberaApid.icie_temp_hk)
+        assert cfg.packet_apid == LiberaApid.icie_temp_hk
+        assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_TEMP_HK"
+        assert cfg.packet_time_fields.ms_field == "ICIE__TM_MS_TEMP_HK"
+        assert cfg.packet_time_fields.us_field == "ICIE__TM_US_TEMP_HK"
+        assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
+        assert cfg.sample_groups == []
+        assert cfg.aggregation_groups == []
+
+    def test_jpss_sc_pos_config(self):
+        """APID 8 — JPSS spacecraft position/attitude, two JPSS-timestamped sample groups."""
+        cfg = get_packet_config(LiberaApid.jpss_sc_pos)
+        assert cfg.packet_apid == LiberaApid.jpss_sc_pos
+        assert cfg.packet_time_fields.day_field == "DAYS"
+        assert cfg.packet_time_fields.ms_field == "MSEC"
+        assert cfg.packet_time_fields.us_field == "USEC"
+        assert cfg.packet_definition_config_key == "JPSS_GEOLOCATION_PACKET_DEFINITION"
+        assert cfg.packet_time_coordinate == "PACKET_JPSS_TIME"
+        assert len(cfg.sample_groups) == 2
+
+        adgps = cfg.sample_groups[0]
+        assert adgps.name == "ADGPS"
+        assert adgps.sample_count == 1
+        assert adgps.time_source == SampleTimeSource.JPSS
+        assert adgps.sample_time_dimension == "ADGPS_JPSS_TIME"
+        assert adgps.time_field_patterns is not None
+        assert adgps.time_field_patterns.day_field == "ADAET1DAY"
+        assert adgps.time_field_patterns.ms_field == "ADAET1MS"
+        assert adgps.time_field_patterns.us_field == "ADAET1US"
+
+        adcfa = cfg.sample_groups[1]
+        assert adcfa.name == "ADCFA"
+        assert adcfa.sample_count == 1
+        assert adcfa.time_source == SampleTimeSource.JPSS
+        assert adcfa.sample_time_dimension == "ADCFA_JPSS_TIME"
+        assert adcfa.time_field_patterns is not None
+        assert adcfa.time_field_patterns.day_field == "ADAET2DAY"
+        assert adcfa.time_field_patterns.ms_field == "ADAET2MS"
+        assert adcfa.time_field_patterns.us_field == "ADAET2US"
 
 
 @pytest.mark.parametrize(
