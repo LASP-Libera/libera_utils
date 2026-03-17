@@ -97,7 +97,6 @@ variables:
       long_name: ICIE calibration full resolution packet checksum
   ICIE__CAL_FULL_RES:
     dtype: float32
-
     dimensions: ["CAL_FULL_FPE_TIME"]
     attributes:
       long_name: ICIE calibration full resolution radiometer sample
