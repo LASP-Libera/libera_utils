@@ -1,5 +1,27 @@
 # APID Contents
 
+## `ccsds_2025_218_12_10_06`
+
+ISTR gain calibration event. Contains 1 kHz full-resolution radiometer and calibration data
+(`icie_rad_full`, `icie_cal_full`).
+
+**Total packets**: 3124
+
+| APID | Packet Name       | Count |
+| ---- | ----------------- | ----- |
+| 1017 | icie_seq_hk       | 3     |
+| 1019 | icie_fp_hk        | 3     |
+| 1035 | icie_rad_full     | 1236  |
+| 1037 | icie_axis_hk      | 173   |
+| 1043 | icie_cal_full     | 491   |
+| 1044 | icie_cal_sample   | 1     |
+| 1048 | icie_axis_sample  | 695   |
+| 1051 | icie_crit_hk      | 173   |
+| 1057 | icie_nom_hk       | 173   |
+| 1058 | UNKNOWN_APID_1058 | 1     |
+| 1059 | icie_ana_hk       | 173   |
+| 1060 | icie_temp_hk      | 2     |
+
 ## `ccsds_2025_218_18_37_32`
 
 **Total packets**: 2973

@@ -103,6 +103,8 @@ class TestDataProductIdentifier:
             "l0_icie_rad_sample_pds",
             "l0_icie_wfov_sci_pds",
             "l0_icie_axis_sample_pds",
+            "l0_pev_sw_stat_pds",
+            "l0_pec_sw_stat_pds",
             "l0_icie_sw_stat_pds",
             "l0_icie_seq_hk_pds",
             "l0_icie_fp_hk_pds",
@@ -122,6 +124,8 @@ class TestDataProductIdentifier:
             "l1a_icie_rad_sample_decoded",
             "l1a_icie_wfov_sci_decoded",
             "l1a_icie_axis_sample_decoded",
+            "l1a_pev_sw_stat_decoded",
+            "l1a_pec_sw_stat_decoded",
             "l1a_icie_sw_stat_decoded",
             "l1a_icie_seq_hk_decoded",
             "l1a_icie_fp_hk_decoded",
@@ -364,6 +368,8 @@ class TestLiberaApid:
         """
         expected_names = [
             "jpss_sc_pos",
+            "pev_sw_stat",
+            "pec_sw_stat",
             "icie_sw_stat",
             "icie_seq_hk",
             "icie_fp_hk",
