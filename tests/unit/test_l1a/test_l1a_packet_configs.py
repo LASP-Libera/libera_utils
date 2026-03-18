@@ -146,7 +146,7 @@ class TestL1aConfigYaml:
         assert grp.time_field_patterns.us_field == "ICIE__AXIS_SAMPLE_TM_SUB%i"
 
     def test_icie_rad_sample_config(self):
-        """APID 1056 — radiometer 200 Hz samples, FPE epoch+period timestamps."""
+        """APID 1036 — radiometer 200 Hz samples, FPE epoch+period timestamps."""
         cfg = get_packet_config(LiberaApid.icie_rad_sample)
         assert cfg.packet_apid == LiberaApid.icie_rad_sample
         assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_RAD_SAMPLE"
@@ -226,7 +226,7 @@ class TestL1aConfigYaml:
         assert grp.epoch_time_fields.us_field == "ICIE__CAL_SAMP_START_LO"
 
     def test_icie_wfov_sci_config(self):
-        """APID 1060 — WFOV camera science data as a single aggregated binary blob per packet."""
+        """APID 1040 — WFOV camera science data as a single aggregated binary blob per packet."""
         cfg = get_packet_config(LiberaApid.icie_wfov_sci)
         assert cfg.packet_apid == LiberaApid.icie_wfov_sci
         assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_WFOV_SCI"
@@ -243,7 +243,7 @@ class TestL1aConfigYaml:
         assert agg.dtype == np.dtype("|S972")
 
     def test_icie_nom_hk_config(self):
-        """APID 1064 — nominal housekeeping, no sample groups."""
+        """APID 1057 — nominal housekeeping, no sample groups."""
         cfg = get_packet_config(LiberaApid.icie_nom_hk)
         assert cfg.packet_apid == LiberaApid.icie_nom_hk
         assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_NOM_HK"
@@ -255,7 +255,7 @@ class TestL1aConfigYaml:
         assert cfg.aggregation_groups == []
 
     def test_icie_crit_hk_config(self):
-        """APID 1065 — critical housekeeping, no sample groups."""
+        """APID 1051 — critical housekeeping, no sample groups."""
         cfg = get_packet_config(LiberaApid.icie_crit_hk)
         assert cfg.packet_apid == LiberaApid.icie_crit_hk
         assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_CRIT_HK"
@@ -267,7 +267,7 @@ class TestL1aConfigYaml:
         assert cfg.aggregation_groups == []
 
     def test_icie_temp_hk_config(self):
-        """APID 1066 — temperature housekeeping, no sample groups."""
+        """APID 1060 — temperature housekeeping, no sample groups."""
         cfg = get_packet_config(LiberaApid.icie_temp_hk)
         assert cfg.packet_apid == LiberaApid.icie_temp_hk
         assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_TEMP_HK"
@@ -279,7 +279,7 @@ class TestL1aConfigYaml:
         assert cfg.aggregation_groups == []
 
     def test_jpss_sc_pos_config(self):
-        """APID 8 — JPSS spacecraft position/attitude, two JPSS-timestamped sample groups."""
+        """APID 11 — JPSS spacecraft position/attitude, two JPSS-timestamped sample groups."""
         cfg = get_packet_config(LiberaApid.jpss_sc_pos)
         assert cfg.packet_apid == LiberaApid.jpss_sc_pos
         assert cfg.packet_time_fields.day_field == "DAYS"
