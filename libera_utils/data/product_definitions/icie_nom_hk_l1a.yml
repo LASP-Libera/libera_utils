@@ -150,7 +150,7 @@ variables:
     dtype: float64
     dimensions: ["PACKET"]
   ICIE__SV_SAS_FAULT:
-    dtype: "|S5"
+    dtype: "|S7"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_ANG_ERR_AZ:
     dtype: float32
@@ -165,10 +165,10 @@ variables:
     dtype: float32
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_AWU_ST_AZ:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_AWU_ST_EL:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_BRK_ST:
     dtype: "|S10"
@@ -198,10 +198,10 @@ variables:
     dtype: "|S6"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_ENC_ST_AZ:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_ENC_ST_EL:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FAULT_ST_AZ:
     dtype: "|S5"
@@ -210,34 +210,34 @@ variables:
     dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_ANG_AZ:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_ANG_EL:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_ERR_AZ:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_ERR_EL:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_RT_AZ:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_RT_EL:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_TQ_AZ:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_FLT_TQ_EL:
-    dtype: "|S8"
+    dtype: "|S5"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_MTR_ST_AZ:
-    dtype: "|S8"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_AXIS_MTR_ST_EL:
-    dtype: "|S8"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_CAL_SAMPLE:
     dtype: float32
@@ -654,10 +654,10 @@ variables:
     dtype: "|S8"
     dimensions: ["PACKET"]
   ICIE__SW_LL_OVR_AZ:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_LL_OVR_EL:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_LWC_ALIVE_ST:
     dtype: "|S5"
@@ -705,28 +705,28 @@ variables:
     dtype: float32
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP0:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP1:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP2:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP3:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP4:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP5:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP6:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_BUF_OP7:
-    dtype: "|S12"
+    dtype: "|S11"
     dimensions: ["PACKET"]
   ICIE__SW_SEQ_EXEC_POS_OP0:
     dtype: uint16
@@ -822,13 +822,13 @@ variables:
     dtype: uint32
     dimensions: ["PACKET"]
   ICIE__SW_WFOV_IMG_ST:
-    dtype: "|S7"
+    dtype: "|S6"
     dimensions: ["PACKET"]
   ICIE__SW_WFOV_NAND_BAD:
-    dtype: "|S5"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   ICIE__SW_WFOV_TLM_ST:
-    dtype: "|S7"
+    dtype: "|S3"
     dimensions: ["PACKET"]
   REUSABLE_SPARE_2:
     dtype: uint8

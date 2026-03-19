@@ -37,4 +37,10 @@ PACKET_ICIE_TIME:
 AXIS_SAMPLE_ICIE_TIME:
   long_name: "Azimuth and elevation encoder sample time from ICIE main processor clock"
 RAD_SAMPLE_FPE_TIME:
-  long_name: "Radiometer sample time from ICIE fast processor clock"
+  long_name: "Radiometer sample time"
+RAD_FULL_FPE_TIME:
+  long_name: "Radiometer full resolution sample time"
+CAL_SAMPLE_FPE_TIME:
+  long_name: "Calibration sample time"
+CAL_FULL_FPE_TIME:
+  long_name: "Calibration full resolution sample time"

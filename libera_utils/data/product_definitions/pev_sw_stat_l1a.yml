@@ -6,7 +6,7 @@ attributes:
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Packet timestamp from ICIE main processor
     encoding:
@@ -17,354 +17,351 @@ variables:
   # CCSDS Primary Header
   VERSION:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Packet version
       valid_range: [0, 7]
   TYPE:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Packet type
       valid_range: [0, 1]
   SEC_HDR_FLAG:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Secondary header flag
       valid_range: [0, 1]
   PKT_APID:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Packet application ID
       valid_range: [0, 2047]
   SEQ_FLGS:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Sequence flags
       valid_range: [0, 3]
   SRC_SEQ_CTR:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Source sequence counter
       valid_range: [0, 16383]
   PKT_LEN:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Packet length
       units: bytes
   # Timestamps
   PEV__TM_DAY_SW_STAT:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Time Day
   PEV__TM_MS_SW_STAT:
     dtype: uint32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Time Ms
   PEV__TM_US_SW_STAT:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Time Us
 
   # Header Spares
   REUSABLE_SPARE_8:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   # Command Counters
   PEV__SW_CMD_SUCC_CNT:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Number of successful commands
   PEV__SW_CMD_RJCT_CNT:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Number of commands rejected
   PEV__SW_CMD_RCV_CNT:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Number of received commands
   PEV__SW_CMD_FMT_CNT:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Number of bad format commands received
 
   # Last Command Status (Enumerated Strings)
   PEV__SW_CMD_SUCC_OP:
-    dtype: "|S13"
-    dimensions: ["packet"]
+    dtype: "|S21"
+    dimensions: ["PACKET"]
     attributes:
       long_name: Last successful command opcode
   PEV__SW_CMD_RJCT_OP:
-    dtype: "|S9"
-    dimensions: ["packet"]
+    dtype: "|S21"
+    dimensions: ["PACKET"]
     attributes:
       long_name: Last rejected command opcode
   PEV__SW_CMD_FAIL_CODE:
-    dtype: "|S6"
-    dimensions: ["packet"]
+    dtype: "|S8"
+    dimensions: ["PACKET"]
     attributes:
       long_name: Command failure code
 
   PEV__SW_DES_OVR_CNT:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Number of DES tasks that overran
 
   # System States (Enumerated Strings)
   PEV__SW_BD_PASS:
-    dtype: "|S2"
-    dimensions: ["packet"]
+    dtype: "|S3"
+    dimensions: ["PACKET"]
     attributes:
       long_name: Board passivation status
   PEV__SW_IMG_IDX:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Current image index from flash
   PEV__SW_TIME_FREE_ST:
     dtype: "|S4"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
     attributes:
       long_name: Time sync status
   PEV__SW_TBL_LD_ST:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S11"
+    dimensions: ["PACKET"]
     attributes:
       long_name: Table loading state
   PEV__SW_MEM_OP_TYPE:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
     attributes:
       long_name: Last memory operation type
 
   # Sequential Spares
   REUSABLE_SPARE_1:
     dtype: uint8
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   # Power and Subsystem States
   PEV__SW_PWR_ST_WFOV:
-    dtype: "|S2"
-    dimensions: ["packet"]
+    dtype: "|S3"
+    dimensions: ["PACKET"]
   PEV__SW_PWR_ST_CFPE:
-    dtype: "|S2"
-    dimensions: ["packet"]
+    dtype: "|S3"
+    dimensions: ["PACKET"]
   PEV__SW_PWR_ST_FPE:
-    dtype: "|S2"
-    dimensions: ["packet"]
+    dtype: "|S3"
+    dimensions: ["PACKET"]
   PEV__SW_PWR_ST_LWC:
-    dtype: "|S2"
-    dimensions: ["packet"]
+    dtype: "|S3"
+    dimensions: ["PACKET"]
 
   PEV__SW_AXIS_AWU_ST_SD:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_AWU_ST_RSM:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_ENC_MD_SD:
     dtype: "|S6"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_ENC_MD_RSM:
     dtype: "|S6"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_ENC_ST_SD:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_ENC_ST_RSM:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_MTR_ST_SD:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_MTR_ST_RSM:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   PEV__SW_STEP_POS:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_LWC_BB_SEL:
-    dtype: "|S3"
-    dimensions: ["packet"]
+    dtype: "|S4"
+    dimensions: ["PACKET"]
   PEV__SW_LWC_HTR_ST:
     dtype: "|S3"
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_STEP_CYCLE_ST:
-    dtype: "|S3"
-    dimensions: ["packet"]
+    dtype: "|S7"
+    dimensions: ["PACKET"]
   PEV__SW_HALL_POS:
-    dtype: "|S6"
-    dimensions: ["packet"]
+    dtype: "|S7"
+    dimensions: ["PACKET"]
   PEV__SW_STEP_INIT:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S8"
+    dimensions: ["PACKET"]
 
   PEV__SW_MSG_RCV_CNT:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_PPS_RCV_CNT:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_MEM_XSUM:
     dtype: uint32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   # Board Temperatures (ADCs)
   PEV__ADC_SD_MTR1_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_SD_MTR2_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_RSM_MTR1_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_RSM_MTR2_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_SS_MTR1_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_SS_MTR2_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_GND1:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_GND2:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__ADC_VOR_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
-
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_CMD_RSM:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S12"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_CMD_SD:
-    dtype: "|S4"
-    dimensions: ["packet"]
-
+    dtype: "|S12"
+    dimensions: ["PACKET"]
   PEV__SW_LWC_ALIVE_ST:
     dtype: "|S5"
-    dimensions: ["packet"]
-
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FAULT_ST_SD:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FAULT_ST_RSM:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
 
   # Axis Fault Flags
   PEV__SW_AXIS_FLT_ERR_SD:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_TQ_SD:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_RT_SD:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_ANG_SD:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_ERR_RSM:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_TQ_RSM:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_RT_RSM:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_FLT_ANG_RSM:
-    dtype: "|S4"
-    dimensions: ["packet"]
+    dtype: "|S5"
+    dimensions: ["PACKET"]
 
   # Control Loop Parameters
   PEV__SW_AXIS_CMD_PCG0_RSM:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_CMD_PCG1_RSM:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_CMD_PCG0_SD:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_CMD_PCG1_SD:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_ANG_MEAS_RSM:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_RT_MEAS_RSM:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_ANG_MEAS_SD:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_RT_MEAS_SD:
     dtype: float32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   # LWC Specific Data
   PEV__SW_LWC_HTR_PWM:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_LWC_BB1_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
     attributes:
       units: C
   PEV__SW_LWC_BB2_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
     attributes:
       units: C
   PEV__SW_LWC_HTR_SETPNT:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__SW_LWC_CMD_SUCC_CNT:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_LWC_PWBA_TEMP:
-    dtype: uint16
-    dimensions: ["packet"]
+    dtype: float64
+    dimensions: ["PACKET"]
   PEV__SW_LWC_HTR_PWM_DUTY:
     dtype: uint32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   PEV__SW_AXIS_EN_CSEC_RSM:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__SW_AXIS_EN_CSEC_SD:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   PEV__PL_ALIVE_CNT_LWC:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
   PEV__PL_DEAD_CNT_LWC:
     dtype: uint16
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
 
   # Footer Spares and Checksum
   PEV__SW_STAT_CHECKSUM:
     dtype: uint32
-    dimensions: ["packet"]
+    dimensions: ["PACKET"]
