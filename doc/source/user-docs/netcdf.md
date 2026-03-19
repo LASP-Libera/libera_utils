@@ -1,16 +1,13 @@
 # Creating Libera Data Product Files (NetCDF-4)
 
-TODO[LIBSDC-633]: Include discussion here (or in the YAML format description below) of Dimensions, static global attributes, and dynamic attributes.
-
-The Libera SDC provides utilities for creating NetCDF4 data product files that conform to YAML data product definitions and a few global expectations.
-These definitions ensure a degree of consistency across all Libera data products, including proper metadata, coordinate systems, and data types.
-Libera Utils includes a few different ways to work with data product definitions for validation.
+The Libera SDC provides utilities for creating NetCDF4 data product files that conform to YAML data product definitions
+and a few global expectations. These definitions ensure a degree of consistency across all Libera data products,
+including proper metadata, coordinate systems, and data types. Libera Utils includes a few different ways to work with
+data product definitions for validation.
 
 ## Product Definition YAML Structure
 
-TODO[LIBSDC-623]: Include discussion of dimension names being in a global namespace.
-
-Product definition files specify the exact structure and metadata for data products:
+Product definition files specify the exact structure and metadata for data products. For example:
 
 ```yaml
 # Product level metadata attributes
@@ -18,11 +15,13 @@ attributes:
   ProductID: RAD-4CH
   version: 0.0.1
 
-# Coordinate variables (dimensions)
+# Coordinate variables
+# Coordinates with the same name as their dimension are "dimension coordinates" and are
+# automatically linked to variables referencing their dimension name.
 coordinates:
-  time:
+  radiometer_time:
     dtype: datetime64[ns]
-    dimensions: ["time"]
+    dimensions: ["radiometer_time"]
     attributes:
       long_name: "Time of sample collection"
     encoding:
@@ -34,14 +33,38 @@ coordinates:
 variables:
   fil_rad:
     dtype: float64
-    dimensions: ["time"]
+    dimensions: ["radiometer_time"]
     attributes:
       long_name: Filtered Radiance
       units: W/(m^2*sr*nm)
       valid_range: [0, 1000]
 ```
 
-The `LiberaDataProductDefinition` system ensures all Libera data products maintain consistent structure, metadata, and quality standards across the mission.
+The `LiberaDataProductDefinition` system ensures all Libera data products maintain consistent structure, metadata, and
+quality standards across the mission.
+
+### Dimensions
+
+All dimensions referenced in a product definition must match an existing dimension in the global allowed dimension list
+in `libera_utils/data/libera_dimensions.yml`. Additionally, data referencing a dimension must have the correct size if
+referencing a dimension with a static size. Most dimensions are considered to be "dynamic size", in which case the sizes
+of all variables/coordinates referencing the dimension must match but no specific size is enforced.
+
+### Attributes
+
+Attributes may be defined at the product (Dataset) level or the variable (DataArray) level. All products must contain a
+set of expected product level attributes, defined in `libera_utils/data/required_product_attributes.yml` to be valid
+(these will be added automatically when using `write_libera_data_product`). In addition, attributes may be defined in a
+product definition itself.
+
+Attributes defined as `null` or empty are considered "required dynamic attributes". Their values must be set before the
+product Dataset is considered valid but the value is expected to be dynamic. To include dynamic attribute values when
+writing a data product, pass the `dynamic_product_attributes` kwarg to `write_libera_data_product`.
+
+The precedence for attribute assignment is: `required_product_attributes.yml` (globally required) <
+`product_definition_file.yml` (defined in product definition) < `dynamic_product_attributes` kwarg. For example,
+`ProductID` is required by the standard metadata file but it is dynamic (`null` valued). It could be defined with a
+value in a particular product definition yml file or it could be passed via kwarg to `write_libera_data_product`.
 
 ## Basic Usage
 
@@ -78,7 +101,8 @@ filename = write_libera_data_product(
     data_product_definition=product_definition_path,
     data=data,
     output_path=output_dir,
-    time_variable="time",  # Specify which variable contains time data
+    time_variable="radiometer_time",  # Specify which variable contains time data
+    dynamic_product_attributes={"algorithm_version": "1.2.3"},
     strict=True,  # Enforce strict conformance, raising exceptions on errors
 )
 
@@ -95,8 +119,9 @@ The function automatically:
 
 ## Advanced Usage
 
-There are a few other APIs that may be useful for debugging data product creation during development. Once a data product definition is working,
-the proper approach is to call `write_libera_data_product` with `strict=True` (the default).
+There are a few other APIs that may be useful for debugging data product creation during development. Once a data
+product definition is working, the proper approach is to call `write_libera_data_product` with `strict=True` (the
+default).
 
 ### Creation, Enforcement, and Validation for Existing Dataset
 
@@ -104,15 +129,16 @@ You can use the `LiberaDataProductDefinition` class to create, enforce (modify),
 
 #### Validation of Conformance
 
-The `LiberaDataProductDefinition.check_dataset_conformance()` method takes a dataset as an argument and checks that
-it conforms to the data product definition. The typical usage of this method is in strict mode, which raises an exception for any validation error.
-For debugging, you can run with `strict=False`, in which case it returns a (possibly empty) list of informational error messages.
+The `LiberaDataProductDefinition.check_dataset_conformance()` method takes a dataset as an argument and checks that it
+conforms to the data product definition. The typical usage of this method is in strict mode, which raises an exception
+for any validation error. For debugging, you can run with `strict=False`, in which case it returns a (possibly empty)
+list of informational error messages.
 
 ```python
 # Call LiberaDataProductDefinition.check_dataset_conformance() with strict=False
 # so we get a list of error messages instead of an exception raised.
 # This checks the conformance of an existing dataset against a data product definition without modifying it
-# Note that the dataset need not be generated by create_conforming_dataset. This method accepts _any_ xarray Dataset object.
+# Note that the dataset need not be generated by create_product_dataset. This method accepts _any_ xarray Dataset object.
 validation_errors = dpd.check_dataset_conformance(dataset, strict=False)
 
 # Demonstrate how to use the return values
@@ -123,26 +149,20 @@ if validation_errors:
 
 #### Enforcement of Product Definition
 
-The `LiberaDataProductDefinition.enforce_dataset_conformance()` method takes a Dataset as an argument and attempts to enforce all
-data product definition requirements by modifying any necessary attributes, data types, and encodings. This doesn't necessarily work, so
-we return a list of error messages for any problems that couldn't be fixed.
+The `LiberaDataProductDefinition.enforce_dataset_conformance()` method takes a Dataset as an argument and attempts to
+enforce all data product definition requirements by modifying any necessary attributes, data types, and encodings.
+Fixable issues (wrong attribute values, encoding mismatches, safe dtype casts) are corrected automatically and
+reported via `WARNING` or `DEBUG` log messages. Issues that cannot be automatically fixed (e.g., dimension
+mismatches, unsafe dtype casts) raise a `ValueError`.
 
 ```python
 # Call dpd.enforce_dataset_conformance() to fix problems with a dataset
-# This modifies the dataset in-place to fix what it can
-# Obviously some problems are not fixable such as missing variables.
-fixed_dataset, remaining_errors = dpd.enforce_dataset_conformance(dataset)
+# This modifies the dataset in-place to fix what it can.
+# Unfixable issues (e.g., dimension mismatches, unsafe dtype casts) raise ValueError.
+fixed_dataset = dpd.enforce_dataset_conformance(dataset)
 
-# Demonstrate how to use the return values
-if not remaining_errors:
-    print("Successfully fixed all conformance issues!")
-    # Save the fixed dataset
-    fixed_dataset.to_netcdf("output_fixed.nc")
-else:
-    print("Some issues could not be automatically fixed")
-    print(f"Remaining issues: {len(remaining_errors)}")
-    for error in remaining_errors:
-        print(f"  - {error}")
+# Save the fixed dataset
+fixed_dataset.to_netcdf("output_fixed.nc")
 ```
 
 #### Direct Creation of Conforming Dataset
@@ -167,23 +187,12 @@ data = {
     "q_flag": np.random.randint(0, 100, n_times, dtype=np.uint32),
 }
 
-# Create a Dataset with dpd.create_conforming_dataset() with strict=False
-# This allows creation even if some requirements aren't met.
-# This method coerces the resulting dataset to conform as closely as possible
-# to the data product definition by adding attributes, encodings,
-# and coercing data types if possible.
-dataset, errors = dpd.create_conforming_dataset(
-    data=data,
-    strict=False  # Don't raise exceptions, just report issues
-)
-
-# Demonstrate how to use the return values
-if not errors:
-    print("Dataset is valid and conforms to the product definition")
-else:
-    print(f"Dataset has {len(errors)} conformance issues:")
-    for error in errors[:5]:  # Show first 5 errors
-        print(f"  - {error}")
+# Create a Dataset with dpd.create_product_dataset().
+# This method constructs the Dataset from numpy arrays, assigning each variable to
+# coordinates or data variables as defined in the product definition, and applying
+# the static attributes and encodings from the definition.
+# It does NOT enforce conformance or coerce dtypes — use enforce_dataset_conformance() for that.
+dataset = dpd.create_product_dataset(data=data)
 ```
 
 ### Dynamic Global and Variable Attributes
@@ -192,12 +201,12 @@ _Note: L2 Developers should not need this._
 
 Avoid this unless absolutely necessary!
 
-When creating datasets, you can specify attributes whose values are not defined in the YAML (i.e. they are null).
-We call these "dynamic attributes" and they are required but must be passed directly during dataset creation:
+When creating datasets, you can specify attributes whose values are not defined in the YAML (i.e. they are null). We
+call these "dynamic attributes" and they are required but must be passed directly during dataset creation:
 
 ```python
 # Set dynamic global attribute values (e.g., algorithm-specific metadata values for required attribute keys)
-user_global_attrs = {
+dynamic_product_attrs = {
     "date_created": "2024-03-15T11:22:33",
     "algorithm_version": "2.1.0",
     "processing_level": "L1B",
@@ -205,7 +214,7 @@ user_global_attrs = {
 
 # Set dynamic variable attribute values
 # NOTE: these should be avoided unless absolutely necessary
-user_var_attrs = {
+dynamic_var_attrs = {
     "fil_rad": {
         "calibration_date": "2024-01-01",
         "sensor_id": "LIBERA-001",
@@ -217,10 +226,9 @@ user_var_attrs = {
 }
 
 # Create dataset with custom attributes
-dataset, errors = dpd.create_conforming_dataset(
+dataset = dpd.create_product_dataset(
     data=data,
-    user_global_attributes=user_global_attrs,
-    user_variable_attributes=user_var_attrs,
-    strict=True,
+    dynamic_product_attributes=dynamic_product_attrs,
+    dynamic_variable_attributes=dynamic_var_attrs,
 )
 ```

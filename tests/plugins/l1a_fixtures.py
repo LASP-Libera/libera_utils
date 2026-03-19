@@ -117,7 +117,7 @@ def l1a_test_product(
     # Note: We need to set encoding on the DataArrays, not in the Dataset constructor
     packet_time_coord = xr.DataArray(
         packet_times,
-        dims=["packet"],
+        dims=["PACKET"],
         attrs={"long_name": "Packet timestamp from ICIE main processor"},
     )
     packet_time_coord.encoding = {
@@ -167,7 +167,7 @@ def l1a_test_product(
 
     ds = xr.Dataset(
         coords={
-            "packet": np.arange(num_packets),
+            "PACKET": np.arange(num_packets),
             "PACKET_ICIE_TIME": packet_time_coord,
             time_dim: sample_time_coord,
         },
@@ -179,7 +179,7 @@ def l1a_test_product(
         attrs={
             "Conventions": "CF-1.8",
             "Format": "NetCDF-4",
-            "ProductID": "TEST-AXIS-SAMPLE-L1A",
+            "ProductID": "AXIS-SAMPLE-DECODED",
             "algorithm_version": "1.0.0",
             "ProjectLongName": "Libera",
             "ProjectShortName": "Libera",

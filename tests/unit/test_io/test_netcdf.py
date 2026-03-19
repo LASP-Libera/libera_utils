@@ -7,14 +7,16 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+import yaml
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.netcdf import write_libera_data_product
+from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
 
 
+@pytest.mark.filterwarnings("error")
 class TestWriteLiberaDataProduct:
     """Tests for the write_libera_data_product function"""
 
@@ -25,7 +27,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Verify return type
@@ -40,8 +42,8 @@ class TestWriteLiberaDataProduct:
         assert result.path.name.endswith(".nc")
 
         # Read back the file and verify basic structure
-        ds = xr.open_dataset(result.path)
-        assert "time" in ds.coords
+        ds = xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config())
+        assert "radiometer_time" in ds.coords
         assert "fil_rad" in ds.data_vars
         assert "q_flag" in ds.data_vars
         ds.close()
@@ -53,7 +55,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_dataset,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Verify return type
@@ -68,8 +70,8 @@ class TestWriteLiberaDataProduct:
         assert result.path.name.endswith(".nc")
 
         # Read back the file and verify basic structure
-        ds = xr.open_dataset(result.path)
-        assert "time" in ds.coords
+        ds = xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config())
+        assert "radiometer_time" in ds.coords
         assert "fil_rad" in ds.data_vars
         assert "q_flag" in ds.data_vars
         ds.close()
@@ -88,7 +90,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=modified_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
             dynamic_product_attributes={"algorithm_version": "1.2.3"},  # Dynamically set algorithm version
         )
 
@@ -104,8 +106,8 @@ class TestWriteLiberaDataProduct:
         assert result.path.name.endswith(".nc")
 
         # Read back the file and verify basic structure
-        ds = xr.open_dataset(result.path)
-        assert "time" in ds.coords
+        ds = xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config())
+        assert "radiometer_time" in ds.coords
         assert "fil_rad" in ds.data_vars
         assert "q_flag" in ds.data_vars
         assert ds.attrs["algorithm_version"] == "1.2.3"
@@ -127,7 +129,7 @@ class TestWriteLiberaDataProduct:
                 data_product_definition=modified_product_definition,
                 data=test_dataset,
                 output_path=tmp_path,
-                time_variable="time",
+                time_variable="radiometer_time",
                 dynamic_product_attributes={
                     "algorithm_version": "1.2.3"
                 },  # Invalid usage because attribute is already dynamically set on the Dataset
@@ -137,7 +139,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=modified_product_definition,
             data=test_dataset,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Verify return type
@@ -152,8 +154,8 @@ class TestWriteLiberaDataProduct:
         assert result.path.name.endswith(".nc")
 
         # Read back the file and verify basic structure
-        ds = xr.open_dataset(result.path)
-        assert "time" in ds.coords
+        ds = xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config())
+        assert "radiometer_time" in ds.coords
         assert "fil_rad" in ds.data_vars
         assert "q_flag" in ds.data_vars
         assert ds.attrs["algorithm_version"] == "0.0.1"
@@ -168,7 +170,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=output_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Verify result has correct path
@@ -183,7 +185,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Verify filename contains correct product ID and version
@@ -202,7 +204,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
             add_archive_path_prefix=True,
         )
         print(result.path)
@@ -218,46 +220,119 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
             strict=True,
         )
 
         assert result.path.exists()
 
-    def test_write_libera_data_product_strict_mode_invalid(
-        self, test_product_definition, test_data_dict_missing_variable, tmp_path
-    ):
-        """Test that strict mode raises exception with invalid data"""
-        with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
+    def test_write_libera_data_product_invalid_dimension(self, test_product_definition, test_data_dict, tmp_path):
+        """Test that write_libera_data_product raises when product definition has invalid dimension"""
+        with test_product_definition.open("r") as f:
+            definition_contents = yaml.safe_load(f)
+        definition_contents["coordinates"]["radiometer_time"]["dimensions"] = ["dne_dimension"]
+        # Write the invalid definition to a temp file so it is loaded inside write_libera_data_product
+        invalid_def_path = tmp_path / "invalid_def.yml"
+        invalid_def_path.write_text(yaml.dump(definition_contents))
+
+        with pytest.raises(ValueError, match="Undefined dimension name 'dne_dimension'"):
             write_libera_data_product(
-                data_product_definition=test_product_definition,
-                data=test_data_dict_missing_variable,
+                data_product_definition=invalid_def_path,
+                data=test_data_dict,
                 output_path=tmp_path,
-                time_variable="time",
-                strict=True,
+                time_variable="radiometer_time",
             )
 
-    def test_write_libera_data_product_non_strict_mode(
-        self, test_product_definition, test_data_dict_missing_variable, tmp_path
+    def test_write_libera_data_product_strict_mode_invalid_exception(
+        self, test_product_definition, test_data_dict, tmp_path
     ):
-        """Test non-strict mode allows writing with warnings"""
-        # Should not raise exception, but will log warnings
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict_missing_variable,
-            output_path=tmp_path,
-            time_variable="time",
-            strict=False,
+        """Test that strict mode raises exception in strict mode for problems (e.g. missing variable)"""
+
+        del test_data_dict["q_flag"]  # Remove a required variable to trigger an error
+
+        with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
+            with pytest.warns(UserWarning, match="q_flag: missing variable"):
+                write_libera_data_product(
+                    data_product_definition=test_product_definition,
+                    data=test_data_dict,
+                    output_path=tmp_path,
+                    time_variable="radiometer_time",
+                    strict=True,
+                )
+
+    def test_write_libera_data_product_non_strict_mode(self, test_product_definition, test_data_dict, tmp_path, caplog):
+        """Test non-strict mode allows writing with warnings
+
+        This test covers:
+        - missing variable
+        - extra attribute
+        - accidental override of standard attribute via dynamic attributes
+        - safe dtype casting
+        """
+        with test_product_definition.open("r") as f:
+            definition_contents = yaml.safe_load(f)
+        modified_definition = LiberaDataProductDefinition(**definition_contents)
+
+        del test_data_dict["q_flag"]  # Remove a variable
+        test_data_dict["fil_rad"] = test_data_dict["fil_rad"].astype(
+            np.float32
+        )  # Change dtype to something that can be safely cast to the expected dtype (float32 -> float64)
+
+        # Should not raise exception, but will issue and log warnings
+        with caplog.at_level("INFO"):
+            with pytest.warns(UserWarning, match=r".*") as warning_list:
+                result = write_libera_data_product(
+                    data_product_definition=modified_definition,
+                    data=test_data_dict,
+                    output_path=tmp_path,
+                    time_variable="radiometer_time",
+                    dynamic_product_attributes={
+                        "ProjectShortName": "NotLibera",  # This overrides a standard attr incorrectly
+                        "ExtraAttribute": "extra_value",  # This adds an extra attribute not present in definition
+                    },
+                    strict=False,
+                )
+        warning_messages = [str(w.message) for w in warning_list]
+
+        # Missing variable warning and log message. This is the only piece here that would actually prevent
+        # writing a data product in strict mode.
+        assert any(["q_flag: missing variable" in msg for msg in warning_messages])
+        assert any(["q_flag: missing variable" in msg for msg in caplog.messages])
+
+        # Static attribute gets forced to correct value during enforcement step
+        assert any(
+            [
+                "Dataset attribute value mismatch for 'ProjectShortName': Expected 'Libera' but got 'NotLibera'" in msg
+                for msg in warning_messages
+            ]
+        )
+        assert any(
+            [
+                "Overwrote global static attribute 'ProjectShortName' from 'NotLibera' to 'Libera'" in msg
+                for msg in caplog.messages
+            ]
+        )
+
+        # Extra attribute gets removed during enforcement step
+        assert any(["Dataset has unexpected attribute 'ExtraAttribute'" in msg for msg in warning_messages])
+        assert any(
+            [
+                "Removed unexpected global attribute 'ExtraAttribute' with value 'extra_value'" in msg
+                for msg in caplog.messages
+            ]
         )
 
         # File should still be created
         assert result.path.exists()
 
         # Verify the file has the variables that were provided
-        ds = xr.open_dataset(result.path)
-        assert "time" in ds.coords
+        ds = xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config())
+        assert "radiometer_time" in ds.coords
         assert "fil_rad" in ds.data_vars
         assert "q_flag" not in ds.data_vars  # This was missing
+        assert ds.attrs["ProjectShortName"] == "Libera"  # This should have been enforced to correct value
+        assert "ExtraAttribute" not in ds.attrs  # This should be removed since it's not in the definition
+        assert ds["fil_rad"].dtype == np.float64  # This should have been safely upcast from float32
         ds.close()
 
     def test_write_libera_data_product_time_range_extraction(self, test_product_definition, tmp_path):
@@ -273,18 +348,19 @@ class TestWriteLiberaDataProduct:
         time_data.sort()
 
         data = {
-            "time": time_data,
+            "radiometer_time": time_data,
             "lat": np.linspace(-90, 90, num=n_times),
             "lon": np.linspace(-180, 180, num=n_times),
             "fil_rad": np.random.rand(n_times),
             "q_flag": np.random.randint(100, size=n_times, dtype=np.int32),
+            "cartesian_position": np.zeros((n_times, 3), dtype=np.float32),
         }
 
         result = write_libera_data_product(
             data_product_definition=test_product_definition,
             data=data,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Verify filename contains the correct date (2025-01-01)
@@ -298,11 +374,11 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Read back the file
-        ds = xr.open_dataset(result.path)
+        ds = xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config())
 
         # Check global attributes
         assert ds.attrs["ProductID"] == "RAD-4CH"
@@ -311,7 +387,7 @@ class TestWriteLiberaDataProduct:
         assert ds.attrs["Conventions"] == "CF-1.8"
 
         # Check coordinates
-        assert "time" in ds.coords
+        assert "radiometer_time" in ds.coords
         assert "lat" in ds.coords
         assert "lon" in ds.coords
 
@@ -338,21 +414,14 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
-
-        # Read back the file
-        ds = xr.open_dataset(result.path)
-
-        # Load the product definition and check conformance
+        # Load the product definition
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
-        errors = definition.check_dataset_conformance(ds, strict=False)
 
-        ds.close()
-
-        # The dataset should be valid (no errors)
-        assert not errors
-        assert len(errors) == 0
+        # Read back the file and check conformance in strict mode
+        with xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config()) as ds:
+            definition.check_dataset_conformance(ds, strict=True)
 
     def test_write_libera_data_product_overwrite_existing(self, test_product_definition, test_data_dict, tmp_path):
         """Test that write_libera_data_product overwrites existing files"""
@@ -361,7 +430,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         # Modify data slightly
@@ -374,8 +443,8 @@ class TestWriteLiberaDataProduct:
             mock_filename = LiberaDataProductFilename.from_filename_parts(
                 product_name="RAD-4CH",
                 version="V0-0-1",
-                utc_start=pd.Timestamp(test_data_dict["time"][0]).to_pydatetime(),
-                utc_end=pd.Timestamp(test_data_dict["time"][-1]).to_pydatetime(),
+                utc_start=pd.Timestamp(test_data_dict["radiometer_time"][0]).to_pydatetime(),
+                utc_end=pd.Timestamp(test_data_dict["radiometer_time"][-1]).to_pydatetime(),
             )
             mock_filename.path = result1.path
             mock_gen.return_value = mock_filename
@@ -384,40 +453,16 @@ class TestWriteLiberaDataProduct:
                 data_product_definition=test_product_definition,
                 data=modified_data,
                 output_path=tmp_path,
-                time_variable="time",
+                time_variable="radiometer_time",
             )
 
             # Should be the same file path
             assert result2.path == result1.path
 
             # Verify new data was written
-            ds = xr.open_dataset(result2.path)
+            ds = xr.open_dataset(result2.path, engine=NetcdfEngine.get_from_config())
             np.testing.assert_array_almost_equal(ds["fil_rad"].values, modified_data["fil_rad"])
             ds.close()
-
-    def test_write_libera_data_product_different_time_variable(self, test_product_definition, tmp_path):
-        """Test using a different time variable name if it exists in coordinates"""
-        # Create data with an alternate time coordinate
-        n_times = 10
-        time_data = np.arange(n_times).astype("datetime64[ns]")
-
-        # Use a different name for the primary time variable
-        data = {
-            "time": time_data,  # This will be the coordinate
-            "lat": np.linspace(-90, 90, num=n_times),
-            "lon": np.linspace(-180, 180, num=n_times),
-            "fil_rad": np.random.rand(n_times),
-            "q_flag": np.random.randint(100, size=n_times, dtype=np.int32),
-        }
-
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=data,
-            output_path=tmp_path,
-            time_variable="time",  # Specify which variable to use for time range
-        )
-
-        assert result.path.exists()
 
     def test_write_libera_data_product_path_types(self, test_product_definition, test_data_dict, tmp_path):
         """Test that the function accepts various path types"""
@@ -426,7 +471,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=str(test_product_definition),
             data=test_data_dict,
             output_path=str(tmp_path),
-            time_variable="time",
+            time_variable="radiometer_time",
         )
         assert result1.path.exists()
 
@@ -435,7 +480,7 @@ class TestWriteLiberaDataProduct:
             data_product_definition=Path(test_product_definition),
             data=test_data_dict,
             output_path=Path(tmp_path),
-            time_variable="time",
+            time_variable="radiometer_time",
         )
         assert result2.path.exists()
 
@@ -457,7 +502,7 @@ class TestNetCDFSupport:
             # Verify data matches
             assert "fil_rad" in ds_read.data_vars
             assert "q_flag" in ds_read.data_vars
-            assert "time" in ds_read.coords
+            assert "radiometer_time" in ds_read.coords
             np.testing.assert_array_almost_equal(ds_read["fil_rad"].values, test_dataset["fil_rad"].values)
             ds_read.close()
 
@@ -492,7 +537,7 @@ class TestNetCDFSupport:
             test_dataset.to_netcdf(f, engine="h5netcdf")
 
         # Read back and verify
-        ds_read = xr.open_dataset(nc_file)
+        ds_read = xr.open_dataset(nc_file, engine="h5netcdf")
         assert "fil_rad" in ds_read.data_vars
         assert "q_flag" in ds_read.data_vars
         np.testing.assert_array_almost_equal(ds_read["fil_rad"].values, test_dataset["fil_rad"].values)
@@ -564,7 +609,7 @@ class TestNetCDFSupport:
             test_dataset.to_netcdf(f, engine="h5netcdf")
 
         # Read back and verify
-        ds_read = xr.open_dataset(nc_file)
+        ds_read = xr.open_dataset(nc_file, engine="h5netcdf")
         assert "fil_rad" in ds_read.data_vars
         np.testing.assert_array_almost_equal(ds_read["fil_rad"].values, test_dataset["fil_rad"].values)
         ds_read.close()
@@ -659,7 +704,7 @@ class TestNetcdfEngineConfig:
             data_product_definition=test_product_definition,
             data=test_data_dict,
             output_path=tmp_path,
-            time_variable="time",
+            time_variable="radiometer_time",
         )
 
         assert result.path.exists()
@@ -686,5 +731,5 @@ class TestNetcdfEngineConfig:
                 data_product_definition=test_product_definition,
                 data=test_data_dict,
                 output_path=output_path,
-                time_variable="time",
+                time_variable="radiometer_time",
             )
