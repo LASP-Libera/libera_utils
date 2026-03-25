@@ -75,8 +75,8 @@ print(config.sample_groups[0].sample_time_dimension)   # → "AXIS_SAMPLE_ICIE_T
 The top-level object describing how to process one packet type.
 
 | Field                          | Type                     | Description                                                                          |
-| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------ |
-| `packet_apid`                  | `LiberaApid` str         | APID name matching the `LiberaApid` enum (e.g. `"icie_axis_sample"`)                 |
+| ------------------------------ | ------------------------ | ------------------------------------------------------------------------------------ | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packet_apid`                  | `LiberaApid              | str                                                                                  | int` | APID for this packet; in YAML you may use the enum name (e.g. `"icie_axis_sample"`) or numeric APID (e.g. 111) and it is stored as `LiberaApid` after validation |
 | `packet_time_fields`           | `TimeFieldMapping`       | Packet-level timestamp field names                                                   |
 | `packet_time_source`           | `SampleTimeSource`       | Clock source for packet timestamps: `ICIE`, `FPE`, or `JPSS`                         |
 | `packet_definition_config_key` | str                      | Config key for the XTCE definition file path. Defaults to `LIBERA_PACKET_DEFINITION` |
