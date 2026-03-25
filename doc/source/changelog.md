@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.6.1
+
+- BUGFIX: Fix packet parsing to l1a of datasets with aggregated fields to use deduplicated timestamps for final data assembly
+
 ## 5.6.0
 
 - FEAT: Add dimension validation to data product definition
