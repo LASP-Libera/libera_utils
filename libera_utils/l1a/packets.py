@@ -126,6 +126,8 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     # Drop duplicates from the packet dataset before we process samples
     # This drops full duplicate packets based on identical packet timestamps
     packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate)
+    packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
+    packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)
 
     # Start building the dataset containing expanded sample fields
     sample_ds = xr.Dataset()

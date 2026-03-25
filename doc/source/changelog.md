@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.7.1
+
+- BUGFIX: Fix packet parsing to l1a of datasets with deduplicated timestamps for final data assembly
+- FEAT: Added ground data 
+
 ## 5.7.0
 
 - FEAT: Added metadata writer to make UMM-G metadata files from NetCDF-4 data files
