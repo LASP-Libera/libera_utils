@@ -227,10 +227,64 @@ def parse_packets_to_l1a_dataset(packet_files: list[PathLike | str], apid: int) 
     return packet_ds
 
 
+def _validate_duplicate_values(
+    dataset: xr.Dataset,
+    coordinate_name: str,
+    dim_name: str,
+    coord_values: np.ndarray,
+    duplicates: np.ndarray,
+) -> None:
+    """Validate that duplicate coordinate entries are identical across all data variables.
+
+    Only applies when the coordinate being deduplicated is itself a dimension coordinate
+    (i.e. coordinate_name == dim_name). For non-dimension coordinates,the underlying dimension indices are inherently
+    distinct so value-identity checks are not meaningful.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        The dataset containing the duplicates to validate.
+    coordinate_name : str
+        The name of the coordinate being deduplicated (used in error messages).
+    dim_name : str
+        The dimension name along which to index duplicates.
+    coord_values : np.ndarray
+        The full array of coordinate values (including duplicates).
+    duplicates : np.ndarray
+        The coordinate values that appear more than once.
+
+    Raises
+    ------
+    ValueError
+        If any duplicate coordinate value has differing data values across
+        any variable, indicating that dropping it would cause data loss.
+    """
+    # Non-dimension coordinates share a dimension with other variables but
+    # don't index them directly — rows are inherently distinct, so
+    # value-identity validation is not applicable.
+    if coordinate_name != dim_name:
+        return
+
+    for dup_val in duplicates:
+        dup_indices = np.where(coord_values == dup_val)[0]
+        dup_slice = dataset.isel({dim_name: dup_indices})
+
+        for var_name, var in dup_slice.data_vars.items():
+            data = var.values
+            if not np.all(data == data[0]):
+                raise ValueError(
+                    f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
+                    f"has differing values in variable '{var_name}'. "
+                    f"Dropping this duplicate would result in data loss."
+                )
+
+
 def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str):
     """Detect and drop duplicate values based on a coordinate
 
-    Issues warnings when duplicates are detected
+    Issues warnings when duplicates are detected. Raises an error if duplicate
+    coordinate values have differing data values, as only identical duplicates
+    are safe to drop.
 
     Parameters
     ----------
@@ -246,6 +300,14 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str):
         Deduplicated dataset
     n_duplicates : int
         Number of duplicates detected and dropped
+
+    Raises
+    ------
+    KeyError
+        If the coordinate is not found in the dataset.
+    ValueError
+        If the coordinate is not 1-dimensional, or if duplicate coordinate
+        values have differing data values across any variable.
     """
     # Validate coordinate exists
     if coordinate_name not in dataset.coords:
@@ -275,12 +337,13 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str):
     n_duplicates = original_size - len(unique_indices_sorted)
 
     if n_duplicates > 0:
-        # Select only the first occurrence of each unique coordinate value
-        dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
-
         # Log the duplicate values (not indices)
         _, counts = np.unique(coord_values, return_counts=True)
         duplicates = unique_values[counts > 1]
+
+        _validate_duplicate_values(dataset, coordinate_name, dim_name, coord_values, duplicates)
+        # Select only the first occurrence of each unique coordinate value
+        dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
 
         warnings.warn(f"Detected {n_duplicates} duplicate packet timestamps in dataset")
         logger.warning(f"Duplicate coordinates detected ({n_duplicates}) in {coordinate_name}: {duplicates}")

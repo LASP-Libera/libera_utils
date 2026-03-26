@@ -71,7 +71,7 @@ def test_drop_duplicates_with_duplicates():
     """Test _drop_duplicates removes duplicate coordinates and warns"""
     ds = xr.Dataset(
         {
-            "data": (["time"], [1, 2, 3, 4]),
+            "data": (["time"], [1, 2, 2, 4]),
             "time": (["time"], [100, 200, 200, 300]),  # 200 appears twice
         }
     )
@@ -85,6 +85,19 @@ def test_drop_duplicates_with_duplicates():
     assert 100 in result_ds["time"].values
     assert 200 in result_ds["time"].values
     assert 300 in result_ds["time"].values
+
+
+def test_drop_duplicates_with_non_identical_duplicates():
+    """Test _drop_duplicates removes duplicate coordinates and warns"""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 3, 4]),
+            "time": (["time"], [100, 200, 200, 300]),  # 200 appears twice
+        }
+    )
+
+    with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
+        result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time")
 
 
 def test_drop_duplicates_non_dimension_coordinate():
@@ -103,6 +116,128 @@ def test_drop_duplicates_non_dimension_coordinate():
     # Data should also be reduced accordingly (keep first 4 items)
     assert len(result_ds["data"]) == 4
     assert list(result_ds["data"].values) == [10, 20, 30, 40]
+
+
+def test_validate_duplicate_values_non_dimension_coordinate_skips_validation():
+    """Non-dimension coordinates should skip value-identity checks entirely,
+    even when duplicate rows have differing data values."""
+    ds = xr.Dataset({"data": (["PACKET"], [10, 20, 30])})
+    ds = ds.assign_coords({"packet_time": (["PACKET"], [1, 8, 8])})
+
+    coord_values = ds["packet_time"].values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    _, counts = np.unique(coord_values, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    # Should not raise even though duplicate rows [20, 30] differ
+    libera_packets._validate_duplicate_values(ds, "packet_time", "PACKET", coord_values, duplicates)
+
+
+def test_validate_duplicate_values_dimension_coordinate_identical_rows():
+    """Dimension coordinate duplicates with identical data values should pass validation."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 2, 3]),
+            "time": (["time"], [100, 200, 200, 300]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    _, counts = np.unique(coord_values, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    # Should not raise — both rows at time=200 have data value 2
+    libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+
+
+def test_validate_duplicate_values_dimension_coordinate_differing_rows():
+    """Dimension coordinate duplicates with differing data values should raise ValueError."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 99, 3]),
+            "time": (["time"], [100, 200, 200, 300]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    _, counts = np.unique(coord_values, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    with pytest.raises(ValueError, match="200.*time.*data"):
+        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+
+
+def test_validate_duplicate_values_multiple_duplicates_all_identical():
+    """Multiple duplicate coordinate values that are all internally identical should pass."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 2, 3, 3, 4]),
+            "time": (["time"], [100, 200, 200, 300, 300, 400]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    _, counts = np.unique(coord_values, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    # Both time=200 (data=2,2) and time=300 (data=3,3) are identical — should pass
+    libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+
+
+def test_validate_duplicate_values_multiple_duplicates_one_differs():
+    """If any one duplicate group has differing values, a ValueError should be raised."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 2, 3, 99, 4]),
+            "time": (["time"], [100, 200, 200, 300, 300, 400]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    _, counts = np.unique(coord_values, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    # time=200 is fine (2,2), but time=300 differs (3 vs 99)
+    with pytest.raises(ValueError, match="300"):
+        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+
+
+def test_validate_duplicate_values_multiple_variables_one_differs():
+    """Validation should catch differing values in any variable, not just the first."""
+    ds = xr.Dataset(
+        {
+            "data_a": (["time"], [1, 2, 2]),
+            "data_b": (["time"], [10, 20, 99]),  # differs at time=200
+            "time": (["time"], [100, 200, 200]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    _, counts = np.unique(coord_values, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    with pytest.raises(ValueError, match="data_b"):
+        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+
+
+def test_validate_duplicate_values_empty_duplicates():
+    """Passing an empty duplicates array should be a no-op with no errors raised."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 3]),
+            "time": (["time"], [100, 200, 300]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    duplicates = np.array([])
+
+    libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
