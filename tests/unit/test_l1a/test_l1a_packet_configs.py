@@ -235,12 +235,9 @@ class TestL1aConfigYaml:
         assert cfg.packet_definition_config_key == "LIBERA_PACKET_DEFINITION"
         assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
         assert cfg.sample_groups == []
-        assert len(cfg.aggregation_groups) == 1
-        agg = cfg.aggregation_groups[0]
-        assert agg.name == "ICIE__WFOV_DATA"
-        assert agg.field_pattern == "ICIE__WFOV_DATA_%i"
-        assert agg.field_count == 972
-        assert agg.dtype == np.dtype("|S972")
+        # ICIE__WFOV_DATA is now parsed directly as a binary field by SPP (via BinaryParameterType in XTCE),
+        # so no aggregation_groups are needed.
+        assert cfg.aggregation_groups == []
 
     def test_icie_nom_hk_config(self):
         """APID 1057 — nominal housekeeping, no sample groups."""

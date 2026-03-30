@@ -18,7 +18,7 @@ We recommended using Conda and outline the steps below for using Conda to manage
    create virtual environments. You can find the full path to the base interpreter by running something similar
    to the following (run `conda env list` to see why this works):
    ```shell
-   PATH_TO_PYTHON=$(conda env list | grep "conda-python3.11" | awk '{print $2}')/bin/python
+   PATH_TO_PYTHON=$(conda run -n conda-python3.11 python -c "import sys; print(sys.executable)")
    $PATH_TO_PYTHON -m venv path/to/new/venv
    ```
 

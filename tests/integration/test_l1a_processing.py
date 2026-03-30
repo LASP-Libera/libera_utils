@@ -87,6 +87,13 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
             8,
         ),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "PACKET_ICIE_TIME", 8),
+        pytest.param(
+            ["test_ditl_camera_with_duplicate_packet"],
+            LiberaApid.icie_wfov_sci,
+            "PACKET_ICIE_TIME",
+            8,
+            marks=pytest.mark.filterwarnings("ignore::UserWarning"),
+        ),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
@@ -105,6 +112,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
         "RAD_SAMPLE_1",
         "RAD_SAMPLE_2",
         "WFOV_SCI",
+        "DITL_WFOV_SCI",
         "NOM_HK",
         "CRIT_HK",
         "TEMP_HK",
@@ -171,6 +179,9 @@ def test_process_packets_to_l1a_product(
     # Create LiberaDataProductDefinition from product definition file
     product_definition_path = get_l1a_product_definition_path(apid)
     product_config = LiberaDataProductDefinition.from_yaml(product_definition_path)
+
+    # Enforce conformance (this catches dimension mismatches and other issues)
+    dataset = product_config.enforce_dataset_conformance(dataset)
 
     # Write NetCDF for round trip testing
     output_filename = write_libera_data_product(
