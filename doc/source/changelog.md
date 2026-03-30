@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.8.2
+
+- FEAT: Faster ICIE WFOV SCI (APID 1040) packet-to-L1A by refreshing `icie_xtce_tlm.xml` and combining the 972-field WFOV `aggregation_groups` block from `icie_wfov_sci` in `l1a_processing_configs.yml`.
+
 ## 5.8.1
 
 - FEAT: Added alpha calibration combination constants for data products
