@@ -82,4 +82,5 @@ venv
 .python-version
 pytest.ini
 .devcontainer
-.claude
+.claude/settings.local.json
+**/*mcp.json
