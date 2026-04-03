@@ -28,7 +28,7 @@ Follow these steps when running tests:
    - **Pattern matching**: `pytest -k "pattern" tests/ -v --tb=short -q 2>&1`
    - **Specific module directory**: `pytest tests/unit/test_aws/ -v --tb=short -q 2>&1`
 
-   **IMPORTANT**: Always run pytest from the repo root (`/workspaces/libera_utils`). Use `-m "not integration"` to exclude integration tests and `-m integration` to run only integration tests. Do NOT use marker flags when targeting a specific file directly.
+   **IMPORTANT**: Always run pytest from the repository root (where `pyproject.toml` lives). Use `-m "not integration"` to exclude integration tests and `-m integration` to run only integration tests. Do NOT use marker flags when targeting a specific file directly.
 
 2. **Standard pytest flags to use**:
 
@@ -95,7 +95,7 @@ Brief observation about failure patterns or likely root cause
 
 ### Pytest Configuration
 
-- **Pytest config**: `pyproject.toml` lines 102-107
+- **Pytest config**: `[tool.pytest.ini_options]` section in `pyproject.toml`
 - Integration tests are marked with `@pytest.mark.integration`
 - Use `-m "not integration"` to exclude them; `-m integration` to select only them
 
