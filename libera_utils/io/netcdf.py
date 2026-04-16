@@ -2,7 +2,7 @@
 
 import logging
 from enum import StrEnum
-from typing import Any, Literal, Dict
+from typing import Any, Literal
 
 import xarray as xr
 from cloudpathlib import AnyPath
