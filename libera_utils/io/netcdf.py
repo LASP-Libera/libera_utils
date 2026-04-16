@@ -44,7 +44,7 @@ def write_libera_data_product(
     strict: bool = True,
     add_archive_path_prefix: bool = False,
     netcdf_engine: NetcdfEngine | None = None,
-    encoding: Dict[str, Any] | None = None,
+    encoding: dict[str, Any] | None = None,
 ) -> LiberaDataProductFilename:
     """Write a Libera data product NetCDF4 file that conforms to data product definition requirements
 
