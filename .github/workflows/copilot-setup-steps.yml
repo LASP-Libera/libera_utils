@@ -1,0 +1,59 @@
+name: Copilot Setup Steps
+
+# Copilot bypasses these workflow triggers when it sets up an Agent environment.
+# These triggers are here to allow manual runs and to ensure that changes to
+# relevant files trigger a run to verify the Copilot cloud agent environment setup
+# still works.
+on:
+  workflow_dispatch:
+  # Trigger on pushes and pull requests that change relevant files.
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+      - .github/actions/setup-env/action.yml
+      - .pre-commit-config.yaml
+      - pyproject.toml
+      - .gitattributes
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+      - .github/actions/setup-env/action.yml
+      - .pre-commit-config.yaml
+      - pyproject.toml
+      - .gitattributes
+
+jobs:
+  # Job name is required by Copilot cloud agent.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        # No LFS checkout here so we can use the LFS cache in our setup-env action
+
+      # Reuse CI setup so Copilot and CI environments stay in parity.
+      - name: Setup Python environment and dependencies
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: "3.12"
+          lfs: "true"
+
+      - name: Verify required development tools
+        shell: bash
+        run: |
+          poetry --version
+          poetry run pre-commit --version
+          poetry run pytest --version
+          git lfs version
+
+      - name: Smoke-check pre-commit entrypoint
+        shell: bash
+        run: poetry run pre-commit run --help > /dev/null
+
+      - name: Smoke-check pytest entrypoint
+        shell: bash
+        run: poetry run pytest --help > /dev/null
