@@ -91,9 +91,56 @@ class KernelManager:
         # Configure temporary directory base
         self._temp_base: Path = Path(temp_dir_base) if temp_dir_base else get_local_short_temp_dir()
 
-        self._cache_timeout_days: int = datetime.timedelta(days=cache_timeout_days)
+        self._cache_timeout_days: datetime.timedelta = datetime.timedelta(days=cache_timeout_days)
 
         logger.debug(f"Using temp base directory: {self._temp_base}")
+
+    @staticmethod
+    def _output_basename_for_static_kernel_config(config_path: Path) -> str:
+        """Binary kernel filename produced by ``make_kernel`` for a static JSON config."""
+        stem = config_path.stem
+        if stem.endswith(".spk"):
+            return f"{stem}.bsp"
+        if stem.endswith(".ck"):
+            return f"{stem}.bc"
+        msg = f"Unsupported static kernel config for caching (expected .spk.json or .ck.json): {config_path}"
+        raise ValueError(msg)
+
+    @staticmethod
+    def _static_kernel_manifest_basenames() -> list[str]:
+        """Basenames of all Libera static kernels furnished (mission non-JSON + generated static outputs)."""
+        names: set[str] = set()
+        libera_kernels_path = Path(config.get("LIBERA_KERNEL_DIR"))
+        for f in libera_kernels_path.iterdir():
+            if f.is_file() and "json" not in f.suffix.lower():
+                names.add(f.name)
+        for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
+            names.add(KernelManager._output_basename_for_static_kernel_config(Path(kernel_config_file)))
+        return sorted(names)
+
+    def _static_kernel_file_cache(self, basename: str) -> KernelFileCache:
+        """KernelFileCache for a manifest basename (``kernel_url`` only supplies basename for probes)."""
+        return KernelFileCache(Path(basename), max_cache_age=self._cache_timeout_days)
+
+    def _prepare_static_kernel_workspace(self) -> None:
+        """Ensure user-cache copies of static kernels exist, building under a short path on cache miss."""
+        manifest = self._static_kernel_manifest_basenames()
+        if not manifest:
+            raise FileNotFoundError("No static kernels found for configured manifest")
+
+        if all(self._static_kernel_file_cache(b).is_cached() for b in manifest):
+            logger.info("All static kernels found in user cache; skipping static kernel build.")
+            self._static_kernels_path = None
+            return
+
+        self._delete_temporary_static_kernels()
+        temp_path = self._create_temporary_static_kernels()
+        self._static_kernels_path = temp_path
+        for basename in manifest:
+            built = temp_path / basename
+            if not built.is_file():
+                raise RuntimeError(f"Expected static kernel artifact missing after build: {built}")
+            _ = KernelFileCache(built, max_cache_age=self._cache_timeout_days).kernel_path
 
     # TODO[LIBSDC-704]: Adding caching of these static kernels to avoid re-creation on each run
     def _create_temporary_static_kernels(self) -> Path:
@@ -221,9 +268,7 @@ class KernelManager:
             return
 
         try:
-            # Create the static kernels if not already created
-            if self._static_kernels_path is None:
-                self._static_kernels_path = self._create_temporary_static_kernels()
+            self._prepare_static_kernel_workspace()
 
             # Load metakernel
             metakernel = meta.MetaKernel.from_json(
@@ -233,14 +278,11 @@ class KernelManager:
                 mission_dir=config.get("LIBERA_KERNEL_DIR"),
             )
 
-            # Get static kernel files
-            static_kernels = []
-            for f in self._static_kernels_path.iterdir():
-                if f.is_file() and "json" not in f.suffix.lower():
-                    static_kernels.append(str(f))
+            manifest = self._static_kernel_manifest_basenames()
+            static_kernels = [str(self._static_kernel_file_cache(b).kernel_path) for b in manifest]
 
             if not static_kernels:
-                raise FileNotFoundError(f"No static kernels found in {self._static_kernels_path}")
+                raise FileNotFoundError("No static kernels found for configured manifest")
 
             # Load all kernels
             if self._loaded_kernels is None:
