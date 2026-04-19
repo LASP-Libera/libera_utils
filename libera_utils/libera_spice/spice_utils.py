@@ -10,12 +10,13 @@ import functools
 import logging
 import os
 import re
+import shutil
 import tempfile
 import time
 from collections.abc import Callable, Collection
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, TypeVar, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -84,66 +85,111 @@ class SpiceFrame(Enum):
 
 
 class KernelFileCache:
-    """Class for downloading, caching, and furnishing SPICE kernel files locally.
+    """Download, cache, and furnish SPICE kernel files under the user cache directory.
 
-    It attempts to find a cached kernel file in the user's cache directory (OS-specific location).
-    If that file is not there or is old, it attempts to download it from the specified location.
-    If it is unable to do that, it can optionally read a fallback file included in the libera_utils package but this
-    is not recommended.
+    On first access of :attr:`kernel_path`, a valid cached copy (younger than
+    :attr:`max_cache_age`) is reused; otherwise the kernel is materialized from
+    its source into the cache and that path is returned.
+
+    Supported sources for ``kernel_url``:
+
+    * **HTTP(S) URL** — ``str`` starting with ``http://`` or ``https://``; fetched with ``requests``.
+    * **S3** — ``s3://`` string or :class:`cloudpathlib.S3Path`; read via ``smart_open``.
+    * **Local file** — :class:`pathlib.Path` or non-URL ``str`` path to an existing file; copied with
+      :func:`shutil.copy2`. Relative paths are resolved with
+      :meth:`pathlib.Path.expanduser` and :meth:`pathlib.Path.resolve` against the
+      **process current working directory at the time** :meth:`download_kernel` runs
+      (typically the first uncached read of :attr:`kernel_path`), not at construction time.
+
+    If materialization fails and ``fallback_kernel`` is set, :attr:`kernel_path` may return
+    that path instead (not recommended for production).
     """
 
-    def __init__(
-        self,
-        kernel_url: str or S3Path,
-        max_cache_age: datetime.timedelta = datetime.timedelta(days=1),
-        fallback_kernel: Path = None,
-    ):
-        """Create a new file cache. Downloading is done on first access of kernel_path if the file is not already
-        cached. Fallback occurs only after failing to download.
+    @staticmethod
+    def _resolve_local_kernel_file(kernel_url: Path | str) -> Path:
+        """Return an absolute path to an existing local kernel file.
+
         Parameters
         ----------
-        kernel_url : str or cloudpathlib.S3Path
-            Location of kernel file as a URL or an S3Path
-        max_cache_age : datetime.timedelta
-            Length of time to tolerate stale kernels in the cache without forcing a redownload.
-        fallback_kernel : pathlib.Path
-            Path pointing to a fallback kernel location. May be None, which disallows a fallback.
-        """
-        # Remove any trailing slash from naif_base_url (we assume no trailing slash in methods)
-        self.kernel_url = kernel_url
-        self.max_cache_age = max_cache_age
-        self.fallback_kernel = fallback_kernel
-
-    def __str__(self):
-        return str(self.cache_dir / self.kernel_url)
-
-    @property
-    def kernel_basename(self):
-        """Base filename of the kernel.
-
-        Returns
-        -------
-        str
-        """
-        if isinstance(self.kernel_url, S3Path):
-            return self.kernel_url.name
-        return os.path.basename(self.kernel_url)
-
-    @property
-    def cache_dir(self):
-        """Property that calls out to get the proper local cache directory
+        kernel_url : pathlib.Path or str
+            Path to a kernel file (not a directory).
 
         Returns
         -------
         pathlib.Path
-            Path to the proper local cache for the system.
+            Resolved path suitable as the copy source.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the resolved path is not a regular file.
+        """
+        local = Path(kernel_url) if isinstance(kernel_url, str) else kernel_url
+        resolved = local.expanduser().resolve(strict=False)
+        if not resolved.is_file():
+            msg = f"Local kernel file not found: {resolved}"
+            raise FileNotFoundError(msg)
+        return resolved
+
+    def __init__(
+        self,
+        kernel_url: str | Path | S3Path,
+        max_cache_age: datetime.timedelta = datetime.timedelta(days=1),
+        fallback_kernel: Path | None = None,
+    ) -> None:
+        """Create a cache handle; copying or download happens on first use of :attr:`kernel_path` if needed.
+
+        Parameters
+        ----------
+        kernel_url : str or pathlib.Path or cloudpathlib.S3Path
+            Remote URL, S3 location, or path to a local kernel file.
+        max_cache_age : datetime.timedelta
+            Maximum age of a cached file before it is treated as stale and replaced.
+        fallback_kernel : pathlib.Path or None
+            Optional path returned if materialization from ``kernel_url`` fails.
+        """
+        self.kernel_url = kernel_url
+        self.max_cache_age = max_cache_age
+        self.fallback_kernel = fallback_kernel
+
+    def __str__(self) -> str:
+        return str(self.cache_dir / self.kernel_basename)
+
+    @property
+    def kernel_basename(self) -> str:
+        """Base filename of the kernel used in the cache directory.
+
+        Returns
+        -------
+        str
+            Filename only (no directory components).
+        """
+        if isinstance(self.kernel_url, S3Path):
+            return self.kernel_url.name
+        if isinstance(self.kernel_url, Path):
+            return self.kernel_url.name
+        return os.path.basename(self.kernel_url)
+
+    @property
+    def cache_dir(self) -> Path:
+        """Directory where cached kernel files are stored.
+
+        Returns
+        -------
+        pathlib.Path
+            User-specific cache directory for this application.
         """
         return caching.get_local_cache_dir()
 
     @property
     def kernel_path(self) -> Path:
-        """Return the local path location of the kernel if it exists. If not, try downloading it. If that
-        fails, return the fallback kernel, if allowed."""
+        """Path to the kernel in the cache, materializing it if necessary.
+
+        Returns
+        -------
+        pathlib.Path
+            Path to the cached file, or ``fallback_kernel`` if materialization failed and a fallback was set.
+        """
         if self.is_cached():
             return self.cache_dir / self.kernel_basename
 
@@ -160,27 +206,27 @@ class KernelFileCache:
                 return self.fallback_kernel
             raise
 
-    def furnsh(self):
-        """Furnish the cached kernel"""
+    def furnsh(self) -> None:
+        """Load the cached kernel into the SPICE kernel pool via :func:`spiceypy.furnsh`."""
         spice.furnsh(str(self.kernel_path))
 
-    def clear(self):
-        """Remove cached kernel file"""
-        logger.info(f"Removing cached file (if exists): {self.kernel_basename}")
+    def clear(self) -> None:
+        """Remove the cached kernel file from the cache directory if it exists."""
+        logger.info("Removing cached file (if exists): %s", self.kernel_basename)
         self.kernel_path.unlink(missing_ok=True)
 
     def is_cached(self, include_stale: bool = False) -> bool:
-        """Check the cache directory for kernel file that is within cache age limit. If present, return True.
+        """Return whether a usable cached copy of the kernel exists.
 
         Parameters
         ----------
-        include_stale : bool
-            Default False. If True, results include kernel that are past the max age.
+        include_stale : bool, optional
+            If True, treat kernels older than ``max_cache_age`` as still cached.
 
         Returns
         -------
         bool
-            Returns True if kernel is present locally and within the age limit.
+            True if the cache file exists and is not stale (unless ``include_stale`` is True).
         """
         presumptive_local_file = self.cache_dir / self.kernel_basename
         if presumptive_local_file.exists():
@@ -190,31 +236,54 @@ class KernelFileCache:
             return False
         return False
 
-    def download_kernel(self, kernel_url: str or S3Path, allowed_attempts: int = 3) -> Path:
-        """Downloads a kernel from a URL or an S3 location to the system cache location.
+    def download_kernel(self, kernel_url: str | Path | S3Path, allowed_attempts: int = 3) -> Path:
+        """Copy or download a kernel into the user cache directory.
 
         Parameters
         ----------
-        kernel_url : str
-            Filename of kernel on NAIF site, as discovered by find_most_recent_naif_kernel
-        allowed_attempts : int, Optional
-            Number of allowed download times for naif kernel default = 3
+        kernel_url : str or pathlib.Path or cloudpathlib.S3Path
+            Same kinds of sources as :class:`KernelFileCache` (S3, HTTP(S) URL, or local file).
+        allowed_attempts : int, optional
+            Retries for HTTP downloads only.
 
         Returns
         -------
         pathlib.Path
-            Location of downloaded file
+            Path to the file in the cache directory.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``kernel_url`` denotes a local path that does not exist or is not a file.
+        requests.exceptions.RequestException
+            If the HTTP download fails after all retries.
+        ValueError
+            If ``kernel_url`` is not a supported type or not an HTTP(S) URL when given as ``str``.
         """
-        kernel_name = kernel_url.name if isinstance(kernel_url, S3Path) else os.path.basename(kernel_url)
+        if isinstance(kernel_url, S3Path):
+            kernel_name = kernel_url.name
+        elif isinstance(kernel_url, Path):
+            kernel_name = kernel_url.name
+        else:
+            kernel_name = os.path.basename(kernel_url)
         local_filepath = self.cache_dir / kernel_name
 
-        # If kernel_url is an S3 object location
-        if smart_open.is_s3(kernel_url):
+        if smart_open.is_s3(kernel_url) or isinstance(kernel_url, S3Path):
             with smart_open.smart_open(kernel_url) as s3_object:
                 with local_filepath.open("wb") as local_object:
                     local_object.write(s3_object.read())
-        elif isinstance(kernel_url, str):
-            # Else, treat as URL string
+        elif isinstance(kernel_url, Path) or (
+            isinstance(kernel_url, str) and not kernel_url.startswith(("http://", "https://"))
+        ):
+            resolved = self._resolve_local_kernel_file(kernel_url)
+            if not local_filepath.parent.exists():
+                local_filepath.parent.mkdir(parents=True)
+            shutil.copy2(resolved, local_filepath)
+            # New mtime so is_cached() age checks match freshly downloaded kernels (sources
+            # may carry old mtimes).
+            local_filepath.touch()
+            logger.info("Cached local kernel file to %s", local_filepath)
+        elif isinstance(kernel_url, str) and kernel_url.startswith(("http://", "https://")):
             if not local_filepath.parent.exists():
                 local_filepath.parent.mkdir(parents=True)
 
@@ -223,25 +292,33 @@ class KernelFileCache:
                 try:
                     with requests.get(kernel_url, stream=True, timeout=30) as r:
                         r.raise_for_status()
-                        with open(local_filepath, "wb") as f:
+                        with local_filepath.open("wb") as f:
                             for chunk in r.iter_content(chunk_size=8192):
                                 f.write(chunk)
                     break
                 except requests.exceptions.RequestException as error:
-                    logger.info(f"Request failed. {error}")
+                    logger.info("Request failed. %s", error)
                     if attempt_number < allowed_attempts:
                         logger.info(
-                            f"Trying again, retries left {allowed_attempts - attempt_number}, Exception: {error}"
+                            "Trying again, retries left %s, Exception: %s",
+                            allowed_attempts - attempt_number,
+                            error,
                         )
                         time.sleep(1)
                     else:
-                        logger.error(f"Failed to download file after {allowed_attempts} attempts, Final Error: {error}")
+                        logger.error(
+                            "Failed to download file after %s attempts, Final Error: %s",
+                            allowed_attempts,
+                            error,
+                        )
                         raise
                 attempt_number += 1
 
             logger.info("Cached kernel file to %s", local_filepath)
         else:
-            raise ValueError(f"Kernel URL must be of type S3Path or str (for URL). Got {type(kernel_url)}")
+            raise ValueError(
+                f"Kernel source must be S3Path, s3:// str, http(s) URL str, or local Path/str. Got {type(kernel_url)}"
+            )
         return local_filepath
 
 
@@ -289,6 +366,9 @@ def find_most_recent_naif_kernel(naif_base_url: str, kernel_file_regex: str, all
     return os.path.join(naif_base_url, file_names[-1])
 
 
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
 class KernelFileRecord(NamedTuple):
     """Tuple for keeping track of kernel files with default kernel_level"""
 
@@ -302,7 +382,22 @@ class KernelFileRecord(NamedTuple):
         return f"KernelFileRecord({self.kernel_type}, {self.file_name})"
 
 
-def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
+@overload
+def ensure_spice(f_py: _F, time_kernels_only: bool = False) -> _F: ...
+
+
+@overload
+def ensure_spice(
+    f_py: None = None,
+    *,
+    time_kernels_only: bool = False,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]: ...
+
+
+def ensure_spice(
+    f_py: Callable[..., Any] | None = None,
+    time_kernels_only: bool = False,
+) -> Callable[..., Any] | Callable[[Callable[..., Any]], Callable[..., Any]]:
     # TODO[LIBSDC-614] LIBSDC-687: revisit this interface. It works well for time kernels currently (LSK/SCLK)
     #  but we haven't figured out exactly how we want to use it for SPK and CK files.
     #  Perhaps this decorator should only be smart enough to check for generic kernels?
@@ -371,11 +466,11 @@ def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
             f"f_py must be a callable object."
         )
 
-    def _decorator(func):
+    def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         """This is either a decorator or a function wrapper, depending on how ensure_spice is being used"""
 
         @functools.wraps(func)
-        def wrapper_ensure_spice(*args, **kwargs):
+        def wrapper_ensure_spice(*args: Any, **kwargs: Any) -> Any:
             """
             This function wraps the actual function that ensure_spice is wrapping/decorating. *args and **kwargs
             refer to those passed to the decorated function.
@@ -406,7 +501,7 @@ def ensure_spice(f_py: Callable = None, time_kernels_only: bool = False):
     return _decorator(f_py) if callable(f_py) else _decorator
 
 
-def ls_kernels(verbose: bool = False, log: bool = False) -> list:
+def ls_kernels(verbose: bool = False, log: bool = False) -> list[KernelFileRecord]:
     """
     List all furnished spice kernels.
 
@@ -438,7 +533,7 @@ def ls_kernels(verbose: bool = False, log: bool = False) -> list:
     return result
 
 
-def ls_spice_constants(verbose: bool = False) -> dict:
+def ls_spice_constants(verbose: bool = False) -> dict[str, Any]:
     """
     List all constants in the Spice constant pool
 
@@ -475,7 +570,7 @@ def ls_spice_constants(verbose: bool = False) -> dict:
     return result
 
 
-def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
+def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict[str, list[tuple[float, float]]]:
     """
     List time coverage of all furnished kernels of a given type
 
@@ -522,7 +617,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict:
     return result
 
 
-def ls_all_kernel_coverage(as_datetime: bool = True, verbose: bool = False) -> dict:
+def ls_all_kernel_coverage(as_datetime: bool = True, verbose: bool = False) -> dict[str, Any]:
     """
     List time coverage of all furnished kernels
 
@@ -626,8 +721,9 @@ def make_kernel(
 
 
 def et_2_timestamp(
-    et: "float | Collection[float] | np.ndarray", fmt: str = "%Y%m%dT%H%M%S.%f"
-) -> "str | Collection[str]":
+    et: float | Collection[float] | np.ndarray,
+    fmt: str = "%Y%m%dT%H%M%S.%f",
+) -> str | np.ndarray:
     """
     Convert ephemeris time to a custom formatted timestamp (default is lowercase version of ISO).
 
@@ -654,7 +750,7 @@ def et_2_timestamp(
     return time_out
 
 
-def et_2_datetime(et: "float | Collection[float] | np.ndarray") -> "datetime | np.ndarray":
+def et_2_datetime(et: float | Collection[float] | np.ndarray) -> datetime.datetime | np.ndarray:
     """
     Convert ephemeris time to a python datetime object by first converting it to a UTC timestamp.
 
@@ -680,7 +776,7 @@ def et_2_datetime(et: "float | Collection[float] | np.ndarray") -> "datetime | n
 
 
 @ensure_spice(time_kernels_only=True)
-def et2utc_wrapper(et: "float | Collection[float] | np.ndarray", fmt: str, prec: int) -> "str | Collection[str]":
+def et2utc_wrapper(et: float | Collection[float] | np.ndarray, fmt: str, prec: int) -> str | np.ndarray:
     """
     Convert ephemeris times to UTC ISO strings.
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/et2utc_c.html
@@ -705,7 +801,7 @@ def et2utc_wrapper(et: "float | Collection[float] | np.ndarray", fmt: str, prec:
 
 
 @ensure_spice(time_kernels_only=True)
-def utc2et_wrapper(iso_str: "str | Collection[str]") -> "float | np.ndarray":
+def utc2et_wrapper(iso_str: str | Collection[str]) -> float | np.ndarray:
     """
     Convert UTC ISO strings to ephemeris times.
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/utc2et_c.html
@@ -730,7 +826,7 @@ def utc2et_wrapper(iso_str: "str | Collection[str]") -> "float | np.ndarray":
 
 
 @ensure_spice(time_kernels_only=True)
-def scs2e_wrapper(sclk_str: "str | Collection[str]") -> "float | np.ndarray":
+def scs2e_wrapper(sclk_str: str | Collection[str]) -> float | np.ndarray:
     """
     Convert SCLK strings to ephemeris time.
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/scs2e_c.html
@@ -756,7 +852,7 @@ def scs2e_wrapper(sclk_str: "str | Collection[str]") -> "float | np.ndarray":
 
 
 @ensure_spice(time_kernels_only=True)
-def sce2s_wrapper(et: "float | Collection[float] | np.ndarray") -> "str | np.ndarray":
+def sce2s_wrapper(et: float | Collection[float] | np.ndarray) -> str | np.ndarray:
     """
     Convert ephemeris times to SCLK string
     https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/sce2s_c.html
