@@ -8,6 +8,7 @@ to minimize mocking complexity.
 
 import datetime
 from pathlib import Path
+from unittest import mock
 from unittest.mock import MagicMock, call, patch
 
 import pytest
@@ -234,37 +235,57 @@ class TestContextManagerProtocol:
 class TestStaticKernelLoading:
     """Test static kernel loading behavior."""
 
-    @patch("libera_utils.libera_spice.kernel_manager.KernelManager._create_temporary_static_kernels")
-    def test_load_static_skips_if_already_loaded(self, mock_create, tmp_path):
+    def test_output_basename_for_static_kernel_config(self):
+        """SPK/CK JSON configs map to the expected binary kernel basenames."""
+        assert KernelManager._output_basename_for_static_kernel_config(
+            Path("libera_base_v01.fixed_offset.spk.json")
+        ) == "libera_base_v01.fixed_offset.spk.bsp"
+        assert KernelManager._output_basename_for_static_kernel_config(
+            Path("jpss4_sc_v01.attitude.ck.json")
+        ) == "jpss4_sc_v01.attitude.ck.bc"
+
+    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=["x.bsp"])
+    @patch.object(KernelManager, "_create_temporary_static_kernels")
+    def test_prepare_static_workspace_skips_build_when_fully_cached(self, mock_create, mock_manifest, tmp_path):
+        """When every manifest file is cached, do not create a temporary build directory."""
+        km = KernelManager(temp_dir_base=tmp_path)
+        mock_entry = MagicMock()
+        mock_entry.is_cached.return_value = True
+        with patch.object(KernelManager, "_static_kernel_file_cache", return_value=mock_entry):
+            km._prepare_static_kernel_workspace()
+        mock_create.assert_not_called()
+        assert km._static_kernels_path is None
+
+    @patch("libera_utils.libera_spice.kernel_manager.KernelManager._prepare_static_kernel_workspace")
+    def test_load_static_skips_if_already_loaded(self, mock_prepare, tmp_path):
         """load_static_kernels should skip if already loaded."""
         km = KernelManager(temp_dir_base=tmp_path)
         km._static_loaded = True
 
         km.load_static_kernels()
 
-        mock_create.assert_not_called()
+        mock_prepare.assert_not_called()
 
-    @patch("libera_utils.config.config.get")
-    @patch("libera_utils.libera_spice.spice_utils.make_kernel")
-    def test_load_static_cleans_up_on_failure(self, mock_make_kernel, mock_config_get, tmp_path):
-        """Should clean up temp directory if loading fails."""
+    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=["test.bsp"])
+    @patch("libera_utils.libera_spice.kernel_manager.KernelManager._create_temporary_static_kernels")
+    @patch("libera_utils.libera_spice.kernel_manager.KernelFileCache")
+    def test_load_static_cleans_up_on_failure(self, mock_kfc_class, mock_create, mock_manifest, tmp_path):
+        """Should clean up temp directory if loading fails after workspace prep."""
         km = KernelManager(temp_dir_base=tmp_path)
 
-        config_file = tmp_path / "kernel_config.json"
-        config_file.touch()
-        mock_config_get.return_value = [str(config_file)]
+        static_build = tmp_path / "static_build"
+        static_build.mkdir()
+        (static_build / "test.bsp").touch()
+        mock_create.return_value = static_build
 
-        # Make kernel creation succeed but loading fail
-        def create_kernel(config, output_dir, input_data):
-            (Path(output_dir) / "test.bsp").touch()
-
-        mock_make_kernel.side_effect = create_kernel
+        mock_cache = mock_kfc_class.return_value
+        mock_cache.kernel_path = static_build / "test.bsp"
+        mock_cache.is_cached = mock.Mock(return_value=False)
 
         with patch("curryer.meta.MetaKernel.from_json", side_effect=RuntimeError("Load failed")):
             with pytest.raises(RuntimeError):
                 km.load_static_kernels()
 
-        # Should have cleaned up
         assert km._static_kernels_path is None
 
     @patch("libera_utils.config.config.get")
@@ -297,20 +318,13 @@ class TestStaticKernelLoading:
 
         KernelManager._max_path_length = 80  # Reset to default
 
-    @patch("libera_utils.libera_spice.kernel_manager.KernelManager._create_temporary_static_kernels")
-    def test_load_static_empty_directory_error(self, mock_create, tmp_path):
-        """Test error when static kernel directory exists but is empty."""
+    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=[])
+    def test_load_static_empty_manifest_error(self, mock_manifest, tmp_path):
+        """Test error when the static kernel manifest is empty."""
         km = KernelManager(temp_dir_base=tmp_path)
 
-        # Create an empty directory and have _create_static_kernels return it
-        empty_dir = tmp_path / "empty_static"
-        empty_dir.mkdir()
-        mock_create.return_value = empty_dir
-
-        # Mock config so metakernel loading doesn't crash before our check
-        with patch("curryer.meta.MetaKernel.from_json"):
-            with pytest.raises(FileNotFoundError, match="No static kernels found"):
-                km.load_static_kernels()
+        with pytest.raises(FileNotFoundError, match="No static kernels found for configured manifest"):
+            km.load_static_kernels()
 
 
 # ============================================================================

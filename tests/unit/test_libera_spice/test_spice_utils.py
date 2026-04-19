@@ -1,6 +1,7 @@
 """Tests for kernels module"""
 
 import logging
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -89,6 +90,56 @@ def test_kernel_file_cache_s3(write_file_to_s3, test_jpss_spk, tmp_path):
         assert cache.is_cached() is True
         cache.furnsh()
         assert spice_utils.ls_kernels() == [spice_utils.KernelFileRecord("SPK", str(cache.kernel_path))]
+
+
+def test_kernel_file_cache_local_absolute_path(spice_test_data_path, tmp_path):
+    """Local kernel Path is copied into the cache directory."""
+    test_kernel_filename = "earth_000101_211220_210926.bpc"
+    src = spice_test_data_path / test_kernel_filename
+    cache = spice_utils.KernelFileCache(src)
+    with mock.patch(
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
+        new_callable=mock.PropertyMock,
+        return_value=tmp_path,
+    ):
+        out = cache.download_kernel(src)
+        assert out == tmp_path / test_kernel_filename
+        assert out.read_bytes() == src.read_bytes()
+        assert cache.is_cached() is True
+        assert cache.kernel_path == tmp_path / test_kernel_filename
+        assert str(cache) == str(tmp_path / test_kernel_filename)
+
+
+@pytest.mark.parametrize("source", ["earth_000101_211220_210926.bpc", Path("earth_000101_211220_210926.bpc")])
+def test_kernel_file_cache_local_relative_path(spice_test_data_path, tmp_path, monkeypatch, source):
+    """Relative local str/Path resolves against CWD when materializing into the cache."""
+    test_kernel_filename = "earth_000101_211220_210926.bpc"
+    cache_subdir = tmp_path / "cache"
+    cache_subdir.mkdir()
+    monkeypatch.chdir(tmp_path)
+    src = spice_test_data_path / test_kernel_filename
+    (tmp_path / test_kernel_filename).write_bytes(src.read_bytes())
+    cache = spice_utils.KernelFileCache(source)
+    with mock.patch(
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
+        new_callable=mock.PropertyMock,
+        return_value=cache_subdir,
+    ):
+        assert cache.kernel_path == cache_subdir / test_kernel_filename
+        assert (cache_subdir / test_kernel_filename).read_bytes() == src.read_bytes()
+
+
+def test_kernel_file_cache_local_missing_raises(tmp_path):
+    """Missing local kernel path raises FileNotFoundError."""
+    missing = tmp_path / "nonexistent.bsp"
+    cache = spice_utils.KernelFileCache(missing)
+    with mock.patch(
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
+        new_callable=mock.PropertyMock,
+        return_value=tmp_path,
+    ):
+        with pytest.raises(FileNotFoundError, match="Local kernel file not found"):
+            cache.download_kernel(missing)
 
 
 def test_ls_kernels(furnish_sclk, caplog):

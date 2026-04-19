@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.8.0
+
+- FEAT: `KernelFileCache` can materialize kernels from local filesystem paths (`Path` or non-HTTP `str`), with documented resolution rules for relative paths and stable cache freshness after copy.
+- FEAT: `KernelManager` caches Libera static kernels under the versioned user cache via `KernelFileCache` after building them under the existing short temporary directory. When every required artifact is already cached (and within `cache_timeout_days`), static kernel creation is skipped and kernels are furnished from the cache, consistent with NAIF generic kernels.
+- Improve `KernelFileCache` docstrings and `spice_utils` type annotations (including `ensure_spice` overloads and tighter return types on kernel helpers).
+
+
 ## 5.7.1
 
 - BUGFIX: Fix packet parsing to l1a of datasets with deduplicated timestamps for final data assembly
