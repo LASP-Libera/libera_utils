@@ -115,7 +115,7 @@ class LiberaVariableDefinition(BaseModel):
             cls._standard_allowed_dimensions = cls._get_standard_dimensions()
 
         for dimension in raw_dimensions:
-            if dimension.upper() not in cls._standard_allowed_dimensions.keys():
+            if dimension not in cls._standard_allowed_dimensions.keys():
                 raise ValueError(
                     f"Undefined dimension name '{dimension}' used in product definition. "
                     "All dimensions must be defined in the global standard dimensions. "
@@ -283,12 +283,12 @@ class LiberaVariableDefinition(BaseModel):
         # Check dimension names and ordering match product definition
         if list(self.dimensions) == list(data_array.sizes.keys()):
             for dim in self.dimensions:
-                if dim.upper() not in LiberaVariableDefinition._standard_allowed_dimensions:
+                if dim not in LiberaVariableDefinition._standard_allowed_dimensions:
                     _err_msg = f"{variable_name}: undefined dimension '{dim}' - Dimension '{dim}' is not defined in the global standard dimensions"
                     warnings.warn(_err_msg)
                     error_messages.append(_err_msg)
                     continue
-                expected_size = LiberaVariableDefinition._standard_allowed_dimensions[dim.upper()].size
+                expected_size = LiberaVariableDefinition._standard_allowed_dimensions[dim].size
                 actual_size = data_array.sizes[dim]
                 if expected_size is not None and expected_size != actual_size:
                     _err_msg = f"{variable_name}: dimension size mismatch for dimension '{dim}' - Expected size {expected_size} but got {actual_size}"
@@ -457,7 +457,7 @@ class LiberaVariableDefinition(BaseModel):
         data_array.encoding.update(self.encoding)
 
         # Check dimensions. We can't fix this so we just raise.
-        if undefined_dims := [d for d in data_array.sizes.keys() if d.upper() not in self._standard_allowed_dimensions]:
+        if undefined_dims := [d for d in data_array.sizes.keys() if d not in self._standard_allowed_dimensions]:
             raise ValueError(
                 f"Variable {variable_name} has undefined dimensions {undefined_dims} that are not in the standard "
                 f"allowed dimensions {list(self._standard_allowed_dimensions)}. "
