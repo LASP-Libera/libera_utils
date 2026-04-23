@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # This is a constant and is not expected to change in SPP
 SDC_PACKET_DIMENSION = "PACKET"
 SPP_PACKET_DIMENSION = "packet"  # The original dimension name from SPP before we swap it to uppercase
+SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variable in the dataset
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
@@ -100,8 +101,7 @@ def parse_packets_to_l1a_dataset(
         The APID (Application Process Identifier) value for the packet type. Used to select the appropriate
         configuration for generating the L1A Dataset structure.
     ground_data : bool, optional
-        If True, non-identical duplicate timestamps will produce a warning instead of a ValueError
-        as long as the sequence counter (``SRC_SEQ_CTR``) is monotonic. This is useful for ground
+        If True, non-identical duplicate timestamps will produce a warning instead of a ValueError. This is useful for ground
         test data where duplicate timestamps with differing data may be expected. Default is False.
 
     Returns
@@ -254,19 +254,15 @@ def _validate_duplicate_values(
     duplicates : np.ndarray
         The coordinate values that appear more than once.
     ground_data : bool, optional
-        If True, non-identical duplicates with monotonic sequence counters will produce a
-        warning instead of raising a ValueError. The sequence counter (``SRC_SEQ_CTR``) is
-        considered monotonic when it increments by one between consecutive packets, with
-        rollover to 0 treated as valid. Default is False, which raises a ValueError for any
+        If True, non-identical duplicates with will produce a
+        warning instead of raising a ValueError. Default is False, which raises a ValueError for any
         non-identical duplicates.
 
     Raises
     ------
     ValueError
-        If any duplicate coordinate value has differing data values across
-        any variable, indicating that dropping it would cause data loss.
-        When ``ground_data`` is True, this is only raised if the sequence
-        counters are not monotonic.
+        If values have differing data values across any variable (when
+        ``ground_data`` is False).
     """
     # Non-dimension coordinates share a dimension with other variables but
     # don't index them directly — rows are inherently distinct, so
@@ -279,15 +275,20 @@ def _validate_duplicate_values(
     # Build a boolean mask marking every row whose coord value appears in `duplicates`.
     dup_mask = np.isin(coord_values, duplicates)
     dup_indices_all = np.where(dup_mask)[0]
-    dup_slice = dataset.isel({dim_name: dup_indices_all})
     dup_coord_vals = coord_values[dup_indices_all]
 
-    for var_name, var in dup_slice.data_vars.items():
-        data = var.values 
+    sort_order = np.argsort(dup_coord_vals, kind="stable")
+    dup_indices_sorted = dup_indices_all[sort_order]
+    dup_coord_vals_sorted = dup_coord_vals[sort_order]
 
-        # For each unique duplicate value, check whether all rows with that value are identical.
-        unique_dup_vals, group_starts = np.unique(dup_coord_vals, return_index=True)
-        group_ends = np.append(group_starts[1:], len(dup_coord_vals))
+    dup_slice = dataset.isel({dim_name: dup_indices_sorted})
+
+    # Computed once, outside the loop, using the sorted array:
+    unique_dup_vals, group_starts = np.unique(dup_coord_vals_sorted, return_index=True)
+    group_ends = np.append(group_starts[1:], len(dup_coord_vals_sorted))
+
+    for var_name, var in dup_slice.data_vars.items():
+        data = var.values
 
         for dup_val, start, end in zip(unique_dup_vals, group_starts, group_ends):
             group_data = data[start:end]
@@ -299,14 +300,14 @@ def _validate_duplicate_values(
                     warnings.warn(
                         f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
                         f"has differing values in variable '{var_name}' at {pairs}. "
-                        f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[group_coord_indices]}. "
+                        f"{SRC_SEQ_CTR_DIMENSION} values for these packets are {dataset[SRC_SEQ_CTR_DIMENSION].values[group_coord_indices]}. "
                         f"Proceeding because ground_data=True."
                     )
-                    break  # Already warned for this dup_val, skip remaining vars
+                    continue
                 raise ValueError(
                     f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
                     f"has differing values in variable '{var_name}' at {pairs}. "
-                    f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[group_coord_indices]}. "
+                    f"{SRC_SEQ_CTR_DIMENSION} values for these packets are {dataset[SRC_SEQ_CTR_DIMENSION].values[group_coord_indices]}. "
                     f"Dropping this duplicate would result in data loss."
                 )
 
@@ -314,9 +315,8 @@ def _validate_duplicate_values(
 def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: bool = False):
     """Detect and drop duplicate values based on a coordinate
 
-    Issues warnings when duplicates are detected. Raises an error if duplicate
-    coordinate values have differing data values, as only identical duplicates
-    are safe to drop.
+    Runs a validation function which raises an error if duplicate
+    coordinate values in the dataset have differing data values, as only identical duplicates are safe to drop.
 
     Parameters
     ----------
@@ -326,7 +326,7 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
         The name of the coordinate over which to search for duplicates.
         Can be either a dimension coordinate or a non-dimension coordinate.
     ground_data : bool, optional
-        If True, non-identical duplicates with monotonic sequence counters will produce a
+        If True, validations to check for non-identical duplicates will produce a
         warning instead of raising a ValueError. Default is False.
 
     Returns
@@ -341,9 +341,7 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
     KeyError
         If the coordinate is not found in the dataset.
     ValueError
-        If the coordinate is not 1-dimensional, or if duplicate coordinate
-        values have differing data values across any variable (when
-        ``ground_data`` is False or sequence counters are not monotonic).
+        If the coordinate is not 1-dimensional, or if duplicate coordinate.
     """
     # Validate coordinate exists
     if coordinate_name not in dataset.coords:
@@ -380,7 +378,7 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
         # Select only the first occurrence of each unique coordinate value
         dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
 
-        warnings.warn(f"Detected {n_duplicates} duplicate packet timestamps in dataset")
+        warnings.warn(f"Detected {n_duplicates} duplicate {coordinate_name} in dataset")
         logger.warning(f"Duplicate coordinates detected ({n_duplicates}) in {coordinate_name}: {duplicates}")
     else:
         # No duplicates, return original dataset
