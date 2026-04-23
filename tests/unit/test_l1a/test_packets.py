@@ -57,6 +57,7 @@ def test_drop_duplicates_no_duplicates():
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 3]),
+            "SRC_SEQ_CTR": [100, 101, 102],
             "time": (["time"], [100, 200, 300]),
         }
     )
@@ -72,6 +73,7 @@ def test_drop_duplicates_with_duplicates():
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 2, 4]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
             "time": (["time"], [100, 200, 200, 300]),  # 200 appears twice
         }
     )
@@ -92,6 +94,7 @@ def test_drop_duplicates_with_non_identical_duplicates():
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 3, 4]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
             "time": (["time"], [100, 200, 200, 300]),  # 200 appears twice
         }
     )
@@ -130,7 +133,7 @@ def test_validate_duplicate_values_non_dimension_coordinate_skips_validation():
     duplicates = unique_values[counts > 1]
 
     # Should not raise even though duplicate rows [20, 30] differ
-    libera_packets._validate_duplicate_values(ds, "packet_time", "PACKET", coord_values, duplicates)
+    libera_packets._validate_duplicate_values(ds, "packet_time", duplicates)
 
 
 def test_validate_duplicate_values_dimension_coordinate_identical_rows():
@@ -138,6 +141,7 @@ def test_validate_duplicate_values_dimension_coordinate_identical_rows():
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 2, 3]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
             "time": (["time"], [100, 200, 200, 300]),
         }
     )
@@ -148,7 +152,7 @@ def test_validate_duplicate_values_dimension_coordinate_identical_rows():
     duplicates = unique_values[counts > 1]
 
     # Should not raise — both rows at time=200 have data value 2
-    libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+    libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
 def test_validate_duplicate_values_dimension_coordinate_differing_rows():
@@ -157,6 +161,7 @@ def test_validate_duplicate_values_dimension_coordinate_differing_rows():
         {
             "data": (["time"], [1, 2, 99, 3]),
             "time": (["time"], [100, 200, 200, 300]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
         }
     )
 
@@ -166,7 +171,7 @@ def test_validate_duplicate_values_dimension_coordinate_differing_rows():
     duplicates = unique_values[counts > 1]
 
     with pytest.raises(ValueError, match="200.*time.*data"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+        libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
 def test_validate_duplicate_values_multiple_duplicates_all_identical():
@@ -174,6 +179,7 @@ def test_validate_duplicate_values_multiple_duplicates_all_identical():
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 2, 3, 3, 4]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103, 104, 105],
             "time": (["time"], [100, 200, 200, 300, 300, 400]),
         }
     )
@@ -184,7 +190,7 @@ def test_validate_duplicate_values_multiple_duplicates_all_identical():
     duplicates = unique_values[counts > 1]
 
     # Both time=200 (data=2,2) and time=300 (data=3,3) are identical — should pass
-    libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+    libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
 def test_validate_duplicate_values_multiple_duplicates_one_differs():
@@ -192,6 +198,7 @@ def test_validate_duplicate_values_multiple_duplicates_one_differs():
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 2, 3, 99, 4]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103, 104, 105],
             "time": (["time"], [100, 200, 200, 300, 300, 400]),
         }
     )
@@ -203,7 +210,7 @@ def test_validate_duplicate_values_multiple_duplicates_one_differs():
 
     # time=200 is fine (2,2), but time=300 differs (3 vs 99)
     with pytest.raises(ValueError, match="300"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+        libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
 def test_validate_duplicate_values_multiple_variables_one_differs():
@@ -213,6 +220,7 @@ def test_validate_duplicate_values_multiple_variables_one_differs():
             "data_a": (["time"], [1, 2, 2]),
             "data_b": (["time"], [10, 20, 99]),  # differs at time=200
             "time": (["time"], [100, 200, 200]),
+            "SRC_SEQ_CTR": [100, 101, 102],
         }
     )
 
@@ -222,7 +230,7 @@ def test_validate_duplicate_values_multiple_variables_one_differs():
     duplicates = unique_values[counts > 1]
 
     with pytest.raises(ValueError, match="data_b"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+        libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
 def test_validate_duplicate_values_empty_duplicates():
@@ -231,13 +239,14 @@ def test_validate_duplicate_values_empty_duplicates():
         {
             "data": (["time"], [1, 2, 3]),
             "time": (["time"], [100, 200, 300]),
+            "SRC_SEQ_CTR": [100, 101, 102],
         }
     )
 
     coord_values = ds["time"].values
     duplicates = np.array([])
 
-    libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates)
+    libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
@@ -645,242 +654,3 @@ def test_parse_packets_to_l1a_dataset_basic(
     # Verify global attributes were added
     assert "algorithm_version" in result.attrs
     assert "date_created" in result.attrs
-
-
-def test_monotonic_sequence_returns_true():
-    """Monotonically increasing sequence counters should return True."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102, 103]),
-            "time": (["time"], [10, 20, 20, 30]),
-        }
-    )
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is True
-
-
-def test_non_monotonic_sequence_returns_false():
-    """Non-monotonic sequence counters (gap) should return False."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 105, 103]),
-            "time": (["time"], [10, 20, 20, 30]),
-        }
-    )
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is False
-
-
-def test_rollover_at_zero_current_returns_true():
-    """Sequence counter rolling over to 0 at the current index should be treated as monotonic."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [16382, 16383, 0, 1]),
-            "time": (["time"], [10, 20, 20, 30]),
-        }
-    )
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is True
-
-
-def test_rollover_at_zero_previous_returns_true():
-    """Sequence counter at 0 for the previous neighbor should be treated as monotonic."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [0, 1, 2, 3]),
-            "time": (["time"], [10, 20, 20, 30]),
-        }
-    )
-    # Duplicate at index 1 and 2; previous of index 1 is index 0 which is 0
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is True
-
-
-def test_rollover_at_zero_next_returns_true():
-    """Sequence counter at 0 for the next neighbor should be treated as monotonic."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [16382, 16383, 16383, 0]),
-            "time": (["time"], [10, 20, 20, 30]),
-        }
-    )
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is True
-
-
-def test_missing_src_seq_ctr_returns_false():
-    """If SRC_SEQ_CTR is not in the dataset, should return False."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "time": (["time"], [10, 20, 20, 30]),
-        }
-    )
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is False
-
-
-def test_first_index_duplicate_no_previous():
-    """Duplicate at the very first index should only check the next neighbor."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102]),
-            "time": (["time"], [10, 10, 20]),
-        }
-    )
-    dup_indices = np.array([0, 1])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is True
-
-
-def test_last_index_duplicate_no_next():
-    """Duplicate at the very last index should only check the previous neighbor."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102]),
-            "time": (["time"], [10, 20, 20]),
-        }
-    )
-    dup_indices = np.array([1, 2])
-    assert libera_packets._is_sequence_counter_monotonic(ds, "time", dup_indices) is True
-
-
-def test_ground_data_false_raises_valueerror():
-    """With ground_data=False (default), non-identical duplicates should raise ValueError."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102, 103]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-    coord_values = ds["time"].values
-    _, counts = np.unique(coord_values, return_counts=True)
-    unique_values = np.unique(coord_values)
-    duplicates = unique_values[counts > 1]
-
-    with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates, ground_data=False)
-
-
-def test_ground_data_true_monotonic_seq_warns():
-    """With ground_data=True and monotonic sequence counters, should warn instead of raise."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102, 103]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-    coord_values = ds["time"].values
-    unique_values = np.unique(coord_values)
-    _, counts = np.unique(coord_values, return_counts=True)
-    duplicates = unique_values[counts > 1]
-
-    with pytest.warns(UserWarning, match="sequence counter is monotonic"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates, ground_data=True)
-
-
-def test_ground_data_true_non_monotonic_seq_raises():
-    """With ground_data=True but non-monotonic sequence counters, should still raise ValueError."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 999, 103]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-    coord_values = ds["time"].values
-    unique_values = np.unique(coord_values)
-    _, counts = np.unique(coord_values, return_counts=True)
-    duplicates = unique_values[counts > 1]
-
-    with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates, ground_data=True)
-
-
-def test_ground_data_true_no_seq_ctr_raises():
-    """With ground_data=True but no SRC_SEQ_CTR field, should still raise ValueError."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-    coord_values = ds["time"].values
-    unique_values = np.unique(coord_values)
-    _, counts = np.unique(coord_values, return_counts=True)
-    duplicates = unique_values[counts > 1]
-
-    with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates, ground_data=True)
-
-
-def test_ground_data_true_with_rollover_warns():
-    """With ground_data=True and sequence counter rolling over at 0, should warn."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [16382, 16383, 0, 1]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-    coord_values = ds["time"].values
-    unique_values = np.unique(coord_values)
-    _, counts = np.unique(coord_values, return_counts=True)
-    duplicates = unique_values[counts > 1]
-
-    with pytest.warns(UserWarning, match="sequence counter is monotonic"):
-        libera_packets._validate_duplicate_values(ds, "time", "time", coord_values, duplicates, ground_data=True)
-
-
-def test_drop_duplicates_ground_data_false_raises_on_non_identical():
-    """_drop_duplicates with ground_data=False should raise on non-identical duplicates."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102, 103]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-
-    with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
-        libera_packets._drop_duplicates(ds, "time", ground_data=False)
-
-
-def test_drop_duplicates_ground_data_true_monotonic_warns_and_deduplicates():
-    """_drop_duplicates with ground_data=True and monotonic seq should warn and deduplicate."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102, 103]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-
-    with pytest.warns(UserWarning, match="sequence counter is monotonic"):
-        result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time", ground_data=True)
-
-    assert n_duplicates == 1
-    assert len(result_ds["time"]) == 3
-    assert list(result_ds["time"].values) == [100, 200, 300]
-
-
-def test_drop_duplicates_default_ground_data_is_false():
-    """The default value of ground_data should be False, raising on non-identical duplicates."""
-    ds = xr.Dataset(
-        {
-            "data": (["time"], [1, 2, 3, 4]),
-            "SRC_SEQ_CTR": (["time"], [100, 101, 102, 103]),
-            "time": (["time"], [100, 200, 200, 300]),
-        }
-    )
-
-    with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
-        libera_packets._drop_duplicates(ds, "time")

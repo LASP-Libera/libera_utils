@@ -233,73 +233,9 @@ def parse_packets_to_l1a_dataset(
     return packet_ds
 
 
-def _is_sequence_counter_monotonic(dataset: xr.Dataset, dim_name: str, dup_indices: np.ndarray) -> bool:
-    """Check if sequence counters around duplicate indices are monotonic.
-
-    The sequence counter is considered monotonic when duplicates are part of a
-    contiguous duplicate block and the sequence counter values at the boundaries
-    (previous neighbour before the block and next neighbour after the block)
-    are monotonic with rollover rules.
-
-    Parameters
-    ----------
-    dataset : xr.Dataset
-        The dataset containing a ``SRC_SEQ_CTR`` variable.
-    dim_name : str
-        The dimension name used to index into the dataset.
-    dup_indices : np.ndarray
-        Array of integer indices where the duplicate values occur.
-
-    Returns
-    -------
-    bool
-        True if the sequence counters around all duplicate indices are monotonic
-        (accounting for rollover at 0), False otherwise.
-    """
-    if "SRC_SEQ_CTR" not in dataset.data_vars:
-        return False
-
-    seq_ctr = dataset["SRC_SEQ_CTR"].values
-    total_len = len(seq_ctr)
-
-    if len(dup_indices) == 0:
-        return True
-
-    sorted_dup_indices = np.sort(dup_indices)
-    i = 0
-    while i < len(sorted_dup_indices):
-        start_idx = int(sorted_dup_indices[i])
-        end_idx = start_idx
-
-        # Find end of contiguous duplicate block
-        while i + 1 < len(sorted_dup_indices) and sorted_dup_indices[i + 1] == end_idx + 1:
-            i += 1
-            end_idx = int(sorted_dup_indices[i])
-
-        # Left boundary check (previous neighbour outside duplicate block)
-        if start_idx > 0:
-            prev_val = int(seq_ctr[start_idx - 1])
-            current_val = int(seq_ctr[start_idx])
-            if not (current_val == prev_val + 1 or current_val == 0 or prev_val == 0):
-                return False
-
-        # Right boundary check (next neighbour outside duplicate block)
-        if end_idx < total_len - 1:
-            next_val = int(seq_ctr[end_idx + 1])
-            current_val = int(seq_ctr[end_idx])
-            if not (next_val == current_val + 1 or next_val == 0 or current_val == 0):
-                return False
-
-        i += 1
-
-    return True
-
-
 def _validate_duplicate_values(
     dataset: xr.Dataset,
     coordinate_name: str,
-    dim_name: str,
-    coord_values: np.ndarray,
     duplicates: np.ndarray,
     ground_data: bool = False,
 ) -> None:
@@ -315,10 +251,6 @@ def _validate_duplicate_values(
         The dataset containing the duplicates to validate.
     coordinate_name : str
         The name of the coordinate being deduplicated (used in error messages).
-    dim_name : str
-        The dimension name along which to index duplicates.
-    coord_values : np.ndarray
-        The full array of coordinate values (including duplicates).
     duplicates : np.ndarray
         The coordinate values that appear more than once.
     ground_data : bool, optional
@@ -339,6 +271,8 @@ def _validate_duplicate_values(
     # Non-dimension coordinates share a dimension with other variables but
     # don't index them directly — rows are inherently distinct, so
     # value-identity validation is not applicable.
+    dim_name = dataset[coordinate_name].dims[0]
+    coord_values = dataset[coordinate_name].values
     if coordinate_name != dim_name:
         return
 
@@ -349,16 +283,19 @@ def _validate_duplicate_values(
         for var_name, var in dup_slice.data_vars.items():
             data = var.values
             if not np.all(data == data[0]):
-                if ground_data and _is_sequence_counter_monotonic(dataset, dim_name, dup_indices):
+                pairs = list(zip(data, coord_values[dup_indices]))
+                if ground_data:
                     warnings.warn(
                         f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
-                        f"has differing values in variable '{var_name}', but sequence counter "
-                        f"is monotonic. Proceeding because ground_data=True."
+                        f"has differing values in variable '{var_name}' at {pairs}. "
+                        f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[dup_indices]}. "
+                        f"Proceeding because ground_data=True."
                     )
                     break  # Already warned for this dup_val, skip remaining vars
                 raise ValueError(
                     f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
-                    f"has differing values in variable '{var_name}'. "
+                    f"has differing values in variable '{var_name}' at {pairs}. "
+                    f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[dup_indices]}. "
                     f"Dropping this duplicate would result in data loss."
                 )
 
@@ -429,7 +366,7 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
         _, counts = np.unique(coord_values, return_counts=True)
         duplicates = unique_values[counts > 1]
 
-        _validate_duplicate_values(dataset, coordinate_name, dim_name, coord_values, duplicates, ground_data)
+        _validate_duplicate_values(dataset, coordinate_name, duplicates, ground_data)
         # Select only the first occurrence of each unique coordinate value
         dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
 
