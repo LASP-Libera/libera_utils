@@ -276,26 +276,37 @@ def _validate_duplicate_values(
     if coordinate_name != dim_name:
         return
 
-    for dup_val in duplicates:
-        dup_indices = np.where(coord_values == dup_val)[0]
-        dup_slice = dataset.isel({dim_name: dup_indices})
+    # Build a boolean mask marking every row whose coord value appears in `duplicates`.
+    dup_mask = np.isin(coord_values, duplicates)
+    dup_indices_all = np.where(dup_mask)[0]
+    dup_slice = dataset.isel({dim_name: dup_indices_all})
+    dup_coord_vals = coord_values[dup_indices_all]
 
-        for var_name, var in dup_slice.data_vars.items():
-            data = var.values
-            if not np.all(data == data[0]):
-                pairs = list(zip(data, coord_values[dup_indices]))
+    for var_name, var in dup_slice.data_vars.items():
+        data = var.values 
+
+        # For each unique duplicate value, check whether all rows with that value are identical.
+        unique_dup_vals, group_starts = np.unique(dup_coord_vals, return_index=True)
+        group_ends = np.append(group_starts[1:], len(dup_coord_vals))
+
+        for dup_val, start, end in zip(unique_dup_vals, group_starts, group_ends):
+            group_data = data[start:end]
+            # Vectorized identity check: broadcast first row against all rows in the group.
+            if not np.all(group_data == group_data[0]):
+                group_coord_indices = dup_indices_all[start:end]
+                pairs = list(zip(group_data, dup_coord_vals[start:end]))
                 if ground_data:
                     warnings.warn(
                         f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
                         f"has differing values in variable '{var_name}' at {pairs}. "
-                        f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[dup_indices]}. "
+                        f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[group_coord_indices]}. "
                         f"Proceeding because ground_data=True."
                     )
                     break  # Already warned for this dup_val, skip remaining vars
                 raise ValueError(
                     f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
                     f"has differing values in variable '{var_name}' at {pairs}. "
-                    f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[dup_indices]}. "
+                    f"SRC_SEQ_CTR values for these packets are {dataset['SRC_SEQ_CTR'].values[group_coord_indices]}. "
                     f"Dropping this duplicate would result in data loss."
                 )
 
@@ -351,7 +362,8 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
     # Optimize for the common case (no duplicates) by checking size first
     # Use np.unique to find first occurrence of each unique value
     coord_values = coord.values
-    unique_values, unique_indices = np.unique(coord_values, return_index=True)
+    # Obtain unique values, their first-occurrence indices, and per-value counts in one pass.
+    unique_values, unique_indices, counts = np.unique(coord_values, return_index=True, return_counts=True)
 
     # Sort indices to maintain original order in the dataset
     # np.unique sorts the VALUES (not indices), so indices may be out of order
@@ -362,8 +374,6 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
     n_duplicates = original_size - len(unique_indices_sorted)
 
     if n_duplicates > 0:
-        # Log the duplicate values (not indices)
-        _, counts = np.unique(coord_values, return_counts=True)
         duplicates = unique_values[counts > 1]
 
         _validate_duplicate_values(dataset, coordinate_name, duplicates, ground_data)
