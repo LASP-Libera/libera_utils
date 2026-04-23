@@ -78,7 +78,7 @@ def test_drop_duplicates_with_duplicates():
         }
     )
 
-    with pytest.warns(UserWarning, match="duplicate packet timestamps"):
+    with pytest.warns(UserWarning, match="Detected 1 duplicate time in dataset"):
         result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time")
 
     assert n_duplicates > 0
@@ -174,6 +174,42 @@ def test_validate_duplicate_values_dimension_coordinate_differing_rows():
         libera_packets._validate_duplicate_values(ds, "time", duplicates)
 
 
+def test_validate_duplicate_values_interleaved_identical_duplicates():
+    """Interleaved duplicates (not adjacent) with identical values should pass validation."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 1, 2]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
+            "time": (["time"], [100, 200, 100, 200]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, _, counts = np.unique(coord_values, return_index=True, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    # Both time=100 (data=1,1) and time=200 (data=2,2) are identical — should pass
+    libera_packets._validate_duplicate_values(ds, "time", duplicates)
+
+
+def test_validate_duplicate_values_interleaved_differing_duplicates():
+    """Interleaved duplicates with differing values should raise ValueError."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 99, 2]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
+            "time": (["time"], [100, 200, 100, 200]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, _, counts = np.unique(coord_values, return_index=True, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    with pytest.raises(ValueError, match="100"):
+        libera_packets._validate_duplicate_values(ds, "time", duplicates)
+
+
 def test_validate_duplicate_values_multiple_duplicates_all_identical():
     """Multiple duplicate coordinate values that are all internally identical should pass."""
     ds = xr.Dataset(
@@ -242,11 +278,33 @@ def test_validate_duplicate_values_empty_duplicates():
             "SRC_SEQ_CTR": [100, 101, 102],
         }
     )
-
-    coord_values = ds["time"].values
     duplicates = np.array([])
 
     libera_packets._validate_duplicate_values(ds, "time", duplicates)
+
+
+def test_validate_duplicate_values_ground_data_warns_for_each_differing_value():
+    """With ground_data=True, a warning is issued for each differing duplicate value."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 99, 3, 88, 4]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103, 104, 105],
+            "time": (["time"], [100, 200, 200, 300, 300, 400]),
+        }
+    )
+
+    coord_values = ds["time"].values
+    unique_values, _, counts = np.unique(coord_values, return_index=True, return_counts=True)
+    duplicates = unique_values[counts > 1]
+
+    with pytest.warns(UserWarning, match="Duplicate coordinate value") as warning_list:
+        libera_packets._validate_duplicate_values(ds, "time", duplicates, ground_data=True)
+
+    # Both time=200 (2 vs 99) and time=300 (3 vs 88) differ — expect two warnings
+    assert len(warning_list) == 2
+    messages = [str(w.message) for w in warning_list]
+    assert any("200" in m for m in messages)
+    assert any("300" in m for m in messages)
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
