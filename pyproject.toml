@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.6.2rc1" # Adding rc until spp release is out with bug fix
+version = "5.6.2rc3" # Adding rc until spp release is out with bug fix
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -46,7 +46,7 @@ dependencies = [
     "pydantic>2.0.3",
     "requests>=2.27.0,<3.0",
     "setuptools>=69.0.0",
-    "space-packet-parser @ git+https://github.com/lasp/space_packet_parser.git@bugfix/BinaryParameter-Truncation-fix", # Change before merging to main
+    "space-packet-parser>=6.1.2,<7.0.0", # Change before merging to main
     "spiceypy>=5.0.0",
     "urllib3<2.0",  # This pin speeds up solving boto dependencies, which require urllib3<2.0
     "watchtower>=3.0.0,<4.0",
