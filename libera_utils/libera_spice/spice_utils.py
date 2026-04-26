@@ -213,7 +213,7 @@ class KernelFileCache:
     def clear(self) -> None:
         """Remove the cached kernel file from the cache directory if it exists."""
         logger.info("Removing cached file (if exists): %s", self.kernel_basename)
-        self.kernel_path.unlink(missing_ok=True)
+        (self.cache_dir / self.kernel_basename).unlink(missing_ok=True)
 
     def is_cached(self, include_stale: bool = False) -> bool:
         """Return whether a usable cached copy of the kernel exists.
@@ -269,6 +269,8 @@ class KernelFileCache:
         local_filepath = self.cache_dir / kernel_name
 
         if smart_open.is_s3(kernel_url) or isinstance(kernel_url, S3Path):
+            if not local_filepath.parent.exists():
+                local_filepath.parent.mkdir(parents=True)
             with smart_open.smart_open(kernel_url) as s3_object:
                 with local_filepath.open("wb") as local_object:
                     local_object.write(s3_object.read())
@@ -729,14 +731,14 @@ def et_2_timestamp(
 
     Parameters
     ----------
-    et: Union[float, Collection[float], numpy.ndarray]
+    et: float | Collection[float] | numpy.ndarray
         Ephemeris Time to be converted.
     fmt: str, Optional
         Format string as defined by the datetime.strftime() function.
 
     Returns
     -------
-    : Union[str, Collection[str]]
+    : str | numpy.ndarray
         Formatted timestamps
     """
 
@@ -794,7 +796,7 @@ def et2utc_wrapper(et: float | Collection[float] | np.ndarray, fmt: str, prec: i
 
     Returns
     -------
-    : Union[numpy.ndarray, str]
+    : str or numpy.ndarray
         UTC time string(s)
     """
     return spice.et2utc(et, fmt, prec)
@@ -810,7 +812,7 @@ def utc2et_wrapper(iso_str: str | Collection[str]) -> float | np.ndarray:
 
     Parameters
     ----------
-    iso_str: Union[str, Collection[str]]
+    iso_str: str or Collection[str]
         The UTC to convert to ephemeris time
 
     Returns
@@ -835,12 +837,12 @@ def scs2e_wrapper(sclk_str: str | Collection[str]) -> float | np.ndarray:
 
     Parameters
     ----------
-    sclk_str: Union[str, Collection[str]]
+    sclk_str: str or Collection[str]
         Spacecraft clock string
 
     Returns
     -------
-    : Union[float, numpy.ndarray]
+    : float or numpy.ndarray
         Ephemeris time
     """
 
@@ -866,7 +868,7 @@ def sce2s_wrapper(et: float | Collection[float] | np.ndarray) -> str | np.ndarra
 
     Returns
     -------
-    : Union[str, Collection[str]]
+    : str or numpy.ndarray
         SCLK string
     """
 

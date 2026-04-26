@@ -257,6 +257,9 @@ class KernelManager:
 
         Static kernels include instrument orientation and configuration data
         that doesn't change with time. This only needs to be called once.
+        This method also guarantees NAIF kernels are loaded (including leap-second
+        setup) so callers can rely on a consistent initialization contract for both
+        static cache-hit and static rebuild paths.
 
         Raises
         ------
@@ -270,6 +273,9 @@ class KernelManager:
             return
 
         try:
+            if not self._naif_kernels_loaded:
+                self.load_naif_kernels()
+
             self._prepare_static_kernel_workspace()
 
             # Load metakernel
@@ -402,6 +408,17 @@ class KernelManager:
         """Resolve dynamic kernel inputs to cached filesystem paths via :class:`KernelFileCache`."""
         max_age = self._cache_timeout_days
 
+        def _warn_if_cached_basename_conflict(local_source: Path) -> None:
+            cache_target = get_local_cache_dir() / local_source.name
+            if cache_target.exists() and local_source.resolve() != cache_target.resolve():
+                msg = (
+                    f"Dynamic kernel basename conflict for '{local_source.name}': source '{local_source}' maps to "
+                    f"existing cache file '{cache_target}'. Kernel cache is keyed by basename; ensure dynamic "
+                    "kernel filenames are unique."
+                )
+                warnings.warn(msg, UserWarning, stacklevel=2)
+                logger.warning(msg)
+
         if isinstance(sources, Path) or (isinstance(sources, str) and not self._is_remote_kernel_specifier(sources)):
             path = Path(sources) if isinstance(sources, str) else sources
             path = path.expanduser()
@@ -424,9 +441,12 @@ class KernelManager:
                     resolved,
                     len(top_level_files),
                 )
+                for file_path in top_level_files:
+                    _warn_if_cached_basename_conflict(file_path.resolve())
                 out = [KernelFileCache(f, max_cache_age=max_age).kernel_path for f in top_level_files]
             elif path.is_file():
                 logger.info("Loading single dynamic kernel file %s", resolved)
+                _warn_if_cached_basename_conflict(resolved)
                 out = [KernelFileCache(path, max_cache_age=max_age).kernel_path]
             else:
                 raise FileNotFoundError(f"Dynamic kernel path is not a file or directory: {resolved}")
@@ -441,6 +461,7 @@ class KernelManager:
         if self._is_dynamic_sources_sequence(sources):
             logger.info("Loading %d dynamic kernel entries from explicit sequence", len(sources))
             out: list[Path] = []
+            local_sources_by_basename: dict[str, Path] = {}
             for entry in sources:
                 if isinstance(entry, Path):
                     candidate = entry.expanduser().resolve(strict=False)
@@ -450,6 +471,18 @@ class KernelManager:
                             f"specifiers, or use the directory overload: {candidate}"
                         )
                         raise ValueError(msg)
+                    first_source = local_sources_by_basename.get(candidate.name)
+                    if first_source is not None and first_source != candidate:
+                        msg = (
+                            f"Dynamic kernel basename conflict for '{candidate.name}': '{first_source}' and "
+                            f"'{candidate}'. Kernel cache is keyed by basename; ensure dynamic kernel filenames are "
+                            "unique."
+                        )
+                        warnings.warn(msg, UserWarning, stacklevel=2)
+                        logger.warning(msg)
+                    else:
+                        local_sources_by_basename[candidate.name] = candidate
+                    _warn_if_cached_basename_conflict(candidate)
                 elif isinstance(entry, str) and not self._is_remote_kernel_specifier(entry):
                     candidate = Path(entry).expanduser().resolve(strict=False)
                     if candidate.is_dir():
@@ -458,6 +491,18 @@ class KernelManager:
                             f"specifiers, or use the directory overload: {candidate}"
                         )
                         raise ValueError(msg)
+                    first_source = local_sources_by_basename.get(candidate.name)
+                    if first_source is not None and first_source != candidate:
+                        msg = (
+                            f"Dynamic kernel basename conflict for '{candidate.name}': '{first_source}' and "
+                            f"'{candidate}'. Kernel cache is keyed by basename; ensure dynamic kernel filenames are "
+                            "unique."
+                        )
+                        warnings.warn(msg, UserWarning, stacklevel=2)
+                        logger.warning(msg)
+                    else:
+                        local_sources_by_basename[candidate.name] = candidate
+                    _warn_if_cached_basename_conflict(candidate)
                 out.append(KernelFileCache(entry, max_cache_age=max_age).kernel_path)
             if not out:
                 raise FileNotFoundError("No kernel files found in provided paths")
