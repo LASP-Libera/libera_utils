@@ -622,3 +622,80 @@ def test_applicable_date_warning_message():
         assert len(w) == 1
         assert issubclass(w[0].category, UserWarning)
         assert "Time range for filename spans more than 24 hours" in str(w[0].message)
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected_ummg_filename"),
+    [
+        (
+            "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.cmr.json",
+        ),
+        (
+            "/tmp/foo/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "/tmp/foo/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.cmr.json",
+        ),
+        (
+            "s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+            "s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.cmr.json",
+        ),
+    ],
+)
+def test_ummg_metadata_filename(filename, expected_ummg_filename):
+    """Test that the UMM-G filename property returns the correct filename"""
+    fn = filenaming.LiberaDataProductFilename(filename)
+    ummg_fn = fn.ummg_metadata_filename
+
+    assert str(ummg_fn) == expected_ummg_filename
+    assert isinstance(ummg_fn, type(fn.path))
+    assert ummg_fn.parent == fn.path.parent
+    assert ummg_fn.suffixes == [".cmr", ".json"]
+
+
+def _make_mock_path(data_name: str, ummg_name: str) -> mock.MagicMock:
+    """Return a mock _path whose with_suffix() yields a controlled UMM-G path name.
+
+    Parameters
+    ----------
+    data_name : str
+        The filename string the mock reports as its .name (the data file side).
+    ummg_name : str
+        The filename string the mock's with_suffix() return value reports as its .name.
+    """
+    mock_ummg = mock.MagicMock()
+    mock_ummg.name = ummg_name
+    mock_data = mock.MagicMock()
+    mock_data.name = data_name
+    mock_data.with_suffix.return_value = mock_ummg
+    return mock_data
+
+
+# A valid L1B data product filename used as the base for ummg_metadata_filename error tests
+_VALID_L1B_NC = "LIBERA_L1B_RAD-4CH_V0-5-0_20251120T175950_20251120T180950_R26048185228.nc"
+
+
+@pytest.mark.parametrize(
+    "bad_ummg_name",
+    [
+        # Extension is .json only — the required .cmr part is missing
+        "LIBERA_L1B_RAD-4CH_V0-5-0_20251120T175950_20251120T180950_R26048185228.json",
+        # Extension has a typo: .jsno instead of .json
+        "LIBERA_L1B_RAD-4CH_V0-5-0_20251120T175950_20251120T180950_R26048185228.cmr.jsno",
+    ],
+)
+def test_ummg_metadata_filename_invalid_extension(bad_ummg_name):
+    """Test that ummg_metadata_filename raises ValueError when the derived CMR filename fails regex validation."""
+    fn = filenaming.LiberaDataProductFilename(_VALID_L1B_NC)
+    fn._path = _make_mock_path(_VALID_L1B_NC, bad_ummg_name)
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
+        fn.ummg_metadata_filename
+
+
+def test_ummg_metadata_filename_stem_mismatch():
+    """Test that ummg_metadata_filename raises ValueError when the UMM-G filename stem doesn't match its data file."""
+    fn = filenaming.LiberaDataProductFilename(_VALID_L1B_NC)
+    # Structurally valid CMR filename, but product name (CAM) differs from the data file (RAD-4CH)
+    mismatched_ummg_name = "LIBERA_L1B_CAM_V0-5-0_20251120T175950_20251120T180950_R26048185228.cmr.json"
+    fn._path = _make_mock_path(_VALID_L1B_NC, mismatched_ummg_name)
+    with pytest.raises(ValueError, match="does not match its data file path"):
+        fn.ummg_metadata_filename

@@ -3,11 +3,12 @@
 import logging
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated
 
 import xarray as xr
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from libera_utils.io.filenaming import LiberaDataProductFilename
 
 logger = logging.getLogger(__name__)
 
@@ -1089,8 +1090,8 @@ class UMMGranule(BaseModel):
     )
 
     @classmethod
-    def from_dataset(cls, input_dataset: xr.Dataset, **kwargs):
-        transformer = UMMGDatasetTransformer(input_dataset, **kwargs)
+    def from_dataset(cls, input_dataset: xr.Dataset, filepath: LiberaDataProductFilename, **kwargs):
+        transformer = UMMGDatasetTransformer(input_dataset, filepath, **kwargs)
         return transformer.umm_granule
 
 
@@ -1101,7 +1102,7 @@ class UMMGDatasetTransformer:
 
     """
 
-    def __init__(self, input_dataset: xr.Dataset, log_warnings: bool = False):
+    def __init__(self, input_dataset: xr.Dataset, filepath: LiberaDataProductFilename, log_warnings: bool = False):
         """
         Create the transformer object from input_dataset.
 
@@ -1111,6 +1112,8 @@ class UMMGDatasetTransformer:
         ----------
         input_dataset : xr.Dataset
             The input dataset read from a netCDF file to convert into a UMMGranule object.
+        filepath : LiberaDataProductFilename
+            Filename object containing the full path to the data product file.
         log_warnings : bool
             Indicates whether warnings while extracting values from the dataset should be logged out,
             or only stored in the "warnings" attribute. Note that this does not affect validation
@@ -1118,7 +1121,6 @@ class UMMGDatasetTransformer:
 
         """
         self.dataset_attrs = input_dataset.attrs
-        filepath = input_dataset.encoding.get("source")
         self.science_variable_names = [var for var in input_dataset.data_vars]
 
         self.log_warnings = log_warnings
@@ -1131,14 +1133,12 @@ class UMMGDatasetTransformer:
             logger.warning(message)
         self.warnings.append(message)
 
-    def extract_granule_ur(self) -> str:
-        """Extract GranuleUR from dataset attributes."""
-        granule_id = self.dataset_attrs.get("ProductID", None)
-        granule_id = self.dataset_attrs.get("GranuleID", granule_id)
-        if granule_id is None:
-            self._warn("No GranuleID found in dataset attributes; using 'Unknown_GranuleID' as GranuleUR.")
-            granule_id = "Unknown_GranuleID"
-        return granule_id
+    def extract_granule_ur(self, filepath: LiberaDataProductFilename) -> str:
+        """Extract GranuleUR from the filename."""
+        if filepath:
+            return filepath.path.stem
+        else:
+            raise ValueError("The filename is required to extract the Granule Universal Reference")
 
     def extract_provider_dates(self) -> list[ProviderDateType]:
         """Extract provider dates from dataset attributes."""
@@ -1171,23 +1171,20 @@ class UMMGDatasetTransformer:
         """Extract access constraints from dataset attributes."""
         return None
 
-    def extract_data_granule(self, filepath: str | None = None) -> DataGranuleType | None:
+    def extract_data_granule(self, filepath: LiberaDataProductFilename) -> DataGranuleType | None:
         """Extract data granule information from dataset attributes."""
         file_type = None
 
         if filepath:
-            # Get file path and information
-            filepath = Path(filepath)
-
             # Get file size if file exists
             size_bytes = None
-            if filepath.exists():
-                size_bytes = filepath.stat().st_size
+            if filepath.path.exists():
+                size_bytes = filepath.path.stat().st_size
             else:
                 self._warn(f"File {filepath} does not exist, cannot determine size")
 
             file_type = FileType(
-                Name=filepath.name,
+                Name=filepath.path.name,
                 SizeInBytes=size_bytes,
                 Format=self.dataset_attrs.get("Format", "NetCDF-4"),
                 MimeType=MimeTypeEnum.APPLICATION_X_NETCDF,
@@ -1338,10 +1335,10 @@ class UMMGDatasetTransformer:
         """Extract grid mapping names from dataset attributes."""
         return None
 
-    def _to_umm_granule(self, filepath: str | None = None) -> UMMGranule:
+    def _to_umm_granule(self, filepath: LiberaDataProductFilename) -> UMMGranule:
         """Build complete UMM-G granule from dataset."""
         return UMMGranule(
-            GranuleUR=self.extract_granule_ur(),
+            GranuleUR=self.extract_granule_ur(filepath),
             ProviderDates=self.extract_provider_dates(),
             CollectionReference=self.extract_collection_reference(),
             AccessConstraints=self.extract_access_constraints(),
