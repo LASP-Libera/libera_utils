@@ -286,8 +286,8 @@ class SceneDefinition:
         self._validate_footprint_data_columns_present(data)
 
         # Get dimensions and shape
-        dims = list(data.dims.keys())
-        shape = tuple(data.dims[dim] for dim in dims)
+        dims = list(data.sizes.keys())
+        shape = tuple(data.sizes[dim] for dim in dims)
 
         # Vectorized scene identification with chunking
         scene_ids = self._identify_vectorized(data, shape)

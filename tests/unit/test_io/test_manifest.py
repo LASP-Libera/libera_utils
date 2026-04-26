@@ -229,7 +229,7 @@ def test_output_manifest_from_input_manifest(input_manifest, test_jpss_manifest,
 )
 def test_manifest_validation_failure(man_path, man_files, man_type, man_config):
     """Test manifest validation method for correct failure cases"""
-    with pytest.raises(ValidationError, match=""):
+    with pytest.raises(ValidationError):
         _ = Manifest(manifest_type=man_type, files=man_files, configuration=man_config, filename=man_path)
 
 
