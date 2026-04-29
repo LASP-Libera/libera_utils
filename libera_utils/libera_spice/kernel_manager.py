@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # os.environ["LEAPSECOND_FILE_ENV"] = config.get("GENERIC_KERNEL_DIR")
 
 
-# TODO [LIBSDC-687] This class should likely be in curryer instead of libera_utils
+# TODO[LIBSDC-687]: This class should likely be in curryer instead of libera_utils.
 class KernelManager:
     """
     Manages SPICE kernel loading and lifecycle for Libera geolocation calculations.
@@ -109,28 +109,23 @@ class KernelManager:
         raise ValueError(msg)
 
     @staticmethod
-    def _static_kernel_manifest_basenames() -> list[str]:
-        """Basenames of all Libera static kernels furnished (mission non-JSON + generated static outputs)."""
-        names: set[str] = set()
-        libera_kernels_path = Path(config.get("LIBERA_KERNEL_DIR"))
-        for f in libera_kernels_path.iterdir():
-            if f.is_file() and "json" not in f.suffix.lower():
-                names.add(f.name)
-        for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
-            names.add(KernelManager._output_basename_for_static_kernel_config(Path(kernel_config_file)))
-        return sorted(names)
-
-    def _static_kernel_file_cache(self, basename: str) -> KernelFileCache:
-        """KernelFileCache for a manifest basename (``kernel_url`` only supplies basename for probes)."""
-        return KernelFileCache(Path(basename), max_cache_age=self._cache_timeout_days)
+    def _static_generated_kernel_basenames() -> list[str]:
+        """Basenames of generated static binaries from ``LIBERA_KERNEL_STATIC_CONFIGS``."""
+        names = [
+            KernelManager._output_basename_for_static_kernel_config(Path(kernel_config_file))
+            for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS")
+        ]
+        return sorted(set(names))
 
     def _prepare_static_kernel_workspace(self) -> None:
-        """Ensure user-cache copies of static kernels exist, building under a short path on cache miss."""
-        manifest = self._static_kernel_manifest_basenames()
-        if not manifest:
+        """Ensure user-cache copies of generated static kernels exist, building on cache miss."""
+        generated_basenames = self._static_generated_kernel_basenames()
+        if not generated_basenames:
             raise FileNotFoundError("No static kernels found for configured manifest")
 
-        if all(self._static_kernel_file_cache(b).is_cached() for b in manifest):
+        if all(
+            KernelFileCache(Path(b), max_cache_age=self._cache_timeout_days).is_cached() for b in generated_basenames
+        ):
             logger.info("All static kernels found in user cache; skipping static kernel build.")
             self._static_kernels_path = None
             return
@@ -138,13 +133,12 @@ class KernelManager:
         self._delete_temporary_static_kernels()
         temp_path = self._create_temporary_static_kernels()
         self._static_kernels_path = temp_path
-        for basename in manifest:
+        for basename in generated_basenames:
             built = temp_path / basename
             if not built.is_file():
                 raise RuntimeError(f"Expected static kernel artifact missing after build: {built}")
             _ = KernelFileCache(built, max_cache_age=self._cache_timeout_days).kernel_path
 
-    # TODO[LIBSDC-704]: Adding caching of these static kernels to avoid re-creation on each run
     def _create_temporary_static_kernels(self) -> Path:
         """
         Curryer uses json based kernel configuration files to generate SPICE kernels. These configuration files need
@@ -286,8 +280,11 @@ class KernelManager:
                 mission_dir=config.get("LIBERA_KERNEL_DIR"),
             )
 
-            manifest = self._static_kernel_manifest_basenames()
-            static_kernels = [str(self._static_kernel_file_cache(b).kernel_path) for b in manifest]
+            generated_basenames = self._static_generated_kernel_basenames()
+            static_kernels = [
+                str(KernelFileCache(Path(basename), max_cache_age=self._cache_timeout_days).kernel_path)
+                for basename in generated_basenames
+            ]
 
             if not static_kernels:
                 raise FileNotFoundError("No static kernels found for configured manifest")

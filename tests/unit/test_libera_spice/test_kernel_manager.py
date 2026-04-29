@@ -259,14 +259,31 @@ class TestStaticKernelLoading:
             == "jpss4_sc_v01.attitude.ck.bc"
         )
 
-    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=["x.bsp"])
+    @patch("libera_utils.config.config.get")
+    def test_static_generated_manifest_uses_only_static_json_outputs(self, mock_config_get):
+        """Static generated manifest includes only .bc/.bsp derived from static JSON config entries."""
+        mock_config_get.side_effect = lambda key: {
+            "LIBERA_KERNEL_STATIC_CONFIGS": [
+                "/tmp/libera_base_v01.fixed_offset.spk.json",
+                "/tmp/jpss4_sc_v01.attitude.ck.json",
+            ],
+            "LIBERA_KERNEL_DIR": "/tmp/mission",
+        }[key]
+
+        assert KernelManager._static_generated_kernel_basenames() == [
+            "jpss4_sc_v01.attitude.ck.bc",
+            "libera_base_v01.fixed_offset.spk.bsp",
+        ]
+
+    @patch.object(KernelManager, "_static_generated_kernel_basenames", return_value=["x.bsp"])
     @patch.object(KernelManager, "_create_temporary_static_kernels")
     def test_prepare_static_workspace_skips_build_when_fully_cached(self, mock_create, mock_manifest, tmp_path):
         """When every manifest file is cached, do not create a temporary build directory."""
         km = KernelManager(temp_dir_base=tmp_path)
         mock_entry = MagicMock()
         mock_entry.is_cached.return_value = True
-        with patch.object(KernelManager, "_static_kernel_file_cache", return_value=mock_entry):
+        mock_entry.kernel_path = tmp_path / "x.bsp"
+        with patch("libera_utils.libera_spice.kernel_manager.KernelFileCache", return_value=mock_entry):
             km._prepare_static_kernel_workspace()
         mock_create.assert_not_called()
         assert km._static_kernels_path is None
@@ -281,7 +298,7 @@ class TestStaticKernelLoading:
 
         mock_prepare.assert_not_called()
 
-    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=["test.bsp"])
+    @patch.object(KernelManager, "_static_generated_kernel_basenames", return_value=["test.bsp"])
     @patch("libera_utils.libera_spice.kernel_manager.KernelManager._create_temporary_static_kernels")
     @patch("libera_utils.libera_spice.kernel_manager.KernelFileCache")
     def test_load_static_cleans_up_on_failure(self, mock_kfc_class, mock_create, mock_manifest, tmp_path):
@@ -346,7 +363,7 @@ class TestStaticKernelLoading:
         assert km._static_kernels_path is None
         assert not list(km_base.iterdir())
 
-    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=["cached_static.bsp"])
+    @patch.object(KernelManager, "_static_generated_kernel_basenames", return_value=["cached_static.bsp"])
     def test_load_static_cache_hit_still_sets_naif_and_leapsecond_env(self, mock_manifest, tmp_path, monkeypatch):
         """Static cache hits should still leave NAIF state and leap-second env initialized."""
         monkeypatch.delenv("LEAPSECOND_FILE_ENV", raising=False)
@@ -365,7 +382,7 @@ class TestStaticKernelLoading:
 
         with (
             patch.object(km, "load_naif_kernels", side_effect=_fake_load_naif) as mock_load_naif,
-            patch.object(KernelManager, "_static_kernel_file_cache", return_value=mock_cache_entry),
+            patch("libera_utils.libera_spice.kernel_manager.KernelFileCache", return_value=mock_cache_entry),
             patch("curryer.meta.MetaKernel.from_json") as mock_meta,
             patch("curryer.spicierpy.ext.load_kernel"),
         ):
@@ -387,7 +404,7 @@ class TestStaticKernelLoading:
 
         KernelManager._max_path_length = 80  # Reset to default
 
-    @patch.object(KernelManager, "_static_kernel_manifest_basenames", return_value=[])
+    @patch.object(KernelManager, "_static_generated_kernel_basenames", return_value=[])
     def test_load_static_empty_manifest_error(self, mock_manifest, tmp_path):
         """Test error when the static kernel manifest is empty."""
         km = KernelManager(temp_dir_base=tmp_path)
