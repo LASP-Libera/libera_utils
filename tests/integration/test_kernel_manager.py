@@ -71,10 +71,20 @@ def test_static_kernels_loading(monkeypatch, spice_test_data_path):
         # Get the Libera instrument kernel
         libera_instrument_kernel = [config.get("LIBERA_KERNEL_INSTRUMENT")]
 
-        # Get the list Libera static kernels from the config
-        libera_static_kernels = config.get("LIBERA_KERNEL_STATIC_CONFIGS")
+        # Static generated kernels are cached/furnished as binary .bc/.bsp outputs from JSON configs.
+        libera_static_generated_kernels = []
+        for kernel_config in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
+            config_path = Path(kernel_config)
+            stem = config_path.stem
+            if stem.endswith(".spk"):
+                libera_static_generated_kernels.append(config_path.with_suffix("").name + ".bsp")
+            elif stem.endswith(".ck"):
+                libera_static_generated_kernels.append(config_path.with_suffix("").name + ".bc")
+            else:
+                pytest.fail(f"Unexpected static kernel config type: {kernel_config}")
 
-        all_libera_expected_kernels = set(generic_kernel_files + libera_static_kernels + libera_instrument_kernel)
+        all_libera_expected_kernels = set(generic_kernel_files + libera_instrument_kernel)
+        all_libera_expected_kernels.update(libera_static_generated_kernels)
 
         for file in all_libera_expected_kernels:
             filename = Path(file).name.split(".")[0]
