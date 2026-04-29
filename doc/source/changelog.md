@@ -1,5 +1,13 @@
 # Version Changes
 
+## 5.6.1
+
+- FEAT: `KernelManager.load_libera_dynamic_kernels` accepts a directory, a single local kernel file, or a `Sequence` of sources (`str` / `Path` / `S3Path`); every dynamic kernel is materialized through `KernelFileCache` with the same `max_cache_age` as `KernelManager`’s `cache_timeout_days`. Directory mode logs the resolved path and file count; sequence mode logs the entry count. If the directory argument resolves to the flat user cache root, a warning explains that `iterdir` is not limited to dynamic kernels.
+- BREAKING: Renamed `load_libera_dynamic_kernels` argument `dynamic_kernel_directory` to `dynamic_kernel_sources` (broader semantics; no compatibility alias).
+- FEAT: `KernelFileCache` can materialize kernels from local filesystem paths (`Path` or non-HTTP `str`), with documented resolution rules for relative paths and stable cache freshness after copy.
+- FEAT: `KernelManager` caches Libera static kernels under the versioned user cache via `KernelFileCache` after building them under the existing short temporary directory. When every required artifact is already cached (and within `cache_timeout_days`), static kernel creation is skipped and kernels are furnished from the cache, consistent with NAIF generic kernels.
+- Improve `KernelFileCache` docstrings and `spice_utils` type annotations (including `ensure_spice` overloads and tighter return types on kernel helpers).
+
 ## 5.6.0
 
 - FEAT: Add dimension validation to data product definition
