@@ -80,6 +80,16 @@ LIBERA_DATA_PRODUCT_REGEX = re.compile(
     r"\.(?P<extension>nc|h5|bsp|bc)$"
 )
 
+LIBERA_METADATA_PRODUCT_REGEX = re.compile(
+    rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
+    rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
+    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+    r"_(?P<revision>R[0-9]{11})"
+    r"\.(?P<extension>cmr\.json)$"
+)
+
 MANIFEST_FILE_REGEX = re.compile(
     r"^LIBERA"
     r"_(?P<manifest_type>INPUT|OUTPUT)"
@@ -459,6 +469,30 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         applicable_date = self.applicable_date
 
         return f"{product_name}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
+
+    @property
+    def ummg_metadata_filename(self) -> Path | S3Path:
+        """Property that returns the corresponding UMM-G metadata filename for this data product file.
+
+        Returns
+        -------
+        : Path | S3Path
+           Same base filename with a Common Metadata Repository(CMR) JSON extension.
+        """
+        # TODO[LIBSDC-731]: Decide where to write metadata files (currently this sets it at the same place as the data file)
+        ummg_filename = self.path.with_suffix(".cmr.json")
+
+        if not LIBERA_METADATA_PRODUCT_REGEX.match(ummg_filename.name):
+            raise ValueError(
+                f"Proposed path {ummg_filename} failed validation against regex pattern {LIBERA_METADATA_PRODUCT_REGEX}"
+            )
+
+        if ummg_filename.name.rsplit(".")[0] != self.path.name.rsplit(".")[0]:
+            raise ValueError(
+                f"Proposed path {ummg_filename} does not match its data file path {self.path}. They must have the same name with different extensions"
+            )
+
+        return ummg_filename
 
     @property
     def applicable_date(self) -> date:
