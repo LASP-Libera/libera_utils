@@ -44,3 +44,16 @@ CAL_SAMPLE_FPE_TIME:
   long_name: "Calibration sample time"
 CAL_FULL_FPE_TIME:
   long_name: "Calibration full resolution sample time"
+# Solar Cal event product dimensions (per-APID prefixed to avoid collisions in merged flat files)
+NOM_HK_PACKET:
+  long_name: "Packet index for NOM-HK packets in solar cal event"
+NOM_HK_PACKET_ICIE_TIME:
+  long_name: "Packet creation time from ICIE main processor clock (NOM-HK)"
+PEV_SW_PACKET:
+  long_name: "Packet index for PEV-SW-STAT packets in solar cal event"
+PEV_SW_PACKET_ICIE_TIME:
+  long_name: "Packet creation time from ICIE main processor clock (PEV-SW-STAT)"
+RAD_PACKET:
+  long_name: "Packet index for RAD-SAMPLE packets in solar cal event"
+RAD_PACKET_ICIE_TIME:
+  long_name: "Packet creation time from ICIE main processor clock (RAD-SAMPLE)"

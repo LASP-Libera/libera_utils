@@ -361,7 +361,7 @@ class LiberaVariableDefinition(BaseModel):
             if key not in data_array.attrs:
                 logger.debug(f"Added missing static attribute to '{variable_name}' as '{key}:{value}'")
                 data_array.attrs[key] = value
-            elif data_array.attrs[key] != value:
+            elif not np.array_equal(data_array.attrs[key], value):
                 # This is fixable but should be fixed by the user because because they have attempted to set a static
                 # attribute with the incorrect value. Issue a warning and a warning level log message.
                 old_value = data_array.attrs[key]
@@ -858,7 +858,7 @@ class LiberaDataProductDefinition(BaseModel):
                 # This is acceptable without a warning because it is reasonable to populate static attributes directly
                 # from the product definition if they are missing from the input Dataset.
                 logger.debug(f"Added missing global static attribute '{key}': {value}")
-            elif dataset.attrs[key] != value:
+            elif not np.array_equal(dataset.attrs[key], value):
                 old_value = dataset.attrs[key]
                 dataset.attrs[key] = value
                 warnings.warn(
