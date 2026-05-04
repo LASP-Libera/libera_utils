@@ -140,6 +140,9 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
+            # Solar Calibration Event Products
+            "l1a_solar_cal_face1",
+            "l1a_solar_cal_face2",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
@@ -189,15 +192,19 @@ class TestDataProductIdentifier:
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
+        # Multi-APID merged products have no single associated APID
+        _no_single_apid = {
+            DataProductIdentifier.l0_pds_cr,
+            DataProductIdentifier.l1a_solar_cal_face1,
+            DataProductIdentifier.l1a_solar_cal_face2,
+        }
         for product in DataProductIdentifier:
             apid = product.associated_apid
-            # L0 and L1A products should have an associated APID, others should be None
-            # L0 PDS CR is a special case and should be None
+            # L0 and L1A products should have an associated APID, others should be None.
+            # Products in _no_single_apid are special cases and should be None.
             if (
-                product.data_level == DataLevel.L1A
-                or product.data_level == DataLevel.L0
-                and product != DataProductIdentifier.l0_pds_cr
-            ):
+                product.data_level == DataLevel.L1A or product.data_level == DataLevel.L0
+            ) and product not in _no_single_apid:
                 assert isinstance(apid, LiberaApid)
             else:
                 assert apid is None

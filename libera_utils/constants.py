@@ -153,17 +153,27 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_ana_hk_decoded = ("ANA-HK-DECODED", DataLevel.L1A)
     l1a_icie_temp_hk_decoded = ("TEMP-HK-DECODED", DataLevel.L1A)
 
+    # Calibration Event Products
+    # ==========================
+    # Solar Calibration Event Products (merged NOM-HK, PEV-SW, RAD-SAMPLE per face)
+    cal_solar_cal_face1_combined = ("SOLAR-CAL-FACE1-COMBINED", DataLevel.CAL)
+    cal_solar_cal_face2_combined = ("SOLAR-CAL-FACE2-COMBINED", DataLevel.CAL)
+    cal_solar_cal_face3_combined = ("SOLAR-CAL-FACE3-COMBINED", DataLevel.CAL)
+    # LW Calibration Event Product (merged NOM-HK, PEV-SW, PEC-SW, RAD-SAMPLE, AXIS-SAMPLE)
+    cal_lw_cal_temp1_combined = ("LW-CAL-TEMP1-COMBINED", DataLevel.CAL)
+    cal_lw_cal_temp2_combined = ("LW-CAL-TEMP2-COMBINED", DataLevel.CAL)
+    cal_lw_cal_temp3_combined = ("LW-CAL-TEMP3-COMBINED", DataLevel.CAL)
+    # Gain and Noise Calibration Event Product (merged RAD-FULL, CAL-FULL, NOM-HK)
+    cal_gain_cal_combined = ("GAIN-CAL-COMBINED", DataLevel.CAL)
+    # SW Calibration Event Product (merged PEV-SW, PEC-SW, RAD-SAMPLE, CAL-SAMPLE, AXIS-SAMPLE, NOM-HK)
+    cal_sw_cal_combined = ("SW-CAL-COMBINED", DataLevel.CAL)
+
     # SPICE kernels
     # =============
     spice_az_ck = ("AZROT-CK", DataLevel.SPICE)
     spice_el_ck = ("ELSCAN-CK", DataLevel.SPICE)
     spice_jpss_ck = ("JPSS-CK", DataLevel.SPICE)
     spice_jpss_spk = ("JPSS-SPK", DataLevel.SPICE)
-
-    # Calibration Products
-    # ====================
-    cal_rad = ("CAL-RAD", DataLevel.CAL)
-    cal_cam = ("CAL-CAM", DataLevel.CAL)
 
     # L1B Products
     # ============
@@ -295,8 +305,8 @@ class ProcessingStepIdentifier(StrEnum):
         return obj
 
     # Calibration processing steps
-    cal_rad = ("cal-rad", [DataProductIdentifier.cal_rad])
-    cal_cam = ("cal-cam", [DataProductIdentifier.cal_cam])
+    # cal_rad = ("cal-rad", [DataProductIdentifier.cal_rad])
+    # cal_cam = ("cal-cam", [DataProductIdentifier.cal_cam])
 
     # SPICE processing steps
     spice_azel = ("spice-azel", [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck])

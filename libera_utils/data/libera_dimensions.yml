@@ -44,3 +44,23 @@ CAL_SAMPLE_FPE_TIME:
   long_name: "Calibration sample time"
 CAL_FULL_FPE_TIME:
   long_name: "Calibration full resolution sample time"
+
+# Calibration event product packet dimensions (per-APID prefixed to avoid collisions in merged flat files)
+NOM_HK_PACKET:
+  long_name: "Packet index for NOM-HK packets in calibration events"
+PEV_SW_PACKET:
+  long_name: "Packet index for PEV-SW-STAT packets in calibration event"
+PEC_SW_PACKET:
+  long_name: "Packet index for PEC-SW-STAT packets in calibration event"
+RAD_SAMPLE_PACKET:
+  long_name: "Packet index for RAD-SAMPLE packets in calibration event"
+RAD_FULL_PACKET:
+  long_name: "Packet index for RAD-FULL packets in calibration event"
+AXIS_SAMPLE_PACKET:
+  long_name: "Packet index for AXIS-SAMPLE packets in calibration event"
+CAL_FULL_PACKET:
+  long_name: "Packet index for CAL-FULL packets in calibration event"
+CAL_SAMPLE_PACKET:
+  long_name: "Packet index for CAL-SAMPLE packets in calibration event"
+WFOV_SCI_PACKET:
+  long_name: "Packet index for WFOV-SCI packets in calibration event"
