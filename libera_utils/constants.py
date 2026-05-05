@@ -153,6 +153,10 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_ana_hk_decoded = ("ANA-HK-DECODED", DataLevel.L1A)
     l1a_icie_temp_hk_decoded = ("TEMP-HK-DECODED", DataLevel.L1A)
 
+    # Solar Calibration Event Products (merged NOM-HK + PEV-SW + RAD-SAMPLE per face)
+    l1a_solar_cal_face1 = ("SOLAR-CAL-FACE1-DECODED", DataLevel.L1A)
+    l1a_solar_cal_face2 = ("SOLAR-CAL-FACE2-DECODED", DataLevel.L1A)
+
     # SPICE kernels
     # =============
     spice_az_ck = ("AZROT-CK", DataLevel.SPICE)
