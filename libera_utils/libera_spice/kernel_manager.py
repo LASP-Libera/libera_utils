@@ -14,7 +14,6 @@ import tempfile
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
-from typing import overload
 
 from cloudpathlib import AnyPath, S3Path
 from curryer import meta
@@ -391,18 +390,65 @@ class KernelManager:
         logger.info(f"Successfully loaded {len(naif_kernel_paths)} NAIF kernels")
 
     @staticmethod
-    def _is_dynamic_sources_sequence(sources: object) -> bool:
-        return isinstance(sources, Sequence) and not isinstance(sources, (str, bytes))
-
-    @staticmethod
     def _is_remote_kernel_specifier(s: str) -> bool:
         return s.startswith(("http://", "https://", "s3://"))
 
-    def _materialize_dynamic_kernel_paths(
+    def load_libera_dynamic_kernels(
         self,
-        sources: str | Path | Sequence[str | Path | S3Path],
-    ) -> list[Path]:
-        """Resolve dynamic kernel inputs to cached filesystem paths via :class:`KernelFileCache`."""
+        dynamic_kernel_sources: Sequence[str | Path | S3Path],
+        *,
+        needs_static_kernels: bool = True,
+        needs_naif_kernels: bool = True,
+    ) -> None:
+        """
+        Load dynamic kernels from an explicit sequence of sources (typically manifest order).
+
+        This will load static and NAIF kernels first when requested and they are not already loaded.
+
+        Every source is materialized through :class:`KernelFileCache` with ``max_cache_age`` equal to
+        ``cache_timeout_days`` from construction.
+
+        Parameters
+        ----------
+        dynamic_kernel_sources : sequence of str, pathlib.Path, or cloudpathlib.S3Path
+            One cache entry per element; see :class:`KernelFileCache` for local paths vs remote URLs.
+            Use ``[single_path]`` or ``[\"https://...\"]`` — bare ``Path`` / ``str`` / ``bytes`` arguments are rejected
+            because ``str`` is a Python ``Sequence``.
+        needs_static_kernels : bool
+            Whether to ensure static kernels are loaded before loading dynamic kernels (default: True).
+        needs_naif_kernels : bool
+            Whether to ensure NAIF kernels are loaded before loading dynamic kernels (default: True).
+
+        Raises
+        ------
+        FileNotFoundError
+            If paths do not exist, or the sequence is empty.
+        ValueError
+            If an entry resolves to a directory instead of a kernel file.
+        TypeError
+            If ``dynamic_kernel_sources`` is not a non-string sequence (pass ``Path`` objects inside a tuple/list).
+        """
+        if isinstance(dynamic_kernel_sources, Path):
+            raise TypeError(
+                "Expected a sequence of kernel paths or remote specifiers; "
+                "for one local file use load_libera_dynamic_kernels([path])."
+            )
+        if isinstance(dynamic_kernel_sources, (str, bytes)):
+            raise TypeError(
+                "Expected a sequence of kernel paths or remote specifiers; "
+                'use e.g. load_libera_dynamic_kernels([url]) or load_libera_dynamic_kernels(["/path/kernel.bsp"]).'
+            )
+        if not isinstance(dynamic_kernel_sources, Sequence):
+            raise TypeError(f"Expected a sequence of kernel sources, got {type(dynamic_kernel_sources).__name__!r}.")
+
+        if not self._static_loaded and needs_static_kernels:
+            logger.info("Static kernels not loaded, loading now...")
+            self.load_static_kernels()
+
+        if not self._naif_kernels_loaded and needs_naif_kernels:
+            logger.info("NAIF kernels not loaded, loading now...")
+            self.load_naif_kernels()
+
         max_age = self._cache_timeout_days
 
         def _warn_if_cached_basename_conflict(local_source: Path) -> None:
@@ -413,169 +459,54 @@ class KernelManager:
                     f"existing cache file '{cache_target}'. Kernel cache is keyed by basename; ensure dynamic "
                     "kernel filenames are unique."
                 )
-                warnings.warn(msg, UserWarning, stacklevel=2)
+                warnings.warn(msg, UserWarning, stacklevel=3)
                 logger.warning(msg)
 
-        if isinstance(sources, Path) or (isinstance(sources, str) and not self._is_remote_kernel_specifier(sources)):
-            path = Path(sources) if isinstance(sources, str) else sources
-            path = path.expanduser()
-            if not path.exists():
-                raise FileNotFoundError(f"Dynamic kernel path does not exist: {path}")
-            resolved = path.resolve()
-            if path.is_dir():
-                cache_root = get_local_cache_dir().resolve()
-                if resolved == cache_root:
-                    msg = (
-                        "Dynamic kernel directory equals the flat user cache root; top-level iterdir will "
-                        "include NAIF, static, and other cached kernels—not dynamic kernels only. Prefer a "
-                        "dedicated subdirectory under the cache or pass an explicit sequence of sources."
-                    )
-                    warnings.warn(msg, UserWarning, stacklevel=2)
-                    logger.warning(msg)
-                top_level_files = sorted(f for f in path.iterdir() if f.is_file())
-                logger.info(
-                    "Expanding dynamic kernels from directory %s (%d top-level files)",
-                    resolved,
-                    len(top_level_files),
-                )
-                for file_path in top_level_files:
-                    _warn_if_cached_basename_conflict(file_path.resolve())
-                out = [KernelFileCache(f, max_cache_age=max_age).kernel_path for f in top_level_files]
-            elif path.is_file():
-                logger.info("Loading single dynamic kernel file %s", resolved)
-                _warn_if_cached_basename_conflict(resolved)
-                out = [KernelFileCache(path, max_cache_age=max_age).kernel_path]
-            else:
-                raise FileNotFoundError(f"Dynamic kernel path is not a file or directory: {resolved}")
-            if not out:
-                raise FileNotFoundError("No kernel files found in provided paths")
-            return out
-
-        if isinstance(sources, str) and self._is_remote_kernel_specifier(sources):
-            msg = "Pass remote kernel URLs inside a sequence, e.g. load_libera_dynamic_kernels([url])."
-            raise TypeError(msg)
-
-        if self._is_dynamic_sources_sequence(sources):
-            logger.info("Loading %d dynamic kernel entries from explicit sequence", len(sources))
+        try:
+            logger.info("Loading %d dynamic kernel entries", len(dynamic_kernel_sources))
             out: list[Path] = []
             local_sources_by_basename: dict[str, Path] = {}
-            for entry in sources:
+            for entry in dynamic_kernel_sources:
+                local_candidate: Path | None = None
                 if isinstance(entry, Path):
-                    candidate = entry.expanduser().resolve(strict=False)
-                    if candidate.is_dir():
-                        msg = (
-                            "Sequence entries must not be directories; pass kernel files, HTTP(S)/S3 "
-                            f"specifiers, or use the directory overload: {candidate}"
+                    local_candidate = entry.expanduser().resolve(strict=False)
+                    if local_candidate.is_dir():
+                        raise ValueError(
+                            "Dynamic kernel entries must be kernel files or remote specifiers, not directories: "
+                            f"{local_candidate}"
                         )
-                        raise ValueError(msg)
-                    first_source = local_sources_by_basename.get(candidate.name)
-                    if first_source is not None and first_source != candidate:
+                elif isinstance(entry, str):
+                    if not self._is_remote_kernel_specifier(entry):
+                        local_candidate = Path(entry).expanduser().resolve(strict=False)
+                        if local_candidate.is_dir():
+                            raise ValueError(
+                                "Dynamic kernel entries must be kernel files or remote specifiers, not directories: "
+                                f"{local_candidate}"
+                            )
+
+                if local_candidate is not None:
+                    cand = local_candidate
+                    first_source = local_sources_by_basename.get(cand.name)
+                    if first_source is not None and first_source != cand:
                         msg = (
-                            f"Dynamic kernel basename conflict for '{candidate.name}': '{first_source}' and "
-                            f"'{candidate}'. Kernel cache is keyed by basename; ensure dynamic kernel filenames are "
+                            f"Dynamic kernel basename conflict for '{cand.name}': '{first_source}' and "
+                            f"'{cand}'. Kernel cache is keyed by basename; ensure dynamic kernel filenames are "
                             "unique."
                         )
-                        warnings.warn(msg, UserWarning, stacklevel=2)
+                        warnings.warn(msg, UserWarning, stacklevel=3)
                         logger.warning(msg)
                     else:
-                        local_sources_by_basename[candidate.name] = candidate
-                    _warn_if_cached_basename_conflict(candidate)
-                elif isinstance(entry, str) and not self._is_remote_kernel_specifier(entry):
-                    candidate = Path(entry).expanduser().resolve(strict=False)
-                    if candidate.is_dir():
-                        msg = (
-                            "Sequence entries must not be directories; pass kernel files, HTTP(S)/S3 "
-                            f"specifiers, or use the directory overload: {candidate}"
-                        )
-                        raise ValueError(msg)
-                    first_source = local_sources_by_basename.get(candidate.name)
-                    if first_source is not None and first_source != candidate:
-                        msg = (
-                            f"Dynamic kernel basename conflict for '{candidate.name}': '{first_source}' and "
-                            f"'{candidate}'. Kernel cache is keyed by basename; ensure dynamic kernel filenames are "
-                            "unique."
-                        )
-                        warnings.warn(msg, UserWarning, stacklevel=2)
-                        logger.warning(msg)
-                    else:
-                        local_sources_by_basename[candidate.name] = candidate
-                    _warn_if_cached_basename_conflict(candidate)
+                        local_sources_by_basename[cand.name] = cand
+                    _warn_if_cached_basename_conflict(cand)
+
                 out.append(KernelFileCache(entry, max_cache_age=max_age).kernel_path)
+
             if not out:
                 raise FileNotFoundError("No kernel files found in provided paths")
-            return out
 
-        raise TypeError(f"Unsupported dynamic_kernel_sources type: {type(sources)!r}")
-
-    @overload
-    def load_libera_dynamic_kernels(
-        self,
-        dynamic_kernel_sources: str | Path,
-        *,
-        needs_static_kernels: bool = True,
-        needs_naif_kernels: bool = True,
-    ) -> None: ...
-
-    @overload
-    def load_libera_dynamic_kernels(
-        self,
-        dynamic_kernel_sources: Sequence[str | Path | S3Path],
-        *,
-        needs_static_kernels: bool = True,
-        needs_naif_kernels: bool = True,
-    ) -> None: ...
-
-    def load_libera_dynamic_kernels(
-        self,
-        dynamic_kernel_sources: str | Path | Sequence[str | Path | S3Path],
-        needs_static_kernels: bool = True,
-        needs_naif_kernels: bool = True,
-    ) -> None:
-        """
-        Load dynamic kernels from a directory, a single kernel file, or an explicit sequence of sources.
-
-        This will load static and NAIF kernels first when requested and they are not already loaded.
-
-        Every source is materialized through :class:`KernelFileCache` with ``max_cache_age`` equal to
-        ``cache_timeout_days`` from construction.
-
-        Parameters
-        ----------
-        dynamic_kernel_sources : pathlib.Path, str, or sequence
-            * **Directory** (``Path`` or non-URL ``str``): all *top-level* regular files (no recursion into
-              subdirectories); each file is copied or refreshed in the user cache, then furnished.
-            * **Single file** (``Path`` or non-URL ``str``): one kernel through :class:`KernelFileCache`.
-            * **Sequence** (``tuple``, ``list``, etc. of ``str`` | ``Path`` | ``S3Path``): one cache entry per
-              element, supporting local paths and remote rules documented on :class:`KernelFileCache`.
-              Directory paths in the sequence are rejected (``ValueError``). Remote URL strings must appear
-              inside a sequence, not as the sole ``str`` argument.
-        needs_static_kernels : bool
-            Whether to ensure static kernels are loaded before loading dynamic kernels (default: True).
-        needs_naif_kernels : bool
-            Whether to ensure NAIF kernels are loaded before loading dynamic kernels (default: True).
-
-        Raises
-        ------
-        FileNotFoundError
-            If paths do not exist, or no kernel files are resolved.
-        ValueError
-            If a sequence entry refers to a directory.
-        TypeError
-            If ``dynamic_kernel_sources`` is a bare remote URL string (wrap it in a one-element sequence).
-        """
-        if not self._static_loaded and needs_static_kernels:
-            logger.info("Static kernels not loaded, loading now...")
-            self.load_static_kernels()
-
-        if not self._naif_kernels_loaded and needs_naif_kernels:
-            logger.info("NAIF kernels not loaded, loading now...")
-            self.load_naif_kernels()
-
-        try:
-            dynamic_kernel_paths = self._materialize_dynamic_kernel_paths(dynamic_kernel_sources)
-            self._loaded_kernels._iter_load(dynamic_kernel_paths)
+            self._loaded_kernels._iter_load(out)
             self._dynamic_loaded = True
-            logger.info("Successfully loaded %d dynamic kernel files", len(dynamic_kernel_paths))
+            logger.info("Successfully loaded %d dynamic kernel files", len(out))
 
         except Exception as e:
             logger.error(f"Failed to load dynamic kernels: {e}")

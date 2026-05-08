@@ -104,8 +104,10 @@ def test_dynamic_kernels_loading(monkeypatch, spice_test_data_path, test_data_pa
         # Initially, dynamic kernels should not be loaded
         assert not km._dynamic_loaded
 
-        # Load dynamic kernels
-        km.load_libera_dynamic_kernels(Path(test_data_path) / "dynamic_kernels")
+        dk_dir = Path(test_data_path) / "dynamic_kernels"
+        kernel_paths = sorted(f for f in dk_dir.iterdir() if f.is_file())
+        assert kernel_paths
+        km.load_libera_dynamic_kernels(kernel_paths)
 
         # Now, dynamic kernels should be loaded
         assert km._dynamic_loaded
@@ -114,8 +116,10 @@ def test_dynamic_kernels_loading(monkeypatch, spice_test_data_path, test_data_pa
         loaded_kernels = km._loaded_kernels.loaded
         loaded_kernel_names = [Path(k).name.split(".")[0] for k in loaded_kernels]
 
-        libera_dynamic_kernel_dir = Path(test_data_path / "dynamic_kernels")
-        for file in libera_dynamic_kernel_dir.iterdir():
+        dk_dir = Path(test_data_path) / "dynamic_kernels"
+        for file in dk_dir.iterdir():
+            if not file.is_file():
+                continue
             filename = Path(file).name.split(".")[0]
             assert filename in loaded_kernel_names
 
