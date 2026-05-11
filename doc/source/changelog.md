@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.8.3
+
+- FEAT: Add NOM-HK array groups to stack waypoint status and sequence execution fields into indexed arrays (`ARRAY_128` and `ARRAY_8`)
+- BUGFIX: Normalize Unicode packet string fields during aggregation to ensure deterministic byte sizing
+
 ## 5.8.2
 
 - FEAT: Faster ICIE WFOV SCI (APID 1040) packet-to-L1A by refreshing `icie_xtce_tlm.xml` and combining the 972-field WFOV `aggregation_groups` block from `icie_wfov_sci` in `l1a_processing_configs.yml`.

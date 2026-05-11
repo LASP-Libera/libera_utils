@@ -166,6 +166,11 @@ def test_process_packets_to_l1a_product(
         expected_indices = np.repeat(np.arange(n_packets_in_ds), group.sample_count)
         np.testing.assert_array_equal(dataset[packet_index_var].values, expected_indices)
 
+    if apid == LiberaApid.icie_nom_hk:
+        assert "ICIE__SW_FP_WP_ST_WP" in dataset.data_vars
+        assert dataset["ICIE__SW_FP_WP_ST_WP"].dims == ("PACKET", "ARRAY_128")
+        assert dataset["ICIE__SW_FP_WP_ST_WP"].shape[1] == 128
+
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
     # Create LiberaDataProductDefinition from product definition file

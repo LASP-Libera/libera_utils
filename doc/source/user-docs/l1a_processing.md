@@ -24,7 +24,7 @@ L1A processing draws on three layers of configuration:
 - **Global runtime config** (`config.json`): controls file paths and behaviour flags such as
   `SKIP_PACKET_HEADER_BYTES`. All values can be overridden by environment variables of the same name.
 - **L1A processing configs YAML** (`l1a_processing_configs.yml`): defines per-APID packet structure
-  (sample groups, aggregation groups, time field mappings). Its path is set by the
+  (sample groups, aggregation groups, array groups, time field mappings). Its path is set by the
   `LIBERA_L1A_PROCESSING_CONFIGS_PATH` config key.
 - **XTCE packet definitions** (e.g. `icie_xtce_tlm.xml`): define the binary field layout at the
   bit-field level, consumed by Space Packet Parser. Each `PacketConfiguration` references the
@@ -82,6 +82,7 @@ The top-level object describing how to process one packet type.
 | `packet_definition_config_key` | str                      | Config key for the XTCE definition file path. Defaults to `LIBERA_PACKET_DEFINITION` |
 | `sample_groups`                | list[`SampleGroup`]      | Zero or more sample group configurations                                             |
 | `aggregation_groups`           | list[`AggregationGroup`] | Zero or more aggregation group configurations                                        |
+| `array_groups`                 | list[`ArrayGroup`]       | Zero or more array group configurations                                              |
 
 The computed property `packet_time_coordinate` returns `PACKET_{time_source}_TIME`
 (e.g. `PACKET_ICIE_TIME` for `packet_time_source: "ICIE"`). This is the non-dimension coordinate
@@ -267,6 +268,46 @@ icie_wfov_sci:
       field_pattern: "ICIE__WFOV_DATA_%i"
       field_count: 972
       dtype: "|S972"
+  packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
+  packet_time_source: "ICIE"
+```
+
+### ArrayGroup
+
+Some packets contain numbered enum/status fields that represent fixed slot arrays rather than
+independent packet variables. `ArrayGroup` stacks these fields into a single 2D variable with
+dimensions `["PACKET", "ARRAY_{N}"]`, where `N` is `field_count`.
+
+| Field           | Type            | Description                                                          |
+| --------------- | --------------- | -------------------------------------------------------------------- |
+| `name`          | str             | Output variable name in the Dataset                                  |
+| `field_pattern` | str             | XTCE field name pattern with `%i` for the field index                |
+| `field_count`   | int             | Number of fields to stack (indices `0` to `field_count-1`)           |
+| `dimension`     | str             | Output array dimension, must be `ARRAY_{field_count}`                |
+| `dtype`         | numpy dtype str | Target dtype for each array element (for example `\|S8` or `uint16`) |
+
+Unlike `AggregationGroup`, `ArrayGroup` preserves element boundaries and supports direct index-based
+access in downstream code.
+
+```yaml
+# NOM_HK: waypoint and sequence enums stacked as indexed arrays
+icie_nom_hk:
+  packet_apid: "icie_nom_hk"
+  packet_time_fields:
+    day_field: "ICIE__TM_DAY_NOM_HK"
+    ms_field: "ICIE__TM_MS_NOM_HK"
+    us_field: "ICIE__TM_US_NOM_HK"
+  array_groups:
+    - name: "ICIE__SW_FP_WP_ST_WP"
+      field_pattern: "ICIE__SW_FP_WP_ST_WP%i"
+      field_count: 128
+      dimension: "ARRAY_128"
+      dtype: "|S8"
+    - name: "ICIE__SW_SEQ_EXEC_POS_OP"
+      field_pattern: "ICIE__SW_SEQ_EXEC_POS_OP%i"
+      field_count: 8
+      dimension: "ARRAY_8"
+      dtype: "uint16"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 ```

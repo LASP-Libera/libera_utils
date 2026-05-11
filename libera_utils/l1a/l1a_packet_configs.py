@@ -283,6 +283,59 @@ class AggregationGroup(BaseModel):
         return self
 
 
+class ArrayGroup(BaseModel):
+    """Configuration for stacking multiple sequential fields into a fixed-size array.
+
+    This class defines how to stack multiple numbered fields (e.g., ICIE__SW_SEQ_ST_OP0
+    through ICIE__SW_SEQ_ST_OP7) into a 2D array with dimensions [PACKET, ARRAY_N].
+
+    Attributes
+    ----------
+    name : str
+        Name for the stacked variable (e.g., "ICIE__SW_SEQ_ST_OP")
+    field_pattern : str
+        Pattern with %i placeholder for field index (e.g., "ICIE__SW_SEQ_ST_OP%i")
+    field_count : int
+        Expected number of fields to stack (e.g., 8)
+    dimension : str
+        Name of the array index dimension (e.g., "ARRAY_8")
+    dtype : np.dtype
+        Resulting numpy dtype for each stacked element (e.g., np.dtype("|S7"))
+    """
+
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    name: str
+    field_pattern: str
+    field_count: int
+    dimension: str
+    dtype: np.dtype = Field(default_factory=lambda: np.dtype("object"))
+
+    @field_validator("dtype", mode="before")
+    @classmethod
+    def _convert_dtype(cls, v: Any) -> np.dtype:
+        """Convert dtype from string to numpy dtype."""
+        if isinstance(v, np.dtype):
+            return v
+        if isinstance(v, str):
+            return np.dtype(v)
+        raise ValueError(f"dtype must be str or np.dtype, got {type(v)}")
+
+    @model_validator(mode="after")
+    def _validate_array_group(self) -> "ArrayGroup":
+        """Validate ArrayGroup constraints after all fields are set."""
+        if self.field_count < 1:
+            raise ValueError("The field_count must be > 0")
+        if "%i" not in self.field_pattern:
+            raise ValueError("field_pattern must contain %i placeholder for field index")
+        expected_dimension = f"ARRAY_{self.field_count}"
+        if self.dimension != expected_dimension:
+            raise ValueError(
+                f"dimension must be '{expected_dimension}' for field_count={self.field_count}, got '{self.dimension}'"
+            )
+        return self
+
+
 class PacketConfiguration(BaseModel):
     """Base class for packet configurations.
 
@@ -302,6 +355,8 @@ class PacketConfiguration(BaseModel):
         List of sample group configurations for this packet type.
     aggregation_groups : list[AggregationGroup]
         List of aggregation group configurations for this packet type.
+    array_groups : list[ArrayGroup]
+        List of array group configurations for this packet type.
     packet_definition_config_key : str
         Configuration key to fetch the packet definition path from config.
         Defaults to "LIBERA_PACKET_DEFINITION".
@@ -315,6 +370,7 @@ class PacketConfiguration(BaseModel):
     packet_time_fields: TimeFieldMapping
     sample_groups: list[SampleGroup] = Field(default_factory=list)
     aggregation_groups: list[AggregationGroup] = Field(default_factory=list)
+    array_groups: list[ArrayGroup] = Field(default_factory=list)
     packet_definition_config_key: str = "LIBERA_PACKET_DEFINITION"
     packet_time_source: SampleTimeSource = SampleTimeSource.ICIE
 

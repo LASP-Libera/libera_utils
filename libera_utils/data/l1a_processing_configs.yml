@@ -59,6 +59,17 @@
 #   - field_count: Number of fields to aggregate
 #   - dtype: NumPy dtype string for the result (e.g., "|S972" for 972-byte string)
 #
+# array_groups: (list of ArrayGroup)
+#   Defines how to stack multiple sequential fields into fixed-size arrays.
+#   Used for enum-style packet fields split across numbered slots.
+#
+#   ArrayGroup fields:
+#   - name: Name for the stacked variable in the output dataset
+#   - field_pattern: Pattern with %i for field index (e.g., "ICIE__SW_SEQ_ST_OP%i")
+#   - field_count: Number of fields to stack
+#   - dimension: Dimension name, must match ARRAY_{field_count} (e.g., "ARRAY_8")
+#   - dtype: NumPy dtype string for each stacked element (e.g., "|S7")
+#
 # Time Sources Explained:
 # ----------------------
 # - ICIE: Libera Instrument Control and Interface Electronics (main processor)
@@ -215,6 +226,32 @@ icie_nom_hk:
     day_field: "ICIE__TM_DAY_NOM_HK"
     ms_field: "ICIE__TM_MS_NOM_HK"
     us_field: "ICIE__TM_US_NOM_HK"
+  array_groups:
+    - name: "ICIE__SW_FP_WP_ST_WP"
+      field_pattern: "ICIE__SW_FP_WP_ST_WP%i"
+      field_count: 128
+      dimension: "ARRAY_128"
+      dtype: "|S8" # 128 waypoint status fields, 8 bytes each
+    - name: "ICIE__SW_SEQ_EXEC_BUF_OP"
+      field_pattern: "ICIE__SW_SEQ_EXEC_BUF_OP%i"
+      field_count: 8
+      dimension: "ARRAY_8"
+      dtype: "|S11" # 8 sequence buffer fields, 11 bytes each
+    - name: "ICIE__SW_SEQ_EXEC_POS_OP"
+      field_pattern: "ICIE__SW_SEQ_EXEC_POS_OP%i"
+      field_count: 8
+      dimension: "ARRAY_8"
+      dtype: "uint16" # 8 uint16 sequence position fields
+    - name: "ICIE__SW_SEQ_STOP_CD_OP"
+      field_pattern: "ICIE__SW_SEQ_STOP_CD_OP%i"
+      field_count: 8
+      dimension: "ARRAY_8"
+      dtype: "|S11" # 8 sequence stop code fields, 11 bytes each
+    - name: "ICIE__SW_SEQ_ST_OP"
+      field_pattern: "ICIE__SW_SEQ_ST_OP%i"
+      field_count: 8
+      dimension: "ARRAY_8"
+      dtype: "|S7" # 8 sequence state fields, 7 bytes each
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 
