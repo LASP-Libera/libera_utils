@@ -304,10 +304,6 @@ class ProcessingStepIdentifier(StrEnum):
         obj._products = products or []
         return obj
 
-    # Calibration processing steps
-    # cal_rad = ("cal-rad", [DataProductIdentifier.cal_rad])
-    # cal_cam = ("cal-cam", [DataProductIdentifier.cal_cam])
-
     # SPICE processing steps
     spice_azel = ("spice-azel", [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck])
     spice_jpss = ("spice-jpss", [DataProductIdentifier.spice_jpss_ck, DataProductIdentifier.spice_jpss_spk])

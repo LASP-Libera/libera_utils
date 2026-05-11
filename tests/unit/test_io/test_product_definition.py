@@ -1,5 +1,6 @@
 """Tests for data product definition YAML parsing and validation."""
 
+import warnings
 from datetime import UTC, datetime
 
 import numpy as np
@@ -375,6 +376,58 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
         # Should be valid after fixing (no errors)
         errors = definition.check_dataset_conformance(fixed_ds, strict=True)
         assert not errors
+
+    def test_enforce_dataset_conformance_handles_numpy_array_attr_no_change(
+        self, test_product_definition, test_dataset, tmp_path
+    ):
+        """Test enforcement does not flag equal numpy-array static attributes."""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        outpath = tmp_path / "roundtrip_no_change.nc"
+        test_dataset.to_netcdf(outpath, engine="h5netcdf")
+
+        with xr.open_dataset(outpath, engine="h5netcdf") as read_ds:
+            read_ds["fil_rad"].attrs["valid_range"] = np.array([0, 1000], dtype=np.int64)
+
+            with warnings.catch_warnings(record=True) as captured_warnings:
+                warnings.simplefilter("always")
+                fixed_ds = definition.enforce_dataset_conformance(read_ds)
+
+        mismatch_warnings = [str(w.message) for w in captured_warnings if "attribute value mismatch" in str(w.message)]
+        assert not mismatch_warnings
+        assert np.array_equal(fixed_ds["fil_rad"].attrs["valid_range"], np.array([0, 1000]))
+
+    def test_enforce_dataset_conformance_corrects_wrong_numpy_array_attr(
+        self, test_product_definition, test_dataset, tmp_path
+    ):
+        """Test enforcement corrects non-equal numpy-array static attributes."""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        outpath = tmp_path / "roundtrip_wrong_value.nc"
+        test_dataset.to_netcdf(outpath, engine="h5netcdf")
+
+        with xr.open_dataset(outpath, engine="h5netcdf") as read_ds:
+            read_ds["fil_rad"].attrs["valid_range"] = np.array([0, 5], dtype=np.int64)
+            with warnings.catch_warnings(record=True) as captured_warnings:
+                warnings.simplefilter("always")
+                fixed_ds = definition.enforce_dataset_conformance(read_ds)
+
+        mismatch_warnings = [str(w.message) for w in captured_warnings if "attribute value mismatch" in str(w.message)]
+        assert any("attribute value mismatch" in warning for warning in mismatch_warnings)
+        assert np.array_equal(fixed_ds["fil_rad"].attrs["valid_range"], np.array([0, 1000]))
+
+    def test_enforce_data_array_conformance_handles_numpy_array_attr(self, test_product_definition, test_dataset):
+        """Test DataArray enforcement handles equal numpy-array static attributes."""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        variable_definition = definition.variables["fil_rad"]
+        data_array = test_dataset["fil_rad"].copy(deep=True)
+        data_array.attrs["valid_range"] = np.array([0, 1000], dtype=np.int64)
+
+        with warnings.catch_warnings(record=True) as captured_warnings:
+            warnings.simplefilter("always")
+            fixed_array = variable_definition.enforce_data_array_conformance(data_array, variable_name="fil_rad")
+
+        mismatch_warnings = [str(w.message) for w in captured_warnings if "attribute value mismatch" in str(w.message)]
+        assert not mismatch_warnings
+        assert np.array_equal(fixed_array.attrs["valid_range"], np.array([0, 1000]))
 
     def test_enforce_dataset_conformance_dtype_conversion_exception(self, test_product_definition):
         """Test that enforce_dataset_conformance refuses to convert unsafe dtypes and raises an exception."""

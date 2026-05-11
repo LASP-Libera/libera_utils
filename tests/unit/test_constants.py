@@ -140,17 +140,20 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
-            # Solar Calibration Event Products
-            "l1a_solar_cal_face1",
-            "l1a_solar_cal_face2",
+            # Calibration Event Products
+            "cal_solar_cal_face1_combined",
+            "cal_solar_cal_face2_combined",
+            "cal_solar_cal_face3_combined",
+            "cal_lw_cal_temp1_combined",
+            "cal_lw_cal_temp2_combined",
+            "cal_lw_cal_temp3_combined",
+            "cal_gain_cal_combined",
+            "cal_sw_cal_combined",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
             "spice_jpss_ck",
             "spice_jpss_spk",
-            # Calibration Products
-            "cal_rad",
-            "cal_cam",
             # L1B Products
             "l1b_rad",
             "l1b_cam",
@@ -192,12 +195,7 @@ class TestDataProductIdentifier:
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
-        # Multi-APID merged products have no single associated APID
-        _no_single_apid = {
-            DataProductIdentifier.l0_pds_cr,
-            DataProductIdentifier.l1a_solar_cal_face1,
-            DataProductIdentifier.l1a_solar_cal_face2,
-        }
+        _no_single_apid = {DataProductIdentifier.l0_pds_cr}
         for product in DataProductIdentifier:
             apid = product.associated_apid
             # L0 and L1A products should have an associated APID, others should be None.
@@ -208,6 +206,40 @@ class TestDataProductIdentifier:
                 assert isinstance(apid, LiberaApid)
             else:
                 assert apid is None
+
+    def test_calibration_event_products_metadata(self):
+        """Test metadata consistency for merged calibration event products."""
+        expected_products = {
+            DataProductIdentifier.cal_solar_cal_face1_combined: "SOLAR-CAL-FACE1-COMBINED",
+            DataProductIdentifier.cal_solar_cal_face2_combined: "SOLAR-CAL-FACE2-COMBINED",
+            DataProductIdentifier.cal_solar_cal_face3_combined: "SOLAR-CAL-FACE3-COMBINED",
+            DataProductIdentifier.cal_lw_cal_temp1_combined: "LW-CAL-TEMP1-COMBINED",
+            DataProductIdentifier.cal_lw_cal_temp2_combined: "LW-CAL-TEMP2-COMBINED",
+            DataProductIdentifier.cal_lw_cal_temp3_combined: "LW-CAL-TEMP3-COMBINED",
+            DataProductIdentifier.cal_gain_cal_combined: "GAIN-CAL-COMBINED",
+            DataProductIdentifier.cal_sw_cal_combined: "SW-CAL-COMBINED",
+        }
+
+        for product, expected_value in expected_products.items():
+            assert product.data_level is DataLevel.CAL
+            assert product.value == expected_value
+            assert product.associated_apid is None
+            assert product.data_level.archive_bucket_name == DataLevel.ANC.archive_bucket_name
+
+    def test_no_l1a_to_cal_step_for_combined_products(self):
+        """Test combined calibration products are not mapped from any processing step."""
+        combined_products = [
+            DataProductIdentifier.cal_solar_cal_face1_combined,
+            DataProductIdentifier.cal_solar_cal_face2_combined,
+            DataProductIdentifier.cal_solar_cal_face3_combined,
+            DataProductIdentifier.cal_lw_cal_temp1_combined,
+            DataProductIdentifier.cal_lw_cal_temp2_combined,
+            DataProductIdentifier.cal_lw_cal_temp3_combined,
+            DataProductIdentifier.cal_gain_cal_combined,
+            DataProductIdentifier.cal_sw_cal_combined,
+        ]
+        for product in combined_products:
+            assert ProcessingStepIdentifier.from_data_product(product) is None
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
@@ -232,9 +264,6 @@ class TestProcessingStepIdentifier:
         This ensures API compatibility - the names are part of the contract.
         """
         expected_names = [
-            # Calibration steps
-            "cal_rad",
-            "cal_cam",
             # SPICE steps
             "spice_azel",
             "spice_jpss",
