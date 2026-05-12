@@ -48,9 +48,9 @@ CAL_FULL_FPE_TIME:
 # Calibration event product packet dimensions (per-APID prefixed to avoid collisions in merged flat files)
 NOM_HK_PACKET:
   long_name: "Packet index for NOM-HK packets in calibration events"
-PEV_SW_PACKET:
+PEV_SW_STAT_PACKET:
   long_name: "Packet index for PEV-SW-STAT packets in calibration event"
-PEC_SW_PACKET:
+PEC_SW_STAT_PACKET:
   long_name: "Packet index for PEC-SW-STAT packets in calibration event"
 RAD_SAMPLE_PACKET:
   long_name: "Packet index for RAD-SAMPLE packets in calibration event"

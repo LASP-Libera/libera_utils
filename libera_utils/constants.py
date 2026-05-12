@@ -156,17 +156,17 @@ class DataProductIdentifier(StrEnum):
     # Calibration Event Products
     # ==========================
     # Solar Calibration Event Products (merged NOM-HK, PEV-SW, RAD-SAMPLE per face)
-    cal_solar_cal_face1_combined = ("SOLAR-CAL-FACE1-COMBINED", DataLevel.CAL)
-    cal_solar_cal_face2_combined = ("SOLAR-CAL-FACE2-COMBINED", DataLevel.CAL)
-    cal_solar_cal_face3_combined = ("SOLAR-CAL-FACE3-COMBINED", DataLevel.CAL)
+    cal_solar_face1_combined = ("SOLAR-FACE1-COMBINED", DataLevel.CAL)
+    cal_solar_face2_combined = ("SOLAR-FACE2-COMBINED", DataLevel.CAL)
+    cal_solar_face3_combined = ("SOLAR-FACE3-COMBINED", DataLevel.CAL)
     # LW Calibration Event Product (merged NOM-HK, PEV-SW, PEC-SW, RAD-SAMPLE, AXIS-SAMPLE)
-    cal_lw_cal_temp1_combined = ("LW-CAL-TEMP1-COMBINED", DataLevel.CAL)
-    cal_lw_cal_temp2_combined = ("LW-CAL-TEMP2-COMBINED", DataLevel.CAL)
-    cal_lw_cal_temp3_combined = ("LW-CAL-TEMP3-COMBINED", DataLevel.CAL)
+    cal_lw_temp1_combined = ("LW-TEMP1-COMBINED", DataLevel.CAL)
+    cal_lw_temp2_combined = ("LW-TEMP2-COMBINED", DataLevel.CAL)
+    cal_lw_temp3_combined = ("LW-TEMP3-COMBINED", DataLevel.CAL)
     # Gain and Noise Calibration Event Product (merged RAD-FULL, CAL-FULL, NOM-HK)
-    cal_gain_cal_combined = ("GAIN-CAL-COMBINED", DataLevel.CAL)
+    cal_gain_combined = ("GAIN-COMBINED", DataLevel.CAL)
     # SW Calibration Event Product (merged PEV-SW, PEC-SW, RAD-SAMPLE, CAL-SAMPLE, AXIS-SAMPLE, NOM-HK)
-    cal_sw_cal_combined = ("SW-CAL-COMBINED", DataLevel.CAL)
+    cal_sw_combined = ("SW-COMBINED", DataLevel.CAL)
 
     # SPICE kernels
     # =============

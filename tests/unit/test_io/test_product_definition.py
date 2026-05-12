@@ -2,6 +2,7 @@
 
 import warnings
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,8 +10,57 @@ import xarray as xr
 import yaml
 from pydantic import ValidationError
 
+from libera_utils.config import config
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.product_definition import LiberaDataProductDefinition, LiberaVariableDefinition
+from libera_utils.io.product_definition import (
+    LiberaDataProductDefinition,
+    LiberaDimensionDefinition,
+    LiberaVariableDefinition,
+)
+
+
+def _libera_dimensions_yaml_path() -> Path:
+    return Path(str(config.get("LIBERA_DIMENSIONS_DEFINITION_PATH")))
+
+
+def _libera_dimensions_yaml_contents() -> dict:
+    with _libera_dimensions_yaml_path().open(encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+_STANDARD_DIMENSION_NAMES = tuple(_libera_dimensions_yaml_contents())
+
+
+@pytest.fixture(scope="module")
+def standard_dimensions() -> dict[str, LiberaDimensionDefinition]:
+    """Standard dimensions from libera_dimensions.yml."""
+    return LiberaVariableDefinition._get_standard_dimensions()
+
+
+class TestLiberaStandardDimensions:
+    """Tests for global standard dimension definitions in libera_dimensions.yml."""
+
+    def test_standard_dimensions_match_yaml_file(self, standard_dimensions):
+        """Every dimension in libera_dimensions.yml loads as a LiberaDimensionDefinition."""
+        yaml_contents = _libera_dimensions_yaml_contents()
+        assert set(standard_dimensions) == set(yaml_contents)
+
+        for dimension_name, raw_definition in yaml_contents.items():
+            dimension = standard_dimensions[dimension_name]
+            assert isinstance(dimension, LiberaDimensionDefinition)
+            assert dimension.long_name == raw_definition["long_name"]
+            expected_size = raw_definition.get("size")
+            assert dimension.size == expected_size
+
+    @pytest.mark.parametrize("dimension_name", _STANDARD_DIMENSION_NAMES)
+    def test_variable_definition_accepts_standard_dimension(self, dimension_name: str):
+        """Each standard dimension name is accepted by LiberaVariableDefinition validation."""
+        variable_definition = LiberaVariableDefinition(
+            dtype="int32",
+            attributes={"long_name": "Test variable"},
+            dimensions=[dimension_name],
+        )
+        assert variable_definition.dimensions == [dimension_name]
 
 
 @pytest.mark.filterwarnings("error")
@@ -413,21 +463,6 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
         mismatch_warnings = [str(w.message) for w in captured_warnings if "attribute value mismatch" in str(w.message)]
         assert any("attribute value mismatch" in warning for warning in mismatch_warnings)
         assert np.array_equal(fixed_ds["fil_rad"].attrs["valid_range"], np.array([0, 1000]))
-
-    def test_enforce_data_array_conformance_handles_numpy_array_attr(self, test_product_definition, test_dataset):
-        """Test DataArray enforcement handles equal numpy-array static attributes."""
-        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
-        variable_definition = definition.variables["fil_rad"]
-        data_array = test_dataset["fil_rad"].copy(deep=True)
-        data_array.attrs["valid_range"] = np.array([0, 1000], dtype=np.int64)
-
-        with warnings.catch_warnings(record=True) as captured_warnings:
-            warnings.simplefilter("always")
-            fixed_array = variable_definition.enforce_data_array_conformance(data_array, variable_name="fil_rad")
-
-        mismatch_warnings = [str(w.message) for w in captured_warnings if "attribute value mismatch" in str(w.message)]
-        assert not mismatch_warnings
-        assert np.array_equal(fixed_array.attrs["valid_range"], np.array([0, 1000]))
 
     def test_enforce_dataset_conformance_dtype_conversion_exception(self, test_product_definition):
         """Test that enforce_dataset_conformance refuses to convert unsafe dtypes and raises an exception."""

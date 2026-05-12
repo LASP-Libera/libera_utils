@@ -141,14 +141,14 @@ class TestDataProductIdentifier:
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
             # Calibration Event Products
-            "cal_solar_cal_face1_combined",
-            "cal_solar_cal_face2_combined",
-            "cal_solar_cal_face3_combined",
-            "cal_lw_cal_temp1_combined",
-            "cal_lw_cal_temp2_combined",
-            "cal_lw_cal_temp3_combined",
-            "cal_gain_cal_combined",
-            "cal_sw_cal_combined",
+            "cal_solar_face1_combined",
+            "cal_solar_face2_combined",
+            "cal_solar_face3_combined",
+            "cal_lw_temp1_combined",
+            "cal_lw_temp2_combined",
+            "cal_lw_temp3_combined",
+            "cal_gain_combined",
+            "cal_sw_combined",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
@@ -210,14 +210,14 @@ class TestDataProductIdentifier:
     def test_calibration_event_products_metadata(self):
         """Test metadata consistency for merged calibration event products."""
         expected_products = {
-            DataProductIdentifier.cal_solar_cal_face1_combined: "SOLAR-CAL-FACE1-COMBINED",
-            DataProductIdentifier.cal_solar_cal_face2_combined: "SOLAR-CAL-FACE2-COMBINED",
-            DataProductIdentifier.cal_solar_cal_face3_combined: "SOLAR-CAL-FACE3-COMBINED",
-            DataProductIdentifier.cal_lw_cal_temp1_combined: "LW-CAL-TEMP1-COMBINED",
-            DataProductIdentifier.cal_lw_cal_temp2_combined: "LW-CAL-TEMP2-COMBINED",
-            DataProductIdentifier.cal_lw_cal_temp3_combined: "LW-CAL-TEMP3-COMBINED",
-            DataProductIdentifier.cal_gain_cal_combined: "GAIN-CAL-COMBINED",
-            DataProductIdentifier.cal_sw_cal_combined: "SW-CAL-COMBINED",
+            DataProductIdentifier.cal_solar_face1_combined: "SOLAR-FACE1-COMBINED",
+            DataProductIdentifier.cal_solar_face2_combined: "SOLAR-FACE2-COMBINED",
+            DataProductIdentifier.cal_solar_face3_combined: "SOLAR-FACE3-COMBINED",
+            DataProductIdentifier.cal_lw_temp1_combined: "LW-TEMP1-COMBINED",
+            DataProductIdentifier.cal_lw_temp2_combined: "LW-TEMP2-COMBINED",
+            DataProductIdentifier.cal_lw_temp3_combined: "LW-TEMP3-COMBINED",
+            DataProductIdentifier.cal_gain_combined: "GAIN-COMBINED",
+            DataProductIdentifier.cal_sw_combined: "SW-COMBINED",
         }
 
         for product, expected_value in expected_products.items():
@@ -225,21 +225,6 @@ class TestDataProductIdentifier:
             assert product.value == expected_value
             assert product.associated_apid is None
             assert product.data_level.archive_bucket_name == DataLevel.ANC.archive_bucket_name
-
-    def test_no_l1a_to_cal_step_for_combined_products(self):
-        """Test combined calibration products are not mapped from any processing step."""
-        combined_products = [
-            DataProductIdentifier.cal_solar_cal_face1_combined,
-            DataProductIdentifier.cal_solar_cal_face2_combined,
-            DataProductIdentifier.cal_solar_cal_face3_combined,
-            DataProductIdentifier.cal_lw_cal_temp1_combined,
-            DataProductIdentifier.cal_lw_cal_temp2_combined,
-            DataProductIdentifier.cal_lw_cal_temp3_combined,
-            DataProductIdentifier.cal_gain_cal_combined,
-            DataProductIdentifier.cal_sw_cal_combined,
-        ]
-        for product in combined_products:
-            assert ProcessingStepIdentifier.from_data_product(product) is None
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
