@@ -298,7 +298,7 @@ def test_validate_duplicate_values_ground_data_warns_for_each_differing_value():
     duplicates = unique_values[counts > 1]
 
     with pytest.warns(UserWarning, match="Duplicate coordinate value") as warning_list:
-        libera_packets._validate_duplicate_values(ds, "time", duplicates, ground_data=True)
+        libera_packets._validate_duplicate_values(ds, "time", duplicates, ground_data=True, verbose=True)
 
     # Both time=200 (2 vs 99) and time=300 (3 vs 88) differ — expect two warnings
     assert len(warning_list) == 2

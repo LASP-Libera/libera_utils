@@ -85,7 +85,7 @@ def parse_packets_to_dataset(
 
 
 def parse_packets_to_l1a_dataset(
-    packet_files: list[PathLike | str], apid: int, ground_data: bool = False
+    packet_files: list[PathLike | str], apid: int, ground_data: bool = False, verbose: bool = False
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
 
@@ -103,6 +103,8 @@ def parse_packets_to_l1a_dataset(
     ground_data : bool, optional
         If True, non-identical duplicate timestamps will produce a warning instead of a ValueError. This is useful for ground
         test data where duplicate timestamps with differing data may be expected. Default is False.
+    verbose : bool, optional
+        If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
 
     Returns
     -------
@@ -131,7 +133,7 @@ def parse_packets_to_l1a_dataset(
 
     # Drop duplicates from the packet dataset before we process samples
     # This drops full duplicate packets based on identical packet timestamps
-    packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data)
+    packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
     packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)
 
@@ -176,7 +178,7 @@ def parse_packets_to_l1a_dataset(
         # NOTE: This should never find duplicates in flight but in ground testing, FSW was generating
         # packets that had repeated sample timestamps due to an issue with Hydra simulating SC time pulses
         # incorrectly, causing a microsecond counter to roll over at 1E6 without incrementing the second counter.
-        sample_ds, _ = _drop_duplicates(sample_ds, sample_time_dimension)
+        sample_ds, _ = _drop_duplicates(sample_ds, sample_time_dimension, ground_data=ground_data, verbose=verbose)
 
         # Sort the data by the newly added dimension for the sample group
         sample_ds = sample_ds.sortby(sample_time_dimension)
@@ -238,6 +240,7 @@ def _validate_duplicate_values(
     coordinate_name: str,
     duplicates: np.ndarray,
     ground_data: bool = False,
+    verbose: bool = False,
 ) -> None:
     """Validate that duplicate coordinate entries are identical across all data variables.
 
@@ -254,9 +257,13 @@ def _validate_duplicate_values(
     duplicates : np.ndarray
         The coordinate values that appear more than once.
     ground_data : bool, optional
-        If True, non-identical duplicates with will produce a
-        warning instead of raising a ValueError. Default is False, which raises a ValueError for any
-        non-identical duplicates.
+        If True, non-identical duplicate rows are tolerated instead of raising ``ValueError`` (so
+        deduplication can proceed). Whether a ``UserWarning`` is emitted for each case is controlled
+        by ``verbose``. Default is False, which raises for any non-identical duplicates.
+    verbose : bool, optional
+        When ``ground_data`` is True, controls whether a warning is issued for each non-identical
+        duplicate. Default True so direct calls surface diagnostics; ``_drop_duplicates`` passes its
+        own ``verbose`` (default False) to limit noise during batch parsing.
 
     Raises
     ------
@@ -294,25 +301,23 @@ def _validate_duplicate_values(
             group_data = data[start:end]
             # Vectorized identity check: broadcast first row against all rows in the group.
             if not np.all(group_data == group_data[0]):
-                group_coord_indices = dup_indices_all[start:end]
                 pairs = list(zip(group_data, dup_coord_vals[start:end]))
                 if ground_data:
-                    warnings.warn(
-                        f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
-                        f"has differing values in variable '{var_name}' at {pairs}. "
-                        f"{SRC_SEQ_CTR_DIMENSION} values for these packets are {dataset[SRC_SEQ_CTR_DIMENSION].values[group_coord_indices]}. "
-                        f"Proceeding because ground_data=True."
-                    )
+                    if verbose:
+                        warnings.warn(
+                            f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
+                            f"has differing values in variable '{var_name}' at {pairs}. "
+                            f"Proceeding because ground_data=True."
+                        )
                     continue
                 raise ValueError(
                     f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
                     f"has differing values in variable '{var_name}' at {pairs}. "
-                    f"{SRC_SEQ_CTR_DIMENSION} values for these packets are {dataset[SRC_SEQ_CTR_DIMENSION].values[group_coord_indices]}. "
                     f"Dropping this duplicate would result in data loss."
                 )
 
 
-def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: bool = False):
+def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: bool = False, verbose: bool = False):
     """Detect and drop duplicate values based on a coordinate
 
     Runs a validation function which raises an error if duplicate
@@ -326,8 +331,11 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
         The name of the coordinate over which to search for duplicates.
         Can be either a dimension coordinate or a non-dimension coordinate.
     ground_data : bool, optional
-        If True, validations to check for non-identical duplicates will produce a
-        warning instead of raising a ValueError. Default is False.
+        If True, non-identical duplicates are allowed instead of raising ``ValueError``. Per-duplicate
+        ``UserWarning`` messages are emitted only when ``verbose`` is also True. Default is False.
+    verbose : bool, optional
+        If True and ``ground_data`` is True, emit a ``UserWarning`` for each non-identical duplicate
+        coordinate value. Default False so batch parsing stays quiet unless opted in.
 
     Returns
     -------
@@ -374,12 +382,16 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
     if n_duplicates > 0:
         duplicates = unique_values[counts > 1]
 
-        _validate_duplicate_values(dataset, coordinate_name, duplicates, ground_data)
+        _validate_duplicate_values(dataset, coordinate_name, duplicates, ground_data, verbose)
         # Select only the first occurrence of each unique coordinate value
         dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
 
-        warnings.warn(f"Detected {n_duplicates} duplicate {coordinate_name} in dataset")
-        logger.warning(f"Duplicate coordinates detected ({n_duplicates}) in {coordinate_name}: {duplicates}")
+        warnings.warn(
+            f"Detected {n_duplicates} duplicate {coordinate_name} in dataset. Use verbose=True to see warnings for the duplicates."
+        )
+        logger.warning(
+            f"Duplicate coordinates detected ({n_duplicates}) in {coordinate_name}: {duplicates}. Use verbose=True to see warnings for the duplicates."
+        )
     else:
         # No duplicates, return original dataset
         dataset_deduped = dataset
