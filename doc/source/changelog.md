@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.7.1
+
+- BUGFIX: Fix packet parsing to l1a of datasets with deduplicated timestamps for final data assembly
+- FEAT: Added `ground data` option for deduplication to allow ground data processing to continue
+- BUGFIX: With `ground_data=True`, non-identical duplicate coordinates no longer raise when `verbose=False`; warnings only if `verbose=True`.
+- BUGFIX: Duplicate-coordinate diagnostics no longer cite the source sequence counter when that coordinate is absent from the dataset slice (e.g. inside sample groups).
+
 ## 5.7.0
 
 - FEAT: Added metadata writer to make UMM-G metadata files from NetCDF-4 data files
