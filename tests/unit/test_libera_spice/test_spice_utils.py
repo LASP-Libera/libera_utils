@@ -88,8 +88,6 @@ def test_kernel_file_cache_s3(write_file_to_s3, test_jpss_spk, tmp_path):
         assert cache.is_cached() is False  # still
         assert cache.kernel_path == tmp_path / test_jpss_spk.name
         assert cache.is_cached() is True
-        cache.furnsh()
-        assert spice_utils.ls_kernels() == [spice_utils.KernelFileRecord("SPK", str(cache.kernel_path))]
 
 
 def test_kernel_file_cache_local_absolute_path(spice_test_data_path, tmp_path):

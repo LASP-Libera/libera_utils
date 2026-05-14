@@ -43,7 +43,7 @@ NAIF_PCK_REGEX = "pck[0-9]{5}.tpc"
 logger = logging.getLogger(__name__)
 
 
-# TODO[LIBSDC-611]: Revisit idea.
+# TODO[LIBSDC-611]: Revisit
 class SpiceId(NamedTuple):
     """Class that represents a unique identifier in the NAIF SPICE library"""
 
@@ -51,6 +51,7 @@ class SpiceId(NamedTuple):
     numid: int
 
 
+# TODO[LIBSDC-611]: Revisit
 class SpiceBody(Enum):
     """Enum containing SPICE IDs for ephemeris bodies that we use."""
 
@@ -61,6 +62,7 @@ class SpiceBody(Enum):
     EARTH_MOON_BARYCENTER = SpiceId("EARTH-MOON BARYCENTER", 3)
 
 
+# TODO[LIBSDC-611]: Revisit
 class SpiceInstrument(Enum):
     """Enum containing SPICE IDs for instrument geometries configured in the Instrument Kernel (IK)"""
 
@@ -71,8 +73,7 @@ class SpiceInstrument(Enum):
     #  and here: https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/req/kernel.html#Kernel%20Types
     pass
 
-
-class SpiceFrame(Enum):
+    # TODO[LIBSDC-611]: Revisitclass SpiceFrame(Enum):
     """Enum containing SPICE IDs for reference frames, possibly defined in the Frame Kernel (FK)"""
 
     J2000 = SpiceId("J2000", 1)
@@ -105,6 +106,30 @@ class KernelFileCache:
     that path instead (not recommended for production).
     """
 
+    def __init__(
+        self,
+        kernel_url: str | Path | S3Path,
+        max_cache_age: datetime.timedelta = datetime.timedelta(days=1),
+        fallback_kernel: Path | None = None,
+    ) -> None:
+        """Create a cache handle; copying or download happens on first use of :attr:`kernel_path` if needed.
+
+        Parameters
+        ----------
+        kernel_url : str or pathlib.Path or cloudpathlib.S3Path
+            Remote URL, S3 location, or path to a local kernel file.
+        max_cache_age : datetime.timedelta
+            Maximum age of a cached file before it is treated as stale and replaced.
+        fallback_kernel : pathlib.Path or None
+            Optional path returned if materialization from ``kernel_url`` fails.
+        """
+        self.kernel_url = kernel_url
+        self.max_cache_age = max_cache_age
+        self.fallback_kernel = fallback_kernel
+
+    def __str__(self) -> str:
+        return str(self.cache_dir / self.kernel_basename)
+
     @staticmethod
     def _resolve_local_kernel_file(kernel_url: Path | str) -> Path:
         """Return an absolute path to an existing local kernel file.
@@ -130,30 +155,6 @@ class KernelFileCache:
             msg = f"Local kernel file not found: {resolved}"
             raise FileNotFoundError(msg)
         return resolved
-
-    def __init__(
-        self,
-        kernel_url: str | Path | S3Path,
-        max_cache_age: datetime.timedelta = datetime.timedelta(days=1),
-        fallback_kernel: Path | None = None,
-    ) -> None:
-        """Create a cache handle; copying or download happens on first use of :attr:`kernel_path` if needed.
-
-        Parameters
-        ----------
-        kernel_url : str or pathlib.Path or cloudpathlib.S3Path
-            Remote URL, S3 location, or path to a local kernel file.
-        max_cache_age : datetime.timedelta
-            Maximum age of a cached file before it is treated as stale and replaced.
-        fallback_kernel : pathlib.Path or None
-            Optional path returned if materialization from ``kernel_url`` fails.
-        """
-        self.kernel_url = kernel_url
-        self.max_cache_age = max_cache_age
-        self.fallback_kernel = fallback_kernel
-
-    def __str__(self) -> str:
-        return str(self.cache_dir / self.kernel_basename)
 
     @property
     def kernel_basename(self) -> str:
@@ -205,10 +206,6 @@ class KernelFileCache:
                 )
                 return self.fallback_kernel
             raise
-
-    def furnsh(self) -> None:
-        """Load the cached kernel into the SPICE kernel pool via :func:`spiceypy.furnsh`."""
-        spice.furnsh(str(self.kernel_path))
 
     def clear(self) -> None:
         """Remove the cached kernel file from the cache directory if it exists."""
@@ -384,10 +381,12 @@ class KernelFileRecord(NamedTuple):
         return f"KernelFileRecord({self.kernel_type}, {self.file_name})"
 
 
+# TODO[LIBSDC-611] Look for lessons learned from this function for inclusion in the KernelManager or Curryer
 @overload
 def ensure_spice(f_py: _F, time_kernels_only: bool = False) -> _F: ...
 
 
+# TODO[LIBSDC-611] Look for lessons learned from this function for inclusion in the KernelManager or Curryer
 @overload
 def ensure_spice(
     f_py: None = None,
@@ -396,6 +395,7 @@ def ensure_spice(
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]: ...
 
 
+# TODO[LIBSDC-611] Look for lessons learned from this function for inclusion in the KernelManager or Curryer
 def ensure_spice(
     f_py: Callable[..., Any] | None = None,
     time_kernels_only: bool = False,
@@ -503,6 +503,7 @@ def ensure_spice(
     return _decorator(f_py) if callable(f_py) else _decorator
 
 
+# TODO[LIBSDC-611] Revisit this ls function for inclusion in the KernelManager or Curryer
 def ls_kernels(verbose: bool = False, log: bool = False) -> list[KernelFileRecord]:
     """
     List all furnished spice kernels.
@@ -535,6 +536,7 @@ def ls_kernels(verbose: bool = False, log: bool = False) -> list[KernelFileRecor
     return result
 
 
+# TODO[LIBSDC-611] Revisit this ls function for inclusion in the KernelManager or Curryer
 def ls_spice_constants(verbose: bool = False) -> dict[str, Any]:
     """
     List all constants in the Spice constant pool
@@ -572,6 +574,7 @@ def ls_spice_constants(verbose: bool = False) -> dict[str, Any]:
     return result
 
 
+# TODO[LIBSDC-611] Revisit this ls function for inclusion in the KernelManager or Curryer
 def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict[str, list[tuple[float, float]]]:
     """
     List time coverage of all furnished kernels of a given type
@@ -619,6 +622,7 @@ def ls_kernel_coverage(kernel_type: str, verbose: bool = False) -> dict[str, lis
     return result
 
 
+# TODO[LIBSDC-611] Revisit this ls function for inclusion in the KernelManager or Curryer
 def ls_all_kernel_coverage(as_datetime: bool = True, verbose: bool = False) -> dict[str, Any]:
     """
     List time coverage of all furnished kernels
@@ -649,6 +653,7 @@ def ls_all_kernel_coverage(as_datetime: bool = True, verbose: bool = False) -> d
     return result
 
 
+# TODO[LIBSDC-611] Revisit this function for migration toCurryer
 def make_kernel(
     config_file: str | Path,
     output_kernel: str | PathType,
@@ -722,6 +727,7 @@ def make_kernel(
 # SPICE Time Conversion Functions (moved from time.py)
 
 
+# TODO[LIBSDC-611] Revisit this time conversion function for migration to Curryer
 def et_2_timestamp(
     et: float | Collection[float] | np.ndarray,
     fmt: str = "%Y%m%dT%H%M%S.%f",
@@ -752,6 +758,7 @@ def et_2_timestamp(
     return time_out
 
 
+# TODO[LIBSDC-611] Revisit this time conversion function for migration to Curryer
 def et_2_datetime(et: float | Collection[float] | np.ndarray) -> datetime.datetime | np.ndarray:
     """
     Convert ephemeris time to a python datetime object by first converting it to a UTC timestamp.
@@ -777,6 +784,7 @@ def et_2_datetime(et: float | Collection[float] | np.ndarray) -> datetime.dateti
     return datetime.datetime.strptime(isoc_timestamp, isoc_fmt)
 
 
+# TODO[LIBSDC-611] Revisit this time conversion function for migration to Curryer
 @ensure_spice(time_kernels_only=True)
 def et2utc_wrapper(et: float | Collection[float] | np.ndarray, fmt: str, prec: int) -> str | np.ndarray:
     """
@@ -802,6 +810,7 @@ def et2utc_wrapper(et: float | Collection[float] | np.ndarray, fmt: str, prec: i
     return spice.et2utc(et, fmt, prec)
 
 
+# TODO[LIBSDC-611] Revisit this time conversion function for migration to Curryer
 @ensure_spice(time_kernels_only=True)
 def utc2et_wrapper(iso_str: str | Collection[str]) -> float | np.ndarray:
     """
@@ -827,6 +836,7 @@ def utc2et_wrapper(iso_str: str | Collection[str]) -> float | np.ndarray:
     return np.array([spice.utc2et(s) for s in iso_str])
 
 
+# TODO[LIBSDC-611] Revisit this time conversion function for migration to Curryer
 @ensure_spice(time_kernels_only=True)
 def scs2e_wrapper(sclk_str: str | Collection[str]) -> float | np.ndarray:
     """
@@ -853,6 +863,7 @@ def scs2e_wrapper(sclk_str: str | Collection[str]) -> float | np.ndarray:
     return np.array([spice.scs2e(sc_id, s) for s in sclk_str])
 
 
+# TODO[LIBSDC-611] Revisit this time conversion function for migration to Curryer
 @ensure_spice(time_kernels_only=True)
 def sce2s_wrapper(et: float | Collection[float] | np.ndarray) -> str | np.ndarray:
     """
