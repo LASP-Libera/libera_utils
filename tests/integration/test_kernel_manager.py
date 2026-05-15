@@ -71,10 +71,20 @@ def test_static_kernels_loading(monkeypatch, spice_test_data_path):
         # Get the Libera instrument kernel
         libera_instrument_kernel = [config.get("LIBERA_KERNEL_INSTRUMENT")]
 
-        # Get the list Libera static kernels from the config
-        libera_static_kernels = config.get("LIBERA_KERNEL_STATIC_CONFIGS")
+        # Static generated kernels are cached/furnished as binary .bc/.bsp outputs from JSON configs.
+        libera_static_generated_kernels = []
+        for kernel_config in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
+            config_path = Path(kernel_config)
+            stem = config_path.stem
+            if stem.endswith(".spk"):
+                libera_static_generated_kernels.append(config_path.with_suffix("").name + ".bsp")
+            elif stem.endswith(".ck"):
+                libera_static_generated_kernels.append(config_path.with_suffix("").name + ".bc")
+            else:
+                pytest.fail(f"Unexpected static kernel config type: {kernel_config}")
 
-        all_libera_expected_kernels = set(generic_kernel_files + libera_static_kernels + libera_instrument_kernel)
+        all_libera_expected_kernels = set(generic_kernel_files + libera_instrument_kernel)
+        all_libera_expected_kernels.update(libera_static_generated_kernels)
 
         for file in all_libera_expected_kernels:
             filename = Path(file).name.split(".")[0]
@@ -94,8 +104,10 @@ def test_dynamic_kernels_loading(monkeypatch, spice_test_data_path, test_data_pa
         # Initially, dynamic kernels should not be loaded
         assert not km._dynamic_loaded
 
-        # Load dynamic kernels
-        km.load_libera_dynamic_kernels(Path(test_data_path) / "dynamic_kernels")
+        dk_dir = Path(test_data_path) / "dynamic_kernels"
+        kernel_paths = sorted(f for f in dk_dir.iterdir() if f.is_file())
+        assert kernel_paths
+        km.load_libera_dynamic_kernels(kernel_paths)
 
         # Now, dynamic kernels should be loaded
         assert km._dynamic_loaded
@@ -104,8 +116,10 @@ def test_dynamic_kernels_loading(monkeypatch, spice_test_data_path, test_data_pa
         loaded_kernels = km._loaded_kernels.loaded
         loaded_kernel_names = [Path(k).name.split(".")[0] for k in loaded_kernels]
 
-        libera_dynamic_kernel_dir = Path(test_data_path / "dynamic_kernels")
-        for file in libera_dynamic_kernel_dir.iterdir():
+        dk_dir = Path(test_data_path) / "dynamic_kernels"
+        for file in dk_dir.iterdir():
+            if not file.is_file():
+                continue
             filename = Path(file).name.split(".")[0]
             assert filename in loaded_kernel_names
 

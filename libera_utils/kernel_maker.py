@@ -421,7 +421,7 @@ def create_kernel_from_l1a(
     # Get the kernel config file from the environment config
     kernel_config_file = Path(str(config.get(SPICE_DPI_TO_KERNEL_CONFIG_KEY_MAP[kernel_identifier])))
 
-    # Create the kernel (kernels are already furnished by km.load_static_kernels() above)
+    # Create the kernel (required kernels are already furnished by KernelManager above)
     output_kernel = spice_utils.make_kernel(
         config_file=kernel_config_file,
         output_kernel=output_full_path,
@@ -499,7 +499,7 @@ def create_kernel_from_packets(
         "Created L1A dataset from %d packet files, combining all data before time trimming",
         len(input_data_files),
     )
-    logger.debug("L1A dataset created with dimensions: %s", dict(l1a_dataset.dims))
+    logger.debug("L1A dataset created with dimensions: %s", dict(l1a_dataset.sizes))
 
     # Create kernel DataFrame from L1A dataset
     return create_kernel_from_l1a(
