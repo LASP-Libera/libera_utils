@@ -155,9 +155,8 @@ def test_iov_swc_event(test_data_path):
 
 @pytest.fixture(scope="session")
 def test_ditl_camera_with_duplicate_packet(test_data_path):
-    """Day in the Life test data containing a camera packet with a duplicate timestamp, which caused an error in the past.
-    This data can be used to verify that the duplicate timestamp issue is resolved and does not cause errors in the future.
-    Contains: icie_wfov_sci (1040) packets with duplicate timestamps, as well as other standard ICIE packets.
+    """Contains: icie_wfov_sci (1040) with a duplicate packet at 2028-02-15T13:17:03.095685
+    See test_data/packets/libera_ditl_packets/notes.md for full details of packet contents.
     """
     return test_data_path / "packets/libera_ditl_packets/ccsds_2025_318_13_16_34"
 
