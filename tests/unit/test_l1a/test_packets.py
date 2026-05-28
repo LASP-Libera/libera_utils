@@ -628,10 +628,33 @@ def test_aggregate_fields_missing_field():
         }
     )
 
-    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3)
+    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("|S3"))
 
     with pytest.raises(KeyError, match="Required field FIELD_2 not found"):
         libera_packets._aggregate_fields(ds, agg_group)
+
+
+def test_aggregate_fields_invalid_dtype():
+    """Test _aggregate_fields raises ValueError for invalid output dtypes."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array([1, 2], dtype=np.uint8)),
+            "FIELD_1": (["PACKET"], np.array([3, 4], dtype=np.uint8)),
+            "FIELD_2": (["PACKET"], np.array([5, 6], dtype=np.uint8)),
+        }
+    )
+
+    with pytest.raises(ValueError, match="requires fixed-width byte-string dtype"):
+        libera_packets._aggregate_fields(
+            ds,
+            AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("object")),
+        )
+
+    with pytest.raises(ValueError, match="size must be divisible by field_count"):
+        libera_packets._aggregate_fields(
+            ds,
+            AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("|S5")),
+        )
 
 
 def test_get_aggregated_field_names():

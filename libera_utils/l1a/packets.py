@@ -604,10 +604,18 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
     """
     n_packets = dataset.sizes[SDC_PACKET_DIMENSION]
 
+    if group.dtype.kind != "S" or group.dtype.itemsize <= 0:
+        raise ValueError(f"Aggregation group {group.name} requires fixed-width byte-string dtype; got {group.dtype}.")
+    if group.dtype.itemsize % group.field_count != 0:
+        raise ValueError(
+            f"Aggregation group {group.name} has invalid dtype size {group.dtype.itemsize} for "
+            f"field_count {group.field_count}; size must be divisible by field_count."
+        )
+
     # Extract all field arrays at once (fail fast if any missing)
     field_arrays = []
     aggregate_size = 0  # Track total size of aggregated fields (per packet)
-    bytes_per_field = group.dtype.itemsize // group.field_count if group.dtype.itemsize else None
+    bytes_per_field = group.dtype.itemsize // group.field_count
 
     for i in range(group.field_count):
         field_name = group.field_pattern % i
@@ -621,8 +629,6 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
         if field_array.dtype.kind in {"U", "S"}:
             # Packet parser commonly emits fixed-width ASCII-like telemetry as Unicode.
             # Cast explicitly to bytes so itemsize checks and final view() are deterministic.
-            if bytes_per_field is None:
-                raise ValueError(f"Aggregation group {group.name} needs a fixed-width byte dtype for string fields.")
             field_array = field_array.astype(f"S{bytes_per_field}")
             field_size = field_array.dtype.itemsize
 
@@ -632,11 +638,7 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
 
         field_arrays.append(field_array)
 
-    if not group.dtype.itemsize:
-        warnings.warn(
-            f"Aggregation group {group.name} has a dtype with unspecified size ({group.dtype}). This may lead to unexpected results."
-        )
-    elif aggregate_size != group.dtype.itemsize:
+    if aggregate_size != group.dtype.itemsize:
         raise ValueError(
             f"Aggregation group {group.name} size mismatch: "
             f"expected total size {group.dtype.itemsize} bytes, got {aggregate_size} bytes."
@@ -696,9 +698,7 @@ def _stack_fields(dataset: xr.Dataset, group: ArrayGroup) -> np.ndarray:
             raise KeyError(f"Required field {field_name} not found for array group {group.name}")
 
         field_array = dataset[field_name].values
-        if field_array.dtype.kind == "U":
-            field_array = field_array.astype(group.dtype)
-        elif field_array.dtype != group.dtype:
+        if field_array.dtype != group.dtype:
             field_array = field_array.astype(group.dtype)
         field_arrays.append(field_array)
 

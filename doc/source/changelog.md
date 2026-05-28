@@ -4,6 +4,7 @@
 
 - FEAT: Add NOM-HK array groups to stack waypoint status and sequence execution fields into indexed arrays (`ARRAY_128` and `ARRAY_8`)
 - BUGFIX: Normalize Unicode packet string fields during aggregation to ensure deterministic byte sizing
+- NOTE: NOM-HK L1A changes the shape and dtype of five variables (replacing per-index fields with indexed arrays). Treat this as breaking for external consumers of those variables; a patch bump was chosen during early development.
 
 ## 5.8.2
 
