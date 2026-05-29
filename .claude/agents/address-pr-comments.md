@@ -101,8 +101,11 @@ Run `git branch --show-current` via Bash to get the current branch name.
 Using the GitHub MCP tools, fetch all review feedback for the PR:
 
 - **Inline review comments**: code-level comments with file path, line number, and body text.
-- **Top-level review summaries**: general review comments not attached to specific lines.
+- **Top-level review summaries**: general review comments not attached to specific lines (review bodies).
+- **Conversation-level (issue) comments**: standalone comments left in the PR conversation, not attached to a review or a code line. GitHub exposes these as issue comments — fetch them with `mcp__github__pull_request_read` (e.g., `method: get_comments`) and/or `mcp__github__issue_read`, and include them so meaningful suggestions left in the conversation are not missed.
 - Filter out resolved or outdated comments if the tool supports it. Otherwise, fetch all comments and note which are resolved in your output.
+
+Count all three sources (inline + top-level review summaries + conversation/issue comments) toward the unresolved-comment total reported in the plan.
 
 If fetching fails, exit with a clear error describing what went wrong.
 
@@ -125,6 +128,8 @@ For each unresolved comment:
 
    When in doubt, choose **Needs Clarification** rather than guessing. Never silently assume an interpretation for an ambiguous comment.
 
+   **Conversation/issue comments are less targeted.** Because they carry no file path or line anchor, their intended scope is often unclear. Lean toward **Needs Clarification** for these — drafting a question that confirms whether and how the user wants the comment addressed — unless the comment is unambiguously self-contained.
+
 5. **Produce the comment's plan entry**:
    - If **Clear** — describe the concrete fix approach: what to change, where, and why, referencing the repository conventions from Step 2 where applicable.
    - If **Needs Clarification** — draft a specific question to ask the user. The question must be precise enough that the user's answer unblocks implementation. Do **not** propose a fix approach.
@@ -146,7 +151,7 @@ Once every unresolved comment has a type, a clarity assessment, and either an ap
 - Repository conventions found in Step 2 (brief list of instruction files read)
 
 ### Clear Actions
-For each Clear comment:
+For each Clear comment that requires a code or documentation change (i.e., **not** a discussion-only question/clarification — those go in the next section):
 - Comment location — <file>:<line> (@<reviewer>), or "general" for top-level summaries
 - Quoted comment body (truncated if long)
 - **Type:** <bug fix | style/refactor | logic change | question/clarification | documentation>
@@ -168,7 +173,10 @@ For each Needs-Clarification comment:
 - **Note:** The calling session **must ask the user this question and receive an answer before implementing anything related to this comment.**
 ```
 
-4. Include every unresolved comment in exactly one section. Do not skip minor comments — the reviewer left them for a reason.
+4. Include every unresolved comment in exactly one section. Do not skip minor comments — the reviewer left them for a reason. Route each comment by this rule so the "exactly once" invariant holds:
+   - **Needs Clarification** if its clarity is Needs Clarification (regardless of type).
+   - Otherwise **Discussion-Only Comments** if its type is question/clarification and it implies no code or documentation change.
+   - Otherwise **Clear Actions** (any Clear comment that requires a change).
 5. Call `ExitPlanMode` to present the plan to the caller for approval.
 
 ## Step 8: Report
