@@ -85,7 +85,7 @@ def step_function_trigger(
         {
             "detail": {
                 "job_id": f"cli-manual-trigger-{ulid_timestamp}",
-                "node_id": algorithm_name,
+                "processing_step_id": algorithm_name,
                 "applicable_date": applicable_day.date().strftime("%Y-%m-%d"),
             }
         }
