@@ -18,7 +18,7 @@ This file requires multiple XTCE definitions to fully parse:
 - PEC packets (`pec_*`, APID 116) → `LIBERA_PEC_PACKET_DEFINITION`
 
 Several APIDs are present in the raw stream but are not defined in `LiberaApid` and do not parse
-with the XTCE files above (notably APID 1200).
+with the XTCE files above (notably APID <1000, 1006, 1008, 1200).
 
 **Total packets**: 2813 (raw CCSDS headers, `skip_header_bytes=8`)
 

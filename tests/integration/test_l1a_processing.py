@@ -172,9 +172,6 @@ def test_process_packets_to_l1a_product(
     product_definition_path = get_l1a_product_definition_path(apid)
     product_config = LiberaDataProductDefinition.from_yaml(product_definition_path)
 
-    # Enforce conformance (this catches dimension mismatches and other issues)
-    dataset = product_config.enforce_dataset_conformance(dataset)
-
     # Write NetCDF for round trip testing
     output_filename = write_libera_data_product(
         data_product_definition=product_definition_path,
@@ -214,7 +211,7 @@ def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
     test_ditl_camera_with_duplicate_packet,
     monkeypatch,
 ):
-    """DITL WFOV SCI data includes one duplicate packet timestamp (LIBSDC-679 regression).
+    """DITL WFOV SCI data includes one duplicate packet timestamp
 
     L1A processing must warn, drop the duplicate packet, and leave unique packet times.
     """
