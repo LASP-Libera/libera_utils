@@ -86,6 +86,14 @@ ITRF93 is a more precise version of the standard IAU_EARTH reference frame provi
 
 This kernel is regenerated several times per week so we should retrieve this from NAIF for every processing run.
 
+### Extended Earth Binary PCK (predict)
+
+e.g. `earth_2025_250826_2125_predict.bpc`
+
+Covers epochs beyond the short window of the high-precision `earth_000101_*.bpc` kernels (simulation dates,
+future mission processing). `KernelManager.load_naif_kernels()` discovers it on the NAIF PCK index using
+`NAIF_EARTH_EXTENDED_PCK_REGEX` (same mechanism as other NAIF kernels) when `use_high_precision_earth` is True.
+
 ### ITFR93 Reference Frame Kernel for Earth
 
 e.g. `earth_assoc_itrf93.tf`

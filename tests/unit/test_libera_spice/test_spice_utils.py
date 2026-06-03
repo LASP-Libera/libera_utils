@@ -28,6 +28,16 @@ def test_find_most_recent_naif_kernel(test_data_path):
 
 
 @responses.activate
+def test_find_most_recent_naif_kernel_earth_extended_pck(test_data_path):
+    """Extended Earth PCK uses the same NAIF index scraper as other kernel types."""
+    test_index_url = "https://fake-naif-page/"
+    with open(test_data_path / "naif_pck_index.html") as fh:
+        responses.add(responses.GET, test_index_url, body=fh.read(), status=200, content_type="text/html")
+    recent_kernel = spice_utils.find_most_recent_naif_kernel(test_index_url, spice_utils.NAIF_EARTH_EXTENDED_PCK_REGEX)
+    assert recent_kernel.endswith("earth_2025_250826_2125_predict.bpc")
+
+
+@responses.activate
 def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
     """Test caching a kernel file from NAIF, mocking out the actual HTTP requests."""
     # Name of a file mentioned in the test naif page

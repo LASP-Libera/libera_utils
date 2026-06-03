@@ -36,6 +36,8 @@ NAIF_PCK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/"
 NAIF_LSK_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/"
 NAIF_DEVELOPMENT_EPHEMERIS_INDEX_URL = "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/"
 NAIF_HIGH_PREC_PCK_REGEX = "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc"
+# Long-range Earth orientation (simulation / future epochs beyond high-precision coverage).
+NAIF_EARTH_EXTENDED_PCK_REGEX = r"earth_[0-9]{4}_[0-9]{6}_[0-9]{4}_predict\.bpc"
 NAIF_LSK_REGEX = "naif[0-9]{4}.tls"
 NAIF_DE_REGEX = "de[0-9]{3}s.bsp"
 NAIF_PCK_REGEX = "pck[0-9]{5}.tpc"

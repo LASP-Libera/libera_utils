@@ -196,10 +196,28 @@ def test_pck(spice_test_data_path):
 
 
 @pytest.fixture(scope="session")
+def test_naif_text_pck(spice_test_data_path):
+    """Text PCK used as the NAIF generic kernel in tests/test_data/spice (KernelManager base load)."""
+    return spice_test_data_path / "pck00011.tpc"
+
+
+@pytest.fixture(scope="session")
+def test_earth_assoc_itrf93_fk(spice_test_data_path):
+    """Earth body to ITRF93 association frame kernel in tests/test_data/spice."""
+    return spice_test_data_path / "earth_assoc_itrf93.tf"
+
+
+@pytest.fixture(scope="session")
 def test_itrf93_pck(spice_test_data_path):
     """Path to the testing high precision planetary constants kernel (PCK) stored in the test_data directory
     to provide a single configuration for all tests"""
     return spice_test_data_path / "earth_000101_211220_210926.bpc"
+
+
+@pytest.fixture(scope="session")
+def test_earth_predict_pck(spice_test_data_path):
+    """Extended Earth predict binary PCK in tests/test_data/spice (stub for local NAIF loads)."""
+    return spice_test_data_path / "earth_2025_250826_2125_predict.bpc"
 
 
 # Test L1A products
