@@ -153,17 +153,27 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_ana_hk_decoded = ("ANA-HK-DECODED", DataLevel.L1A)
     l1a_icie_temp_hk_decoded = ("TEMP-HK-DECODED", DataLevel.L1A)
 
+    # Calibration Event Products
+    # ==========================
+    # Solar Calibration Event Products (merged NOM-HK, PEV-SW, RAD-SAMPLE per face)
+    cal_solar_face1_combined = ("SOLAR-FACE1-COMBINED", DataLevel.CAL)
+    cal_solar_face2_combined = ("SOLAR-FACE2-COMBINED", DataLevel.CAL)
+    cal_solar_face3_combined = ("SOLAR-FACE3-COMBINED", DataLevel.CAL)
+    # LW Calibration Event Product (merged NOM-HK, PEV-SW, PEC-SW, RAD-SAMPLE, AXIS-SAMPLE)
+    cal_lw_temp1_combined = ("LW-TEMP1-COMBINED", DataLevel.CAL)
+    cal_lw_temp2_combined = ("LW-TEMP2-COMBINED", DataLevel.CAL)
+    cal_lw_temp3_combined = ("LW-TEMP3-COMBINED", DataLevel.CAL)
+    # Gain and Noise Calibration Event Product (merged RAD-FULL, CAL-FULL, NOM-HK)
+    cal_gain_combined = ("GAIN-COMBINED", DataLevel.CAL)
+    # SW Calibration Event Product (merged PEV-SW, PEC-SW, RAD-SAMPLE, CAL-SAMPLE, AXIS-SAMPLE, NOM-HK)
+    cal_sw_combined = ("SW-COMBINED", DataLevel.CAL)
+
     # SPICE kernels
     # =============
     spice_az_ck = ("AZROT-CK", DataLevel.SPICE)
     spice_el_ck = ("ELSCAN-CK", DataLevel.SPICE)
     spice_jpss_ck = ("JPSS-CK", DataLevel.SPICE)
     spice_jpss_spk = ("JPSS-SPK", DataLevel.SPICE)
-
-    # Calibration Products
-    # ====================
-    cal_rad = ("CAL-RAD", DataLevel.CAL)
-    cal_cam = ("CAL-CAM", DataLevel.CAL)
 
     # L1B Products
     # ============
@@ -293,10 +303,6 @@ class ProcessingStepIdentifier(StrEnum):
         obj._value_ = value
         obj._products = products or []
         return obj
-
-    # Calibration processing steps
-    cal_rad = ("cal-rad", [DataProductIdentifier.cal_rad])
-    cal_cam = ("cal-cam", [DataProductIdentifier.cal_cam])
 
     # SPICE processing steps
     spice_azel = ("spice-azel", [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck])

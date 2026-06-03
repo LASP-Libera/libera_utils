@@ -140,14 +140,20 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
+            # Calibration Event Products
+            "cal_solar_face1_combined",
+            "cal_solar_face2_combined",
+            "cal_solar_face3_combined",
+            "cal_lw_temp1_combined",
+            "cal_lw_temp2_combined",
+            "cal_lw_temp3_combined",
+            "cal_gain_combined",
+            "cal_sw_combined",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
             "spice_jpss_ck",
             "spice_jpss_spk",
-            # Calibration Products
-            "cal_rad",
-            "cal_cam",
             # L1B Products
             "l1b_rad",
             "l1b_cam",
@@ -189,18 +195,36 @@ class TestDataProductIdentifier:
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
+        _no_single_apid = {DataProductIdentifier.l0_pds_cr}
         for product in DataProductIdentifier:
             apid = product.associated_apid
-            # L0 and L1A products should have an associated APID, others should be None
-            # L0 PDS CR is a special case and should be None
+            # L0 and L1A products should have an associated APID, others should be None.
+            # Products in _no_single_apid are special cases and should be None.
             if (
-                product.data_level == DataLevel.L1A
-                or product.data_level == DataLevel.L0
-                and product != DataProductIdentifier.l0_pds_cr
-            ):
+                product.data_level == DataLevel.L1A or product.data_level == DataLevel.L0
+            ) and product not in _no_single_apid:
                 assert isinstance(apid, LiberaApid)
             else:
                 assert apid is None
+
+    def test_calibration_event_products_metadata(self):
+        """Test metadata consistency for merged calibration event products."""
+        expected_products = {
+            DataProductIdentifier.cal_solar_face1_combined: "SOLAR-FACE1-COMBINED",
+            DataProductIdentifier.cal_solar_face2_combined: "SOLAR-FACE2-COMBINED",
+            DataProductIdentifier.cal_solar_face3_combined: "SOLAR-FACE3-COMBINED",
+            DataProductIdentifier.cal_lw_temp1_combined: "LW-TEMP1-COMBINED",
+            DataProductIdentifier.cal_lw_temp2_combined: "LW-TEMP2-COMBINED",
+            DataProductIdentifier.cal_lw_temp3_combined: "LW-TEMP3-COMBINED",
+            DataProductIdentifier.cal_gain_combined: "GAIN-COMBINED",
+            DataProductIdentifier.cal_sw_combined: "SW-COMBINED",
+        }
+
+        for product, expected_value in expected_products.items():
+            assert product.data_level is DataLevel.CAL
+            assert product.value == expected_value
+            assert product.associated_apid is None
+            assert product.data_level.archive_bucket_name == DataLevel.ANC.archive_bucket_name
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
@@ -225,9 +249,6 @@ class TestProcessingStepIdentifier:
         This ensures API compatibility - the names are part of the contract.
         """
         expected_names = [
-            # Calibration steps
-            "cal_rad",
-            "cal_cam",
             # SPICE steps
             "spice_azel",
             "spice_jpss",

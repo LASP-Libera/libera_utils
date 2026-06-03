@@ -533,8 +533,8 @@ class TestFootprintDataExtraction:
             "cloud_particle_phase_37um_mean": MagicMock(),
             "cloud_optical_depth_mean": MagicMock(),
         }
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"].__getitem__ = (
-            lambda x: cloud_frac_data
+        mock_dataset.groups["Cloudy_Footprint_Area"].variables["layers_coverages"].__getitem__ = lambda x: (
+            cloud_frac_data
         )
 
         cloud_phase_data = np.array([[1.0, 2.0], [1.5, 1.8], [2.0, 1.0]])
@@ -543,8 +543,8 @@ class TestFootprintDataExtraction:
         cloud_phase_var._FillValue = -999.0  # Set fill value
 
         optical_depth_data = np.array([[5.0, 10.0], [15.0, 20.0], [25.0, 30.0]])
-        mock_dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"].__getitem__ = (
-            lambda x: optical_depth_data
+        mock_dataset.groups["Cloudy_Footprint_Area"].variables["cloud_optical_depth_mean"].__getitem__ = lambda x: (
+            optical_depth_data
         )
 
         igbp_data = np.array([[1], [17], [15]])

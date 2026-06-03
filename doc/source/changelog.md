@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.8.1
+
+- FEAT: Added alpha calibration combination constants for data products
+
 ## 5.8.0
 
 - BREAKING: `KernelManager.load_libera_dynamic_kernels` accepts **only** a `Sequence[str | pathlib.Path | S3Path]` (manifest-ordered path list). Directory expansion, scalar `Path`, and scalar local `str` are not accepted (use `[path]` for a single file). Materialization is inlined with a single normalization pass per entry; `_materialize_dynamic_kernel_paths` / `_is_dynamic_sources_sequence` are removed from the dispatch path.
