@@ -14,6 +14,7 @@ from unittest import mock
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
+from cloudpathlib import S3Path
 
 from libera_utils.io.caching import get_local_short_temp_dir
 from libera_utils.libera_spice.kernel_manager import KernelManager
@@ -640,6 +641,31 @@ class TestDynamicKernelLoading:
         km._loaded_kernels = MagicMock()
         km.load_libera_dynamic_kernels(["https://example.invalid/granule.bsp"])
         assert Path(km._loaded_kernels._iter_load.call_args[0][0][0]).name == "granule.bsp"
+
+    @pytest.mark.parametrize("source_wrapper", ["s3_uri", "S3Path"])
+    def test_s3_sources_materialize_into_cache(
+        self, write_file_to_s3, test_jpss_spk, isolate_local_cache_dir, source_wrapper
+    ):
+        """S3 dynamic kernel entries (s3:// str or S3Path) materialize via KernelFileCache before load."""
+        s3_uri = f"s3://libera-utils-test-kernels/dynamic/{test_jpss_spk.name}"
+        write_file_to_s3(test_jpss_spk, s3_uri)
+        source = s3_uri if source_wrapper == "s3_uri" else S3Path(s3_uri)
+
+        km = KernelManager()
+        km._static_loaded = km._naif_kernels_loaded = True
+        km._loaded_kernels = MagicMock()
+        iter_load = MagicMock()
+        km._loaded_kernels._iter_load = iter_load
+
+        km.load_libera_dynamic_kernels([source])
+
+        cached = isolate_local_cache_dir / test_jpss_spk.name
+        assert cached.is_file()
+        assert cached.read_bytes() == test_jpss_spk.read_bytes()
+        loaded_paths = iter_load.call_args[0][0]
+        assert len(loaded_paths) == 1
+        assert Path(loaded_paths[0]).name == test_jpss_spk.name
+        assert Path(loaded_paths[0]) == cached
 
     def test_directory_path_in_sequence_raises(self, tmp_path):
         km = KernelManager(temp_dir_base=tmp_path)

@@ -206,6 +206,34 @@ def test_process_packets_to_l1a_product(
     print("   ✓ NetCDF file verification complete")
 
 
+@pytest.mark.filterwarnings("error")
+def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
+    test_ditl_camera_with_duplicate_packet,
+    monkeypatch,
+):
+    """DITL WFOV SCI data includes one duplicate packet timestamp
+
+    L1A processing must warn, drop the duplicate packet, and leave unique packet times.
+    """
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+    apid = LiberaApid.icie_wfov_sci
+    packet_time_coordinate = get_packet_config(apid).packet_time_coordinate
+
+    with pytest.warns(
+        UserWarning,
+        match=r"Detected 1 duplicate PACKET_ICIE_TIME in dataset",
+    ):
+        dataset = packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ditl_camera_with_duplicate_packet],
+            apid=apid.value,
+        )
+
+    # Fixture has 1510 WFOV SCI packets with one repeated PACKET_ICIE_TIME.
+    assert dataset.sizes["PACKET"] == 1509
+    _, counts = np.unique(dataset[packet_time_coordinate].values, return_counts=True)
+    assert not np.any(counts > 1)
+
+
 @pytest.mark.parametrize(
     "packet_definition",
     [
