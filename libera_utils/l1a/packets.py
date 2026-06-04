@@ -675,6 +675,39 @@ def _get_aggregated_field_names(dataset: xr.Dataset, group: AggregationGroup) ->
     return aggregated
 
 
+def _normalize_field_dtype(
+    field_array: np.ndarray,
+    target_dtype: np.dtype,
+    *,
+    field_name: str,
+    group_name: str,
+) -> np.ndarray:
+    """Normalize a field array to the expected group dtype with explicit coercion rules.
+
+    Only Unicode-to-bytes normalization is allowed for string fields. All other dtype
+    mismatches raise ValueError to avoid silent cross-kind coercion (e.g. int -> S).
+    """
+    if field_array.dtype == target_dtype:
+        return field_array
+
+    source_kind = field_array.dtype.kind
+    target_kind = target_dtype.kind
+
+    if source_kind == "U" and target_kind == "S":
+        return field_array.astype(target_dtype)
+
+    if source_kind == "S" and target_kind == "S":
+        if field_array.dtype.itemsize != target_dtype.itemsize:
+            raise ValueError(
+                f"Array group {group_name}: field {field_name} has width {field_array.dtype}, expected {target_dtype}."
+            )
+        return field_array.astype(target_dtype)
+
+    raise ValueError(
+        f"Array group {group_name}: field {field_name} has dtype {field_array.dtype}, expected {target_dtype}."
+    )
+
+
 def _stack_fields(dataset: xr.Dataset, group: ArrayGroup) -> np.ndarray:
     """Stack multiple sequential fields into a fixed-size array per packet.
 
@@ -697,9 +730,12 @@ def _stack_fields(dataset: xr.Dataset, group: ArrayGroup) -> np.ndarray:
         if field_name not in dataset:
             raise KeyError(f"Required field {field_name} not found for array group {group.name}")
 
-        field_array = dataset[field_name].values
-        if field_array.dtype != group.dtype:
-            field_array = field_array.astype(group.dtype)
+        field_array = _normalize_field_dtype(
+            dataset[field_name].values,
+            group.dtype,
+            field_name=field_name,
+            group_name=group.name,
+        )
         field_arrays.append(field_array)
 
     return np.stack(field_arrays, axis=1)

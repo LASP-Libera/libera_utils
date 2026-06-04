@@ -46,10 +46,10 @@ CAL_FULL_FPE_TIME:
   long_name: "Calibration full resolution sample time"
 ARRAY_128:
   size: 128
-  long_name: "Array index dimension (128 elements)"
+  long_name: "Array index dimension (128 elements) for arrays that come per packet"
 ARRAY_8:
   size: 8
-  long_name: "Array index dimension (8 elements)"
+  long_name: "Array index dimension (8 elements) for arrays that come per packet"
 
 # Calibration event product packet dimensions (per-APID prefixed to avoid collisions in merged flat files)
 NOM_HK_PACKET:

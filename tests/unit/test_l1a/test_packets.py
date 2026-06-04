@@ -676,6 +676,49 @@ def test_get_aggregated_field_names():
     assert "OTHER_FIELD" not in result
 
 
+@pytest.mark.parametrize(
+    ("field_array", "target_dtype", "expected"),
+    [
+        (np.array([10, 20], dtype=np.uint16), np.dtype("uint16"), np.array([10, 20], dtype=np.uint16)),
+        (
+            np.array(["ENABLED", "DISABLED"], dtype="<U8"),
+            np.dtype("|S8"),
+            np.array([b"ENABLED", b"DISABLED"], dtype="|S8"),
+        ),
+    ],
+)
+def test_normalize_field_dtype_allowed_coercions(field_array, target_dtype, expected):
+    """Test _normalize_field_dtype allows exact matches and Unicode-to-bytes normalization."""
+    result = libera_packets._normalize_field_dtype(
+        field_array,
+        target_dtype,
+        field_name="FIELD_0",
+        group_name="FIELD",
+    )
+
+    np.testing.assert_array_equal(result, expected)
+    assert result.dtype == target_dtype
+
+
+@pytest.mark.parametrize(
+    ("field_array", "target_dtype", "match"),
+    [
+        (np.array([10, 20], dtype=np.uint16), np.dtype("|S8"), "expected \\|S8"),
+        (np.array([10, 20], dtype=np.uint32), np.dtype("uint16"), "expected uint16"),
+        (np.array([b"ABC", b"def"], dtype="|S3"), np.dtype("|S8"), "expected \\|S8"),
+    ],
+)
+def test_normalize_field_dtype_rejects_invalid_coercions(field_array, target_dtype, match):
+    """Test _normalize_field_dtype rejects cross-kind and width-mismatch coercions."""
+    with pytest.raises(ValueError, match=match):
+        libera_packets._normalize_field_dtype(
+            field_array,
+            target_dtype,
+            field_name="FIELD_0",
+            group_name="FIELD",
+        )
+
+
 def test_stack_fields_strings():
     """Test _stack_fields stacks sequential strings into a 2D array."""
     ds = xr.Dataset(

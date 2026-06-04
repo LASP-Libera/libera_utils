@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import numpy as np
 import pytest
 
 from libera_utils.constants import LiberaApid
