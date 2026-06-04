@@ -2,6 +2,7 @@
 
 from datetime import timedelta
 
+import numpy as np
 import pytest
 
 from libera_utils.constants import LiberaApid
@@ -239,7 +240,7 @@ class TestL1aConfigYaml:
         assert cfg.aggregation_groups == []
 
     def test_icie_nom_hk_config(self):
-        """APID 1057 — nominal housekeeping, no sample groups."""
+        """APID 1057 — nominal housekeeping with array groups."""
         cfg = get_packet_config(LiberaApid.icie_nom_hk)
         assert cfg.packet_apid == LiberaApid.icie_nom_hk
         assert cfg.packet_time_fields.day_field == "ICIE__TM_DAY_NOM_HK"
@@ -249,6 +250,42 @@ class TestL1aConfigYaml:
         assert cfg.packet_time_coordinate == "PACKET_ICIE_TIME"
         assert cfg.sample_groups == []
         assert cfg.aggregation_groups == []
+        assert len(cfg.array_groups) == 5
+
+        wp = cfg.array_groups[0]
+        assert wp.name == "ICIE__SW_FP_WP_ST_WP"
+        assert wp.field_pattern == "ICIE__SW_FP_WP_ST_WP%i"
+        assert wp.field_count == 128
+        assert wp.dimension == "ARRAY_128"
+        assert wp.dtype == np.dtype("|S8")
+
+        seq_buf = cfg.array_groups[1]
+        assert seq_buf.name == "ICIE__SW_SEQ_EXEC_BUF_OP"
+        assert seq_buf.field_pattern == "ICIE__SW_SEQ_EXEC_BUF_OP%i"
+        assert seq_buf.field_count == 8
+        assert seq_buf.dimension == "ARRAY_8"
+        assert seq_buf.dtype == np.dtype("|S11")
+
+        seq_pos = cfg.array_groups[2]
+        assert seq_pos.name == "ICIE__SW_SEQ_EXEC_POS_OP"
+        assert seq_pos.field_pattern == "ICIE__SW_SEQ_EXEC_POS_OP%i"
+        assert seq_pos.field_count == 8
+        assert seq_pos.dimension == "ARRAY_8"
+        assert seq_pos.dtype == np.dtype("uint16")
+
+        stop_cd = cfg.array_groups[3]
+        assert stop_cd.name == "ICIE__SW_SEQ_STOP_CD_OP"
+        assert stop_cd.field_pattern == "ICIE__SW_SEQ_STOP_CD_OP%i"
+        assert stop_cd.field_count == 8
+        assert stop_cd.dimension == "ARRAY_8"
+        assert stop_cd.dtype == np.dtype("|S11")
+
+        seq_st = cfg.array_groups[4]
+        assert seq_st.name == "ICIE__SW_SEQ_ST_OP"
+        assert seq_st.field_pattern == "ICIE__SW_SEQ_ST_OP%i"
+        assert seq_st.field_count == 8
+        assert seq_st.dimension == "ARRAY_8"
+        assert seq_st.dtype == np.dtype("|S7")
 
     def test_icie_crit_hk_config(self):
         """APID 1051 — critical housekeeping, no sample groups."""

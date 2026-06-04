@@ -17,6 +17,7 @@ from libera_utils.constants import LiberaApid
 from libera_utils.io import filenaming
 from libera_utils.l1a.l1a_packet_configs import (
     AggregationGroup,
+    ArrayGroup,
     SampleGroup,
     TimeFieldMapping,
     get_packet_config,
@@ -205,6 +206,30 @@ def parse_packets_to_l1a_dataset(
 
     # Drop aggregated fields from packet_ds to reduce data duplication
     packet_ds = packet_ds.drop_vars(aggregated_fields)
+
+    # Process array groups
+    array_group_fields = set()  # Track fields that are stacked to remove from main array
+
+    for array_group in packet_config.array_groups:
+        # Stack the fields
+        stacked_data = _stack_fields(packet_ds, array_group)
+        index_coord = np.arange(array_group.field_count, dtype=np.int64)
+
+        # Add stacked variable to packet dataset with packet and array dimensions
+        packet_ds[array_group.name] = xr.DataArray(
+            data=stacked_data,
+            dims=[SDC_PACKET_DIMENSION, array_group.dimension],
+            coords={
+                packet_time_coordinate: (SDC_PACKET_DIMENSION, packet_times_us),
+                array_group.dimension: (array_group.dimension, index_coord),
+            },
+        )
+
+        # Track stacked fields to remove from main array
+        array_group_fields.update(_get_array_group_field_names(packet_ds, array_group))
+
+    # Drop stacked fields from packet_ds to reduce data duplication
+    packet_ds = packet_ds.drop_vars(array_group_fields)
 
     # Merge sample variables into packet_ds
     # This works because the coordinates and dimensions in sample_ds are different than the
@@ -579,9 +604,18 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
     """
     n_packets = dataset.sizes[SDC_PACKET_DIMENSION]
 
+    if group.dtype.kind != "S" or group.dtype.itemsize <= 0:
+        raise ValueError(f"Aggregation group {group.name} requires fixed-width byte-string dtype; got {group.dtype}.")
+    if group.dtype.itemsize % group.field_count != 0:
+        raise ValueError(
+            f"Aggregation group {group.name} has invalid dtype size {group.dtype.itemsize} for "
+            f"field_count {group.field_count}; size must be divisible by field_count."
+        )
+
     # Extract all field arrays at once (fail fast if any missing)
     field_arrays = []
     aggregate_size = 0  # Track total size of aggregated fields (per packet)
+    bytes_per_field = group.dtype.itemsize // group.field_count
 
     for i in range(group.field_count):
         field_name = group.field_pattern % i
@@ -590,18 +624,21 @@ def _aggregate_fields(dataset: xr.Dataset, group: AggregationGroup) -> np.ndarra
 
         # The field_array is the data for one field across all packets
         field_array = dataset[field_name].values
+        field_size = field_array.dtype.itemsize
+
+        if field_array.dtype.kind in {"U", "S"}:
+            # Packet parser commonly emits fixed-width ASCII-like telemetry as Unicode.
+            # Cast explicitly to bytes so itemsize checks and final view() are deterministic.
+            field_array = field_array.astype(f"S{bytes_per_field}")
+            field_size = field_array.dtype.itemsize
 
         # Adds up total size of the aggregated fields (per packet)
         # This allows for fields that are not all the same size/dtype to be aggregated together as bytes
-        aggregate_size += field_array.dtype.itemsize
+        aggregate_size += field_size
 
         field_arrays.append(field_array)
 
-    if not group.dtype.itemsize:
-        warnings.warn(
-            f"Aggregation group {group.name} has a dtype with unspecified size ({group.dtype}). This may lead to unexpected results."
-        )
-    elif aggregate_size != group.dtype.itemsize:
+    if aggregate_size != group.dtype.itemsize:
         raise ValueError(
             f"Aggregation group {group.name} size mismatch: "
             f"expected total size {group.dtype.itemsize} bytes, got {aggregate_size} bytes."
@@ -636,3 +673,92 @@ def _get_aggregated_field_names(dataset: xr.Dataset, group: AggregationGroup) ->
         if field_name in dataset:
             aggregated.add(field_name)
     return aggregated
+
+
+def _normalize_field_dtype(
+    field_array: np.ndarray,
+    target_dtype: np.dtype,
+    *,
+    field_name: str,
+    group_name: str,
+) -> np.ndarray:
+    """Normalize a field array to the expected group dtype with explicit coercion rules.
+
+    Only Unicode-to-bytes normalization is allowed for string fields. All other dtype
+    mismatches raise ValueError to avoid silent cross-kind coercion (e.g. int -> S).
+    """
+    if field_array.dtype == target_dtype:
+        return field_array
+
+    source_kind = field_array.dtype.kind
+    target_kind = target_dtype.kind
+
+    if source_kind == "U" and target_kind == "S":
+        return field_array.astype(target_dtype)
+
+    if source_kind == "S" and target_kind == "S":
+        if field_array.dtype.itemsize != target_dtype.itemsize:
+            raise ValueError(
+                f"Array group {group_name}: field {field_name} has width {field_array.dtype}, expected {target_dtype}."
+            )
+        return field_array.astype(target_dtype)
+
+    raise ValueError(
+        f"Array group {group_name}: field {field_name} has dtype {field_array.dtype}, expected {target_dtype}."
+    )
+
+
+def _stack_fields(dataset: xr.Dataset, group: ArrayGroup) -> np.ndarray:
+    """Stack multiple sequential fields into a fixed-size array per packet.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Dataset containing the individual fields to stack.
+    group : ArrayGroup
+        Configuration for the array group.
+
+    Returns
+    -------
+    np.ndarray
+        Array with shape (n_packets, field_count) and dtype matching group.dtype.
+    """
+    field_arrays = []
+
+    for i in range(group.field_count):
+        field_name = group.field_pattern % i
+        if field_name not in dataset:
+            raise KeyError(f"Required field {field_name} not found for array group {group.name}")
+
+        field_array = _normalize_field_dtype(
+            dataset[field_name].values,
+            group.dtype,
+            field_name=field_name,
+            group_name=group.name,
+        )
+        field_arrays.append(field_array)
+
+    return np.stack(field_arrays, axis=1)
+
+
+def _get_array_group_field_names(dataset: xr.Dataset, group: ArrayGroup) -> set[str]:
+    """Get all field names that are stacked for an array group.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Dataset containing the fields.
+    group : ArrayGroup
+        Array group configuration.
+
+    Returns
+    -------
+    set[str]
+        Set of field names that are stacked.
+    """
+    array_fields = set()
+    for i in range(group.field_count):
+        field_name = group.field_pattern % i
+        if field_name in dataset:
+            array_fields.add(field_name)
+    return array_fields

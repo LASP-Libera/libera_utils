@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.8.3
+
+- FEAT: Add NOM-HK array groups to stack waypoint status and sequence execution fields into indexed arrays (`ARRAY_128` and `ARRAY_8`)
+- BUGFIX: Normalize Unicode packet string fields during aggregation to ensure deterministic byte sizing
+- NOTE: NOM-HK L1A changes the shape and dtype of five variables (replacing per-index fields with indexed arrays). Treat this as breaking for external consumers of those variables; a patch bump was chosen during early development. Changed variables: ICIE**SW_FP_WP_ST_WP, ICIE**SW_SEQ_EXEC_BUF_OP,
+  ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
+
 ## 5.8.2
 
 - FEAT: Faster ICIE WFOV SCI (APID 1040) packet-to-L1A by refreshing `icie_xtce_tlm.xml` and combining the 972-field WFOV `aggregation_groups` block from `icie_wfov_sci` in `l1a_processing_configs.yml`.

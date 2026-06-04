@@ -12,6 +12,7 @@ from libera_utils.constants import LiberaApid
 from libera_utils.l1a import packets as libera_packets
 from libera_utils.l1a.l1a_packet_configs import (
     AggregationGroup,
+    ArrayGroup,
     PacketConfiguration,
     SampleGroup,
     SampleTimeSource,
@@ -579,6 +580,24 @@ def test_aggregate_fields_bytes():
     assert result[1] == b"abcdefghi"
 
 
+def test_aggregate_fields_unicode():
+    """Test _aggregate_fields normalizes unicode strings to fixed-width ASCII bytes."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array(["ENABLED", "DISABLED"], dtype="<U8")),
+            "FIELD_1": (["PACKET"], np.array(["DISABLED", "ENABLED"], dtype="<U8")),
+        }
+    )
+    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=2, dtype=np.dtype("|S16"))
+
+    result = libera_packets._aggregate_fields(ds, agg_group)
+
+    assert len(result) == 2
+    assert result.dtype == np.dtype("|S16")
+    assert result[0] == b"ENABLED\x00DISABLED"
+    assert result[1] == b"DISABLEDENABLED"
+
+
 def test_aggregate_fields_size_mismatch():
     """Test _aggregate_fields raises ValueError on size mismatch"""
     ds = xr.Dataset(
@@ -609,10 +628,33 @@ def test_aggregate_fields_missing_field():
         }
     )
 
-    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3)
+    agg_group = AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("|S3"))
 
     with pytest.raises(KeyError, match="Required field FIELD_2 not found"):
         libera_packets._aggregate_fields(ds, agg_group)
+
+
+def test_aggregate_fields_invalid_dtype():
+    """Test _aggregate_fields raises ValueError for invalid output dtypes."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array([1, 2], dtype=np.uint8)),
+            "FIELD_1": (["PACKET"], np.array([3, 4], dtype=np.uint8)),
+            "FIELD_2": (["PACKET"], np.array([5, 6], dtype=np.uint8)),
+        }
+    )
+
+    with pytest.raises(ValueError, match="requires fixed-width byte-string dtype"):
+        libera_packets._aggregate_fields(
+            ds,
+            AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("object")),
+        )
+
+    with pytest.raises(ValueError, match="size must be divisible by field_count"):
+        libera_packets._aggregate_fields(
+            ds,
+            AggregationGroup(name="FIELD", field_pattern="FIELD_%i", field_count=3, dtype=np.dtype("|S5")),
+        )
 
 
 def test_get_aggregated_field_names():
@@ -631,6 +673,162 @@ def test_get_aggregated_field_names():
     result = libera_packets._get_aggregated_field_names(ds, agg_group)
 
     assert result == {"DATA_0", "DATA_1", "DATA_2"}
+    assert "OTHER_FIELD" not in result
+
+
+@pytest.mark.parametrize(
+    ("field_array", "target_dtype", "expected"),
+    [
+        (np.array([10, 20], dtype=np.uint16), np.dtype("uint16"), np.array([10, 20], dtype=np.uint16)),
+        (
+            np.array(["ENABLED", "DISABLED"], dtype="<U8"),
+            np.dtype("|S8"),
+            np.array([b"ENABLED", b"DISABLED"], dtype="|S8"),
+        ),
+    ],
+)
+def test_normalize_field_dtype_allowed_coercions(field_array, target_dtype, expected):
+    """Test _normalize_field_dtype allows exact matches and Unicode-to-bytes normalization."""
+    result = libera_packets._normalize_field_dtype(
+        field_array,
+        target_dtype,
+        field_name="FIELD_0",
+        group_name="FIELD",
+    )
+
+    np.testing.assert_array_equal(result, expected)
+    assert result.dtype == target_dtype
+
+
+@pytest.mark.parametrize(
+    ("field_array", "target_dtype", "match"),
+    [
+        (np.array([10, 20], dtype=np.uint16), np.dtype("|S8"), "expected \\|S8"),
+        (np.array([10, 20], dtype=np.uint32), np.dtype("uint16"), "expected uint16"),
+        (np.array([b"ABC", b"def"], dtype="|S3"), np.dtype("|S8"), "expected \\|S8"),
+    ],
+)
+def test_normalize_field_dtype_rejects_invalid_coercions(field_array, target_dtype, match):
+    """Test _normalize_field_dtype rejects cross-kind and width-mismatch coercions."""
+    with pytest.raises(ValueError, match=match):
+        libera_packets._normalize_field_dtype(
+            field_array,
+            target_dtype,
+            field_name="FIELD_0",
+            group_name="FIELD",
+        )
+
+
+def test_stack_fields_strings():
+    """Test _stack_fields stacks sequential strings into a 2D array."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array([b"ENABLED", b"DISABLED"], dtype="|S8")),
+            "FIELD_1": (["PACKET"], np.array([b"DISABLED", b"ENABLED"], dtype="|S8")),
+        }
+    )
+
+    array_group = ArrayGroup(
+        name="FIELD",
+        field_pattern="FIELD_%i",
+        field_count=2,
+        dimension="ARRAY_2",
+        dtype=np.dtype("|S8"),
+    )
+
+    result = libera_packets._stack_fields(ds, array_group)
+
+    assert result.shape == (2, 2)
+    assert result.dtype == np.dtype("|S8")
+    assert result[0, 0] == b"ENABLED"
+    assert result[1, 1] == b"ENABLED"
+
+
+def test_stack_fields_uint16():
+    """Test _stack_fields stacks sequential uint16 fields into a 2D array."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array([10, 20], dtype=np.uint16)),
+            "FIELD_1": (["PACKET"], np.array([11, 21], dtype=np.uint16)),
+        }
+    )
+
+    array_group = ArrayGroup(
+        name="FIELD",
+        field_pattern="FIELD_%i",
+        field_count=2,
+        dimension="ARRAY_2",
+        dtype=np.dtype("uint16"),
+    )
+
+    result = libera_packets._stack_fields(ds, array_group)
+
+    assert result.shape == (2, 2)
+    assert result.dtype == np.dtype("uint16")
+    np.testing.assert_array_equal(result, np.array([[10, 11], [20, 21]], dtype=np.uint16))
+
+
+def test_stack_fields_unicode():
+    """Test _stack_fields normalizes unicode strings to fixed-width ASCII bytes."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array(["ENABLED", "DISABLED"], dtype="<U8")),
+            "FIELD_1": (["PACKET"], np.array(["DISABLED", "ENABLED"], dtype="<U8")),
+        }
+    )
+
+    array_group = ArrayGroup(
+        name="FIELD",
+        field_pattern="FIELD_%i",
+        field_count=2,
+        dimension="ARRAY_2",
+        dtype=np.dtype("|S8"),
+    )
+
+    result = libera_packets._stack_fields(ds, array_group)
+
+    assert result.shape == (2, 2)
+    assert result.dtype == np.dtype("|S8")
+    assert result[0, 0] == b"ENABLED"
+    assert result[0, 1] == b"DISABLED"
+
+
+def test_stack_fields_missing_field():
+    """Test _stack_fields raises KeyError when a required field is missing."""
+    ds = xr.Dataset(
+        {
+            "FIELD_0": (["PACKET"], np.array([1, 2], dtype=np.uint16)),
+            # FIELD_1 is missing
+        }
+    )
+
+    array_group = ArrayGroup(
+        name="FIELD",
+        field_pattern="FIELD_%i",
+        field_count=2,
+        dimension="ARRAY_2",
+        dtype=np.dtype("uint16"),
+    )
+
+    with pytest.raises(KeyError, match="Required field FIELD_1 not found"):
+        libera_packets._stack_fields(ds, array_group)
+
+
+def test_get_array_group_field_names():
+    """Test _get_array_group_field_names returns all stacked field names."""
+    ds = xr.Dataset(
+        {
+            "DATA_0": (["PACKET"], [1, 2]),
+            "DATA_1": (["PACKET"], [3, 4]),
+            "OTHER_FIELD": (["PACKET"], [7, 8]),
+        }
+    )
+
+    array_group = ArrayGroup(name="DATA", field_pattern="DATA_%i", field_count=2, dimension="ARRAY_2")
+
+    result = libera_packets._get_array_group_field_names(ds, array_group)
+
+    assert result == {"DATA_0", "DATA_1"}
     assert "OTHER_FIELD" not in result
 
 
