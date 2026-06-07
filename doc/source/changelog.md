@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.10.3
+
+- FEAT: WFOV SCI (APID 1040) L1A parsing extracts first/last FSW image acquisition times from qualifying SOP packets and stores them as `first_image_utc_time` / `last_image_utc_time` global attributes (declared in `icie_wfov_sci_l1a.yml`).
+- FEAT: Add `WFOV_FILENAME_TIME` coordinate to the parsed WFOV L1A dataset so `write_libera_data_product(..., time_variable="WFOV_FILENAME_TIME")` produces filenames from the image acquisition window rather than CCSDS packet telemetry times.
+
 ## 5.10.2
 
 - BUGFIX: `enforce_data_array_conformance` no longer emits a `UserWarning` (or log line) for every encoding key present on a DataArray but absent from the product definition. Extra keys (typically xarray/NetCDF runtime metadata such as `source`, `original_shape`, `preferred_chunks`, compression stubs) are dropped silently; conflicting values for keys that _are_ defined still warn. This removes thousands of spurious warnings when packaging products built from opened L1A NetCDF inputs.

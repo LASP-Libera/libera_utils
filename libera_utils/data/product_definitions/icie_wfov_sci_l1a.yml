@@ -3,6 +3,8 @@ attributes:
   algorithm_version: null
   date_created: null
   input_files: null
+  first_image_utc_time: null
+  last_image_utc_time: null
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]
