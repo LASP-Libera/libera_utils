@@ -22,6 +22,13 @@ from libera_utils.l1a.l1a_packet_configs import (
     TimeFieldMapping,
     get_packet_config,
 )
+from libera_utils.l1a.wfov_image_time import (
+    FIRST_IMAGE_UTC_TIME_ATTR,
+    LAST_IMAGE_UTC_TIME_ATTR,
+    WFOV_FILENAME_TIME_DIMENSION,
+    WFOV_FILENAME_TIME_VARIABLE,
+    extract_wfov_filename_time_bounds,
+)
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
 
@@ -256,6 +263,15 @@ def parse_packets_to_l1a_dataset(
     }
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
+
+    if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
+        first_image_time, last_image_time = extract_wfov_filename_time_bounds(packet_ds)
+        packet_ds.attrs[FIRST_IMAGE_UTC_TIME_ATTR] = str(np.datetime_as_string(first_image_time, unit="us"))
+        packet_ds.attrs[LAST_IMAGE_UTC_TIME_ATTR] = str(np.datetime_as_string(last_image_time, unit="us"))
+        filename_times = np.array([first_image_time, last_image_time], dtype=DATETIME_USEC_DTYPE)
+        packet_ds = packet_ds.assign_coords(
+            {WFOV_FILENAME_TIME_VARIABLE: (WFOV_FILENAME_TIME_DIMENSION, filename_times)}
+        )
 
     return packet_ds
 

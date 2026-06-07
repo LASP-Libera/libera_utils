@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.10.5
+
+- FEAT: WFOV SCI (APID 1040) L1A parsing extracts first/last FSW image acquisition times from qualifying SOP packets and stores them as `first_image_utc_time` / `last_image_utc_time` global attributes (declared in `icie_wfov_sci_l1a.yml`).
+- FEAT: Add `WFOV_FILENAME_TIME` coordinate to the parsed WFOV L1A dataset so `write_libera_data_product(..., time_variable="WFOV_FILENAME_TIME")` produces filenames from the image acquisition window rather than CCSDS packet telemetry times.
+
 ## 5.10.4
 
 - FEAT: Register ADM-specific standard dimensions in `libera_dimensions.yml` (viewing-geometry, surface-type, and cloud/wind property bins for ERBE-like and TRMM-like ADM products)
