@@ -2,8 +2,8 @@
 
 ## 5.8.5
 
-- FEAT: WFOV SCI (APID 1040) L1A parsing extracts first/last FSW image acquisition times from qualifying SOP packets and stores them as `first_image_utc_time` / `last_image_utc_time` global attributes (declared in `icie_wfov_sci_l1a.yml`).
-- FEAT: Add `WFOV_FILENAME_TIME` coordinate to the parsed WFOV L1A dataset so `write_libera_data_product(..., time_variable="WFOV_FILENAME_TIME")` produces filenames from the image acquisition window rather than CCSDS packet telemetry times.
+- FEAT: WFOV SCI (APID 1040) L1A parsing decodes FSW (36B) and FPGA (140B) headers from every qualifying SOP packet into the `CAMERA_TIME` dimension, preserving packet stream order.
+- FEAT: Add `CAMERA_TIME` coordinate with per-image metadata (`WFOV_FSW_*`, `WFOV_FPGA_*`, parse-valid flags, and image completeness) so `write_libera_data_product(..., time_variable="CAMERA_TIME")` produces filenames from first/last SOP FSW times in packet order.
 
 ## 5.8.4
 

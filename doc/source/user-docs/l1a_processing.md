@@ -332,25 +332,32 @@ This varies by packet but there is some consistent behavior:
   data) that maps each sample back to its originating packet index in the `PACKET` dimension.
   This enables efficient joins between per-packet metadata and per-sample science data.
 
-### WFOV camera science (APID 1040) filename times
+### WFOV camera science (APID 1040) image metadata
 
 WFOV science packets carry two independent time sources:
 
 - **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every mem-dump
   packet (SOP, MOP, and EOP). This coordinate is used for packet ordering and deduplication.
-- **Image acquisition time**: encoded in the FSW header at the start of each image blob (inside
-  `ICIE__WFOV_DATA`). Only SOP packets with `ICIE__MEM_DUMP_OFFSET_WFOV == 0` contain a valid image
-  start header.
+- **`CAMERA_TIME`**: FSW image acquisition time decoded from the start of each qualifying SOP packet
+  (`ICIE__MEM_DUMP_FLAGS_WFOV == "SOP"` and `ICIE__MEM_DUMP_OFFSET_WFOV == 0`). One row is added per
+  qualifying SOP in **packet stream order** (not re-sorted by acquisition time).
 
-During L1A parsing for APID 1040, libera_utils extracts FSW timestamps from the **first and last**
-qualifying SOP packets only (no JPEG-LS decode or multi-packet blob stitching). The results are stored
-as global attributes `first_image_utc_time` and `last_image_utc_time`, declared in the WFOV SCI
-product definition YAML. A two-element coordinate `WFOV_FILENAME_TIME` is also added to the parsed
-dataset with those same bounds.
+During L1A parsing for APID 1040, libera_utils decodes the FSW header (36 bytes) and FPGA header
+block (140 bytes) from each qualifying SOP packet slice
+(`bytes(ICIE__WFOV_DATA[i])[:ICIE__MEM_DUMP_LENGTH_WFOV[i]]`). No multi-packet stitching is
+performed; the 8-byte FPGA footer at the end of a full image is not available on SOP alone.
 
-When writing the L1A NetCDF product, pass `time_variable="WFOV_FILENAME_TIME"` to
-`write_libera_data_product()` so the filename reflects the image acquisition window. Use
-`PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
+Decoded metadata is stored on the `CAMERA_TIME` dimension:
+
+- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_FSW_PARSE_VALID`, `WFOV_FPGA_PARSE_VALID`,
+  `WFOV_IMAGE_COMPLETE`
+- FSW fields: `WFOV_FSW_*` (20 uppercase field names matching the libera_cam FSW header layout)
+- FPGA fields: `WFOV_FPGA_*` (header, internal footer, and status flags; CRC stored as metadata only)
+
+When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
+`write_libera_data_product()` so the filename reflects the first and last qualifying SOP FSW times in
+packet order (`CAMERA_TIME.values[0]` and `values[-1]`). Use `PACKET_ICIE_TIME` for packet ordering
+and all other non-filename uses.
 
 For example, for `N` packets, the `AXIS_SAMPLE` packet containing Azimuth and Elevation mechanism data
 comes down with 50 Az and El samples per packet (a sample group). It's L1A product has:
