@@ -10,10 +10,16 @@ from space_packet_parser.xtce.validation import validate_xtce
 
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
+from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
+from libera_utils.l1a.wfov_image_time import (
+    FIRST_IMAGE_UTC_TIME_ATTR,
+    LAST_IMAGE_UTC_TIME_ATTR,
+    WFOV_FILENAME_TIME_VARIABLE,
+)
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -86,7 +92,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
             "PACKET_ICIE_TIME",
             8,
         ),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "PACKET_ICIE_TIME", 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, WFOV_FILENAME_TIME_VARIABLE, 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
@@ -171,6 +177,12 @@ def test_process_packets_to_l1a_product(
         assert dataset["ICIE__SW_FP_WP_ST_WP"].dims == ("PACKET", "ARRAY_128")
         assert dataset["ICIE__SW_FP_WP_ST_WP"].shape[1] == 128
 
+    if apid == LiberaApid.icie_wfov_sci:
+        assert FIRST_IMAGE_UTC_TIME_ATTR in dataset.attrs
+        assert LAST_IMAGE_UTC_TIME_ATTR in dataset.attrs
+        assert WFOV_FILENAME_TIME_VARIABLE in dataset.coords
+        assert dataset[WFOV_FILENAME_TIME_VARIABLE].shape == (2,)
+
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
     # Create LiberaDataProductDefinition from product definition file
@@ -209,6 +221,50 @@ def test_process_packets_to_l1a_product(
             )
 
     print("   ✓ NetCDF file verification complete")
+
+
+@pytest.mark.filterwarnings("error")
+def test_wfov_sci_filename_uses_image_time_bounds(
+    test_ditl_camera_with_duplicate_packet,
+    monkeypatch,
+    tmp_path,
+):
+    """WFOV L1A filenames must reflect FSW image times, not CCSDS packet telemetry times."""
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+    apid = LiberaApid.icie_wfov_sci
+    packet_config = get_packet_config(apid)
+
+    with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+        dataset = packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ditl_camera_with_duplicate_packet],
+            apid=apid.value,
+        )
+
+    expected_first = np.datetime64("2028-02-14T04:23:03.681622", "us")
+    expected_last = np.datetime64("2028-02-14T04:23:18.577840", "us")
+
+    assert dataset.attrs[FIRST_IMAGE_UTC_TIME_ATTR] == str(np.datetime_as_string(expected_first, unit="us"))
+    assert dataset.attrs[LAST_IMAGE_UTC_TIME_ATTR] == str(np.datetime_as_string(expected_last, unit="us"))
+
+    packet_first = dataset[packet_config.packet_time_coordinate].values[0]
+    packet_last = dataset[packet_config.packet_time_coordinate].values[-1]
+    assert expected_first != packet_first
+    assert expected_last != packet_last
+
+    product_definition_path = get_l1a_product_definition_path(apid)
+    output_filename = write_libera_data_product(
+        data_product_definition=product_definition_path,
+        data=dataset,
+        output_path=tmp_path,
+        time_variable=WFOV_FILENAME_TIME_VARIABLE,
+        strict=True,
+    )
+    parsed_filename = LiberaDataProductFilename.from_file_path(output_filename.path)
+    filename = parsed_filename.path.name
+    assert "20280214T042303" in filename
+    assert "20280214T042318" in filename
+    assert "20280215T131631" not in filename
+    assert "20280215T131727" not in filename
 
 
 @pytest.mark.filterwarnings("error")
