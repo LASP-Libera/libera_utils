@@ -15,11 +15,7 @@ from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
-from libera_utils.l1a.wfov_image_time import (
-    FIRST_IMAGE_UTC_TIME_ATTR,
-    LAST_IMAGE_UTC_TIME_ATTR,
-    WFOV_FILENAME_TIME_VARIABLE,
-)
+from libera_utils.l1a.wfov_image_metadata import CAMERA_TIME_COORD
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -92,7 +88,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
             "PACKET_ICIE_TIME",
             8,
         ),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, WFOV_FILENAME_TIME_VARIABLE, 8),
+        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, CAMERA_TIME_COORD, 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
@@ -178,10 +174,12 @@ def test_process_packets_to_l1a_product(
         assert dataset["ICIE__SW_FP_WP_ST_WP"].shape[1] == 128
 
     if apid == LiberaApid.icie_wfov_sci:
-        assert FIRST_IMAGE_UTC_TIME_ATTR in dataset.attrs
-        assert LAST_IMAGE_UTC_TIME_ATTR in dataset.attrs
-        assert WFOV_FILENAME_TIME_VARIABLE in dataset.coords
-        assert dataset[WFOV_FILENAME_TIME_VARIABLE].shape == (2,)
+        assert CAMERA_TIME_COORD in dataset.coords
+        assert CAMERA_TIME_COORD in dataset.dims
+        assert "CAMERA_PACKET_INDEX" in dataset.data_vars
+        assert "WFOV_FSW_PARSE_VALID" in dataset.data_vars
+        assert "WFOV_FPGA_PARSE_VALID" in dataset.data_vars
+        assert dataset.sizes[CAMERA_TIME_COORD] > 0
 
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
@@ -243,8 +241,9 @@ def test_wfov_sci_filename_uses_image_time_bounds(
     expected_first = np.datetime64("2028-02-14T04:23:03.681622", "us")
     expected_last = np.datetime64("2028-02-14T04:23:18.577840", "us")
 
-    assert dataset.attrs[FIRST_IMAGE_UTC_TIME_ATTR] == str(np.datetime_as_string(expected_first, unit="us"))
-    assert dataset.attrs[LAST_IMAGE_UTC_TIME_ATTR] == str(np.datetime_as_string(expected_last, unit="us"))
+    camera_times = dataset[CAMERA_TIME_COORD].values
+    np.testing.assert_equal(camera_times[0], expected_first)
+    np.testing.assert_equal(camera_times[-1], expected_last)
 
     packet_first = dataset[packet_config.packet_time_coordinate].values[0]
     packet_last = dataset[packet_config.packet_time_coordinate].values[-1]
@@ -256,7 +255,7 @@ def test_wfov_sci_filename_uses_image_time_bounds(
         data_product_definition=product_definition_path,
         data=dataset,
         output_path=tmp_path,
-        time_variable=WFOV_FILENAME_TIME_VARIABLE,
+        time_variable=CAMERA_TIME_COORD,
         strict=True,
     )
     parsed_filename = LiberaDataProductFilename.from_file_path(output_filename.path)
