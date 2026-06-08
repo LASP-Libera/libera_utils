@@ -22,6 +22,8 @@ class NetcdfEngine(StrEnum):
 
     The netcdf4 engine does not support writing to filelike objects (e.g. S3 objects via cloudpathlib).
     The h5netcdf engine does support writing to filelike objects.
+    The netcdf4 engine is required for use with the Dask distributed client, since
+    the h5netcdf engine does not manage the necessary multiprocessing lock.
     """
 
     netcdf4 = "netcdf4"
@@ -41,6 +43,8 @@ def write_libera_data_product(
     dynamic_product_attributes: dict[str, Any] | None = None,
     strict: bool = True,
     add_archive_path_prefix: bool = False,
+    netcdf_engine: NetcdfEngine | None = None,
+    encoding: dict[str, Any] | None = None,
 ) -> LiberaDataProductFilename:
     """Write a Libera data product NetCDF4 file that conforms to data product definition requirements
 
@@ -70,6 +74,10 @@ def write_libera_data_product(
     add_archive_path_prefix : bool
         Note: do not use this to write to a processing dropbox! L2 devs do not need this kwarg. Default False. If True,
         adds the archive path prefix to the output path when generating the full output path.
+    netcdf_engine : NetcdfEngine
+        NetCDFEngine to use for writing the file. Defaults to the value in the package configuration.
+    encoding : Dict[str, Any] | None
+        Encoding passed to to_netcdf, default None.
 
     Returns
     -------
@@ -117,11 +125,12 @@ def write_libera_data_product(
     else:
         data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
 
-    netcdf4_engine = NetcdfEngine.get_from_config()
-    if netcdf4_engine == NetcdfEngine.netcdf4:
+    if netcdf_engine is None:
+        netcdf_engine = NetcdfEngine.get_from_config()
+    if netcdf_engine == NetcdfEngine.netcdf4:
         logger.info("Using netcdf4 engine to write data product, this will not work for S3 paths")
-        dataset.to_netcdf(data_product_filename.path, engine=NetcdfEngine.netcdf4)
+        dataset.to_netcdf(data_product_filename.path, engine=netcdf_engine, encoding=encoding)
     else:
         with data_product_filename.path.open("w+b") as fh:
-            dataset.to_netcdf(fh, engine=NetcdfEngine.h5netcdf)
+            dataset.to_netcdf(fh, engine=NetcdfEngine.h5netcdf, encoding=encoding)
     return data_product_filename
