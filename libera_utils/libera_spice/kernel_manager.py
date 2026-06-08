@@ -24,6 +24,7 @@ from libera_utils.io.caching import get_local_cache_dir, get_local_short_temp_di
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.spice_utils import (
     NAIF_DE_REGEX,
+    NAIF_EARTH_EXTENDED_PCK_REGEX,
     NAIF_HIGH_PREC_PCK_REGEX,
     NAIF_LSK_REGEX,
     NAIF_PCK_REGEX,
@@ -46,13 +47,32 @@ class KernelManager:
     """
     Manages SPICE kernel loading and lifecycle for Libera geolocation calculations.
 
+    Kernel paths are validated against the SPICE 80-character limit (see ``Notes``). Short
+    temporary workspaces (``temp_dir_base``) help generated kernels stay within that limit.
+
     Parameters
     ----------
     temp_dir_base : str | Path | None
         Base directory for temporary kernel files. If None, uses platform default.
         Can also be controlled via LIBERA_TEMP_DIR environment variable.
-    max_path_length : int
-        Maximum allowed path length when validation is enabled (default: 80 to match SPICE requirements).
+    download_naif_url : str
+        Base URL for NAIF generic kernel downloads.
+    use_test_naif_url : bool
+        When ``True``, use a flat test index layout instead of NAIF subdirectory structure.
+    use_high_precision_earth : bool
+        When ``True`` (default), load the NAIF ITRF93 Earth-orientation bundle: association FK,
+        extended predict binary PCK (``earth_*_predict.bpc``), and ops high-precision binary PCK
+        (``earth_000101_*.bpc``). Files are discovered in ``GENERIC_KERNEL_DIR`` or downloaded from
+        NAIF. When ``False``, only base kernels (leap seconds, DE, text PCK) are loaded; use only
+        when ITRF93 / Libera+JPSS geolocation is not required. The name is historical; this flag
+        gates the full ITRF93 stack, not a precision-only toggle.
+    cache_timeout_days : int
+        Maximum age in days before cached NAIF kernels are refreshed.
+
+    Notes
+    -----
+    The path length limit is fixed by the class attribute ``_max_path_length`` (80) and is not
+    a constructor argument. ``load_static_kernels`` validates paths before furnishing kernels.
     """
 
     _naif_kernel_regexs = [
@@ -61,8 +81,11 @@ class KernelManager:
         NAIF_LSK_REGEX,
     ]
 
+    # NAIF recommends furnishing predict before ops high-precision so overlapping intervals
+    # prefer the newer high-precision file.
     _high_precision_earth_regexs = [
         r"earth_assoc_itrf93\.tf",
+        NAIF_EARTH_EXTENDED_PCK_REGEX,
         NAIF_HIGH_PREC_PCK_REGEX,
     ]
 
@@ -81,7 +104,6 @@ class KernelManager:
         self._static_loaded: bool = False
         self._dynamic_loaded: bool = False
         self._naif_kernels_loaded: bool = False
-        self._high_precision_earth_loaded: bool = False
         self._static_kernels_path: str | AnyPath | None = None
         self._naif_kernels_path: str | AnyPath | None = None
 
@@ -311,7 +333,9 @@ class KernelManager:
         local versions of the needed kernels are found, it will download them from the NAIF server and cache them
         locally.
 
-        These include leap seconds, planetary ephemeris, and Earth orientation data.
+        These include leap seconds, planetary ephemeris, and Earth orientation data. When
+        ``use_high_precision_earth`` is ``True``, ITRF93 kernels (association FK, predict and ops
+        binary PCK) are included; see :class:`KernelManager` parameter documentation.
 
         Raises
         ------
@@ -328,23 +352,25 @@ class KernelManager:
         if cache_time_out is not None:
             naif_cache_timeout = datetime.timedelta(days=cache_time_out)
 
-        needed_naif_kernels = KernelManager._naif_kernel_regexs.copy()
+        kernel_patterns = KernelManager._naif_kernel_regexs.copy()
         if self._use_high_precision_earth:
-            needed_naif_kernels.extend(KernelManager._high_precision_earth_regexs)
+            kernel_patterns.extend(KernelManager._high_precision_earth_regexs)
 
         naif_kernel_paths = []
 
-        # First check the generic kernel directory for local versions of needed NAIF kernels
+        # Resolve each kernel in pattern order so overlapping Earth PCK intervals prefer the
+        # last-furnished file (ops high-precision after predict per NAIF guidance).
         local_kernel_dir = Path(config.get("GENERIC_KERNEL_DIR"))
-        for file in local_kernel_dir.iterdir():
-            if file.is_file() and any(re.match(pattern, file.name) for pattern in needed_naif_kernels):
-                logger.debug(f"Found local NAIF kernel: {file.name}")
-                naif_kernel_paths.append(str(file))
-                # Remove from needed list
-                needed_naif_kernels = [pattern for pattern in needed_naif_kernels if not re.match(pattern, file.name)]
+        local_kernel_files = [f for f in local_kernel_dir.iterdir() if f.is_file()]
 
-        # Download any missing NAIF kernels from the NAIF server using the caching tools in spice_utils
-        for pattern in needed_naif_kernels:
+        for pattern in kernel_patterns:
+            local_match = next((f for f in local_kernel_files if re.match(pattern, f.name)), None)
+            if local_match is not None:
+                logger.debug(f"Found local NAIF kernel: {local_match.name}")
+                naif_kernel_paths.append(str(local_match))
+                continue
+
+            # Download missing NAIF kernels from the NAIF server using the caching tools in spice_utils
             naif_url = self._naif_download_url
             if "tpc" in pattern or "bpc" in pattern:
                 naif_url = naif_url + "pck/"

@@ -106,6 +106,13 @@ def furnish_test_pck(test_pck):
 
 
 @pytest.fixture
+def generic_kernel_dir(monkeypatch, spice_test_data_path):
+    """Set ``GENERIC_KERNEL_DIR`` to bundled NAIF kernels under tests/test_data/spice."""
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    return spice_test_data_path
+
+
+@pytest.fixture
 def furnish_test_itrf93_pck(test_itrf93_pck):
     """Furnishes (temporarily) a testing ITRF93 high precision binary PCK kernel
     Also furnishes (temporarily) a NAIF-produced FK that associates the Earth body with the ITRF93 reference frame.
