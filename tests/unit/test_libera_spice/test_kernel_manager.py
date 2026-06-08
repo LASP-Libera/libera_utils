@@ -8,6 +8,7 @@ to minimize mocking complexity.
 
 import datetime
 import os
+import re
 import warnings
 from pathlib import Path
 from unittest import mock
@@ -17,6 +18,7 @@ import pytest
 from cloudpathlib import S3Path
 
 from libera_utils.io.caching import get_local_short_temp_dir
+from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
 
 
@@ -464,6 +466,28 @@ class TestNaifKernelLogic:
             [call("https://fake-url.com/naif0012.tls", max_cache_age=datetime.timedelta(days=7))]
             * mock_find.call_count,
         )
+
+    @patch("libera_utils.libera_spice.kernel_manager.sp")
+    @patch("libera_utils.config.config.get")
+    def test_load_naif_kernels_preserves_earth_pck_furnishing_order(self, mock_config_get, mock_sp, generic_kernel_dir):
+        """Local NAIF kernels must be furnished in pattern order, not directory iteration order."""
+        km = KernelManager()
+        mock_config_get.return_value = str(generic_kernel_dir)
+
+        km.load_naif_kernels()
+
+        furnished_paths = mock_sp.ext.load_kernel.call_args.args[0]
+        furnished_names = [Path(path).name for path in furnished_paths]
+
+        predict_idx = next(
+            index
+            for index, name in enumerate(furnished_names)
+            if re.search(spice_utils.NAIF_EARTH_EXTENDED_PCK_REGEX, name)
+        )
+        high_prec_idx = next(
+            index for index, name in enumerate(furnished_names) if re.search(spice_utils.NAIF_HIGH_PREC_PCK_REGEX, name)
+        )
+        assert predict_idx < high_prec_idx
 
     @patch("libera_utils.libera_spice.kernel_manager.find_most_recent_naif_kernel")
     def test_naif_test_url_flag(self, mock_find, tmp_path):

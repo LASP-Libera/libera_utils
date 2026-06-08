@@ -12,6 +12,34 @@ from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
 
 
+def _index_of_furnished_kernel_matching(pattern: str) -> int:
+    """Return the SPICE kernel-pool index of the first furnished file matching ``pattern``."""
+    pool = spice_utils.ls_kernels()
+    for index, kernel in enumerate(pool):
+        if re.search(pattern, Path(kernel.file_name).name):
+            return index
+    pool_names = [kernel.file_name for kernel in pool]
+    pytest.fail(f"No furnished kernel matching {pattern!r}. Kernel pool: {pool_names}")
+
+
+def test_earth_orientation_kernel_furnishing_order(generic_kernel_dir):
+    """
+    NAIF guidance: furnish predict before ops high-precision so overlapping intervals
+    prefer the newer high-precision file. SPICE uses the last-loaded kernel when coverage overlaps.
+    """
+    km = KernelManager()
+    km.load_naif_kernels()
+
+    fk_idx = _index_of_furnished_kernel_matching(r"earth_assoc_itrf93\.tf")
+    predict_idx = _index_of_furnished_kernel_matching(spice_utils.NAIF_EARTH_EXTENDED_PCK_REGEX)
+    high_prec_idx = _index_of_furnished_kernel_matching(spice_utils.NAIF_HIGH_PREC_PCK_REGEX)
+
+    assert fk_idx < predict_idx < high_prec_idx, (
+        "Earth orientation kernels must be furnished FK, then predict PCK, then ops high-precision PCK. "
+        f"Pool order: {[kernel.file_name for kernel in spice_utils.ls_kernels()]}"
+    )
+
+
 def test_ensure_known_kernels_are_furnished(spice_test_data_path):
     """Test _ensure_ready internal validation method."""
     km = KernelManager()
@@ -176,6 +204,12 @@ def test_load_naif_kernels_with_real_caching_from_naif(test_data_path):
             assert re.search("cache", kernel_path, re.IGNORECASE)
         else:
             pytest.fail(f"Unexpected kernel loaded: {kernel_path}")
+
+    predict_idx = _index_of_furnished_kernel_matching(spice_utils.NAIF_EARTH_EXTENDED_PCK_REGEX)
+    high_prec_idx = _index_of_furnished_kernel_matching(spice_utils.NAIF_HIGH_PREC_PCK_REGEX)
+    assert predict_idx < high_prec_idx, (
+        "Predict Earth PCK must be furnished before ops high-precision PCK when intervals overlap."
+    )
 
     # Check that another load does not re-download the PCK
     pre_second_load_time = datetime.datetime.now()

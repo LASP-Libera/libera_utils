@@ -352,23 +352,25 @@ class KernelManager:
         if cache_time_out is not None:
             naif_cache_timeout = datetime.timedelta(days=cache_time_out)
 
-        needed_naif_kernels = KernelManager._naif_kernel_regexs.copy()
+        kernel_patterns = KernelManager._naif_kernel_regexs.copy()
         if self._use_high_precision_earth:
-            needed_naif_kernels.extend(KernelManager._high_precision_earth_regexs)
+            kernel_patterns.extend(KernelManager._high_precision_earth_regexs)
 
         naif_kernel_paths = []
 
-        # First check the generic kernel directory for local versions of needed NAIF kernels
+        # Resolve each kernel in pattern order so overlapping Earth PCK intervals prefer the
+        # last-furnished file (ops high-precision after predict per NAIF guidance).
         local_kernel_dir = Path(config.get("GENERIC_KERNEL_DIR"))
-        for file in local_kernel_dir.iterdir():
-            if file.is_file() and any(re.match(pattern, file.name) for pattern in needed_naif_kernels):
-                logger.debug(f"Found local NAIF kernel: {file.name}")
-                naif_kernel_paths.append(str(file))
-                # Remove from needed list
-                needed_naif_kernels = [pattern for pattern in needed_naif_kernels if not re.match(pattern, file.name)]
+        local_kernel_files = [f for f in local_kernel_dir.iterdir() if f.is_file()]
 
-        # Download any missing NAIF kernels from the NAIF server using the caching tools in spice_utils
-        for pattern in needed_naif_kernels:
+        for pattern in kernel_patterns:
+            local_match = next((f for f in local_kernel_files if re.match(pattern, f.name)), None)
+            if local_match is not None:
+                logger.debug(f"Found local NAIF kernel: {local_match.name}")
+                naif_kernel_paths.append(str(local_match))
+                continue
+
+            # Download missing NAIF kernels from the NAIF server using the caching tools in spice_utils
             naif_url = self._naif_download_url
             if "tpc" in pattern or "bpc" in pattern:
                 naif_url = naif_url + "pck/"
