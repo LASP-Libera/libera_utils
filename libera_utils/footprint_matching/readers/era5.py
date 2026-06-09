@@ -110,6 +110,12 @@ class ERA5Reader(GriddedDataReader):
         """
         ds = xr.open_dataset(self._file_path, engine="netcdf4")
         try:
+            # ERA5 files from CDS can use either –180→180 or 0→360 longitude convention
+            # depending on how the download was configured. Normalize to –180→180 so that
+            # the bbox slice (which always uses –180→180) works correctly.
+            if float(ds["longitude"].min()) >= 0:
+                ds = ds.assign_coords(longitude=((ds["longitude"] + 180) % 360) - 180).sortby("longitude")
+
             # ERA5 lats are descending, so slice(max, min) selects the correct range.
             lat_slice = slice(bbox.lat_max, bbox.lat_min)
             lon_slice = slice(bbox.lon_min, bbox.lon_max)
