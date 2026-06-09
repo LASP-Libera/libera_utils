@@ -15,6 +15,8 @@ I/O calls themselves fail with a clear, actionable error message.
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
 
 
@@ -63,8 +65,8 @@ def read_hdf4_lat_lon_grid(
     file_path : str
         Absolute path to the HDF4 (.hdf) file.
     data_sds_name : str
-        Name of the SDS holding the primary data variable. For IGBP this is
-        ``"Land_Cover_Type_1"``; for VIIRS the caller iterates per-variable.
+        Name of the SDS holding the primary data variable (e.g., for VIIRS the
+        caller iterates per-variable).
     lat_sds_name : str
         Name of the latitude SDS (e.g., ``"latitude"``).
     lon_sds_name : str
@@ -119,3 +121,103 @@ def read_hdf4_lat_lon_grid(
         hdf.end()
 
     return data_arr, lats_arr, lons_arr
+
+
+def read_modis_sinusoidal_hdf4(
+    file_path: str,
+    data_sds_name: str,
+    fill_value: float = 255.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Read a MODIS sinusoidal-projection HDF4 tile, computing lat/lon from StructMetadata.
+
+    MODIS gridded products (e.g., MCD12Q1) do not store latitude/longitude as
+    SDS arrays. Instead, the tile geometry is encoded in the HDF-EOS
+    ``StructMetadata.0`` attribute as upper-left/lower-right corners in
+    sinusoidal-projection metres. This function parses those corners, derives
+    pixel-centre coordinates, and converts them to geographic degrees.
+
+    Parameters
+    ----------
+    file_path : str
+        Absolute path to the MODIS HDF4 tile file.
+    data_sds_name : str
+        Name of the SDS to read (e.g., ``"LC_Type1"`` for MCD12Q1 IGBP).
+    fill_value : float, optional
+        Fill/missing sentinel value in the data SDS. Returned as-is; the caller
+        is responsible for masking. Default is 255 (MCD12Q1 standard).
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        ``(data, lats, lons)`` where:
+
+        - ``data`` is float32, shape ``(nrows, ncols)``.
+        - ``lats`` is float64, shape ``(nrows, ncols)`` — pixel-centre latitudes.
+        - ``lons`` is float64, shape ``(nrows, ncols)`` — pixel-centre longitudes.
+
+    Raises
+    ------
+    ImportError
+        If pyhdf is not installed (see :func:`_require_pyhdf`).
+    KeyError
+        If ``data_sds_name`` is not found in the file.
+    ValueError
+        If ``StructMetadata.0`` cannot be parsed (missing tile geometry fields).
+
+    Notes
+    -----
+    Sinusoidal projection conversion:
+
+    .. code-block:: text
+
+        lat = Y / R
+        lon = X / (R * cos(lat))
+
+    where ``R`` is the sphere radius from ``ProjParams`` (default 6 371 007.181 m,
+    the MODIS standard). Both ``lats`` and ``lons`` are returned as 2-D arrays so
+    the caller can perform pixel-level bounding-box tests without special-casing the
+    non-rectangular sinusoidal footprint.
+    """
+    sd = _require_pyhdf()
+    hdf = sd.SD(str(file_path), sd.SDC.READ)
+    try:
+        data_arr = np.array(hdf.select(data_sds_name).get(), dtype=np.float32)
+        struct_meta: str = hdf.attributes().get("StructMetadata.0", "")
+    finally:
+        hdf.end()
+
+    # --- parse tile geometry from HDF-EOS StructMetadata ---
+    def _parse(pattern: str, text: str) -> re.Match:  # type: ignore[type-arg]
+        m = re.search(pattern, text)
+        if m is None:
+            raise ValueError(f"Cannot parse '{pattern}' from StructMetadata.0 in {file_path}")
+        return m
+
+    xdim = int(_parse(r"\bXDim\s*=\s*(\d+)", struct_meta).group(1))
+    ydim = int(_parse(r"\bYDim\s*=\s*(\d+)", struct_meta).group(1))
+    ul = _parse(r"UpperLeftPointMtrs\s*=\s*\(([^,]+),([^)]+)\)", struct_meta)
+    lr = _parse(r"LowerRightMtrs\s*=\s*\(([^,]+),([^)]+)\)", struct_meta)
+    x_ul, y_ul = float(ul.group(1)), float(ul.group(2))
+    x_lr, y_lr = float(lr.group(1)), float(lr.group(2))
+
+    r_match = re.search(r"ProjParams\s*=\s*\(\s*([^,)]+)", struct_meta)
+    sphere_radius: float = (
+        float(r_match.group(1))
+        if r_match and float(r_match.group(1)) > 0
+        else 6371007.181
+    )
+
+    # --- pixel-centre coordinates in sinusoidal metres ---
+    xs = x_ul + (np.arange(xdim) + 0.5) * ((x_lr - x_ul) / xdim)  # (xdim,)
+    ys = y_ul + (np.arange(ydim) + 0.5) * ((y_lr - y_ul) / ydim)  # (ydim,)
+
+    # --- sinusoidal → geographic (degrees) ---
+    lat_rad = ys / sphere_radius  # (ydim,)
+    # Broadcast to 2-D (ydim, xdim) for pixel-level lon computation
+    lats_2d = np.degrees(np.broadcast_to(lat_rad[:, np.newaxis], (ydim, xdim)))
+    lons_2d = np.degrees(
+        np.broadcast_to(xs[np.newaxis, :], (ydim, xdim))
+        / (sphere_radius * np.cos(lat_rad[:, np.newaxis]))
+    )
+
+    return data_arr, np.array(lats_2d, dtype=np.float64), np.array(lons_2d, dtype=np.float64)

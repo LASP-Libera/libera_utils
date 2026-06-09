@@ -14,13 +14,13 @@ References
 Product page: https://lpdaac.usgs.gov/products/mcd12q1v061/
 User guide:   https://lpdaac.usgs.gov/documents/1409/MCD12_User_Guide_V61.pdf
 LP DAAC Access: https://appeears.earthdatacloud.nasa.gov/ (EarthData login required)
-SDS naming:   "Land_Cover_Type_1" for IGBP classification scheme
+SDS naming:   "LC_Type1" for IGBP classification scheme
 """
 from __future__ import annotations
 
 import numpy as np
 
-from libera_utils.footprint_matching.readers._hdf4_io import read_hdf4_lat_lon_grid
+from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
 
@@ -38,17 +38,11 @@ _N_IGBP_CATEGORIES: int = 20
 class IGBPReader(GriddedDataReader):
     """Read IGBP land cover classification from a MODIS MCD12Q1 HDF4 tile file.
 
-    The MCD12Q1 product stores IGBP land cover as ``Land_Cover_Type_1`` (uint8)
-    alongside lat/lon grids named ``latitude`` and ``longitude`` in sinusoidal
-    projected HDF4 files. This reader loads the full tile, converts fill values,
-    and returns the subset that falls within the requested bounding box.
-
-    Assumption
-    ----------
-    The HDF4 file contains ``latitude`` and ``longitude`` SDS arrays that are
-    already in geographic coordinates (degrees). This is the standard layout for
-    MCD12Q1 061 tiles as distributed by LP DAAC. If a future product version
-    changes the coordinate representation, this reader must be updated.
+    The MCD12Q1 product stores IGBP land cover as ``LC_Type1`` (uint8) in
+    sinusoidal-projected HDF4 tiles. Geographic coordinates are not stored as SDS
+    arrays; they are computed from the HDF-EOS ``StructMetadata.0`` tile-corner
+    metadata via :func:`read_modis_sinusoidal_hdf4`. This reader loads the full
+    tile and returns the subset that falls within the requested bounding box.
 
     Class Attributes
     ----------------
@@ -84,7 +78,7 @@ class IGBPReader(GriddedDataReader):
     def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Load IGBP land cover pixels within ``bbox``.
 
-        Opens the MCD12Q1 HDF4 file, reads the full ``Land_Cover_Type_1``,
+        Opens the MCD12Q1 HDF4 file, reads the full ``LC_Type1``,
         ``latitude``, and ``longitude`` SDS arrays, then returns the subset of
         pixels whose coordinates fall within the bounding box.
 
@@ -101,8 +95,8 @@ class IGBPReader(GriddedDataReader):
             - ``data`` is float32 shape ``(n_lat, n_lon)``. Fill pixels (original
               value 255) are preserved as-is; the PSF engine is responsible for
               masking.
-            - ``lats`` is float64 shape ``(n_lat,)``.
-            - ``lons`` is float64 shape ``(n_lon,)``.
+            - ``lats`` is float64 shape ``(n_lat, n_lon)`` — 2-D pixel-centre latitudes.
+            - ``lons`` is float64 shape ``(n_lat, n_lon)`` — 2-D pixel-centre longitudes.
 
         Notes
         -----
@@ -111,20 +105,16 @@ class IGBPReader(GriddedDataReader):
         HDF4 tile), this is acceptable because the TileManager caches the GridTile
         and does not re-read the file for subsequent overlapping footprints.
         """
-        data_full, lats_full, lons_full = read_hdf4_lat_lon_grid(
+        data_full, lats_full, lons_full = read_modis_sinusoidal_hdf4(
             file_path=str(self._file_path),
-            data_sds_name="Land_Cover_Type_1",
-            lat_sds_name="latitude",
-            lon_sds_name="longitude",
+            data_sds_name="LC_Type1",
             fill_value=_IGBP_FILL_VALUE,
         )
 
-        # Determine which rows/columns fall within the bounding box.
-        # lats_full and lons_full are 2-D arrays (pixel-level coordinates from
-        # MODIS sinusoidal projection), so we construct 1-D index masks.
-        # For MODIS the lat/lon grids are delivered as 2D; we compute bounding
-        # box membership on the per-pixel level and then extract the rectangular
-        # subregion that covers all matching pixels.
+        # lats_full and lons_full are 2-D pixel-centre coordinate grids derived
+        # from the sinusoidal projection metadata (MCD12Q1 has no lat/lon SDS).
+        # Compute bounding-box membership on the per-pixel level and extract the
+        # rectangular subregion that covers all matching pixels.
         lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
         lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
 
