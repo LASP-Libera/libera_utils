@@ -1,0 +1,311 @@
+# =============================================================================
+# FMATCH-CAM Data Product Definition
+# =============================================================================
+# FMATCH-CAM ("Footprint Match - Libera Camera Only, radiometer time") is the
+# lowest-latency footprint-matching product. It is an SSF-style, per-footprint
+# record: every footprint the radiometer observed becomes one entry along the
+# RADIOMETER_TIME dimension, and that footprint is *identified by its time*.
+#
+# WHY this product exists:
+#   For every radiometer footprint we need to know "what was the radiometer
+#   looking at?" - surface type, sea ice, winds, clouds, etc. Those geophysical
+#   properties are measured by other (finer-resolution) instruments and data
+#   sources. Footprint matching weights each fine-resolution pixel by the
+#   instrument Point Spread Function (PSF) and collapses them to a SINGLE value
+#   per footprint. FMATCH-CAM is the shared intermediate consumed by Scene ID
+#   and by the Camera Cloud Fraction algorithm.
+#   See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4, §2.3.2
+#   Modeled on the CERES Single Scanner Footprint (SSF) product:
+#   https://ceres.larc.nasa.gov/data/#ssf-level-2
+#
+# HOW this file is used:
+#   Loaded and validated by LiberaDataProductDefinition.from_yaml() in
+#   libera_utils/io/product_definition.py. Global attributes (Format,
+#   Conventions, Project*, Platform*, algorithm_version, ...) are injected
+#   automatically from libera_utils/data/required_product_attributes.yml, so we
+#   only list ProductID plus the per-product dynamic attributes here.
+#
+# CONVENTIONS (must match the schema engine, or conformance checking fails):
+#   - Every dimension name used below MUST be declared in
+#     libera_utils/data/libera_dimensions.yml. We reuse the existing dynamic
+#     RADIOMETER_TIME dimension - one element per footprint - so no new
+#     dimension is added.
+#   - dtypes for the externally-aggregated variables are copied VERBATIM from
+#     each reader's VariableSpec.dtype (libera_utils/footprint_matching/readers/)
+#     so the written data matches the schema exactly and avoids dtype-mismatch
+#     errors during enforce/check conformance.
+# =============================================================================
+
+attributes:
+  # ProductID MUST be a valid DataProductIdentifier (constants.py). It is also
+  # the operational-mode string for this product (OperationalMode.CAM.value).
+  ProductID: FMATCH-CAM
+  # Dynamic attributes (null here) are REQUIRED but supplied at write time.
+  algorithm_version: null # semantic version of the FMATCH algorithm that produced the file
+  date_created: null # ISO-8601 UTC timestamp of file creation
+  input_files: null # provenance: the L1B + ancillary input files used
+
+coordinates:
+  # The per-footprint identifier. Each footprint is uniquely identified by the
+  # radiometer observation time, so RADIOMETER_TIME is both the dimension and the
+  # coordinate (same pattern as the *_JPSS_TIME coordinates in jpss_sc_pos_l1a.yml).
+  # This is the `time_variable` passed to write_libera_data_product() for filename
+  # start/end time generation.
+  RADIOMETER_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Radiometer footprint observation time
+    encoding:
+      # Stored on disk as int64 nanoseconds since the Libera/JPSS epoch (CF time).
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  # ---------------------------------------------------------------------------
+  # (a) Geolocation inputs (from L1B Daily; design §2.3.2 lists lat, lon, sza,
+  #     vza, raa, alt). These describe WHERE the footprint is and the Sun-surface-
+  #     sensor geometry. They are inputs (not PSF-aggregated ancillary data).
+  # ---------------------------------------------------------------------------
+  latitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+      valid_range: [-90, 90]
+  longitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+      valid_range: [-180, 180]
+  altitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Spacecraft altitude above the reference ellipsoid at the time of the footprint.
+      long_name: Spacecraft altitude above reference ellipsoid
+      units: meters
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Angle between the local zenith and the direction to the Sun (SZA).
+      long_name: Solar zenith angle
+      units: degrees
+      valid_range: [0, 180]
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Angle between the local zenith and the direction to the sensor (VZA).
+      long_name: Viewing zenith angle
+      units: degrees
+      valid_range: [0, 180]
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Azimuth angle between the Sun and the sensor as seen from the footprint (RAA).
+      long_name: Relative azimuth angle between Sun and sensor
+      units: degrees
+      valid_range: [0, 360]
+
+  # ---------------------------------------------------------------------------
+  # (b) Derived viewing geometry. These are COMPUTED from the angles above to
+  #     characterize the Sun-surface-sensor scattering geometry (CERES/SSF
+  #     heritage). They are stored on the product so downstream consumers
+  #     (Scene ID, ADM binning) do not have to recompute them.
+  #     The actual math lives in
+  #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
+  # ---------------------------------------------------------------------------
+  scattering_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Angle between the incoming solar beam and the direction to the sensor.
+      # Derived from SZA, VZA, RAA:
+      #   cos(Theta) = -cos(SZA)cos(VZA) + sin(SZA)sin(VZA)cos(RAA)
+      long_name: Scattering angle (Sun-surface-sensor)
+      units: degrees
+      valid_range: [0, 180]
+  sunglint_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Angle between the sensor view direction and the specular (mirror)
+      # reflection of the solar beam. Small values flag potential sun glint.
+      long_name: Sun glint angle
+      units: degrees
+      valid_range: [0, 180]
+
+  # ---------------------------------------------------------------------------
+  # (c) PSF-aggregated external variables. Each is collapsed to ONE value per
+  #     footprint by the aggregation engine. Variable NAMES and DTYPES are taken
+  #     verbatim from the readers' VariableSpec definitions so the schema and the
+  #     aggregation output agree. The aggregation strategy is noted in comments
+  #     for reference only; it is configured on the reader side, not here.
+  #     Readers: libera_utils/footprint_matching/readers/{igbp,nsidc,era5,viirs}.py
+  # ---------------------------------------------------------------------------
+  surface_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # IGBP land cover classification. Aggregation: weighted_mode.
+      # https://climatedataguide.ucar.edu/climate-data/ceres-igbp-land-classification
+      long_name: IGBP surface type classification
+      valid_range: [1, 20]
+  sea_ice_concentration:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # NSIDC NISE sea ice concentration. Aggregation: weighted_mean.
+      # https://nsidc.org/data/nise/versions/5
+      long_name: Sea ice concentration
+      units: percent
+      valid_range: [0, 100]
+  wind_u10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # ERA5 10 m eastward wind component. Aggregation: weighted_mean.
+      long_name: Eastward wind component at 10 m
+      units: m/s
+  wind_v10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # ERA5 10 m northward wind component. Aggregation: weighted_mean.
+      long_name: Northward wind component at 10 m
+      units: m/s
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # VIIRS cloud fraction. Aggregation: weighted_mean.
+      long_name: Cloud fraction
+      units: "1"
+      valid_range: [0, 1]
+  cloud_optical_thickness:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # VIIRS cloud optical thickness. Aggregation: weighted_log_mean (geometric mean).
+      long_name: Cloud optical thickness
+      units: "1"
+  cloud_top_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # VIIRS cloud top pressure. Aggregation: weighted_mean.
+      long_name: Cloud top pressure
+      units: hPa
+  # VIIRS surface BRDF kernel weights (reader key: viirs_brdf). The
+  # Ross-Thick/Li-Sparse model decomposes surface reflectance into isotropic
+  # (fiso), volumetric (fvol), and geometric (fgeo) kernel weights, provided per
+  # spectral band (shortwave/vis/nir). All aggregation: weighted_mean.
+  # https://www.earthdata.nasa.gov/data/catalog/lpcloud-vj143c1-002
+  brdf_shortwave_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF isotropic kernel weight
+      units: "1"
+  brdf_shortwave_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF volumetric kernel weight
+      units: "1"
+  brdf_shortwave_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Shortwave BRDF geometric kernel weight
+      units: "1"
+  brdf_vis_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF isotropic kernel weight
+      units: "1"
+  brdf_vis_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF volumetric kernel weight
+      units: "1"
+  brdf_vis_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Visible BRDF geometric kernel weight
+      units: "1"
+  brdf_nir_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF isotropic kernel weight
+      units: "1"
+  brdf_nir_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF volumetric kernel weight
+      units: "1"
+  brdf_nir_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Near-infrared BRDF geometric kernel weight
+      units: "1"
+
+  # ---------------------------------------------------------------------------
+  # (d) Coverage / QA. The design (§1.4) requires coverage statistics and QA
+  #     flags alongside the aggregated values so downstream algorithms know the
+  #     provenance/quality of each footprint (CERES partial-coverage convention:
+  #     accept >95% PSF energy, flag 75-95%, discard <75%).
+  # ---------------------------------------------------------------------------
+  psf_coverage_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of PSF energy covered by valid ancillary data
+      units: "1"
+      valid_range: [0, 1]
+  q_flags:
+    dtype: int64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Quality flags (bitwise)
+      valid_range: [0, 2147483647]
+
+  # ---------------------------------------------------------------------------
+  # (e) PLACEHOLDERS - additional FMATCH-CAM external dependencies that do not
+  #     yet have an implemented GriddedDataReader. These are intentionally left
+  #     COMMENTED OUT so the file still validates today; uncomment each one (and
+  #     match its dtype to the new reader's VariableSpec) when the reader lands.
+  #     FMATCH-CAM deps per data_products.md still lacking a reader: VIIRS AOD,
+  #     NSIDC snow cover. (VIIRS surface BRDF is already implemented above via the
+  #     viirs_brdf reader. ISCCP is intentionally NOT included: all cloud
+  #     information for FMATCH-CAM comes from VIIRS, so no ISCCP reader is planned.)
+  #
+  # TODO[LIBSDC-785]: enable when the VIIRS AOD reader is implemented
+  # aerosol_optical_depth:
+  #   dtype: float32
+  #   dimensions: ["RADIOMETER_TIME"]
+  #   attributes:
+  #     long_name: Aerosol optical depth
+  #     units: "1"
+  #
+  # TODO[LIBSDC-785]: enable when the NSIDC snow-cover band is wired through
+  # snow_cover:
+  #   dtype: float32
+  #   dimensions: ["RADIOMETER_TIME"]
+  #   attributes:
+  #     long_name: Snow cover fraction
+  #     units: percent
+  #     valid_range: [0, 100]
