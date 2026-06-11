@@ -10,9 +10,10 @@ Run from the repo root (or any directory on the Python path)::
 
     python -m libera_utils.footprint_matching.verify_readers \\
         --igbp   /data/MCD12Q1.A2023001.h09v05.061.hdf \\
-        --nsidc  /data/ims2023001_24km_v1.3.asc.gz \\
+        --nise   /data/NISE_SSMISF18_20260115.HDFEOS \\
         --era5   /data/era5_wind_20230101.nc \\
-        --viirs  /data/VIIRS_CLDPX_20230101.hdf \\
+        --viirs  /data/CLDPROP_D3_VIIRS_NOAA20.A2026147.011.nc \\
+        --brdf   /data/VJ143C1.A2026153.002.h5 \\
         --lat-center 45.0 --lon-center -90.0 \\
         --output-dir ./reader_verification
 
@@ -21,9 +22,10 @@ Any subset of reader arguments may be supplied; omitted readers are skipped.
 Arguments
 ---------
 --igbp PATH      MCD12Q1 HDF4 tile (download: https://appeears.earthdatacloud.nasa.gov/)
---nsidc PATH     IMS ASCII raster, plain or gzip (download: https://noaadata.apps.nsidc.org/NOAA/G02156/24km/)
+--nise PATH      NISE HDF-EOS4 file (download: https://n5eil01u.ecs.nsidc.org/NISE/)
 --era5 PATH      ERA5 NetCDF4 with u10/v10 (download: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels)
---viirs PATH     VIIRS CLDPX HDF4 granule (download: https://www.avl.class.noaa.gov/saa/products/welcome)
+--viirs PATH     CLDPROP_D3 VIIRS NetCDF4 (download: https://www.ncei.noaa.gov/data/cloud-properties-viirs/access/)
+--brdf PATH      VJ143C1 VIIRS BRDF HDF5 (download: https://e4ftl01.cr.usgs.gov/VIIRS/VJ143C1.002/)
 --lat-center     Latitude of the tile center in degrees (default: 45.0)
 --lon-center     Longitude of the tile center in degrees (default: -90.0)
 --output-dir     Directory for PNG output (default: current directory)
@@ -70,16 +72,6 @@ _IGBP_CLASS_NAMES = {
     17: "Water Body (alt.)",
     18: "Wooded Tundra",
     19: "Mixed Tundra",
-}
-
-# IMS sea ice category names
-# Source: https://nsidc.org/sites/default/files/g02156-v001-userguide_1_1.pdf
-_NSIDC_CLASS_NAMES = {
-    0: "Outside Domain",
-    1: "Open Ocean",
-    2: "Sea Ice",
-    3: "Snow-Covered Land",
-    4: "Ice-Free Land",
 }
 
 
@@ -163,11 +155,7 @@ def _print_var_stats(arr: np.ndarray, name: str) -> None:
         for val in unique_vals:
             count = int(np.sum(finite == val))
             pct = 100.0 * count / total
-            label = (
-                _IGBP_CLASS_NAMES.get(int(val))
-                or _NSIDC_CLASS_NAMES.get(int(val))
-                or ""
-            )
+            label = _IGBP_CLASS_NAMES.get(int(val)) or ""
             label_str = f"  {label}" if label else ""
             print(f"      {int(val):3d}{label_str:<35s}  {count:6,}  ({pct:5.1f}%)")
 
@@ -249,31 +237,18 @@ def _make_igbp_figure(tile: GridTile, out_path: Path) -> None:
     print(f"  [igbp] Saved: {out_path}")
 
 
-def _make_nsidc_figure(tile: GridTile, out_path: Path) -> None:
-    """Save a sea ice category map for NSIDC IMS data."""
+def _make_nise_figure(tile: GridTile, out_path: Path) -> None:
+    """Save a sea ice concentration map for NISE data."""
     import matplotlib.pyplot as plt
-    from matplotlib.colors import BoundaryNorm, ListedColormap
-    from matplotlib.patches import Patch
 
     data = tile.data.astype(float)
-
-    nsidc_colors = [
-        "#2C3E50",  # 0 Outside domain — dark blue-gray
-        "#5DADE2",  # 1 Open ocean — sky blue
-        "#F0F4F8",  # 2 Sea ice — near white
-        "#7F8C8D",  # 3 Snow-covered land — cool gray
-        "#27AE60",  # 4 Ice-free land — green
-    ]
-    cmap = ListedColormap(nsidc_colors)
-    bounds = np.arange(-0.5, 5.5, 1)
-    norm = BoundaryNorm(bounds, cmap.N)
-
     bbox = tile.bounds
     fig, ax = plt.subplots(figsize=(8, 7))
-    ax.imshow(
+    im = ax.imshow(
         data,
-        cmap=cmap,
-        norm=norm,
+        cmap="Blues",
+        vmin=0.0,
+        vmax=1.0,
         extent=[bbox.lon_min, bbox.lon_max, bbox.lat_min, bbox.lat_max],
         origin="lower",
         aspect="auto",
@@ -281,21 +256,16 @@ def _make_nsidc_figure(tile: GridTile, out_path: Path) -> None:
     ax.set_xlabel("Longitude (°)")
     ax.set_ylabel("Latitude (°)")
     ax.set_title(
-        f"NSIDC IMS Sea Ice / Snow\n"
+        f"NISE Sea Ice Concentration\n"
         f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
         f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
         f"({tile.data.shape[1]}×{tile.data.shape[0]} px)"
     )
-    legend_patches = [
-        Patch(color=nsidc_colors[v], label=f"{v}: {_NSIDC_CLASS_NAMES[v]}")
-        for v in range(5)
-    ]
-    ax.legend(handles=legend_patches, bbox_to_anchor=(1.02, 1), loc="upper left",
-              fontsize=9, title="IMS Category", framealpha=0.9)
+    plt.colorbar(im, ax=ax, shrink=0.85, pad=0.02, label="Concentration (0–1)")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  [nsidc] Saved: {out_path}")
+    print(f"  [nise] Saved: {out_path}")
 
 
 def _make_era5_figure(tile: GridTile, out_path: Path) -> None:
@@ -329,8 +299,7 @@ def _make_era5_figure(tile: GridTile, out_path: Path) -> None:
     ]
 
     for ax, arr, title, cmap, vmin, vmax in panels:
-        kw = dict(extent=extent, origin="lower", aspect="auto",
-                  cmap=cmap)
+        kw = dict(extent=extent, origin="lower", aspect="auto", cmap=cmap)
         if vmin is not None:
             kw["vmin"] = vmin
         if vmax is not None:
@@ -353,7 +322,7 @@ def _make_era5_figure(tile: GridTile, out_path: Path) -> None:
     print(f"  [era5] Saved: {out_path}")
 
 
-def _make_viirs_figure(tile: GridTile, out_path: Path) -> None:
+def _make_viirs_cloud_figure(tile: GridTile, out_path: Path) -> None:
     """Save a 3-panel VIIRS cloud property figure."""
     import matplotlib.pyplot as plt
 
@@ -371,7 +340,7 @@ def _make_viirs_figure(tile: GridTile, out_path: Path) -> None:
 
     fig, axes = plt.subplots(1, 3, figsize=(14, 5))
     fig.suptitle(
-        f"VIIRS Cloud Properties (CLDPX)\n"
+        f"VIIRS Cloud Properties (CLDPROP_D3)\n"
         f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
         f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
         f"({tile.data.shape[2]}×{tile.data.shape[1]} px)",
@@ -379,11 +348,7 @@ def _make_viirs_figure(tile: GridTile, out_path: Path) -> None:
     )
 
     for i, (ax, label, cmap) in enumerate(zip(axes, labels, cmaps)):
-        arr = tile.data[i]
-        # Replace VIIRS fill (-999) with NaN for display
-        arr_disp = arr.copy().astype(float)
-        arr_disp[arr_disp < -900] = np.nan
-
+        arr_disp = tile.data[i].copy().astype(float)
         im = ax.imshow(
             arr_disp,
             extent=extent,
@@ -399,7 +364,53 @@ def _make_viirs_figure(tile: GridTile, out_path: Path) -> None:
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"  [viirs] Saved: {out_path}")
+    print(f"  [viirs_cloud] Saved: {out_path}")
+
+
+def _make_brdf_figure(tile: GridTile, out_path: Path) -> None:
+    """Save a 3×3 panel figure of VIIRS BRDF kernel parameters."""
+    import matplotlib.pyplot as plt
+
+    bands = ["shortwave", "vis", "nir"]
+    params = ["fiso", "fvol", "fgeo"]
+    param_labels = {
+        "fiso": "Isotropic (f_iso)",
+        "fvol": "Volume (f_vol)",
+        "fgeo": "Geometric (f_geo)",
+    }
+
+    bbox = tile.bounds
+    lons = tile.lons
+    lats = tile.lats
+    extent = [lons.min(), lons.max(), lats.min(), lats.max()]
+
+    fig, axes = plt.subplots(3, 3, figsize=(13, 10))
+    fig.suptitle(
+        f"VIIRS BRDF Kernel Parameters (VJ143C1)\n"
+        f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
+        f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]",
+        fontsize=12,
+    )
+
+    from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+    var_names = [v.name for v in ReaderRegistry.get("viirs_brdf").VARIABLES]
+
+    for row_idx, param in enumerate(params):
+        for col_idx, band in enumerate(bands):
+            ax = axes[row_idx, col_idx]
+            var_name = f"brdf_{band}_{param}"
+            var_idx = var_names.index(var_name)
+            arr = tile.data[var_idx].copy().astype(float)
+            im = ax.imshow(arr, extent=extent, origin="lower", aspect="auto", cmap="viridis")
+            ax.set_title(f"{band} / {param_labels[param]}", fontsize=8)
+            ax.set_xlabel("Lon (°)", fontsize=6)
+            ax.set_ylabel("Lat (°)", fontsize=6)
+            plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [viirs_brdf] Saved: {out_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +439,6 @@ def _run_reader(
         print(f"  ERROR: reader '{reader_key}' not found in registry.")
         return False
 
-    # Construct reader (NSIDCReader uses real 1024×1024 grid for real files).
     reader: GriddedDataReader = reader_cls(file_path)
 
     # Convert the center point to a TileKey.
@@ -440,7 +450,6 @@ def _run_reader(
     try:
         tile = reader.load_tile(key)
     except ImportError as exc:
-        # pyhdf is not installed in this environment
         print(f"  SKIPPED — library not available:\n    {exc}")
         return False
     except Exception as exc:  # noqa: BLE001
@@ -464,9 +473,10 @@ def _run_reader(
         out_file = output_dir / f"{reader_key}_tile_verification.png"
         dispatch = {
             "igbp": _make_igbp_figure,
-            "nsidc": _make_nsidc_figure,
+            "nise": _make_nise_figure,
             "era5": _make_era5_figure,
-            "viirs_l2l3": _make_viirs_figure,
+            "viirs_cloud": _make_viirs_cloud_figure,
+            "viirs_brdf": _make_brdf_figure,
         }
         if reader_key in dispatch:
             dispatch[reader_key](tile, out_file)
@@ -491,12 +501,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--igbp", type=Path, metavar="FILE",
                         help="MODIS MCD12Q1 HDF4 file")
-    parser.add_argument("--nsidc", type=Path, metavar="FILE",
-                        help="NSIDC IMS ASCII raster (.asc or .asc.gz)")
+    parser.add_argument("--nise", type=Path, metavar="FILE",
+                        help="NISE HDF-EOS4 file (*.HDFEOS)")
     parser.add_argument("--era5", type=Path, metavar="FILE",
                         help="ERA5 NetCDF4 file with u10/v10 variables")
     parser.add_argument("--viirs", type=Path, metavar="FILE",
-                        help="VIIRS CLDPX HDF4 granule")
+                        help="VIIRS CLDPROP_D3 NetCDF4 file")
+    parser.add_argument("--brdf", type=Path, metavar="FILE",
+                        help="VIIRS VJ143C1 BRDF HDF5 file")
     parser.add_argument("--lat-center", type=float, default=45.0, metavar="DEG",
                         help="Tile center latitude in degrees (default: 45.0)")
     parser.add_argument("--lon-center", type=float, default=-90.0, metavar="DEG",
@@ -515,15 +527,16 @@ def main(argv: list[str] | None = None) -> int:
     # Map CLI argument names → registry keys
     requested: dict[str, Path | None] = {
         "igbp": args.igbp,
-        "nsidc": args.nsidc,
+        "nise": args.nise,
         "era5": args.era5,
-        "viirs_l2l3": args.viirs,
+        "viirs_cloud": args.viirs,
+        "viirs_brdf": args.brdf,
     }
 
     if not any(requested.values()):
         parser.error(
             "No reader files supplied. Provide at least one of: "
-            "--igbp, --nsidc, --era5, --viirs"
+            "--igbp, --nise, --era5, --viirs, --brdf"
         )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)

@@ -14,7 +14,6 @@ import pytest
 from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG, GriddedDataReader
 from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey, VariableSpec
 
-
 # ---------------------------------------------------------------------------
 # Minimal concrete reader used only in tests
 # ---------------------------------------------------------------------------
