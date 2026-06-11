@@ -169,6 +169,7 @@ class TestDataProductIdentifier:
             # Ancillary Products
             "anc_adm",
             "anc_scene_id",
+            "anc_fmatch_cam",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names

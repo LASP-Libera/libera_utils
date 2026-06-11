@@ -200,6 +200,12 @@ class DataProductIdentifier(StrEnum):
     # TODO[LIBSDC-544]: Add in additional expected products
     anc_adm = ("ADM", DataLevel.ANC)
     anc_scene_id = ("SCENE-ID", DataLevel.ANC)
+    # Footprint Matching products (SSF-style per-footprint intermediates)
+    # FMATCH is a shared intermediate consumed by Scene ID and the Camera Cloud Fraction algorithm
+    # (see Footprint Matching design doc §1.4), so it is treated as an ancillary (ANC) product rather
+    # than a final L2 science product. The string value MUST stay identical to OperationalMode.CAM.value
+    # in libera_utils/footprint_matching/types.py because the operational mode *is* the product ID.
+    anc_fmatch_cam = ("FMATCH-CAM", DataLevel.ANC)
 
     @property
     def product_name(self) -> str:
