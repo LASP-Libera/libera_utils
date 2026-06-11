@@ -132,3 +132,76 @@ options:
                         Block command line until step function completes (may be a long time)
   -v, --verbose         Prints out the result of the step_function_trigger run
 ```
+
+### Sub-Command `s3-utils`
+
+Utilities for working with the SDC's S3 archives. The `--profile` option (or default boto authentication, e.g.
+`AWS_PROFILE`) selects the AWS credentials used for all sub-commands. It must be supplied _before_ the sub-command,
+e.g. `libera-utils s3-utils --profile my-profile put ...`.
+
+```shell
+usage: libera-utils s3-utils [-h] [--profile PROFILE] {put,ls,cp} ...
+
+options:
+  -h, --help         show this help message and exit
+  --profile PROFILE  AWS profile name to use when accessing S3. If not set, the default profile is used.
+```
+
+#### Sub-Command `s3-utils put`
+
+Stages one or more Libera data product files for ingest into the SDC. This does **not** write directly to an archive
+bucket. Instead, each file is uploaded to the SDC Ingest Dropbox bucket and a single `NewFilesAvailable` event is
+emitted to the SDC event bus. The SDC Data Ingester service then archives the files and creates the associated file
+metadata and data availability records — exactly as it does for files produced by automated processing steps. The
+command returns once the files are staged and the event is emitted; the ingest itself runs asynchronously, so it may
+take a few minutes for files to appear in their archive bucket.
+
+Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
+
+```shell
+usage: libera-utils s3-utils put [-h] file_path [file_path ...]
+
+positional arguments:
+  file_path   Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file.
+
+options:
+  -h, --help  show this help message and exit
+```
+
+Example usage:
+
+```shell
+libera-utils s3-utils --profile my-profile put \
+  LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc \
+  LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc
+```
+
+#### Sub-Command `s3-utils ls`
+
+Lists the files currently in the archive bucket for a given data product.
+
+```shell
+usage: libera-utils s3-utils ls [-h] product_name
+
+positional arguments:
+  product_name  The data product name string. Used to determine the S3 archive bucket name.
+
+options:
+  -h, --help    show this help message and exit
+```
+
+#### Sub-Command `s3-utils cp`
+
+Copies an object between local and S3 locations (in either direction).
+
+```shell
+usage: libera-utils s3-utils cp [-h] [--delete] source_path dest_path
+
+positional arguments:
+  source_path  The current path to the object to retrieve
+  dest_path    Destination path to save the object to
+
+options:
+  -h, --help   show this help message and exit
+  --delete     If set, deletes files copied from source
+```

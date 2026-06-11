@@ -1,6 +1,7 @@
-"""File for testing ECR upload module"""
+"""Tests for the s3_utilities module (s3-utils CLI handlers and manual data ingest workflow)"""
 
 import argparse
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,87 +15,150 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io import filenaming
 
 
-@mock_aws
-def test_find_bucket_ambiguity():
+class TestManualIngestPut:
+    """Tests for the manual data ingest ``s3-utils put`` CLI handler and its workflow functions.
+
+    The ``put`` command stages Libera data product files into the SDC Ingest Dropbox bucket and emits a single
+    NewFilesAvailable event to the SDC event bus. These tests mock all AWS interactions with moto and do not need
+    real data product file contents (the Data Ingester does not open the files).
     """
-    Test that find_bucket... raises ValueError if it finds 0 or >1 buckets.
-    """
-    s3 = boto3.client("s3", region_name="us-east-1")
 
-    # Setup: Create two buckets that share a substring
-    s3.create_bucket(Bucket="libera-l1b-cam-test-v1")
-    s3.create_bucket(Bucket="libera-l1b-cam-test-v2")
-    s3.create_bucket(Bucket="libera-l2-rad-test")
-
-    session = boto3.Session()
-
-    # Case 1: Ambiguity (finding 'l1b' matches v1 and v2)
-    with pytest.raises(ValueError, match="Error finding a single bucket"):
-        s3_utilities.find_bucket_in_account_by_partial_name(session, "l1b")
-
-    # Case 2: No match
-    with pytest.raises(ValueError, match="Error finding a single bucket"):
-        s3_utilities.find_bucket_in_account_by_partial_name(session, "l0-packet")
-
-    # Case 3: Success (Specific enough to match only one)
-    # Matching "l2" should only find the one l2 bucket
-    result = s3_utilities.find_bucket_in_account_by_partial_name(session, "l2")
-    assert result == "libera-l2-rad-test"
-
-
-@pytest.mark.parametrize(
-    ("file_path", "profile"),
-    [
-        ("some/file/path.nc", None),
-        ("some/file/path.nc", "test"),
-    ],
-)
-@patch("libera_utils.aws.s3_utilities.s3_put_in_archive_for_processing_step")
-def test_s3_utils_put_cli_handler(mock_s3_put_for_processing_step, file_path, profile):
-    """Test the S3 utilities CLI handler for file upload."""
-    # Make the input namespace object
-    args = argparse.Namespace(
-        func=s3_utilities.s3_put_cli_handler,
-        file_path=file_path,
-        profile=profile,
+    @pytest.mark.parametrize(
+        ("file_paths", "profile"),
+        [
+            (["some/file/path.nc"], None),
+            (["some/file/path.nc", "another/file/path.nc"], "test"),
+        ],
     )
+    @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
+    @patch("libera_utils.aws.s3_utilities.boto3.Session")
+    def test_cli_handler_creates_session_and_delegates(self, mock_session_cls, mock_manual_ingest, file_paths, profile):
+        """The CLI handler creates a single session from the profile and delegates to manual_ingest_data_products."""
+        args = argparse.Namespace(
+            func=s3_utilities.s3_put_cli_handler,
+            file_paths=file_paths,
+            profile=profile,
+        )
 
-    # Call the CLI handler
-    s3_utilities.s3_put_cli_handler(args)
+        s3_utilities.s3_put_cli_handler(args)
 
-    # Check the mocked function was called correctly
-    expected_file_path = AnyPath(file_path)
-    expected_profile = profile
-    mock_s3_put_for_processing_step.assert_called_once_with(expected_file_path, profile_name=expected_profile)
+        # A single session is created from the profile and threaded into the workflow function.
+        mock_session_cls.assert_called_once_with(profile_name=profile)
+        expected_paths = [AnyPath(p) for p in file_paths]
+        mock_manual_ingest.assert_called_once_with(expected_paths, boto_session=mock_session_cls.return_value)
 
+    @pytest.mark.parametrize(
+        "file_names",
+        [
+            # Single L1B data product
+            ["LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"],
+            # SPICE kernels
+            [
+                "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+                "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
+            ],
+            # L0 PDS (file number 01) and L0 CR (file number 00)
+            [
+                "P1590011SOMESCIENCEAAA99030231459001.PDS",
+                "P1590011SOMESCIENCEAAA99030231459000.PDS",
+            ],
+            # Mixed batch spanning data levels, including L0, CR, SPICE, L1B, and L2
+            [
+                "P1590011SOMESCIENCEAAA99030231459001.PDS",
+                "P1590011SOMESCIENCEAAA99030231459000.PDS",
+                "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+                "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            ],
+        ],
+    )
+    def test_manual_ingest_stages_files_and_emits_event(
+        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session, file_names
+    ):
+        """All file types are staged to the dropbox and described in a single NewFilesAvailable event."""
+        dropbox_bucket = make_ingest_dropbox_bucket
 
-@pytest.mark.parametrize(
-    "file_name",
-    [
-        "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
-        "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
-        "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        "LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        "LIBERA_L2_SSW-TOA-FLUXES-OSSE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-    ],
-)
-def test_s3_put_for_processing_step(tmp_path, make_test_archive_buckets, file_name):
-    """Test uploading an object to an S3 bucket for a given processing step."""
+        # Write dummy files with distinct sizes so we can verify the size field maps to the right file.
+        paths = []
+        expected_sizes = {}
+        for i, name in enumerate(file_names):
+            file_path = tmp_path / name
+            file_path.write_bytes(b"x" * (i + 1))
+            paths.append(file_path)
+            expected_sizes[name] = i + 1
 
-    # Create an empty file that is correctly named file in a temp directory
-    Path.touch(tmp_path / file_name)
+        session, captured = make_event_capturing_session()
+        s3_utilities.manual_ingest_data_products(paths, boto_session=session)
 
-    # Make the expected file path in S3
-    filename_object = filenaming.LiberaDataProductFilename.from_file_path(tmp_path / file_name)
-    bucket_name = filename_object.data_product_id.data_level.archive_bucket_name + "-test"
-    s3_path = f"s3://{bucket_name}"
-    expected_s3_path = filename_object.generate_prefixed_path(s3_path)
+        # 1. Every file was uploaded to the Ingest Dropbox at the bucket root (bare filename key).
+        for name in file_names:
+            assert S3Path(f"s3://{dropbox_bucket}/{name}").exists()
 
-    # Run the upload function
-    s3_utilities.s3_put_in_archive_for_processing_step(tmp_path / file_name, profile_name="test-profile")
-    # Check that the expected file is in the S3 bucket
-    assert S3Path(expected_s3_path).exists()
+        # 2. A single NewFilesAvailable event was emitted with the exact source and detail-type values.
+        entries = captured["entries"]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["Source"] == "manual-processing"
+        assert entry["DetailType"] == "NewFilesAvailableEventDetail"
+        assert entry["EventBusName"] == make_sdc_event_bus
+
+        # 3. The event detail lists every staged file with correct type, uri, name, and size.
+        detail = json.loads(entry["Detail"])
+        expected_files = [
+            {
+                "type": "data",
+                "uri": f"s3://{dropbox_bucket}/{name}",
+                "name": name,
+                "size": expected_sizes[name],
+            }
+            for name in file_names
+        ]
+        assert detail["files"] == expected_files
+
+    def test_invalid_filename_in_batch_raises_before_staging(
+        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """A single invalid filename aborts the whole batch before any file is staged or any event is emitted."""
+        good_name = "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
+        bad_name = "not_a_valid_libera_file.nc"
+        Path.touch(tmp_path / good_name)
+        Path.touch(tmp_path / bad_name)
+
+        session, captured = make_event_capturing_session()
+        with pytest.raises(ValueError, match="not a valid Libera L0 or data product filename"):
+            s3_utilities.manual_ingest_data_products([tmp_path / good_name, tmp_path / bad_name], boto_session=session)
+
+        # Nothing was staged and no event was emitted.
+        assert not S3Path(f"s3://{make_ingest_dropbox_bucket}/{good_name}").exists()
+        assert "entries" not in captured
+
+    def test_manifest_filename_rejected(self, mock_s3_context_with_profile):
+        """Manifest filenames are not eligible for manual ingest and are rejected during validation."""
+        # A valid INPUT manifest filename (26-character Crockford base32 ULID code).
+        manifest_name = "LIBERA_INPUT_MANIFEST_0123456789ABCDEFGHJKMNPQRS.json"
+        # Sanity check that this really is a valid manifest filename, so the test proves manifests are rejected.
+        filenaming.ManifestFilename(manifest_name)
+
+        session = boto3.Session(profile_name="test-profile")
+        with pytest.raises(ValueError, match="not a valid Libera L0 or data product filename"):
+            s3_utilities.manual_ingest_data_products([AnyPath(manifest_name)], boto_session=session)
+
+    def test_put_event_raises_on_failed_entry(self, make_sdc_event_bus):
+        """A failed event entry from put_events surfaces as a RuntimeError."""
+        session = boto3.Session(profile_name="test-profile")
+        real_client = session.client
+
+        def failing_put_client(service_name, *args, **kwargs):
+            client = real_client(service_name, *args, **kwargs)
+            if service_name == "events":
+                client.put_events = lambda **kwargs: {"FailedEntryCount": 1, "Entries": [{"ErrorCode": "Boom"}]}
+            return client
+
+        session.client = failing_put_client
+
+        files = [{"type": "data", "uri": "s3://bucket/file.nc", "name": "file.nc", "size": 1}]
+        with pytest.raises(RuntimeError, match="Failed to put NewFilesAvailable event"):
+            s3_utilities.put_new_files_available_event(files, boto_session=session)
 
 
 @pytest.mark.parametrize(
@@ -167,21 +231,18 @@ def test_s3_utils_list_cli_handler(mock_s3_list_files, product_name, profile):
         ),
     ],
 )
-def test_s3_list_objects(tmp_path, make_test_archive_buckets, product_id, file_names):
+def test_s3_list_objects(tmp_path, make_test_archive_buckets, write_file_to_s3, product_id, file_names):
     """Test listing objects in an S3 bucket for a given processing step."""
     expected_s3_paths = []
     for file in file_names:
         Path.touch(tmp_path / file)
 
-        # Make the expected file path in S3
+        # Build the correct archive path for the file and seed it into the (mocked) archive bucket.
         filename_object = filenaming.AbstractValidFilename.from_file_path(tmp_path / file)
-        product_id = DataProductIdentifier(product_id)
-        archive_bucket_name = product_id.data_level.archive_bucket_name + "-test"
-        s3_path = f"s3://{archive_bucket_name}"
-        expected_s3_paths.append(filename_object.generate_prefixed_path(s3_path))
+        archive_bucket_name = filename_object.data_product_id.data_level.archive_bucket_name + "-test"
+        archive_path = filename_object.generate_prefixed_path(f"s3://{archive_bucket_name}")
+        expected_s3_paths.append(write_file_to_s3(tmp_path / file, str(archive_path)))
 
-        # Run the upload function
-        s3_utilities.s3_put_in_archive_for_processing_step(tmp_path / file, profile_name="test-profile")
     # List out all files in the s3 bucket
     found_files = s3_utilities.s3_list_archive_files(product_id, profile_name="test-profile")
     # Check that the number of files found matches the number of files uploaded
@@ -194,6 +255,7 @@ def test_s3_list_objects(tmp_path, make_test_archive_buckets, product_id, file_n
 def test_s3_list_objects_correct_prefix(
     tmp_path,
     make_test_archive_buckets,
+    write_file_to_s3,
 ):
     """Test that listing objects in an S3 bucket uses the correct prefix for a given processing step."""
     # Create files in two different prefixes
@@ -202,13 +264,12 @@ def test_s3_list_objects_correct_prefix(
     Path.touch(tmp_path / file_in_prefix_1)
     Path.touch(tmp_path / file_in_prefix_2)
 
-    # Upload both files to the CAM processing step archive bucket
-    s3_utilities.s3_put_in_archive_for_processing_step(
-        tmp_path / file_in_prefix_1,
-    )
-    s3_utilities.s3_put_in_archive_for_processing_step(
-        tmp_path / file_in_prefix_2,
-    )
+    # Seed both files into the L1B archive bucket (different product prefixes within the same bucket)
+    for file in (file_in_prefix_1, file_in_prefix_2):
+        filename_object = filenaming.AbstractValidFilename.from_file_path(tmp_path / file)
+        archive_bucket_name = filename_object.data_product_id.data_level.archive_bucket_name + "-test"
+        archive_path = filename_object.generate_prefixed_path(f"s3://{archive_bucket_name}")
+        write_file_to_s3(tmp_path / file, str(archive_path))
 
     # List out all files in the CAM archive bucket
     found_files = s3_utilities.s3_list_archive_files(DataProductIdentifier.l1b_cam)

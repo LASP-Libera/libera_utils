@@ -158,7 +158,15 @@ def test_ecr_upload_cli_args(cli_args, parsed):
             ["s3-utils", "put", "some/file/path.nc"],
             argparse.Namespace(
                 func=s3_utilities.s3_put_cli_handler,
-                file_path="some/file/path.nc",
+                file_paths=["some/file/path.nc"],
+                profile=None,
+            ),
+        ),
+        (
+            ["s3-utils", "put", "some/file/path.nc", "another/file/path.nc"],
+            argparse.Namespace(
+                func=s3_utilities.s3_put_cli_handler,
+                file_paths=["some/file/path.nc", "another/file/path.nc"],
                 profile=None,
             ),
         ),
@@ -166,7 +174,7 @@ def test_ecr_upload_cli_args(cli_args, parsed):
             ["s3-utils", "--profile=test", "put", "some/file/path.nc"],
             argparse.Namespace(
                 func=s3_utilities.s3_put_cli_handler,
-                file_path="some/file/path.nc",
+                file_paths=["some/file/path.nc"],
                 profile="test",
             ),
         ),
