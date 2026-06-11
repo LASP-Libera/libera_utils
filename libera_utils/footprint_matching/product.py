@@ -1,76 +1,192 @@
-"""FMATCH product metadata: mapping operational modes to data product identifiers.
+"""FMATCH-CAM data product assembly and writing.
 
-This module connects each ``OperationalMode`` value to its corresponding
-``DataProductIdentifier``, so the FMATCH pipeline knows which output product
-to write for a given run mode.
+This module is the seam between the footprint-matching *engine* (readers, PSF
+aggregation, geometry) and the Libera *data-product* machinery
+(``LiberaDataProductDefinition`` / ``write_libera_data_product``). It owns the
+FMATCH-CAM product definition and the eventual flow that turns a day of matched
+footprints into a conformant NetCDF file.
 
-Background
-----------
-FMATCH (Footprint Matching) runs in five distinct operational modes that differ
-in data latency and ancillary data sources. Each mode produces a separate data
-product with a unique product ID defined in the Libera Data Product Information
-(DPI) PDF v87 (2026-06-18). The mapping here is the single authoritative place
-that encodes mode ↔ product ID and mode ↔ active reader set relationships.
+Milestone scope
+---------------
+Only :func:`load_fmatch_cam_definition` is implemented. The aggregation,
+geometry, assembly, and write functions are intentionally **stubs** that raise
+``NotImplementedError`` - they document the intended pipeline so the product
+definition has an obvious home and its future producers are visible, but the
+actual computation is deferred to later milestones (see the design doc:
+``instructions/documentation/Footprint Matching and Scene ID PDF``).
 
-Product definition YAML files (which define the NetCDF variable schemas) are
-managed separately in ``libera_utils/data/product_definitions/`` and will be
-linked here in a future branch once created.
-
-References
-----------
-DPI v87 Table of Data Product Identifiers (FMATCH section):
-    instructions/documentation/Data Product Information-v87-20260618_005103.pdf
-FMATCH reader mode assignments (ACTIVE_MODES per reader):
-    libera_utils/footprint_matching/readers/
+Why a thin seam here
+--------------------
+The product definition (``libera_utils/data/product_definitions/fmatch_cam.yml``)
+is the contract every downstream consumer (Scene ID, Camera Cloud Fraction)
+reads against. Keeping the loader next to the (future) writer means there is a
+single place that knows how a FMATCH-CAM file is produced, while the reader
+plugins stay decoupled from product I/O.
 """
 
 from __future__ import annotations
 
-from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching.types import OperationalMode
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-# ---------------------------------------------------------------------------
-# Mode → DataProductIdentifier
-# ---------------------------------------------------------------------------
+from libera_utils.config import config
+from libera_utils.io.product_definition import LiberaDataProductDefinition
 
-# Maps each of the five FMATCH operational modes to its DataProductIdentifier.
-# This is the single authoritative source for the mode ↔ product ID relationship
-# within the pipeline. The pipeline uses this to construct output filenames,
-# set NetCDF global attributes, and route data to the correct S3 prefix.
-#
-# Product IDs come directly from the DPI v87 Table of Data Product Identifiers.
-# Keep this in sync with DataProductIdentifier in libera_utils/constants.py.
-PRODUCT_FOR_MODE: dict[OperationalMode, DataProductIdentifier] = {
-    # Camera/NRT tier — available from mission start, no RBSP dependency.
-    OperationalMode.CAM: DataProductIdentifier.fmatch_cam,
-    OperationalMode.CAM_CAMTIME: DataProductIdentifier.fmatch_cam_camtime,
-    # RBSP FlashFlux tier — available ~5 days after observation.
-    OperationalMode.IMAGER_FLASH: DataProductIdentifier.fmatch_imager_flash,
-    # RBSP Climate Quality tier — available post-Year 1, highest fidelity.
-    OperationalMode.IMAGER: DataProductIdentifier.fmatch_imager,
-    OperationalMode.IMAGER_CAMTIME: DataProductIdentifier.fmatch_imager_camtime,
-}
+if TYPE_CHECKING:
+    # Imported only for type hints to avoid pulling heavy deps at import time.
+    import numpy as np
+    from xarray import Dataset
+
+    from libera_utils.footprint_matching.types import OperationalMode
+
+# Filename of the FMATCH-CAM product definition within the configured
+# LIBERA_PRODUCT_DEFINITIONS_PATH directory. Kept as a module constant so tests
+# and callers reference one source of truth rather than hard-coding the string.
+FMATCH_CAM_DEFINITION_FILENAME = "fmatch_cam.yml"
+
+# Name of the coordinate/dimension that identifies each footprint by its
+# radiometer observation time. This is the ``time_variable`` handed to
+# ``write_libera_data_product`` for start/end-time filename generation.
+FMATCH_CAM_TIME_VARIABLE = "RADIOMETER_TIME"
 
 
-def get_product_identifier(mode: OperationalMode) -> DataProductIdentifier:
-    """Return the DataProductIdentifier for the given operational mode.
+def load_fmatch_cam_definition() -> LiberaDataProductDefinition:
+    """Load and validate the FMATCH-CAM product definition.
 
-    Parameters
-    ----------
-    mode : OperationalMode
-        The active FMATCH operational mode.
+    Resolves ``fmatch_cam.yml`` under the configured product-definitions
+    directory and parses it into a validated :class:`LiberaDataProductDefinition`.
 
     Returns
     -------
-    DataProductIdentifier
-        The product identifier used for output file naming and pipeline routing.
+    LiberaDataProductDefinition
+        The validated FMATCH-CAM product definition, ready for use with
+        ``create_product_dataset`` / ``enforce_dataset_conformance`` /
+        ``check_dataset_conformance``.
 
-    Examples
-    --------
-    >>> from libera_utils.footprint_matching.types import OperationalMode
-    >>> get_product_identifier(OperationalMode.CAM)
-    <DataProductIdentifier.fmatch_cam: 'FMATCHCAM'>
-    >>> str(get_product_identifier(OperationalMode.IMAGER))
-    'FMATCHIMAGER'
+    Notes
+    -----
+    The directory is read from ``config.get("LIBERA_PRODUCT_DEFINITIONS_PATH")``
+    so packaging/test overrides are honored, matching how L1A product
+    definitions are resolved elsewhere in the codebase.
     """
-    return PRODUCT_FOR_MODE[mode]
+    definitions_dir = Path(str(config.get("LIBERA_PRODUCT_DEFINITIONS_PATH")))
+    definition_path = definitions_dir / FMATCH_CAM_DEFINITION_FILENAME
+    return LiberaDataProductDefinition.from_yaml(definition_path)
+
+
+def aggregate_external_variables(
+    mode: OperationalMode,
+    *args: Any,
+    **kwargs: Any,
+) -> dict[str, np.ndarray]:
+    """Aggregate every active reader's gridded data to one value per footprint.
+
+    For the given operational mode this will select the active readers via
+    ``ReaderRegistry.get_readers_for_mode(mode)``, load the tiles overlapping
+    each footprint, and apply each variable's PSF-weighted aggregation strategy
+    (weighted mean / mode / log-mean) to collapse the fine-resolution pixels to a
+    single value per footprint. The returned dict is keyed by the variable names
+    declared in ``fmatch_cam.yml`` (``surface_type``, ``sea_ice_concentration``,
+    ``wind_u10``, ``wind_v10``, ``cloud_fraction``, ``cloud_optical_thickness``,
+    ``cloud_top_pressure``).
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Mapping of aggregated-variable name to a 1-D array indexed by footprint.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, in this milestone. The PSF/aggregation engine is future work.
+    """
+    # TODO[LIBSDC-785]: implement PSF-weighted aggregation over active readers.
+    raise NotImplementedError(
+        "External-variable aggregation is not implemented yet. This is a placeholder "
+        "for the FMATCH PSF aggregation engine (future milestone)."
+    )
+
+
+def compute_derived_viewing_geometry(
+    solar_zenith_angle: np.ndarray,
+    viewing_zenith_angle: np.ndarray,
+    relative_azimuth_angle: np.ndarray,
+) -> dict[str, np.ndarray]:
+    """Compute derived viewing-geometry variables from the geolocation angles.
+
+    Produces the ``scattering_angle`` and ``sunglint_angle`` variables defined in
+    ``fmatch_cam.yml``. The intended (CERES/SSF-heritage) formulas, with all
+    angles in degrees:
+
+    - Scattering angle ``Theta``::
+
+          cos(Theta) = -cos(SZA) * cos(VZA)
+                       + sin(SZA) * sin(VZA) * cos(RAA)
+
+    - Sun glint angle: the angle between the sensor view direction and the
+      specular reflection of the solar beam; small values indicate potential
+      sun glint contamination.
+
+    Parameters
+    ----------
+    solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : np.ndarray
+        Per-footprint geolocation angles in degrees.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        ``{"scattering_angle": ..., "sunglint_angle": ...}``.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, in this milestone. The geometry module is future work.
+    """
+    # TODO[LIBSDC-785]: implement scattering and sun-glint angle calculations.
+    raise NotImplementedError(
+        "Derived viewing-geometry computation is not implemented yet. This is a "
+        "placeholder for the FMATCH geometry module (future milestone)."
+    )
+
+
+def assemble_fmatch_cam_dataset(*args: Any, **kwargs: Any) -> Dataset:
+    """Assemble a conformant FMATCH-CAM :class:`xarray.Dataset`.
+
+    Will combine the L1B geolocation inputs, the derived viewing geometry from
+    :func:`compute_derived_viewing_geometry`, and the aggregated external
+    variables from :func:`aggregate_external_variables` into the variable dict
+    expected by the product definition, then build a Dataset via
+    ``LiberaDataProductDefinition.create_product_dataset`` and bring it into
+    conformance with ``enforce_dataset_conformance``.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, in this milestone. Dataset assembly is future work.
+    """
+    # TODO[LIBSDC-785]: assemble the per-footprint Dataset from all inputs.
+    raise NotImplementedError(
+        "FMATCH-CAM dataset assembly is not implemented yet. This is a placeholder "
+        "for the footprint-matching orchestrator (future milestone)."
+    )
+
+
+def write_fmatch_cam_product(*args: Any, **kwargs: Any) -> Any:
+    """Write a FMATCH-CAM NetCDF data product to disk.
+
+    Will delegate to ``libera_utils.io.netcdf.write_libera_data_product`` using
+    the definition from :func:`load_fmatch_cam_definition`, the assembled Dataset
+    from :func:`assemble_fmatch_cam_dataset`, and
+    ``time_variable=FMATCH_CAM_TIME_VARIABLE`` so the output filename encodes the
+    footprint time span.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, in this milestone. The writer entry point is future work.
+    """
+    # TODO[LIBSDC-785]: wire assembly + write_libera_data_product together.
+    raise NotImplementedError(
+        "FMATCH-CAM product writing is not implemented yet. This is a placeholder "
+        "for the footprint-matching orchestrator entry point (future milestone)."
+    )
