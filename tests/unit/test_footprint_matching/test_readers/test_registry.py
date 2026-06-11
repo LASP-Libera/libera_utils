@@ -1,7 +1,7 @@
 """Unit tests for ReaderRegistry.
 
 Tests confirm:
-- All five built-in readers register when the readers package is imported
+- All built-in readers register when the readers package is imported
 - get() returns the correct class
 - get() raises KeyError for unknown keys
 - list_readers() returns sorted keys
@@ -12,25 +12,28 @@ from __future__ import annotations
 import pytest
 
 # Importing the readers subpackage triggers __init_subclass__ registration
-# for all five built-in readers.
+# for all built-in readers.
 import libera_utils.footprint_matching.readers  # noqa: F401
+from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
+from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5 import ERA5Reader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
 from libera_utils.footprint_matching.types import OperationalMode
 
 
 class TestListReaders:
-    def test_all_five_readers_are_registered(self):
+    def test_all_readers_are_registered(self):
         keys = ReaderRegistry.list_readers()
-        assert "era5" in keys
-        assert "igbp" in keys
-        assert "nise" in keys
-        assert "viirs_brdf" in keys
-        assert "viirs_cloud" in keys
+        for expected in (
+            "cldpix", "era5", "igbp", "nise", "ssf",
+            "viirs_aod", "viirs_brdf", "viirs_cloud",
+        ):
+            assert expected in keys
 
     def test_list_readers_is_sorted(self):
         keys = ReaderRegistry.list_readers()
@@ -58,6 +61,15 @@ class TestGetReader:
     def test_get_viirs_brdf_returns_viirs_brdf_class(self):
         assert ReaderRegistry.get("viirs_brdf") is VIIRSBRDFReader
 
+    def test_get_viirs_aod_returns_viirs_aod_class(self):
+        assert ReaderRegistry.get("viirs_aod") is VIIRSAODReader
+
+    def test_get_ssf_returns_ssf_class(self):
+        assert ReaderRegistry.get("ssf") is SSFReader
+
+    def test_get_cldpix_returns_cldpix_class(self):
+        assert ReaderRegistry.get("cldpix") is CLDPIXReader
+
     def test_get_unknown_key_raises_key_error(self):
         with pytest.raises(KeyError, match="not_a_reader"):
             ReaderRegistry.get("not_a_reader")
@@ -77,6 +89,18 @@ class TestGetReadersForMode:
         cam_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
         imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
         for key in cam_readers:
+            assert key in imager_readers
+
+    def test_climate_quality_readers_excluded_from_cam_mode(self):
+        # AOD/SSF/CLDPIX are climate-quality (post-Year-1) dependencies and must
+        # not be active in the CAM/NRT mode.
+        cam_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
+        for key in ("viirs_aod", "ssf", "cldpix"):
+            assert key not in cam_readers
+
+    def test_imager_mode_includes_climate_quality_readers(self):
+        imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
+        for key in ("viirs_aod", "ssf", "cldpix"):
             assert key in imager_readers
 
     def test_returns_dict_of_reader_classes(self):
