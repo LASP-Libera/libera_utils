@@ -1,45 +1,37 @@
-"""Unit tests for NSIDCReader.
+"""Unit tests for NISEReader.
 
-Uses real synthetic ASCII fixture files (created by make_nsidc_ascii_fixture)
-with a small 4 × 4 grid to keep tests fast. NSIDCReader is initialized with
-matching grid dimensions and a simple pyproj transformer.
+The NISE product is distributed as an HDF-EOS4 file requiring pyhdf, which
+in turn requires the HDF4 C library. To keep tests environment-independent,
+``_read_extent_sds`` is mocked to return a synthetic numpy array directly.
+The lat/lon grid computation (``_compute_latlon_grid``) exercises the real
+pyproj EPSG:3408 → EPSG:4326 transform, which is always available.
 
-Real IMS 24-km files can be downloaded from:
-    NOAA NSIDC FTP: https://noaadata.apps.nsidc.org/NOAA/G02156/24km/
-    No login required; files are publicly accessible.
+Real NISE files can be downloaded from:
+    NSIDC HTTPS: https://n5eil01u.ecs.nsidc.org/NISE/
+    Earthdata login required: https://urs.earthdata.nasa.gov/
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
-import pytest
 
-from libera_utils.footprint_matching.readers.nsidc import NSIDCReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TileKey
-from tests.test_data.footprint_matching.fixtures import make_nsidc_ascii_fixture
+from libera_utils.footprint_matching.readers.nsidc import NISEReader
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
 
-# Small test grid parameters — passed to NSIDCReader to override 1024×1024 defaults.
-# These values are chosen so the pyproj-converted lat/lons produce a reasonable
-# geographic extent for the bounding box tests below.
+# Small test grid parameters — passed to NISEReader to override 721×721 defaults.
+# 500 km cells give a 4×4 grid a usable geographic extent in Northern Hemisphere.
 _TEST_ROWS = 4
 _TEST_COLS = 4
-# Reduce resolution so the 4×4 grid covers a usable geographic extent.
-_TEST_RESOLUTION_M = 500_000.0  # 500 km — very coarse, but fine for unit tests
-# x_origin and y_origin position the test grid in the Northern Hemisphere.
-_TEST_X_ORIGIN = -1_000_000.0  # meters
-_TEST_Y_ORIGIN = 1_000_000.0   # meters
+_TEST_RESOLUTION_M = 500_000.0   # 500 km — very coarse, enough for unit tests
+_TEST_X_ORIGIN = -1_000_000.0   # meters (EPSG:3408)
+_TEST_Y_ORIGIN = 1_000_000.0    # meters (EPSG:3408)
 
 
-def _make_reader(tmp_path, data=None, gzipped=False):
-    """Helper: write fixture file and return an NSIDCReader with test grid params."""
-    fixture_path = make_nsidc_ascii_fixture(
-        tmp_path,
-        grid_rows=_TEST_ROWS,
-        grid_cols=_TEST_COLS,
-        data=data,
-        gzipped=gzipped,
-    )
-    return NSIDCReader(
-        fixture_path,
+def _make_reader(tmp_path: Path) -> NISEReader:
+    """Return a NISEReader pointing at a dummy file with small test grid params."""
+    return NISEReader(
+        tmp_path / "NISE_fixture.HDFEOS",
         grid_rows=_TEST_ROWS,
         grid_cols=_TEST_COLS,
         resolution_m=_TEST_RESOLUTION_M,
@@ -48,118 +40,174 @@ def _make_reader(tmp_path, data=None, gzipped=False):
     )
 
 
-class TestNSIDCReaderClassAttributes:
+def _mock_extent(rows: int, cols: int, data: np.ndarray | None = None) -> np.ndarray:
+    """Return a uint8 array for use as a fake Extent SDS."""
+    if data is not None:
+        return data.astype(np.uint8)
+    return np.full((rows, cols), 50, dtype=np.uint8)  # 50% concentration by default
+
+
+class TestNISEReaderClassAttributes:
     def test_reader_key(self):
-        assert NSIDCReader.READER_KEY == "nsidc"
+        assert NISEReader.READER_KEY == "nise"
 
     def test_resolution_km(self):
-        assert NSIDCReader.RESOLUTION_KM == 25.0
+        assert NISEReader.RESOLUTION_KM == 25.0
 
     def test_required_mode_is_cam(self):
-        assert NSIDCReader.REQUIRED_MODE == OperationalMode.CAM
+        assert NISEReader.REQUIRED_MODE == OperationalMode.CAM
 
     def test_variables_has_one_entry(self):
-        assert len(NSIDCReader.VARIABLES) == 1
+        assert len(NISEReader.VARIABLES) == 1
 
-    def test_variable_name_is_sea_ice_type(self):
-        assert NSIDCReader.VARIABLES[0].name == "sea_ice_type"
+    def test_variable_name_is_sea_ice_concentration(self):
+        assert NISEReader.VARIABLES[0].name == "sea_ice_concentration"
 
-    def test_n_categories_is_5(self):
-        assert NSIDCReader.VARIABLES[0].n_categories == 5
+    def test_variable_dtype_is_float32(self):
+        assert NISEReader.VARIABLES[0].dtype == "float32"
+
+    def test_variable_aggregation_is_weighted_mean(self):
+        assert NISEReader.VARIABLES[0].aggregation == "weighted_mean"
+
+    def test_n_categories_is_none(self):
+        assert NISEReader.VARIABLES[0].n_categories is None
 
 
-class TestNSIDCReaderParseAscii:
-    def test_parse_plain_text_file(self, tmp_path):
+class TestNISEReaderConcentrationMapping:
+    """Verify the NISE Extent code → float32 concentration value mapping."""
+
+    def _run(self, tmp_path: Path, monkeypatch, data: np.ndarray, bbox: BoundingBox | None = None):
         reader = _make_reader(tmp_path)
-        grid = reader._parse_ascii_grid()
-        assert grid.shape == (_TEST_ROWS, _TEST_COLS)
+        monkeypatch.setattr(reader, "_read_extent_sds", lambda: data)
+        lats_2d, lons_2d = reader._compute_latlon_grid()
+        if bbox is None:
+            bbox = BoundingBox(
+                float(lats_2d.min()) - 0.1, float(lats_2d.max()) + 0.1,
+                float(lons_2d.min()) - 0.1, float(lons_2d.max()) + 0.1,
+            )
+        conc, _, _ = reader._load_spatial_region(bbox)
+        return conc
 
-    def test_parse_gzipped_file(self, tmp_path):
-        reader = _make_reader(tmp_path, gzipped=True)
-        grid = reader._parse_ascii_grid()
-        assert grid.shape == (_TEST_ROWS, _TEST_COLS)
+    def test_code_50_maps_to_0_5(self, tmp_path, monkeypatch):
+        data = np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
+        conc = self._run(tmp_path, monkeypatch, data)
+        assert np.allclose(conc[conc > 0], 0.5, atol=1e-5)
 
-    def test_values_are_in_valid_range(self, tmp_path):
-        reader = _make_reader(tmp_path)
-        grid = reader._parse_ascii_grid()
-        assert np.all((grid >= 0) & (grid <= 4))
+    def test_code_1_maps_to_0_01(self, tmp_path, monkeypatch):
+        data = np.full((_TEST_ROWS, _TEST_COLS), 1, dtype=np.uint8)
+        conc = self._run(tmp_path, monkeypatch, data)
+        assert np.allclose(conc[conc > 0], 0.01, atol=1e-5)
 
-    def test_specific_values_match_fixture(self, tmp_path):
-        # Use a known data array and verify round-trip fidelity.
-        known_data = np.array([[1, 2, 1, 2], [2, 1, 2, 1], [0, 3, 0, 3], [4, 0, 4, 0]], dtype=np.int8)
-        reader = _make_reader(tmp_path, data=known_data)
-        grid = reader._parse_ascii_grid()
-        np.testing.assert_array_equal(grid, known_data)
+    def test_code_100_maps_to_1_0(self, tmp_path, monkeypatch):
+        data = np.full((_TEST_ROWS, _TEST_COLS), 100, dtype=np.uint8)
+        conc = self._run(tmp_path, monkeypatch, data)
+        assert np.allclose(conc[conc > 0], 1.0, atol=1e-5)
 
-    def test_wrong_row_count_raises_value_error(self, tmp_path):
-        # Write a fixture with fewer rows than the reader expects.
-        fixture = make_nsidc_ascii_fixture(tmp_path, grid_rows=2, grid_cols=4)
-        reader = NSIDCReader(
-            fixture,
-            grid_rows=8,  # expects 8 rows but file only has 2
-            grid_cols=4,
-            resolution_m=_TEST_RESOLUTION_M,
-            x_origin=_TEST_X_ORIGIN,
-            y_origin=_TEST_Y_ORIGIN,
-        )
-        with pytest.raises(ValueError, match="Expected 8 data rows"):
-            reader._parse_ascii_grid()
+    def test_code_101_maps_to_1_0(self, tmp_path, monkeypatch):
+        # Code 101 = permanent ice (Greenland, Antarctica ice shelves) → 100%
+        data = np.full((_TEST_ROWS, _TEST_COLS), 101, dtype=np.uint8)
+        conc = self._run(tmp_path, monkeypatch, data)
+        assert np.allclose(conc[conc > 0], 1.0, atol=1e-5)
+
+    def test_code_0_maps_to_0_0(self, tmp_path, monkeypatch):
+        # Code 0 = outside domain / snow-free land → 0.0
+        data = np.full((_TEST_ROWS, _TEST_COLS), 0, dtype=np.uint8)
+        conc = self._run(tmp_path, monkeypatch, data)
+        assert np.all(conc == 0.0)
+
+    def test_code_103_maps_to_0_0(self, tmp_path, monkeypatch):
+        # Code 103 = dry snow on land → treated as non-ocean → 0.0
+        data = np.full((_TEST_ROWS, _TEST_COLS), 103, dtype=np.uint8)
+        conc = self._run(tmp_path, monkeypatch, data)
+        assert np.all(conc == 0.0)
 
 
-class TestNSIDCReaderLatLonGrid:
+class TestNISEReaderLatLonGrid:
     def test_lat_lon_grid_shape(self, tmp_path):
         reader = _make_reader(tmp_path)
         lats_2d, lons_2d = reader._compute_latlon_grid()
         assert lats_2d.shape == (_TEST_ROWS, _TEST_COLS)
         assert lons_2d.shape == (_TEST_ROWS, _TEST_COLS)
 
-    def test_lat_lon_values_are_in_valid_range(self, tmp_path):
+    def test_lat_values_in_valid_range(self, tmp_path):
         reader = _make_reader(tmp_path)
         lats_2d, lons_2d = reader._compute_latlon_grid()
-        # All lats should be in [-90, 90]; all lons in [-180, 180]
         assert np.all((lats_2d >= -90) & (lats_2d <= 90))
         assert np.all((lons_2d >= -180) & (lons_2d <= 180))
 
     def test_northern_hemisphere_coverage(self, tmp_path):
-        # With the test grid origin in the Northern Hemisphere, most lat values
-        # should be positive (north of equator).
+        # Test grid is centered in the Northern Hemisphere (EPSG:3408 near-pole).
         reader = _make_reader(tmp_path)
         lats_2d, _ = reader._compute_latlon_grid()
-        # At least half the pixels should be in the Northern Hemisphere.
         assert np.sum(lats_2d > 0) >= _TEST_ROWS * _TEST_COLS // 2
 
 
-class TestNSIDCReaderLoadSpatialRegion:
-    def test_returns_data_lats_lons(self, tmp_path):
+class TestNISEReaderLoadSpatialRegion:
+    def test_returns_data_lats_lons(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
+        monkeypatch.setattr(reader, "_read_extent_sds",
+                            lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
         lats_2d, lons_2d = reader._compute_latlon_grid()
-        # Use the actual geographic extent of the test grid as the bbox.
         bbox = BoundingBox(
-            lat_min=float(lats_2d.min()) - 0.1,
-            lat_max=float(lats_2d.max()) + 0.1,
-            lon_min=float(lons_2d.min()) - 0.1,
-            lon_max=float(lons_2d.max()) + 0.1,
+            float(lats_2d.min()) - 0.1, float(lats_2d.max()) + 0.1,
+            float(lons_2d.min()) - 0.1, float(lons_2d.max()) + 0.1,
         )
         data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
         assert data_sub.size > 0
         assert lats_sub.ndim == 1
         assert lons_sub.ndim == 1
 
-    def test_empty_result_outside_bbox(self, tmp_path):
+    def test_empty_result_outside_bbox(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
-        # Request a bbox in the Southern Hemisphere far from the test grid.
+        monkeypatch.setattr(reader, "_read_extent_sds",
+                            lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
+        # Bbox in the Southern Hemisphere far from test grid (near pole).
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
         data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
         assert data_sub.size == 0
 
-    def test_data_dtype_is_int16(self, tmp_path):
+    def test_data_dtype_is_float32(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
+        monkeypatch.setattr(reader, "_read_extent_sds",
+                            lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
         lats_2d, lons_2d = reader._compute_latlon_grid()
         bbox = BoundingBox(
-            lat_min=float(lats_2d.min()) - 0.1,
-            lat_max=float(lats_2d.max()) + 0.1,
-            lon_min=float(lons_2d.min()) - 0.1,
-            lon_max=float(lons_2d.max()) + 0.1,
+            float(lats_2d.min()) - 0.1, float(lats_2d.max()) + 0.1,
+            float(lons_2d.min()) - 0.1, float(lons_2d.max()) + 0.1,
         )
         data_sub, _, _ = reader._load_spatial_region(bbox)
-        assert data_sub.dtype == np.int16
+        assert data_sub.dtype == np.float32
+
+    def test_data_values_in_0_to_1_range(self, tmp_path, monkeypatch):
+        reader = _make_reader(tmp_path)
+        # Mix of all meaningful codes to verify all map to [0, 1].
+        mixed = np.array([[0, 50, 100, 101],
+                          [0, 25, 75, 103],
+                          [0, 1, 99, 101],
+                          [0, 0, 0, 0]], dtype=np.uint8)
+        monkeypatch.setattr(reader, "_read_extent_sds", lambda: mixed)
+        lats_2d, lons_2d = reader._compute_latlon_grid()
+        bbox = BoundingBox(
+            float(lats_2d.min()) - 0.1, float(lats_2d.max()) + 0.1,
+            float(lons_2d.min()) - 0.1, float(lons_2d.max()) + 0.1,
+        )
+        data_sub, _, _ = reader._load_spatial_region(bbox)
+        assert np.all((data_sub >= 0.0) & (data_sub <= 1.0))
+
+    def test_load_tile_returns_grid_tile(self, tmp_path, monkeypatch):
+        reader = _make_reader(tmp_path)
+        monkeypatch.setattr(reader, "_read_extent_sds",
+                            lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
+        lats_2d, lons_2d = reader._compute_latlon_grid()
+        # Build a TileKey that overlaps the test grid's geographic extent.
+        lat_center = float(lats_2d.mean())
+        lon_center = float(lons_2d.mean())
+        import math
+
+        from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG
+        lat_idx = max(0, min(int(math.floor((lat_center + 90.0) / TILE_SIZE_DEG)), 89))
+        lon_idx = max(0, min(int(math.floor((lon_center + 180.0) / TILE_SIZE_DEG)), 179))
+        key = TileKey("nise", lat_idx, lon_idx)
+        tile = reader.load_tile(key)
+        assert isinstance(tile, GridTile)
+        assert tile.source == "nise"

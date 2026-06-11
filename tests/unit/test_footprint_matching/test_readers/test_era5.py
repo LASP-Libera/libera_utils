@@ -11,7 +11,6 @@ Real ERA5 files can be downloaded from:
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from libera_utils.footprint_matching.readers.era5 import ERA5Reader
 from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
@@ -133,3 +132,35 @@ class TestERA5ReaderLoadTile:
         key = TileKey("era5", 45, 90)
         tile = reader.load_tile(key)
         assert tile.timestamp_source is None
+
+
+class TestERA5ReaderValidTimeDimension:
+    """ERA5 files downloaded via the new CDS API use 'valid_time' as the time dimension name.
+
+    The reader must drop ANY dimension whose name contains the substring 'time',
+    not just the exact name 'time'. This class verifies the fix for that edge case.
+    """
+
+    def test_valid_time_dimension_is_dropped(self, tmp_path):
+        from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
+        fixture_path = make_era5_valid_time_fixture(
+            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
+        )
+        reader = ERA5Reader(fixture_path)
+        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
+        data, lats, lons = reader._load_spatial_region(bbox)
+        # Without the fix the shape would be (2, 1, n_lat, n_lon); the time dim must be gone.
+        assert data.ndim == 3
+        assert data.shape[0] == 2
+
+    def test_valid_time_values_correct(self, tmp_path):
+        from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
+        fixture_path = make_era5_valid_time_fixture(
+            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0,
+            n_lat=4, n_lon=4, u10_fill=3.0, v10_fill=-2.0,
+        )
+        reader = ERA5Reader(fixture_path)
+        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
+        data, _, _ = reader._load_spatial_region(bbox)
+        assert np.allclose(data[0], 3.0, atol=1e-4)
+        assert np.allclose(data[1], -2.0, atol=1e-4)

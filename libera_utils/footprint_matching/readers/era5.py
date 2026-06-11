@@ -123,10 +123,12 @@ class ERA5Reader(GriddedDataReader):
             u10_sub = ds[_ERA5_U10_VAR].sel(latitude=lat_slice, longitude=lon_slice)
             v10_sub = ds[_ERA5_V10_VAR].sel(latitude=lat_slice, longitude=lon_slice)
 
-            # Drop the time dimension if present (take first time step).
-            if "time" in u10_sub.dims:
-                u10_sub = u10_sub.isel(time=0)
-                v10_sub = v10_sub.isel(time=0)
+            # Drop any time-like dimension (covers both "time" and "valid_time", which
+            # the CDS API uses in newer downloads). Take the first time step only.
+            time_dims = [d for d in u10_sub.dims if "time" in d]
+            if time_dims:
+                u10_sub = u10_sub.isel({d: 0 for d in time_dims})
+                v10_sub = v10_sub.isel({d: 0 for d in time_dims})
 
             # Extract coordinate arrays and ensure ascending lat order.
             lats = u10_sub["latitude"].values.astype(np.float64)

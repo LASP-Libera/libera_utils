@@ -10,14 +10,10 @@ Real MCD12Q1 files can be downloaded from:
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
-import pytest
 
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TileKey
-
 
 # ---------------------------------------------------------------------------
 # Synthetic HDF4 data used in all IGBPReader tests
@@ -60,12 +56,11 @@ class TestIGBPReaderLoadTile:
     def test_returns_grid_tile_with_correct_source(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
         monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_hdf4_lat_lon_grid",
+            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
             lambda **kwargs: (data, lats, lons),
         )
 
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        key = TileKey("igbp", 45, 90)  # lat 0–2°, lon 0–2° (tile coords)
         # Patch bbox to match our synthetic lat/lon range
         bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
         tile = reader._load_spatial_region(bbox)
@@ -74,7 +69,7 @@ class TestIGBPReaderLoadTile:
     def test_subset_within_bbox(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
         monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_hdf4_lat_lon_grid",
+            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
             lambda **kwargs: (data, lats, lons),
         )
 
@@ -90,7 +85,7 @@ class TestIGBPReaderLoadTile:
     def test_empty_result_when_no_pixels_in_bbox(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
         monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_hdf4_lat_lon_grid",
+            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
             lambda **kwargs: (data, lats, lons),
         )
 
@@ -106,7 +101,7 @@ class TestIGBPReaderLoadTile:
     def test_data_dtype_is_float32(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
         monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_hdf4_lat_lon_grid",
+            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
             lambda **kwargs: (data, lats, lons),
         )
 
@@ -122,7 +117,7 @@ class TestIGBPReaderLoadTile:
 
         data, lats, lons = _make_synthetic_igbp_data()
         monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_hdf4_lat_lon_grid",
+            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
             lambda **kwargs: (data, lats, lons),
         )
 
