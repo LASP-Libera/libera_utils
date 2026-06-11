@@ -41,7 +41,7 @@ class ReaderRegistry:
     --------
     >>> import libera_utils.footprint_matching.readers  # triggers registration
     >>> ReaderRegistry.list_readers()
-    ['era5', 'igbp', 'nsidc', 'viirs_l2l3']
+    ['cldpix', 'era5', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cloud']
     >>> cls = ReaderRegistry.get("igbp")
     >>> cls.RESOLUTION_KM
     1.0
@@ -115,7 +115,7 @@ class ReaderRegistry:
         >>> import libera_utils.footprint_matching.readers
         >>> readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
         >>> sorted(readers.keys())
-        ['era5', 'igbp', 'nsidc', 'viirs_l2l3']
+        ['era5', 'igbp', 'nise', 'viirs_brdf', 'viirs_cloud']
         """
         return {
             key: cls

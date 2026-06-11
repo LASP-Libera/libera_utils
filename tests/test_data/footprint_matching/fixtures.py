@@ -30,10 +30,21 @@ VIIRS BRDF VJ143C1 (HDF5/HDF-EOS5):
     LP DAAC: https://e4ftl01.cr.usgs.gov/VIIRS/VJ143C1.002/
     Example filename: VJ143C1.A2026153.002.2026161161054.h5
     EarthData login required: https://urs.earthdata.nasa.gov/
+
+VIIRS / merged AOD (AERDB_D3_GEOLEO, NetCDF4 with per-sensor groups):
+    NASA Deep Blue: https://deepblue.gsfc.nasa.gov/
+    Example filename: AERDB_D3_GEOLEO_Merged.A2020121.001.2024121023016.nc
+
+CERES SSF / FLASHFlux (NetCDF4, per-footprint swath):
+    NASA CERES: https://ceres.larc.nasa.gov/data/#ssf-level-2
+    Example filename: CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc
+
+CERES CLDPIX (NetCDF4, imager-pixel swath):
+    NASA CERES: https://ceres.larc.nasa.gov/data/
+    Example filename: CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc
 """
 from __future__ import annotations
 
-import pathlib
 from pathlib import Path
 
 import numpy as np
@@ -343,5 +354,275 @@ def make_viirs_brdf_hdf5_fixture(
             ds_obj = grp.create_dataset(name, data=raw)
             ds_obj.attrs["scale_factor"] = np.float32(0.001)
             ds_obj.attrs["_FillValue"] = np.int16(fill_sentinel)
+
+    return out_path
+
+
+def make_aod_merged_fixture(
+    tmp_path: Path,
+    n_lat: int = 4,
+    n_lon: int = 8,
+    lat_min: float = 0.5,
+    lat_max: float = 3.5,
+    lon_min: float = 10.5,
+    lon_max: float = 17.5,
+    aod_fill: float = 0.2,
+    include_fill_pixel: bool = True,
+) -> Path:
+    """Write a synthetic AERDB_D3_GEOLEO merged AOD NetCDF4 file.
+
+    Replicates the relevant structure of the real Deep Blue GEO-LEO merged
+    product:
+    - Root-level ``Latitude`` (ascending) and ``Longitude`` coordinate arrays
+    - A ``Merged`` group containing ``Aerosol_Optical_Thickness_550_Land_Ocean``
+      with **(Latitude, Longitude)** dimension order (no transpose needed) and
+      ``_FillValue = -999.0``
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    n_lat, n_lon : int
+        Grid dimensions. Default 4 × 8.
+    lat_min, lat_max : float
+        Latitude range (ascending). Default 0.5 → 3.5°.
+    lon_min, lon_max : float
+        Longitude range (−180..180 convention). Default 10.5 → 17.5°.
+    aod_fill : float
+        Constant AOD value written to every non-fill pixel. Default 0.2.
+    include_fill_pixel : bool
+        If True, set pixel [0, 0] to the −999.0 fill sentinel so tests can
+        verify fill → NaN conversion. Default True.
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    import netCDF4  # noqa: PLC0415
+
+    out_path = tmp_path / "aerdb_d3_geoleo_merged_fixture.nc"
+    lats = np.linspace(lat_min, lat_max, n_lat)  # ascending
+    lons = np.linspace(lon_min, lon_max, n_lon)
+
+    with netCDF4.Dataset(str(out_path), "w") as ds:
+        ds.createDimension("Latitude", n_lat)
+        ds.createDimension("Longitude", n_lon)
+
+        lat_var = ds.createVariable("Latitude", "f4", ("Latitude",))
+        lat_var[:] = lats.astype(np.float32)
+        lat_var.units = "degrees_north"
+
+        lon_var = ds.createVariable("Longitude", "f4", ("Longitude",))
+        lon_var[:] = lons.astype(np.float32)
+        lon_var.units = "degrees_east"
+
+        grp = ds.createGroup("Merged")
+        # Note: dimension order (Latitude, Longitude) — matches the real product.
+        aod_var = grp.createVariable(
+            "Aerosol_Optical_Thickness_550_Land_Ocean", "f4", ("Latitude", "Longitude"),
+            fill_value=-999.0,
+        )
+        data = np.full((n_lat, n_lon), aod_fill, dtype=np.float32)
+        if include_fill_pixel:
+            data[0, 0] = -999.0
+        aod_var[:] = data
+
+    return out_path
+
+
+def make_ssf_fixture(
+    tmp_path: Path,
+    lats: np.ndarray | None = None,
+    lons_0360: np.ndarray | None = None,
+    aerosol_optical_depth: np.ndarray | None = None,
+    clear_coverage: np.ndarray | None = None,
+    cloud_optical_depth_lower: np.ndarray | None = None,
+    cloud_classification: np.ndarray | None = None,
+    shortwave_adm_type: np.ndarray | None = None,
+    longwave_adm_type: np.ndarray | None = None,
+) -> Path:
+    """Write a synthetic CERES SSF (footprint/swath) NetCDF4 file.
+
+    Replicates the grouped, per-footprint structure of the real SSF product:
+    - 1-D ``Footprints`` dimension and a ``LowerUpper`` dimension of length 2
+    - ``Time_and_Position/instrument_fov_latitude`` and ``…_longitude``
+      (**longitude stored in the 0..360 convention**, matching the real file)
+    - One variable per supported reader field across the corresponding groups,
+      with float fill ``3.4028235e38`` and int16 fill ``32767``
+
+    All arrays default to a small deterministic set of footprints clustered near
+    lat ≈ 10–11°, lon ≈ −10° (written as 350° in the 0..360 file convention) so
+    tests can verify longitude normalization and rasterization. Pass explicit
+    arrays to override any field.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    lats : np.ndarray, optional
+        Per-footprint latitudes (−90..90).
+    lons_0360 : np.ndarray, optional
+        Per-footprint longitudes in the **0..360** convention.
+    aerosol_optical_depth, clear_coverage, cloud_optical_depth_lower : np.ndarray, optional
+        Per-footprint continuous values. ``cloud_optical_depth_lower`` fills the
+        lower (index 0) layer of the 2-D ``cloud_optical_depth_mean`` variable.
+    cloud_classification, shortwave_adm_type, longwave_adm_type : np.ndarray, optional
+        Per-footprint int16 categorical/encoded codes.
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    import netCDF4  # noqa: PLC0415
+
+    fill_f = np.float32(3.4028235e38)
+    fill_i = np.int16(32767)
+
+    # Default footprint set: five in the test cluster (lat 10–11, lon −10) plus
+    # one far-away footprint that must be excluded by any local bbox.
+    if lats is None:
+        lats = np.array([10.2, 10.4, 10.6, 10.8, 11.0, -50.0], dtype=np.float32)
+    if lons_0360 is None:
+        # −10° in the 0..360 convention is 350°; last point is far away (100°).
+        lons_0360 = np.array([350.0, 350.0, 350.0, 350.0, 350.0, 100.0], dtype=np.float32)
+    n = lats.size
+
+    if aerosol_optical_depth is None:
+        aerosol_optical_depth = np.array([0.10, 0.20, 0.30, 0.40, 0.50, 0.60], dtype=np.float32)[:n]
+    if clear_coverage is None:
+        clear_coverage = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], dtype=np.float32)[:n]
+    if cloud_optical_depth_lower is None:
+        cloud_optical_depth_lower = np.array([1.0, 2.0, 4.0, 8.0, 16.0, 32.0], dtype=np.float32)[:n]
+    if cloud_classification is None:
+        # Four of one code, one of another → modal code is 1001.
+        cloud_classification = np.array([1001, 1001, 1001, 1001, 1191, 2000], dtype=np.int16)[:n]
+    if shortwave_adm_type is None:
+        shortwave_adm_type = np.array([50, 50, 50, fill_i, fill_i, 60], dtype=np.int16)[:n]
+    if longwave_adm_type is None:
+        longwave_adm_type = np.array([50, 50, 50, 50, 50, 60], dtype=np.int16)[:n]
+
+    out_path = tmp_path / "cer_ssf_fixture.nc"
+
+    def _add(grp, name, data, fill, valid_range=None):
+        var = grp.createVariable(name, data.dtype, ("Footprints",), fill_value=fill)
+        var[:] = data
+        if valid_range is not None:
+            var.valid_range = np.array(valid_range, dtype=data.dtype)
+
+    with netCDF4.Dataset(str(out_path), "w") as ds:
+        ds.createDimension("Footprints", n)
+        ds.createDimension("LowerUpper", 2)
+
+        tp = ds.createGroup("Time_and_Position")
+        _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
+        _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
+
+        aux = ds.createGroup("Auxillary_Properties")
+        _add(aux, "aerosol_optical_depth", aerosol_optical_depth.astype(np.float32), fill_f, (0.0, 8.0))
+
+        clr = ds.createGroup("Clear_Footprint_Area")
+        _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
+
+        cif = ds.createGroup("Cloudy_Imager_Footprint_Layer")
+        cod_var = cif.createVariable(
+            "cloud_optical_depth_mean", "f4", ("Footprints", "LowerUpper"), fill_value=fill_f
+        )
+        cod = np.full((n, 2), fill_f, dtype=np.float32)
+        cod[:, 0] = cloud_optical_depth_lower.astype(np.float32)  # lower layer (index 0)
+        cod_var[:] = cod
+        cod_var.valid_range = np.array([0.0, 512.0], dtype=np.float32)
+
+        scn = ds.createGroup("Scene_Type")
+        _add(scn, "cloud_classification", cloud_classification.astype(np.int16), fill_i, (0, 32766))
+        _add(scn, "shortwave_adm_type", shortwave_adm_type.astype(np.int16), fill_i, (0, 5000))
+        _add(scn, "longwave_adm_type", longwave_adm_type.astype(np.int16), fill_i, (0, 5000))
+
+    return out_path
+
+
+def make_cldpix_fixture(
+    tmp_path: Path,
+    lats: np.ndarray | None = None,
+    lons_0360: np.ndarray | None = None,
+) -> Path:
+    """Write a synthetic CERES CLDPIX (imager-pixel swath) NetCDF4 file.
+
+    Replicates the flat, 2-D ``(Scanlines, Pixels)`` structure of the real
+    CLDPIX product:
+    - 2-D ``Latitude`` / ``Longitude`` arrays (**longitude in the 0..360
+      convention**)
+    - A minimal set of float cloud variables (fill ``3.4028235e38``) and int8
+      categorical variables (fill ``127``; snow/ice also use a ``-1`` sentinel)
+    - ``Eff_Cld_Pressure`` is written with a **descending** ``valid_range``
+      ([1100, 10]) exactly as the real file does, so tests can verify the reader
+      disables netCDF4 auto-masking (which would otherwise mask every value).
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    lats, lons_0360 : np.ndarray, optional
+        2-D ``(Scanlines, Pixels)`` geolocation arrays. ``lons_0360`` is in the
+        0..360 convention. Defaults place all pixels near lat ≈ 40°, lon ≈ −15°
+        (written as 345° in the file).
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    import netCDF4  # noqa: PLC0415
+
+    fill_f = np.float32(3.4028235e38)
+    fill_i8 = np.int8(127)
+
+    n_scan, n_pix = 3, 4
+    if lats is None:
+        lats = np.full((n_scan, n_pix), 40.0, dtype=np.float32)
+        # Spread pixels slightly so they fall in a couple of 0.05° cells.
+        lats += np.linspace(0.0, 0.10, n_scan * n_pix).reshape(n_scan, n_pix).astype(np.float32)
+    if lons_0360 is None:
+        # −15° in the 0..360 convention is 345°.
+        lons_0360 = np.full((n_scan, n_pix), 345.0, dtype=np.float32)
+    shape = lats.shape
+
+    out_path = tmp_path / "cer_cldpix_fixture.nc"
+
+    with netCDF4.Dataset(str(out_path), "w") as ds:
+        ds.createDimension("Scanlines", shape[0])
+        ds.createDimension("Pixels", shape[1])
+        dims = ("Scanlines", "Pixels")
+
+        def _add(name, data, fill, valid_range=None):
+            var = ds.createVariable(name, data.dtype, dims, fill_value=fill)
+            var[:] = data
+            if valid_range is not None:
+                var.valid_range = np.array(valid_range, dtype=data.dtype)
+
+        _add("Latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
+        _add("Longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
+
+        # Continuous cloud properties (constant values for easy assertions).
+        _add("Eff_Cld_Optical_Depth", np.full(shape, 4.0, np.float32), fill_f, (0.25, 150.0))
+        _add("Cld_Water_Path", np.full(shape, 100.0, np.float32), fill_f, (0.0, 10000.0))
+        _add("Eff_Cld_Temp", np.full(shape, 270.0, np.float32), fill_f, (190.0, 350.0))
+        _add("Eff_Cld_Height", np.full(shape, 5.0, np.float32), fill_f, (0.0, 18.0))
+        # Reversed valid_range exactly like the real file.
+        _add("Eff_Cld_Pressure", np.full(shape, 800.0, np.float32), fill_f, (1100.0, 10.0))
+        _add("Top_Cld_Height", np.full(shape, 6.0, np.float32), fill_f)
+        # Ice concentration percent; one pixel set to the −1 land/no-data sentinel.
+        ice = np.full(shape, 0.0, dtype=np.int8)
+        ice.flat[0] = -1
+        _add("Ice_Map_Value", ice, fill_i8, (0, 100))
+
+        # Categorical (int8) fields; one pixel set to the 127 fill sentinel.
+        phase = np.full(shape, 1, dtype=np.int8)
+        phase.flat[-1] = fill_i8
+        _add("Cloud_Particle_Phase", phase, fill_i8, (1, 5))
+        _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3))
+        _add("IGBP_Ecosystem", np.full(shape, 17, np.int8), fill_i8, (1, 19))
+        _add("Snow_Map_Value", np.full(shape, 0, np.int8), fill_i8, (0, 1))
 
     return out_path
