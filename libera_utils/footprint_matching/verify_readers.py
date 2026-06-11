@@ -14,6 +14,9 @@ Run from the repo root (or any directory on the Python path)::
         --era5   /data/era5_wind_20230101.nc \\
         --viirs  /data/CLDPROP_D3_VIIRS_NOAA20.A2026147.011.nc \\
         --brdf   /data/VJ143C1.A2026153.002.h5 \\
+        --aod    /data/AERDB_D3_GEOLEO_Merged.A2020121.001.nc \\
+        --ssf    /data/CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc \\
+        --cldpix /data/CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc \\
         --lat-center 45.0 --lon-center -90.0 \\
         --output-dir ./reader_verification
 
@@ -26,6 +29,9 @@ Arguments
 --era5 PATH      ERA5 NetCDF4 with u10/v10 (download: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels)
 --viirs PATH     CLDPROP_D3 VIIRS NetCDF4 (download: https://www.ncei.noaa.gov/data/cloud-properties-viirs/access/)
 --brdf PATH      VJ143C1 VIIRS BRDF HDF5 (download: https://e4ftl01.cr.usgs.gov/VIIRS/VJ143C1.002/)
+--aod PATH       AERDB_D3_GEOLEO merged AOD NetCDF4 (Deep Blue GEO-LEO merged daily L3)
+--ssf PATH       CERES SSF or FLASHFlux NetCDF4 (download: https://ceres.larc.nasa.gov/data/)
+--cldpix PATH    CERES CLDPIX NetCDF4 (download: https://ceres.larc.nasa.gov/data/)
 --lat-center     Latitude of the tile center in degrees (default: 45.0)
 --lon-center     Longitude of the tile center in degrees (default: -90.0)
 --output-dir     Directory for PNG output (default: current directory)
@@ -413,6 +419,95 @@ def _make_brdf_figure(tile: GridTile, out_path: Path) -> None:
     print(f"  [viirs_brdf] Saved: {out_path}")
 
 
+def _make_aod_figure(tile: GridTile, out_path: Path) -> None:
+    """Save a single-panel merged AOD map."""
+    import matplotlib.pyplot as plt
+
+    bbox = tile.bounds
+    extent = [tile.lons.min(), tile.lons.max(), tile.lats.min(), tile.lats.max()]
+    fig, ax = plt.subplots(figsize=(8, 7))
+    im = ax.imshow(
+        tile.data.astype(float),
+        extent=extent,
+        origin="lower",
+        aspect="auto",
+        cmap="YlOrBr",
+    )
+    ax.set_xlabel("Longitude (°)")
+    ax.set_ylabel("Latitude (°)")
+    ax.set_title(
+        f"Merged AOD at 550 nm (AERDB_D3_GEOLEO)\n"
+        f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
+        f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
+        f"({tile.data.shape[1]}×{tile.data.shape[0]} px)"
+    )
+    plt.colorbar(im, ax=ax, shrink=0.85, pad=0.02, label="AOD (unitless)")
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [viirs_aod] Saved: {out_path}")
+
+
+def _make_gridded_multivar_figure(
+    tile: GridTile, out_path: Path, reader_key: str, suptitle: str
+) -> None:
+    """Save a grid of panels, one per variable, for a rasterized multi-var tile.
+
+    Used for the CERES SSF and CLDPIX readers, whose tiles carry many variables
+    rasterized from swath/point data onto the 2° tile grid. Categorical
+    variables (those with ``n_categories`` set) use a discrete colormap;
+    continuous variables use a sequential one. Panels whose variable is entirely
+    fill in this tile are explicitly annotated, so an empty panel reads as
+    "no valid data here" rather than as a rendering failure.
+    """
+    import matplotlib.pyplot as plt
+
+    variables = ReaderRegistry.get(reader_key).VARIABLES
+    n = len(variables)
+    ncol = 3
+    nrow = math.ceil(n / ncol)
+
+    bbox = tile.bounds
+    extent = [tile.lons.min(), tile.lons.max(), tile.lats.min(), tile.lats.max()]
+
+    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.3 * nrow))
+    axes = np.atleast_1d(axes).ravel()
+    fig.suptitle(
+        f"{suptitle}\n"
+        f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
+        f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
+        f"({tile.data.shape[2]}×{tile.data.shape[1]} px)",
+        fontsize=12,
+    )
+    for i, var_spec in enumerate(variables):
+        ax = axes[i]
+        arr = tile.data[i].astype(float)
+        n_valid = int(np.isfinite(arr).sum())
+        # Categorical variables get a discrete qualitative colormap; continuous
+        # variables a perceptually-uniform sequential one.
+        cmap = "tab20" if var_spec.n_categories is not None else "viridis"
+        im = ax.imshow(arr, extent=extent, origin="lower", aspect="auto", cmap=cmap)
+        ax.set_title(f"{var_spec.name}  ({n_valid} cells)", fontsize=8)
+        ax.set_xlabel("Lon (°)", fontsize=6)
+        ax.set_ylabel("Lat (°)", fontsize=6)
+        if n_valid == 0:
+            # Make a fully-fill panel unambiguous rather than a blank white box.
+            ax.text(
+                0.5, 0.5, "all fill\n(no valid data\nin this tile)",
+                ha="center", va="center", transform=ax.transAxes, fontsize=8, color="gray",
+            )
+        else:
+            plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+    # Hide any unused subplot axes.
+    for j in range(n, len(axes)):
+        axes[j].axis("off")
+
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [{reader_key}] Saved: {out_path}")
+
+
 # ---------------------------------------------------------------------------
 # Per-reader load + report orchestration
 # ---------------------------------------------------------------------------
@@ -477,6 +572,11 @@ def _run_reader(
             "era5": _make_era5_figure,
             "viirs_cloud": _make_viirs_cloud_figure,
             "viirs_brdf": _make_brdf_figure,
+            "viirs_aod": _make_aod_figure,
+            "ssf": lambda t, p: _make_gridded_multivar_figure(t, p, "ssf", "CERES SSF (rasterized)"),
+            "cldpix": lambda t, p: _make_gridded_multivar_figure(
+                t, p, "cldpix", "CERES CLDPIX (rasterized)"
+            ),
         }
         if reader_key in dispatch:
             dispatch[reader_key](tile, out_file)
@@ -509,6 +609,12 @@ def _build_parser() -> argparse.ArgumentParser:
                         help="VIIRS CLDPROP_D3 NetCDF4 file")
     parser.add_argument("--brdf", type=Path, metavar="FILE",
                         help="VIIRS VJ143C1 BRDF HDF5 file")
+    parser.add_argument("--aod", type=Path, metavar="FILE",
+                        help="AERDB_D3_GEOLEO merged AOD NetCDF4 file")
+    parser.add_argument("--ssf", type=Path, metavar="FILE",
+                        help="CERES SSF (or FLASHFlux) NetCDF4 file")
+    parser.add_argument("--cldpix", type=Path, metavar="FILE",
+                        help="CERES CLDPIX NetCDF4 file")
     parser.add_argument("--lat-center", type=float, default=45.0, metavar="DEG",
                         help="Tile center latitude in degrees (default: 45.0)")
     parser.add_argument("--lon-center", type=float, default=-90.0, metavar="DEG",
@@ -531,12 +637,15 @@ def main(argv: list[str] | None = None) -> int:
         "era5": args.era5,
         "viirs_cloud": args.viirs,
         "viirs_brdf": args.brdf,
+        "viirs_aod": args.aod,
+        "ssf": args.ssf,
+        "cldpix": args.cldpix,
     }
 
     if not any(requested.values()):
         parser.error(
             "No reader files supplied. Provide at least one of: "
-            "--igbp, --nise, --era5, --viirs, --brdf"
+            "--igbp, --nise, --era5, --viirs, --brdf, --aod, --ssf, --cldpix"
         )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
