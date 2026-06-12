@@ -118,7 +118,7 @@ _VARIABLE_ORDER: tuple[str, ...] = (
     "no_ice_or_snow",
     "permanent_ice",
     "dry_snow_on_land",
-    "missing",
+    "snow_ice_missing",
 )
 
 
@@ -153,7 +153,7 @@ class NISEReader(GriddedDataReader):
         Five fractional-coverage variables, all continuous float32 with
         ``weighted_mean`` aggregation and range 0.0–1.0:
         ``"sea_ice_concentration"``, ``"no_ice_or_snow"``, ``"permanent_ice"``,
-        ``"dry_snow_on_land"``, and ``"missing"``.
+        ``"dry_snow_on_land"``, and ``"snow_ice_missing"``.
 
     Parameters
     ----------
@@ -210,7 +210,7 @@ class NISEReader(GriddedDataReader):
             n_categories=None,
         ),
         VariableSpec(
-            name="missing",
+            name="snow_ice_missing",
             dtype="float32",
             aggregation="weighted_mean",
             required_mode=OperationalMode.CAM,
@@ -334,7 +334,7 @@ class NISEReader(GriddedDataReader):
         dry_snow_on_land = (
             (raw >= _SNOW_CODE_MIN) & (raw <= _SNOW_CODE_MAX)
         ).astype(np.float32)
-        missing = (raw == _CODE_MISSING).astype(np.float32)
+        snow_ice_missing = (raw == _CODE_MISSING).astype(np.float32)
 
         # Stack in canonical order. Keep this list aligned with _VARIABLE_ORDER /
         # VARIABLES — the aggregation engine indexes layers by that position.
@@ -344,7 +344,7 @@ class NISEReader(GriddedDataReader):
                 no_ice_or_snow,
                 permanent_ice,
                 dry_snow_on_land,
-                missing,
+                snow_ice_missing,
             ],
             axis=0,
         ).astype(np.float32)

@@ -150,10 +150,52 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       # source: nise (aggregation: weighted_mean)
+      # PSF-weighted mean sea ice concentration derived from NISE Extent codes 1–100
+      # (code / 100.0). Permanent ice (code 101) counts as 1.0. Range [0, 1].
       # https://nsidc.org/data/nise/versions/5
-      long_name: Sea ice concentration
-      units: "percent"
-      valid_range: [0, 100]
+      long_name: Sea ice concentration (fraction)
+      units: "1"
+      valid_range: [0, 1]
+  no_ice_or_snow:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: nise (aggregation: weighted_mean)
+      # Fraction of PSF-weighted footprint area where NISE code 0 (no ice or snow —
+      # open ocean, snow-free land, or outside grid). Range [0, 1].
+      long_name: Fraction of footprint with no ice or snow (NISE code 0)
+      units: "1"
+      valid_range: [0, 1]
+  permanent_ice:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: nise (aggregation: weighted_mean)
+      # Fraction of PSF-weighted footprint area where NISE code 101 (permanent ice:
+      # Greenland Ice Sheet, Antarctic ice shelves). Range [0, 1].
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101)
+      units: "1"
+      valid_range: [0, 1]
+  dry_snow_on_land:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: nise (aggregation: weighted_mean)
+      # Fraction of PSF-weighted footprint area where NISE codes 103–110 (dry snow
+      # on land). Range [0, 1].
+      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110)
+      units: "1"
+      valid_range: [0, 1]
+  snow_ice_missing:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: nise (aggregation: weighted_mean)
+      # Fraction of PSF-weighted footprint area where NISE code 255 (missing/no
+      # retrieval). High values flag unreliable ice/snow classification.
+      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255)
+      units: "1"
+      valid_range: [0, 1]
   # --- source reader: ssf (resolution 20.0 km) ---
   aerosol_optical_depth:
     dtype: float32
@@ -179,6 +221,26 @@ variables:
       long_name: Cloud optical depth (CERES SSF imager layer)
       units: "1"
       valid_range: [0, 512]
+  cloud_water_particle_radius:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_mean)
+      # Effective cloud water-droplet particle radius at 3.7 µm, lower cloud layer.
+      # Phase-separated from cloud_ice_particle_radius; the blended radius is not
+      # available in SSF — use cldpix.cloud_particle_radius for that.
+      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer)
+      units: "um"
+      valid_range: [2, 60]
+  cloud_ice_particle_radius:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_mean)
+      # Effective cloud ice-crystal particle radius at 3.7 µm, lower cloud layer.
+      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer)
+      units: "um"
+      valid_range: [5, 90]
   cloud_classification:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]

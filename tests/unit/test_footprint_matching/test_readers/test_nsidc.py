@@ -27,7 +27,7 @@ _EXPECTED_VARIABLES = (
     "no_ice_or_snow",
     "permanent_ice",
     "dry_snow_on_land",
-    "missing",
+    "snow_ice_missing",
 )
 
 
@@ -165,7 +165,7 @@ class TestNISEReaderLayerMapping:
 
     def test_code_255_is_missing(self, tmp_path, monkeypatch):
         stack = self._run(tmp_path, monkeypatch, self._filled(255))
-        assert np.all(self._layer(stack, "missing") == 1.0)
+        assert np.all(self._layer(stack, "snow_ice_missing") == 1.0)
         assert np.all(self._layer(stack, "sea_ice_concentration") == 0.0)
 
     def test_code_102_belongs_to_no_layer(self, tmp_path, monkeypatch):
@@ -295,7 +295,7 @@ class TestNISEExtentToCategoryMasks:
         # One pixel per code group, laid out across a 2×3 grid:
         #   60  -> sea ice 0.60      0   -> no_ice_or_snow
         #   101 -> permanent ice     105 -> dry snow on land
-        #   255 -> missing           102 -> belongs to no layer
+        #   255 -> snow_ice_missing   102 -> belongs to no layer
         raw = np.array([[60, 0, 101],
                         [105, 255, 102]], dtype=np.uint8)
         masks = reader._extent_to_category_masks(raw)
@@ -304,13 +304,13 @@ class TestNISEExtentToCategoryMasks:
         no_ice = masks[_layer_index("no_ice_or_snow")]
         perm = masks[_layer_index("permanent_ice")]
         snow = masks[_layer_index("dry_snow_on_land")]
-        missing = masks[_layer_index("missing")]
+        snow_ice_missing = masks[_layer_index("snow_ice_missing")]
 
         assert np.isclose(sea_ice[0, 0], 0.60, atol=1e-5)
         assert no_ice[0, 1] == 1.0
         assert perm[0, 2] == 1.0
         assert snow[1, 0] == 1.0
-        assert missing[1, 1] == 1.0
+        assert snow_ice_missing[1, 1] == 1.0
         # Code 102 pixel is zero in every layer.
         assert np.all(masks[:, 1, 2] == 0.0)
 
@@ -324,7 +324,7 @@ class TestNISEExtentToCategoryMasks:
         masks = reader._extent_to_category_masks(raw)
         indicator_layers = [
             masks[_layer_index(n)]
-            for n in ("no_ice_or_snow", "permanent_ice", "dry_snow_on_land", "missing")
+            for n in ("no_ice_or_snow", "permanent_ice", "dry_snow_on_land", "snow_ice_missing")
         ]
         indicator_sum = np.sum(indicator_layers, axis=0)
         assert np.all(indicator_sum <= 1.0)
