@@ -1,12 +1,15 @@
-"""Unit tests for the FMATCH-CAM data product definition and its loader.
+"""Unit tests for the FMATCH product definitions and their loaders.
 
-These tests confirm that:
-- ``FMATCH-CAM`` is registered as an ancillary (ANC) DataProductIdentifier.
+There is one SSF-style product definition per FMATCH operational mode. These
+tests confirm, for every mode, that:
+- The product ID is registered as an ancillary (ANC) DataProductIdentifier and
+  matches the OperationalMode value string.
 - The product definition YAML loads and validates via LiberaDataProductDefinition.
-- The schema declares the expected geolocation, derived-geometry, coverage/QA,
-  and PSF-aggregated external variables.
-- The external-variable names/dtypes in the YAML stay in sync with the reader
-  plugins' VariableSpec definitions (guards against future drift).
+- The schema declares the expected geolocation, derived-geometry, and QA variables
+  on the correct (radiometer vs camera) time dimension.
+- The external (reader-sourced) variables stay in sync with the reader plugins'
+  VariableSpec definitions, including the source-prefix disambiguation applied to
+  globally-colliding names (cloud_optical_depth from both ssf and cldpix).
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
 
@@ -15,35 +18,25 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+# Importing the readers subpackage registers all built-in readers so we can
+# cross-check the product definitions against their VariableSpecs.
+import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.product import (
-    FMATCH_CAM_TIME_VARIABLE,
-    load_fmatch_cam_definition,
+    FMATCH_DEFINITION_FILENAMES,
+    fmatch_time_variable,
+    load_fmatch_definition,
 )
-
-# Import the concrete production readers directly rather than reading the global
-# ReaderRegistry: other tests register throwaway readers (e.g. _FakeReader in
-# test_base.py) into that shared registry, so iterating it would make this test
-# order-dependent. Pinning to the real reader classes keeps the cross-check stable.
-from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
-from libera_utils.footprint_matching.readers.era5 import ERA5Reader
-from libera_utils.footprint_matching.readers.igbp import IGBPReader
-from libera_utils.footprint_matching.readers.nsidc import NISEReader
-from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
+from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
-# The production readers active in FMATCH-CAM (OperationalMode.CAM).
-_FMATCH_CAM_READERS = (
-    ERA5Reader,
-    IGBPReader,
-    NISEReader,
-    VIIRSBRDFReader,
-    VIIRSCloudReader,
-)
+# The production reader keys. Intersecting with these makes the cross-check robust
+# against throwaway readers other tests register into the shared ReaderRegistry
+# (e.g. _FakeReader in test_base.py).
+PRODUCTION_READER_KEYS = frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "ssf", "cldpix", "viirs_aod"})
 
-# Geolocation inputs and derived viewing-geometry variables the definition must
-# expose (these have no reader; they come from L1B / are computed).
+# Variables that always appear regardless of mode.
 GEOLOCATION_VARIABLES = (
     "latitude",
     "longitude",
@@ -55,88 +48,128 @@ GEOLOCATION_VARIABLES = (
 DERIVED_GEOMETRY_VARIABLES = ("scattering_angle", "sunglint_angle")
 COVERAGE_QA_VARIABLES = ("psf_coverage_fraction", "q_flags")
 
+# Modes that carry the Climate Quality gate flag (design §1.4).
+CLIMATE_QUALITY_MODES = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
 
-def _expected_external_variables() -> dict[str, str]:
-    """Return {variable_name: dtype} for every CAM-mode production reader variable."""
-    expected: dict[str, str] = {}
-    for cls in _FMATCH_CAM_READERS:
-        # Defensive: every reader pinned here should indeed be active in CAM mode.
-        assert cls.REQUIRED_MODE.rank <= OperationalMode.CAM.rank
+ALL_MODES = tuple(OperationalMode)
+
+
+def _production_readers_for_mode(mode: OperationalMode) -> dict:
+    """Active production readers for a mode (excludes test-injected readers)."""
+    return {key: cls for key, cls in ReaderRegistry.get_readers_for_mode(mode).items() if key in PRODUCTION_READER_KEYS}
+
+
+def _globally_colliding_names() -> set[str]:
+    """Variable names produced by more than one production reader across all modes."""
+    counts: dict[str, set[str]] = {}
+    for key, cls in ReaderRegistry._registry.items():
+        if key not in PRODUCTION_READER_KEYS:
+            continue
         for spec in cls.VARIABLES:
-            expected[spec.name] = spec.dtype
+            counts.setdefault(spec.name, set()).add(key)
+    return {name for name, owners in counts.items() if len(owners) > 1}
+
+
+def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
+    """{output_variable_name: dtype} for every active production reader variable.
+
+    Mirrors the product-definition naming rule: globally-colliding names are
+    prefixed with the reader source key.
+    """
+    collisions = _globally_colliding_names()
+    expected: dict[str, str] = {}
+    for key, cls in _production_readers_for_mode(mode).items():
+        for spec in cls.VARIABLES:
+            name = f"{key}_{spec.name}" if spec.name in collisions else spec.name
+            expected[name] = spec.dtype
     return expected
 
 
 @pytest.fixture(scope="module")
-def fmatch_cam_definition() -> LiberaDataProductDefinition:
-    """The loaded FMATCH-CAM product definition."""
-    return load_fmatch_cam_definition()
+def definitions() -> dict[OperationalMode, LiberaDataProductDefinition]:
+    """All five FMATCH product definitions keyed by operational mode."""
+    return {mode: load_fmatch_definition(mode) for mode in ALL_MODES}
 
 
-class TestFmatchCamIdentifier:
-    """The product ID must exist in the enum as an ANC product."""
+class TestFmatchIdentifiers:
+    """Every mode's product ID must be an ANC member matching the mode string."""
 
-    def test_fmatch_cam_in_enum(self):
-        product = DataProductIdentifier("FMATCH-CAM")
-        assert product is DataProductIdentifier.anc_fmatch_cam
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_product_id_registered_as_anc(self, mode):
+        product = DataProductIdentifier(mode.value)
         assert product.data_level is DataLevel.ANC
 
-    def test_product_id_matches_operational_mode(self):
-        # The product ID string must stay identical to the operational mode value.
-        assert str(DataProductIdentifier.anc_fmatch_cam) == OperationalMode.CAM.value
+    def test_all_modes_have_a_definition_file(self):
+        # The product module must map every operational mode to a YAML file.
+        assert set(FMATCH_DEFINITION_FILENAMES) == set(ALL_MODES)
 
 
-class TestFmatchCamDefinition:
-    """The YAML loads and declares the expected structure."""
+class TestFmatchDefinitions:
+    """Each YAML loads and declares the expected structure."""
 
-    def test_definition_loads(self, fmatch_cam_definition):
-        assert isinstance(fmatch_cam_definition, LiberaDataProductDefinition)
-        assert fmatch_cam_definition.attributes["ProductID"] == "FMATCH-CAM"
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_definition_loads_with_matching_product_id(self, mode, definitions):
+        definition = definitions[mode]
+        assert isinstance(definition, LiberaDataProductDefinition)
+        assert definition.attributes["ProductID"] == mode.value
 
-    def test_time_coordinate_present(self, fmatch_cam_definition):
-        assert FMATCH_CAM_TIME_VARIABLE in fmatch_cam_definition.coordinates
-        time_def = fmatch_cam_definition.coordinates[FMATCH_CAM_TIME_VARIABLE]
-        assert time_def.dtype == "datetime64[ns]"
-        assert time_def.dimensions == [FMATCH_CAM_TIME_VARIABLE]
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_time_coordinate_matches_timescale(self, mode, definitions):
+        definition = definitions[mode]
+        time_var = fmatch_time_variable(mode)
+        assert time_var in definition.coordinates
+        assert definition.coordinates[time_var].dtype == "datetime64[ns]"
+        assert definition.coordinates[time_var].dimensions == [time_var]
 
-    @pytest.mark.parametrize(
-        "variable_name",
-        GEOLOCATION_VARIABLES + DERIVED_GEOMETRY_VARIABLES + COVERAGE_QA_VARIABLES,
-    )
-    def test_non_reader_variables_present(self, fmatch_cam_definition, variable_name):
-        assert variable_name in fmatch_cam_definition.variables
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_common_variables_present(self, mode, definitions):
+        definition = definitions[mode]
+        for name in GEOLOCATION_VARIABLES + DERIVED_GEOMETRY_VARIABLES + COVERAGE_QA_VARIABLES:
+            assert name in definition.variables, f"{mode.value} missing {name}"
 
-    def test_external_variables_match_readers(self, fmatch_cam_definition):
-        """Every active reader variable must be present with a matching dtype."""
-        expected = _expected_external_variables()
-        for name, dtype in expected.items():
-            assert name in fmatch_cam_definition.variables, f"missing external variable {name}"
-            assert fmatch_cam_definition.variables[name].dtype == dtype, (
-                f"dtype drift for {name}: definition has "
-                f"{fmatch_cam_definition.variables[name].dtype}, reader has {dtype}"
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_climate_quality_gate_only_on_imager_modes(self, mode, definitions):
+        has_gate = "climate_quality_gate" in definitions[mode].variables
+        assert has_gate == (mode in CLIMATE_QUALITY_MODES)
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_external_variables_match_readers(self, mode, definitions):
+        definition = definitions[mode]
+        for name, dtype in _expected_external_variables(mode).items():
+            assert name in definition.variables, f"{mode.value} missing external variable {name}"
+            assert definition.variables[name].dtype == dtype, (
+                f"{mode.value} dtype drift for {name}: definition has "
+                f"{definition.variables[name].dtype}, reader has {dtype}"
             )
 
-    def test_all_variables_use_radiometer_time_dimension(self, fmatch_cam_definition):
-        for name, var_def in fmatch_cam_definition.variables.items():
-            assert var_def.dimensions == [FMATCH_CAM_TIME_VARIABLE], (
-                f"{name} should be indexed by {FMATCH_CAM_TIME_VARIABLE}"
-            )
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_all_variables_use_mode_time_dimension(self, mode, definitions):
+        time_var = fmatch_time_variable(mode)
+        for name, var_def in definitions[mode].variables.items():
+            assert var_def.dimensions == [time_var], f"{mode.value}/{name} wrong dimension"
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_no_duplicate_variable_names(self, mode, definitions):
+        # Sanity: collision prefixing must leave a unique variable set.
+        definition = definitions[mode]
+        all_names = list(definition.variables) + list(definition.coordinates)
+        assert len(all_names) == len(set(all_names))
 
 
-class TestFmatchCamConformance:
-    """A dummy dataset must round-trip through create/enforce/check."""
+class TestFmatchConformance:
+    """A dummy dataset must round-trip through create/enforce/check for every mode."""
 
-    def test_roundtrip(self, fmatch_cam_definition):
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_roundtrip(self, mode, definitions):
+        definition = definitions[mode]
+        time_var = fmatch_time_variable(mode)
         n_footprints = 4
-        # One datetime64 value per footprint identifies each record.
         times = np.array(
             ["2026-06-11T00:00:00", "2026-06-11T00:00:01", "2026-06-11T00:00:02", "2026-06-11T00:00:03"],
             dtype="datetime64[ns]",
         )
-
-        data: dict[str, np.ndarray] = {FMATCH_CAM_TIME_VARIABLE: times}
-        # Fill every declared variable with dummy data of the correct dtype.
-        for name, var_def in fmatch_cam_definition.variables.items():
+        data: dict[str, np.ndarray] = {time_var: times}
+        for name, var_def in definition.variables.items():
             data[name] = np.zeros(n_footprints, dtype=var_def.dtype)
 
         dynamic_attrs = {
@@ -144,9 +177,7 @@ class TestFmatchCamConformance:
             "date_created": "2026-06-11T00:00:00Z",
             "input_files": "dummy_l1b.nc",
         }
-        dataset = fmatch_cam_definition.create_product_dataset(data, dynamic_product_attributes=dynamic_attrs)
-        dataset = fmatch_cam_definition.enforce_dataset_conformance(dataset)
-
-        # strict=True raises on any nonconformance; an empty list means success.
-        errors = fmatch_cam_definition.check_dataset_conformance(dataset, strict=True)
+        dataset = definition.create_product_dataset(data, dynamic_product_attributes=dynamic_attrs)
+        dataset = definition.enforce_dataset_conformance(dataset)
+        errors = definition.check_dataset_conformance(dataset, strict=True)
         assert errors == []

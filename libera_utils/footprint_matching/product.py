@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from libera_utils.config import config
+from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 if TYPE_CHECKING:
@@ -37,29 +38,53 @@ if TYPE_CHECKING:
     import numpy as np
     from xarray import Dataset
 
-    from libera_utils.footprint_matching.types import OperationalMode
+# Product definition YAML filename for each FMATCH operational mode. Every mode
+# has its own SSF-style product definition (the mode *is* the product), and the
+# active reader set / variables differ by mode. Kept as one source of truth so
+# callers and tests never hard-code filenames.
+FMATCH_DEFINITION_FILENAMES: dict[OperationalMode, str] = {
+    OperationalMode.CAM: "fmatch_cam.yml",
+    OperationalMode.CAM_CAMTIME: "fmatch_cam_camtime.yml",
+    OperationalMode.IMAGER_FLASH: "fmatch_imager_flash.yml",
+    OperationalMode.IMAGER: "fmatch_imager.yml",
+    OperationalMode.IMAGER_CAMTIME: "fmatch_imager_camtime.yml",
+}
 
-# Filename of the FMATCH-CAM product definition within the configured
-# LIBERA_PRODUCT_DEFINITIONS_PATH directory. Kept as a module constant so tests
-# and callers reference one source of truth rather than hard-coding the string.
-FMATCH_CAM_DEFINITION_FILENAME = "fmatch_cam.yml"
+# Camera-timescale modes index footprints by camera image time; all other modes
+# index by radiometer observation time. This is the dimension/coordinate name and
+# the ``time_variable`` handed to ``write_libera_data_product`` for filename
+# start/end-time generation.
+_CAMERA_TIMESCALE_MODES = frozenset({OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME})
 
-# Name of the coordinate/dimension that identifies each footprint by its
-# radiometer observation time. This is the ``time_variable`` handed to
-# ``write_libera_data_product`` for start/end-time filename generation.
+# Back-compat aliases for the CAM product (the first one delivered).
+FMATCH_CAM_DEFINITION_FILENAME = FMATCH_DEFINITION_FILENAMES[OperationalMode.CAM]
 FMATCH_CAM_TIME_VARIABLE = "RADIOMETER_TIME"
 
 
-def load_fmatch_cam_definition() -> LiberaDataProductDefinition:
-    """Load and validate the FMATCH-CAM product definition.
+def fmatch_time_variable(mode: OperationalMode) -> str:
+    """Return the per-footprint time coordinate name for an operational mode.
 
-    Resolves ``fmatch_cam.yml`` under the configured product-definitions
-    directory and parses it into a validated :class:`LiberaDataProductDefinition`.
+    Camera-timescale modes (``CAM_CAMTIME``, ``IMAGER_CAMTIME``) use
+    ``CAMERA_TIME``; all radiometer-timescale modes use ``RADIOMETER_TIME``.
+    """
+    return "CAMERA_TIME" if mode in _CAMERA_TIMESCALE_MODES else "RADIOMETER_TIME"
+
+
+def load_fmatch_definition(mode: OperationalMode) -> LiberaDataProductDefinition:
+    """Load and validate the FMATCH product definition for an operational mode.
+
+    Resolves the mode's YAML under the configured product-definitions directory
+    and parses it into a validated :class:`LiberaDataProductDefinition`.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The FMATCH operational mode whose product definition to load.
 
     Returns
     -------
     LiberaDataProductDefinition
-        The validated FMATCH-CAM product definition, ready for use with
+        The validated product definition, ready for use with
         ``create_product_dataset`` / ``enforce_dataset_conformance`` /
         ``check_dataset_conformance``.
 
@@ -70,8 +95,22 @@ def load_fmatch_cam_definition() -> LiberaDataProductDefinition:
     definitions are resolved elsewhere in the codebase.
     """
     definitions_dir = Path(str(config.get("LIBERA_PRODUCT_DEFINITIONS_PATH")))
-    definition_path = definitions_dir / FMATCH_CAM_DEFINITION_FILENAME
+    definition_path = definitions_dir / FMATCH_DEFINITION_FILENAMES[mode]
     return LiberaDataProductDefinition.from_yaml(definition_path)
+
+
+def load_fmatch_cam_definition() -> LiberaDataProductDefinition:
+    """Load and validate the FMATCH-CAM product definition.
+
+    Thin convenience wrapper around :func:`load_fmatch_definition` for the
+    lowest-latency CAM product (the first one delivered).
+
+    Returns
+    -------
+    LiberaDataProductDefinition
+        The validated FMATCH-CAM product definition.
+    """
+    return load_fmatch_definition(OperationalMode.CAM)
 
 
 def aggregate_external_variables(
@@ -85,10 +124,14 @@ def aggregate_external_variables(
     ``ReaderRegistry.get_readers_for_mode(mode)``, load the tiles overlapping
     each footprint, and apply each variable's PSF-weighted aggregation strategy
     (weighted mean / mode / log-mean) to collapse the fine-resolution pixels to a
-    single value per footprint. The returned dict is keyed by the variable names
-    declared in ``fmatch_cam.yml`` (``surface_type``, ``sea_ice_concentration``,
-    ``wind_u10``, ``wind_v10``, ``cloud_fraction``, ``cloud_optical_thickness``,
-    ``cloud_top_pressure``).
+    single value per footprint. The active reader set - and therefore the keys of
+    the returned dict - grows with the mode's latency (e.g. CAM has era5, igbp,
+    nise, viirs_brdf, viirs_cloud; IMAGER additionally has ssf, cldpix, viirs_aod).
+
+    Where two active readers emit the same variable name (``cloud_optical_depth``
+    from both ssf and cldpix), the implementation must namespace them with the
+    reader source key (``ssf_cloud_optical_depth`` / ``cldpix_cloud_optical_depth``)
+    to match the product definition variable names.
 
     Returns
     -------
@@ -114,9 +157,9 @@ def compute_derived_viewing_geometry(
 ) -> dict[str, np.ndarray]:
     """Compute derived viewing-geometry variables from the geolocation angles.
 
-    Produces the ``scattering_angle`` and ``sunglint_angle`` variables defined in
-    ``fmatch_cam.yml``. The intended (CERES/SSF-heritage) formulas, with all
-    angles in degrees:
+    Produces the ``scattering_angle`` and ``sunglint_angle`` variables present in
+    every FMATCH product definition. The intended (CERES/SSF-heritage) formulas,
+    with all angles in degrees:
 
     - Scattering angle ``Theta``::
 
@@ -149,15 +192,15 @@ def compute_derived_viewing_geometry(
     )
 
 
-def assemble_fmatch_cam_dataset(*args: Any, **kwargs: Any) -> Dataset:
-    """Assemble a conformant FMATCH-CAM :class:`xarray.Dataset`.
+def assemble_fmatch_dataset(mode: OperationalMode, *args: Any, **kwargs: Any) -> Dataset:
+    """Assemble a conformant FMATCH :class:`xarray.Dataset` for an operational mode.
 
     Will combine the L1B geolocation inputs, the derived viewing geometry from
     :func:`compute_derived_viewing_geometry`, and the aggregated external
     variables from :func:`aggregate_external_variables` into the variable dict
-    expected by the product definition, then build a Dataset via
-    ``LiberaDataProductDefinition.create_product_dataset`` and bring it into
-    conformance with ``enforce_dataset_conformance``.
+    expected by the mode's product definition (from :func:`load_fmatch_definition`),
+    then build a Dataset via ``LiberaDataProductDefinition.create_product_dataset``
+    and bring it into conformance with ``enforce_dataset_conformance``.
 
     Raises
     ------
@@ -166,18 +209,18 @@ def assemble_fmatch_cam_dataset(*args: Any, **kwargs: Any) -> Dataset:
     """
     # TODO[LIBSDC-785]: assemble the per-footprint Dataset from all inputs.
     raise NotImplementedError(
-        "FMATCH-CAM dataset assembly is not implemented yet. This is a placeholder "
+        "FMATCH dataset assembly is not implemented yet. This is a placeholder "
         "for the footprint-matching orchestrator (future milestone)."
     )
 
 
-def write_fmatch_cam_product(*args: Any, **kwargs: Any) -> Any:
-    """Write a FMATCH-CAM NetCDF data product to disk.
+def write_fmatch_product(mode: OperationalMode, *args: Any, **kwargs: Any) -> Any:
+    """Write a FMATCH NetCDF data product to disk for an operational mode.
 
     Will delegate to ``libera_utils.io.netcdf.write_libera_data_product`` using
-    the definition from :func:`load_fmatch_cam_definition`, the assembled Dataset
-    from :func:`assemble_fmatch_cam_dataset`, and
-    ``time_variable=FMATCH_CAM_TIME_VARIABLE`` so the output filename encodes the
+    the definition from :func:`load_fmatch_definition`, the assembled Dataset from
+    :func:`assemble_fmatch_dataset`, and ``time_variable=fmatch_time_variable(mode)``
+    (``RADIOMETER_TIME`` or ``CAMERA_TIME``) so the output filename encodes the
     footprint time span.
 
     Raises
@@ -187,6 +230,6 @@ def write_fmatch_cam_product(*args: Any, **kwargs: Any) -> Any:
     """
     # TODO[LIBSDC-785]: wire assembly + write_libera_data_product together.
     raise NotImplementedError(
-        "FMATCH-CAM product writing is not implemented yet. This is a placeholder "
+        "FMATCH product writing is not implemented yet. This is a placeholder "
         "for the footprint-matching orchestrator entry point (future milestone)."
     )
