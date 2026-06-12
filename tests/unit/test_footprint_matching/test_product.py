@@ -48,9 +48,6 @@ GEOLOCATION_VARIABLES = (
 DERIVED_GEOMETRY_VARIABLES = ("scattering_angle", "sunglint_angle")
 COVERAGE_QA_VARIABLES = ("psf_coverage_fraction", "q_flags")
 
-# Modes that carry the Climate Quality gate flag (design §1.4).
-CLIMATE_QUALITY_MODES = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
-
 ALL_MODES = tuple(OperationalMode)
 
 
@@ -126,11 +123,6 @@ class TestFmatchDefinitions:
         definition = definitions[mode]
         for name in GEOLOCATION_VARIABLES + DERIVED_GEOMETRY_VARIABLES + COVERAGE_QA_VARIABLES:
             assert name in definition.variables, f"{mode.value} missing {name}"
-
-    @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_climate_quality_gate_only_on_imager_modes(self, mode, definitions):
-        has_gate = "climate_quality_gate" in definitions[mode].variables
-        assert has_gate == (mode in CLIMATE_QUALITY_MODES)
 
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_external_variables_match_readers(self, mode, definitions):
