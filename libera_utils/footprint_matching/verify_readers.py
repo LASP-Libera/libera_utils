@@ -244,30 +244,45 @@ def _make_igbp_figure(tile: GridTile, out_path: Path) -> None:
 
 
 def _make_nise_figure(tile: GridTile, out_path: Path) -> None:
-    """Save a sea ice concentration map for NISE data."""
+    """Save a panel of the five NISE surface-coverage layers.
+
+    The NISE reader now emits a 3-D ``(5, n_lat, n_lon)`` tile — one fractional
+    coverage layer per Extent code group — so we render a small multi-panel
+    figure (one subplot per layer) rather than a single concentration map.
+    """
     import matplotlib.pyplot as plt
 
-    data = tile.data.astype(float)
     bbox = tile.bounds
-    fig, ax = plt.subplots(figsize=(8, 7))
-    im = ax.imshow(
-        data,
-        cmap="Blues",
-        vmin=0.0,
-        vmax=1.0,
-        extent=[bbox.lon_min, bbox.lon_max, bbox.lat_min, bbox.lat_max],
-        origin="lower",
-        aspect="auto",
-    )
-    ax.set_xlabel("Longitude (°)")
-    ax.set_ylabel("Latitude (°)")
-    ax.set_title(
-        f"NISE Sea Ice Concentration\n"
-        f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
+    var_names = [v.name for v in ReaderRegistry.get("nise").VARIABLES]
+    data = tile.data.astype(float)
+
+    # data is (n_vars, n_lat, n_lon); lay the panels out in a single row.
+    n_vars = data.shape[0]
+    fig, axes = plt.subplots(1, n_vars, figsize=(4 * n_vars, 4.5), squeeze=False)
+    extent = [bbox.lon_min, bbox.lon_max, bbox.lat_min, bbox.lat_max]
+    for i, name in enumerate(var_names):
+        ax = axes[0][i]
+        im = ax.imshow(
+            data[i],
+            cmap="Blues",
+            vmin=0.0,
+            vmax=1.0,
+            extent=extent,
+            origin="lower",
+            aspect="auto",
+        )
+        ax.set_title(name, fontsize=9)
+        ax.set_xlabel("Longitude (°)")
+        if i == 0:
+            ax.set_ylabel("Latitude (°)")
+        plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
+
+    fig.suptitle(
+        f"NISE surface coverage layers  —  "
+        f"lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
         f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
-        f"({tile.data.shape[1]}×{tile.data.shape[0]} px)"
+        f"({data.shape[2]}×{data.shape[1]} px)"
     )
-    plt.colorbar(im, ax=ax, shrink=0.85, pad=0.02, label="Concentration (0–1)")
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
