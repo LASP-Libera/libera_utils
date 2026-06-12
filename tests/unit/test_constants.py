@@ -170,6 +170,10 @@ class TestDataProductIdentifier:
             "anc_adm",
             "anc_scene_id",
             "anc_fmatch_cam",
+            "anc_fmatch_cam_camtime",
+            "anc_fmatch_imager_flash",
+            "anc_fmatch_imager",
+            "anc_fmatch_imager_camtime",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
