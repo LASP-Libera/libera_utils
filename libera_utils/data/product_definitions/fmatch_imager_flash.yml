@@ -1,0 +1,314 @@
+# =============================================================================
+# FMATCH-IMAGER-FLASH Data Product Definition
+# =============================================================================
+# Footprint Match - Libera Imager Flash (radiometer time).
+#
+# Timescale: Radiometer    Latency: RBSP FLASHFlux (7-10 days)
+#
+# Post-Year-1 product. Adds RBSP-produced CERES SSF / FLASHFlux cloud and ADM
+# scene-type variables on top of the FMATCH-CAM reader set.
+#
+# This is an SSF-style, per-footprint record: each footprint is one entry along
+# the RADIOMETER_TIME dimension and is identified by its time. The variables below are:
+#   (a) geolocation inputs (from L1B Daily),
+#   (b) derived viewing geometry (computed from the geolocation angles),
+#   (c) PSF-aggregated external variables - exactly the variables produced by the
+#       readers active in this mode: era5, igbp, nise, ssf, viirs_brdf, viirs_cloud
+#       (ReaderRegistry.get_readers_for_mode), each collapsed to ONE value per
+#       footprint, and
+#   (d) coverage / QA bookkeeping.
+#
+# Loaded and validated by LiberaDataProductDefinition.from_yaml(). Global
+# attributes (Format, Conventions, Project*, Platform*, algorithm_version, ...)
+# are injected automatically from required_product_attributes.yml.
+#
+# NAMING: variable names and dtypes are copied verbatim from each reader's
+# VariableSpec so the schema matches the aggregation output. Where two readers
+# emit the same variable name (cloud_optical_depth from both ssf and cldpix), the
+# name is prefixed with the reader source key (ssf_/cldpix_) to stay unique and
+# preserve provenance.
+# See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4.
+# =============================================================================
+
+attributes:
+  ProductID: FMATCH-IMAGER-FLASH
+  algorithm_version: null # semantic version of the FMATCH algorithm that produced the file
+  date_created: null # ISO-8601 UTC timestamp of file creation
+  input_files: null # provenance: the L1B + ancillary input files used
+
+coordinates:
+  # The per-footprint identifier. Each footprint is uniquely identified by its
+  # observation time, so RADIOMETER_TIME is both the dimension and the coordinate.
+  RADIOMETER_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Radiometer footprint observation time
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  # ---------------------------------------------------------------------------
+  # (a) Geolocation inputs (from L1B Daily): lat, lon, alt, sza, vza, raa.
+  # ---------------------------------------------------------------------------
+  latitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+      valid_range: [-90, 90]
+  longitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+      valid_range: [-180, 180]
+  altitude:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Spacecraft altitude above reference ellipsoid
+      units: meters
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Solar zenith angle
+      units: degrees
+      valid_range: [0, 180]
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Viewing zenith angle
+      units: degrees
+      valid_range: [0, 180]
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative azimuth angle between Sun and sensor
+      units: degrees
+      valid_range: [0, 360]
+
+  # ---------------------------------------------------------------------------
+  # (b) Derived viewing geometry (computed from the angles above; CERES/SSF
+  #     heritage). Math lives in
+  #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
+  # ---------------------------------------------------------------------------
+  scattering_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # cos(Theta) = -cos(SZA)cos(VZA) + sin(SZA)sin(VZA)cos(RAA)
+      long_name: Scattering angle (Sun-surface-sensor)
+      units: degrees
+      valid_range: [0, 180]
+  sunglint_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Angle between the view direction and the specular reflection of the Sun.
+      long_name: Sun glint angle
+      units: degrees
+      valid_range: [0, 180]
+
+  # ---------------------------------------------------------------------------
+  # (c) PSF-aggregated external variables (one value per footprint).
+  # ---------------------------------------------------------------------------
+  # --- source reader: era5 (resolution 25.0 km) ---
+  wind_u10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: era5 (aggregation: weighted_mean)
+      long_name: Eastward wind component at 10 m
+      units: "m/s"
+  wind_v10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: era5 (aggregation: weighted_mean)
+      long_name: Northward wind component at 10 m
+      units: "m/s"
+  # --- source reader: igbp (resolution 1.0 km) ---
+  surface_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: igbp (aggregation: weighted_mode)
+      # https://climatedataguide.ucar.edu/climate-data/ceres-igbp-land-classification
+      long_name: IGBP surface type classification
+      valid_range: [1, 20]
+  # --- source reader: nise (resolution 25.0 km) ---
+  sea_ice_concentration:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: nise (aggregation: weighted_mean)
+      # https://nsidc.org/data/nise/versions/5
+      long_name: Sea ice concentration
+      units: "percent"
+      valid_range: [0, 100]
+  # --- source reader: ssf (resolution 20.0 km) ---
+  aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_log_mean)
+      long_name: Aerosol optical depth (CERES SSF)
+      units: "1"
+      valid_range: [0, 8]
+  clear_coverage:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_mean)
+      long_name: Clear-sky areal coverage
+      units: "percent"
+      valid_range: [0, 100]
+  ssf_cloud_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_log_mean)
+      long_name: Cloud optical depth (CERES SSF imager layer)
+      units: "1"
+      valid_range: [0, 512]
+  cloud_classification:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_mode)
+      long_name: CERES cloud classification code (encoded)
+      valid_range: [0, 32766]
+  shortwave_adm_type:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_mode)
+      long_name: CERES shortwave ADM scene type (encoded)
+      valid_range: [0, 5000]
+  longwave_adm_type:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: ssf (aggregation: weighted_mode)
+      long_name: CERES longwave ADM scene type (encoded)
+      valid_range: [0, 5000]
+  # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  brdf_shortwave_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Shortwave BRDF isotropic kernel weight
+      units: "1"
+  brdf_shortwave_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Shortwave BRDF volumetric kernel weight
+      units: "1"
+  brdf_shortwave_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Shortwave BRDF geometric kernel weight
+      units: "1"
+  brdf_vis_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Visible BRDF isotropic kernel weight
+      units: "1"
+  brdf_vis_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Visible BRDF volumetric kernel weight
+      units: "1"
+  brdf_vis_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Visible BRDF geometric kernel weight
+      units: "1"
+  brdf_nir_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Near-infrared BRDF isotropic kernel weight
+      units: "1"
+  brdf_nir_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Near-infrared BRDF volumetric kernel weight
+      units: "1"
+  brdf_nir_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Near-infrared BRDF geometric kernel weight
+      units: "1"
+  # --- source reader: viirs_cloud (resolution 111.0 km) ---
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_cloud (aggregation: weighted_mean)
+      long_name: Cloud fraction
+      units: "1"
+      valid_range: [0, 1]
+  cloud_optical_thickness:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_cloud (aggregation: weighted_log_mean)
+      long_name: Cloud optical thickness
+      units: "1"
+  cloud_top_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_cloud (aggregation: weighted_mean)
+      long_name: Cloud top pressure
+      units: "hPa"
+
+  # ---------------------------------------------------------------------------
+  # (d) Coverage / QA bookkeeping (design §1.4; CERES partial-coverage convention).
+  # ---------------------------------------------------------------------------
+  psf_coverage_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Fraction of PSF energy covered by valid ancillary data
+      units: "1"
+      valid_range: [0, 1]
+  q_flags:
+    dtype: int64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Quality flags (bitwise)
+      valid_range: [0, 2147483647]
+
+  # ---------------------------------------------------------------------------
+  # (e) Scope note. FMATCH-IMAGER-FLASH additionally carries RBSP FLASHFlux
+  #     reference fluxes (SW, LW) attached verbatim (NOT PSF-aggregated) for
+  #     downstream Scene ID validation (design §1.4). Those are not produced by a
+  #     GriddedDataReader, so they are intentionally omitted here until the
+  #     FLASHFlux pass-through input handling is implemented.
+  # TODO[LIBSDC-785]: add flashflux_sw_flux / flashflux_lw_flux pass-through vars.
