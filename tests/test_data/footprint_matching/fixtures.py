@@ -438,6 +438,8 @@ def make_ssf_fixture(
     aerosol_optical_depth: np.ndarray | None = None,
     clear_coverage: np.ndarray | None = None,
     cloud_optical_depth_lower: np.ndarray | None = None,
+    cloud_water_particle_radius_lower: np.ndarray | None = None,
+    cloud_ice_particle_radius_lower: np.ndarray | None = None,
     cloud_classification: np.ndarray | None = None,
     shortwave_adm_type: np.ndarray | None = None,
     longwave_adm_type: np.ndarray | None = None,
@@ -467,6 +469,12 @@ def make_ssf_fixture(
     aerosol_optical_depth, clear_coverage, cloud_optical_depth_lower : np.ndarray, optional
         Per-footprint continuous values. ``cloud_optical_depth_lower`` fills the
         lower (index 0) layer of the 2-D ``cloud_optical_depth_mean`` variable.
+    cloud_water_particle_radius_lower : np.ndarray, optional
+        Per-footprint water cloud particle effective radius (μm) for the lower
+        layer (index 0) of ``cloud_water_particle_radius_37um_mean``.
+    cloud_ice_particle_radius_lower : np.ndarray, optional
+        Per-footprint ice cloud particle effective radius (μm) for the lower
+        layer (index 0) of ``cloud_ice_particle_radius_37um_mean``.
     cloud_classification, shortwave_adm_type, longwave_adm_type : np.ndarray, optional
         Per-footprint int16 categorical/encoded codes.
 
@@ -495,6 +503,14 @@ def make_ssf_fixture(
         clear_coverage = np.array([10.0, 20.0, 30.0, 40.0, 50.0, 60.0], dtype=np.float32)[:n]
     if cloud_optical_depth_lower is None:
         cloud_optical_depth_lower = np.array([1.0, 2.0, 4.0, 8.0, 16.0, 32.0], dtype=np.float32)[:n]
+    # Water and ice particle radii use distinct deterministic values so each
+    # variable can be asserted independently in tests.
+    if cloud_water_particle_radius_lower is None:
+        cloud_water_particle_radius_lower = np.array(
+            [5.0, 6.0, 7.0, 8.0, 9.0, 10.0], dtype=np.float32)[:n]
+    if cloud_ice_particle_radius_lower is None:
+        cloud_ice_particle_radius_lower = np.array(
+            [20.0, 25.0, 30.0, 35.0, 40.0, 45.0], dtype=np.float32)[:n]
     if cloud_classification is None:
         # Four of one code, one of another → modal code is 1001.
         cloud_classification = np.array([1001, 1001, 1001, 1001, 1191, 2000], dtype=np.int16)[:n]
@@ -511,6 +527,16 @@ def make_ssf_fixture(
         if valid_range is not None:
             var.valid_range = np.array(valid_range, dtype=data.dtype)
 
+    def _add_lower_upper(grp, name, lower_values, fill, valid_range=None):
+        """Write a 2-D (Footprints, LowerUpper) variable with lower-layer values."""
+        var = grp.createVariable(name, "f4", ("Footprints", "LowerUpper"), fill_value=fill)
+        data = np.full((n, 2), fill, dtype=np.float32)
+        # Index 0 is the lower cloud layer — the layer selected by _CLOUD_LAYER_INDEX.
+        data[:, 0] = lower_values.astype(np.float32)
+        var[:] = data
+        if valid_range is not None:
+            var.valid_range = np.array(valid_range, dtype=np.float32)
+
     with netCDF4.Dataset(str(out_path), "w") as ds:
         ds.createDimension("Footprints", n)
         ds.createDimension("LowerUpper", 2)
@@ -526,13 +552,14 @@ def make_ssf_fixture(
         _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
 
         cif = ds.createGroup("Cloudy_Imager_Footprint_Layer")
-        cod_var = cif.createVariable(
-            "cloud_optical_depth_mean", "f4", ("Footprints", "LowerUpper"), fill_value=fill_f
-        )
-        cod = np.full((n, 2), fill_f, dtype=np.float32)
-        cod[:, 0] = cloud_optical_depth_lower.astype(np.float32)  # lower layer (index 0)
-        cod_var[:] = cod
-        cod_var.valid_range = np.array([0.0, 512.0], dtype=np.float32)
+        _add_lower_upper(cif, "cloud_optical_depth_mean",
+                         cloud_optical_depth_lower, fill_f, (0.0, 512.0))
+        # Phase-separated effective particle radii. SSF does not provide a single
+        # blended radius — water and ice clouds are retrieved independently at 3.7 μm.
+        _add_lower_upper(cif, "cloud_water_particle_radius_37um_mean",
+                         cloud_water_particle_radius_lower, fill_f, (2.0, 60.0))
+        _add_lower_upper(cif, "cloud_ice_particle_radius_37um_mean",
+                         cloud_ice_particle_radius_lower, fill_f, (5.0, 90.0))
 
         scn = ds.createGroup("Scene_Type")
         _add(scn, "cloud_classification", cloud_classification.astype(np.int16), fill_i, (0, 32766))
@@ -554,10 +581,14 @@ def make_cldpix_fixture(
     - 2-D ``Latitude`` / ``Longitude`` arrays (**longitude in the 0..360
       convention**)
     - A minimal set of float cloud variables (fill ``3.4028235e38``) and int8
-      categorical variables (fill ``127``; snow/ice also use a ``-1`` sentinel)
+      categorical variables (fill ``127``)
     - ``Eff_Cld_Pressure`` is written with a **descending** ``valid_range``
       ([1100, 10]) exactly as the real file does, so tests can verify the reader
       disables netCDF4 auto-masking (which would otherwise mask every value).
+
+    Surface-type variables (``IGBP_Ecosystem``, ``Snow_Map_Value``,
+    ``Ice_Map_Value``) are present in real CLDPIX files but are NOT written
+    here — the reader does not extract them (see ``cldpix.py`` module docstring).
 
     Parameters
     ----------
@@ -612,17 +643,14 @@ def make_cldpix_fixture(
         # Reversed valid_range exactly like the real file.
         _add("Eff_Cld_Pressure", np.full(shape, 800.0, np.float32), fill_f, (1100.0, 10.0))
         _add("Top_Cld_Height", np.full(shape, 6.0, np.float32), fill_f)
-        # Ice concentration percent; one pixel set to the −1 land/no-data sentinel.
-        ice = np.full(shape, 0.0, dtype=np.int8)
-        ice.flat[0] = -1
-        _add("Ice_Map_Value", ice, fill_i8, (0, 100))
+        # Effective cloud particle radius (μm) — blended water+ice value from
+        # the CERES retrieval algorithm. Constant 10.0 μm for easy assertions.
+        _add("Cld_Radius", np.full(shape, 10.0, np.float32), fill_f, (2.0, 60.0))
 
         # Categorical (int8) fields; one pixel set to the 127 fill sentinel.
         phase = np.full(shape, 1, dtype=np.int8)
         phase.flat[-1] = fill_i8
         _add("Cloud_Particle_Phase", phase, fill_i8, (1, 5))
         _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3))
-        _add("IGBP_Ecosystem", np.full(shape, 17, np.int8), fill_i8, (1, 19))
-        _add("Snow_Map_Value", np.full(shape, 0, np.int8), fill_i8, (0, 1))
 
     return out_path
