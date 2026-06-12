@@ -21,6 +21,7 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
+from libera_utils.footprint_matching.readers._swath import rasterize_points_to_grid
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
 
@@ -41,8 +42,20 @@ class IGBPReader(GriddedDataReader):
     The MCD12Q1 product stores IGBP land cover as ``LC_Type1`` (uint8) in
     sinusoidal-projected HDF4 tiles. Geographic coordinates are not stored as SDS
     arrays; they are computed from the HDF-EOS ``StructMetadata.0`` tile-corner
-    metadata via :func:`read_modis_sinusoidal_hdf4`. This reader loads the full
-    tile and returns the subset that falls within the requested bounding box.
+    metadata via :func:`read_modis_sinusoidal_hdf4`, which returns **2-D
+    per-pixel** latitude/longitude grids.
+
+    Geolocation: rasterization, not mean-collapse
+    ----------------------------------------------
+    The sinusoidal projection is *not* axis-aligned in lat/lon — longitude varies
+    along each row (``lon = X / (R·cos(lat))``), so a single longitude per column
+    (a column mean) places no real pixel and mis-geolocates the data. To carry
+    each pixel's true file-derived position through to footprint matching, this
+    reader flattens the 2-D ``(lat, lon, value)`` pixels to points and bins them
+    onto a regular sub-grid over the requested tile via
+    :func:`~libera_utils.footprint_matching.readers._swath.rasterize_points_to_grid`
+    — exactly like the ``ssf`` and ``cldpix`` swath readers. Every output cell
+    therefore has an exact center lat/lon.
 
     Class Attributes
     ----------------
@@ -51,6 +64,9 @@ class IGBPReader(GriddedDataReader):
     RESOLUTION_KM : float
         Nominal resolution 1.0 km (actual MODIS 500 m native, rounded for PSF
         weighting calculations).
+    OUTPUT_CELL_DEG : float
+        Edge length of the rasterized output cells (degrees). 0.05° matches the
+        ``cldpix`` 1-km reader and gives 40×40 cells per 2° tile.
     REQUIRED_MODE : OperationalMode
         Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
@@ -64,6 +80,7 @@ class IGBPReader(GriddedDataReader):
 
     READER_KEY: str = "igbp"
     RESOLUTION_KM: float = 1.0
+    OUTPUT_CELL_DEG: float = 0.05
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
@@ -75,12 +92,42 @@ class IGBPReader(GriddedDataReader):
         ),
     )
 
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Load IGBP land cover pixels within ``bbox``.
+    def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read the full tile and flatten it to geolocated land-cover points.
 
-        Opens the MCD12Q1 HDF4 file, reads the full ``LC_Type1``,
-        ``latitude``, and ``longitude`` SDS arrays, then returns the subset of
-        pixels whose coordinates fall within the bounding box.
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
+            ``(n_pixels,)`` float64 pixel-centre coordinates derived from the
+            sinusoidal projection metadata, and ``values`` is float64 shape
+            ``(1, n_pixels)`` holding the IGBP class code per pixel. Fill pixels
+            (original value 255) are set to ``NaN`` so the ``weighted_mode``
+            rasterization never selects fill as the modal land-cover class.
+        """
+        data_2d, lats_2d, lons_2d = read_modis_sinusoidal_hdf4(
+            file_path=str(self._file_path),
+            data_sds_name="LC_Type1",
+            fill_value=_IGBP_FILL_VALUE,
+        )
+
+        # read_modis_sinusoidal_hdf4 returns the data and coordinates as 2-D
+        # per-pixel grids. Mask the 255 fill to NaN *before* flattening: the
+        # rasterizer's mode aggregation counts every finite value as a category,
+        # so leaving 255 in would let "fill" win a cell.
+        values_2d = np.where(data_2d == _IGBP_FILL_VALUE, np.nan, data_2d)
+
+        lats = np.asarray(lats_2d, dtype=np.float64).ravel()
+        lons = np.asarray(lons_2d, dtype=np.float64).ravel()
+        values = values_2d.astype(np.float64).ravel()[np.newaxis, :]  # (1, n_pixels)
+        return lats, lons, values
+
+    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Rasterize IGBP land-cover pixels within ``bbox`` onto a regular sub-grid.
+
+        Flattens the sinusoidal tile to geolocated points (see
+        :meth:`_load_points`) and bins them onto a regular ``OUTPUT_CELL_DEG``
+        sub-grid covering the tile, taking the modal land-cover class per cell.
 
         Parameters
         ----------
@@ -90,66 +137,28 @@ class IGBPReader(GriddedDataReader):
         Returns
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where:
-
-            - ``data`` is float32 shape ``(n_lat, n_lon)``. Fill pixels (original
-              value 255) are preserved as-is; the PSF engine is responsible for
-              masking.
-            - ``lats`` is float64 shape ``(n_lat, n_lon)`` — 2-D pixel-centre latitudes.
-            - ``lons`` is float64 shape ``(n_lat, n_lon)`` — 2-D pixel-centre longitudes.
+            ``(data, lats, lons)`` where ``data`` is float32 shape
+            ``(n_lat, n_lon)`` (single-variable contract), ``lats``/``lons`` are
+            1-D float64 cell-centre coordinate arrays, and cells with no pixels
+            are ``NaN``.
 
         Notes
         -----
-        The function reads the entire HDF4 tile and subsets by coordinate, not by
-        HDF4 hyperslab. For the 500 m global MODIS tile (~5000 × 5000 pixels per
-        HDF4 tile), this is acceptable because the TileManager caches the GridTile
-        and does not re-read the file for subsequent overlapping footprints.
+        The function reads the entire HDF4 tile and bins by coordinate. For the
+        500 m MODIS tile this is acceptable because the TileManager caches the
+        GridTile and does not re-read the file for overlapping footprints.
         """
-        data_full, lats_full, lons_full = read_modis_sinusoidal_hdf4(
-            file_path=str(self._file_path),
-            data_sds_name="LC_Type1",
-            fill_value=_IGBP_FILL_VALUE,
+        lats, lons, values = self._load_points()
+
+        # rasterize_points_to_grid always returns (n_var, n_lat, n_lon). IGBP is
+        # single-variable, so squeeze axis 0 to honour the 2-D output contract
+        # that single-variable grid readers use.
+        data, lats_out, lons_out = rasterize_points_to_grid(
+            point_lats=lats,
+            point_lons=lons,
+            values=values,
+            bbox=(bbox.lat_min, bbox.lat_max, bbox.lon_min, bbox.lon_max),
+            cell_size_deg=self.OUTPUT_CELL_DEG,
+            aggregations=[self.VARIABLES[0].aggregation],
         )
-
-        # lats_full and lons_full are 2-D pixel-centre coordinate grids derived
-        # from the sinusoidal projection metadata (MCD12Q1 has no lat/lon SDS).
-        # Compute bounding-box membership on the per-pixel level and extract the
-        # rectangular subregion that covers all matching pixels.
-        lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
-        lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
-
-        if lat_mask.ndim == 2 and lon_mask.ndim == 2:
-            # 2-D lat/lon coordinate grids — find the bounding row/col range.
-            combined = lat_mask & lon_mask
-            rows = np.where(combined.any(axis=1))[0]
-            cols = np.where(combined.any(axis=0))[0]
-            if rows.size == 0 or cols.size == 0:
-                # No pixels fall within bbox; return empty arrays.
-                return (
-                    np.empty((0, 0), dtype=np.float32),
-                    np.empty(0, dtype=np.float64),
-                    np.empty(0, dtype=np.float64),
-                )
-            row_sl = slice(rows[0], rows[-1] + 1)
-            col_sl = slice(cols[0], cols[-1] + 1)
-            data_sub = data_full[row_sl, col_sl]
-            # Build 1-D coordinate arrays from the mean lat/lon per row/column.
-            lats_out = lats_full[row_sl, col_sl].mean(axis=1)
-            lons_out = lons_full[row_sl, col_sl].mean(axis=0)
-        else:
-            # 1-D lat/lon coordinate arrays (simpler case used in tests).
-            row_sl = np.where(lat_mask)[0]
-            col_sl = np.where(lon_mask)[0]
-            if row_sl.size == 0 or col_sl.size == 0:
-                return (
-                    np.empty((0, 0), dtype=np.float32),
-                    np.empty(0, dtype=np.float64),
-                    np.empty(0, dtype=np.float64),
-                )
-            r_sl = slice(row_sl[0], row_sl[-1] + 1)
-            c_sl = slice(col_sl[0], col_sl[-1] + 1)
-            data_sub = data_full[r_sl, c_sl]
-            lats_out = lats_full[r_sl]
-            lons_out = lons_full[c_sl]
-
-        return data_sub, lats_out, lons_out
+        return data[0], lats_out, lons_out
