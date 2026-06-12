@@ -46,6 +46,7 @@ class TestSSFReaderClassAttributes:
         names = {v.name for v in SSFReader.VARIABLES}
         assert names == {
             "aerosol_optical_depth", "clear_coverage", "cloud_optical_depth",
+            "cloud_water_particle_radius", "cloud_ice_particle_radius",
             "cloud_classification", "shortwave_adm_type", "longwave_adm_type",
         }
 
@@ -88,6 +89,25 @@ class TestSSFReaderLoadSpatialRegion:
         data, _, _ = reader._load_spatial_region(_BBOX)
         codes = set(_finite_values(data, "cloud_classification").astype(int))
         assert codes == {1001, 1191}
+
+    def test_cloud_water_particle_radius_uses_lower_layer(self, tmp_path):
+        # Fixture defaults: lower-layer water radii are [5, 6, 7, 8, 9] μm for
+        # the five clustered footprints; upper layer is fill → rasterized cells
+        # contain only the lower-layer values, sorted for assertion stability.
+        reader = SSFReader(make_ssf_fixture(tmp_path))
+        data, _, _ = reader._load_spatial_region(_BBOX)
+        values = _finite_values(data, "cloud_water_particle_radius")
+        assert values.size > 0
+        assert np.all((values >= 5.0) & (values <= 9.0))
+
+    def test_cloud_ice_particle_radius_uses_lower_layer(self, tmp_path):
+        # Fixture defaults: lower-layer ice radii are [20, 25, 30, 35, 40] μm
+        # for the five clustered footprints; upper layer is fill.
+        reader = SSFReader(make_ssf_fixture(tmp_path))
+        data, _, _ = reader._load_spatial_region(_BBOX)
+        values = _finite_values(data, "cloud_ice_particle_radius")
+        assert values.size > 0
+        assert np.all((values >= 20.0) & (values <= 40.0))
 
     def test_fill_values_dropped_for_shortwave_adm(self, tmp_path):
         # Two of the five clustered footprints have the int16 fill for the SW

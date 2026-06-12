@@ -31,6 +31,12 @@ dependencies in ``data_products.md`` (CLDPIX supplies imager-pixel cloud
 properties for the Imager / Imager-camera-time products). Expected to be
 refined.
 
+Surface-type variables (``IGBP_Ecosystem``, ``Snow_Map_Value``, ``Ice_Map_Value``)
+are intentionally NOT extracted here. The pipeline uses the dedicated
+``IGBPReader`` and ``NISEReader`` as the authoritative sources for land-cover
+and ice/snow classification, avoiding duplication and ensuring consistency
+across all operational modes.
+
 References
 ----------
 CERES cloud products: https://ceres.larc.nasa.gov/data/
@@ -89,6 +95,8 @@ class _CLDPIXField(NamedTuple):
 
 
 # Minimal starter field set (refine later — see module docstring).
+# Note: surface-type variables (IGBP_Ecosystem, Snow_Map_Value, Ice_Map_Value)
+# are deliberately omitted — see module docstring for the rationale.
 _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
     # --- continuous cloud properties ---
     _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth",
@@ -103,19 +111,17 @@ _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
                  "weighted_mean", _FILL_FLOAT, (10.0, 1100.0), None),
     _CLDPIXField("cloud_top_height", "Top_Cld_Height",
                  "weighted_mean", _FILL_FLOAT, None, None),
-    # Sea-ice concentration is a percentage (0..100); the −1 land/no-data
-    # sentinel is dropped by the valid range.
-    _CLDPIXField("ice_map", "Ice_Map_Value",
-                 "weighted_mean", _FILL_INT8, (0.0, 100.0), None),
+    # Effective cloud particle radius (μm). Cld_Radius is the combined
+    # (water+ice blended) effective radius produced by the CERES cloud
+    # retrieval algorithm, distinct from the phase-separated radii
+    # (Cld_Radius_0124, Cld_Radius_0160) at specific wavelengths.
+    _CLDPIXField("cloud_particle_radius", "Cld_Radius",
+                 "weighted_mean", _FILL_FLOAT, (2.0, 60.0), None),
     # --- categorical (mode-aggregated) ---
     _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase",
                  "weighted_mode", _FILL_INT8, (1.0, 5.0), 5),
     _CLDPIXField("cloud_mask", "CERES_Cloud_Mask",
                  "weighted_mode", _FILL_INT8, (0.0, 3.0), 4),
-    _CLDPIXField("igbp_ecosystem", "IGBP_Ecosystem",
-                 "weighted_mode", _FILL_INT8, (1.0, 19.0), 20),
-    _CLDPIXField("snow_map", "Snow_Map_Value",
-                 "weighted_mode", _FILL_INT8, (0.0, 1.0), 2),
 )
 
 
