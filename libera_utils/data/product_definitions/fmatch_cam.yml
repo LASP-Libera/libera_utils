@@ -283,29 +283,3 @@ variables:
       long_name: Quality flags (bitwise)
       valid_range: [0, 2147483647]
 
-  # ---------------------------------------------------------------------------
-  # (e) PLACEHOLDERS - additional FMATCH-CAM external dependencies that do not
-  #     yet have an implemented GriddedDataReader. These are intentionally left
-  #     COMMENTED OUT so the file still validates today; uncomment each one (and
-  #     match its dtype to the new reader's VariableSpec) when the reader lands.
-  #     FMATCH-CAM deps per data_products.md still lacking a reader: VIIRS AOD,
-  #     NSIDC snow cover. (VIIRS surface BRDF is already implemented above via the
-  #     viirs_brdf reader. ISCCP is intentionally NOT included: all cloud
-  #     information for FMATCH-CAM comes from VIIRS, so no ISCCP reader is planned.)
-  #
-  # TODO[LIBSDC-785]: enable when the VIIRS AOD reader is implemented
-  # aerosol_optical_depth:
-  #   dtype: float32
-  #   dimensions: ["RADIOMETER_TIME"]
-  #   attributes:
-  #     long_name: Aerosol optical depth
-  #     units: "1"
-  #
-  # TODO[LIBSDC-785]: enable when the NSIDC snow-cover band is wired through
-  # snow_cover:
-  #   dtype: float32
-  #   dimensions: ["RADIOMETER_TIME"]
-  #   attributes:
-  #     long_name: Snow cover fraction
-  #     units: percent
-  #     valid_range: [0, 100]
