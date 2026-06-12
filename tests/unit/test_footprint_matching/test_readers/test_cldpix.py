@@ -42,8 +42,13 @@ class TestCLDPIXReaderClassAttributes:
 
     def test_expected_variable_names(self):
         names = {v.name for v in CLDPIXReader.VARIABLES}
+        # Surface-type variables (igbp_ecosystem, snow_map, ice_map) are
+        # intentionally absent — the IGBP and NISE readers are authoritative.
         assert {"cloud_optical_depth", "cloud_effective_pressure", "cloud_particle_phase",
-                "cloud_mask", "igbp_ecosystem", "snow_map", "ice_map"} <= names
+                "cloud_mask", "cloud_particle_radius"} <= names
+        assert "igbp_ecosystem" not in names
+        assert "snow_map" not in names
+        assert "ice_map" not in names
 
 
 class TestCLDPIXReaderLoadSpatialRegion:
@@ -81,19 +86,20 @@ class TestCLDPIXReaderLoadSpatialRegion:
         assert pressure.size > 0
         assert np.allclose(pressure, 800.0, atol=1e-3)
 
+    def test_cloud_particle_radius_values(self, tmp_path):
+        # Fixture writes Cld_Radius = 10.0 μm for all pixels; rasterized cells
+        # should retain that constant after weighted_mean aggregation.
+        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
+        data, _, _ = reader._load_spatial_region(_BBOX)
+        radius = _finite(data, "cloud_particle_radius")
+        assert radius.size > 0
+        assert np.allclose(radius, 10.0, atol=1e-3)
+
     def test_categorical_values(self, tmp_path):
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.allclose(_finite(data, "cloud_mask"), 1.0)
-        assert np.allclose(_finite(data, "igbp_ecosystem"), 17.0)
         assert np.allclose(_finite(data, "cloud_particle_phase"), 1.0)
-
-    def test_ice_minus_one_sentinel_dropped(self, tmp_path):
-        # The −1 land/no-data sentinel is outside valid_range (0, 100) → NaN.
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data, _, _ = reader._load_spatial_region(_BBOX)
-        ice = _finite(data, "ice_map")
-        assert np.all(ice >= 0.0)
 
 
 class TestCLDPIXReaderLoadTile:

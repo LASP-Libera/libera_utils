@@ -32,6 +32,13 @@ This is a **minimal starter set** drawn from the footprint-matching
 dependencies in ``data_products.md`` (SSF supplies cloud properties and ADM /
 scene types for radiometer footprints). It is expected to be refined.
 
+Surface-type variables in the ``Surface_Map`` group (``surface_igbp_type``,
+``surface_igbp_type_coverage``, ``snow_ice_coverage``) are intentionally NOT
+extracted. The pipeline uses the dedicated ``IGBPReader`` and ``NISEReader`` as
+authoritative sources for land-cover and ice/snow classification. SSF surface
+type values are derived from IGBP and NISE anyway; extracting them here would
+duplicate data that the dedicated readers already supply at higher resolution.
+
 Note on encoded scene/ADM codes
 --------------------------------
 ``cloud_classification``, ``shortwave_adm_type`` and ``longwave_adm_type`` are
@@ -111,6 +118,8 @@ class _SSFField(NamedTuple):
 
 
 # Minimal starter field set (refine later — see module docstring).
+# Note: surface-type variables in Surface_Map are deliberately omitted —
+# see module docstring for the rationale.
 _SSF_FIELDS: tuple[_SSFField, ...] = (
     _SSFField("aerosol_optical_depth", "Auxillary_Properties", "aerosol_optical_depth",
               "weighted_log_mean", _FILL_FLOAT, (0.0, 8.0), None, None),
@@ -118,6 +127,17 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
               "weighted_mean", _FILL_FLOAT, (0.0, 100.0), None, None),
     _SSFField("cloud_optical_depth", "Cloudy_Imager_Footprint_Layer", "cloud_optical_depth_mean",
               "weighted_log_mean", _FILL_FLOAT, (0.0, 512.0), _CLOUD_LAYER_INDEX, None),
+    # Effective cloud particle radius separated by thermodynamic phase (μm).
+    # SSF stores water and ice radii in separate 2-D (Footprints, LowerUpper)
+    # variables; both use _CLOUD_LAYER_INDEX to select the lower cloud layer,
+    # consistent with cloud_optical_depth. The combined (blended) radius is
+    # not available in SSF — use cldpix.cloud_particle_radius for that.
+    _SSFField("cloud_water_particle_radius",
+              "Cloudy_Imager_Footprint_Layer", "cloud_water_particle_radius_37um_mean",
+              "weighted_mean", _FILL_FLOAT, (2.0, 60.0), _CLOUD_LAYER_INDEX, None),
+    _SSFField("cloud_ice_particle_radius",
+              "Cloudy_Imager_Footprint_Layer", "cloud_ice_particle_radius_37um_mean",
+              "weighted_mean", _FILL_FLOAT, (5.0, 90.0), _CLOUD_LAYER_INDEX, None),
     _SSFField("cloud_classification", "Scene_Type", "cloud_classification",
               "weighted_mode", _FILL_INT16, (0.0, 32766.0), None, None),
     _SSFField("shortwave_adm_type", "Scene_Type", "shortwave_adm_type",
