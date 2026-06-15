@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.8.5
+
+- FEAT: WFOV SCI (APID 1040) L1A parsing decodes FSW (36B) and FPGA (140B) headers from every qualifying SOP packet into the `CAMERA_TIME` dimension, preserving packet stream order.
+- FEAT: Add `CAMERA_TIME` coordinate with per-image metadata (`WFOV_FSW_*`, `WFOV_FPGA_*`, parse-valid flags, and image completeness) so `write_libera_data_product(..., time_variable="CAMERA_TIME")` produces filenames from first/last SOP FSW times in packet order.
+
 ## 5.8.4
 
 - FEAT: `KernelManager.load_naif_kernels` also loads an extended Earth PCK (`earth_*_predict.bpc` via `NAIF_EARTH_EXTENDED_PCK_REGEX`) so ITRF93 orientation is available beyond the short high-precision `earth_000101_*.bpc` window (required for JPSS geolocation and future-epoch processing).

@@ -13,6 +13,15 @@ coordinates:
       units: nanoseconds since 1958-01-01
       calendar: standard
       dtype: int64
+  CAMERA_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: WFOV camera image acquisition time from FSW header
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
 variables:
   VERSION:
     dtype: uint8
@@ -151,3 +160,290 @@ variables:
     dimensions: ["PACKET"]
     attributes:
       long_name: ICIE WFOV camera science data checksum
+  CAMERA_PACKET_INDEX:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Packet index for WFOV image start (qualifying SOP)
+      comment: Maps each CAMERA_TIME row to its originating packet index
+  WFOV_FSW_PARSE_VALID:
+    dtype: bool
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Whether full FSW header was parsed from SOP packet slice
+  WFOV_FPGA_PARSE_VALID:
+    dtype: bool
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Whether FPGA header block was parsed from SOP packet slice
+  WFOV_IMAGE_COMPLETE:
+    dtype: bool
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Whether mem-dump sequence from SOP to EOP is contiguous
+  WFOV_FSW_FSW_LENGTH:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW header length field
+  WFOV_FSW_JPEG_BYPASS:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW JPEG bypass flag
+  WFOV_FSW_BITMASK_DISABLE:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW bitmask disable flag
+  WFOV_FSW_TESTPATTERN:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW test pattern flag
+  WFOV_FSW_BITMASK_ID:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW bitmask partition identifier
+  WFOV_FSW_IMG_MODE:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW imaging mode identifier
+  WFOV_FSW_PIXEL_MASK_ID:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW pixel mask identifier
+  WFOV_FSW_SIMULATOR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW simulator flag
+  WFOV_FSW_CADENCE:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW imaging cadence
+  WFOV_FSW_IMAGE_TOTAL:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW total images in sequence
+  WFOV_FSW_IMAGE_COUNT:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW image count in sequence
+  WFOV_FSW_FLASH_WRITE_POINTER:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW flash write pointer
+  WFOV_FSW_TIMESTAMP_SECONDS:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW acquisition timestamp seconds
+  WFOV_FSW_TIMESTAMP_SUBSECONDS:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW acquisition timestamp subseconds
+  WFOV_FSW_RAD_OBS_ID:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW radiometer observation ID
+  WFOV_FSW_CAM_OBS_ID:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW camera observation ID
+  WFOV_FSW_COMMANDED_EXP_TIME_1:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW commanded exposure time 1
+  WFOV_FSW_COMMANDED_EXP_TIME_2:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW commanded exposure time 2
+  WFOV_FSW_AZIMUTH_ANGLE:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FSW azimuth angle
+      units: radians
+  WFOV_FPGA_IMAGE_LENGTH:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA image length
+  WFOV_FPGA_FLAGS:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA header flags
+  WFOV_FPGA_FRAME_ID:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA frame identifier
+  WFOV_FPGA_TAG:
+    dtype: uint64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA tag field
+  WFOV_FPGA_ACTUAL_EXP_TIME_1:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA actual exposure time 1
+  WFOV_FPGA_TEMPERATURE:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA sensor temperature
+  WFOV_FPGA_GAIN:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA gain setting
+  WFOV_FPGA_WIDTH:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA image width
+  WFOV_FPGA_HEIGHT:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA image height
+  WFOV_FPGA_OFFSET_X:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA readout X offset
+  WFOV_FPGA_OFFSET_Y:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA readout Y offset
+  WFOV_FPGA_READOUT:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA readout mode
+  WFOV_FPGA_ACTUAL_EXP_TIME_2:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA actual exposure time 2
+  WFOV_FPGA_DELTA:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA delta field
+  WFOV_FPGA_EXPOSURE_STEP:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA exposure step
+  WFOV_FPGA_NR_SLOPES:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA number of slopes
+  WFOV_FPGA_KP1:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA KP1 parameter
+  WFOV_FPGA_KP2:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA KP2 parameter
+  WFOV_FPGA_VLOW_3:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA VLOW 3 parameter
+  WFOV_FPGA_VLOW_2:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA VLOW 2 parameter
+  WFOV_FPGA_EXP_SEQ:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA exposure sequence
+  WFOV_FPGA_FOOTER_SIZE:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA footer size
+  WFOV_FPGA_PIXEL_SUM:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA internal footer pixel sum
+  WFOV_FPGA_DARK:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA internal footer dark level
+  WFOV_FPGA_WHITE:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA internal footer white level
+  WFOV_FPGA_FOOTER_DELTA:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA internal footer delta
+  WFOV_FPGA_CRC:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA internal footer CRC (metadata only; not validated in L1A)
+  WFOV_FPGA_SYNC_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA sync error status flag
+  WFOV_FPGA_PID_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA PID error status flag
+  WFOV_FPGA_SIZE_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA size error status flag
+  WFOV_FPGA_EOP_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA EOP error status flag
+  WFOV_FPGA_EEP_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA EEP error status flag
+  WFOV_FPGA_CRC_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA CRC error status flag
+  WFOV_FPGA_DROP_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: FPGA drop error status flag
