@@ -351,7 +351,7 @@ Decoded metadata is stored on the `CAMERA_TIME` dimension:
 
 - Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_FSW_PARSE_VALID`, `WFOV_FPGA_PARSE_VALID`,
   `WFOV_IMAGE_COMPLETE`
-- FSW fields: `WFOV_FSW_*` (20 uppercase field names matching the libera_cam FSW header layout)
+- FSW fields: `WFOV_FSW_*` (19 uppercase field names matching the libera_cam FSW header layout)
 - FPGA fields: `WFOV_FPGA_*` (header, internal footer, and status flags; CRC stored as metadata only)
 
 When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to

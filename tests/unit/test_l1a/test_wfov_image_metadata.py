@@ -283,3 +283,6 @@ class TestBuildWfovCameraMetadataDataset:
         ds = _make_wfov_packet_dataset([("SOP", 512, len(blob), blob.ljust(972, b"\x00"))])
         camera_ds = build_wfov_camera_metadata_dataset(ds)
         assert camera_ds.sizes[CAMERA_TIME_COORD] == 0
+        assert "WFOV_FSW_PARSE_VALID" in camera_ds.data_vars
+        assert "CAMERA_PACKET_INDEX" in camera_ds.data_vars
+        assert len(camera_ds["WFOV_FSW_PARSE_VALID"]) == 0
