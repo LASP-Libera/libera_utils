@@ -201,8 +201,8 @@ def extract_fsw_metadata_from_blob(blob_bytes: bytes) -> dict:
 def extract_fpga_metadata_from_blob(blob_bytes: bytes) -> dict:
     """Extract FPGA header, internal footer, and status metadata from a WFOV image blob.
 
-    Expects ``blob_bytes`` to begin at the FPGA block (offset 36 from image start) or to be a
-    full SOP slice with at least ``SOP_FPGA_MIN_SIZE`` bytes.
+    Expects a full SOP slice from image start with at least ``SOP_FPGA_MIN_SIZE`` bytes
+    (FSW header plus FPGA block).
     """
     if len(blob_bytes) < SOP_FPGA_MIN_SIZE:
         raise ValueError(f"Blob too small for FPGA block: {len(blob_bytes)} bytes (minimum {SOP_FPGA_MIN_SIZE})")
@@ -260,8 +260,7 @@ def extract_fpga_metadata_from_blob(blob_bytes: bytes) -> dict:
 
 def find_qualifying_sop_indices(flags: np.ndarray, offsets: np.ndarray) -> np.ndarray:
     """Return packet indices for SOP packets with zero mem-dump offset, in packet order."""
-    flags_str = flags.astype(str)
-    return np.flatnonzero((flags_str == "SOP") & (offsets == 0))
+    return np.flatnonzero((flags == b"SOP") & (offsets == 0))
 
 
 def assess_wfov_image_completeness(
@@ -273,12 +272,11 @@ def assess_wfov_image_completeness(
 
     State machine matches ``reassemble_image_blobs`` in libera_cam ``read_l1a_cam_data.py``.
     """
-    flags_str = flags.astype(str)
-    n_packets = len(flags_str)
+    n_packets = len(flags)
     complete = np.zeros(n_packets, dtype=bool)
 
     for i in range(n_packets):
-        if flags_str[i] != "SOP" or offsets[i] != 0:
+        if flags[i] != b"SOP" or offsets[i] != 0:
             continue
 
         expected_offset = lengths[i]
@@ -287,10 +285,10 @@ def assess_wfov_image_completeness(
             if offsets[j] != expected_offset:
                 break
             expected_offset += lengths[j]
-            if flags_str[j] == "EOP":
+            if flags[j] == b"EOP":
                 complete[i] = True
                 break
-            if flags_str[j] == "SOP":
+            if flags[j] == b"SOP":
                 break
             j += 1
 
@@ -438,9 +436,6 @@ def build_wfov_camera_metadata_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
 
     sop_indices = find_qualifying_sop_indices(flags, offsets)
     image_complete = assess_wfov_image_completeness(flags, offsets, lengths)
-
-    if sop_indices.size == 0:
-        return xr.Dataset(coords={CAMERA_TIME_COORD: (CAMERA_TIME_COORD, np.array([], dtype=DATETIME_USEC_DTYPE))})
 
     camera_times, arrays = _build_metadata_arrays(sop_indices, packet_data, lengths, image_complete)
 
