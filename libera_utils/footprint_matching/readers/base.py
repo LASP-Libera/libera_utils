@@ -25,6 +25,7 @@ The global tile grid uses ``TILE_SIZE_DEG = 2.0`` degrees per tile edge. A
 
 This gives a 90 × 180 grid of 2° × 2° tiles covering the entire globe.
 """
+
 from __future__ import annotations
 
 import abc

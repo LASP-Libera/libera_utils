@@ -13,6 +13,7 @@ footprint_matching package un-importable. Deferring the import to function
 call time via ``_require_h5py()`` keeps the rest of the package importable and
 surfaces a clear, actionable error only when a BRDF read is actually attempted.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -39,6 +40,7 @@ def _require_h5py() -> h5py_type:
     """
     try:
         import h5py  # noqa: PLC0415
+
         return h5py
     except ImportError as exc:
         raise ImportError(
@@ -126,8 +128,8 @@ def read_viirs_brdf_hdf5(
         group = f[hdf5_data_path]
 
         # --- read coordinate arrays ---
-        lats_raw = np.array(group["lat"], dtype=np.float64)   # descending (90 → -90)
-        lons_raw = np.array(group["lon"], dtype=np.float64)   # ascending (-180 → 180)
+        lats_raw = np.array(group["lat"], dtype=np.float64)  # descending (90 → -90)
+        lons_raw = np.array(group["lon"], dtype=np.float64)  # ascending (-180 → 180)
 
         # --- read and scale each requested field ---
         arrays: list[np.ndarray] = []

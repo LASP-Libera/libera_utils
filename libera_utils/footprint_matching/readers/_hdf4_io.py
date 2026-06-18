@@ -13,6 +13,7 @@ package un-importable. By deferring the import to function call time via
 ``_require_pyhdf()``, the rest of the package stays importable and only the HDF4
 I/O calls themselves fail with a clear, actionable error message.
 """
+
 from __future__ import annotations
 
 import re
@@ -36,6 +37,7 @@ def _require_pyhdf() -> object:
     """
     try:
         import pyhdf.SD as sd  # noqa: PLC0415
+
         return sd
     except ImportError as exc:
         raise ImportError(
@@ -134,7 +136,7 @@ def read_modis_sinusoidal_hdf4(
     SDS arrays. Instead, the tile geometry is encoded in the HDF-EOS
     ``StructMetadata.0`` attribute as upper-left/lower-right corners in
     sinusoidal-projection metres. This function parses those corners, derives
-    pixel-centre coordinates, and converts them to geographic degrees.
+    pixel-center coordinates, and converts them to geographic degrees.
 
     Parameters
     ----------
@@ -201,23 +203,18 @@ def read_modis_sinusoidal_hdf4(
     x_lr, y_lr = float(lr.group(1)), float(lr.group(2))
 
     r_match = re.search(r"ProjParams\s*=\s*\(\s*([^,)]+)", struct_meta)
-    sphere_radius: float = (
-        float(r_match.group(1))
-        if r_match and float(r_match.group(1)) > 0
-        else 6371007.181
-    )
+    sphere_radius: float = float(r_match.group(1)) if r_match and float(r_match.group(1)) > 0 else 6371007.181
 
-    # --- pixel-centre coordinates in sinusoidal metres ---
+    # --- pixel-center coordinates in sinusoidal metres ---
     xs = x_ul + (np.arange(xdim) + 0.5) * ((x_lr - x_ul) / xdim)  # (xdim,)
     ys = y_ul + (np.arange(ydim) + 0.5) * ((y_lr - y_ul) / ydim)  # (ydim,)
 
     # --- sinusoidal → geographic (degrees) ---
-    lat_rad = ys / sphere_radius  # (ydim,)
+    lat_rad = ys / sphere_radius
     # Broadcast to 2-D (ydim, xdim) for pixel-level lon computation
     lats_2d = np.degrees(np.broadcast_to(lat_rad[:, np.newaxis], (ydim, xdim)))
     lons_2d = np.degrees(
-        np.broadcast_to(xs[np.newaxis, :], (ydim, xdim))
-        / (sphere_radius * np.cos(lat_rad[:, np.newaxis]))
+        np.broadcast_to(xs[np.newaxis, :], (ydim, xdim)) / (sphere_radius * np.cos(lat_rad[:, np.newaxis]))
     )
 
     return data_arr, np.array(lats_2d, dtype=np.float64), np.array(lons_2d, dtype=np.float64)

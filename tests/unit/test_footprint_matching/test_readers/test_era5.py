@@ -8,6 +8,7 @@ Real ERA5 files can be downloaded from:
     Copernicus CDS: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels
     CDS login required: https://cds.climate.copernicus.eu/user/register
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -53,9 +54,7 @@ class TestERA5ReaderLoadSpatialRegion:
         assert data.shape[0] == 2
 
     def test_data_axis0_is_variables(self, tmp_path):
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, u10_fill=2.5, v10_fill=-1.5, n_lat=4, n_lon=4
-        )
+        fixture_path = make_era5_netcdf_fixture(tmp_path, u10_fill=2.5, v10_fill=-1.5, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = reader._load_spatial_region(bbox)
@@ -143,6 +142,7 @@ class TestERA5ReaderValidTimeDimension:
 
     def test_valid_time_dimension_is_dropped(self, tmp_path):
         from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
+
         fixture_path = make_era5_valid_time_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
         )
@@ -155,9 +155,17 @@ class TestERA5ReaderValidTimeDimension:
 
     def test_valid_time_values_correct(self, tmp_path):
         from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
+
         fixture_path = make_era5_valid_time_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0,
-            n_lat=4, n_lon=4, u10_fill=3.0, v10_fill=-2.0,
+            tmp_path,
+            lat_min=0.0,
+            lat_max=2.0,
+            lon_min=10.0,
+            lon_max=12.0,
+            n_lat=4,
+            n_lon=4,
+            u10_fill=3.0,
+            v10_fill=-2.0,
         )
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)

@@ -8,6 +8,7 @@ Real CLDPROP_D3 files can be downloaded from:
     NCEI CDR: https://www.ncei.noaa.gov/data/cloud-properties-viirs/access/
     Example: CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -76,9 +77,9 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
     def test_variable_stacking_order(self, tmp_path):
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
         data, _, _ = reader._load_spatial_region(_full_bbox())
-        assert np.allclose(data[0], 0.6, equal_nan=True, atol=1e-4)   # cloud_fraction
-        assert np.allclose(data[1], 4.0, equal_nan=True, atol=1e-4)   # cloud_optical_thickness
-        assert np.allclose(data[2], 700.0, equal_nan=True, atol=1e-3) # cloud_top_pressure
+        assert np.allclose(data[0], 0.6, equal_nan=True, atol=1e-4)  # cloud_fraction
+        assert np.allclose(data[1], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
+        assert np.allclose(data[2], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
 
     def test_data_dtype_is_float32(self, tmp_path):
         reader, _ = _make_reader(tmp_path)
@@ -105,9 +106,13 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
     def test_fill_value_becomes_nan(self, tmp_path):
         # Create a fixture where ctp_fill is -9999.0 (the D3 fill value).
         fixture_path = make_viirs_cloud_d3_fixture(
-            tmp_path, n_lat=_N_LAT, n_lon=_N_LON,
-            lat_min=_LAT_MIN, lat_max=_LAT_MAX,
-            lon_min=_LON_MIN, lon_max=_LON_MAX,
+            tmp_path,
+            n_lat=_N_LAT,
+            n_lon=_N_LON,
+            lat_min=_LAT_MIN,
+            lat_max=_LAT_MAX,
+            lon_min=_LON_MIN,
+            lon_max=_LON_MAX,
             ctp_fill=-9999.0,
         )
         reader = VIIRSCloudReader(fixture_path)

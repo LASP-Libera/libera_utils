@@ -8,6 +8,7 @@ Real MCD12Q1 files can be downloaded from:
     LP DAAC AppEEARS: https://appeears.earthdatacloud.nasa.gov/
     LP DAAC Data Pool: https://e4ftl01.cr.usgs.gov/MOTA/MCD12Q1.061/
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -19,6 +20,7 @@ from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, 
 # Synthetic HDF4 data used in all IGBPReader tests
 # ---------------------------------------------------------------------------
 
+
 def _make_synthetic_igbp_data():
     """Return (data, lats_2d, lons_2d) mimicking a small MCD12Q1 tile.
 
@@ -29,7 +31,7 @@ def _make_synthetic_igbp_data():
     Grid: 6 rows × 6 cols, lats 0–3°, lons 10–13°. Category values cycle through
     IGBP classes 0–5 along each row for easy assertion.
     """
-    lats_1d = np.linspace(0.0, 3.0, 6)   # ascending latitudes
+    lats_1d = np.linspace(0.0, 3.0, 6)  # ascending latitudes
     lons_1d = np.linspace(10.0, 13.0, 6)
     lons_2d, lats_2d = np.meshgrid(lons_1d, lats_1d)  # both (6, 6)
     # 6 × 6 grid; values cycle through IGBP classes 0–5
