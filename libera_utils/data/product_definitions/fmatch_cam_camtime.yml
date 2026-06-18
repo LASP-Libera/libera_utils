@@ -23,11 +23,10 @@
 # attributes (Format, Conventions, Project*, Platform*, algorithm_version, ...)
 # are injected automatically from required_product_attributes.yml.
 #
-# NAMING: variable names and dtypes are copied verbatim from each reader's
-# VariableSpec so the schema matches the aggregation output. Where two readers
-# emit the same variable name (cloud_optical_depth from both ssf and cldpix), the
-# name is prefixed with the reader source key (ssf_/cldpix_) to stay unique and
-# preserve provenance.
+# NAMING: variable names are prefixed with the reader source key for provenance
+# (e.g. era5_wind_u10, igbp_surface_type, viirs_cloud_cloud_fraction). DTYPEs
+# are taken verbatim from each reader's VariableSpec so the schema matches the
+# aggregation output.
 # See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4.
 # =============================================================================
 
@@ -122,14 +121,14 @@ variables:
   # (c) PSF-aggregated external variables (one value per footprint).
   # ---------------------------------------------------------------------------
   # --- source reader: era5 (resolution 25.0 km) ---
-  wind_u10:
+  era5_wind_u10:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: era5 (aggregation: weighted_mean)
       long_name: Eastward wind component at 10 m
       units: "m/s"
-  wind_v10:
+  era5_wind_v10:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -137,7 +136,7 @@ variables:
       long_name: Northward wind component at 10 m
       units: "m/s"
   # --- source reader: igbp (resolution 1.0 km) ---
-  surface_type:
+  igbp_surface_type:
     dtype: int16
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -146,7 +145,7 @@ variables:
       long_name: IGBP surface type classification
       valid_range: [1, 20]
   # --- source reader: nise (resolution 25.0 km) ---
-  sea_ice_concentration:
+  nise_sea_ice_concentration:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -157,7 +156,7 @@ variables:
       long_name: Sea ice concentration (fraction)
       units: "1"
       valid_range: [0, 1]
-  no_ice_or_snow:
+  nise_no_ice_or_snow:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -167,7 +166,7 @@ variables:
       long_name: Fraction of footprint with no ice or snow (NISE code 0)
       units: "1"
       valid_range: [0, 1]
-  permanent_ice:
+  nise_permanent_ice:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -177,7 +176,7 @@ variables:
       long_name: Fraction of footprint covered by permanent ice (NISE code 101)
       units: "1"
       valid_range: [0, 1]
-  dry_snow_on_land:
+  nise_dry_snow_on_land:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -187,7 +186,7 @@ variables:
       long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110)
       units: "1"
       valid_range: [0, 1]
-  snow_ice_missing:
+  nise_snow_ice_missing:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -198,63 +197,63 @@ variables:
       units: "1"
       valid_range: [0, 1]
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
-  brdf_shortwave_fiso:
+  viirs_brdf_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF isotropic kernel weight
       units: "1"
-  brdf_shortwave_fvol:
+  viirs_brdf_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF volumetric kernel weight
       units: "1"
-  brdf_shortwave_fgeo:
+  viirs_brdf_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF geometric kernel weight
       units: "1"
-  brdf_vis_fiso:
+  viirs_brdf_brdf_vis_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF isotropic kernel weight
       units: "1"
-  brdf_vis_fvol:
+  viirs_brdf_brdf_vis_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF volumetric kernel weight
       units: "1"
-  brdf_vis_fgeo:
+  viirs_brdf_brdf_vis_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF geometric kernel weight
       units: "1"
-  brdf_nir_fiso:
+  viirs_brdf_brdf_nir_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF isotropic kernel weight
       units: "1"
-  brdf_nir_fvol:
+  viirs_brdf_brdf_nir_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF volumetric kernel weight
       units: "1"
-  brdf_nir_fgeo:
+  viirs_brdf_brdf_nir_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -262,7 +261,7 @@ variables:
       long_name: Near-infrared BRDF geometric kernel weight
       units: "1"
   # --- source reader: viirs_cloud (resolution 111.0 km) ---
-  cloud_fraction:
+  viirs_cloud_cloud_fraction:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -270,14 +269,14 @@ variables:
       long_name: Cloud fraction
       units: "1"
       valid_range: [0, 1]
-  cloud_optical_thickness:
+  viirs_cloud_cloud_optical_thickness:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_cloud (aggregation: weighted_log_mean)
       long_name: Cloud optical thickness
       units: "1"
-  cloud_top_pressure:
+  viirs_cloud_cloud_top_pressure:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -288,6 +287,34 @@ variables:
   # ---------------------------------------------------------------------------
   # (d) Coverage / QA bookkeeping (design §1.4; CERES partial-coverage convention).
   # ---------------------------------------------------------------------------
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+      valid_range: [-90, 90]
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+      valid_range: [-90, 90]
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      valid_range: [-180, 180]
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      valid_range: [-180, 180]
   psf_coverage_fraction:
     dtype: float32
     dimensions: ["CAMERA_TIME"]

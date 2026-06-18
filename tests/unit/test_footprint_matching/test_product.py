@@ -8,8 +8,8 @@ tests confirm, for every mode, that:
 - The schema declares the expected geolocation, derived-geometry, and QA variables
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
-  VariableSpec definitions, including the source-prefix disambiguation applied to
-  globally-colliding names (cloud_optical_depth from both ssf and cldpix).
+  VariableSpec definitions. Every reader-sourced variable is prefixed with its
+  reader source key (e.g. era5_wind_u10, igbp_surface_type, cldpix_cloud_mask).
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
 
@@ -56,29 +56,16 @@ def _production_readers_for_mode(mode: OperationalMode) -> dict:
     return {key: cls for key, cls in ReaderRegistry.get_readers_for_mode(mode).items() if key in PRODUCTION_READER_KEYS}
 
 
-def _globally_colliding_names() -> set[str]:
-    """Variable names produced by more than one production reader across all modes."""
-    counts: dict[str, set[str]] = {}
-    for key, cls in ReaderRegistry._registry.items():
-        if key not in PRODUCTION_READER_KEYS:
-            continue
-        for spec in cls.VARIABLES:
-            counts.setdefault(spec.name, set()).add(key)
-    return {name for name, owners in counts.items() if len(owners) > 1}
-
-
 def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """{output_variable_name: dtype} for every active production reader variable.
 
-    Mirrors the product-definition naming rule: globally-colliding names are
-    prefixed with the reader source key.
+    Mirrors the product-definition naming rule: every reader-sourced variable is
+    prefixed with the reader source key (e.g. era5_wind_u10, igbp_surface_type).
     """
-    collisions = _globally_colliding_names()
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
         for spec in cls.VARIABLES:
-            name = f"{key}_{spec.name}" if spec.name in collisions else spec.name
-            expected[name] = spec.dtype
+            expected[f"{key}_{spec.name}"] = spec.dtype
     return expected
 
 

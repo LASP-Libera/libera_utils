@@ -1,40 +1,6 @@
 # =============================================================================
 # FMATCH-CAM Data Product Definition
 # =============================================================================
-# FMATCH-CAM ("Footprint Match - Libera Camera Only, radiometer time") is the
-# lowest-latency footprint-matching product. It is an SSF-style, per-footprint
-# record: every footprint the radiometer observed becomes one entry along the
-# RADIOMETER_TIME dimension, and that footprint is *identified by its time*.
-#
-# WHY this product exists:
-#   For every radiometer footprint we need to know "what was the radiometer
-#   looking at?" - surface type, sea ice, winds, clouds, etc. Those geophysical
-#   properties are measured by other (finer-resolution) instruments and data
-#   sources. Footprint matching weights each fine-resolution pixel by the
-#   instrument Point Spread Function (PSF) and collapses them to a SINGLE value
-#   per footprint. FMATCH-CAM is the shared intermediate consumed by Scene ID
-#   and by the Camera Cloud Fraction algorithm.
-#   See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4, §2.3.2
-#   Modeled on the CERES Single Scanner Footprint (SSF) product:
-#   https://ceres.larc.nasa.gov/data/#ssf-level-2
-#
-# HOW this file is used:
-#   Loaded and validated by LiberaDataProductDefinition.from_yaml() in
-#   libera_utils/io/product_definition.py. Global attributes (Format,
-#   Conventions, Project*, Platform*, algorithm_version, ...) are injected
-#   automatically from libera_utils/data/required_product_attributes.yml, so we
-#   only list ProductID plus the per-product dynamic attributes here.
-#
-# CONVENTIONS (must match the schema engine, or conformance checking fails):
-#   - Every dimension name used below MUST be declared in
-#     libera_utils/data/libera_dimensions.yml. We reuse the existing dynamic
-#     RADIOMETER_TIME dimension - one element per footprint - so no new
-#     dimension is added.
-#   - dtypes for the externally-aggregated variables are copied VERBATIM from
-#     each reader's VariableSpec.dtype (libera_utils/footprint_matching/readers/)
-#     so the written data matches the schema exactly and avoids dtype-mismatch
-#     errors during enforce/check conformance.
-# =============================================================================
 
 attributes:
   # ProductID MUST be a valid DataProductIdentifier (constants.py). It is also
@@ -143,22 +109,38 @@ variables:
       valid_range: [0, 180]
 
   # ---------------------------------------------------------------------------
-  # (c) PSF-aggregated external variables. Each is collapsed to ONE value per
-  #     footprint by the aggregation engine. Variable NAMES and DTYPES are taken
-  #     verbatim from the readers' VariableSpec definitions so the schema and the
-  #     aggregation output agree. The aggregation strategy is noted in comments
-  #     for reference only; it is configured on the reader side, not here.
-  #     Readers: libera_utils/footprint_matching/readers/{igbp,nsidc,era5,viirs}.py
+  # (c) PSF-aggregated external variables (one value per footprint).
+  #     Variable names are prefixed with the reader source key for provenance.
+  #     DTYPEs match each reader's VariableSpec exactly. Aggregation strategy
+  #     is noted per variable; it is configured on the reader side, not here.
+  #     Readers: libera_utils/footprint_matching/readers/{era5,igbp,nsidc,viirs}.py
   # ---------------------------------------------------------------------------
-  surface_type:
+  # --- source reader: era5 (resolution 25.0 km) ---
+  era5_wind_u10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: era5 (aggregation: weighted_mean)
+      long_name: Eastward wind component at 10 m
+      units: m/s
+  era5_wind_v10:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: era5 (aggregation: weighted_mean)
+      long_name: Northward wind component at 10 m
+      units: m/s
+  # --- source reader: igbp (resolution 1.0 km) ---
+  igbp_surface_type:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # IGBP land cover classification. Aggregation: weighted_mode.
+      # source: igbp (aggregation: weighted_mode)
       # https://climatedataguide.ucar.edu/climate-data/ceres-igbp-land-classification
       long_name: IGBP surface type classification
       valid_range: [1, 20]
-  sea_ice_concentration:
+  # --- source reader: nise (resolution 25.0 km) ---
+  nise_sea_ice_concentration:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -169,7 +151,7 @@ variables:
       long_name: Sea ice concentration (fraction)
       units: "1"
       valid_range: [0, 1]
-  no_ice_or_snow:
+  nise_no_ice_or_snow:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -179,7 +161,7 @@ variables:
       long_name: Fraction of footprint with no ice or snow (NISE code 0)
       units: "1"
       valid_range: [0, 1]
-  permanent_ice:
+  nise_permanent_ice:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -189,7 +171,7 @@ variables:
       long_name: Fraction of footprint covered by permanent ice (NISE code 101)
       units: "1"
       valid_range: [0, 1]
-  dry_snow_on_land:
+  nise_dry_snow_on_land:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -199,7 +181,7 @@ variables:
       long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110)
       units: "1"
       valid_range: [0, 1]
-  snow_ice_missing:
+  nise_snow_ice_missing:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -209,101 +191,97 @@ variables:
       long_name: Fraction of footprint with missing NISE retrieval (NISE code 255)
       units: "1"
       valid_range: [0, 1]
-  wind_u10:
+  # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  # Ross-Thick/Li-Sparse model decomposes surface reflectance into isotropic
+  # (fiso), volumetric (fvol), and geometric (fgeo) kernel weights, per spectral
+  # band (shortwave/vis/nir). All aggregation: weighted_mean.
+  # https://www.earthdata.nasa.gov/data/catalog/lpcloud-vj143c1-002
+  viirs_brdf_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # ERA5 10 m eastward wind component. Aggregation: weighted_mean.
-      long_name: Eastward wind component at 10 m
-      units: m/s
-  wind_v10:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Shortwave BRDF isotropic kernel weight
+      units: "1"
+  viirs_brdf_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # ERA5 10 m northward wind component. Aggregation: weighted_mean.
-      long_name: Northward wind component at 10 m
-      units: m/s
-  cloud_fraction:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Shortwave BRDF volumetric kernel weight
+      units: "1"
+  viirs_brdf_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # VIIRS cloud fraction. Aggregation: weighted_mean.
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Shortwave BRDF geometric kernel weight
+      units: "1"
+  viirs_brdf_brdf_vis_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Visible BRDF isotropic kernel weight
+      units: "1"
+  viirs_brdf_brdf_vis_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Visible BRDF volumetric kernel weight
+      units: "1"
+  viirs_brdf_brdf_vis_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Visible BRDF geometric kernel weight
+      units: "1"
+  viirs_brdf_brdf_nir_fiso:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Near-infrared BRDF isotropic kernel weight
+      units: "1"
+  viirs_brdf_brdf_nir_fvol:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Near-infrared BRDF volumetric kernel weight
+      units: "1"
+  viirs_brdf_brdf_nir_fgeo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_brdf (aggregation: weighted_mean)
+      long_name: Near-infrared BRDF geometric kernel weight
+      units: "1"
+  # --- source reader: viirs_cloud (resolution 111.0 km) ---
+  viirs_cloud_cloud_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # source: viirs_cloud (aggregation: weighted_mean)
       long_name: Cloud fraction
       units: "1"
       valid_range: [0, 1]
-  cloud_optical_thickness:
+  viirs_cloud_cloud_optical_thickness:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # VIIRS cloud optical thickness. Aggregation: weighted_log_mean (geometric mean).
+      # source: viirs_cloud (aggregation: weighted_log_mean (geometric mean))
       long_name: Cloud optical thickness
       units: "1"
-  cloud_top_pressure:
+  viirs_cloud_cloud_top_pressure:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # VIIRS cloud top pressure. Aggregation: weighted_mean.
+      # source: viirs_cloud (aggregation: weighted_mean)
       long_name: Cloud top pressure
       units: hPa
-  # VIIRS surface BRDF kernel weights (reader key: viirs_brdf). The
-  # Ross-Thick/Li-Sparse model decomposes surface reflectance into isotropic
-  # (fiso), volumetric (fvol), and geometric (fgeo) kernel weights, provided per
-  # spectral band (shortwave/vis/nir). All aggregation: weighted_mean.
-  # https://www.earthdata.nasa.gov/data/catalog/lpcloud-vj143c1-002
-  brdf_shortwave_fiso:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Shortwave BRDF isotropic kernel weight
-      units: "1"
-  brdf_shortwave_fvol:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Shortwave BRDF volumetric kernel weight
-      units: "1"
-  brdf_shortwave_fgeo:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Shortwave BRDF geometric kernel weight
-      units: "1"
-  brdf_vis_fiso:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Visible BRDF isotropic kernel weight
-      units: "1"
-  brdf_vis_fvol:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Visible BRDF volumetric kernel weight
-      units: "1"
-  brdf_vis_fgeo:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Visible BRDF geometric kernel weight
-      units: "1"
-  brdf_nir_fiso:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Near-infrared BRDF isotropic kernel weight
-      units: "1"
-  brdf_nir_fvol:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Near-infrared BRDF volumetric kernel weight
-      units: "1"
-  brdf_nir_fgeo:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Near-infrared BRDF geometric kernel weight
-      units: "1"
 
   # ---------------------------------------------------------------------------
   # (d) Coverage / QA. The design (§1.4) requires coverage statistics and QA
@@ -311,6 +289,34 @@ variables:
   #     provenance/quality of each footprint (CERES partial-coverage convention:
   #     accept >95% PSF energy, flag 75-95%, discard <75%).
   # ---------------------------------------------------------------------------
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+      valid_range: [-90, 90]
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+      valid_range: [-90, 90]
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      valid_range: [-180, 180]
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      valid_range: [-180, 180]
   psf_coverage_fraction:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]

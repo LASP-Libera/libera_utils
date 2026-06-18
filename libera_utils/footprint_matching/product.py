@@ -128,10 +128,9 @@ def aggregate_external_variables(
     the returned dict - grows with the mode's latency (e.g. CAM has era5, igbp,
     nise, viirs_brdf, viirs_cloud; IMAGER additionally has ssf, cldpix, viirs_aod).
 
-    Where two active readers emit the same variable name (``cloud_optical_depth``
-    from both ssf and cldpix), the implementation must namespace them with the
-    reader source key (``ssf_cloud_optical_depth`` / ``cldpix_cloud_optical_depth``)
-    to match the product definition variable names.
+    Every output variable is prefixed with the reader source key for provenance
+    (e.g. ``era5_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``),
+    matching the product definition variable names.
 
     Returns
     -------
