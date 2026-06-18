@@ -73,6 +73,7 @@ File naming:     NISE_SSMISF{ss}_{YYYYMMDD}.HDFEOS  (NISE v5; ss = DMSP flight, 
 EPSG:3408 desc:  https://epsg.io/3408
 EASE-Grid ref:   https://nsidc.org/ease
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -93,18 +94,18 @@ _DEFAULT_GRID_COLS: int = 721
 _DEFAULT_RESOLUTION_M: float = 25_067.525  # EASE-Grid North 25-km cell size in meters
 # Upper-left corner of the grid in EPSG:3408 meters (x = easting, y = northing).
 _DEFAULT_X_ORIGIN: float = -9_036_842.7625  # meters (upper-left x)
-_DEFAULT_Y_ORIGIN: float = 9_036_842.7625   # meters (upper-left y)
+_DEFAULT_Y_ORIGIN: float = 9_036_842.7625  # meters (upper-left y)
 
 # --- NISE Extent code groups (see module docstring for the full encoding) ------
 # These name the raw uint8 category codes so the mask construction in
 # ``_extent_to_category_masks`` reads as plain English rather than magic numbers.
-_CODE_NO_ICE_OR_SNOW: int = 0          # open ocean, snow-free land, or outside grid
-_SEA_ICE_CODE_MIN: int = 1             # 1 % sea ice concentration
-_SEA_ICE_CODE_MAX: int = 100           # 100 % sea ice concentration
-_CODE_PERMANENT_ICE: int = 101         # Greenland / Antarctic ice sheets
-_SNOW_CODE_MIN: int = 103              # dry snow on land (lower bound)
-_SNOW_CODE_MAX: int = 110              # dry snow on land (upper bound)
-_CODE_MISSING: int = 255               # fill / no retrieval
+_CODE_NO_ICE_OR_SNOW: int = 0  # open ocean, snow-free land, or outside grid
+_SEA_ICE_CODE_MIN: int = 1  # 1 % sea ice concentration
+_SEA_ICE_CODE_MAX: int = 100  # 100 % sea ice concentration
+_CODE_PERMANENT_ICE: int = 101  # Greenland / Antarctic ice sheets
+_SNOW_CODE_MIN: int = 103  # dry snow on land (lower bound)
+_SNOW_CODE_MAX: int = 110  # dry snow on land (upper bound)
+_CODE_MISSING: int = 255  # fill / no retrieval
 
 # Percent → fraction divisor for the 1–100 sea ice concentration codes.
 _SEA_ICE_PERCENT_DIVISOR: float = 100.0
@@ -239,7 +240,7 @@ class NISEReader(GriddedDataReader):
         # Always use CRS objects (not bare EPSG strings) to suppress pyproj
         # FutureWarning about authority-based CRS construction.
         self._transformer = pyproj.Transformer.from_crs(
-            pyproj.CRS.from_epsg(3408),   # NSIDC EASE-Grid North (azimuthal equal-area)
+            pyproj.CRS.from_epsg(3408),  # NSIDC EASE-Grid North (azimuthal equal-area)
             pyproj.CRS.from_epsg(4326),
             always_xy=True,  # Input: (x=easting, y=northing); Output: (lon, lat)
         )
@@ -331,9 +332,7 @@ class NISEReader(GriddedDataReader):
         # fraction of a footprint occupied by each class.
         no_ice_or_snow = (raw == _CODE_NO_ICE_OR_SNOW).astype(np.float32)
         permanent_ice = (raw == _CODE_PERMANENT_ICE).astype(np.float32)
-        dry_snow_on_land = (
-            (raw >= _SNOW_CODE_MIN) & (raw <= _SNOW_CODE_MAX)
-        ).astype(np.float32)
+        dry_snow_on_land = ((raw >= _SNOW_CODE_MIN) & (raw <= _SNOW_CODE_MAX)).astype(np.float32)
         missing = (raw == _CODE_MISSING).astype(np.float32)
 
         # Stack in canonical order. Keep this list aligned with _VARIABLE_ORDER /

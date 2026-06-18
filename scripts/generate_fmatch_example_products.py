@@ -54,7 +54,7 @@ the time span taken from the time coordinate) is generated automatically by
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -171,7 +171,10 @@ def _synthesize_variable(var_def: LiberaVariableDefinition) -> np.ndarray:
         # Integers (e.g. IGBP surface_type int16 [1, 20], q_flags int64): draw
         # inclusive of both bounds. If no range was declared, _value_range_for_variable
         # returns the float UNITLESS default, so substitute the integer default.
-        if var_def.attributes.get("valid_range") is None and var_def.attributes.get("units") not in UNITS_FALLBACK_RANGE:
+        if (
+            var_def.attributes.get("valid_range") is None
+            and var_def.attributes.get("units") not in UNITS_FALLBACK_RANGE
+        ):
             low, high = INTEGER_DEFAULT_RANGE
         # randint's high is exclusive, hence +1 to make the declared max attainable.
         values = RNG.integers(int(low), int(high) + 1, size=N_FOOTPRINTS)
@@ -260,7 +263,7 @@ def generate_example_product(mode: OperationalMode, output_dir: Path) -> Path:
     dynamic_product_attributes = {
         # Semantic version of the (synthetic) producer. Must match the semver regex.
         "algorithm_version": "0.1.0",
-        "date_created": datetime.now(timezone.utc).isoformat(),
+        "date_created": datetime.now(UTC).isoformat(),
         # Provenance string. Real files list the L1B + ancillary inputs; this is
         # an example, so we mark it as synthetic to avoid implying real inputs.
         "input_files": "SYNTHETIC EXAMPLE - no real input files were used",

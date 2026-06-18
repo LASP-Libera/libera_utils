@@ -7,6 +7,7 @@ engine, and footprint orchestrator (later milestones).
 All classes in this module are intentionally dependency-free so they can be
 imported by any layer without creating circular dependencies.
 """
+
 from __future__ import annotations
 
 import enum
@@ -81,8 +82,15 @@ class BoundingBox(tuple):
 
     __slots__ = ()
 
-    def __new__(cls, lat_min: float, lat_max: float, lon_min: float, lon_max: float,
-                wraps_dateline: bool = False, is_polar: bool = False) -> BoundingBox:
+    def __new__(
+        cls,
+        lat_min: float,
+        lat_max: float,
+        lon_min: float,
+        lon_max: float,
+        wraps_dateline: bool = False,
+        is_polar: bool = False,
+    ) -> BoundingBox:
         return super().__new__(cls, (lat_min, lat_max, lon_min, lon_max, wraps_dateline, is_polar))
 
     @property

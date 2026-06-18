@@ -9,6 +9,7 @@ exercised.
 Real CLDPIX files come from NASA CERES, e.g.
 ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc``.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -44,8 +45,13 @@ class TestCLDPIXReaderClassAttributes:
         names = {v.name for v in CLDPIXReader.VARIABLES}
         # Surface-type variables (igbp_ecosystem, snow_map, ice_map) are
         # intentionally absent — the IGBP and NISE readers are authoritative.
-        assert {"cloud_optical_depth", "cloud_effective_pressure", "cloud_particle_phase",
-                "cloud_mask", "cloud_particle_radius"} <= names
+        assert {
+            "cloud_optical_depth",
+            "cloud_effective_pressure",
+            "cloud_particle_phase",
+            "cloud_mask",
+            "cloud_particle_radius",
+        } <= names
         assert "igbp_ecosystem" not in names
         assert "snow_map" not in names
         assert "ice_map" not in names

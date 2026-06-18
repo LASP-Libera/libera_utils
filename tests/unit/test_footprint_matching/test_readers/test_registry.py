@@ -7,6 +7,7 @@ Tests confirm:
 - list_readers() returns sorted keys
 - get_readers_for_mode() filters by operational mode rank
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,8 +31,14 @@ class TestListReaders:
     def test_all_readers_are_registered(self):
         keys = ReaderRegistry.list_readers()
         for expected in (
-            "cldpix", "era5", "igbp", "nise", "ssf",
-            "viirs_aod", "viirs_brdf", "viirs_cloud",
+            "cldpix",
+            "era5",
+            "igbp",
+            "nise",
+            "ssf",
+            "viirs_aod",
+            "viirs_brdf",
+            "viirs_cloud",
         ):
             assert expected in keys
 
