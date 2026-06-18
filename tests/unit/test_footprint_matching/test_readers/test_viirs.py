@@ -55,12 +55,12 @@ class TestVIIRSCloudReaderClassAttributes:
     def test_required_mode_is_cam(self):
         assert VIIRSCloudReader.REQUIRED_MODE == OperationalMode.CAM
 
-    def test_variables_has_three_entries(self):
-        assert len(VIIRSCloudReader.VARIABLES) == 3
+    def test_variables_has_two_entries(self):
+        assert len(VIIRSCloudReader.VARIABLES) == 2
 
     def test_variable_names_in_order(self):
         names = [v.name for v in VIIRSCloudReader.VARIABLES]
-        assert names == ["cloud_fraction", "cloud_optical_thickness", "cloud_top_pressure"]
+        assert names == ["cloud_optical_thickness", "cloud_top_pressure"]
 
     def test_variables_have_no_categories(self):
         for v in VIIRSCloudReader.VARIABLES:
@@ -72,14 +72,15 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
         reader, _ = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
         assert data.ndim == 3
-        assert data.shape[0] == 3
+        assert data.shape[0] == 2
 
     def test_variable_stacking_order(self, tmp_path):
+        # cf_fill is still accepted by the fixture (the Cloud_Fraction group is written)
+        # but is no longer read by the reader, so it must not appear in the output.
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
         data, _, _ = reader._load_spatial_region(_full_bbox())
-        assert np.allclose(data[0], 0.6, equal_nan=True, atol=1e-4)  # cloud_fraction
-        assert np.allclose(data[1], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
-        assert np.allclose(data[2], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
+        assert np.allclose(data[0], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
+        assert np.allclose(data[1], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
 
     def test_data_dtype_is_float32(self, tmp_path):
         reader, _ = _make_reader(tmp_path)
@@ -101,7 +102,7 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
         data, lats, lons = reader._load_spatial_region(bbox)
         assert data.size == 0
-        assert data.shape[0] == 3
+        assert data.shape[0] == 2
 
     def test_fill_value_becomes_nan(self, tmp_path):
         # Create a fixture where ctp_fill is -9999.0 (the D3 fill value).
@@ -117,8 +118,8 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
         )
         reader = VIIRSCloudReader(fixture_path)
         data, _, _ = reader._load_spatial_region(_full_bbox())
-        # cloud_top_pressure (index 2) should be all NaN since fill_value = -9999.0
-        assert np.all(np.isnan(data[2]))
+        # cloud_top_pressure (index 1) should be all NaN since fill_value = -9999.0
+        assert np.all(np.isnan(data[1]))
 
 
 class TestVIIRSCloudReaderTranspose:

@@ -110,9 +110,6 @@ def apply_fill_and_valid_range(
         arr = np.asarray(raw, dtype=np.float64)
 
     if fill_value is not None:
-        # Use np.isclose for floats (the float max sentinel is exact in IEEE-754
-        # but isclose is harmless) and exact equality for integers via the same
-        # path — both are represented in float64 here.
         arr[arr == float(fill_value)] = np.nan
 
     if valid_range is not None:

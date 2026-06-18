@@ -19,6 +19,8 @@ SDS naming:   "LC_Type1" for IGBP classification scheme
 
 from __future__ import annotations
 
+from functools import cached_property
+
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
@@ -80,6 +82,8 @@ class IGBPReader(GriddedDataReader):
     """
 
     READER_KEY: str = "igbp"
+    # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
+    INSTRUMENT: str = "MODIS"
     RESOLUTION_KM: float = 1.0
     OUTPUT_CELL_DEG: float = 0.05
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
@@ -92,9 +96,46 @@ class IGBPReader(GriddedDataReader):
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )
+    # A footprint typically spans several IGBP land-cover classes. ``surface_type``
+    # above is the single aggregated result; these three derived outputs report the
+    # ranked scene mix within the footprint — the first, second, and third
+    # most-common IGBP classes by PSF-weighted area. They are computed during PSF
+    # aggregation (from the same rasterized pixels as ``surface_type``), not read
+    # from a separate source field, so they live here rather than in VARIABLES.
+    # Distinct aggregation labels record the rank; the PSF aggregation engine does
+    # not implement them yet (declarations only, like every other FMATCH variable).
+    ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
+        VariableSpec(
+            name="surface_type_primary",
+            dtype="int16",
+            aggregation="weighted_mode_primary",
+            required_mode=OperationalMode.CAM,
+            n_categories=_N_IGBP_CATEGORIES,
+        ),
+        VariableSpec(
+            name="surface_type_secondary",
+            dtype="int16",
+            aggregation="weighted_mode_secondary",
+            required_mode=OperationalMode.CAM,
+            n_categories=_N_IGBP_CATEGORIES,
+        ),
+        VariableSpec(
+            name="surface_type_tertiary",
+            dtype="int16",
+            aggregation="weighted_mode_tertiary",
+            required_mode=OperationalMode.CAM,
+            n_categories=_N_IGBP_CATEGORIES,
+        ),
+    )
 
+    @cached_property
     def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Read the full tile and flatten it to geolocated land-cover points.
+
+        Cached per reader instance: the HDF4 read and sinusoidal-projection
+        coordinate computation run once, then every tile reuses the result (the
+        file content is static). Without the cache this whole-tile work would
+        repeat on every ``_load_spatial_region`` / tile request.
 
         Returns
         -------
@@ -149,7 +190,7 @@ class IGBPReader(GriddedDataReader):
         500 m MODIS tile this is acceptable because the TileManager caches the
         GridTile and does not re-read the file for overlapping footprints.
         """
-        lats, lons, values = self._load_points()
+        lats, lons, values = self._load_points
 
         # rasterize_points_to_grid always returns (n_var, n_lat, n_lon). IGBP is
         # single-variable, so squeeze axis 0 to honour the 2-D output contract

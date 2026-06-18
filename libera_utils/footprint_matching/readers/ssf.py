@@ -231,6 +231,8 @@ class SSFReader(GriddedDataReader):
     """
 
     READER_KEY: str = "ssf"
+    # The SSF/FLASHFlux products read here are the NOAA-20 stream (CER_SSF_NOAA20-FM6-VIIRS).
+    INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 20.0
     OUTPUT_CELL_DEG: float = 0.2
     REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER_FLASH

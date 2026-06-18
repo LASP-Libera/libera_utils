@@ -8,16 +8,13 @@ Data source: NOAA-20 (JPSS-1) VIIRS Daily Level-3 Cloud Properties
 - Data layout: variables stored with dimension order (longitude, latitude),
   requiring a transpose to the expected (latitude, longitude) output order
 - Temporal resolution: Daily composites
-- Variables: cloud_fraction (Mean), cloud_optical_thickness (Mean),
-  cloud_top_pressure (Mean)
+- Variables: cloud_optical_thickness (Mean), cloud_top_pressure (Mean)
 
 NetCDF4 group layout (CLDPROP_D3)
 ----------------------------------
 Root:
   latitude  (180,)   — 1° bin centers, −89.5 to 89.5
   longitude (360,)   — 1° bin centers, −179.5 to 179.5
-  Cloud_Fraction/
-    Mean      (360, 180) — daily mean cloud fraction [0–1]
   Cloud_Optical_Thickness_Combined/
     Mean      (360, 180) — daily mean cloud optical thickness
   Cloud_Top_Pressure/
@@ -40,6 +37,8 @@ File naming:
 
 from __future__ import annotations
 
+from functools import cached_property
+
 import numpy as np
 
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
@@ -48,7 +47,6 @@ from libera_utils.footprint_matching.types import BoundingBox, GridTile, Operati
 # Map each VariableSpec name to its (group_name, variable_name_within_group)
 # path inside the CLDPROP_D3 NetCDF4 file.
 _D3_GROUP_MAP: dict[str, tuple[str, str]] = {
-    "cloud_fraction": ("Cloud_Fraction", "Mean"),
     "cloud_optical_thickness": ("Cloud_Optical_Thickness_Combined", "Mean"),
     "cloud_top_pressure": ("Cloud_Top_Pressure", "Mean"),
 }
@@ -60,10 +58,9 @@ _D3_FILL_VALUE: float = -9999.0
 class VIIRSCloudReader(GriddedDataReader):
     """Read VIIRS daily cloud properties from a CLDPROP_D3 NetCDF4 file.
 
-    Loads three cloud variables (cloud_fraction, cloud_optical_thickness,
-    cloud_top_pressure) from a CLDPROP_D3 VIIRS Level-3 daily file and
-    returns a 3-D data array of shape ``(3, n_lat, n_lon)`` stacked in
-    ``VARIABLES`` order.
+    Loads two cloud variables (cloud_optical_thickness, cloud_top_pressure)
+    from a CLDPROP_D3 VIIRS Level-3 daily file and returns a 3-D data array of
+    shape ``(2, n_lat, n_lon)`` stacked in ``VARIABLES`` order.
 
     The CLDPROP_D3 product stores data with a non-standard ``(longitude,
     latitude)`` dimension order. This reader transposes each variable to
@@ -78,8 +75,7 @@ class VIIRSCloudReader(GriddedDataReader):
     REQUIRED_MODE : OperationalMode
         Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
-        Three variables: cloud_fraction, cloud_optical_thickness,
-        cloud_top_pressure.
+        Two variables: cloud_optical_thickness, cloud_top_pressure.
 
     Parameters
     ----------
@@ -88,16 +84,11 @@ class VIIRSCloudReader(GriddedDataReader):
     """
 
     READER_KEY: str = "viirs_cloud"
+    # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
+    INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
-        VariableSpec(
-            name="cloud_fraction",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
         VariableSpec(
             name="cloud_optical_thickness",
             dtype="float32",
@@ -141,12 +132,48 @@ class VIIRSCloudReader(GriddedDataReader):
             timestamp_source="radiometer",
         )
 
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Load VIIRS cloud properties within ``bbox`` from a CLDPROP_D3 file.
+    @cached_property
+    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read the full VIIRS cloud-property grid once and cache it on the instance.
 
         Opens the NetCDF4 file, navigates to each variable's group, transposes
         from (longitude, latitude) to (latitude, longitude) storage order, and
-        subsets to the requested bounding box.
+        replaces fill values with NaN. Cached per reader instance so the file is
+        opened and read once, then every tile slices these in-memory arrays
+        (see :meth:`_load_spatial_region`) instead of re-reading the file.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(data, lats, lons)`` where ``data`` is float32 shape
+            ``(2, n_lat, n_lon)`` with axis 0 = [cloud_optical_thickness,
+            cloud_top_pressure] (fill as NaN), and ``lats`` / ``lons`` are float64
+            1-D coordinate arrays.
+        """
+        import netCDF4  # noqa: PLC0415
+
+        with netCDF4.Dataset(str(self._file_path), "r") as ds:
+            # Root-level coordinate arrays: (180,) and (360,) respectively
+            lats_full = np.array(ds.variables["latitude"][:], dtype=np.float64)
+            lons_full = np.array(ds.variables["longitude"][:], dtype=np.float64)
+
+            variable_arrays: list[np.ndarray] = []
+            for var_spec in self.VARIABLES:
+                group_name, var_name = _D3_GROUP_MAP[var_spec.name]
+                group = ds.groups[group_name]
+                # Data shape is (n_lon, n_lat) in the file — transpose to (n_lat, n_lon).
+                raw = np.array(group.variables[var_name][:], dtype=np.float32).T
+                # Replace fill values with NaN.
+                raw[raw <= _D3_FILL_VALUE] = np.nan
+                variable_arrays.append(raw)
+
+        data = np.stack(variable_arrays, axis=0)  # (2, n_lat_full, n_lon_full)
+        return data, lats_full, lons_full
+
+    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Slice the cached VIIRS cloud-property grid to ``bbox``.
+
+        Subsets the full grid from :attr:`_native_grid` to the requested bounding box.
 
         Parameters
         ----------
@@ -157,46 +184,26 @@ class VIIRSCloudReader(GriddedDataReader):
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(3, n_lat, n_lon)`` with axis 0 = [cloud_fraction,
-            cloud_optical_thickness, cloud_top_pressure]. Fill pixels
-            (originally ≤ −9999.0) are returned as NaN.
+            ``(2, n_lat, n_lon)`` with axis 0 = [cloud_optical_thickness,
+            cloud_top_pressure]. Fill pixels (originally ≤ −9999.0) are
+            returned as NaN.
         """
-        import netCDF4  # noqa: PLC0415
+        data_full, lats_full, lons_full = self._native_grid
 
-        with netCDF4.Dataset(str(self._file_path), "r") as ds:
-            # Root-level coordinate arrays: (180,) and (360,) respectively
-            lats_full = np.array(ds.variables["latitude"][:], dtype=np.float64)
-            lons_full = np.array(ds.variables["longitude"][:], dtype=np.float64)
+        # Compute bbox index masks on the full coordinate arrays.
+        lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
+        lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
 
-            # Compute bbox index masks on the full coordinate arrays.
-            lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
-            lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
+        lat_indices = np.where(lat_mask)[0]
+        lon_indices = np.where(lon_mask)[0]
 
-            lat_indices = np.where(lat_mask)[0]
-            lon_indices = np.where(lon_mask)[0]
+        if lat_indices.size == 0 or lon_indices.size == 0:
+            n = len(self.VARIABLES)
+            return (
+                np.empty((n, 0, 0), dtype=np.float32),
+                np.empty(0, dtype=np.float64),
+                np.empty(0, dtype=np.float64),
+            )
 
-            if lat_indices.size == 0 or lon_indices.size == 0:
-                n = len(self.VARIABLES)
-                return (
-                    np.empty((n, 0, 0), dtype=np.float32),
-                    np.empty(0, dtype=np.float64),
-                    np.empty(0, dtype=np.float64),
-                )
-
-            lats_out = lats_full[lat_indices]
-            lons_out = lons_full[lon_indices]
-
-            variable_arrays: list[np.ndarray] = []
-            for var_spec in self.VARIABLES:
-                group_name, var_name = _D3_GROUP_MAP[var_spec.name]
-                group = ds.groups[group_name]
-                # Data shape is (n_lon, n_lat) in the file — transpose to (n_lat, n_lon).
-                raw = np.array(group.variables[var_name][:], dtype=np.float32).T
-                # raw is now (n_lat_full, n_lon_full); subset to bbox.
-                sub = raw[np.ix_(lat_indices, lon_indices)]
-                # Replace fill values with NaN.
-                sub[sub <= _D3_FILL_VALUE] = np.nan
-                variable_arrays.append(sub)
-
-        data = np.stack(variable_arrays, axis=0)  # (3, n_lat, n_lon)
-        return data, lats_out, lons_out
+        data = data_full[:, lat_indices, :][:, :, lon_indices]
+        return data, lats_full[lat_indices], lons_full[lon_indices]

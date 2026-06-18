@@ -22,6 +22,7 @@ is the contract every downstream consumer (Scene ID, Camera Cloud Fraction)
 reads against. Keeping the loader next to the (future) writer means there is a
 single place that knows how a FMATCH-CAM file is produced, while the reader
 plugins stay decoupled from product I/O.
+
 """
 
 from __future__ import annotations
@@ -128,10 +129,10 @@ def aggregate_external_variables(
     the returned dict - grows with the mode's latency (e.g. CAM has era5, igbp,
     nise, viirs_brdf, viirs_cloud; IMAGER additionally has ssf, cldpix, viirs_aod).
 
-    Where two active readers emit the same variable name (``cloud_optical_depth``
-    from both ssf and cldpix), the implementation must namespace them with the
-    reader source key (``ssf_cloud_optical_depth`` / ``cldpix_cloud_optical_depth``)
-    to match the product definition variable names.
+    Every output variable is named ``<source_key>_<instrument>_<spec_name>`` for
+    provenance, where the instrument token comes from the reader's ``INSTRUMENT``
+    attribute (e.g. ``era5_ECMWF_wind_u10``, ``igbp_MODIS_surface_type``,
+    ``cldpix_NOAA20_cloud_mask``), matching the product definition variable names.
 
     Returns
     -------
@@ -157,18 +158,18 @@ def compute_derived_viewing_geometry(
 ) -> dict[str, np.ndarray]:
     """Compute derived viewing-geometry variables from the geolocation angles.
 
-    Produces the ``scattering_angle`` and ``sunglint_angle`` variables present in
-    every FMATCH product definition. The intended (CERES/SSF-heritage) formulas,
-    with all angles in degrees:
-
-    - Scattering angle ``Theta``::
-
-          cos(Theta) = -cos(SZA) * cos(VZA)
-                       + sin(SZA) * sin(VZA) * cos(RAA)
+    Produces the ``sunglint_angle`` variable present in every FMATCH product
+    definition. The intended (CERES/SSF-heritage) formula, with all angles in
+    degrees:
 
     - Sun glint angle: the angle between the sensor view direction and the
       specular reflection of the solar beam; small values indicate potential
       sun glint contamination.
+
+    (The ``scattering_angle`` quantity was previously emitted here too, but has
+    been dropped from the FMATCH product contract; downstream code that needs it
+    can derive it on demand from the geolocation angles that remain in every
+    product.)
 
     Parameters
     ----------
@@ -178,21 +179,26 @@ def compute_derived_viewing_geometry(
     Returns
     -------
     dict[str, np.ndarray]
-        ``{"scattering_angle": ..., "sunglint_angle": ...}``.
+        ``{"sunglint_angle": ...}``.
 
     Raises
     ------
     NotImplementedError
         Always, in this milestone. The geometry module is future work.
     """
-    # TODO[LIBSDC-785]: implement scattering and sun-glint angle calculations.
+    # TODO[LIBSDC-785]: implement the sun-glint angle calculation.
     raise NotImplementedError(
         "Derived viewing-geometry computation is not implemented yet. This is a "
         "placeholder for the FMATCH geometry module (future milestone)."
     )
 
 
-def assemble_fmatch_dataset(mode: OperationalMode, *args: Any, **kwargs: Any) -> Dataset:
+def assemble_fmatch_dataset(
+    mode: OperationalMode,
+    *args: Any,
+    cloud_fraction_camera: np.ndarray | None = None,
+    **kwargs: Any,
+) -> Dataset:
     """Assemble a conformant FMATCH :class:`xarray.Dataset` for an operational mode.
 
     Will combine the L1B geolocation inputs, the derived viewing geometry from
@@ -201,6 +207,20 @@ def assemble_fmatch_dataset(mode: OperationalMode, *args: Any, **kwargs: Any) ->
     expected by the mode's product definition (from :func:`load_fmatch_definition`),
     then build a Dataset via ``LiberaDataProductDefinition.create_product_dataset``
     and bring it into conformance with ``enforce_dataset_conformance``.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The FMATCH operational mode being assembled.
+    cloud_fraction_camera : np.ndarray, optional
+        Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
+        algorithm (Libera WFOV camera), as a 1-D array indexed by footprint in
+        the same order as the time coordinate. This is an *internal* algorithm
+        output - it does not come from a reader and is already aggregated to one
+        value per footprint - so it is merged directly into the ``cloud_fraction_camera``
+        variable rather than going through :func:`aggregate_external_variables`.
+        Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable; it is
+        ``None`` for the IMAGER modes.
 
     Raises
     ------

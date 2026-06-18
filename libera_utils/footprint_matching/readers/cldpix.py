@@ -143,6 +143,9 @@ class CLDPIXReader(GriddedDataReader):
     """
 
     READER_KEY: str = "cldpix"
+    # CLDPIX imager-pixel cloud retrievals read here are the NOAA-20 stream
+    # (CER_CLDPIX_NOAA20-VIIRS).
+    INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 1.0
     OUTPUT_CELL_DEG: float = 0.05
     REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER

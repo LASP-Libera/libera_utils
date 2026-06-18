@@ -8,8 +8,9 @@ tests confirm, for every mode, that:
 - The schema declares the expected geolocation, derived-geometry, and QA variables
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
-  VariableSpec definitions, including the source-prefix disambiguation applied to
-  globally-colliding names (cloud_optical_depth from both ssf and cldpix).
+  VariableSpec definitions. Every reader-sourced variable is named
+  `<source_key>_<instrument>_<spec_name>` (e.g. era5_ECMWF_wind_u10,
+  igbp_MODIS_surface_type, cldpix_NOAA20_cloud_mask).
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
 
@@ -45,7 +46,7 @@ GEOLOCATION_VARIABLES = (
     "viewing_zenith_angle",
     "relative_azimuth_angle",
 )
-DERIVED_GEOMETRY_VARIABLES = ("scattering_angle", "sunglint_angle")
+DERIVED_GEOMETRY_VARIABLES = ("sunglint_angle",)
 COVERAGE_QA_VARIABLES = ("psf_coverage_fraction", "q_flags")
 
 ALL_MODES = tuple(OperationalMode)
@@ -56,29 +57,22 @@ def _production_readers_for_mode(mode: OperationalMode) -> dict:
     return {key: cls for key, cls in ReaderRegistry.get_readers_for_mode(mode).items() if key in PRODUCTION_READER_KEYS}
 
 
-def _globally_colliding_names() -> set[str]:
-    """Variable names produced by more than one production reader across all modes."""
-    counts: dict[str, set[str]] = {}
-    for key, cls in ReaderRegistry._registry.items():
-        if key not in PRODUCTION_READER_KEYS:
-            continue
-        for spec in cls.VARIABLES:
-            counts.setdefault(spec.name, set()).add(key)
-    return {name for name, owners in counts.items() if len(owners) > 1}
-
-
 def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """{output_variable_name: dtype} for every active production reader variable.
 
-    Mirrors the product-definition naming rule: globally-colliding names are
-    prefixed with the reader source key.
+    Mirrors the product-definition naming rule: every reader-sourced variable is
+    named `<source_key>_<instrument>_<spec_name>`, where the instrument token comes
+    from the reader's INSTRUMENT attribute (e.g. era5_ECMWF_wind_u10,
+    igbp_MODIS_surface_type).
     """
-    collisions = _globally_colliding_names()
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
-        for spec in cls.VARIABLES:
-            name = f"{key}_{spec.name}" if spec.name in collisions else spec.name
-            expected[name] = spec.dtype
+        # product_variable_specs() == the read VARIABLES plus derived outputs
+        # (per-continuous-variable standard-deviation companions and reader-specific
+        # extras such as IGBP's ranked scenes). It is the full set that appears in
+        # the product definition, so this is what the YAMLs must match.
+        for spec in cls.product_variable_specs():
+            expected[f"{key}_{cls.INSTRUMENT}_{spec.name}"] = spec.dtype
     return expected
 
 
@@ -146,6 +140,42 @@ class TestFmatchDefinitions:
         definition = definitions[mode]
         all_names = list(definition.variables) + list(definition.coordinates)
         assert len(all_names) == len(set(all_names))
+
+
+class TestDerivedProductVariables:
+    """Guards the rules that turn read VARIABLES into product output variables."""
+
+    def test_continuous_variable_gets_standard_deviation_companion(self):
+        # ERA5 winds are mean-aggregated (continuous), so each must gain a
+        # `<name>_standard_deviation` companion in the product variable list.
+        era5 = ReaderRegistry.get("era5")
+        names = {spec.name for spec in era5.product_variable_specs()}
+        assert "wind_u10" in names
+        assert "wind_u10_standard_deviation" in names
+        assert "wind_v10_standard_deviation" in names
+
+    def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
+        # SSF's encoded scene-type codes have n_categories=None but are
+        # weighted_mode, so a within-footprint standard deviation is meaningless
+        # and must NOT be generated. This guards the mean-only rule.
+        ssf = ReaderRegistry.get("ssf")
+        names = {spec.name for spec in ssf.product_variable_specs()}
+        for encoded in ("cloud_classification", "shortwave_adm_type", "longwave_adm_type"):
+            assert encoded in names
+            assert f"{encoded}_standard_deviation" not in names
+
+    def test_igbp_reports_ranked_scenes_but_no_standard_deviation(self):
+        # IGBP keeps the single aggregated surface_type plus three ranked-scene
+        # outputs; being categorical (weighted_mode) it gets no std-dev companion.
+        igbp = ReaderRegistry.get("igbp")
+        names = {spec.name for spec in igbp.product_variable_specs()}
+        assert {
+            "surface_type",
+            "surface_type_primary",
+            "surface_type_secondary",
+            "surface_type_tertiary",
+        } <= names
+        assert "surface_type_standard_deviation" not in names
 
 
 class TestFmatchConformance:

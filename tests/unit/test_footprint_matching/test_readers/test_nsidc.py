@@ -28,7 +28,7 @@ _EXPECTED_VARIABLES = (
     "no_ice_or_snow",
     "permanent_ice",
     "dry_snow_on_land",
-    "missing",
+    "snow_ice_missing",
 )
 
 
@@ -169,7 +169,7 @@ class TestNISEReaderLayerMapping:
 
     def test_code_255_is_missing(self, tmp_path, monkeypatch):
         stack = self._run(tmp_path, monkeypatch, self._filled(255))
-        assert np.all(self._layer(stack, "missing") == 1.0)
+        assert np.all(self._layer(stack, "snow_ice_missing") == 1.0)
         assert np.all(self._layer(stack, "sea_ice_concentration") == 0.0)
 
     def test_code_102_belongs_to_no_layer(self, tmp_path, monkeypatch):
@@ -307,7 +307,7 @@ class TestNISEExtentToCategoryMasks:
         no_ice = masks[_layer_index("no_ice_or_snow")]
         perm = masks[_layer_index("permanent_ice")]
         snow = masks[_layer_index("dry_snow_on_land")]
-        missing = masks[_layer_index("missing")]
+        missing = masks[_layer_index("snow_ice_missing")]
 
         assert np.isclose(sea_ice[0, 0], 0.60, atol=1e-5)
         assert no_ice[0, 1] == 1.0
@@ -325,7 +325,7 @@ class TestNISEExtentToCategoryMasks:
         raw = np.array([[0, 101, 105], [255, 102, 0]], dtype=np.uint8)
         masks = reader._extent_to_category_masks(raw)
         indicator_layers = [
-            masks[_layer_index(n)] for n in ("no_ice_or_snow", "permanent_ice", "dry_snow_on_land", "missing")
+            masks[_layer_index(n)] for n in ("no_ice_or_snow", "permanent_ice", "dry_snow_on_land", "snow_ice_missing")
         ]
         indicator_sum = np.sum(indicator_layers, axis=0)
         assert np.all(indicator_sum <= 1.0)
