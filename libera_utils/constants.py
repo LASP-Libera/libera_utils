@@ -25,7 +25,7 @@ class DataLevel(StrEnum):
     L1A = "L1A"
     L1B = "L1B"
     L2 = "L2"
-    AUX = "AUX"
+    ANC = "ANC"
 
     @property
     def archive_bucket_name(self) -> str:
