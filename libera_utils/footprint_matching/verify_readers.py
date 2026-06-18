@@ -37,6 +37,7 @@ Arguments
 --output-dir     Directory for PNG output (default: current directory)
 --no-plots       Print statistics only; skip matplotlib visualization
 """
+
 from __future__ import annotations
 
 import argparse
@@ -85,6 +86,7 @@ _IGBP_CLASS_NAMES = {
 # Coordinate utilities
 # ---------------------------------------------------------------------------
 
+
 def latlon_to_tile_key(source: str, lat: float, lon: float) -> TileKey:
     """Convert a geographic point to the TileKey of the 2° tile containing it.
 
@@ -112,14 +114,14 @@ def latlon_to_tile_key(source: str, lat: float, lon: float) -> TileKey:
 # Statistics helpers
 # ---------------------------------------------------------------------------
 
+
 def _print_tile_summary(tile: GridTile, reader_key: str) -> None:
     """Print a structured summary of a loaded GridTile to stdout."""
     bbox = tile.bounds
     sep = "─" * 60
     print(sep)
     print(f"  Reader : {reader_key}  (source={tile.source})")
-    print(f"  BBox   : lat [{bbox.lat_min:.2f}, {bbox.lat_max:.2f}]  "
-          f"lon [{bbox.lon_min:.2f}, {bbox.lon_max:.2f}]")
+    print(f"  BBox   : lat [{bbox.lat_min:.2f}, {bbox.lat_max:.2f}]  lon [{bbox.lon_min:.2f}, {bbox.lon_max:.2f}]")
     print(f"  Shape  : {tile.data.shape}  dtype={tile.data.dtype}")
     print(f"  Coords : {tile.lats.size} lats × {tile.lons.size} lons")
     if tile.timestamp_source:
@@ -148,8 +150,7 @@ def _print_var_stats(arr: np.ndarray, name: str) -> None:
         print("    All pixels are fill or NaN — no valid data in this tile.")
         return
 
-    print(f"    valid pixels : {finite.size:,} / {arr.size:,} "
-          f"({100 * finite.size / arr.size:.1f}%)")
+    print(f"    valid pixels : {finite.size:,} / {arr.size:,} ({100 * finite.size / arr.size:.1f}%)")
     print(f"    min / max    : {finite.min():.4g} / {finite.max():.4g}")
     print(f"    mean ± std   : {finite.mean():.4g} ± {finite.std():.4g}")
 
@@ -169,6 +170,7 @@ def _print_var_stats(arr: np.ndarray, name: str) -> None:
 # ---------------------------------------------------------------------------
 # Visualization helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_igbp_figure(tile: GridTile, out_path: Path) -> None:
     """Save a categorical land cover map for IGBP data."""
@@ -228,15 +230,16 @@ def _make_igbp_figure(tile: GridTile, out_path: Path) -> None:
     )
 
     # Legend for present classes only
-    present_vals = sorted(
-        int(v) for v in np.unique(data[~np.isnan(data)]) if 0 <= int(v) <= 19
+    present_vals = sorted(int(v) for v in np.unique(data[~np.isnan(data)]) if 0 <= int(v) <= 19)
+    legend_patches = [Patch(color=igbp_colors[v], label=f"{v}: {_IGBP_CLASS_NAMES.get(v, '?')}") for v in present_vals]
+    ax.legend(
+        handles=legend_patches,
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+        fontsize=7,
+        title="IGBP Class",
+        framealpha=0.9,
     )
-    legend_patches = [
-        Patch(color=igbp_colors[v], label=f"{v}: {_IGBP_CLASS_NAMES.get(v, '?')}")
-        for v in present_vals
-    ]
-    ax.legend(handles=legend_patches, bbox_to_anchor=(1.02, 1), loc="upper left",
-              fontsize=7, title="IGBP Class", framealpha=0.9)
     fig.tight_layout()
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -309,14 +312,14 @@ def _make_era5_figure(tile: GridTile, out_path: Path) -> None:
         f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
         f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
         f"({u10.shape[1]}×{u10.shape[0]} px)",
-        fontsize=12
+        fontsize=12,
     )
 
     panels = [
-        (axes[0, 0], u10,       "U10 — Zonal Wind (m s⁻¹)",          "RdBu_r",   None,   None),
-        (axes[0, 1], v10,       "V10 — Meridional Wind (m s⁻¹)",      "RdBu_r",   None,   None),
-        (axes[1, 0], speed,     "Wind Speed (m s⁻¹)",                  "YlOrRd",   0,      None),
-        (axes[1, 1], direction, "Wind Direction (° from N, met. conv.)","twilight", 0,      360),
+        (axes[0, 0], u10, "U10 — Zonal Wind (m s⁻¹)", "RdBu_r", None, None),
+        (axes[0, 1], v10, "V10 — Meridional Wind (m s⁻¹)", "RdBu_r", None, None),
+        (axes[1, 0], speed, "Wind Speed (m s⁻¹)", "YlOrRd", 0, None),
+        (axes[1, 1], direction, "Wind Direction (° from N, met. conv.)", "twilight", 0, 360),
     ]
 
     for ax, arr, title, cmap, vmin, vmax in panels:
@@ -365,7 +368,7 @@ def _make_viirs_cloud_figure(tile: GridTile, out_path: Path) -> None:
         f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
         f"lon [{bbox.lon_min:.1f}, {bbox.lon_max:.1f}]  "
         f"({tile.data.shape[2]}×{tile.data.shape[1]} px)",
-        fontsize=12
+        fontsize=12,
     )
 
     for i, (ax, label, cmap) in enumerate(zip(axes, labels, cmaps)):
@@ -414,6 +417,7 @@ def _make_brdf_figure(tile: GridTile, out_path: Path) -> None:
     )
 
     from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+
     var_names = [v.name for v in ReaderRegistry.get("viirs_brdf").VARIABLES]
 
     for row_idx, param in enumerate(params):
@@ -463,9 +467,7 @@ def _make_aod_figure(tile: GridTile, out_path: Path) -> None:
     print(f"  [viirs_aod] Saved: {out_path}")
 
 
-def _make_gridded_multivar_figure(
-    tile: GridTile, out_path: Path, reader_key: str, suptitle: str
-) -> None:
+def _make_gridded_multivar_figure(tile: GridTile, out_path: Path, reader_key: str, suptitle: str) -> None:
     """Save a grid of panels, one per variable, for a rasterized multi-var tile.
 
     Used for the CERES SSF and CLDPIX readers, whose tiles carry many variables
@@ -508,8 +510,14 @@ def _make_gridded_multivar_figure(
         if n_valid == 0:
             # Make a fully-fill panel unambiguous rather than a blank white box.
             ax.text(
-                0.5, 0.5, "all fill\n(no valid data\nin this tile)",
-                ha="center", va="center", transform=ax.transAxes, fontsize=8, color="gray",
+                0.5,
+                0.5,
+                "all fill\n(no valid data\nin this tile)",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=8,
+                color="gray",
             )
         else:
             plt.colorbar(im, ax=ax, shrink=0.8, pad=0.02)
@@ -526,6 +534,7 @@ def _make_gridded_multivar_figure(
 # ---------------------------------------------------------------------------
 # Per-reader load + report orchestration
 # ---------------------------------------------------------------------------
+
 
 def _run_reader(
     reader_key: str,
@@ -589,9 +598,7 @@ def _run_reader(
             "viirs_brdf": _make_brdf_figure,
             "viirs_aod": _make_aod_figure,
             "ssf": lambda t, p: _make_gridded_multivar_figure(t, p, "ssf", "CERES SSF (rasterized)"),
-            "cldpix": lambda t, p: _make_gridded_multivar_figure(
-                t, p, "cldpix", "CERES CLDPIX (rasterized)"
-            ),
+            "cldpix": lambda t, p: _make_gridded_multivar_figure(t, p, "cldpix", "CERES CLDPIX (rasterized)"),
         }
         if reader_key in dispatch:
             dispatch[reader_key](tile, out_file)
@@ -602,6 +609,7 @@ def _run_reader(
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -614,30 +622,32 @@ def _build_parser() -> argparse.ArgumentParser:
         """),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--igbp", type=Path, metavar="FILE",
-                        help="MODIS MCD12Q1 HDF4 file")
-    parser.add_argument("--nise", type=Path, metavar="FILE",
-                        help="NISE HDF-EOS4 file (*.HDFEOS)")
-    parser.add_argument("--era5", type=Path, metavar="FILE",
-                        help="ERA5 NetCDF4 file with u10/v10 variables")
-    parser.add_argument("--viirs", type=Path, metavar="FILE",
-                        help="VIIRS CLDPROP_D3 NetCDF4 file")
-    parser.add_argument("--brdf", type=Path, metavar="FILE",
-                        help="VIIRS VJ143C1 BRDF HDF5 file")
-    parser.add_argument("--aod", type=Path, metavar="FILE",
-                        help="AERDB_D3_GEOLEO merged AOD NetCDF4 file")
-    parser.add_argument("--ssf", type=Path, metavar="FILE",
-                        help="CERES SSF (or FLASHFlux) NetCDF4 file")
-    parser.add_argument("--cldpix", type=Path, metavar="FILE",
-                        help="CERES CLDPIX NetCDF4 file")
-    parser.add_argument("--lat-center", type=float, default=45.0, metavar="DEG",
-                        help="Tile center latitude in degrees (default: 45.0)")
-    parser.add_argument("--lon-center", type=float, default=-90.0, metavar="DEG",
-                        help="Tile center longitude in degrees (default: -90.0)")
-    parser.add_argument("--output-dir", type=Path, default=Path("."), metavar="DIR",
-                        help="Directory for PNG output (default: current directory)")
-    parser.add_argument("--no-plots", action="store_true",
-                        help="Print statistics only; skip matplotlib visualization")
+    parser.add_argument("--igbp", type=Path, metavar="FILE", help="MODIS MCD12Q1 HDF4 file")
+    parser.add_argument("--nise", type=Path, metavar="FILE", help="NISE HDF-EOS4 file (*.HDFEOS)")
+    parser.add_argument("--era5", type=Path, metavar="FILE", help="ERA5 NetCDF4 file with u10/v10 variables")
+    parser.add_argument("--viirs", type=Path, metavar="FILE", help="VIIRS CLDPROP_D3 NetCDF4 file")
+    parser.add_argument("--brdf", type=Path, metavar="FILE", help="VIIRS VJ143C1 BRDF HDF5 file")
+    parser.add_argument("--aod", type=Path, metavar="FILE", help="AERDB_D3_GEOLEO merged AOD NetCDF4 file")
+    parser.add_argument("--ssf", type=Path, metavar="FILE", help="CERES SSF (or FLASHFlux) NetCDF4 file")
+    parser.add_argument("--cldpix", type=Path, metavar="FILE", help="CERES CLDPIX NetCDF4 file")
+    parser.add_argument(
+        "--lat-center", type=float, default=45.0, metavar="DEG", help="Tile center latitude in degrees (default: 45.0)"
+    )
+    parser.add_argument(
+        "--lon-center",
+        type=float,
+        default=-90.0,
+        metavar="DEG",
+        help="Tile center longitude in degrees (default: -90.0)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("."),
+        metavar="DIR",
+        help="Directory for PNG output (default: current directory)",
+    )
+    parser.add_argument("--no-plots", action="store_true", help="Print statistics only; skip matplotlib visualization")
     return parser
 
 

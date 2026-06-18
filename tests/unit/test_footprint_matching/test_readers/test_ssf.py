@@ -9,6 +9,7 @@ tile grid.
 Real SSF/FLASHFlux files come from NASA CERES, e.g.
 ``CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc``.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -45,9 +46,14 @@ class TestSSFReaderClassAttributes:
     def test_expected_variable_names(self):
         names = {v.name for v in SSFReader.VARIABLES}
         assert names == {
-            "aerosol_optical_depth", "clear_coverage", "cloud_optical_depth",
-            "cloud_water_particle_radius", "cloud_ice_particle_radius",
-            "cloud_classification", "shortwave_adm_type", "longwave_adm_type",
+            "aerosol_optical_depth",
+            "clear_coverage",
+            "cloud_optical_depth",
+            "cloud_water_particle_radius",
+            "cloud_ice_particle_radius",
+            "cloud_classification",
+            "shortwave_adm_type",
+            "longwave_adm_type",
         }
 
 
@@ -75,14 +81,12 @@ class TestSSFReaderLoadSpatialRegion:
     def test_aerosol_optical_depth_values(self, tmp_path):
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        assert np.allclose(_finite_values(data, "aerosol_optical_depth"),
-                           [0.10, 0.20, 0.30, 0.40, 0.50], atol=1e-5)
+        assert np.allclose(_finite_values(data, "aerosol_optical_depth"), [0.10, 0.20, 0.30, 0.40, 0.50], atol=1e-5)
 
     def test_cloud_optical_depth_uses_lower_layer(self, tmp_path):
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        assert np.allclose(_finite_values(data, "cloud_optical_depth"),
-                           [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
+        assert np.allclose(_finite_values(data, "cloud_optical_depth"), [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
 
     def test_cloud_classification_codes_preserved(self, tmp_path):
         reader = SSFReader(make_ssf_fixture(tmp_path))

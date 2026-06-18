@@ -16,6 +16,7 @@ User guide:   https://lpdaac.usgs.gov/documents/1409/MCD12_User_Guide_V61.pdf
 LP DAAC Access: https://appeears.earthdatacloud.nasa.gov/ (EarthData login required)
 SDS naming:   "LC_Type1" for IGBP classification scheme
 """
+
 from __future__ import annotations
 
 import numpy as np

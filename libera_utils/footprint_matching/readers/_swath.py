@@ -36,6 +36,7 @@ identity is lost inside a cell; that is acceptable because the footprint
 matching engine ultimately wants a *spatially averaged* value under each Libera
 radiometer footprint anyway.
 """
+
 from __future__ import annotations
 
 import numpy as np

@@ -5,6 +5,7 @@ These cover the format-agnostic pieces in
 CLDPIX readers: longitude normalization, fill / valid-range masking, and the
 point-to-grid rasterizer (mean, geometric mean, and mode aggregation).
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -160,6 +161,4 @@ class TestRasterizePointsToGrid:
         lons = np.array([0.5])
         vals = np.array([[1.0]])
         with pytest.raises(ValueError, match="Unknown aggregation"):
-            rasterize_points_to_grid(
-                lats, lons, vals, self._bbox(), cell_size_deg=1.0, aggregations=["bogus"]
-            )
+            rasterize_points_to_grid(lats, lons, vals, self._bbox(), cell_size_deg=1.0, aggregations=["bogus"])

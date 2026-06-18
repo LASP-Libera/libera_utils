@@ -6,6 +6,7 @@ Tests confirm:
 - load_tile delegates to _load_spatial_region and wraps the result in GridTile
 - TILE_SIZE_DEG constant is 2.0
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -17,6 +18,7 @@ from libera_utils.footprint_matching.types import BoundingBox, GridTile, Operati
 # ---------------------------------------------------------------------------
 # Minimal concrete reader used only in tests
 # ---------------------------------------------------------------------------
+
 
 class _FakeReader(GriddedDataReader):
     """Minimal concrete subclass for testing base class behavior."""
@@ -45,6 +47,7 @@ class _FakeReader(GriddedDataReader):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestTileSizeConstant:
     def test_tile_size_is_two_degrees(self):

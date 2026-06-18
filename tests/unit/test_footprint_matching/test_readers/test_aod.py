@@ -1,11 +1,13 @@
 """Unit tests for VIIRSAODReader.
 
-Uses synthetic AERDB_D3_GEOLEO merged AOD NetCDF4 fixtures created by
-``make_aod_merged_fixture``.
+Uses synthetic AERDB_D3_GEOLEO NOAA-20 VIIRS AOD NetCDF4 fixtures created by
+``make_aod_noaa20_fixture``.
 
-Real merged AOD files come from the NASA Deep Blue GEO-LEO merged product, e.g.
-``AERDB_D3_GEOLEO_Merged.A2020121.001.2024121023016.nc``.
+Real AOD files come from the NASA Deep Blue GEO-LEO merged product, e.g.
+``AERDB_D3_GEOLEO_Merged.A2020121.001.2024121023016.nc``; the reader pulls the
+per-sensor ``NOAA20_VIIRS`` group from that file.
 """
+
 from __future__ import annotations
 
 import math
@@ -15,7 +17,7 @@ import numpy as np
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG
 from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
-from tests.test_data.footprint_matching.fixtures import make_aod_merged_fixture
+from tests.test_data.footprint_matching.fixtures import make_aod_noaa20_fixture
 
 _N_LAT = 4
 _N_LON = 8
@@ -28,9 +30,14 @@ _AOD_FILL = 0.2
 
 def _make_reader(tmp_path, **kwargs) -> VIIRSAODReader:
     kwargs.setdefault("aod_fill", _AOD_FILL)
-    fixture_path = make_aod_merged_fixture(
-        tmp_path, n_lat=_N_LAT, n_lon=_N_LON,
-        lat_min=_LAT_MIN, lat_max=_LAT_MAX, lon_min=_LON_MIN, lon_max=_LON_MAX,
+    fixture_path = make_aod_noaa20_fixture(
+        tmp_path,
+        n_lat=_N_LAT,
+        n_lon=_N_LON,
+        lat_min=_LAT_MIN,
+        lat_max=_LAT_MAX,
+        lon_min=_LON_MIN,
+        lon_max=_LON_MAX,
         **kwargs,
     )
     return VIIRSAODReader(fixture_path)
@@ -94,6 +101,16 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         reader = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(BoundingBox(-60.0, -58.0, 170.0, 172.0))
         assert data.size == 0
+
+    def test_reads_noaa20_group_not_merged(self, tmp_path):
+        # Build a file with BOTH a NOAA20_VIIRS group (the real AOD value) and a
+        # decoy Merged group filled with a distinct sentinel. The reader must
+        # return the NOAA-20 values, guarding against a revert to the merged group.
+        reader = _make_reader(tmp_path, include_fill_pixel=False, merged_decoy_value=1.23)
+        data, _, _ = reader._load_spatial_region(_full_bbox())
+        assert np.allclose(data, _AOD_FILL, atol=1e-5)
+        # The decoy value (1.23) must never appear.
+        assert not np.any(np.isclose(data, 1.23, atol=1e-5))
 
 
 class TestVIIRSAODReaderLoadTile:

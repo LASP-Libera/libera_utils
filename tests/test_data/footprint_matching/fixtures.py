@@ -358,7 +358,7 @@ def make_viirs_brdf_hdf5_fixture(
     return out_path
 
 
-def make_aod_merged_fixture(
+def make_aod_noaa20_fixture(
     tmp_path: Path,
     n_lat: int = 4,
     n_lon: int = 8,
@@ -368,13 +368,15 @@ def make_aod_merged_fixture(
     lon_max: float = 17.5,
     aod_fill: float = 0.2,
     include_fill_pixel: bool = True,
+    merged_decoy_value: float | None = None,
 ) -> Path:
-    """Write a synthetic AERDB_D3_GEOLEO merged AOD NetCDF4 file.
+    """Write a synthetic AERDB_D3_GEOLEO NOAA-20 VIIRS AOD NetCDF4 file.
 
     Replicates the relevant structure of the real Deep Blue GEO-LEO merged
-    product:
+    product as consumed by ``VIIRSAODReader`` (which reads the per-sensor
+    NOAA-20 VIIRS group, not the cross-sensor ``Merged`` group):
     - Root-level ``Latitude`` (ascending) and ``Longitude`` coordinate arrays
-    - A ``Merged`` group containing ``Aerosol_Optical_Thickness_550_Land_Ocean``
+    - A ``NOAA20_VIIRS`` group containing ``Aerosol_Optical_Thickness_550_Land_Ocean``
       with **(Latitude, Longitude)** dimension order (no transpose needed) and
       ``_FillValue = -999.0``
 
@@ -393,6 +395,11 @@ def make_aod_merged_fixture(
     include_fill_pixel : bool
         If True, set pixel [0, 0] to the −999.0 fill sentinel so tests can
         verify fill → NaN conversion. Default True.
+    merged_decoy_value : float | None
+        If not None, additionally write a decoy ``Merged`` group filled with this
+        constant value. The reader must ignore it (it reads ``NOAA20_VIIRS``), so
+        tests can assert the reader is reading the correct group. Default None
+        (no ``Merged`` group written).
 
     Returns
     -------
@@ -417,7 +424,7 @@ def make_aod_merged_fixture(
         lon_var[:] = lons.astype(np.float32)
         lon_var.units = "degrees_east"
 
-        grp = ds.createGroup("Merged")
+        grp = ds.createGroup("NOAA20_VIIRS")
         # Note: dimension order (Latitude, Longitude) — matches the real product.
         aod_var = grp.createVariable(
             "Aerosol_Optical_Thickness_550_Land_Ocean", "f4", ("Latitude", "Longitude"),
@@ -427,6 +434,17 @@ def make_aod_merged_fixture(
         if include_fill_pixel:
             data[0, 0] = -999.0
         aod_var[:] = data
+
+        # Optionally write a decoy "Merged" group with a distinct constant value.
+        # The reader reads NOAA20_VIIRS, so it must never return these values —
+        # this lets a test guard against an accidental revert to the merged group.
+        if merged_decoy_value is not None:
+            decoy_grp = ds.createGroup("Merged")
+            decoy_var = decoy_grp.createVariable(
+                "Aerosol_Optical_Thickness_550_Land_Ocean", "f4", ("Latitude", "Longitude"),
+                fill_value=-999.0,
+            )
+            decoy_var[:] = np.full((n_lat, n_lon), merged_decoy_value, dtype=np.float32)
 
     return out_path
 

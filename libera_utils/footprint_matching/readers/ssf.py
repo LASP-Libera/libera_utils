@@ -53,6 +53,7 @@ CERES SSF: https://ceres.larc.nasa.gov/data/#ssf-level-2
 FLASHFlux: https://ceres.larc.nasa.gov/data/#fast-longwave-and-shortwave-flux-flashflux
 File naming: CER_SSF_{platform}-{instrument}-{imager}_{config}_{prod}.{YYYYMMDDHH}.nc
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -121,29 +122,84 @@ class _SSFField(NamedTuple):
 # Note: surface-type variables in Surface_Map are deliberately omitted —
 # see module docstring for the rationale.
 _SSF_FIELDS: tuple[_SSFField, ...] = (
-    _SSFField("aerosol_optical_depth", "Auxillary_Properties", "aerosol_optical_depth",
-              "weighted_log_mean", _FILL_FLOAT, (0.0, 8.0), None, None),
-    _SSFField("clear_coverage", "Clear_Footprint_Area", "clear_coverage",
-              "weighted_mean", _FILL_FLOAT, (0.0, 100.0), None, None),
-    _SSFField("cloud_optical_depth", "Cloudy_Imager_Footprint_Layer", "cloud_optical_depth_mean",
-              "weighted_log_mean", _FILL_FLOAT, (0.0, 512.0), _CLOUD_LAYER_INDEX, None),
+    _SSFField(
+        "aerosol_optical_depth",
+        "Auxillary_Properties",
+        "aerosol_optical_depth",
+        "weighted_log_mean",
+        _FILL_FLOAT,
+        (0.0, 8.0),
+        None,
+        None,
+    ),
+    _SSFField(
+        "clear_coverage",
+        "Clear_Footprint_Area",
+        "clear_coverage",
+        "weighted_mean",
+        _FILL_FLOAT,
+        (0.0, 100.0),
+        None,
+        None,
+    ),
+    _SSFField(
+        "cloud_optical_depth",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_optical_depth_mean",
+        "weighted_log_mean",
+        _FILL_FLOAT,
+        (0.0, 512.0),
+        _CLOUD_LAYER_INDEX,
+        None,
+    ),
     # Effective cloud particle radius separated by thermodynamic phase (μm).
     # SSF stores water and ice radii in separate 2-D (Footprints, LowerUpper)
     # variables; both use _CLOUD_LAYER_INDEX to select the lower cloud layer,
     # consistent with cloud_optical_depth. The combined (blended) radius is
     # not available in SSF — use cldpix.cloud_particle_radius for that.
-    _SSFField("cloud_water_particle_radius",
-              "Cloudy_Imager_Footprint_Layer", "cloud_water_particle_radius_37um_mean",
-              "weighted_mean", _FILL_FLOAT, (2.0, 60.0), _CLOUD_LAYER_INDEX, None),
-    _SSFField("cloud_ice_particle_radius",
-              "Cloudy_Imager_Footprint_Layer", "cloud_ice_particle_radius_37um_mean",
-              "weighted_mean", _FILL_FLOAT, (5.0, 90.0), _CLOUD_LAYER_INDEX, None),
-    _SSFField("cloud_classification", "Scene_Type", "cloud_classification",
-              "weighted_mode", _FILL_INT16, (0.0, 32766.0), None, None),
-    _SSFField("shortwave_adm_type", "Scene_Type", "shortwave_adm_type",
-              "weighted_mode", _FILL_INT16, (0.0, 5000.0), None, None),
-    _SSFField("longwave_adm_type", "Scene_Type", "longwave_adm_type",
-              "weighted_mode", _FILL_INT16, (0.0, 5000.0), None, None),
+    _SSFField(
+        "cloud_water_particle_radius",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_water_particle_radius_37um_mean",
+        "weighted_mean",
+        _FILL_FLOAT,
+        (2.0, 60.0),
+        _CLOUD_LAYER_INDEX,
+        None,
+    ),
+    _SSFField(
+        "cloud_ice_particle_radius",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_ice_particle_radius_37um_mean",
+        "weighted_mean",
+        _FILL_FLOAT,
+        (5.0, 90.0),
+        _CLOUD_LAYER_INDEX,
+        None,
+    ),
+    _SSFField(
+        "cloud_classification",
+        "Scene_Type",
+        "cloud_classification",
+        "weighted_mode",
+        _FILL_INT16,
+        (0.0, 32766.0),
+        None,
+        None,
+    ),
+    _SSFField(
+        "shortwave_adm_type",
+        "Scene_Type",
+        "shortwave_adm_type",
+        "weighted_mode",
+        _FILL_INT16,
+        (0.0, 5000.0),
+        None,
+        None,
+    ),
+    _SSFField(
+        "longwave_adm_type", "Scene_Type", "longwave_adm_type", "weighted_mode", _FILL_INT16, (0.0, 5000.0), None, None
+    ),
 )
 
 
@@ -233,9 +289,7 @@ class SSFReader(GriddedDataReader):
                 if f.layer_index is not None:
                     # 2-D (Footprints, LowerUpper) — pick one layer.
                     raw = raw[:, f.layer_index]
-                value_rows.append(
-                    apply_fill_and_valid_range(raw, fill_value=f.fill, valid_range=f.valid_range)
-                )
+                value_rows.append(apply_fill_and_valid_range(raw, fill_value=f.fill, valid_range=f.valid_range))
 
             values = np.stack(value_rows, axis=0)
 

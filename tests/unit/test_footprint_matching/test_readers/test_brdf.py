@@ -10,6 +10,7 @@ Real VJ143C1 files can be downloaded from:
     EarthData login required: https://urs.earthdata.nasa.gov/
     Example: VJ143C1.A2026153.002.2026161161054.h5
 """
+
 from __future__ import annotations
 
 import math
@@ -28,16 +29,21 @@ _LAT_MIN = 0.05
 _LAT_MAX = 0.20
 _LON_MIN = 10.05
 _LON_MAX = 10.40
-_PARAM_FILL = 200        # raw int16 → 0.200 after scale_factor=0.001
-_FILL_SENTINEL = 32767   # last pixel; should become NaN
+_PARAM_FILL = 200  # raw int16 → 0.200 after scale_factor=0.001
+_FILL_SENTINEL = 32767  # last pixel; should become NaN
 
 
 def _make_reader(tmp_path, **kwargs) -> VIIRSBRDFReader:
     fixture_path = make_viirs_brdf_hdf5_fixture(
-        tmp_path, n_lat=_N_LAT, n_lon=_N_LON,
-        lat_min=_LAT_MIN, lat_max=_LAT_MAX,
-        lon_min=_LON_MIN, lon_max=_LON_MAX,
-        param_fill=_PARAM_FILL, fill_sentinel=_FILL_SENTINEL,
+        tmp_path,
+        n_lat=_N_LAT,
+        n_lon=_N_LON,
+        lat_min=_LAT_MIN,
+        lat_max=_LAT_MAX,
+        lon_min=_LON_MIN,
+        lon_max=_LON_MAX,
+        param_fill=_PARAM_FILL,
+        fill_sentinel=_FILL_SENTINEL,
         **kwargs,
     )
     return VIIRSBRDFReader(fixture_path)

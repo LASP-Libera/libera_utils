@@ -23,9 +23,9 @@ Examples
 >>> ReaderRegistry.list_readers()
 ['cldpix', 'era5', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cloud']
 """
+
 # Importing each reader module causes its class to be defined, which triggers
 # GriddedDataReader.__init_subclass__, which calls ReaderRegistry._registry[key] = cls.
-# Order does not matter for correctness, but alphabetical is easiest to maintain.
 from libera_utils.footprint_matching.readers import (  # noqa: F401
     aod,
     brdf,

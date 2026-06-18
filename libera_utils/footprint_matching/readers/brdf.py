@@ -47,6 +47,7 @@ Data access:
 File naming:
     VJ143C1.A{YYYYDDD}.{version}.{YYYYDDDHHMMSS}.h5
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -104,33 +105,69 @@ class VIIRSBRDFReader(GriddedDataReader):
     RESOLUTION_KM: float = 5.6  # 0.05° ≈ 5.6 km at equator
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
-        VariableSpec(name="brdf_shortwave_fiso", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_shortwave_fvol", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_shortwave_fgeo", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_vis_fiso", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_vis_fvol", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_vis_fgeo", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_nir_fiso", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_nir_fvol", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
-        VariableSpec(name="brdf_nir_fgeo", dtype="float32",
-                     aggregation="weighted_mean", required_mode=OperationalMode.CAM,
-                     n_categories=None),
+        VariableSpec(
+            name="brdf_shortwave_fiso",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_shortwave_fvol",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_shortwave_fgeo",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_vis_fiso",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_vis_fvol",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_vis_fgeo",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_nir_fiso",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_nir_fvol",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="brdf_nir_fgeo",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
     )
 
     def __init__(self, file_path: Path) -> None:

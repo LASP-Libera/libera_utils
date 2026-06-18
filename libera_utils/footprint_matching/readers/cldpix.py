@@ -42,6 +42,7 @@ References
 CERES cloud products: https://ceres.larc.nasa.gov/data/
 File naming: CER_CLDPIX_{platform}-{imager}_{config}_{prod}.{YYYYMMDDHH}.nc
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -99,29 +100,20 @@ class _CLDPIXField(NamedTuple):
 # are deliberately omitted — see module docstring for the rationale.
 _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
     # --- continuous cloud properties ---
-    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth",
-                 "weighted_log_mean", _FILL_FLOAT, (0.25, 150.0), None),
-    _CLDPIXField("cloud_water_path", "Cld_Water_Path",
-                 "weighted_mean", _FILL_FLOAT, (0.0, 10000.0), None),
-    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp",
-                 "weighted_mean", _FILL_FLOAT, (190.0, 350.0), None),
-    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height",
-                 "weighted_mean", _FILL_FLOAT, (0.0, 18.0), None),
-    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure",
-                 "weighted_mean", _FILL_FLOAT, (10.0, 1100.0), None),
-    _CLDPIXField("cloud_top_height", "Top_Cld_Height",
-                 "weighted_mean", _FILL_FLOAT, None, None),
+    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", _FILL_FLOAT, (0.25, 150.0), None),
+    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", _FILL_FLOAT, (0.0, 10000.0), None),
+    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", _FILL_FLOAT, (190.0, 350.0), None),
+    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", _FILL_FLOAT, (0.0, 18.0), None),
+    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", _FILL_FLOAT, (10.0, 1100.0), None),
+    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", _FILL_FLOAT, None, None),
     # Effective cloud particle radius (μm). Cld_Radius is the combined
     # (water+ice blended) effective radius produced by the CERES cloud
     # retrieval algorithm, distinct from the phase-separated radii
     # (Cld_Radius_0124, Cld_Radius_0160) at specific wavelengths.
-    _CLDPIXField("cloud_particle_radius", "Cld_Radius",
-                 "weighted_mean", _FILL_FLOAT, (2.0, 60.0), None),
+    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", _FILL_FLOAT, (2.0, 60.0), None),
     # --- categorical (mode-aggregated) ---
-    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase",
-                 "weighted_mode", _FILL_INT8, (1.0, 5.0), 5),
-    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask",
-                 "weighted_mode", _FILL_INT8, (0.0, 3.0), 4),
+    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", _FILL_INT8, (1.0, 5.0), 5),
+    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", _FILL_INT8, (0.0, 3.0), 4),
 )
 
 
@@ -211,11 +203,7 @@ class CLDPIXReader(GriddedDataReader):
             value_rows: list[np.ndarray] = []
             for f in _CLDPIX_FIELDS:
                 raw = ds.variables[f.var][:]
-                value_rows.append(
-                    apply_fill_and_valid_range(
-                        raw, fill_value=f.fill, valid_range=f.valid_range
-                    ).ravel()
-                )
+                value_rows.append(apply_fill_and_valid_range(raw, fill_value=f.fill, valid_range=f.valid_range).ravel())
 
             values = np.stack(value_rows, axis=0)
 

@@ -19,6 +19,7 @@ See Also
 libera_utils.footprint_matching.readers.base.GriddedDataReader :
     Abstract base class whose ``__init_subclass__`` performs registration.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -74,8 +75,7 @@ class ReaderRegistry:
         """
         if name not in ReaderRegistry._registry:
             raise KeyError(
-                f"No reader registered with name {name!r}. "
-                f"Available readers: {ReaderRegistry.list_readers()}"
+                f"No reader registered with name {name!r}. Available readers: {ReaderRegistry.list_readers()}"
             )
         return ReaderRegistry._registry[name]
 
@@ -117,8 +117,4 @@ class ReaderRegistry:
         >>> sorted(readers.keys())
         ['era5', 'igbp', 'nise', 'viirs_brdf', 'viirs_cloud']
         """
-        return {
-            key: cls
-            for key, cls in ReaderRegistry._registry.items()
-            if cls.REQUIRED_MODE.rank <= mode.rank
-        }
+        return {key: cls for key, cls in ReaderRegistry._registry.items() if cls.REQUIRED_MODE.rank <= mode.rank}

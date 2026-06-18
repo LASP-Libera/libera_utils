@@ -1,4 +1,4 @@
-"""VIIRS / merged aerosol optical depth (AOD) reader plugin.
+"""NOAA-20 VIIRS aerosol optical depth (AOD) reader plugin.
 
 Data source: Deep Blue GEO-LEO merged daily Level-3 aerosol optical depth
 - Product: AERDB_D3_GEOLEO_Merged (Collection 001)
@@ -10,14 +10,18 @@ Data source: Deep Blue GEO-LEO merged daily Level-3 aerosol optical depth
   transpose is required**.
 - Temporal resolution: Daily composites
 
-Why the ``Merged`` group?
--------------------------
+Why the per-sensor ``NOAA20_VIIRS`` group?
+------------------------------------------
 The file carries an AOD field for each individual sensor (NOAA20_VIIRS,
 SNPP_VIIRS, Aqua_MODIS, Terra_MODIS, G16_ABI, G17_ABI, H08_AHI) plus a
-``Merged`` group that fuses them into a single best-estimate field. Footprint
-matching wants one consistent gridded AOD value per cell, so this reader reads
-the ``Merged`` group. The per-sensor groups remain available for QA but are not
-exposed as reader variables.
+``Merged`` group that fuses them into a single best-estimate field. Rather than
+the blended ``Merged`` field, FMATCH-IMAGER requires a single, well-characterized
+VIIRS sensor's AOD (DPI v87: "AOD (NOAA-21 initially; NOAA-22 VIIRS when
+available)"). NOAA-20 is the VIIRS sensor available in the current
+AERDB_D3_GEOLEO granules, so this reader reads the ``NOAA20_VIIRS`` group. The
+``Merged`` and other per-sensor groups remain available for QA but are not
+exposed as reader variables. To switch sensors later (e.g. NOAA-21/NOAA-22),
+change only ``_AOD_SENSOR_GROUP`` below. TODO[LIBSDC-785]
 
 Roadmap note
 ------------
@@ -25,16 +29,16 @@ Roadmap note
 ("AOD (NOAA-21 initially; NOAA-22 VIIRS when available)") and COMP-FLUX
 ("VIIRS (AOD, Aerosol Type)"). AOD does not appear in the CAM/NRT products, so
 this reader is gated at ``OperationalMode.IMAGER``. Aerosol *type* is not
-present in this merged AOD product (it is carried by the CERES SSF product), so
-this reader exposes AOD only.
+present in this AOD product (it is carried by the CERES SSF product), so this
+reader exposes AOD only.
 
 NetCDF4 layout (AERDB_D3_GEOLEO_Merged)
 ---------------------------------------
 Root:
   Latitude  (180,)  — 1° bin centers, −89.5 → 89.5 (ascending)
   Longitude (360,)  — 1° bin centers, −179.5 → 179.5
-  Merged/
-    Aerosol_Optical_Thickness_550_Land_Ocean (180, 360)  — daily merged AOD at 550 nm
+  NOAA20_VIIRS/
+    Aerosol_Optical_Thickness_550_Land_Ocean (180, 360)  — daily NOAA-20 VIIRS AOD at 550 nm
 
 Fill value: −999.0 (replaced with NaN). valid_range: [0, 5].
 
@@ -47,6 +51,7 @@ NASA Deep Blue:
 File naming:
     AERDB_D3_GEOLEO_Merged.A{YYYYDDD}.{collection}.{YYYYDDDHHMMSS}.nc
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -54,8 +59,14 @@ import numpy as np
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
 
-# Group + variable path of the merged AOD field inside the NetCDF4 file.
-_AOD_GROUP: str = "Merged"
+# Group + variable path of the per-sensor AOD field inside the NetCDF4 file.
+# We read the single-sensor NOAA-20 VIIRS group rather than the cross-sensor
+# "Merged" best-estimate field, because FMATCH-IMAGER requires a single,
+# well-characterized VIIRS AOD source (DPI v87: "AOD (NOAA-21 initially;
+# NOAA-22 VIIRS when available)"). NOAA-20 is the VIIRS sensor available in the
+# current AERDB_D3_GEOLEO granules. To switch sensors later, change only this
+# constant. TODO[LIBSDC-785]
+_AOD_SENSOR_GROUP: str = "NOAA20_VIIRS"
 _AOD_VARIABLE: str = "Aerosol_Optical_Thickness_550_Land_Ocean"
 
 # Fill / missing value and physically valid range for the AOD field.
@@ -64,11 +75,11 @@ _AOD_VALID_MAX: float = 5.0
 
 
 class VIIRSAODReader(GriddedDataReader):
-    """Read merged daily aerosol optical depth from an AERDB_D3_GEOLEO file.
+    """Read NOAA-20 VIIRS daily aerosol optical depth from an AERDB_D3_GEOLEO file.
 
-    Loads a single variable (``aod_550``) from the ``Merged`` group of a Deep
-    Blue GEO-LEO merged Level-3 daily file and returns a 2-D data array of shape
-    ``(n_lat, n_lon)``.
+    Loads a single variable (``aod_550``) from the ``NOAA20_VIIRS`` group of a
+    Deep Blue GEO-LEO merged Level-3 daily file and returns a 2-D data array of
+    shape ``(n_lat, n_lon)``.
 
     Class Attributes
     ----------------
@@ -104,11 +115,11 @@ class VIIRSAODReader(GriddedDataReader):
     )
 
     def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Load merged AOD within ``bbox`` from an AERDB_D3_GEOLEO file.
+        """Load NOAA-20 VIIRS AOD within ``bbox`` from an AERDB_D3_GEOLEO file.
 
         Opens the NetCDF4 file, reads the root coordinate arrays (ascending
-        latitude, no transpose needed), subsets the ``Merged`` AOD field to the
-        requested bounding box, and replaces fill / out-of-range values with NaN.
+        latitude, no transpose needed), subsets the ``NOAA20_VIIRS`` AOD field to
+        the requested bounding box, and replaces fill / out-of-range values with NaN.
 
         Parameters
         ----------
@@ -147,7 +158,7 @@ class VIIRSAODReader(GriddedDataReader):
             lons_out = lons_full[lon_indices]
 
             # Variable is stored (Latitude, Longitude) — no transpose needed.
-            group = ds.groups[_AOD_GROUP]
+            group = ds.groups[_AOD_SENSOR_GROUP]
             raw = np.array(group.variables[_AOD_VARIABLE][:], dtype=np.float32)
             sub = raw[np.ix_(lat_indices, lon_indices)]
 
