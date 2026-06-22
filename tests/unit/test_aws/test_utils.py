@@ -1,7 +1,10 @@
 """Tests for AWS utils functions"""
 
+from unittest.mock import MagicMock, patch
+
 import boto3
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from libera_utils.aws import utils
@@ -20,6 +23,36 @@ def test_get_aws_account_number_with_profile(mock_s3_context_with_profile):
     # This works because mock_s3_context_with_profile created the config file
     fake_id = utils.get_aws_account_number(profile_name="test-profile")
     assert fake_id == "123456789012"
+
+
+@mock_aws
+def test_get_libera_utils_session_assumes_role(mock_s3_context_with_profile):
+    """A session backed by assumed-role credentials is returned, inheriting the base session's region."""
+    session = utils.get_libera_utils_session(profile_name="test-profile")
+
+    assert isinstance(session, boto3.Session)
+    # The returned session carries (assumed-role) credentials and the base session's region.
+    assert session.get_credentials() is not None
+    assert session.region_name == boto3.Session(profile_name="test-profile").region_name
+
+
+def test_get_libera_utils_session_raises_when_assume_role_denied():
+    """If the base profile cannot assume the LiberaUtils role, a helpful ValueError is raised."""
+    mock_sts = MagicMock()
+    mock_sts.get_caller_identity.return_value = {"Account": "123456789012"}
+    mock_sts.assume_role.side_effect = ClientError(
+        {"Error": {"Code": "AccessDenied", "Message": "not authorized to perform sts:AssumeRole"}},
+        "AssumeRole",
+    )
+    mock_base_session = MagicMock()
+    mock_base_session.client.return_value = mock_sts
+
+    with patch("libera_utils.aws.utils.boto3.Session", return_value=mock_base_session):
+        with pytest.raises(ValueError, match="not permitted to assume the L2Developer/LiberaUtils role"):
+            utils.get_libera_utils_session(profile_name="test-profile")
+
+    mock_sts.assume_role.assert_called_once()
+    assert mock_sts.assume_role.call_args.kwargs["RoleArn"] == "arn:aws:iam::123456789012:role/L2Developer/LiberaUtils"
 
 
 @mock_aws

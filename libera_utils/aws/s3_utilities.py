@@ -9,7 +9,11 @@ from typing import cast
 import boto3
 from cloudpathlib import AnyPath, S3Path
 
-from libera_utils.aws.utils import find_bucket_in_account_by_partial_name, find_event_bus_in_account_by_partial_name
+from libera_utils.aws.utils import (
+    find_bucket_in_account_by_partial_name,
+    find_event_bus_in_account_by_partial_name,
+    get_libera_utils_session,
+)
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import L0Filename, LiberaDataProductFilename, PathType
 from libera_utils.io.smart_open import smart_copy_file
@@ -64,10 +68,10 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     profile_name = parsed_args.profile
     local_file_paths: list[PathType] = [cast(PathType, AnyPath(file_path)) for file_path in parsed_args.file_paths]
 
-    # The boto session originates here and is passed to every function that needs it. Keeping profile resolution in
-    # a single place lets integration tests inject a custom session (e.g. with a specific test role) and call the
-    # workflow functions directly.
-    boto_session = boto3.Session(profile_name=profile_name)
+    # The boto session originates here and is passed to every function that needs it. It assumes the LiberaUtils
+    # role so the CLI has the permissions it needs. Keeping session creation in a single place lets integration
+    # tests inject a custom session (e.g. with a specific test role) and call the workflow functions directly.
+    boto_session = get_libera_utils_session(profile_name=profile_name)
 
     manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 

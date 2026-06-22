@@ -4,8 +4,67 @@ import logging
 import re
 
 import boto3
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
+
+# Canonical IAM role that Libera Utils CLI handlers assume to obtain the permissions they need. Users authenticate
+# to a "base" role (e.g. via AWS SSO) that grants no permissions directly but is allowed to assume this role.
+LIBERA_UTILS_ROLE_NAME = "L2Developer/LiberaUtils"
+
+
+def get_libera_utils_session(
+    profile_name: str | None = None, *, role_name: str = LIBERA_UTILS_ROLE_NAME
+) -> boto3.Session:
+    """Create a boto3 session that has assumed the LiberaUtils IAM role.
+
+    Libera SDC users authenticate (via their AWS config/SSO or an explicit profile) to a "base" role that grants no
+    permissions directly but is permitted to assume the canonical ``LiberaUtils`` role, which holds the permissions
+    needed by the CLI. This function resolves the base credentials, assumes the role, and returns a new session
+    backed by the assumed-role credentials.
+
+    Parameters
+    ----------
+    profile_name : str, optional
+        AWS profile name used to create the base session. If None, standard boto resolution is used (e.g. the
+        ``AWS_PROFILE`` environment variable, the default profile, or an instance role).
+    role_name : str, optional
+        Name (or path-qualified name) of the IAM role to assume. Defaults to ``"L2Developer/LiberaUtils"``.
+
+    Returns
+    -------
+    boto3.Session
+        A session whose credentials are those of the assumed role. The region is inherited from the base session.
+
+    Raises
+    ------
+    ValueError
+        If the base profile is not permitted to assume the role.
+    """
+    # If profile_name is None, this uses standard resolution (env vars, AWS_PROFILE, default profile, instance role).
+    base_session = boto3.Session(profile_name=profile_name)
+    sts_client = base_session.client("sts")
+
+    # get_caller_identity requires no permissions, so it works even from a base role with no direct permissions.
+    account_id = sts_client.get_caller_identity()["Account"]
+    role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+
+    try:
+        response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="libera-utils-cli")
+    except ClientError as err:
+        raise ValueError(
+            f"The provided AWS profile is not permitted to assume the {role_name} role ({role_arn}). "
+            f"Ensure your base profile/role is configured to assume {role_name}."
+        ) from err
+
+    credentials = response["Credentials"]
+    logger.info(f"Assumed role {role_arn} for Libera Utils CLI session.")
+    return boto3.Session(
+        aws_access_key_id=credentials["AccessKeyId"],
+        aws_secret_access_key=credentials["SecretAccessKey"],
+        aws_session_token=credentials["SessionToken"],
+        region_name=base_session.region_name,
+    )
 
 
 def _single_match_by_partial_name(partial_name: str, names: list[str], *, resource_description: str) -> str:

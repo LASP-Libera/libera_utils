@@ -31,9 +31,9 @@ class TestManualIngestPut:
         ],
     )
     @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
-    @patch("libera_utils.aws.s3_utilities.boto3.Session")
-    def test_cli_handler_creates_session_and_delegates(self, mock_session_cls, mock_manual_ingest, file_paths, profile):
-        """The CLI handler creates a single session from the profile and delegates to manual_ingest_data_products."""
+    @patch("libera_utils.aws.s3_utilities.get_libera_utils_session")
+    def test_cli_handler_creates_session_and_delegates(self, mock_get_session, mock_manual_ingest, file_paths, profile):
+        """The CLI handler builds a LiberaUtils session from the profile and delegates to manual_ingest_data_products."""
         args = argparse.Namespace(
             func=s3_utilities.s3_put_cli_handler,
             file_paths=file_paths,
@@ -42,10 +42,10 @@ class TestManualIngestPut:
 
         s3_utilities.s3_put_cli_handler(args)
 
-        # A single session is created from the profile and threaded into the workflow function.
-        mock_session_cls.assert_called_once_with(profile_name=profile)
+        # A single (role-assumed) session is created from the profile and threaded into the workflow function.
+        mock_get_session.assert_called_once_with(profile_name=profile)
         expected_paths = [AnyPath(p) for p in file_paths]
-        mock_manual_ingest.assert_called_once_with(expected_paths, boto_session=mock_session_cls.return_value)
+        mock_manual_ingest.assert_called_once_with(expected_paths, boto_session=mock_get_session.return_value)
 
     @pytest.mark.parametrize(
         "file_names",
