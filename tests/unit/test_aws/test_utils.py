@@ -99,3 +99,30 @@ def test_find_event_bus_ambiguity():
     # No match
     with pytest.raises(ValueError, match="Error finding a single event bus"):
         utils.find_event_bus_in_account_by_partial_name(session, "NonexistentBus")
+
+
+@mock_aws
+def test_find_dynamodb_table_ambiguity():
+    """Test that find_dynamodb_table... raises ValueError if it finds 0 or >1 tables."""
+    client = boto3.client("dynamodb", region_name="us-east-1")
+    for name in ("SomeFileMetadataTableOne", "SomeFileMetadataTableTwo", "SomeDataAvailabilityTable"):
+        client.create_table(
+            TableName=name,
+            KeySchema=[{"AttributeName": "PK", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "PK", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
+        )
+
+    session = boto3.Session(region_name="us-east-1")
+
+    # Ambiguity: two tables match
+    with pytest.raises(ValueError, match="Error finding a single DynamoDB table"):
+        utils.find_dynamodb_table_in_account_by_partial_name(session, "FileMetadataTable")
+
+    # No match
+    with pytest.raises(ValueError, match="Error finding a single DynamoDB table"):
+        utils.find_dynamodb_table_in_account_by_partial_name(session, "NonexistentTable")
+
+    # Success: specific enough to match only one
+    result = utils.find_dynamodb_table_in_account_by_partial_name(session, "DataAvailabilityTable")
+    assert result == "SomeDataAvailabilityTable"

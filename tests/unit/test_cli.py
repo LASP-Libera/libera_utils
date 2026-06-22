@@ -160,6 +160,8 @@ def test_ecr_upload_cli_args(cli_args, parsed):
                 func=s3_utilities.s3_put_cli_handler,
                 file_paths=["some/file/path.nc"],
                 profile=None,
+                verify=False,
+                timeout=s3_utilities.DEFAULT_VERIFY_TIMEOUT_SECONDS,
             ),
         ),
         (
@@ -168,6 +170,18 @@ def test_ecr_upload_cli_args(cli_args, parsed):
                 func=s3_utilities.s3_put_cli_handler,
                 file_paths=["some/file/path.nc", "another/file/path.nc"],
                 profile=None,
+                verify=False,
+                timeout=s3_utilities.DEFAULT_VERIFY_TIMEOUT_SECONDS,
+            ),
+        ),
+        (
+            ["s3-utils", "put", "some/file/path.nc", "--verify", "--timeout", "60"],
+            argparse.Namespace(
+                func=s3_utilities.s3_put_cli_handler,
+                file_paths=["some/file/path.nc"],
+                profile=None,
+                verify=True,
+                timeout=60.0,
             ),
         ),
         (
@@ -176,6 +190,8 @@ def test_ecr_upload_cli_args(cli_args, parsed):
                 func=s3_utilities.s3_put_cli_handler,
                 file_paths=["some/file/path.nc"],
                 profile="test",
+                verify=False,
+                timeout=s3_utilities.DEFAULT_VERIFY_TIMEOUT_SECONDS,
             ),
         ),
         (

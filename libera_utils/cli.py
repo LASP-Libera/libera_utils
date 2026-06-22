@@ -170,6 +170,19 @@ def parse_cli_args(cli_args: list):
         help="Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file. "
         "Files are staged to the SDC Ingest Dropbox and the SDC Data Ingester handles archiving and metadata.",
     )
+    s3_put_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="After triggering ingest, block until each file is confirmed fully ingested (archived with metadata "
+        "and data availability records), then report the result. Requires only read permissions.",
+    )
+    s3_put_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=s3_utilities.DEFAULT_VERIFY_TIMEOUT_SECONDS,
+        help="Seconds to wait for ingestion verification when --verify is set. Default is "
+        f"{s3_utilities.DEFAULT_VERIFY_TIMEOUT_SECONDS:.0f} (5 minutes).",
+    )
 
     # ============================
     # S3 LIST

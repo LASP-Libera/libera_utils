@@ -38,6 +38,8 @@ class TestManualIngestPut:
             func=s3_utilities.s3_put_cli_handler,
             file_paths=file_paths,
             profile=profile,
+            verify=False,
+            timeout=s3_utilities.DEFAULT_VERIFY_TIMEOUT_SECONDS,
         )
 
         s3_utilities.s3_put_cli_handler(args)
@@ -159,6 +161,132 @@ class TestManualIngestPut:
         files = [{"type": "data", "uri": "s3://bucket/file.nc", "name": "file.nc", "size": 1}]
         with pytest.raises(RuntimeError, match="Failed to put NewFilesAvailable event"):
             s3_utilities.put_new_files_available_event(files, boto_session=session)
+
+    @patch("libera_utils.aws.s3_utilities.verify_ingestion")
+    @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
+    @patch("libera_utils.aws.s3_utilities.get_libera_utils_session")
+    def test_cli_handler_verify_invokes_verification(self, mock_get_session, mock_manual_ingest, mock_verify):
+        """When --verify is set, the handler verifies ingestion using the ingest function's returned filenames."""
+        returned_filenames = ["filename-1", "filename-2"]
+        mock_manual_ingest.return_value = returned_filenames
+        args = argparse.Namespace(
+            func=s3_utilities.s3_put_cli_handler,
+            file_paths=["some/file/path.nc"],
+            profile=None,
+            verify=True,
+            timeout=42.0,
+        )
+
+        s3_utilities.s3_put_cli_handler(args)
+
+        mock_verify.assert_called_once_with(
+            returned_filenames, boto_session=mock_get_session.return_value, timeout=42.0
+        )
+
+
+class TestVerifyIngestion:
+    """Tests for ``verify_ingestion``, the blocking post-ingest verification used by ``s3-utils put --verify``."""
+
+    DATA_PRODUCT_FILE = "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
+    L0_PDS_FILE = "P1590011SOMESCIENCEAAA99030231459001.PDS"
+    L0_CR_FILE = "P1590011SOMESCIENCEAAA99030231459000.PDS"
+
+    @staticmethod
+    def _seed_archive_object(session, libera_filename):
+        """Put the file at its expected archive bucket + key in the (mocked) ``-test`` archive bucket."""
+        bucket = libera_filename.data_product_id.data_level.archive_bucket_name + "-test"
+        key = f"{libera_filename.archive_prefix}/{libera_filename.path.name}"
+        session.client("s3").put_object(Bucket=bucket, Key=key, Body=b"x")
+
+    @staticmethod
+    def _seed_metadata_record(session, table_name, basename, sk):
+        """Seed a single File Metadata record (PK=basename, SK=sk). The base record uses SK="#"; a data product /
+        L0 PDS product record uses SK=applicable_date."""
+        session.resource("dynamodb").Table(table_name).put_item(Item={"PK": basename, "SK": sk})
+
+    @staticmethod
+    def _seed_availability_record(session, table_name, libera_filename):
+        session.resource("dynamodb").Table(table_name).put_item(
+            Item={
+                "PK": libera_filename.applicable_date.isoformat(),
+                "SK": f"{libera_filename.data_product_id}#{libera_filename.filename_parts.version}",
+            }
+        )
+
+    def test_verify_succeeds_when_all_records_present(
+        self, make_test_archive_buckets, make_data_availability_table, make_file_metadata_table
+    ):
+        """All three checks present for a data product file -> verification returns without raising."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.LiberaDataProductFilename(self.DATA_PRODUCT_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(
+            session, make_file_metadata_table, self.DATA_PRODUCT_FILE, libera_filename.applicable_date.isoformat()
+        )
+        self._seed_availability_record(session, make_data_availability_table, libera_filename)
+
+        # Should not raise. poll_interval=0 keeps the (single, already-satisfied) pass instant.
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_times_out_when_a_record_is_missing(
+        self, make_test_archive_buckets, make_data_availability_table, make_file_metadata_table
+    ):
+        """A missing data availability record leaves the check pending and raises TimeoutError."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.LiberaDataProductFilename(self.DATA_PRODUCT_FILE)
+
+        # Seed archive + metadata but NOT the availability record.
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(
+            session, make_file_metadata_table, self.DATA_PRODUCT_FILE, libera_filename.applicable_date.isoformat()
+        )
+
+        with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
+            s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
+
+    def test_verify_l0_pds_requires_base_and_product_records(self, make_test_archive_buckets, make_file_metadata_table):
+        """An L0 PDS file is verified with archive + two metadata records (base SK="#" and product SK=date); no
+        availability table is required for L0 files."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.L0Filename(self.L0_PDS_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "#")
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "2027-01-02")
+
+        # No data availability table exists; verification must not look for one for L0 files.
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_l0_cr_requires_only_base_record(self, make_test_archive_buckets, make_file_metadata_table):
+        """An L0 CR (construction record) file is verified with archive + exactly one (base) metadata record."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.L0Filename(self.L0_CR_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_CR_FILE, "#")
+
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_l0_pds_times_out_with_only_base_record(self, make_test_archive_buckets, make_file_metadata_table):
+        """An L0 PDS file with only its base record (missing the product record) does not verify and times out."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.L0Filename(self.L0_PDS_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "#")
+
+        with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
+            s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
+
+    def test_verify_raises_immediately_when_table_missing(self, make_test_archive_buckets):
+        """A missing required resource (the file metadata table) raises immediately, before any polling."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.LiberaDataProductFilename(self.DATA_PRODUCT_FILE)
+        self._seed_archive_object(session, libera_filename)
+
+        with pytest.raises(ValueError, match="Error finding a single DynamoDB table"):
+            s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
 
 
 @pytest.mark.parametrize(

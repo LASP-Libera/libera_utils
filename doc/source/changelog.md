@@ -4,6 +4,8 @@
 
 - FEAT: `s3-utils put` now performs manual SDC data ingest instead of a direct archive upload. It accepts multiple file paths, stages each file to the SDC Ingest Dropbox bucket, and emits a single `NewFilesAvailable` event to the SDC event bus; the SDC Data Ingester then handles archiving and metadata/data-availability records. Accepts L0 and data product filenames (manifests rejected).
 - FEAT: Add `get_libera_utils_session` (in `aws/utils.py`) which builds a boto session from a profile/`AWS_PROFILE` and assumes the `L2Developer/LiberaUtils` role, raising `ValueError` if the base profile is not permitted to assume it. `s3_put_cli_handler` now uses it as its session source.
+- FEAT: Add `--verify`/`--timeout` to `s3-utils put`. With `--verify`, the CLI blocks after emitting the ingest event and polls (read-only) until each file is confirmed in its archive bucket and recorded in the File Metadata table (and, for non-L0 products, the Data Availability table), logging a per-file summary and raising on timeout (default 5 minutes). Adds `find_dynamodb_table_in_account_by_partial_name` to `aws/utils.py`.
+- MAINT: Remove the unused `libera_utils/db/dynamodb_utils.py` module (stale write-side helpers and an unused `get_dynamodb_table`); the ingest-verification DynamoDB reads are inlined in `verify_ingestion`.
 
 ## 5.8.4
 

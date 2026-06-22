@@ -112,6 +112,16 @@ def find_event_bus_in_account_by_partial_name(boto_session: boto3.Session, parti
     )
 
 
+def find_dynamodb_table_in_account_by_partial_name(boto_session: boto3.Session, partial_name: str) -> str:
+    """Finds a DynamoDB table by substring match to its name. Raises if zero or more than one table matches."""
+    dynamodb = boto_session.client("dynamodb")
+    table_names: list[str] = []
+    paginator = dynamodb.get_paginator("list_tables")
+    for page in paginator.paginate():
+        table_names.extend(page["TableNames"])
+    return _single_match_by_partial_name(partial_name, table_names, resource_description="DynamoDB table")
+
+
 def get_aws_account_number(region_name="us-west-2", profile_name=None):
     """Get a users AWS account ID number
 

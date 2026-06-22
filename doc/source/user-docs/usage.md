@@ -158,14 +158,22 @@ take a few minutes for files to appear in their archive bucket.
 
 Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
 
+By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
+block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
+record and (for non-L0 data products) a Data Availability record. Verification needs only read permissions. Use
+`--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command
+logs a per-file summary and exits with an error.
+
 ```shell
-usage: libera-utils s3-utils put [-h] file_path [file_path ...]
+usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [file_path ...]
 
 positional arguments:
-  file_path   Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file.
+  file_path          Path(s) to the file(s) to ingest. Each must be a properly named Libera L0 or data product file.
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help         show this help message and exit
+  --verify           After triggering ingest, block until each file is confirmed fully ingested, then report the result.
+  --timeout TIMEOUT  Seconds to wait for ingestion verification when --verify is set. Default is 300 (5 minutes).
 ```
 
 Example usage:
@@ -174,6 +182,10 @@ Example usage:
 libera-utils s3-utils --profile my-profile put \
   LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc \
   LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc
+
+# Stage one file and block until it is confirmed fully ingested (or 10 minutes elapse):
+libera-utils s3-utils --profile my-profile put --verify --timeout 600 \
+  LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc
 ```
 
 #### Sub-Command `s3-utils ls`

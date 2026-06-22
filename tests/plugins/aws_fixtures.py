@@ -287,3 +287,53 @@ def make_event_capturing_session(mock_s3_context_with_profile):
         return session, captured
 
     return _make_event_capturing_session
+
+
+@pytest.fixture
+def make_data_availability_table(mock_s3_context_with_profile):
+    """Creates a mocked SDC Data Availability DynamoDB table (PK=applicable_date, SK=DataProductId#Version).
+
+    Uses the 'test-profile' session so it stays in the same mock_aws context and region as the other fixtures.
+    Returns the table name so tests can discover, seed, and assert against it.
+    """
+    table_name = "SDCDataIngesterDataAvailabilityTableTest123"
+    session = boto3.Session(profile_name="test-profile")
+    client = session.client("dynamodb", region_name=session.region_name)
+    client.create_table(
+        TableName=table_name,
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return table_name
+
+
+@pytest.fixture
+def make_file_metadata_table(mock_s3_context_with_profile):
+    """Creates a mocked SDC File Metadata DynamoDB table (PK=file basename, SK=applicable_date).
+
+    Uses the 'test-profile' session so it stays in the same mock_aws context and region as the other fixtures.
+    Returns the table name so tests can discover, seed, and assert against it.
+    """
+    table_name = "SDCDataIngesterFileMetadataTableTest789"
+    session = boto3.Session(profile_name="test-profile")
+    client = session.client("dynamodb", region_name=session.region_name)
+    client.create_table(
+        TableName=table_name,
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return table_name
