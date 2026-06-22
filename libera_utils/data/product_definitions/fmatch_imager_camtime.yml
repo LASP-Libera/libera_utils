@@ -22,8 +22,9 @@
 # attributes (Format, Conventions, Project*, Platform*, algorithm_version, ...)
 # are injected automatically from required_product_attributes.yml.
 #
-# NAMING: variable names are prefixed with the reader source key for provenance
-# (e.g. era5_wind_u10, igbp_surface_type, viirs_cloud_cloud_fraction). DTYPEs
+# NAMING: variable names are <source_key>_<instrument>_<spec_name> for provenance,
+# with the instrument token from each reader's INSTRUMENT attribute
+# (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, viirs_cloud_NOAA20_cloud_fraction). DTYPEs
 # are taken verbatim from each reader's VariableSpec so the schema matches the
 # aggregation output.
 # See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4.
@@ -99,14 +100,6 @@ variables:
   #     heritage). Math lives in
   #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
   # ---------------------------------------------------------------------------
-  scattering_angle:
-    dtype: float32
-    dimensions: ["CAMERA_TIME"]
-    attributes:
-      # cos(Theta) = -cos(SZA)cos(VZA) + sin(SZA)sin(VZA)cos(RAA)
-      long_name: Scattering angle (Sun-surface-sensor)
-      units: degrees
-      valid_range: [0, 180]
   sunglint_angle:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
@@ -120,7 +113,7 @@ variables:
   # (c) PSF-aggregated external variables (one value per footprint).
   # ---------------------------------------------------------------------------
   # --- source reader: cldpix (resolution 1.0 km) ---
-  cldpix_cloud_optical_depth:
+  cldpix_NOAA20_cloud_optical_depth:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -128,7 +121,7 @@ variables:
       long_name: Cloud optical depth (RBSP CLDPIX)
       units: "1"
       valid_range: [0.25, 150]
-  cldpix_cloud_water_path:
+  cldpix_NOAA20_cloud_water_path:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -136,7 +129,7 @@ variables:
       long_name: Cloud water path
       units: "g/m^2"
       valid_range: [0, 10000]
-  cldpix_cloud_effective_temperature:
+  cldpix_NOAA20_cloud_effective_temperature:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -144,7 +137,7 @@ variables:
       long_name: Cloud effective temperature
       units: "K"
       valid_range: [190, 350]
-  cldpix_cloud_effective_height:
+  cldpix_NOAA20_cloud_effective_height:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -152,7 +145,7 @@ variables:
       long_name: Cloud effective height
       units: "km"
       valid_range: [0, 18]
-  cldpix_cloud_effective_pressure:
+  cldpix_NOAA20_cloud_effective_pressure:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -160,14 +153,14 @@ variables:
       long_name: Cloud effective pressure
       units: "hPa"
       valid_range: [10, 1100]
-  cldpix_cloud_top_height:
+  cldpix_NOAA20_cloud_top_height:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: cldpix (aggregation: weighted_mean)
       long_name: Cloud top height
       units: "km"
-  cldpix_cloud_particle_radius:
+  cldpix_NOAA20_cloud_particle_radius:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -178,14 +171,14 @@ variables:
       long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius)
       units: "um"
       valid_range: [2, 60]
-  cldpix_cloud_particle_phase:
+  cldpix_NOAA20_cloud_particle_phase:
     dtype: int16
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: cldpix (aggregation: weighted_mode)
       long_name: Cloud particle phase
       valid_range: [1, 5]
-  cldpix_cloud_mask:
+  cldpix_NOAA20_cloud_mask:
     dtype: int16
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -193,14 +186,14 @@ variables:
       long_name: CERES cloud mask
       valid_range: [0, 3]
   # --- source reader: era5 (resolution 25.0 km) ---
-  era5_wind_u10:
+  era5_ECMWF_wind_u10:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: era5 (aggregation: weighted_mean)
       long_name: Eastward wind component at 10 m
       units: "m/s"
-  era5_wind_v10:
+  era5_ECMWF_wind_v10:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -208,7 +201,7 @@ variables:
       long_name: Northward wind component at 10 m
       units: "m/s"
   # --- source reader: igbp (resolution 1.0 km) ---
-  igbp_surface_type:
+  igbp_MODIS_surface_type:
     dtype: int16
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -217,7 +210,7 @@ variables:
       long_name: IGBP surface type classification
       valid_range: [1, 20]
   # --- source reader: nise (resolution 25.0 km) ---
-  nise_sea_ice_concentration:
+  nise_SSMIS_sea_ice_concentration:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -228,7 +221,7 @@ variables:
       long_name: Sea ice concentration (fraction)
       units: "1"
       valid_range: [0, 1]
-  nise_no_ice_or_snow:
+  nise_SSMIS_no_ice_or_snow:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -238,7 +231,7 @@ variables:
       long_name: Fraction of footprint with no ice or snow (NISE code 0)
       units: "1"
       valid_range: [0, 1]
-  nise_permanent_ice:
+  nise_SSMIS_permanent_ice:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -248,7 +241,7 @@ variables:
       long_name: Fraction of footprint covered by permanent ice (NISE code 101)
       units: "1"
       valid_range: [0, 1]
-  nise_dry_snow_on_land:
+  nise_SSMIS_dry_snow_on_land:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -258,7 +251,7 @@ variables:
       long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110)
       units: "1"
       valid_range: [0, 1]
-  nise_snow_ice_missing:
+  nise_SSMIS_snow_ice_missing:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -269,7 +262,7 @@ variables:
       units: "1"
       valid_range: [0, 1]
   # --- source reader: ssf (resolution 20.0 km) ---
-  ssf_aerosol_optical_depth:
+  ssf_NOAA20_aerosol_optical_depth:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -277,7 +270,7 @@ variables:
       long_name: Aerosol optical depth (CERES SSF)
       units: "1"
       valid_range: [0, 8]
-  ssf_clear_coverage:
+  ssf_NOAA20_clear_coverage:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -285,7 +278,7 @@ variables:
       long_name: Clear-sky areal coverage
       units: "percent"
       valid_range: [0, 100]
-  ssf_cloud_optical_depth:
+  ssf_NOAA20_cloud_optical_depth:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -293,7 +286,7 @@ variables:
       long_name: Cloud optical depth (CERES SSF imager layer)
       units: "1"
       valid_range: [0, 512]
-  ssf_cloud_water_particle_radius:
+  ssf_NOAA20_cloud_water_particle_radius:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -304,7 +297,7 @@ variables:
       long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer)
       units: "um"
       valid_range: [2, 60]
-  ssf_cloud_ice_particle_radius:
+  ssf_NOAA20_cloud_ice_particle_radius:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -313,21 +306,21 @@ variables:
       long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer)
       units: "um"
       valid_range: [5, 90]
-  ssf_cloud_classification:
+  ssf_NOAA20_cloud_classification:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: ssf (aggregation: weighted_mode)
       long_name: CERES cloud classification code (encoded)
       valid_range: [0, 32766]
-  ssf_shortwave_adm_type:
+  ssf_NOAA20_shortwave_adm_type:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: ssf (aggregation: weighted_mode)
       long_name: CERES shortwave ADM scene type (encoded)
       valid_range: [0, 5000]
-  ssf_longwave_adm_type:
+  ssf_NOAA20_longwave_adm_type:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -335,7 +328,7 @@ variables:
       long_name: CERES longwave ADM scene type (encoded)
       valid_range: [0, 5000]
   # --- source reader: viirs_aod (resolution 111.0 km) ---
-  viirs_aod_aod_550:
+  viirs_aod_NOAA20_aod_550:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -344,63 +337,63 @@ variables:
       units: "1"
       valid_range: [0, 5]
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
-  viirs_brdf_brdf_shortwave_fiso:
+  viirs_brdf_NOAA20_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF isotropic kernel weight
       units: "1"
-  viirs_brdf_brdf_shortwave_fvol:
+  viirs_brdf_NOAA20_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF volumetric kernel weight
       units: "1"
-  viirs_brdf_brdf_shortwave_fgeo:
+  viirs_brdf_NOAA20_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF geometric kernel weight
       units: "1"
-  viirs_brdf_brdf_vis_fiso:
+  viirs_brdf_NOAA20_brdf_vis_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF isotropic kernel weight
       units: "1"
-  viirs_brdf_brdf_vis_fvol:
+  viirs_brdf_NOAA20_brdf_vis_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF volumetric kernel weight
       units: "1"
-  viirs_brdf_brdf_vis_fgeo:
+  viirs_brdf_NOAA20_brdf_vis_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF geometric kernel weight
       units: "1"
-  viirs_brdf_brdf_nir_fiso:
+  viirs_brdf_NOAA20_brdf_nir_fiso:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF isotropic kernel weight
       units: "1"
-  viirs_brdf_brdf_nir_fvol:
+  viirs_brdf_NOAA20_brdf_nir_fvol:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF volumetric kernel weight
       units: "1"
-  viirs_brdf_brdf_nir_fgeo:
+  viirs_brdf_NOAA20_brdf_nir_fgeo:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -408,7 +401,7 @@ variables:
       long_name: Near-infrared BRDF geometric kernel weight
       units: "1"
   # --- source reader: viirs_cloud (resolution 111.0 km) ---
-  viirs_cloud_cloud_fraction:
+  viirs_cloud_NOAA20_cloud_fraction:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
@@ -416,14 +409,14 @@ variables:
       long_name: Cloud fraction
       units: "1"
       valid_range: [0, 1]
-  viirs_cloud_cloud_optical_thickness:
+  viirs_cloud_NOAA20_cloud_optical_thickness:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       # source: viirs_cloud (aggregation: weighted_log_mean)
       long_name: Cloud optical thickness
       units: "1"
-  viirs_cloud_cloud_top_pressure:
+  viirs_cloud_NOAA20_cloud_top_pressure:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:

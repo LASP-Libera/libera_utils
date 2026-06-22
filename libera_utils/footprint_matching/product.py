@@ -128,9 +128,10 @@ def aggregate_external_variables(
     the returned dict - grows with the mode's latency (e.g. CAM has era5, igbp,
     nise, viirs_brdf, viirs_cloud; IMAGER additionally has ssf, cldpix, viirs_aod).
 
-    Every output variable is prefixed with the reader source key for provenance
-    (e.g. ``era5_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``),
-    matching the product definition variable names.
+    Every output variable is named ``<source_key>_<instrument>_<spec_name>`` for
+    provenance, where the instrument token comes from the reader's ``INSTRUMENT``
+    attribute (e.g. ``era5_ECMWF_wind_u10``, ``igbp_MODIS_surface_type``,
+    ``cldpix_NOAA20_cloud_mask``), matching the product definition variable names.
 
     Returns
     -------
@@ -156,18 +157,18 @@ def compute_derived_viewing_geometry(
 ) -> dict[str, np.ndarray]:
     """Compute derived viewing-geometry variables from the geolocation angles.
 
-    Produces the ``scattering_angle`` and ``sunglint_angle`` variables present in
-    every FMATCH product definition. The intended (CERES/SSF-heritage) formulas,
-    with all angles in degrees:
-
-    - Scattering angle ``Theta``::
-
-          cos(Theta) = -cos(SZA) * cos(VZA)
-                       + sin(SZA) * sin(VZA) * cos(RAA)
+    Produces the ``sunglint_angle`` variable present in every FMATCH product
+    definition. The intended (CERES/SSF-heritage) formula, with all angles in
+    degrees:
 
     - Sun glint angle: the angle between the sensor view direction and the
       specular reflection of the solar beam; small values indicate potential
       sun glint contamination.
+
+    (The ``scattering_angle`` quantity was previously emitted here too, but has
+    been dropped from the FMATCH product contract; downstream code that needs it
+    can derive it on demand from the geolocation angles that remain in every
+    product.)
 
     Parameters
     ----------
@@ -177,14 +178,14 @@ def compute_derived_viewing_geometry(
     Returns
     -------
     dict[str, np.ndarray]
-        ``{"scattering_angle": ..., "sunglint_angle": ...}``.
+        ``{"sunglint_angle": ...}``.
 
     Raises
     ------
     NotImplementedError
         Always, in this milestone. The geometry module is future work.
     """
-    # TODO[LIBSDC-785]: implement scattering and sun-glint angle calculations.
+    # TODO[LIBSDC-785]: implement the sun-glint angle calculation.
     raise NotImplementedError(
         "Derived viewing-geometry computation is not implemented yet. This is a "
         "placeholder for the FMATCH geometry module (future milestone)."

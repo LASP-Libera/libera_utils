@@ -80,6 +80,8 @@ class IGBPReader(GriddedDataReader):
     """
 
     READER_KEY: str = "igbp"
+    # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
+    INSTRUMENT: str = "MODIS"
     RESOLUTION_KM: float = 1.0
     OUTPUT_CELL_DEG: float = 0.05
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM

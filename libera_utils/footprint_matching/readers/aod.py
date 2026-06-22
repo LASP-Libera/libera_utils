@@ -99,6 +99,8 @@ class VIIRSAODReader(GriddedDataReader):
     """
 
     READER_KEY: str = "viirs_aod"
+    # This reader pulls the NOAA20_VIIRS group from the Deep Blue merged AOD product.
+    INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
     REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER
     VARIABLES: tuple[VariableSpec, ...] = (

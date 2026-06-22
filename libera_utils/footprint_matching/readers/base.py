@@ -50,6 +50,13 @@ class GriddedDataReader(abc.ABC):
     READER_KEY : str
         Unique string key used to register the reader in ``ReaderRegistry``.
         Examples: ``"igbp"``, ``"nsidc"``, ``"era5"``, ``"viirs_l2l3"``.
+    INSTRUMENT : str
+        Instrument / platform token embedded in every output variable name, e.g.
+        ``"NOAA20"``, ``"MODIS"``, ``"SSMIS"``, ``"ECMWF"``. Combined with
+        ``READER_KEY`` and each ``VariableSpec`` name to form the product variable
+        name ``f"{READER_KEY}_{INSTRUMENT}_{spec.name}"`` (e.g.
+        ``igbp_MODIS_surface_type``). For model/reanalysis sources that have no
+        instrument (ERA5) the producing center is used so the naming stays uniform.
     RESOLUTION_KM : float
         Native spatial resolution of the data source in km.
     REQUIRED_MODE : OperationalMode
@@ -76,6 +83,7 @@ class GriddedDataReader(abc.ABC):
 
     # --- Required class-level attributes (declared here for static analysis) ---
     READER_KEY: str
+    INSTRUMENT: str
     RESOLUTION_KM: float
     REQUIRED_MODE: OperationalMode
     VARIABLES: tuple[VariableSpec, ...]
@@ -104,6 +112,16 @@ class GriddedDataReader(abc.ABC):
         # class is likely a partial/abstract intermediate class and we skip it.
         if not hasattr(cls, "READER_KEY") or cls.READER_KEY is None:
             return
+
+        # INSTRUMENT is part of every output variable name, so a concrete reader
+        # that forgot to declare it would silently produce malformed names. Fail
+        # fast at import/registration time rather than at product-write time.
+        if not hasattr(cls, "INSTRUMENT") or cls.INSTRUMENT is None:
+            raise TypeError(
+                f"Reader {cls.__name__!r} (READER_KEY={cls.READER_KEY!r}) must define an "
+                f"INSTRUMENT class attribute; it is embedded in output variable names "
+                f"as f'{{READER_KEY}}_{{INSTRUMENT}}_{{spec.name}}'."
+            )
 
         # Local import to break the circular dependency: base → registry → base.
         from libera_utils.footprint_matching.readers.registry import ReaderRegistry  # noqa: PLC0415
