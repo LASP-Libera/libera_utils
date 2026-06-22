@@ -88,6 +88,8 @@ class VIIRSCloudReader(GriddedDataReader):
     """
 
     READER_KEY: str = "viirs_cloud"
+    # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
+    INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (

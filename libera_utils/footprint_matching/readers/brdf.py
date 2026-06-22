@@ -102,6 +102,8 @@ class VIIRSBRDFReader(GriddedDataReader):
     """
 
     READER_KEY: str = "viirs_brdf"
+    # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
+    INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 5.6  # 0.05° ≈ 5.6 km at equator
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (

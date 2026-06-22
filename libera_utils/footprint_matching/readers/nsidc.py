@@ -33,7 +33,7 @@ preserves sub-pixel concentration magnitude:
   no_ice_or_snow        0           1.0 else 0.0
   permanent_ice         101         1.0 else 0.0
   dry_snow_on_land      103–110     1.0 else 0.0
-  missing               255         1.0 else 0.0
+  snow_ice_missing      255         1.0 else 0.0
   ===================== =========== ============================================
 
 Design notes
@@ -119,7 +119,7 @@ _VARIABLE_ORDER: tuple[str, ...] = (
     "no_ice_or_snow",
     "permanent_ice",
     "dry_snow_on_land",
-    "missing",
+    "snow_ice_missing",
 )
 
 
@@ -154,7 +154,7 @@ class NISEReader(GriddedDataReader):
         Five fractional-coverage variables, all continuous float32 with
         ``weighted_mean`` aggregation and range 0.0–1.0:
         ``"sea_ice_concentration"``, ``"no_ice_or_snow"``, ``"permanent_ice"``,
-        ``"dry_snow_on_land"``, and ``"missing"``.
+        ``"dry_snow_on_land"``, and ``"snow_ice_missing"``.
 
     Parameters
     ----------
@@ -173,6 +173,9 @@ class NISEReader(GriddedDataReader):
     """
 
     READER_KEY: str = "nise"
+    # The NISE v5 product this reader targets is built from SSM/I-SSMIS passive
+    # microwave radiometry (the AMSR-2 NISE_A2 variant is not read here).
+    INSTRUMENT: str = "SSMIS"
     RESOLUTION_KM: float = 25.0
     OUTPUT_CELL_DEG: float = 0.25
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
@@ -211,7 +214,7 @@ class NISEReader(GriddedDataReader):
             n_categories=None,
         ),
         VariableSpec(
-            name="missing",
+            name="snow_ice_missing",
             dtype="float32",
             aggregation="weighted_mean",
             required_mode=OperationalMode.CAM,

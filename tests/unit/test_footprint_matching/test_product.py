@@ -8,8 +8,9 @@ tests confirm, for every mode, that:
 - The schema declares the expected geolocation, derived-geometry, and QA variables
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
-  VariableSpec definitions. Every reader-sourced variable is prefixed with its
-  reader source key (e.g. era5_wind_u10, igbp_surface_type, cldpix_cloud_mask).
+  VariableSpec definitions. Every reader-sourced variable is named
+  `<source_key>_<instrument>_<spec_name>` (e.g. era5_ECMWF_wind_u10,
+  igbp_MODIS_surface_type, cldpix_NOAA20_cloud_mask).
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
 
@@ -45,7 +46,7 @@ GEOLOCATION_VARIABLES = (
     "viewing_zenith_angle",
     "relative_azimuth_angle",
 )
-DERIVED_GEOMETRY_VARIABLES = ("scattering_angle", "sunglint_angle")
+DERIVED_GEOMETRY_VARIABLES = ("sunglint_angle",)
 COVERAGE_QA_VARIABLES = ("psf_coverage_fraction", "q_flags")
 
 ALL_MODES = tuple(OperationalMode)
@@ -60,12 +61,14 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """{output_variable_name: dtype} for every active production reader variable.
 
     Mirrors the product-definition naming rule: every reader-sourced variable is
-    prefixed with the reader source key (e.g. era5_wind_u10, igbp_surface_type).
+    named `<source_key>_<instrument>_<spec_name>`, where the instrument token comes
+    from the reader's INSTRUMENT attribute (e.g. era5_ECMWF_wind_u10,
+    igbp_MODIS_surface_type).
     """
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
         for spec in cls.VARIABLES:
-            expected[f"{key}_{spec.name}"] = spec.dtype
+            expected[f"{key}_{cls.INSTRUMENT}_{spec.name}"] = spec.dtype
     return expected
 
 
