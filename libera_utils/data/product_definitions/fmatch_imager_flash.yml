@@ -1,44 +1,13 @@
 # =============================================================================
 # FMATCH-IMAGER-FLASH Data Product Definition
 # =============================================================================
-# Footprint Match - Libera Imager Flash (radiometer time).
-#
-# Timescale: Radiometer    Latency: RBSP FLASHFlux (7-10 days)
-#
-# Post-Year-1 product. Adds RBSP-produced CERES SSF / FLASHFlux cloud and ADM
-# scene-type variables on top of the FMATCH-CAM reader set.
-#
-# This is an SSF-style, per-footprint record: each footprint is one entry along
-# the RADIOMETER_TIME dimension and is identified by its time. The variables below are:
-#   (a) geolocation inputs (from L1B Daily),
-#   (b) derived viewing geometry (computed from the geolocation angles),
-#   (c) PSF-aggregated external variables - exactly the variables produced by the
-#       readers active in this mode: era5, igbp, nise, ssf, viirs_brdf, viirs_cloud
-#       (ReaderRegistry.get_readers_for_mode), each collapsed to ONE value per
-#       footprint, and
-#   (d) coverage / QA bookkeeping.
-#
-# Loaded and validated by LiberaDataProductDefinition.from_yaml(). Global
-# attributes (Format, Conventions, Project*, Platform*, algorithm_version, ...)
-# are injected automatically from required_product_attributes.yml.
-#
-# NAMING: variable names are <source_key>_<instrument>_<spec_name> for provenance,
-# with the instrument token from each reader's INSTRUMENT attribute
-# (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, viirs_cloud_NOAA20_cloud_optical_thickness). DTYPEs
-# are taken verbatim from each reader's VariableSpec so the schema matches the
-# aggregation output.
-# See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4.
-# =============================================================================
 
 attributes:
   ProductID: FMATCH-IMAGER-FLASH
-  algorithm_version: null # semantic version of the FMATCH algorithm that produced the file
-  date_created: null # ISO-8601 UTC timestamp of file creation
-  input_files: null # provenance: the L1B + ancillary input files used
-
+  algorithm_version: null
+  date_created: null
+  input_files: null
 coordinates:
-  # The per-footprint identifier. Each footprint is uniquely identified by its
-  # observation time, so RADIOMETER_TIME is both the dimension and the coordinate.
   RADIOMETER_TIME:
     dtype: datetime64[ns]
     dimensions: ["RADIOMETER_TIME"]
@@ -96,15 +65,12 @@ variables:
       valid_range: [0, 360]
 
   # ---------------------------------------------------------------------------
-  # (b) Derived viewing geometry (computed from the angles above; CERES/SSF
-  #     heritage). Math lives in
-  #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
+  # (b) Derived viewing geometry
   # ---------------------------------------------------------------------------
   sunglint_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # Angle between the view direction and the specular reflection of the Sun.
       long_name: Sun glint angle
       units: degrees
       valid_range: [0, 180]
@@ -117,14 +83,12 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: era5 (aggregation: weighted_mean)
       long_name: Eastward wind component at 10 m
       units: "m/s"
   era5_ECMWF_wind_v10:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: era5 (aggregation: weighted_mean)
       long_name: Northward wind component at 10 m
       units: "m/s"
   # --- source reader: igbp (resolution 1.0 km) ---
@@ -132,8 +96,6 @@ variables:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: igbp (aggregation: weighted_mode)
-      # https://climatedataguide.ucar.edu/climate-data/ceres-igbp-land-classification
       long_name: IGBP surface type classification
       valid_range: [1, 20]
   # --- source reader: nise (resolution 25.0 km) ---
@@ -141,10 +103,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: nise (aggregation: weighted_mean)
-      # PSF-weighted mean sea ice concentration derived from NISE Extent codes 1–100
-      # (code / 100.0). Permanent ice (code 101) counts as 1.0. Range [0, 1].
-      # https://nsidc.org/data/nise/versions/5
       long_name: Sea ice concentration (fraction)
       units: "1"
       valid_range: [0, 1]
@@ -152,9 +110,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: nise (aggregation: weighted_mean)
-      # Fraction of PSF-weighted footprint area where NISE code 0 (no ice or snow —
-      # open ocean, snow-free land, or outside grid). Range [0, 1].
       long_name: Fraction of footprint with no ice or snow (NISE code 0)
       units: "1"
       valid_range: [0, 1]
@@ -162,9 +117,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: nise (aggregation: weighted_mean)
-      # Fraction of PSF-weighted footprint area where NISE code 101 (permanent ice:
-      # Greenland Ice Sheet, Antarctic ice shelves). Range [0, 1].
       long_name: Fraction of footprint covered by permanent ice (NISE code 101)
       units: "1"
       valid_range: [0, 1]
@@ -172,9 +124,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: nise (aggregation: weighted_mean)
-      # Fraction of PSF-weighted footprint area where NISE codes 103–110 (dry snow
-      # on land). Range [0, 1].
       long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110)
       units: "1"
       valid_range: [0, 1]
@@ -182,9 +131,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: nise (aggregation: weighted_mean)
-      # Fraction of PSF-weighted footprint area where NISE code 255 (missing/no
-      # retrieval). High values flag unreliable ice/snow classification.
       long_name: Fraction of footprint with missing NISE retrieval (NISE code 255)
       units: "1"
       valid_range: [0, 1]
@@ -193,7 +139,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_log_mean)
       long_name: Aerosol optical depth (CERES SSF)
       units: "1"
       valid_range: [0, 8]
@@ -201,7 +146,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_mean)
       long_name: Clear-sky areal coverage
       units: "percent"
       valid_range: [0, 100]
@@ -209,7 +153,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_log_mean)
       long_name: Cloud optical depth (CERES SSF imager layer)
       units: "1"
       valid_range: [0, 512]
@@ -217,10 +160,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_mean)
-      # Effective cloud water-droplet particle radius at 3.7 µm, lower cloud layer.
-      # Phase-separated from ssf_cloud_ice_particle_radius; the blended radius is not
-      # available in SSF — use cldpix_cloud_particle_radius for that.
       long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer)
       units: "um"
       valid_range: [2, 60]
@@ -228,8 +167,6 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_mean)
-      # Effective cloud ice-crystal particle radius at 3.7 µm, lower cloud layer.
       long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer)
       units: "um"
       valid_range: [5, 90]
@@ -237,21 +174,18 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_mode)
       long_name: CERES cloud classification code (encoded)
       valid_range: [0, 32766]
   ssf_NOAA20_shortwave_adm_type:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_mode)
       long_name: CERES shortwave ADM scene type (encoded)
       valid_range: [0, 5000]
   ssf_NOAA20_longwave_adm_type:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: ssf (aggregation: weighted_mode)
       long_name: CERES longwave ADM scene type (encoded)
       valid_range: [0, 5000]
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
@@ -259,63 +193,54 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF isotropic kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF volumetric kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Shortwave BRDF geometric kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_vis_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF isotropic kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_vis_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF volumetric kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_vis_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Visible BRDF geometric kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_nir_fiso:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF isotropic kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_nir_fvol:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF volumetric kernel weight
       units: "1"
   viirs_brdf_NOAA20_brdf_nir_fgeo:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_brdf (aggregation: weighted_mean)
       long_name: Near-infrared BRDF geometric kernel weight
       units: "1"
   # --- source reader: viirs_cloud (resolution 111.0 km) ---
@@ -323,19 +248,17 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_cloud (aggregation: weighted_log_mean)
       long_name: Cloud optical thickness
       units: "1"
   viirs_cloud_NOAA20_cloud_top_pressure:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      # source: viirs_cloud (aggregation: weighted_mean)
       long_name: Cloud top pressure
       units: "hPa"
 
   # ---------------------------------------------------------------------------
-  # (d) Coverage / QA bookkeeping (design §1.4; CERES partial-coverage convention).
+  # (d) Coverage / QA bookkeeping
   # ---------------------------------------------------------------------------
   psf_bbox_lat_min:
     dtype: float32
@@ -378,11 +301,3 @@ variables:
     attributes:
       long_name: Quality flags (bitwise)
       valid_range: [0, 2147483647]
-
-  # ---------------------------------------------------------------------------
-  # (e) Scope note. FMATCH-IMAGER-FLASH additionally carries RBSP FLASHFlux
-  #     reference fluxes (SW, LW) attached verbatim (NOT PSF-aggregated) for
-  #     downstream Scene ID validation (design §1.4). Those are not produced by a
-  #     GriddedDataReader, so they are intentionally omitted here until the
-  #     FLASHFlux pass-through input handling is implemented.
-  # TODO[LIBSDC-785]: add flashflux_sw_flux / flashflux_lw_flux pass-through vars.
