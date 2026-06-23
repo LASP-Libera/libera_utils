@@ -225,7 +225,7 @@ class GriddedDataReader(abc.ABC):
 
         Notes
         -----
-        Implementors are responsible for handling the fill / missing-value sentinel
+        Implementers are responsible for handling the fill / missing-value sentinel
         appropriate to their data source. The caller (``load_tile``) does not
         perform any fill-value processing after calling this hook.
         """
