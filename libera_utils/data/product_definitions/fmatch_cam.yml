@@ -4,9 +4,9 @@
 
 attributes:
   ProductID: FMATCH-CAM
-  algorithm_version: null 
-  date_created: null 
-  input_files: null 
+  algorithm_version: null
+  date_created: null
+  input_files: null
 
 coordinates:
   RADIOMETER_TIME:
@@ -229,7 +229,7 @@ variables:
       # directly to the FMATCH record (no reader / PSF step here).
       long_name: Cloud fraction (Libera WFOV)
       units: "1"
-      valid_range: [0, 1] 
+      valid_range: [0, 1]
   # ---------------------------------------------------------------------------
   # (d) Coverage / QA
   # ---------------------------------------------------------------------------
