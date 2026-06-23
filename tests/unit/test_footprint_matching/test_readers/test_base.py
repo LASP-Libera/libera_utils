@@ -25,6 +25,7 @@ class _FakeReader(GriddedDataReader):
 
     # Use a key that won't collide with production readers.
     READER_KEY = "_fake_test_reader"
+    INSTRUMENT = "FAKE"
     RESOLUTION_KM = 10.0
     REQUIRED_MODE = OperationalMode.CAM
     VARIABLES = (

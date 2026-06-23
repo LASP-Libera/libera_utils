@@ -25,7 +25,7 @@
 #
 # NAMING: variable names are <source_key>_<instrument>_<spec_name> for provenance,
 # with the instrument token from each reader's INSTRUMENT attribute
-# (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, viirs_cloud_NOAA20_cloud_fraction). DTYPEs
+# (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, viirs_cloud_NOAA20_cloud_optical_thickness). DTYPEs
 # are taken verbatim from each reader's VariableSpec so the schema matches the
 # aggregation output.
 # See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4.
@@ -254,14 +254,6 @@ variables:
       long_name: Near-infrared BRDF geometric kernel weight
       units: "1"
   # --- source reader: viirs_cloud (resolution 111.0 km) ---
-  viirs_cloud_NOAA20_cloud_fraction:
-    dtype: float32
-    dimensions: ["CAMERA_TIME"]
-    attributes:
-      # source: viirs_cloud (aggregation: weighted_mean)
-      long_name: Cloud fraction
-      units: "1"
-      valid_range: [0, 1]
   viirs_cloud_NOAA20_cloud_optical_thickness:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
@@ -276,6 +268,26 @@ variables:
       # source: viirs_cloud (aggregation: weighted_mean)
       long_name: Cloud top pressure
       units: "hPa"
+
+  # ---------------------------------------------------------------------------
+  # (e) Internal algorithm outputs (NOT from external readers).
+  #     Per-footprint values produced by Libera's own algorithms and merged into
+  #     the record after PSF aggregation, so they get their own section rather
+  #     than sitting under the reader-sourced (c) variables.
+  # ---------------------------------------------------------------------------
+  cam_cloud_fraction:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      # Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
+      # algorithm using Libera's Wide Field-of-View (WFOV) camera. Already
+      # aggregated to one value per footprint upstream, so it is attached
+      # directly to the FMATCH record (no reader / PSF step here).
+      long_name: Cloud fraction (Libera WFOV)
+      # CF "1" = dimensionless ratio; quoted so YAML keeps it a string, matching
+      # the other unitless variables in this product.
+      units: "1"
+      valid_range: [0, 1] # 0 = clear, 1 = fully cloudy
 
   # ---------------------------------------------------------------------------
   # (d) Coverage / QA bookkeeping (design §1.4; CERES partial-coverage convention).

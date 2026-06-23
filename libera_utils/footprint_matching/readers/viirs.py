@@ -8,16 +8,13 @@ Data source: NOAA-20 (JPSS-1) VIIRS Daily Level-3 Cloud Properties
 - Data layout: variables stored with dimension order (longitude, latitude),
   requiring a transpose to the expected (latitude, longitude) output order
 - Temporal resolution: Daily composites
-- Variables: cloud_fraction (Mean), cloud_optical_thickness (Mean),
-  cloud_top_pressure (Mean)
+- Variables: cloud_optical_thickness (Mean), cloud_top_pressure (Mean)
 
 NetCDF4 group layout (CLDPROP_D3)
 ----------------------------------
 Root:
   latitude  (180,)   — 1° bin centers, −89.5 to 89.5
   longitude (360,)   — 1° bin centers, −179.5 to 179.5
-  Cloud_Fraction/
-    Mean      (360, 180) — daily mean cloud fraction [0–1]
   Cloud_Optical_Thickness_Combined/
     Mean      (360, 180) — daily mean cloud optical thickness
   Cloud_Top_Pressure/
@@ -48,7 +45,6 @@ from libera_utils.footprint_matching.types import BoundingBox, GridTile, Operati
 # Map each VariableSpec name to its (group_name, variable_name_within_group)
 # path inside the CLDPROP_D3 NetCDF4 file.
 _D3_GROUP_MAP: dict[str, tuple[str, str]] = {
-    "cloud_fraction": ("Cloud_Fraction", "Mean"),
     "cloud_optical_thickness": ("Cloud_Optical_Thickness_Combined", "Mean"),
     "cloud_top_pressure": ("Cloud_Top_Pressure", "Mean"),
 }
@@ -60,10 +56,9 @@ _D3_FILL_VALUE: float = -9999.0
 class VIIRSCloudReader(GriddedDataReader):
     """Read VIIRS daily cloud properties from a CLDPROP_D3 NetCDF4 file.
 
-    Loads three cloud variables (cloud_fraction, cloud_optical_thickness,
-    cloud_top_pressure) from a CLDPROP_D3 VIIRS Level-3 daily file and
-    returns a 3-D data array of shape ``(3, n_lat, n_lon)`` stacked in
-    ``VARIABLES`` order.
+    Loads two cloud variables (cloud_optical_thickness, cloud_top_pressure)
+    from a CLDPROP_D3 VIIRS Level-3 daily file and returns a 3-D data array of
+    shape ``(2, n_lat, n_lon)`` stacked in ``VARIABLES`` order.
 
     The CLDPROP_D3 product stores data with a non-standard ``(longitude,
     latitude)`` dimension order. This reader transposes each variable to
@@ -78,8 +73,7 @@ class VIIRSCloudReader(GriddedDataReader):
     REQUIRED_MODE : OperationalMode
         Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
-        Three variables: cloud_fraction, cloud_optical_thickness,
-        cloud_top_pressure.
+        Two variables: cloud_optical_thickness, cloud_top_pressure.
 
     Parameters
     ----------
@@ -93,13 +87,6 @@ class VIIRSCloudReader(GriddedDataReader):
     RESOLUTION_KM: float = 111.0
     REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
-        VariableSpec(
-            name="cloud_fraction",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
         VariableSpec(
             name="cloud_optical_thickness",
             dtype="float32",
@@ -159,9 +146,9 @@ class VIIRSCloudReader(GriddedDataReader):
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(3, n_lat, n_lon)`` with axis 0 = [cloud_fraction,
-            cloud_optical_thickness, cloud_top_pressure]. Fill pixels
-            (originally ≤ −9999.0) are returned as NaN.
+            ``(2, n_lat, n_lon)`` with axis 0 = [cloud_optical_thickness,
+            cloud_top_pressure]. Fill pixels (originally ≤ −9999.0) are
+            returned as NaN.
         """
         import netCDF4  # noqa: PLC0415
 
@@ -200,5 +187,5 @@ class VIIRSCloudReader(GriddedDataReader):
                 sub[sub <= _D3_FILL_VALUE] = np.nan
                 variable_arrays.append(sub)
 
-        data = np.stack(variable_arrays, axis=0)  # (3, n_lat, n_lon)
+        data = np.stack(variable_arrays, axis=0)  # (2, n_lat, n_lon)
         return data, lats_out, lons_out

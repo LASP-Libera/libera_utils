@@ -22,6 +22,7 @@ is the contract every downstream consumer (Scene ID, Camera Cloud Fraction)
 reads against. Keeping the loader next to the (future) writer means there is a
 single place that knows how a FMATCH-CAM file is produced, while the reader
 plugins stay decoupled from product I/O.
+
 """
 
 from __future__ import annotations
@@ -192,7 +193,12 @@ def compute_derived_viewing_geometry(
     )
 
 
-def assemble_fmatch_dataset(mode: OperationalMode, *args: Any, **kwargs: Any) -> Dataset:
+def assemble_fmatch_dataset(
+    mode: OperationalMode,
+    *args: Any,
+    cam_cloud_fraction: np.ndarray | None = None,
+    **kwargs: Any,
+) -> Dataset:
     """Assemble a conformant FMATCH :class:`xarray.Dataset` for an operational mode.
 
     Will combine the L1B geolocation inputs, the derived viewing geometry from
@@ -201,6 +207,20 @@ def assemble_fmatch_dataset(mode: OperationalMode, *args: Any, **kwargs: Any) ->
     expected by the mode's product definition (from :func:`load_fmatch_definition`),
     then build a Dataset via ``LiberaDataProductDefinition.create_product_dataset``
     and bring it into conformance with ``enforce_dataset_conformance``.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The FMATCH operational mode being assembled.
+    cam_cloud_fraction : np.ndarray, optional
+        Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
+        algorithm (Libera WFOV camera), as a 1-D array indexed by footprint in
+        the same order as the time coordinate. This is an *internal* algorithm
+        output - it does not come from a reader and is already aggregated to one
+        value per footprint - so it is merged directly into the ``cam_cloud_fraction``
+        variable rather than going through :func:`aggregate_external_variables`.
+        Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable; it is
+        ``None`` for the IMAGER modes.
 
     Raises
     ------
