@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from datetime import UTC, datetime
-from typing import cast
+from pathlib import Path
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -76,7 +76,8 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     logger.debug(f"CLI args: {parsed_args}")
 
     profile_name = parsed_args.profile
-    local_file_paths: list[PathType] = [cast(PathType, AnyPath(file_path)) for file_path in parsed_args.file_paths]
+    # The put workflow uploads from the local filesystem, so resolve inputs to plain local Paths.
+    local_file_paths: list[Path] = [Path(file_path) for file_path in parsed_args.file_paths]
 
     # The boto session originates here and is passed to every function that needs it. It assumes the LiberaUtils
     # role so the CLI has the permissions it needs. Keeping session creation in a single place lets integration
@@ -100,7 +101,7 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 
 def manual_ingest_data_products(
-    paths_to_files: list[PathType],
+    paths_to_files: list[Path],
     *,
     boto_session: boto3.Session,
 ) -> list[L0Filename | LiberaDataProductFilename]:
@@ -111,8 +112,8 @@ def manual_ingest_data_products(
 
     Parameters
     ----------
-    paths_to_files : list of Path or S3Path
-        Paths to the files to ingest. Each must be a validly named Libera L0 or data product file.
+    paths_to_files : list of Path
+        Local filesystem paths to the files to ingest. Each must be a validly named Libera L0 or data product file.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler and passed in so that the
         same authenticated session is used throughout the workflow.

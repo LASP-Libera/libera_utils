@@ -53,8 +53,8 @@ def get_libera_utils_session(
         response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="libera-utils-cli")
     except ClientError as err:
         raise ValueError(
-            f"The provided AWS profile is not permitted to assume the {role_name} role ({role_arn}). "
-            f"Ensure your base profile/role is configured to assume {role_name}."
+            f"Could not assume role {role_name} ({role_arn}). This may be because your base profile/role does not "
+            f"have the correct permissions."
         ) from err
 
     credentials = response["Credentials"]
@@ -73,7 +73,8 @@ def _single_match_by_partial_name(partial_name: str, names: list[str], *, resour
     Parameters
     ----------
     partial_name : str
-        Regex/substring pattern to search for within each candidate name.
+        Literal substring to search for within each candidate name. Regex metacharacters are escaped, so the match
+        is a plain substring match (not a regex).
     names : list of str
         Candidate names to search.
     resource_description : str
@@ -84,7 +85,7 @@ def _single_match_by_partial_name(partial_name: str, names: list[str], *, resour
     str
         The single matching name.
     """
-    name_pattern = re.compile(partial_name)
+    name_pattern = re.compile(re.escape(partial_name))
     matches = [name for name in names if name_pattern.search(name)]
     if len(matches) != 1:
         raise ValueError(

@@ -48,11 +48,19 @@ def test_get_libera_utils_session_raises_when_assume_role_denied():
     mock_base_session.client.return_value = mock_sts
 
     with patch("libera_utils.aws.utils.boto3.Session", return_value=mock_base_session):
-        with pytest.raises(ValueError, match="not permitted to assume the L2Developer/LiberaUtils role"):
+        with pytest.raises(ValueError, match="Could not assume role L2Developer/LiberaUtils"):
             utils.get_libera_utils_session(profile_name="test-profile")
 
     mock_sts.assume_role.assert_called_once()
     assert mock_sts.assume_role.call_args.kwargs["RoleArn"] == "arn:aws:iam::123456789012:role/L2Developer/LiberaUtils"
+
+
+def test_single_match_treats_partial_name_as_literal():
+    """Regex metacharacters in partial_name are matched literally, not interpreted as a regex."""
+    names = ["my.bucket", "myxbucket"]
+    # As a literal substring, "my.bucket" matches only "my.bucket"; a regex "." would also match "myxbucket"
+    # and make this ambiguous.
+    assert utils._single_match_by_partial_name("my.bucket", names, resource_description="bucket") == "my.bucket"
 
 
 @mock_aws

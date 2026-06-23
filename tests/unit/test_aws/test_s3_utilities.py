@@ -46,7 +46,7 @@ class TestManualIngestPut:
 
         # A single (role-assumed) session is created from the profile and threaded into the workflow function.
         mock_get_session.assert_called_once_with(profile_name=profile)
-        expected_paths = [AnyPath(p) for p in file_paths]
+        expected_paths = [Path(p) for p in file_paths]
         mock_manual_ingest.assert_called_once_with(expected_paths, boto_session=mock_get_session.return_value)
 
     @pytest.mark.parametrize(
