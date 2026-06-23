@@ -346,23 +346,36 @@ def _make_era5_figure(tile: GridTile, out_path: Path) -> None:
     print(f"  [era5] Saved: {out_path}")
 
 
+# Per-variable display style (label + colormap) for the VIIRS cloud figure. Keyed
+# by VariableSpec.name so the panel set is driven by the reader's VARIABLES and
+# never desyncs when a variable is added or removed (e.g. cloud_fraction was
+# dropped). Names not listed here fall back to (name, "viridis").
+_VIIRS_CLOUD_PANEL_STYLE: dict[str, tuple[str, str]] = {
+    "cloud_fraction": ("Cloud Fraction (0–1)", "Blues"),
+    "cloud_optical_thickness": ("Cloud Optical Thickness", "YlOrBr"),
+    "cloud_top_pressure": ("Cloud Top Pressure (hPa)", "RdPu_r"),
+}
+
+
 def _make_viirs_cloud_figure(tile: GridTile, out_path: Path) -> None:
-    """Save a 3-panel VIIRS cloud property figure."""
+    """Save a figure with one panel per VIIRS cloud variable.
+
+    The panel set is derived from the ``viirs_cloud`` reader's ``VARIABLES`` (and
+    ``tile.data``'s leading axis), so the figure stays correct as variables change
+    — there is no hard-coded panel count.
+    """
     import matplotlib.pyplot as plt
 
-    cmaps = ["Blues", "YlOrBr", "RdPu_r"]
-    labels = [
-        "Cloud Fraction (0–1)",
-        "Cloud Optical Thickness",
-        "Cloud Top Pressure (hPa)",
-    ]
+    var_names = [v.name for v in ReaderRegistry.get("viirs_cloud").VARIABLES]
 
     bbox = tile.bounds
     lons = tile.lons
     lats = tile.lats
     extent = [lons.min(), lons.max(), lats.min(), lats.max()]
 
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
+    # squeeze=False keeps axes 2-D even for a single panel, so axes[0][i] always works.
+    n_vars = tile.data.shape[0]
+    fig, axes = plt.subplots(1, n_vars, figsize=(7 * n_vars, 5), squeeze=False)
     fig.suptitle(
         f"VIIRS Cloud Properties (CLDPROP_D3)\n"
         f"Tile: lat [{bbox.lat_min:.1f}, {bbox.lat_max:.1f}]  "
@@ -371,7 +384,9 @@ def _make_viirs_cloud_figure(tile: GridTile, out_path: Path) -> None:
         fontsize=12,
     )
 
-    for i, (ax, label, cmap) in enumerate(zip(axes, labels, cmaps)):
+    for i, name in enumerate(var_names):
+        ax = axes[0][i]
+        label, cmap = _VIIRS_CLOUD_PANEL_STYLE.get(name, (name, "viridis"))
         arr_disp = tile.data[i].copy().astype(float)
         im = ax.imshow(
             arr_disp,

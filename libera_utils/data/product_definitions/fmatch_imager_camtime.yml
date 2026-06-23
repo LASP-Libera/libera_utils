@@ -24,7 +24,7 @@
 #
 # NAMING: variable names are <source_key>_<instrument>_<spec_name> for provenance,
 # with the instrument token from each reader's INSTRUMENT attribute
-# (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, viirs_cloud_NOAA20_cloud_fraction). DTYPEs
+# (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, viirs_cloud_NOAA20_cloud_optical_thickness). DTYPEs
 # are taken verbatim from each reader's VariableSpec so the schema matches the
 # aggregation output.
 # See: instructions/documentation/Footprint Matching and Scene ID PDF, §1.4.
@@ -401,14 +401,6 @@ variables:
       long_name: Near-infrared BRDF geometric kernel weight
       units: "1"
   # --- source reader: viirs_cloud (resolution 111.0 km) ---
-  viirs_cloud_NOAA20_cloud_fraction:
-    dtype: float32
-    dimensions: ["CAMERA_TIME"]
-    attributes:
-      # source: viirs_cloud (aggregation: weighted_mean)
-      long_name: Cloud fraction
-      units: "1"
-      valid_range: [0, 1]
   viirs_cloud_NOAA20_cloud_optical_thickness:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
