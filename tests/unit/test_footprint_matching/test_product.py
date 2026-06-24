@@ -67,7 +67,11 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
-        for spec in cls.VARIABLES:
+        # product_variable_specs() == the read VARIABLES plus derived outputs
+        # (per-continuous-variable standard-deviation companions and reader-specific
+        # extras such as IGBP's ranked scenes). It is the full set that appears in
+        # the product definition, so this is what the YAMLs must match.
+        for spec in cls.product_variable_specs():
             expected[f"{key}_{cls.INSTRUMENT}_{spec.name}"] = spec.dtype
     return expected
 
@@ -136,6 +140,42 @@ class TestFmatchDefinitions:
         definition = definitions[mode]
         all_names = list(definition.variables) + list(definition.coordinates)
         assert len(all_names) == len(set(all_names))
+
+
+class TestDerivedProductVariables:
+    """Guards the rules that turn read VARIABLES into product output variables."""
+
+    def test_continuous_variable_gets_standard_deviation_companion(self):
+        # ERA5 winds are mean-aggregated (continuous), so each must gain a
+        # `<name>_standard_deviation` companion in the product variable list.
+        era5 = ReaderRegistry.get("era5")
+        names = {spec.name for spec in era5.product_variable_specs()}
+        assert "wind_u10" in names
+        assert "wind_u10_standard_deviation" in names
+        assert "wind_v10_standard_deviation" in names
+
+    def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
+        # SSF's encoded scene-type codes have n_categories=None but are
+        # weighted_mode, so a within-footprint standard deviation is meaningless
+        # and must NOT be generated. This guards the mean-only rule.
+        ssf = ReaderRegistry.get("ssf")
+        names = {spec.name for spec in ssf.product_variable_specs()}
+        for encoded in ("cloud_classification", "shortwave_adm_type", "longwave_adm_type"):
+            assert encoded in names
+            assert f"{encoded}_standard_deviation" not in names
+
+    def test_igbp_reports_ranked_scenes_but_no_standard_deviation(self):
+        # IGBP keeps the single aggregated surface_type plus three ranked-scene
+        # outputs; being categorical (weighted_mode) it gets no std-dev companion.
+        igbp = ReaderRegistry.get("igbp")
+        names = {spec.name for spec in igbp.product_variable_specs()}
+        assert {
+            "surface_type",
+            "surface_type_primary",
+            "surface_type_secondary",
+            "surface_type_tertiary",
+        } <= names
+        assert "surface_type_standard_deviation" not in names
 
 
 class TestFmatchConformance:

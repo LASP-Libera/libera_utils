@@ -168,12 +168,17 @@ class TestDataProductIdentifier:
             "l2_ssw_surf",
             # Ancillary Products
             "anc_adm",
-            "anc_scene_id",
             "anc_fmatch_cam",
             "anc_fmatch_cam_camtime",
             "anc_fmatch_imager_flash",
             "anc_fmatch_imager",
             "anc_fmatch_imager_camtime",
+            # Scene ID products: one per FMATCH operational mode (SSF-style intermediate).
+            "anc_scene_id_cam",
+            "anc_scene_id_cam_camtime",
+            "anc_scene_id_imager",
+            "anc_scene_id_imager_camtime",
+            "anc_scene_id_imager_flash",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
@@ -260,8 +265,18 @@ class TestProcessingStepIdentifier:
             # L1B steps
             "l1b_rad",
             "l1b_cam",
-            # Intermediate steps
-            "int_footprint_scene_id",
+            # Intermediate steps: one footprint-matching and one scene-ID step per
+            # FMATCH operational mode.
+            "fmatch_cam",
+            "fmatch_imager",
+            "fmatch_imager_flash",
+            "fmatch_cam_camtime",
+            "fmatch_imager_camtime",
+            "scene_id_cam",
+            "scene_id_imager",
+            "scene_id_imager_flash",
+            "scene_id_cam_camtime",
+            "scene_id_imager_camtime",
             # L2 steps
             "l2_cf_rad",
             "l2_cf_cam",

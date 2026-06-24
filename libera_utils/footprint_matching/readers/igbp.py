@@ -94,6 +94,37 @@ class IGBPReader(GriddedDataReader):
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )
+    # A footprint typically spans several IGBP land-cover classes. ``surface_type``
+    # above is the single aggregated result; these three derived outputs report the
+    # ranked scene mix within the footprint — the first, second, and third
+    # most-common IGBP classes by PSF-weighted area. They are computed during PSF
+    # aggregation (from the same rasterized pixels as ``surface_type``), not read
+    # from a separate source field, so they live here rather than in VARIABLES.
+    # Distinct aggregation labels record the rank; the PSF aggregation engine does
+    # not implement them yet (declarations only, like every other FMATCH variable).
+    ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
+        VariableSpec(
+            name="surface_type_primary",
+            dtype="int16",
+            aggregation="weighted_mode_primary",
+            required_mode=OperationalMode.CAM,
+            n_categories=_N_IGBP_CATEGORIES,
+        ),
+        VariableSpec(
+            name="surface_type_secondary",
+            dtype="int16",
+            aggregation="weighted_mode_secondary",
+            required_mode=OperationalMode.CAM,
+            n_categories=_N_IGBP_CATEGORIES,
+        ),
+        VariableSpec(
+            name="surface_type_tertiary",
+            dtype="int16",
+            aggregation="weighted_mode_tertiary",
+            required_mode=OperationalMode.CAM,
+            n_categories=_N_IGBP_CATEGORIES,
+        ),
+    )
 
     def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Read the full tile and flatten it to geolocated land-cover points.
