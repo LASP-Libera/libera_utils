@@ -196,7 +196,7 @@ def compute_derived_viewing_geometry(
 def assemble_fmatch_dataset(
     mode: OperationalMode,
     *args: Any,
-    cam_cloud_fraction: np.ndarray | None = None,
+    cloud_fraction_camera: np.ndarray | None = None,
     **kwargs: Any,
 ) -> Dataset:
     """Assemble a conformant FMATCH :class:`xarray.Dataset` for an operational mode.
@@ -212,12 +212,12 @@ def assemble_fmatch_dataset(
     ----------
     mode : OperationalMode
         The FMATCH operational mode being assembled.
-    cam_cloud_fraction : np.ndarray, optional
+    cloud_fraction_camera : np.ndarray, optional
         Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
         algorithm (Libera WFOV camera), as a 1-D array indexed by footprint in
         the same order as the time coordinate. This is an *internal* algorithm
         output - it does not come from a reader and is already aggregated to one
-        value per footprint - so it is merged directly into the ``cam_cloud_fraction``
+        value per footprint - so it is merged directly into the ``cloud_fraction_camera``
         variable rather than going through :func:`aggregate_external_variables`.
         Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable; it is
         ``None`` for the IMAGER modes.

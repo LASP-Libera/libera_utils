@@ -222,7 +222,7 @@ class VariableSpec:
     Attributes
     ----------
     name : str
-        Canonical variable name used throughout the footprint matching pipeline
+        Variable name used throughout the footprint matching pipeline
         (e.g., ``"surface_type"``, ``"cloud_optical_thickness"``).
     dtype : str
         NumPy dtype string for the variable's data array (e.g., ``"int16"``).
@@ -243,3 +243,67 @@ class VariableSpec:
     aggregation: str
     required_mode: OperationalMode
     n_categories: int | None = None
+
+
+# Aggregation strategies that collapse a footprint's pixels to a *mean* value.
+# These are the only ones for which a within-footprint standard deviation is
+# meaningful: a std-dev quantifies the spread of values around their mean, so it
+# pairs with a mean-type aggregation. A std-dev of a categorical "mode" (most
+# common value) has no physical meaning, so ``weighted_mode`` variables are
+# deliberately excluded below. Note this is *stricter* than "n_categories is
+# None": some readers (e.g. SSF's encoded scene-type codes) carry no category
+# count yet are still mode-aggregated, and those must NOT get a std-dev companion.
+_MEAN_AGGREGATIONS: frozenset[str] = frozenset({"weighted_mean", "weighted_log_mean"})
+
+# Suffix appended to a continuous variable's name to form its std-dev companion.
+# Kept as a module constant so the readers, product definitions, and tests all
+# agree on the exact spelling (e.g. ``era5_ECMWF_wind_u10_standard_deviation``).
+STANDARD_DEVIATION_SUFFIX: str = "_standard_deviation"
+
+
+def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple[VariableSpec, ...]:
+    """Return ``specs`` plus a standard-deviation companion for each continuous spec.
+
+    For every mean-aggregated (continuous) variable in ``specs`` this appends a
+    ``<name>_standard_deviation`` companion describing the spread of that
+    variable's values within the footprint. Categorical / mode-aggregated
+    variables are passed through unchanged (no companion), because a standard
+    deviation of a most-common category is not physically meaningful.
+
+    The companion is declared here so the reader ``VariableSpec`` tuple stays the
+    single source of truth for the FMATCH product variables (the product
+    definition YAMLs and the cross-check test both derive variable names from
+    these specs). The companion's ``aggregation`` is set to ``"weighted_std"`` --
+    a strategy name that the PSF aggregation engine does not yet implement; like
+    the parent variables, the companion is *declared* now and *computed* once the
+    aggregation engine is built (see ``product.aggregate_external_variables``).
+
+    Parameters
+    ----------
+    specs : tuple[VariableSpec, ...]
+        The reader's base variable specifications, in output order.
+
+    Returns
+    -------
+    tuple[VariableSpec, ...]
+        The original specs, each immediately followed by its standard-deviation
+        companion when the spec is mean-aggregated. Ordering is preserved so the
+        companion sits next to its parent in the product definition.
+    """
+    expanded: list[VariableSpec] = []
+    for spec in specs:
+        expanded.append(spec)
+        if spec.aggregation in _MEAN_AGGREGATIONS:
+            # A standard deviation is always a non-negative real number, so it is
+            # stored as float32 regardless of the parent's dtype and carries no
+            # category count.
+            expanded.append(
+                VariableSpec(
+                    name=f"{spec.name}{STANDARD_DEVIATION_SUFFIX}",
+                    dtype="float32",
+                    aggregation="weighted_std",
+                    required_mode=spec.required_mode,
+                    n_categories=None,
+                )
+            )
+    return tuple(expanded)

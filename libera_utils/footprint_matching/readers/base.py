@@ -31,7 +31,14 @@ from __future__ import annotations
 import abc
 from pathlib import Path
 
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey, VariableSpec
+from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    GridTile,
+    OperationalMode,
+    TileKey,
+    VariableSpec,
+    with_standard_deviation_companions,
+)
 
 # Global tile size constant.  2° matches CERES heritage design (~200 km tiles
 # at the equator). All readers assume this tile size when slicing their data.
@@ -64,9 +71,17 @@ class GriddedDataReader(abc.ABC):
         uses ``mode.rank`` ordering to exclude higher-latency readers when the
         pipeline is running in a lower-latency mode.
     VARIABLES : tuple[VariableSpec, ...]
-        Ordered tuple of variable specifications this reader produces.  For
-        multi-variable readers the first axis of the returned data array
-        corresponds to this tuple's ordering.
+        Ordered tuple of variable specifications this reader *reads from its
+        source file*.  For multi-variable readers the first axis of the returned
+        data array corresponds to this tuple's ordering. This is the runtime
+        read/aggregation contract; it deliberately does NOT include derived
+        outputs (see ``product_variable_specs``).
+    ADDITIONAL_PRODUCT_VARIABLES : tuple[VariableSpec, ...]
+        Extra variables this reader contributes to the *product definition* that
+        are not read directly from the source file but are derived during PSF
+        aggregation (e.g. IGBP's second/third most-common scene). Empty for most
+        readers. Standard-deviation companions are added automatically and need
+        not be listed here — see ``product_variable_specs``.
 
     Parameters
     ----------
@@ -87,6 +102,9 @@ class GriddedDataReader(abc.ABC):
     RESOLUTION_KM: float
     REQUIRED_MODE: OperationalMode
     VARIABLES: tuple[VariableSpec, ...]
+    # Derived product outputs not read straight from the source file. Defaults to
+    # empty; readers like IGBP override it to add ranked-scene outputs.
+    ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = ()
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Auto-register every concrete subclass in ReaderRegistry.
@@ -127,6 +145,28 @@ class GriddedDataReader(abc.ABC):
         from libera_utils.footprint_matching.readers.registry import ReaderRegistry  # noqa: PLC0415
 
         ReaderRegistry._registry[cls.READER_KEY] = cls
+
+    @classmethod
+    def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
+        """Return every variable this reader contributes to the product definition.
+
+        This is the full set of *output* variables — what appears in the FMATCH
+        product definition YAMLs and what the product/test cross-check is built
+        against. It is distinct from ``VARIABLES`` (the smaller set actually read
+        from the source file) and is composed of, in order:
+
+        1. each read variable in ``VARIABLES``;
+        2. a ``<name>_standard_deviation`` companion for every *continuous*
+           (mean-aggregated) read variable, inserted right after its parent by
+           :func:`~libera_utils.footprint_matching.types.with_standard_deviation_companions`;
+        3. any reader-specific derived outputs declared in
+           ``ADDITIONAL_PRODUCT_VARIABLES`` (e.g. IGBP ranked scenes).
+
+        Keeping the standard-deviation expansion in one place guarantees the
+        readers, the product definition YAMLs, and the cross-check test all agree
+        on the exact derived-variable names without hand-duplicating ~30 specs.
+        """
+        return with_standard_deviation_companions(cls.VARIABLES) + cls.ADDITIONAL_PRODUCT_VARIABLES
 
     def __init__(self, file_path: Path) -> None:
         """Store the path to the ancillary data file.
