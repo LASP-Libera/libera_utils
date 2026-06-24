@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 # to a "base" role (e.g. via AWS SSO) that grants no permissions directly but is allowed to assume this role.
 LIBERA_UTILS_ROLE_NAME = "L2Developer/LiberaUtils"
 
+# Partial name used to uniquely identify the SDC central EventBridge bus by regex search (see find_*_by_partial_name).
+# Both the manual ingest (s3-utils put) and manual processing flows emit events to this single bus.
+SDC_EVENT_BUS_PARTIAL_NAME = "LiberaSDCEventBus"
+
 
 def get_l2_team_role_session(
     profile_name: str | None = None, *, role_name: str = LIBERA_UTILS_ROLE_NAME

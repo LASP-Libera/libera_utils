@@ -258,6 +258,37 @@ def make_sdc_event_bus(mock_s3_context_with_profile):
 
 
 @pytest.fixture
+def make_coordination_table(mock_s3_context_with_profile):
+    """Creates a mocked SDC Coordination Table (DynamoDB) with the PK/SK key schema.
+
+    Uses the 'test-profile' session so it shares the same mock_aws context as the other AWS fixtures. Returns a
+    ``(table_name, seed)`` tuple where ``seed(job_id)`` writes a ``#JOBMETADATA`` item for the given job id so that
+    verification polling can find it.
+    """
+    table_name = "SDCOrchestrationCoordinationTableTest123"
+    session = boto3.Session(profile_name="test-profile")
+    dynamodb_client = session.client("dynamodb", region_name=session.region_name)
+    dynamodb_client.create_table(
+        TableName=table_name,
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    table = session.resource("dynamodb", region_name=session.region_name).Table(table_name)
+
+    def _seed(job_id) -> None:
+        table.put_item(Item={"PK": str(job_id), "SK": "#JOBMETADATA", "created-time": "2026-06-24T00:00:00Z"})
+
+    return table_name, _seed
+
+
+@pytest.fixture
 def make_event_capturing_session(mock_s3_context_with_profile):
     """Returns a factory that builds a boto3 session whose ``events`` client records ``put_events`` calls.
 

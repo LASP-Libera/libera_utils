@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.8.6
+
+- FEAT: `step-function-trigger` no longer calls the AWS Step Functions API directly. It now emits a single `ManualProcessing` event to the SDC event bus (`LiberaSDCEventBus`), running the requested step through the SDC's standard event-driven orchestration. It uses the default DAG with `process_downstream=False` and the step as the start node, so input/output products come from the SDC and no custom DAG is needed. Input products must already be ingested.
+- FEAT: Add `manual-processing` CLI for submitting arbitrary custom DAGs (or the default DAG, for reprocessing) for one or more applicable dates.
+
 ## 5.8.5
 
 - FEAT: `s3-utils put` now performs manual SDC data ingest instead of a direct archive upload. It accepts multiple file paths, stages each file to the SDC Ingest Dropbox bucket, and emits a single `NewFilesAvailable` event to the SDC event bus; the SDC Data Ingester then handles archiving and metadata/data-availability records. Accepts L0 and data product filenames (manifests rejected).
