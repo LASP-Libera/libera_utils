@@ -27,7 +27,7 @@ from libera_utils.aws.utils import (
     SDC_EVENT_BUS_PARTIAL_NAME,
     find_dynamodb_table_in_account_by_partial_name,
     find_event_bus_in_account_by_partial_name,
-    get_libera_utils_session,
+    get_l2_team_role_session,
 )
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
@@ -386,7 +386,7 @@ def step_function_trigger_cli_handler(parsed_args: argparse.Namespace) -> None:
     )
     logger.debug(f"CLI args: {parsed_args}")
 
-    boto_session = get_libera_utils_session(profile_name=parsed_args.profile)
+    boto_session = get_l2_team_role_session(profile_name=parsed_args.profile)
     step_function_trigger(
         parsed_args.algorithm_name,
         parsed_args.applicable_day,
@@ -421,7 +421,7 @@ def manual_processing_cli_handler(parsed_args: argparse.Namespace) -> None:
         [ProcessingStepIdentifier(step) for step in parsed_args.start_steps] if parsed_args.start_steps else None
     )
 
-    boto_session = get_libera_utils_session(profile_name=parsed_args.profile)
+    boto_session = get_l2_team_role_session(profile_name=parsed_args.profile)
     start_manual_processing(
         parsed_args.applicable_dates,
         boto_session=boto_session,

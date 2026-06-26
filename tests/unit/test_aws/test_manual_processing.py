@@ -236,7 +236,7 @@ def test_get_state_machine_console_url():
 
 
 @patch("libera_utils.aws.manual_processing.step_function_trigger")
-@patch("libera_utils.aws.manual_processing.get_libera_utils_session")
+@patch("libera_utils.aws.manual_processing.get_l2_team_role_session")
 def test_step_function_trigger_cli_handler(mock_get_session, mock_trigger):
     """The CLI handler builds a session from the profile and delegates to step_function_trigger."""
     args = argparse.Namespace(
@@ -261,7 +261,7 @@ def test_step_function_trigger_cli_handler(mock_get_session, mock_trigger):
 
 
 @patch("libera_utils.aws.manual_processing.start_manual_processing")
-@patch("libera_utils.aws.manual_processing.get_libera_utils_session")
+@patch("libera_utils.aws.manual_processing.get_l2_team_role_session")
 def test_manual_processing_cli_handler(mock_get_session, mock_start, tmp_path):
     """The CLI handler reads the DAG file, parses start steps, and delegates to start_manual_processing."""
     dag = {

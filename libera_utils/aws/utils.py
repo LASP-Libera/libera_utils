@@ -8,9 +8,13 @@ from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
-# Canonical IAM role that Libera Utils CLI handlers assume to obtain the permissions they need. Users authenticate
-# to a "base" role (e.g. via AWS SSO) that grants no permissions directly but is allowed to assume this role.
-LIBERA_UTILS_ROLE_NAME = "L2Developer/LiberaUtils"
+# IAM path prefix shared by every role the L2 developers assume (the generic LiberaUtils role and the per-team L2
+# roles). Roles are referenced as "<L2_DEVELOPER_ROLE_PATH>/<role>".
+L2_DEVELOPER_ROLE_PATH = "L2Developer"
+
+# Canonical generic IAM role that Libera Utils CLI handlers assume to obtain the permissions they need. Users
+# authenticate to a "base" role (e.g. via AWS SSO) that grants no permissions directly but is allowed to assume it.
+LIBERA_UTILS_ROLE_NAME = f"{L2_DEVELOPER_ROLE_PATH}/LiberaUtils"
 
 # Partial name used to uniquely identify the SDC central EventBridge bus by regex search (see find_*_by_partial_name).
 # Both the manual ingest (s3-utils put) and manual processing flows emit events to this single bus.
@@ -23,9 +27,10 @@ def get_l2_team_role_session(
     """Create a boto3 session that has assumed an L2 team IAM role.
 
     Libera SDC users authenticate (via their AWS config/SSO or an explicit profile) to a "base" role that grants no
-    permissions directly but is permitted to assume L2 team roles such as the canonical ``LiberaUtils`` role, which
-    hold the permissions needed by the CLI. This function resolves the base credentials, assumes the requested role,
-    and returns a new session backed by the assumed-role credentials.
+    permissions directly but is permitted to assume one or more L2 team roles. This includes the generic
+    ``LiberaUtils`` role (used by ``s3-utils put`` and ``manual-processing``) as well as per-team L2 roles (used by
+    ``ecr-upload`` to push to a specific algorithm's ECR repo). This function resolves the base credentials, assumes
+    the requested role, and returns a new session backed by the assumed-role credentials.
 
     Parameters
     ----------
@@ -43,7 +48,8 @@ def get_l2_team_role_session(
     Raises
     ------
     ValueError
-        If the base profile is not permitted to assume the role.
+        If the base profile is not permitted to assume the role. The message names both the base role and the
+        target role.
     """
     # If profile_name is None, this uses standard resolution (env vars, AWS_PROFILE, default profile, instance role).
     base_session = boto3.Session(profile_name=profile_name)
@@ -132,29 +138,3 @@ def find_dynamodb_table_in_account_by_partial_name(boto_session: boto3.Session, 
     for page in paginator.paginate():
         table_names.extend(page["TableNames"])
     return _single_match_by_partial_name(partial_name, table_names, resource_description="DynamoDB table")
-
-
-def get_aws_account_number(region_name="us-west-2", profile_name=None):
-    """Get a users AWS account ID number
-
-    Parameters
-    ----------
-    region_name : string
-        Region that the users AWS account is on
-    profile_name : str, optional
-        The name of the AWS profile to use for credentials.
-
-    Returns
-    -------
-    account_id : str
-        users account_id number
-    """
-    # If profile_name is None, this uses standard resolution (Env vars, default, IAM role)
-    session = boto3.Session(profile_name=profile_name)
-
-    # Create the client from the session to ensure it uses the profile's creds
-    client = session.client(service_name="sts", region_name=region_name)
-
-    account_id = client.get_caller_identity()["Account"]
-    logger.info(f"AWS Account ID: {account_id}")
-    return account_id
