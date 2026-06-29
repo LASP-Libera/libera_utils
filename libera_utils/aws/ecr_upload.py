@@ -12,11 +12,45 @@ import boto3
 import docker
 from docker import errors as docker_errors
 
-from libera_utils.aws import utils as aws_utils
+from libera_utils.aws.utils import L2_DEVELOPER_ROLE_PATH, get_l2_team_role_session
 from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_ecr_session(algorithm: ProcessingStepIdentifier, profile_name: str | None) -> boto3.Session:
+    """Build the boto3 session to use for an ECR upload of the given algorithm's image.
+
+    L2 algorithms (those with a ``ProcessingStepIdentifier.l2_team_iam_role``) require their team's L2 Team Role to
+    push to ECR, so this assumes that role. All other steps (SPICE, L1B, scene-id) use the default or ``--profile``
+    session directly.
+
+    Parameters
+    ----------
+    algorithm : ProcessingStepIdentifier
+        The processing step whose image is being uploaded.
+    profile_name : str or None
+        AWS profile name from the CLI (``--profile``), or None for default resolution.
+
+    Returns
+    -------
+    boto3.Session
+        The session to use for the ECR upload.
+
+    Raises
+    ------
+    ValueError
+        If the algorithm requires an L2 Team Role that the base profile cannot assume.
+    """
+    team_role = algorithm.l2_team_iam_role
+    if team_role is None:
+        logger.info(f"{algorithm} is not an L2 algorithm; using the default/--profile session for the ECR upload.")
+        return boto3.Session(profile_name=profile_name)
+
+    role_name = f"{L2_DEVELOPER_ROLE_PATH}/{team_role}"
+    logger.info(f"{algorithm} is an L2 algorithm; assuming the {role_name} role for the ECR upload.")
+    return get_l2_team_role_session(profile_name=profile_name, role_name=role_name)
 
 
 class DockerConfigManager:
@@ -58,7 +92,7 @@ def _push_single_tag(
     full_ecr_tag: str,
     region_name: str,
     max_retries: int = 3,
-    profile_name: str = None,
+    boto_session: boto3.Session = None,
 ) -> None:
     """Push a single tagged image to ECR with retry logic and fresh authentication.
 
@@ -74,13 +108,13 @@ def _push_single_tag(
         AWS region name
     max_retries : int
         Maximum retry attempts
-    profile_name : str, optional
-        AWS profile name to use for the session
+    boto_session : boto3.Session
+        Boto3 session used to obtain ECR credentials (already role-assumed if needed)
     """
     for attempt in range(max_retries + 1):
         try:
             # Get fresh ECR credentials for this push attempt
-            auth_config = _get_fresh_ecr_auth(region_name, profile_name=profile_name)
+            auth_config = _get_fresh_ecr_auth(region_name, boto_session=boto_session)
 
             # Tag the local image
             local_image.tag(full_ecr_tag)
@@ -116,15 +150,15 @@ def _push_single_tag(
                 raise
 
 
-def _get_fresh_ecr_auth(region_name: str, profile_name: str = None) -> dict:
+def _get_fresh_ecr_auth(region_name: str, *, boto_session: boto3.Session) -> dict:
     """Get fresh ECR authentication configuration.
 
     Parameters
     ----------
     region_name : str
         AWS region name
-    profile_name : str, optional
-        AWS profile name to use for the session
+    boto_session : boto3.Session
+        Boto3 session used to obtain the ECR authorization token (already role-assumed if needed)
 
     Returns
     -------
@@ -132,8 +166,7 @@ def _get_fresh_ecr_auth(region_name: str, profile_name: str = None) -> dict:
         Authentication configuration for Docker API
     """
     try:
-        session = boto3.Session(profile_name=profile_name)
-        ecr_client = session.client("ecr", region_name=region_name)
+        ecr_client = boto_session.client("ecr", region_name=region_name)
         token_response = ecr_client.get_authorization_token()
 
         auth_data = token_response["authorizationData"][0]
@@ -226,13 +259,30 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     algorithm_name = ProcessingStepIdentifier(parsed_args.algorithm_name)
     ecr_tags = parsed_args.ecr_tags
     profile_name = parsed_args.profile
+
+    # L2 algorithms require their team's L2 Team Role to push to ECR; other steps use the default/--profile session.
+    try:
+        boto_session = _resolve_ecr_session(algorithm_name, profile_name)
+    except ValueError:
+        # The raised error already names the base role and target role. Add the algorithm-specific remediation: this
+        # is the team-membership cause (you are the right base role but not in the L2 Team Role's user list).
+        logger.error(
+            "Could not assume the %s/%s role required to upload the %s algorithm image. If you are signed in with "
+            "the correct L2 Developer base-role profile, contact the SDC Team to be added to the list of users for "
+            "that L2 Team Role.",
+            L2_DEVELOPER_ROLE_PATH,
+            algorithm_name.l2_team_iam_role,
+            algorithm_name,
+        )
+        raise
+
     push_image_to_ecr(
         image_name,
         image_tag,
         algorithm_name,
         ecr_image_tags=ecr_tags,
         ignore_docker_config=parsed_args.ignore_docker_config,
-        profile_name=profile_name,
+        boto_session=boto_session,
     )
 
 
@@ -245,7 +295,7 @@ def push_image_to_ecr(
     region_name: str = "us-west-2",
     ignore_docker_config: bool = False,
     max_retries: int = 1,
-    profile_name: str = None,
+    boto_session: boto3.Session | None = None,
 ) -> None:
     """Push a Docker image to Amazon ECR with robust authentication handling.
 
@@ -271,8 +321,9 @@ def push_image_to_ecr(
         If True, creates a temporary Docker config to prevent using stored credentials
     max_retries : int, default 3
         Maximum number of retry attempts for failed push operations
-    profile_name : Optional[str], default None
-        AWS profile name to use for the session
+    boto_session : boto3.Session, optional
+        Boto3 session used for ECR operations (already role-assumed if needed). If None, a default session is created
+        (so callers that don't need role assumption, e.g. libera_cdk integration tests, can omit it).
 
     Raises
     ------
@@ -295,11 +346,17 @@ def push_image_to_ecr(
     if isinstance(processing_step_id, str):
         processing_step_id = ProcessingStepIdentifier(processing_step_id)
 
+    # Default to a plain session when no (role-assumed) session is provided, so callers that don't need role
+    # assumption can omit it.
+    if boto_session is None:
+        boto_session = boto3.Session()
+
     with DockerConfigManager(override_default_config=ignore_docker_config):
         logger.info(f"Starting ECR push for image {image_name}:{image_tag}")
 
-        # Get AWS account and ECR repository information
-        account_id = aws_utils.get_aws_account_number(profile_name=profile_name)
+        # Get AWS account and ECR repository information. Deriving the account from the session ensures the registry
+        # account matches the credentials performing the push.
+        account_id = boto_session.client("sts").get_caller_identity()["Account"]
         ecr_name = processing_step_id.ecr_name
 
         if ecr_name is None:
@@ -330,7 +387,7 @@ def push_image_to_ecr(
                     full_ecr_tag=full_ecr_tag,
                     region_name=region_name,
                     max_retries=max_retries,
-                    profile_name=profile_name,
+                    boto_session=boto_session,
                 )
                 successful_pushes.append(remote_tag)
                 logger.info(f"Successfully pushed tag: {remote_tag}")

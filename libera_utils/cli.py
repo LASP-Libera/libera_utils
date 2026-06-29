@@ -4,7 +4,7 @@ import argparse
 
 from libera_utils import kernel_maker
 from libera_utils.aws import ecr_upload, s3_utilities
-from libera_utils.aws import processing_step_function_trigger as psfn
+from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.version import version as libera_utils_version
 
@@ -120,25 +120,95 @@ def parse_cli_args(cli_args: list):
     # STEP FUNCTION MANUAL TRIGGER
     # ============================
     sfn_trigger_parser = subparsers.add_parser(
-        "step-function-trigger", help="Manually trigger a specific step function"
+        "step-function-trigger",
+        help="Manually trigger a single processing step for one applicable date",
+        description="Manually trigger a single processing step for one applicable date by emitting a ManualProcessing "
+        "event to the SDC event bus. The SDC runs the step end-to-end using its standard DAG (only this node, no "
+        "downstream steps). Input products must already be ingested into the SDC.",
     )
-    sfn_trigger_parser.set_defaults(func=psfn.step_function_trigger_cli_handler)
+    sfn_trigger_parser.set_defaults(func=mp.step_function_trigger_cli_handler)
     sfn_trigger_parser.add_argument(
         "algorithm_name",
         type=str,
         choices=processing_steps,
-        help=f"Algorithm name you want to run. Options are: {processing_steps}",
+        help=f"ID of the algorithm (processing step) you want to run.",
     )
     sfn_trigger_parser.add_argument(
-        "applicable_day", type=str, help="Day of data you want to rerun. Format of date: YYYY-MM-DD"
+        "applicable_day", type=str, help="Day of data you want to run. Format of date: YYYY-MM-DD"
     )
     sfn_trigger_parser.add_argument(
-        "--wait-time", type=float, default=5, help="Time in seconds to wait for step function completes "
+        "--verify",
+        action="store_true",
+        help="After emitting the event, poll the Coordination Table to verify the job was created. The console URL "
+        "for the step function is always logged regardless of this flag.",
+    )
+    sfn_trigger_parser.add_argument(
+        "--wait-time",
+        type=float,
+        default=60,
+        help="Maximum time in seconds to wait when verifying the job was successfully created (only used with "
+        "--verify). Default is 60.",
     )
     sfn_trigger_parser.add_argument(
         "--profile",
         type=str,
-        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+        help=f"AWS profile name to use for the session. If not set, the default profile is used.",
+    )
+
+    # ===========================
+    # MANUAL PROCESSING
+    # ===========================
+    manual_processing_parser = subparsers.add_parser(
+        "manual-processing",
+        help="Manually run a custom processing DAG (or the default DAG) for one or more applicable dates",
+        description="Manually run processing by emitting a ManualProcessing event to the SDC event bus. Optionally "
+        "supply a custom DAG configuration (JSON file) and/or start nodes. With no custom DAG, the SDC's default DAG "
+        "is used (e.g. for reprocessing). Input products must already be ingested into the SDC.",
+    )
+    manual_processing_parser.set_defaults(func=mp.manual_processing_cli_handler)
+    manual_processing_parser.add_argument(
+        "applicable_dates",
+        type=str,
+        nargs="+",
+        metavar="applicable_date",
+        help="One or more applicable dates to process. A separate job is created per date. Format: YYYY-MM-DD",
+    )
+    manual_processing_parser.add_argument(
+        "--dag-config",
+        type=str,
+        help="Path to a JSON file containing a custom DAG configuration (ProcessingSystemDagConfig). If omitted, the "
+        "SDC's default DAG is used.",
+    )
+    manual_processing_parser.add_argument(
+        "--start-steps",
+        type=str,
+        nargs="*",
+        choices=processing_steps,
+        help="Processing step IDs to start from (entry nodes). If omitted, the DAG's root nodes are used.",
+    )
+    manual_processing_parser.add_argument(
+        "--no-process-downstream",
+        action="store_false",
+        dest="process_downstream",
+        help="Run only the start nodes, without their downstream descendants.",
+    )
+    manual_processing_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="After emitting the event, poll the Coordination Table to verify the job(s) were created. The console "
+        "URL(s) for the step function(s) are always logged regardless of this flag.",
+    )
+    manual_processing_parser.add_argument(
+        "--wait-time",
+        type=float,
+        default=60,
+        help="Maximum time in seconds to wait when verifying the job(s) were created (only used with --verify). "
+        "Default is 60.",
+    )
+    manual_processing_parser.add_argument(
+        "--profile",
+        type=str,
+        help=f"AWS profile name to use for the session. If not set, the default profile is used.",
     )
 
     # ============================
