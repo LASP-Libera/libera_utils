@@ -19,6 +19,8 @@ SDS naming:   "LC_Type1" for IGBP classification scheme
 
 from __future__ import annotations
 
+from functools import cached_property
+
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
@@ -126,8 +128,14 @@ class IGBPReader(GriddedDataReader):
         ),
     )
 
+    @cached_property
     def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Read the full tile and flatten it to geolocated land-cover points.
+
+        Cached per reader instance: the HDF4 read and sinusoidal-projection
+        coordinate computation run once, then every tile reuses the result (the
+        file content is static). Without the cache this whole-tile work would
+        repeat on every ``_load_spatial_region`` / tile request.
 
         Returns
         -------
@@ -182,7 +190,7 @@ class IGBPReader(GriddedDataReader):
         500 m MODIS tile this is acceptable because the TileManager caches the
         GridTile and does not re-read the file for overlapping footprints.
         """
-        lats, lons, values = self._load_points()
+        lats, lons, values = self._load_points
 
         # rasterize_points_to_grid always returns (n_var, n_lat, n_lon). IGBP is
         # single-variable, so squeeze axis 0 to honour the 2-D output contract
