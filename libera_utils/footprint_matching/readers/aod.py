@@ -54,6 +54,8 @@ File naming:
 
 from __future__ import annotations
 
+from functools import cached_property
+
 import numpy as np
 
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
@@ -116,12 +118,45 @@ class VIIRSAODReader(GriddedDataReader):
         ),
     )
 
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Load NOAA-20 VIIRS AOD within ``bbox`` from an AERDB_D3_GEOLEO file.
+    @cached_property
+    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read the full NOAA-20 VIIRS AOD grid once and cache it on the instance.
 
         Opens the NetCDF4 file, reads the root coordinate arrays (ascending
-        latitude, no transpose needed), subsets the ``NOAA20_VIIRS`` AOD field to
-        the requested bounding box, and replaces fill / out-of-range values with NaN.
+        latitude, no transpose needed) and the ``NOAA20_VIIRS`` AOD field, and
+        replaces fill / out-of-range values with NaN. Cached per reader instance so
+        the file is opened and read once, then every tile slices these in-memory
+        arrays (see :meth:`_load_spatial_region`) instead of re-reading the file.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(data, lats, lons)`` where ``data`` is float32 shape
+            ``(n_lat, n_lon)`` (fill / out-of-range as NaN) and ``lats`` / ``lons``
+            are float64 1-D coordinate arrays.
+        """
+        import netCDF4  # noqa: PLC0415
+
+        with netCDF4.Dataset(str(self._file_path), "r") as ds:
+            # Root-level coordinate arrays: (180,) and (360,) respectively.
+            lats_full = np.array(ds.variables["Latitude"][:], dtype=np.float64)
+            lons_full = np.array(ds.variables["Longitude"][:], dtype=np.float64)
+
+            # Variable is stored (Latitude, Longitude) — no transpose needed.
+            group = ds.groups[_AOD_SENSOR_GROUP]
+            raw = np.array(group.variables[_AOD_VARIABLE][:], dtype=np.float32)
+
+        # Replace fill (−999.0) and out-of-range (>5 or <0) values with NaN.
+        raw[raw <= _AOD_FILL_VALUE] = np.nan
+        raw[(raw < 0.0) | (raw > _AOD_VALID_MAX)] = np.nan
+
+        return raw, lats_full, lons_full
+
+    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Slice the cached NOAA-20 VIIRS AOD grid to ``bbox``.
+
+        Subsets the full grid from :attr:`_native_grid` to the requested bounding
+        box (ascending latitude, no transpose needed).
 
         Parameters
         ----------
@@ -135,37 +170,21 @@ class VIIRSAODReader(GriddedDataReader):
             ``(n_lat, n_lon)``. Fill pixels (originally −999.0 or outside
             [0, 5]) are returned as NaN.
         """
-        import netCDF4  # noqa: PLC0415
+        raw, lats_full, lons_full = self._native_grid
 
-        with netCDF4.Dataset(str(self._file_path), "r") as ds:
-            # Root-level coordinate arrays: (180,) and (360,) respectively.
-            lats_full = np.array(ds.variables["Latitude"][:], dtype=np.float64)
-            lons_full = np.array(ds.variables["Longitude"][:], dtype=np.float64)
+        # Compute bbox index masks on the full coordinate arrays.
+        lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
+        lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
 
-            # Compute bbox index masks on the full coordinate arrays.
-            lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
-            lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
+        lat_indices = np.where(lat_mask)[0]
+        lon_indices = np.where(lon_mask)[0]
 
-            lat_indices = np.where(lat_mask)[0]
-            lon_indices = np.where(lon_mask)[0]
+        if lat_indices.size == 0 or lon_indices.size == 0:
+            return (
+                np.empty((0, 0), dtype=np.float32),
+                np.empty(0, dtype=np.float64),
+                np.empty(0, dtype=np.float64),
+            )
 
-            if lat_indices.size == 0 or lon_indices.size == 0:
-                return (
-                    np.empty((0, 0), dtype=np.float32),
-                    np.empty(0, dtype=np.float64),
-                    np.empty(0, dtype=np.float64),
-                )
-
-            lats_out = lats_full[lat_indices]
-            lons_out = lons_full[lon_indices]
-
-            # Variable is stored (Latitude, Longitude) — no transpose needed.
-            group = ds.groups[_AOD_SENSOR_GROUP]
-            raw = np.array(group.variables[_AOD_VARIABLE][:], dtype=np.float32)
-            sub = raw[np.ix_(lat_indices, lon_indices)]
-
-            # Replace fill (−999.0) and out-of-range (>5 or <0) values with NaN.
-            sub[sub <= _AOD_FILL_VALUE] = np.nan
-            sub[(sub < 0.0) | (sub > _AOD_VALID_MAX)] = np.nan
-
-        return sub, lats_out, lons_out
+        sub = raw[np.ix_(lat_indices, lon_indices)]
+        return sub, lats_full[lat_indices], lons_full[lon_indices]

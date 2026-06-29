@@ -31,7 +31,7 @@ runs:
       run: |
         sudo apt-get update -q
         sudo apt-get install -y --no-install-recommends \
-          libudunits2-dev libhdf5-dev libnetcdf-dev libgdal-dev \
+          libudunits2-dev libhdf4-dev libhdf5-dev libnetcdf-dev libgdal-dev \
           build-essential pkg-config
 
     - name: Get CSPICE remote metadata
@@ -111,5 +111,7 @@ runs:
     - name: Install dependencies
       # The cache restores the .venv directory, which speeds up dependency installation but
       # we run poetry update to get the latest versions of any deps that have changed since the last cache save.
+      # --all-extras installs the optional 'fmatch' extra (pyproj/pyhdf/h5py) so the footprint_matching
+      # reader tests can run. pyhdf builds against the libhdf4-dev system package installed above.
       shell: bash
-      run: poetry update && poetry sync
+      run: poetry update && poetry sync --all-extras

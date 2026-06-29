@@ -6,9 +6,9 @@ stdout, and writes PNG visualizations to an output directory.
 
 Usage
 -----
-Run from the repo root (or any directory on the Python path)::
+Run from the repo root (requires the ``fmatch`` extra and ``matplotlib`` installed)::
 
-    python -m libera_utils.footprint_matching.verify_readers \\
+    python scripts/verify_readers.py \\
         --igbp   /data/MCD12Q1.A2023001.h09v05.061.hdf \\
         --nise   /data/NISE_SSMISF18_20260115.HDFEOS \\
         --era5   /data/era5_wind_20230101.nc \\

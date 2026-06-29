@@ -76,12 +76,13 @@ EASE-Grid ref:   https://nsidc.org/ease
 
 from __future__ import annotations
 
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
-import pyproj
 
 from libera_utils.footprint_matching.readers._hdf4_io import _require_pyhdf
+from libera_utils.footprint_matching.readers._pyproj_io import _require_pyproj
 from libera_utils.footprint_matching.readers._swath import rasterize_points_to_grid
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
@@ -239,17 +240,31 @@ class NISEReader(GriddedDataReader):
         self._x_origin = x_origin
         self._y_origin = y_origin
 
-        # Build the EPSG:3408 → WGS84 transformer once at construction time.
-        # Always use CRS objects (not bare EPSG strings) to suppress pyproj
-        # FutureWarning about authority-based CRS construction.
-        self._transformer = pyproj.Transformer.from_crs(
+    @cached_property
+    def _transformer(self) -> object:
+        """Lazily build the EPSG:3408 → WGS84 transformer, cached per instance.
+
+        pyproj is an optional ('fmatch' extra) dependency imported lazily via
+        :func:`_require_pyproj`, so construction stays import-free for a core-only
+        install; the transformer is built on first reprojection and reused for every
+        tile. Always use CRS objects (not bare EPSG strings) to suppress the pyproj
+        FutureWarning about authority-based CRS construction.
+        """
+        pyproj = _require_pyproj()
+        return pyproj.Transformer.from_crs(
             pyproj.CRS.from_epsg(3408),  # NSIDC EASE-Grid North (azimuthal equal-area)
             pyproj.CRS.from_epsg(4326),
             always_xy=True,  # Input: (x=easting, y=northing); Output: (lon, lat)
         )
 
+    @cached_property
     def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Read the Extent SDS and flatten it to geolocated coverage points.
+
+        Cached per reader instance: the file read and the full EPSG:3408 → WGS84
+        reprojection of every pixel run once, then every tile reuses the result
+        (the file content is static). Without the cache this whole-file work would
+        repeat on every ``_load_spatial_region`` / tile request.
 
         Returns
         -------
@@ -295,7 +310,7 @@ class NISEReader(GriddedDataReader):
             cells with no pixels are ``NaN``. ``lats``/``lons`` are 1-D
             cell-centre coordinate arrays.
         """
-        lats, lons, values = self._load_points()
+        lats, lons, values = self._load_points
         return rasterize_points_to_grid(
             point_lats=lats,
             point_lons=lons,
