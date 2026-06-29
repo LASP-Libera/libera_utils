@@ -228,3 +228,112 @@ def make_test_archive_buckets(create_mock_bucket):
     create_mock_bucket("libera-spice-kernels-test")
     create_mock_bucket("libera-l1b-data-test")
     create_mock_bucket("libera-l2-data-test")
+
+
+@pytest.fixture
+def make_ingest_dropbox_bucket(create_mock_bucket):
+    """Creates a mocked SDC Ingest Dropbox bucket whose name matches the real resource naming pattern.
+
+    Returns the bucket name so tests can assert against it.
+    """
+    bucket_name = "sdc-dataingesteringestdropbox-test"
+    create_mock_bucket(bucket_name)
+    return bucket_name
+
+
+@pytest.fixture
+def make_sdc_event_bus(mock_s3_context_with_profile):
+    """Creates a mocked SDC EventBridge event bus whose name matches the real resource naming pattern.
+
+    Uses the 'test-profile' session so it shares the same mock_aws context as the S3 fixtures. The event bus is
+    created in whatever region the session resolves to, so the fixture stays region-agnostic and matches the region
+    the code under test (which derives its region from the session) will query.
+    Returns the event bus name so tests can discover and assert against it.
+    """
+    bus_name = "SDCOrchestrationLiberaSDCEventBusTest123"
+    session = boto3.Session(profile_name="test-profile")
+    events_client = session.client("events", region_name=session.region_name)
+    events_client.create_event_bus(Name=bus_name)
+    return bus_name
+
+
+@pytest.fixture
+def make_event_capturing_session(mock_s3_context_with_profile):
+    """Returns a factory that builds a boto3 session whose ``events`` client records ``put_events`` calls.
+
+    This is useful for asserting on EventBridge events without relying on moto delivering them to a target. The
+    returned factory hands back a ``(session, captured)`` tuple; after the code under test calls ``put_events``, the
+    ``captured`` dict will contain the ``entries`` that were passed.
+    """
+
+    def _make_event_capturing_session(profile_name: str = "test-profile"):
+        session = boto3.Session(profile_name=profile_name)
+        captured: dict = {}
+        real_client = session.client
+
+        def capturing_client(service_name, *args, **kwargs):
+            client = real_client(service_name, *args, **kwargs)
+            if service_name == "events":
+                original_put_events = client.put_events
+
+                def put_events_spy(**put_kwargs):
+                    captured["entries"] = put_kwargs["Entries"]
+                    return original_put_events(**put_kwargs)
+
+                client.put_events = put_events_spy
+            return client
+
+        session.client = capturing_client
+        return session, captured
+
+    return _make_event_capturing_session
+
+
+@pytest.fixture
+def make_data_availability_table(mock_s3_context_with_profile):
+    """Creates a mocked SDC Data Availability DynamoDB table (PK=applicable_date, SK=DataProductId#Version).
+
+    Uses the 'test-profile' session so it stays in the same mock_aws context and region as the other fixtures.
+    Returns the table name so tests can discover, seed, and assert against it.
+    """
+    table_name = "SDCDataIngesterDataAvailabilityTableTest123"
+    session = boto3.Session(profile_name="test-profile")
+    client = session.client("dynamodb", region_name=session.region_name)
+    client.create_table(
+        TableName=table_name,
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return table_name
+
+
+@pytest.fixture
+def make_file_metadata_table(mock_s3_context_with_profile):
+    """Creates a mocked SDC File Metadata DynamoDB table (PK=file basename, SK=applicable_date).
+
+    Uses the 'test-profile' session so it stays in the same mock_aws context and region as the other fixtures.
+    Returns the table name so tests can discover, seed, and assert against it.
+    """
+    table_name = "SDCDataIngesterFileMetadataTableTest789"
+    session = boto3.Session(profile_name="test-profile")
+    client = session.client("dynamodb", region_name=session.region_name)
+    client.create_table(
+        TableName=table_name,
+        KeySchema=[
+            {"AttributeName": "PK", "KeyType": "HASH"},
+            {"AttributeName": "SK", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "PK", "AttributeType": "S"},
+            {"AttributeName": "SK", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    return table_name
