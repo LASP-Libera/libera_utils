@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 LIBERA_UTILS_ROLE_NAME = "L2Developer/LiberaUtils"
 
 
-def get_libera_utils_session(
+def get_l2_team_role_session(
     profile_name: str | None = None, *, role_name: str = LIBERA_UTILS_ROLE_NAME
 ) -> boto3.Session:
-    """Create a boto3 session that has assumed the LiberaUtils IAM role.
+    """Create a boto3 session that has assumed an L2 team IAM role.
 
     Libera SDC users authenticate (via their AWS config/SSO or an explicit profile) to a "base" role that grants no
-    permissions directly but is permitted to assume the canonical ``LiberaUtils`` role, which holds the permissions
-    needed by the CLI. This function resolves the base credentials, assumes the role, and returns a new session
-    backed by the assumed-role credentials.
+    permissions directly but is permitted to assume L2 team roles such as the canonical ``LiberaUtils`` role, which
+    hold the permissions needed by the CLI. This function resolves the base credentials, assumes the requested role,
+    and returns a new session backed by the assumed-role credentials.
 
     Parameters
     ----------
@@ -46,15 +46,22 @@ def get_libera_utils_session(
     sts_client = base_session.client("sts")
 
     # get_caller_identity requires no permissions, so it works even from a base role with no direct permissions.
-    account_id = sts_client.get_caller_identity()["Account"]
+    # Its Arn identifies the base role the user is currently authenticated as.
+    base_identity = sts_client.get_caller_identity()
+    account_id = base_identity["Account"]
+    base_role_arn = base_identity["Arn"]
+    # The base role name is the resource-name segment of the ARN, e.g.
+    # arn:aws:sts::<acct>:assumed-role/<BaseRoleName>/<session> -> <BaseRoleName>.
+    base_role_name = base_role_arn.split("/")[1] if "/" in base_role_arn else base_role_arn
     role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
 
     try:
         response = sts_client.assume_role(RoleArn=role_arn, RoleSessionName="libera-utils-cli")
     except ClientError as err:
         raise ValueError(
-            f"Could not assume role {role_name} ({role_arn}). This may be because your base profile/role does not "
-            f"have the correct permissions."
+            f"Could not assume role {role_name} ({role_arn}) from base role {base_role_name} ({base_role_arn}). "
+            f"Check that you are using the profile that logs in as the L2 Developer base role. If this error "
+            f"persists, contact the SDC team."
         ) from err
 
     credentials = response["Credentials"]

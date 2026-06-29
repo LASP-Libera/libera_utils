@@ -16,7 +16,7 @@ from libera_utils.aws.utils import (
     find_bucket_in_account_by_partial_name,
     find_dynamodb_table_in_account_by_partial_name,
     find_event_bus_in_account_by_partial_name,
-    get_libera_utils_session,
+    get_l2_team_role_session,
 )
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import L0Filename, LiberaDataProductFilename, PathType
@@ -82,7 +82,7 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     # The boto session originates here and is passed to every function that needs it. It assumes the LiberaUtils
     # role so the CLI has the permissions it needs. Keeping session creation in a single place lets integration
     # tests inject a custom session (e.g. with a specific test role) and call the workflow functions directly.
-    boto_session = get_libera_utils_session(profile_name=profile_name)
+    boto_session = get_l2_team_role_session(profile_name=profile_name)
 
     libera_filenames = manual_ingest_data_products(local_file_paths, boto_session=boto_session)
 

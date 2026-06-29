@@ -31,7 +31,7 @@ class TestManualIngestPut:
         ],
     )
     @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
-    @patch("libera_utils.aws.s3_utilities.get_libera_utils_session")
+    @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
     def test_cli_handler_creates_session_and_delegates(self, mock_get_session, mock_manual_ingest, file_paths, profile):
         """The CLI handler builds a LiberaUtils session from the profile and delegates to manual_ingest_data_products."""
         args = argparse.Namespace(
@@ -164,7 +164,7 @@ class TestManualIngestPut:
 
     @patch("libera_utils.aws.s3_utilities.verify_ingestion")
     @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
-    @patch("libera_utils.aws.s3_utilities.get_libera_utils_session")
+    @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
     def test_cli_handler_verify_invokes_verification(self, mock_get_session, mock_manual_ingest, mock_verify):
         """When --verify is set, the handler verifies ingestion using the ingest function's returned filenames."""
         returned_filenames = ["filename-1", "filename-2"]

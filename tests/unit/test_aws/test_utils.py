@@ -26,9 +26,9 @@ def test_get_aws_account_number_with_profile(mock_s3_context_with_profile):
 
 
 @mock_aws
-def test_get_libera_utils_session_assumes_role(mock_s3_context_with_profile):
+def test_get_l2_team_role_session_assumes_role(mock_s3_context_with_profile):
     """A session backed by assumed-role credentials is returned, inheriting the base session's region."""
-    session = utils.get_libera_utils_session(profile_name="test-profile")
+    session = utils.get_l2_team_role_session(profile_name="test-profile")
 
     assert isinstance(session, boto3.Session)
     # The returned session carries (assumed-role) credentials and the base session's region.
@@ -36,10 +36,13 @@ def test_get_libera_utils_session_assumes_role(mock_s3_context_with_profile):
     assert session.region_name == boto3.Session(profile_name="test-profile").region_name
 
 
-def test_get_libera_utils_session_raises_when_assume_role_denied():
-    """If the base profile cannot assume the LiberaUtils role, a helpful ValueError is raised."""
+def test_get_l2_team_role_session_raises_when_assume_role_denied():
+    """If the base profile cannot assume the role, a helpful ValueError naming both roles is raised."""
     mock_sts = MagicMock()
-    mock_sts.get_caller_identity.return_value = {"Account": "123456789012"}
+    mock_sts.get_caller_identity.return_value = {
+        "Account": "123456789012",
+        "Arn": "arn:aws:sts::123456789012:assumed-role/L2DeveloperBaseRole/session-name",
+    }
     mock_sts.assume_role.side_effect = ClientError(
         {"Error": {"Code": "AccessDenied", "Message": "not authorized to perform sts:AssumeRole"}},
         "AssumeRole",
@@ -48,8 +51,14 @@ def test_get_libera_utils_session_raises_when_assume_role_denied():
     mock_base_session.client.return_value = mock_sts
 
     with patch("libera_utils.aws.utils.boto3.Session", return_value=mock_base_session):
-        with pytest.raises(ValueError, match="Could not assume role L2Developer/LiberaUtils"):
-            utils.get_libera_utils_session(profile_name="test-profile")
+        with pytest.raises(
+            ValueError,
+            match=(
+                "Could not assume role L2Developer/LiberaUtils .* from base role L2DeveloperBaseRole .*"
+                "contact the SDC team"
+            ),
+        ):
+            utils.get_l2_team_role_session(profile_name="test-profile")
 
     mock_sts.assume_role.assert_called_once()
     assert mock_sts.assume_role.call_args.kwargs["RoleArn"] == "arn:aws:iam::123456789012:role/L2Developer/LiberaUtils"
