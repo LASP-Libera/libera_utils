@@ -1,8 +1,5 @@
 """Shared data classes and enumerations for the footprint matching subsystem.
 
-These types flow through every layer of the FMATCH pipeline: from the reader
-plugin system (Milestone 1) through the tile manager, PSF engine, aggregation
-engine, and footprint orchestrator (later milestones).
 
 All classes in this module are intentionally dependency-free so they can be
 imported by any layer without creating circular dependencies.
@@ -61,9 +58,8 @@ class OperationalMode(enum.Enum):
 class BoundingBox(tuple):
     """Geographic bounding box for a footprint's PSF contour.
 
-    An immutable, hashable six-element tuple of (lat_min, lat_max, lon_min,
-    lon_max, wraps_dateline, is_polar), constructed via the class method
-    ``BoundingBox.create()``.
+    An immutable, hashable seven-element tuple of (lat_min, lat_max, lon_min,
+    lon_max, wraps_dateline, is_polar, truncated), constructed directly.
 
     Attributes
     ----------
@@ -78,6 +74,12 @@ class BoundingBox(tuple):
     is_polar : bool
         True when the boresight latitude exceeds 85°, triggering a great-circle
         distance test instead of rectangular bounding box logic.
+    truncated : bool
+        True when the box was clipped at the Earth's limb because the footprint
+        ran partly off the edge of the Earth at a severe viewing angle (see
+        ``geometry.compute_footprint_bounding_box``). The footprint therefore has
+        only **partial coverage**, and the orchestrator should set the
+        corresponding QA flag. Always ``False`` for tile bounding boxes.
     """
 
     __slots__ = ()
@@ -90,8 +92,9 @@ class BoundingBox(tuple):
         lon_max: float,
         wraps_dateline: bool = False,
         is_polar: bool = False,
+        truncated: bool = False,
     ) -> BoundingBox:
-        return super().__new__(cls, (lat_min, lat_max, lon_min, lon_max, wraps_dateline, is_polar))
+        return super().__new__(cls, (lat_min, lat_max, lon_min, lon_max, wraps_dateline, is_polar, truncated))
 
     @property
     def lat_min(self) -> float:
@@ -123,11 +126,17 @@ class BoundingBox(tuple):
         """True when the boresight is poleward of 85°."""
         return bool(self[5])
 
+    @property
+    def truncated(self) -> bool:
+        """True when the box was clipped at the Earth's limb (partial coverage)."""
+        return bool(self[6])
+
     def __repr__(self) -> str:
         return (
             f"BoundingBox(lat=[{self.lat_min}, {self.lat_max}], "
             f"lon=[{self.lon_min}, {self.lon_max}], "
-            f"wraps_dateline={self.wraps_dateline}, is_polar={self.is_polar})"
+            f"wraps_dateline={self.wraps_dateline}, is_polar={self.is_polar}, "
+            f"truncated={self.truncated})"
         )
 
 
