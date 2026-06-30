@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.9.1
+
+- FEAT: Scene Identification now reports the property bin min/max bounds alongside the scene ID. For each footprint and classification variable, `identify_scenes` adds `scene_bin_{type}_{variable}_min`/`_max` variables giving the bounds of the matched scene's bin (unbounded sides and unmatched footprints reported as `NaN`). Controlled by the new `report_bin_bounds` flag (default `True`) on `FootprintData.identify_scenes` and `SceneDefinition.identify_and_update`; existing `scene_id_{type}` columns are unchanged.
+- FEAT: Add `SceneDefinition.get_bin_bounds_for_scene_id` and `Scene.get_bin_bounds` to look up the property bin bounds for a given scene ID.
+
 ## 5.9.0
 
 - BREAKING: Rename `DataLevel.ANC` to `DataLevel.AUX` and split ancillary archive routing into separate AUX and CAL archive buckets.

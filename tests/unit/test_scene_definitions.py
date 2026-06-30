@@ -85,6 +85,15 @@ class TestScene:
         assert scene.matches({"var1": -1000.0}) is True
         assert scene.matches({"var1": 1000.0}) is True
 
+    def test_get_bin_bounds(self):
+        """Test retrieving (min, max) bounds for a variable."""
+        scene = Scene(scene_id=1, variable_ranges={"var1": (0.0, 10.0), "var2": (None, 5.0)})
+
+        assert scene.get_bin_bounds("var1") == (0.0, 10.0)
+        assert scene.get_bin_bounds("var2") == (None, 5.0)
+        # Variable not constrained by this scene is unbounded on both sides.
+        assert scene.get_bin_bounds("missing") == (None, None)
+
 
 class TestSceneDefinition:
     """Test cases for SceneDefinition class."""
@@ -216,3 +225,56 @@ class TestSceneDefinitionLoading:
         erbe_def = SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION")))
 
         assert trmm_def.type != erbe_def.type, "TRMM and ERBE should have different types"
+
+
+class TestPropertyBins:
+    """Tests for property bin reporting (min/max bounds alongside scene IDs)."""
+
+    @pytest.fixture
+    def scene_definition(self, tmp_path):
+        """Create a fully-covering 4-scene definition over two variables."""
+        csv_content = (
+            "scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max\n"
+            "1,0.0,50.0,0.0,10.0\n"
+            "2,50.0,100.0,0.0,10.0\n"
+            "3,0.0,50.0,10.0,20.0\n"
+            "4,50.0,100.0,10.0,20.0\n"
+        )
+        csv_file = tmp_path / "bins.csv"
+        csv_file.write_text(csv_content)
+        return SceneDefinition(csv_file)
+
+    def test_get_bin_bounds_for_scene_id(self, scene_definition):
+        """Test looking up bin bounds for a known scene ID."""
+        bounds = scene_definition.get_bin_bounds_for_scene_id(4)
+        assert bounds == {"cloud_fraction": (50.0, 100.0), "optical_depth": (10.0, 20.0)}
+
+    def test_get_bin_bounds_for_unknown_scene_id_raises(self, scene_definition):
+        """Test that an unknown scene ID (including 0) raises KeyError."""
+        with pytest.raises(KeyError, match="Scene ID 0 not found"):
+            scene_definition.get_bin_bounds_for_scene_id(0)
+
+    def test_compute_property_bins(self, scene_definition):
+        """Test per-footprint bin bound arrays, including unmatched footprints."""
+        scene_ids = np.array([1, 4, 0])
+        bins = scene_definition._compute_property_bins(scene_ids)
+
+        np.testing.assert_array_equal(bins["scene_bin_bins_cloud_fraction_min"], [0.0, 50.0, np.nan])
+        np.testing.assert_array_equal(bins["scene_bin_bins_cloud_fraction_max"], [50.0, 100.0, np.nan])
+        np.testing.assert_array_equal(bins["scene_bin_bins_optical_depth_min"], [0.0, 10.0, np.nan])
+        np.testing.assert_array_equal(bins["scene_bin_bins_optical_depth_max"], [10.0, 20.0, np.nan])
+
+    def test_compute_property_bins_unbounded_side_is_nan(self, tmp_path):
+        """Test that an unbounded bin side is reported as NaN."""
+        csv_content = (
+            "scene_id,cloud_fraction_min,cloud_fraction_max\n"
+            "1,,50.0\n"  # unbounded minimum
+            "2,50.0,\n"  # unbounded maximum
+        )
+        csv_file = tmp_path / "unbounded.csv"
+        csv_file.write_text(csv_content)
+        scene_definition = SceneDefinition(csv_file)
+
+        bins = scene_definition._compute_property_bins(np.array([1, 2]))
+        np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_min"], [np.nan, 50.0])
+        np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_max"], [50.0, np.nan])
