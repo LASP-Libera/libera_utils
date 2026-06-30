@@ -50,6 +50,7 @@ File naming:
 
 from __future__ import annotations
 
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
@@ -177,13 +178,34 @@ class VIIRSBRDFReader(GriddedDataReader):
         # Build ordered field name list matching VARIABLES tuple order.
         self._field_names: list[str] = [_BRDF_FIELD_MAP[v.name] for v in self.VARIABLES]
 
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Load VIIRS BRDF kernel parameters within ``bbox``.
+    @cached_property
+    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read all 9 BRDF fields from the HDF5 file once and cache them.
 
-        Reads all 9 BRDF fields from the HDF5 file via
+        Reads via
         :func:`~libera_utils.footprint_matching.readers._hdf5_io.read_viirs_brdf_hdf5`,
-        which returns data in ascending latitude order. Subsets to the
-        requested bounding box and returns the stacked array.
+        which returns data in ascending latitude order with fill as NaN. Cached per
+        reader instance so the file is opened and read once, then every tile slices
+        these in-memory arrays (see :meth:`_load_spatial_region`).
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(data, lats, lons)`` where ``data`` is float32 shape
+            ``(9, n_lat, n_lon)`` (axis 0 in ``VARIABLES`` order, fill as NaN) and
+            ``lats`` (ascending) / ``lons`` are float64 1-D coordinate arrays.
+        """
+        return read_viirs_brdf_hdf5(
+            file_path=str(self._file_path),
+            field_names=self._field_names,
+            hdf5_data_path=_BRDF_DATA_PATH,
+        )
+
+    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Slice the cached VIIRS BRDF kernel-parameter grid to ``bbox``.
+
+        Subsets the full grid from :attr:`_native_grid` to the requested bounding
+        box and returns the stacked array.
 
         Parameters
         ----------
@@ -197,11 +219,7 @@ class VIIRSBRDFReader(GriddedDataReader):
             ``(9, n_lat, n_lon)`` with axis 0 in ``VARIABLES`` order.
             Fill pixels are NaN.
         """
-        data_full, lats_full, lons_full = read_viirs_brdf_hdf5(
-            file_path=str(self._file_path),
-            field_names=self._field_names,
-            hdf5_data_path=_BRDF_DATA_PATH,
-        )
+        data_full, lats_full, lons_full = self._native_grid
 
         # lats_full is already ascending (flipped by read_viirs_brdf_hdf5).
         lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)

@@ -19,6 +19,8 @@ v10 variable: https://apps.ecmwf.int/codes/grib/param-db?id=166
 
 from __future__ import annotations
 
+from functools import cached_property
+
 import numpy as np
 import xarray as xr
 
@@ -84,27 +86,22 @@ class ERA5Reader(GriddedDataReader):
         ),
     )
 
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Load ERA5 u10/v10 data within ``bbox`` from a NetCDF4 file.
+    @cached_property
+    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read the full ERA5 u10/v10 grid once and cache it on the instance.
 
-        Uses xarray for coordinate-aware slicing. The ERA5 latitude axis is
-        stored in descending order (90 → -90), so the slice is specified as
-        ``slice(lat_max, lat_min)`` to match xarray's direction-aware indexing.
-        The output arrays are reordered so that lats are ASCENDING.
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
+        Opens the NetCDF4 file, normalizes longitude to −180..180, drops any
+        time-like dimension (first step only), and returns the whole global grid
+        with latitudes in ASCENDING order. Cached per reader instance so the file
+        is opened and read once, then every tile slices these in-memory arrays
+        (see :meth:`_load_spatial_region`) instead of re-opening the file.
 
         Returns
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where:
-
-            - ``data`` is float32 shape ``(2, n_lat, n_lon)`` — [u10, v10].
-            - ``lats`` is float64 shape ``(n_lat,)``, ASCENDING order.
-            - ``lons`` is float64 shape ``(n_lon,)``.
+            ``(data, lats, lons)`` where ``data`` is float32 shape
+            ``(2, n_lat, n_lon)`` — [u10, v10] — and ``lats`` (ASCENDING) / ``lons``
+            are float64 1-D coordinate arrays, both sorted ascending.
 
         Notes
         -----
@@ -120,26 +117,20 @@ class ERA5Reader(GriddedDataReader):
             if float(ds["longitude"].min()) >= 0:
                 ds = ds.assign_coords(longitude=((ds["longitude"] + 180) % 360) - 180).sortby("longitude")
 
-            # ERA5 lats are descending, so slice(max, min) selects the correct range.
-            lat_slice = slice(bbox.lat_max, bbox.lat_min)
-            lon_slice = slice(bbox.lon_min, bbox.lon_max)
-
-            u10_sub = ds[_ERA5_U10_VAR].sel(latitude=lat_slice, longitude=lon_slice)
-            v10_sub = ds[_ERA5_V10_VAR].sel(latitude=lat_slice, longitude=lon_slice)
+            u10 = ds[_ERA5_U10_VAR]
+            v10 = ds[_ERA5_V10_VAR]
 
             # Drop any time-like dimension (covers both "time" and "valid_time", which
             # the CDS API uses in newer downloads). Take the first time step only.
-            time_dims = [d for d in u10_sub.dims if "time" in d]
+            time_dims = [d for d in u10.dims if "time" in d]
             if time_dims:
-                u10_sub = u10_sub.isel({d: 0 for d in time_dims})
-                v10_sub = v10_sub.isel({d: 0 for d in time_dims})
+                u10 = u10.isel({d: 0 for d in time_dims})
+                v10 = v10.isel({d: 0 for d in time_dims})
 
-            # Extract coordinate arrays and ensure ascending lat order.
-            lats = u10_sub["latitude"].values.astype(np.float64)
-            lons = u10_sub["longitude"].values.astype(np.float64)
-
-            u10_arr = u10_sub.values.astype(np.float32)
-            v10_arr = v10_sub.values.astype(np.float32)
+            lats = u10["latitude"].values.astype(np.float64)
+            lons = u10["longitude"].values.astype(np.float64)
+            u10_arr = u10.values.astype(np.float32)
+            v10_arr = v10.values.astype(np.float32)
 
             if _ERA5_LAT_DESCENDING and lats.size > 1 and lats[0] > lats[-1]:
                 # Flip to ascending order for consistency with other readers.
@@ -153,3 +144,34 @@ class ERA5Reader(GriddedDataReader):
             ds.close()
 
         return data, lats, lons
+
+    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Slice the cached ERA5 u10/v10 grid to ``bbox``.
+
+        Slices the full ascending-latitude grid from :attr:`_native_grid` with an
+        inclusive bounding-box mask (matching xarray's endpoint-inclusive ``.sel``
+        slicing that this previously used).
+
+        Parameters
+        ----------
+        bbox : BoundingBox
+            Geographic region to extract.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(data, lats, lons)`` where:
+
+            - ``data`` is float32 shape ``(2, n_lat, n_lon)`` — [u10, v10].
+            - ``lats`` is float64 shape ``(n_lat,)``, ASCENDING order.
+            - ``lons`` is float64 shape ``(n_lon,)``.
+        """
+        data, lats, lons = self._native_grid
+
+        # Inclusive bbox masks on the ascending coordinate arrays select a
+        # contiguous block, reproducing the previous xarray slice() behavior.
+        lat_mask = (lats >= bbox.lat_min) & (lats <= bbox.lat_max)
+        lon_mask = (lons >= bbox.lon_min) & (lons <= bbox.lon_max)
+
+        sub = data[:, lat_mask, :][:, :, lon_mask]
+        return sub, lats[lat_mask], lons[lon_mask]
