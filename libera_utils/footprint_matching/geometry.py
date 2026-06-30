@@ -19,39 +19,44 @@ pole, and viewing geometry that runs off the limb of the Earth -- including the 
 where the boresight is on Earth but the limb-ward corner of the box is not (severe-
 angle truncation), which raises :class:`PartialFootprintError`.
 
-Earth model: SPHERE
--------------------
-We approximate the Earth as a sphere of radius :data:`EARTH_RADIUS_KM` (the CERES
-ATBD value), matching the heritage PSF geometry. This was validated against the
-example L1B file: recovering the satellite altitude from VZA + footprint/subsatellite
-positions on this sphere gave 834.6 +/- 5.8 km (~0.7% scatter) across ~399k
-footprints. That ~0.7% is the real WGS84/terrain departure from the sphere, and it
-is comfortably absorbed by the outward rounding of a bounding box.
+Earth model: WGS84 ellipsoid (ECEF ray-trace)
+---------------------------------------------
+The footprint is anchored at the reported L1B footprint latitude/longitude (the
+box centre). From the viewing zenith angle and the bearing toward the subsatellite
+point we build the boresight line of sight at that ground point, locate the
+satellite in Earth-Centred-Earth-Fixed (ECEF) coordinates, then rotate the boresight
+by the PSF's angular half-extents and intersect each resulting ray with the WGS84
+ellipsoid. The intersection points, converted back to geodetic latitude/longitude,
+give the box. Because the model is the true ellipsoid:
 
-Caveats of the spherical approximation (all benign for a bounding box, more relevant
-for the later pixel-level projection step):
-  * Ellipsoid flattening: WGS84 equatorial 6378.1 km vs polar 6356.8 km (~0.3%).
-  * Geodetic vs geocentric latitude differ by up to ~0.2 deg at mid-latitudes;
-    L1B latitudes are geodetic and we treat them as spherical.
-TODO[LIBSDC-794]: migrate to the WGS84 ellipsoid using pyproj (already a project
-dependency: pyproj.Geod for ellipsoidal geodesics, pyproj.Transformer for
-geodetic<->ECEF) if pixel-accurate geometry is later required.
+  * flattening (equatorial 6378.137 km vs polar 6356.752 km) is exact, and
+  * geodetic latitude is honoured exactly -- the local vertical at each point is the
+    ellipsoid normal, not the geocentric radial direction.
 
+Off-limb handling falls out of the ray-trace: rays that miss the ellipsoid are off
+the Earth. A boresight at viewing zenith >= 90 deg is on (or past) the limb, so it
+raises :class:`OffLimbError`; a boresight on Earth whose box *corner* rays miss the
+ellipsoid is partial coverage (truncated/flagged, or raised as
+:class:`PartialFootprintError`).
+
+We use :mod:`pyproj` for the geodetic<->ECEF transforms (``pyproj.Transformer``) and
+for the surface distances in the pole-enclosure test (``pyproj.Geod``).
 
 References
 ----------
-* CERES ATBD v2.2, Section 4.4 (spherical viewing geometry, Eqs. 4.4-4/4.4-5):
+* CERES ATBD v2.2, Section 4.4 (viewing geometry):
   https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
-* Great-circle "destination point", bearing, and distance formulae:
-  https://www.movable-type.co.uk/scripts/latlong.html
+* WGS84 ellipsoid parameters (NIMA TR8350.2).
 
 """
 
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 import numpy as np
+from pyproj import Geod, Transformer
 
 from libera_utils.footprint_matching.psf import (
     LIBERA_FOV_HALFANGLE_DEG,
@@ -60,24 +65,24 @@ from libera_utils.footprint_matching.psf import (
 )
 from libera_utils.footprint_matching.types import BoundingBox
 
-# Spherical Earth radius, in km. This is the CERES ATBD value (ATBD Table 4.4-1),
-# chosen so our geometry stays consistent with the heritage PSF math. See the
-# module docstring for the validation of this approximation against real L1B data.
-# TODO[LIBSDC-794]: replace with the WGS84 ellipsoid (via pyproj) if pixel-accurate
-# geometry becomes necessary.
-EARTH_RADIUS_KM: float = 6367.0
+# WGS84 ellipsoid parameters. The semi-major axis and inverse flattening are the
+# defining constants (NIMA TR8350.2); the semi-minor axis and first-eccentricity
+# follow from them. All lengths in km to match the rest of the module.
+WGS84_SEMI_MAJOR_AXIS_KM: float = 6378.137
+WGS84_FLATTENING: float = 1.0 / 298.257223563
+WGS84_SEMI_MINOR_AXIS_KM: float = WGS84_SEMI_MAJOR_AXIS_KM * (1.0 - WGS84_FLATTENING)
 
 # Fallback satellite altitude, used only when the altitude cannot be derived from
 # the inputs (no Altitude field AND the footprint is essentially at nadir, where the
-# altitude-recovery formula is numerically degenerate). Value is the median altitude
+# altitude-recovery geometry is numerically degenerate). Value is the median altitude
 # recovered from the example L1B file (834.6 km), i.e. the JPSS orbit.
 # TODO[LIBSDC-794]: read the nominal altitude from mission config rather than
 # hard-coding it.
 NOMINAL_ALTITUDE_KM: float = 835.0
 
-# Outward safety margin applied to the footprint half-extents before building the
-# box. Absorbs the spherical-Earth approximation error (~0.7%, see module docstring)
-# and any small slop in the PSF extent, guaranteeing the box is a true superset.
+# Outward safety margin applied to the PSF angular half-extents before the box is
+# projected. Absorbs any small slop in the PSF extent and guarantees the box is a
+# true superset of the footprint.
 BBOX_MARGIN_FRACTION: float = 0.05
 
 # Latitude beyond which we flag the box as "polar" so downstream code knows the
@@ -85,14 +90,17 @@ BBOX_MARGIN_FRACTION: float = 0.05
 # mirrors the design doc's 85 deg threshold.
 POLAR_LATITUDE_THRESHOLD_DEG: float = 85.0
 
-# Sentinel below which a footprint is treated as essentially at nadir: the
-# along-scan asymmetry and scan azimuth become ill-defined, so we use a symmetric
-# box. 1e-6 deg of cone angle is far smaller than any real footprint.
+# Sentinel below which a footprint is treated as essentially at nadir: the scan
+# azimuth and along-scan asymmetry become ill-defined, so we use the nominal altitude
+# and an arbitrary scan orientation. 1e-6 deg is far smaller than any real footprint.
 _NADIR_CONE_ANGLE_EPS_DEG: float = 1e-6
 
 # L1B fill value. Footprints that did not intersect the Earth (space/cal views) are
 # stored as this sentinel; we treat such inputs as "no footprint".
 _L1B_FILL_VALUE: float = -999.0
+
+# Number of samples around the PSF angular-extent ellipse perimeter. 72 == every 5 deg.
+_N_PERIMETER_SAMPLES: int = 72
 
 
 class GeometryError(Exception):
@@ -102,10 +110,10 @@ class GeometryError(Exception):
 class OffLimbError(GeometryError):
     """Raised when the viewing geometry does not intersect the Earth's surface.
 
-    This happens when the line of sight misses the Earth entirely (cone angle at or
-    beyond the Earth's angular radius as seen from the satellite), or when the input
-    footprint is a fill value (a non-Earth view). The orchestrator is expected to
-    catch this and flag/discard the footprint rather than silently substituting data.
+    This happens when the boresight viewing zenith angle is at or beyond 90 deg (the
+    line of sight is tangent to / past the limb), or when the input footprint is a
+    fill value (a non-Earth view). The orchestrator is expected to catch this and
+    flag/discard the footprint rather than silently substituting data.
     """
 
 
@@ -113,16 +121,14 @@ class PartialFootprintError(OffLimbError):
     """Raised when the boresight is on Earth but part of the bounding box is not.
 
     At severe viewing zenith angles the footprint stretches so far that the
-    limb-ward *corner* of its bounding box (maximum along-scan offset toward the limb
-    combined with the maximum cross-scan offset) projects past the Earth's horizon,
-    even though the boresight -- and even the pure along-scan and cross-scan edges --
-    still intersect the surface. The box would otherwise silently include a region
-    that is off the Earth.
+    limb-ward *corner* of its bounding box projects past the Earth's horizon, even
+    though the boresight still intersects the surface. The box would otherwise
+    silently include a region that is off the Earth.
 
     By default this condition is *flagged* rather than raised:
-    :func:`compute_footprint_bounding_box` truncates the box at the limb and sets
-    ``BoundingBox.truncated = True`` (partial coverage). This exception is raised only
-    when the caller opts in with ``on_limb="raise"``.
+    :func:`compute_footprint_bounding_box` truncates the offending rays at the limb
+    and sets ``BoundingBox.truncated = True`` (partial coverage). This exception is
+    raised only when the caller opts in with ``on_limb="raise"``.
 
     This is a subclass of :class:`OffLimbError`, so callers that simply
     ``except OffLimbError`` keep working; callers that want to distinguish "no
@@ -132,529 +138,347 @@ class PartialFootprintError(OffLimbError):
 
 
 # ---------------------------------------------------------------------------
-# Spherical trigonometry helpers (great-circle math on a sphere of radius R)
-# These follow https://www.movable-type.co.uk/scripts/latlong.html
+# pyproj singletons (created once, reused for every footprint)
 # ---------------------------------------------------------------------------
 
 
-def _great_circle_distance_km(
-    lat1_deg: float, lon1_deg: float, lat2_deg: float, lon2_deg: float, earth_radius_km: float
-) -> float:
-    """Great-circle (haversine) distance between two lat/lon points, in km.
+@lru_cache(maxsize=1)
+def _geodetic_to_ecef_transformer() -> Transformer:
+    """Transformer from geodetic 3D (EPSG:4979) to geocentric ECEF (EPSG:4978)."""
+    return Transformer.from_crs("EPSG:4979", "EPSG:4978", always_xy=True)
 
-    The haversine form is used (rather than the simpler spherical law of cosines)
-    because it stays numerically accurate for the small angular separations typical
-    between a footprint and its subsatellite point.
 
-    Parameters
-    ----------
-    lat1_deg, lon1_deg, lat2_deg, lon2_deg : float
-        The two points, in degrees.
-    earth_radius_km : float
-        Sphere radius in km.
+@lru_cache(maxsize=1)
+def _ecef_to_geodetic_transformer() -> Transformer:
+    """Transformer from geocentric ECEF (EPSG:4978) to geodetic 3D (EPSG:4979)."""
+    return Transformer.from_crs("EPSG:4978", "EPSG:4979", always_xy=True)
 
-    Returns
-    -------
-    float
-        Surface distance in km.
+
+@lru_cache(maxsize=1)
+def _wgs84_geod() -> Geod:
+    """WGS84 :class:`pyproj.Geod` for ellipsoidal surface distances."""
+    return Geod(ellps="WGS84")
+
+
+# ---------------------------------------------------------------------------
+# Vector / coordinate helpers
+# ---------------------------------------------------------------------------
+
+
+def _unit(vec: np.ndarray) -> np.ndarray:
+    """Return ``vec`` scaled to unit length."""
+    return vec / np.linalg.norm(vec)
+
+
+def _geodetic_to_ecef(lat_deg: float, lon_deg: float, height_km: float) -> np.ndarray:
+    """Geodetic (lat, lon, ellipsoidal height) -> ECEF position vector, in km."""
+    x, y, z = _geodetic_to_ecef_transformer().transform(lon_deg, lat_deg, height_km * 1000.0)
+    return np.array([x, y, z], dtype=float) / 1000.0
+
+
+def _ecef_to_geodetic(xyz_km: np.ndarray) -> tuple[float, float, float]:
+    """ECEF position (km) -> geodetic ``(lat_deg, lon_deg, height_km)``.
+
+    Longitude is normalized to [-180, 180].
     """
-    phi1, phi2 = math.radians(lat1_deg), math.radians(lat2_deg)
-    dphi = math.radians(lat2_deg - lat1_deg)
-    dlambda = math.radians(lon2_deg - lon1_deg)
-    a = math.sin(dphi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2.0) ** 2
-    return earth_radius_km * 2.0 * math.asin(min(1.0, math.sqrt(a)))
-
-
-def _initial_bearing_deg(lat1_deg: float, lon1_deg: float, lat2_deg: float, lon2_deg: float) -> float:
-    """Initial great-circle bearing from point 1 to point 2, degrees clockwise from north.
-
-    Used to find the scan azimuth: the along-scan ground direction is the great
-    circle joining the footprint and the subsatellite point (changing the cone angle
-    slides the look-point along that great circle), so the bearing from the footprint
-    toward the subsatellite point gives the along-scan axis orientation.
-
-    Parameters
-    ----------
-    lat1_deg, lon1_deg, lat2_deg, lon2_deg : float
-        Start (1) and end (2) points in degrees.
-
-    Returns
-    -------
-    float
-        Bearing in [0, 360) degrees.
-    """
-    phi1, phi2 = math.radians(lat1_deg), math.radians(lat2_deg)
-    dlambda = math.radians(lon2_deg - lon1_deg)
-    x = math.sin(dlambda) * math.cos(phi2)
-    y = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dlambda)
-    return math.degrees(math.atan2(x, y)) % 360.0
-
-
-def _destination_point(
-    lat_deg: float, lon_deg: float, bearing_deg: float, distance_km: float, earth_radius_km: float
-) -> tuple[float, float]:
-    """Point reached by travelling ``distance_km`` along ``bearing_deg`` from a start point.
-
-    This is the spherical "destination point" formula. We use it instead of the
-    flat-Earth ``km / 111`` and ``km / (111 * cos(lat))`` approximation because it is
-    curvature-correct everywhere and degrades gracefully toward the poles (where the
-    flat-Earth longitude scaling blows up).
-
-    Parameters
-    ----------
-    lat_deg, lon_deg : float
-        Start point in degrees.
-    bearing_deg : float
-        Travel direction, degrees clockwise from north.
-    distance_km : float
-        Surface distance to travel, km.
-    earth_radius_km : float
-        Sphere radius, km.
-
-    Returns
-    -------
-    tuple[float, float]
-        Destination (latitude, longitude) in degrees, longitude normalized to
-        [-180, 180].
-    """
-    angular_distance = distance_km / earth_radius_km  # central angle, radians
-    phi1 = math.radians(lat_deg)
-    lambda1 = math.radians(lon_deg)
-    theta = math.radians(bearing_deg)
-
-    sin_phi2 = math.sin(phi1) * math.cos(angular_distance) + math.cos(phi1) * math.sin(angular_distance) * math.cos(
-        theta
+    lon, lat, height_m = _ecef_to_geodetic_transformer().transform(
+        xyz_km[0] * 1000.0, xyz_km[1] * 1000.0, xyz_km[2] * 1000.0
     )
-    sin_phi2 = max(-1.0, min(1.0, sin_phi2))
-    phi2 = math.asin(sin_phi2)
+    lon = (lon + 540.0) % 360.0 - 180.0
+    return lat, lon, height_m / 1000.0
 
-    y = math.sin(theta) * math.sin(angular_distance) * math.cos(phi1)
-    x = math.cos(angular_distance) - math.sin(phi1) * sin_phi2
-    lambda2 = lambda1 + math.atan2(y, x)
 
-    lat2 = math.degrees(phi2)
-    # Normalize longitude to [-180, 180].
-    lon2 = (math.degrees(lambda2) + 540.0) % 360.0 - 180.0
-    return lat2, lon2
+def _ellipsoid_normal(lat_deg: float, lon_deg: float) -> np.ndarray:
+    """Outward unit normal (local geodetic zenith) at a surface point.
+
+    This is the geodetic vertical, ``(cos lat cos lon, cos lat sin lon, sin lat)`` --
+    *not* the geocentric radial direction. Honouring this difference is the whole
+    point of using the ellipsoid rather than a sphere.
+    """
+    lat, lon = math.radians(lat_deg), math.radians(lon_deg)
+    return np.array(
+        [math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat)],
+        dtype=float,
+    )
+
+
+def _arbitrary_tangent(normal: np.ndarray) -> np.ndarray:
+    """A unit vector perpendicular to ``normal`` (direction is arbitrary).
+
+    Used only at nadir, where the scan azimuth is irrelevant (the footprint is a
+    near-circular disc), so any tangent direction will do.
+    """
+    reference = np.array([0.0, 0.0, 1.0]) if abs(normal[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    return _unit(np.cross(normal, reference))
+
+
+def _rotate(vec: np.ndarray, axis: np.ndarray, angle_rad: float) -> np.ndarray:
+    """Rotate ``vec`` about a unit ``axis`` by ``angle_rad`` (Rodrigues' formula)."""
+    axis = _unit(axis)
+    cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
+    return vec * cos_a + np.cross(axis, vec) * sin_a + axis * np.dot(axis, vec) * (1.0 - cos_a)
+
+
+def _ray_ellipsoid_intersection(origin_km: np.ndarray, direction: np.ndarray) -> np.ndarray | None:
+    """Nearest intersection of a ray with the WGS84 ellipsoid, or ``None`` if it misses.
+
+    The ray is ``origin + s * direction`` for ``s > 0``. Scaling each axis by the
+    reciprocal semi-axis turns the ellipsoid into the unit sphere, so the
+    intersection reduces to a quadratic ``|D*origin + s*D*direction|^2 = 1``.
+
+    Parameters
+    ----------
+    origin_km : np.ndarray
+        Ray start (the satellite), ECEF km.
+    direction : np.ndarray
+        Ray direction (need not be unit length).
+
+    Returns
+    -------
+    np.ndarray or None
+        The ECEF intersection point (km) at the smallest positive ray parameter, or
+        ``None`` when the ray does not meet the ellipsoid.
+    """
+    scale = np.array([1.0 / WGS84_SEMI_MAJOR_AXIS_KM, 1.0 / WGS84_SEMI_MAJOR_AXIS_KM, 1.0 / WGS84_SEMI_MINOR_AXIS_KM])
+    o = origin_km * scale
+    d = direction * scale
+    a = float(np.dot(d, d))
+    b = 2.0 * float(np.dot(o, d))
+    c = float(np.dot(o, o)) - 1.0
+    discriminant = b * b - 4.0 * a * c
+    if discriminant < 0.0:
+        return None
+    sqrt_disc = math.sqrt(discriminant)
+    roots = ((-b - sqrt_disc) / (2.0 * a), (-b + sqrt_disc) / (2.0 * a))
+    positive = [s for s in roots if s > 0.0]
+    if not positive:
+        return None
+    return origin_km + min(positive) * direction
 
 
 # ---------------------------------------------------------------------------
-# Viewing-geometry triangle (satellite, Earth-centre, ground point)
+# Viewing geometry: anchor the boresight at the footprint and locate the satellite
 # ---------------------------------------------------------------------------
 
 
-def _solve_viewing_triangle(
+def _satellite_along_ray(ground_km: np.ndarray, up_direction: np.ndarray, altitude_km: float) -> np.ndarray:
+    """Point along the upward ray from a ground point at a given geodetic height.
+
+    Walks outward from ``ground_km`` along ``up_direction`` (the unit vector toward
+    the satellite) until the geodetic ellipsoidal height equals ``altitude_km``.
+    Geodetic height increases monotonically along an upward-going ray, so a simple
+    bisection converges.
+
+    Parameters
+    ----------
+    ground_km : np.ndarray
+        Footprint ground point, ECEF km.
+    up_direction : np.ndarray
+        Unit direction from the ground toward the satellite.
+    altitude_km : float
+        Target ellipsoidal height of the satellite, km.
+
+    Returns
+    -------
+    np.ndarray
+        Satellite ECEF position, km.
+    """
+    lo = 0.0
+    hi = max(altitude_km, 1.0)
+    # Grow the upper bracket until the height overshoots the target (oblique rays
+    # need a long slant range to gain altitude).
+    while _ecef_to_geodetic(ground_km + hi * up_direction)[2] < altitude_km and hi < 1.0e6:
+        hi *= 2.0
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        if _ecef_to_geodetic(ground_km + mid * up_direction)[2] < altitude_km:
+            lo = mid
+        else:
+            hi = mid
+    return ground_km + hi * up_direction
+
+
+def _viewing_geometry(
     boresight_lat_deg: float,
     boresight_lon_deg: float,
     subsatellite_lat_deg: float,
     subsatellite_lon_deg: float,
     viewing_zenith_deg: float,
     altitude_km: float | None,
-    earth_radius_km: float,
-) -> tuple[float, float, float]:
-    """Solve the satellite/Earth-centre/ground-point triangle for this footprint.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Build the boresight line of sight and locate the satellite in ECEF.
 
-    The triangle (CERES ATBD Fig. 4.4-2) has vertices at the Earth's centre O, the
-    satellite S, and the ground point P, with:
-      * cone angle ``alpha`` = nadir angle of the view vector at S,
-      * viewing zenith angle ``theta`` = angle at P (given, from L1B),
-      * Earth-central angle ``gamma`` = angle at O, and gamma = theta - alpha,
-      * law of sines: Re / sin(alpha) = (Re + h) / sin(theta).
+    The footprint ground point ``P`` (the box centre) is the reported L1B
+    latitude/longitude. The boresight ray to the satellite makes the viewing zenith
+    angle with the local vertical at ``P``, in the vertical plane that also contains
+    the subsatellite point. The satellite ``S`` lies along that ray and on the
+    geodetic normal through the subsatellite point.
 
-    There are two ways to close the triangle depending on what is available:
-
-    * If ``altitude_km`` is given, ``Re + h`` is known and we get
-      ``alpha = asin(Re * sin(theta) / (Re + h))`` directly.
-    * Otherwise (the current L1B product has no usable altitude), we get ``gamma``
-      from the *positions* (the great-circle distance from footprint to subsatellite
-      point is ``Re * gamma``), then ``alpha = theta - gamma`` and recover
-      ``Re + h = Re * sin(theta) / sin(alpha)``. This was validated to ~0.7% against
-      the example file.
-
-    Near nadir (alpha -> 0) the position-based recovery of ``Re + h`` is
-    numerically ill-conditioned (it divides by sin(alpha)), so we fall back to
-    :data:`NOMINAL_ALTITUDE_KM`. The footprint is a tiny near-circular disc there, so
-    the exact altitude is immaterial.
+    * If ``altitude_km`` is given, ``S`` is the point on the boresight ray at that
+      ellipsoidal height.
+    * Otherwise ``S`` is recovered as the (least-squares) intersection of the
+      boresight ray from ``P`` and the vertical through the subsatellite point.
 
     Returns
     -------
-    tuple[float, float, float]
-        ``(alpha_deg, rho_km, earth_plus_alt_km)`` -- the cone angle, the slant range
-        (satellite-to-ground distance), and ``Re + h``.
-
-    Raises
-    ------
-    OffLimbError
-        If the resulting geometry does not intersect the Earth (see
-        :func:`_check_on_limb`).
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        ``(satellite_ecef_km, boresight_direction, subsatellite_normal)`` where the
+        boresight direction is the unit vector from the satellite toward the ground.
     """
+    ground = _geodetic_to_ecef(boresight_lat_deg, boresight_lon_deg, 0.0)
+    normal_p = _ellipsoid_normal(boresight_lat_deg, boresight_lon_deg)
+    subsat_ground = _geodetic_to_ecef(subsatellite_lat_deg, subsatellite_lon_deg, 0.0)
+    normal_sub = _ellipsoid_normal(subsatellite_lat_deg, subsatellite_lon_deg)
+
+    # Horizontal direction at the footprint pointing toward the subsatellite point.
+    toward_subsat = subsat_ground - ground
+    horizontal = toward_subsat - np.dot(toward_subsat, normal_p) * normal_p
+    horizontal_norm = float(np.linalg.norm(horizontal))
+    near_nadir = viewing_zenith_deg < _NADIR_CONE_ANGLE_EPS_DEG or horizontal_norm < 1.0e-9
+    horizontal_unit = _arbitrary_tangent(normal_p) if near_nadir else horizontal / horizontal_norm
+
     theta = math.radians(viewing_zenith_deg)
+    # Unit direction from the ground point toward the satellite.
+    to_satellite = math.cos(theta) * normal_p + math.sin(theta) * horizontal_unit
+    boresight_direction = -to_satellite  # satellite -> ground
 
     if altitude_km is not None and altitude_km > 0.0:
-        # Altitude known: close the triangle via the law of sines.
-        earth_plus_alt = earth_radius_km + altitude_km
-        sin_alpha = earth_radius_km * math.sin(theta) / earth_plus_alt
-        alpha = math.asin(max(-1.0, min(1.0, sin_alpha)))
+        satellite = _satellite_along_ray(ground, to_satellite, altitude_km)
+    elif near_nadir:
+        satellite = _satellite_along_ray(ground, to_satellite, NOMINAL_ALTITUDE_KM)
     else:
-        # Altitude unknown: derive the Earth-central angle from the positions.
-        gamma = (
-            _great_circle_distance_km(
-                boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, earth_radius_km
-            )
-            / earth_radius_km
-        )
-        alpha = theta - gamma
-        if alpha <= math.radians(_NADIR_CONE_ANGLE_EPS_DEG):
-            # Degenerate near nadir: positions can't recover altitude robustly.
-            earth_plus_alt = earth_radius_km + NOMINAL_ALTITUDE_KM
-            sin_alpha = earth_radius_km * math.sin(theta) / earth_plus_alt
-            alpha = math.asin(max(-1.0, min(1.0, sin_alpha)))
+        # S = ground + rho * to_satellite = subsat_ground + h * normal_sub.
+        # Solve the over-determined system for (rho, h); rho is the slant range.
+        matrix = np.column_stack([to_satellite, -normal_sub])
+        solution, *_ = np.linalg.lstsq(matrix, toward_subsat, rcond=None)
+        rho = float(solution[0])
+        if rho <= 0.0:
+            satellite = _satellite_along_ray(ground, to_satellite, NOMINAL_ALTITUDE_KM)
         else:
-            # Law of sines, solved for the satellite radius Re + h.
-            earth_plus_alt = earth_radius_km * math.sin(theta) / math.sin(alpha)
+            satellite = ground + rho * to_satellite
 
-    _check_on_limb(alpha, earth_plus_alt, earth_radius_km)
-
-    # Earth-central angle and slant range (law of cosines, ATBD Eq. 4.4-5).
-    gamma = theta - alpha
-    rho = math.sqrt(earth_radius_km**2 + earth_plus_alt**2 - 2.0 * earth_radius_km * earth_plus_alt * math.cos(gamma))
-    return math.degrees(alpha), rho, earth_plus_alt
-
-
-def _limb_cone_angle_deg(earth_plus_alt_km: float, earth_radius_km: float) -> float:
-    """Maximum cone angle that still hits the Earth, in degrees.
-
-    Beyond this angle the line of sight is tangent to / misses the Earth: it is the
-    Earth's angular radius as seen from the satellite, ``asin(Re / (Re + h))``.
-    """
-    return math.degrees(math.asin(earth_radius_km / earth_plus_alt_km))
-
-
-def _check_on_limb(alpha_rad: float, earth_plus_alt_km: float, earth_radius_km: float) -> None:
-    """Raise :class:`OffLimbError` if a cone angle is at or beyond the Earth limb.
-
-    Parameters
-    ----------
-    alpha_rad : float
-        Cone angle in radians.
-    earth_plus_alt_km : float
-        Satellite radius Re + h, km.
-    earth_radius_km : float
-        Sphere radius, km.
-    """
-    limb = math.radians(_limb_cone_angle_deg(earth_plus_alt_km, earth_radius_km))
-    if alpha_rad >= limb:
-        raise OffLimbError(
-            f"Cone angle {math.degrees(alpha_rad):.3f} deg reaches the Earth limb "
-            f"({math.degrees(limb):.3f} deg); the line of sight misses the surface."
-        )
-
-
-def _effective_cone_angle_deg(inplane_cone_angle_deg: float, cross_offset_deg: float) -> float:
-    """Cone angle of a view ray given its in-plane and cross-scan angular components.
-
-    A footprint point is offset from the boresight by an along-scan angle (which lies
-    in the scan plane -- the plane that also contains the nadir direction) and a
-    cross-scan angle (perpendicular to that plane). The along-scan offset therefore
-    adds *in-plane* to the boresight's own cone angle, giving an in-plane cone angle;
-    the cross-scan offset is the perpendicular leg.
-
-    Because the two legs are orthogonal, the resulting cone angle (the total
-    off-nadir angle of the ray) follows the spherical Pythagorean theorem for a right
-    spherical triangle, ``cos(c) = cos(a) * cos(b)``:
-
-        cos(alpha_eff) = cos(inplane_cone_angle) * cos(cross_offset)
-
-    Parameters
-    ----------
-    inplane_cone_angle_deg : float
-        In-plane cone angle (centroid cone angle plus the along-scan offset), degrees.
-    cross_offset_deg : float
-        Cross-scan angular offset, degrees.
-
-    Returns
-    -------
-    float
-        Effective cone angle (off-nadir angle of the ray) in degrees.
-    """
-    cos_eff = math.cos(math.radians(inplane_cone_angle_deg)) * math.cos(math.radians(cross_offset_deg))
-    return math.degrees(math.acos(max(-1.0, min(1.0, cos_eff))))
-
-
-def _check_box_within_limb(
-    alpha0_deg: float,
-    along_extent_deg: float,
-    cross_extent_deg: float,
-    earth_plus_alt_km: float,
-    earth_radius_km: float,
-    on_limb: str,
-) -> tuple[float, float, bool]:
-    """Check whether the whole bounding box (including its corners) stays on Earth.
-
-    The bounding box is a rectangle in the instrument angular frame, so its most
-    extreme point is the limb-ward **corner**: the maximum along-scan offset toward
-    the limb *combined with* the maximum cross-scan offset. Because the effective
-    cone angle (:func:`_effective_cone_angle_deg`) is monotonic in both the limb-ward
-    along-scan offset and the cross-scan offset, that single corner is the worst case
-    for the entire box -- it goes off-limb before any pure edge does.
-
-    This is the key check the centroid test (:func:`_check_on_limb`) and the old
-    pure-along-scan test miss: at severe angles the corner can be off the Earth while
-    the boresight and both axis edges are still on it.
-
-    Parameters
-    ----------
-    alpha0_deg : float
-        Centroid cone angle, degrees.
-    along_extent_deg, cross_extent_deg : float
-        Along-scan and cross-scan angular half-extents of the box, degrees.
-    earth_plus_alt_km : float
-        Satellite radius Re + h, km.
-    earth_radius_km : float
-        Sphere radius, km.
-    on_limb : str
-        ``"flag"`` (default policy) to truncate the limb-ward along-scan extent so the
-        corner sits just inside the limb and report the truncation, or ``"raise"`` to
-        raise :class:`PartialFootprintError` instead.
-
-    Returns
-    -------
-    tuple[float, float, bool]
-        ``(along_extent_deg, cross_extent_deg, truncated)``. When the box is fully on
-        the Earth the extents are unchanged and ``truncated`` is ``False``. When the
-        corner was off-limb and ``on_limb="flag"``, the along-scan extent is reduced
-        to the horizon and ``truncated`` is ``True``.
-
-    Raises
-    ------
-    PartialFootprintError
-        If the limb-ward corner is off the Earth and ``on_limb="raise"``.
-    """
-    limb_deg = _limb_cone_angle_deg(earth_plus_alt_km, earth_radius_km)
-    # Limb-ward corner: in-plane cone angle alpha0 + along_extent, plus cross_extent.
-    corner_cone_deg = _effective_cone_angle_deg(alpha0_deg + along_extent_deg, cross_extent_deg)
-
-    if corner_cone_deg < limb_deg:
-        return along_extent_deg, cross_extent_deg, False
-
-    if on_limb == "raise":
-        raise PartialFootprintError(
-            f"Bounding-box corner reaches cone angle {corner_cone_deg:.3f} deg "
-            f"(Earth limb {limb_deg:.3f} deg) at centroid cone angle {alpha0_deg:.3f} deg: "
-            f"part of the box is off the Earth limb. The default on_limb='flag' truncates "
-            f"the box at the horizon and marks it as partial coverage instead of raising."
-        )
-
-    # flag: truncate. Find the largest in-plane cone angle whose corner (with the same
-    # cross-scan extent) still sits just inside the limb, then back out the
-    # corresponding along-scan extent. Solve, from the Pythagorean relation,
-    #   cos(limb*(1-eps)) = cos(inplane_max) * cos(cross)
-    # for inplane_max, then along' = inplane_max - alpha0 (clamped at >= 0).
-    target = math.radians(limb_deg * (1.0 - 1e-9))
-    cos_ratio = math.cos(target) / math.cos(math.radians(cross_extent_deg))
-    inplane_max_deg = math.degrees(math.acos(max(-1.0, min(1.0, cos_ratio))))
-    clamped_along_deg = max(0.0, inplane_max_deg - alpha0_deg)
-    return clamped_along_deg, cross_extent_deg, True
-
-
-def _ground_arc_from_cone_angle(alpha_deg: float, earth_plus_alt_km: float, earth_radius_km: float) -> float:
-    """Ground arc distance (subsatellite point -> look-point) for a cone angle.
-
-    Forward spherical geometry (CERES ATBD, notebook ``get_geometry_from_alpha``):
-    from the cone angle ``alpha`` and satellite radius, find the viewing zenith
-    angle, the Earth-central angle ``gamma = theta - alpha``, and hence the ground
-    arc ``l = Re * gamma``. Used to convert an along-scan *angular* offset into an
-    along-scan *ground* distance by perturbing alpha.
-
-    Returns
-    -------
-    float
-        Ground arc distance in km.
-
-    Raises
-    ------
-    OffLimbError
-        If ``alpha`` is at or beyond the Earth limb.
-    """
-    alpha = math.radians(alpha_deg)
-    sin_theta = earth_plus_alt_km * math.sin(alpha) / earth_radius_km
-    if sin_theta >= 1.0:
-        raise OffLimbError(f"Perturbed cone angle {alpha_deg:.3f} deg projects past the Earth limb.")
-    theta = math.asin(sin_theta)
-    gamma = theta - alpha
-    return earth_radius_km * gamma
-
-
-def _along_scan_ground_extent_km(
-    alpha0_deg: float,
-    delta_extent_deg: float,
-    earth_plus_alt_km: float,
-    earth_radius_km: float,
-) -> float:
-    """Project the along-scan PSF angular half-extent to a ground half-extent (km).
-
-    The scan sweeps in cone angle, so an along-scan angular offset ``delta`` is a
-    perturbation of the centroid cone angle ``alpha0`` (notebook cell 2:
-    ``alpha = alpha0 - delta``). Because the cone-angle -> ground-arc relationship is
-    nonlinear, the same angular offset projects to *different* ground distances on
-    the limb side vs the nadir side -- this is the along-scan stretch that grows
-    severe near the limb.
-
-    For a bounding box we want a single conservative half-extent, so we perturb in
-    BOTH directions and take the larger ground excursion. The limb-ward direction
-    dominates at high VZA.
-
-    Off-limb safety is enforced upstream: :func:`compute_footprint_bounding_box`
-    calls :func:`_check_box_within_limb` *before* this projection, so by the time we
-    perturb here the edges are guaranteed to stay inside the limb. The guard in
-    :func:`_ground_arc_from_cone_angle` remains only as a defensive backstop.
-
-    Parameters
-    ----------
-    alpha0_deg : float
-        Centroid cone angle, degrees.
-    delta_extent_deg : float
-        Along-scan angular half-extent of the box, degrees.
-    earth_plus_alt_km : float
-        Satellite radius Re + h, km.
-    earth_radius_km : float
-        Sphere radius, km.
-
-    Returns
-    -------
-    float
-        Conservative along-scan ground half-extent in km.
-    """
-    l0 = _ground_arc_from_cone_angle(alpha0_deg, earth_plus_alt_km, earth_radius_km)
-
-    excursions = []
-    # +delta -> toward nadir (smaller alpha); -delta -> toward limb (larger alpha).
-    for signed_delta in (delta_extent_deg, -delta_extent_deg):
-        # Cone angle is unsigned; reflect through nadir if the perturbation overshoots.
-        alpha_edge = abs(alpha0_deg - signed_delta)
-        l_edge = _ground_arc_from_cone_angle(alpha_edge, earth_plus_alt_km, earth_radius_km)
-        excursions.append(abs(l_edge - l0))
-
-    return max(excursions)
-
-
-def _cross_scan_ground_extent_km(slant_range_km: float, beta_max_deg: float) -> float:
-    """Project the cross-scan PSF angular half-extent to a ground half-extent (km).
-
-    The cross-scan direction is perpendicular to the scan plane, so the angular
-    offset ``beta`` does not change the cone angle; it is simply projected through the
-    slant range: ``perpendicular distance = rho * tan(beta)`` (notebook cell 1).
-
-    Parameters
-    ----------
-    slant_range_km : float
-        Satellite-to-ground distance rho, km.
-    beta_max_deg : float
-        Cross-scan angular half-extent of the PSF, degrees.
-
-    Returns
-    -------
-    float
-        Cross-scan ground half-extent in km.
-    """
-    return slant_range_km * math.tan(math.radians(beta_max_deg))
+    return satellite, boresight_direction, normal_sub
 
 
 # ---------------------------------------------------------------------------
-# Bounding-box assembly (footprint half-extents in km -> lat/lon box)
+# PSF perimeter ray-trace
+# ---------------------------------------------------------------------------
+
+
+def _scan_frame_axes(boresight_direction: np.ndarray, subsatellite_normal: np.ndarray) -> np.ndarray:
+    """Cross-scan rotation axis (perpendicular to the scan plane).
+
+    The scan plane contains the boresight and the satellite nadir direction. Rotating
+    the boresight about this axis slides the look-point along the scan (a cone-angle
+    perturbation); rotating about an axis in the plane tilts it cross-scan.
+
+    Returns
+    -------
+    np.ndarray
+        Unit cross-scan rotation axis.
+    """
+    nadir = -subsatellite_normal
+    cross_axis = np.cross(nadir, boresight_direction)
+    if float(np.linalg.norm(cross_axis)) < 1.0e-9:
+        # Boresight ~ nadir: orientation is irrelevant for the near-circular disc.
+        return _arbitrary_tangent(boresight_direction)
+    return _unit(cross_axis)
+
+
+def _offset_ray_direction(
+    boresight_direction: np.ndarray, cross_axis: np.ndarray, delta_deg: float, beta_deg: float
+) -> np.ndarray:
+    """Boresight direction rotated by an along-scan (delta) and cross-scan (beta) angle."""
+    along = _rotate(boresight_direction, cross_axis, math.radians(delta_deg))
+    inplane_axis = np.cross(cross_axis, along)  # in the scan plane, perpendicular to `along`
+    return _rotate(along, inplane_axis, math.radians(beta_deg))
+
+
+def _perimeter_point(
+    satellite_km: np.ndarray,
+    boresight_direction: np.ndarray,
+    cross_axis: np.ndarray,
+    delta_deg: float,
+    beta_deg: float,
+) -> tuple[float, float, bool]:
+    """Ground intersection of one PSF-perimeter ray, clipping to the limb if it misses.
+
+    Returns ``(lat_deg, lon_deg, missed)``. When the full-extent ray misses the
+    ellipsoid (``missed=True``) the angular offset is bisected back toward the
+    boresight until the ray just grazes the limb, so the returned point sits on the
+    horizon (keeping the box a conservative superset up to the limb).
+    """
+    direction = _offset_ray_direction(boresight_direction, cross_axis, delta_deg, beta_deg)
+    hit = _ray_ellipsoid_intersection(satellite_km, direction)
+    if hit is not None:
+        lat, lon, _ = _ecef_to_geodetic(hit)
+        return lat, lon, False
+
+    # Bisect the angular fraction down to the grazing direction (largest that hits).
+    lo, hi = 0.0, 1.0
+    for _ in range(40):
+        mid = 0.5 * (lo + hi)
+        probe = _offset_ray_direction(boresight_direction, cross_axis, delta_deg * mid, beta_deg * mid)
+        if _ray_ellipsoid_intersection(satellite_km, probe) is not None:
+            lo = mid
+        else:
+            hi = mid
+    grazing = _offset_ray_direction(boresight_direction, cross_axis, delta_deg * lo, beta_deg * lo)
+    hit = _ray_ellipsoid_intersection(satellite_km, grazing)
+    lat, lon, _ = _ecef_to_geodetic(hit)
+    return lat, lon, True
+
+
+# ---------------------------------------------------------------------------
+# Bounding-box assembly (perimeter lat/lon samples -> lat/lon box)
 # ---------------------------------------------------------------------------
 
 
 def _assemble_bounding_box(
     boresight_lat_deg: float,
     boresight_lon_deg: float,
-    along_half_km: float,
-    cross_half_km: float,
-    scan_azimuth_deg: float,
-    earth_radius_km: float,
-    truncated: bool = False,
-    n_perimeter_samples: int = 72,
+    lats: list[float],
+    lons: list[float],
+    truncated: bool,
 ) -> BoundingBox:
-    """Build a lat/lon bounding box from the footprint's ground half-extents.
+    """Build a lat/lon bounding box from the projected footprint perimeter points.
 
-    The footprint is modelled as an ellipse with the long axis along the scan
-    azimuth. We sample its perimeter, map each sample to a (bearing, distance) from
-    the boresight, project to lat/lon with the curvature-correct destination-point
-    formula, and take the min/max -- handling the three structural edge cases:
+    Handles the three structural edge cases:
 
     * **Pole enclosure**: if the footprint reaches a pole, all meridians are inside
-      it, so longitude must span the full [-180, 180] and the bounding latitude is
-      pinned to +/- 90. Detected geometrically (distance from boresight to the pole
-      <= footprint radius).
+      it, so longitude spans the full [-180, 180] and the bounding latitude is pinned
+      to +/- 90. Detected when the surface distance from the boresight to the pole is
+      within the footprint's reach (the max boresight-to-perimeter distance).
     * **Dateline crossing**: detected by comparing the longitude span in [-180, 180]
       vs in [0, 360); the smaller span wins. When it wraps, we return the [0, 360)
-      representation (``lon_max`` > 180), matching the convention used elsewhere in
-      the codebase (see ``readers/base.py``), and set ``wraps_dateline``.
+      representation (``lon_max`` > 180) and set ``wraps_dateline``.
     * **Polar advisory**: boxes touching very high latitudes are flagged ``is_polar``
       so downstream code knows the rectangular box is a coarse over-approximation.
-
-    Parameters
-    ----------
-    boresight_lat_deg, boresight_lon_deg : float
-        Footprint centroid, degrees.
-    along_half_km, cross_half_km : float
-        Ground half-extents along and across scan, km.
-    scan_azimuth_deg : float
-        Orientation of the along-scan axis, degrees clockwise from north.
-    earth_radius_km : float
-        Sphere radius, km.
-    truncated : bool, optional
-        Whether the box was clipped at the Earth's limb (partial coverage). Stored on
-        the returned :class:`BoundingBox`. Default False.
-    n_perimeter_samples : int, optional
-        Number of ellipse perimeter samples. Default 72 (every 5 degrees).
-
-    Returns
-    -------
-    BoundingBox
-        The geographic bounding box.
     """
-    # The maximum reach in any direction; used for the pole-enclosure test.
-    max_radius_km = max(along_half_km, cross_half_km)
+    geod = _wgs84_geod()
 
-    # --- Pole enclosure: does the footprint contain the N or S pole? ---
-    # Great-circle distance from the boresight to a pole is Re * radians(90 -/+ lat).
-    dist_to_north_pole_km = earth_radius_km * math.radians(90.0 - boresight_lat_deg)
-    dist_to_south_pole_km = earth_radius_km * math.radians(90.0 + boresight_lat_deg)
+    # Pole enclosure: compare the footprint's reach to the distance to each pole.
+    perimeter_distances_m = [
+        geod.inv(boresight_lon_deg, boresight_lat_deg, lon, lat)[2] for lat, lon in zip(lats, lons, strict=True)
+    ]
+    max_reach_m = max(perimeter_distances_m)
+    dist_north_pole_m = geod.inv(boresight_lon_deg, boresight_lat_deg, boresight_lon_deg, 90.0)[2]
+    dist_south_pole_m = geod.inv(boresight_lon_deg, boresight_lat_deg, boresight_lon_deg, -90.0)[2]
 
-    # --- Sample the elliptical perimeter and project each point to lat/lon. ---
-    lats: list[float] = []
-    lons: list[float] = []
-    for t in np.linspace(0.0, 2.0 * math.pi, n_perimeter_samples, endpoint=False):
-        # Point on the ellipse in the local (along, cross) frame.
-        along = along_half_km * math.cos(t)
-        cross = cross_half_km * math.sin(t)
-        distance_km = math.hypot(along, cross)
-        # Bearing of this perimeter point relative to the scan axis, then rotated
-        # into the geographic frame by the scan azimuth.
-        local_bearing_deg = math.degrees(math.atan2(cross, along))
-        bearing_deg = scan_azimuth_deg + local_bearing_deg
-        lat, lon = _destination_point(boresight_lat_deg, boresight_lon_deg, bearing_deg, distance_km, earth_radius_km)
-        lats.append(lat)
-        lons.append(lon)
-
-    if dist_to_north_pole_km <= max_radius_km:
-        # Footprint encloses the North pole: every longitude is covered.
+    if dist_north_pole_m <= max_reach_m:
         return BoundingBox(min(lats), 90.0, -180.0, 180.0, wraps_dateline=False, is_polar=True, truncated=truncated)
-    if dist_to_south_pole_km <= max_radius_km:
-        # Footprint encloses the South pole.
+    if dist_south_pole_m <= max_reach_m:
         return BoundingBox(-90.0, max(lats), -180.0, 180.0, wraps_dateline=False, is_polar=True, truncated=truncated)
 
     lat_min, lat_max = min(lats), max(lats)
 
-    # --- Dateline handling: choose the representation with the smaller span. ---
+    # Dateline handling: choose the representation with the smaller longitude span.
     lons_arr = np.asarray(lons)
     span_signed = float(lons_arr.max() - lons_arr.min())  # span in [-180, 180]
     lons_360 = lons_arr % 360.0
     span_360 = float(lons_360.max() - lons_360.min())  # span in [0, 360)
 
     if span_360 < span_signed:
-        # The footprint is tighter when expressed in [0, 360): it wraps the dateline.
         lon_min = float(lons_360.min())
         lon_max = float(lons_360.max())  # may exceed 180 -> signals the wrap
         wraps_dateline = lon_max > 180.0
@@ -663,8 +487,7 @@ def _assemble_bounding_box(
         lon_max = float(lons_arr.max())
         wraps_dateline = False
 
-    # Advisory polar flag for boxes that reach very high latitudes (meridians
-    # converge, so the rectangular box over-covers); mirrors the design doc threshold.
+    # Advisory polar flag for boxes that reach very high latitudes.
     is_polar = abs(lat_min) >= POLAR_LATITUDE_THRESHOLD_DEG or abs(lat_max) >= POLAR_LATITUDE_THRESHOLD_DEG
 
     return BoundingBox(
@@ -686,15 +509,14 @@ def compute_footprint_bounding_box(
     *,
     altitude_km: float | None = None,
     fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
-    earth_radius_km: float = EARTH_RADIUS_KM,
     on_limb: str = "flag",
 ) -> BoundingBox:
     """Compute the lat/lon bounding box of one radiometer footprint on the surface.
 
-    This is the public, per-footprint entry point. It chains: solve the viewing
-    triangle -> get the PSF angular extent -> project that extent to ground km
-    (asymmetric along-scan stretch + cross-scan projection) -> assemble a lat/lon box
-    with curvature, pole, and dateline handling.
+    This is the public, per-footprint entry point. It chains: build the boresight
+    line of sight and locate the satellite -> get the PSF angular extent -> rotate
+    the boresight by that extent and ray-trace each ray onto the WGS84 ellipsoid ->
+    assemble a lat/lon box with pole and dateline handling.
 
     Inputs come straight from the L1B fields that are actually populated:
     footprint ``Latitude``/``Longitude``, ``Subsatellite_Latitude``/``Longitude``,
@@ -702,10 +524,16 @@ def compute_footprint_bounding_box(
     describe sun geometry and do not affect which ground patch the radiometer sees,
     so they are intentionally not parameters here.)
 
+    The box is always centred on the reported footprint latitude/longitude; the
+    viewing zenith angle and the bearing toward the subsatellite point set the
+    footprint's size and orientation. When ``altitude_km`` is supplied it fixes the
+    satellite range along the boresight; otherwise the range is recovered from the
+    footprint/subsatellite geometry.
+
     TODO[LIBSDC-794]: this is scalar (one footprint per call) for clarity. To meet
-    the real-time latency budget, vectorize the helpers over
-    NumPy arrays of footprints; the math is all elementwise except the perimeter
-    sampling, which can be batched.
+    the real-time latency budget, vectorize the helpers over NumPy arrays of
+    footprints; the math is all elementwise except the perimeter sampling, which can
+    be batched.
 
     Parameters
     ----------
@@ -713,8 +541,7 @@ def compute_footprint_bounding_box(
         Footprint centroid (L1B ``Latitude``/``Longitude``), degrees.
     subsatellite_lat_deg, subsatellite_lon_deg : float
         Subsatellite point (L1B ``Subsatellite_Latitude``/``Longitude``), degrees.
-        Used to recover geometry without an altitude field and to set the scan
-        azimuth.
+        Sets the scan azimuth and, without an altitude field, the satellite range.
     viewing_zenith_deg : float
         Viewing zenith angle (L1B ``Viewing_Zenith_Surface``), degrees.
     altitude_km : float or None, optional
@@ -724,16 +551,14 @@ def compute_footprint_bounding_box(
         Instrument FOV half-angle, degrees. Used as a floor on the PSF extent so the
         box is never smaller than the optical field of view. Defaults to
         :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
-    earth_radius_km : float, optional
-        Spherical Earth radius, km. Defaults to :data:`EARTH_RADIUS_KM`.
     on_limb : {"flag", "raise"}, optional
-        Behaviour when the box *corner* runs off the Earth limb at a severe angle
-        while the boresight is still on Earth. ``"flag"`` (default) truncates the box
-        at the horizon and marks it ``BoundingBox.truncated = True`` so the
+        Behaviour when a box *corner* ray runs off the Earth limb at a severe angle
+        while the boresight is still on Earth. ``"flag"`` (default) truncates those
+        rays at the horizon and marks the box ``BoundingBox.truncated = True`` so the
         orchestrator can record partial coverage; ``"raise"`` raises
         :class:`PartialFootprintError` instead. Note this does NOT cover the
         *centroid* being off-limb (or fill inputs) -- those mean there is no footprint
-        at all and always raise :class:`OffLimbError`, regardless of ``on_limb``.
+        at all and always raise :class:`OffLimbError`.
 
     Returns
     -------
@@ -745,11 +570,11 @@ def compute_footprint_bounding_box(
     ------
     OffLimbError
         If any input is an L1B fill value (a non-Earth view), or if the *centroid*
-        viewing geometry does not intersect the surface. These mean there is no
-        footprint at all, so they raise regardless of ``on_limb``.
+        viewing zenith angle is at or beyond 90 deg (on/past the limb). These mean
+        there is no footprint at all, so they raise regardless of ``on_limb``.
     PartialFootprintError
         A subclass of :class:`OffLimbError`. Raised only when the boresight is on Earth
-        but the limb-ward corner of the box is off it (severe-angle truncation) *and*
+        but a corner ray of the box is off it (severe-angle truncation) *and*
         ``on_limb="raise"``.
     ValueError
         If ``on_limb`` is not ``"flag"`` or ``"raise"``.
@@ -758,63 +583,57 @@ def compute_footprint_bounding_box(
         raise ValueError(f"on_limb must be 'flag' or 'raise', got {on_limb!r}")
 
     # Reject fill-valued / non-finite inputs: these are space or calibration views
-    # with no Earth intersection. Treat them like an off-limb footprint so the
-    # caller's flag/discard path handles them uniformly.
+    # with no Earth intersection. Treat them like an off-limb footprint.
     for value in (boresight_lat_deg, boresight_lon_deg, viewing_zenith_deg):
         if not math.isfinite(value) or value == _L1B_FILL_VALUE:
             raise OffLimbError("Footprint has fill/non-finite geolocation (non-Earth view).")
 
-    # 1. Solve the viewing triangle for the cone angle, slant range, and Re + h.
-    alpha0_deg, slant_range_km, earth_plus_alt_km = _solve_viewing_triangle(
+    # A viewing zenith angle at or beyond 90 deg means the boresight is on or past
+    # the limb: there is no footprint at all.
+    if viewing_zenith_deg >= 90.0:
+        raise OffLimbError(f"Viewing zenith angle {viewing_zenith_deg:.3f} deg is at or beyond the limb (90 deg).")
+
+    # 1. Build the boresight ray and locate the satellite in ECEF.
+    satellite, boresight_direction, subsatellite_normal = _viewing_geometry(
         boresight_lat_deg,
         boresight_lon_deg,
         subsatellite_lat_deg,
         subsatellite_lon_deg,
         viewing_zenith_deg,
         altitude_km,
-        earth_radius_km,
     )
 
     # 2. Get the PSF angular extent and apply the FOV floor. We use the larger of the
     #    dynamic 95%-energy extent and the static FOV so the box is never smaller than
     #    the optical field of view (the FOV also stands in for the stationary-scanner
-    #    case, which we cannot currently detect without the cone-angle rate).
+    #    case, which we cannot currently detect without the cone-angle rate). The
+    #    outward safety margin is applied to the angular extents.
     psf_extent = psf_95_energy_extent()
-    along_extent_deg = max(conservative_along_scan_extent(psf_extent), fov_halfangle_deg)
-    cross_extent_deg = max(psf_extent.beta_max_deg, fov_halfangle_deg)
+    along_extent_deg = max(conservative_along_scan_extent(psf_extent), fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
+    cross_extent_deg = max(psf_extent.beta_max_deg, fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
 
-    # 2b. Verify the WHOLE box stays on the Earth. At severe angles the limb-ward
-    #     corner (max along-scan toward the limb + max cross-scan) can be off-limb
-    #     even though the centroid and the pure axis edges are not. By default
-    #     (on_limb="flag") this truncates the along-scan extent at the horizon and
-    #     flags the box as partial coverage; on_limb="raise" raises instead.
-    along_extent_deg, cross_extent_deg, truncated = _check_box_within_limb(
-        alpha0_deg, along_extent_deg, cross_extent_deg, earth_plus_alt_km, earth_radius_km, on_limb
-    )
+    # 3. Rotate the boresight by the PSF angular extent and ray-trace each perimeter
+    #    sample onto the ellipsoid. Rays that miss are clipped to the limb (flag) or
+    #    raise PartialFootprintError (raise).
+    cross_axis = _scan_frame_axes(boresight_direction, subsatellite_normal)
+    lats: list[float] = []
+    lons: list[float] = []
+    truncated = False
+    for t in np.linspace(0.0, 2.0 * math.pi, _N_PERIMETER_SAMPLES, endpoint=False):
+        delta_deg = along_extent_deg * math.cos(t)
+        beta_deg = cross_extent_deg * math.sin(t)
+        lat, lon, missed = _perimeter_point(satellite, boresight_direction, cross_axis, delta_deg, beta_deg)
+        if missed:
+            if on_limb == "raise":
+                raise PartialFootprintError(
+                    "A bounding-box corner ray is off the Earth limb: part of the box is off the Earth. "
+                    "The default on_limb='flag' truncates the box at the horizon and marks it as partial "
+                    "coverage instead of raising."
+                )
+            truncated = True
+        lats.append(lat)
+        lons.append(lon)
 
-    # 3. Project the angular extents to ground half-extents (km).
-    along_half_km = _along_scan_ground_extent_km(alpha0_deg, along_extent_deg, earth_plus_alt_km, earth_radius_km)
-    cross_half_km = _cross_scan_ground_extent_km(slant_range_km, cross_extent_deg)
-
-    # 4. Round outward by the safety margin (see BBOX_MARGIN_FRACTION rationale).
-    along_half_km *= 1.0 + BBOX_MARGIN_FRACTION
-    cross_half_km *= 1.0 + BBOX_MARGIN_FRACTION
-
-    # 5. Scan azimuth: the along-scan axis points along the great circle toward the
-    #    subsatellite point. (Ill-defined exactly at nadir, but there the footprint is
-    #    a near-circular disc and the orientation is irrelevant.)
-    scan_azimuth_deg = _initial_bearing_deg(
-        boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg
-    )
-
-    # 6. Assemble the lat/lon box (handles curvature, poles, dateline), carrying the
+    # 4. Assemble the lat/lon box (handles poles and dateline), carrying the
     #    partial-coverage truncation flag onto the returned box.
-    return _assemble_bounding_box(
-        boresight_lat_deg,
-        boresight_lon_deg,
-        along_half_km,
-        cross_half_km,
-        scan_azimuth_deg,
-        earth_radius_km,
-        truncated=truncated,
-    )
+    return _assemble_bounding_box(boresight_lat_deg, boresight_lon_deg, lats, lons, truncated)
