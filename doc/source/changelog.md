@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.8.6
+
+- FEAT: Scene Identification now reports the property bin min/max bounds alongside the scene ID. For each footprint and classification variable, `identify_scenes` adds `scene_bin_{type}_{variable}_min`/`_max` variables giving the bounds of the matched scene's bin (unbounded sides and unmatched footprints reported as `NaN`). Controlled by the new `report_bin_bounds` flag (default `True`) on `FootprintData.identify_scenes` and `SceneDefinition.identify_and_update`; existing `scene_id_{type}` columns are unchanged.
+- FEAT: Add `SceneDefinition.get_bin_bounds_for_scene_id` and `Scene.get_bin_bounds` to look up the property bin bounds for a given scene ID.
+
 ## 5.8.5
 
 - FEAT: `s3-utils put` now performs manual SDC data ingest instead of a direct archive upload. It accepts multiple file paths, stages each file to the SDC Ingest Dropbox bucket, and emits a single `NewFilesAvailable` event to the SDC event bus; the SDC Data Ingester then handles archiving and metadata/data-availability records. Accepts L0 and data product filenames (manifests rejected).
