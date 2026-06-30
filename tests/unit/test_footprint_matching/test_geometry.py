@@ -1,8 +1,8 @@
 """Unit tests for the geometry module (libera_utils.footprint_matching.geometry).
 
 Coverage:
-- spherical helpers (great-circle distance, bearing, destination point)
-- the viewing-triangle solver, including altitude recovery from positions
+- WGS84 internals (geodetic<->ECEF round-trip, ellipsoid normal, ray-ellipsoid
+  intersection, satellite-position recovery from the viewing geometry)
 - the public bounding-box entry point: nadir vs stretched high-VZA footprints,
   enclosure of the boresight, growth with VZA
 - edge cases: pole enclosure, dateline crossing, off-limb (raise/clamp), fill
@@ -18,8 +18,9 @@ import pytest
 
 from libera_utils.footprint_matching import geometry as geo
 from libera_utils.footprint_matching.geometry import (
-    EARTH_RADIUS_KM,
     NOMINAL_ALTITUDE_KM,
+    WGS84_SEMI_MAJOR_AXIS_KM,
+    WGS84_SEMI_MINOR_AXIS_KM,
     OffLimbError,
     PartialFootprintError,
     compute_footprint_bounding_box,
@@ -29,64 +30,91 @@ from libera_utils.footprint_matching.geometry import (
 ALT = NOMINAL_ALTITUDE_KM
 
 
-class TestGreatCircleDistance:
-    def test_one_degree_along_equator(self):
-        # One degree of arc along the equator is Re * radians(1).
-        d = geo._great_circle_distance_km(0.0, 0.0, 0.0, 1.0, EARTH_RADIUS_KM)
-        assert d == pytest.approx(EARTH_RADIUS_KM * math.radians(1.0), rel=1e-9)
+class TestGeodeticEcefRoundTrip:
+    @pytest.mark.parametrize(
+        ("lat", "lon", "height_km"),
+        [(0.0, 0.0, 0.0), (45.0, -75.0, 0.0), (89.9, 120.0, 0.0), (-30.0, 179.0, ALT)],
+    )
+    def test_round_trip(self, lat, lon, height_km):
+        xyz = geo._geodetic_to_ecef(lat, lon, height_km)
+        rlat, rlon, rheight = geo._ecef_to_geodetic(xyz)
+        assert rlat == pytest.approx(lat, abs=1e-7)
+        assert rlon == pytest.approx(lon, abs=1e-7)
+        assert rheight == pytest.approx(height_km, abs=1e-4)
 
-    def test_zero_distance(self):
-        assert geo._great_circle_distance_km(12.0, 34.0, 12.0, 34.0, EARTH_RADIUS_KM) == pytest.approx(0.0)
+    def test_equator_radius_is_semi_major(self):
+        xyz = geo._geodetic_to_ecef(0.0, 0.0, 0.0)
+        assert np.linalg.norm(xyz) == pytest.approx(WGS84_SEMI_MAJOR_AXIS_KM, abs=1e-6)
+
+    def test_pole_radius_is_semi_minor(self):
+        xyz = geo._geodetic_to_ecef(90.0, 0.0, 0.0)
+        assert np.linalg.norm(xyz) == pytest.approx(WGS84_SEMI_MINOR_AXIS_KM, abs=1e-6)
 
 
-class TestInitialBearing:
-    def test_due_north(self):
-        assert geo._initial_bearing_deg(0.0, 0.0, 1.0, 0.0) == pytest.approx(0.0, abs=1e-9)
+class TestEllipsoidNormal:
+    def test_unit_length(self):
+        assert np.linalg.norm(geo._ellipsoid_normal(37.0, -100.0)) == pytest.approx(1.0)
 
-    def test_due_east(self):
-        assert geo._initial_bearing_deg(0.0, 0.0, 0.0, 1.0) == pytest.approx(90.0, abs=1e-9)
+    def test_radial_at_equator_and_pole(self):
+        # On the equator and at the poles the geodetic normal equals the geocentric
+        # radial direction.
+        eq = geo._geodetic_to_ecef(0.0, 0.0, 0.0)
+        assert np.allclose(geo._ellipsoid_normal(0.0, 0.0), eq / np.linalg.norm(eq), atol=1e-9)
+        assert np.allclose(geo._ellipsoid_normal(90.0, 0.0), [0.0, 0.0, 1.0], atol=1e-9)
+
+    def test_geodetic_differs_from_geocentric_at_mid_latitude(self):
+        # Off the equator the geodetic normal is NOT the geocentric radial direction;
+        # this is exactly what the spherical model got wrong.
+        lat = 45.0
+        normal = geo._ellipsoid_normal(lat, 0.0)
+        radial = geo._geodetic_to_ecef(lat, 0.0, 0.0)
+        radial = radial / np.linalg.norm(radial)
+        angle_deg = math.degrees(math.acos(np.clip(np.dot(normal, radial), -1.0, 1.0)))
+        assert angle_deg > 0.1
 
 
-class TestDestinationPoint:
-    def test_north_by_one_degree(self):
-        lat, lon = geo._destination_point(0.0, 0.0, 0.0, EARTH_RADIUS_KM * math.radians(1.0), EARTH_RADIUS_KM)
-        assert lat == pytest.approx(1.0, abs=1e-6)
+class TestRayEllipsoidIntersection:
+    def test_straight_down_hits_below_point(self):
+        # A ray from above (0, 0) pointing straight down hits near (0, 0).
+        origin = geo._geodetic_to_ecef(0.0, 0.0, ALT)
+        direction = -geo._ellipsoid_normal(0.0, 0.0)
+        hit = geo._ray_ellipsoid_intersection(origin, direction)
+        assert hit is not None
+        lat, lon, height = geo._ecef_to_geodetic(hit)
+        assert lat == pytest.approx(0.0, abs=1e-6)
         assert lon == pytest.approx(0.0, abs=1e-6)
+        assert height == pytest.approx(0.0, abs=1e-6)
 
-    def test_longitude_normalized(self):
-        # Travelling east from near the dateline must wrap into [-180, 180].
-        _, lon = geo._destination_point(0.0, 179.5, 90.0, EARTH_RADIUS_KM * math.radians(1.0), EARTH_RADIUS_KM)
-        assert -180.0 <= lon <= 180.0
-        assert lon < 0.0  # wrapped past +180
+    def test_ray_into_space_misses(self):
+        origin = geo._geodetic_to_ecef(0.0, 0.0, ALT)
+        direction = geo._ellipsoid_normal(0.0, 0.0)  # pointing up, away from Earth
+        assert geo._ray_ellipsoid_intersection(origin, direction) is None
 
 
-class TestSolveViewingTriangle:
-    def test_nadir_has_zero_cone_angle(self):
-        alpha, _rho, _reh = geo._solve_viewing_triangle(0.0, 0.0, 0.0, 0.0, 0.0, ALT, EARTH_RADIUS_KM)
-        assert alpha == pytest.approx(0.0, abs=1e-6)
+class TestViewingGeometry:
+    def test_satellite_recovered_from_positions(self):
+        # Build a self-consistent footprint / subsatellite / VZA triple: place the
+        # satellite at a known altitude over the subsatellite point, pick a footprint,
+        # and compute the VZA it implies. The no-altitude path must then recover that
+        # altitude and subsatellite location.
+        subsat_lat = 2.0
+        satellite = geo._geodetic_to_ecef(subsat_lat, 0.0, ALT)
+        ground = geo._geodetic_to_ecef(0.0, 0.0, 0.0)
+        normal_p = geo._ellipsoid_normal(0.0, 0.0)
+        vza = math.degrees(math.acos(np.dot(normal_p, satellite - ground) / np.linalg.norm(satellite - ground)))
 
-    def test_altitude_recovered_from_positions(self):
-        # Place a footprint at a known ground distance from the subsatellite point
-        # consistent with VZA, then confirm the solver recovers ~ALT without being
-        # given the altitude. (Build a self-consistent case from the forward model.)
-        theta = math.radians(40.0)
-        reh = EARTH_RADIUS_KM + ALT
-        alpha = math.asin(EARTH_RADIUS_KM * math.sin(theta) / reh)
-        gamma = theta - alpha
-        ground_arc_km = EARTH_RADIUS_KM * gamma
-        # Subsatellite point due north of the footprint by that ground arc.
-        boresight_lat = 0.0
-        subsat_lat = math.degrees(ground_arc_km / EARTH_RADIUS_KM)
-        _alpha, _rho, reh_recovered = geo._solve_viewing_triangle(
-            boresight_lat, 0.0, subsat_lat, 0.0, 40.0, None, EARTH_RADIUS_KM
-        )
-        assert (reh_recovered - EARTH_RADIUS_KM) == pytest.approx(ALT, rel=1e-3)
+        recovered, _direction, _normal = geo._viewing_geometry(0.0, 0.0, subsat_lat, 0.0, vza, None)
+        rlat, rlon, rheight = geo._ecef_to_geodetic(recovered)
+        assert rheight == pytest.approx(ALT, rel=1e-3)
+        assert rlat == pytest.approx(subsat_lat, abs=1e-3)
+        assert rlon == pytest.approx(0.0, abs=1e-3)
 
-    def test_off_limb_raises(self):
-        # At VZA = 90 the line of sight is tangent to the Earth (cone angle == limb),
-        # so even the centroid no longer intersects the surface.
-        with pytest.raises(OffLimbError):
-            geo._solve_viewing_triangle(0.0, 0.0, 30.0, 0.0, 90.0, ALT, EARTH_RADIUS_KM)
+    def test_boresight_points_at_footprint(self):
+        # The boresight direction from the satellite must point at the footprint.
+        satellite, direction, _normal = geo._viewing_geometry(10.0, 20.0, 12.0, 20.0, 30.0, ALT)
+        ground = geo._geodetic_to_ecef(10.0, 20.0, 0.0)
+        expected = (ground - satellite) / np.linalg.norm(ground - satellite)
+        assert np.allclose(direction, expected, atol=1e-9)
 
 
 class TestComputeBoundingBoxBasics:
@@ -142,7 +170,7 @@ class TestComputeBoundingBoxEdgeCases:
         assert bb.lon_max > 180.0
 
     def test_partial_off_limb_flagged_not_raised_by_default(self):
-        # Boresight on Earth but the box corner is off-limb: the default policy
+        # Boresight on Earth but a box corner is off-limb: the default policy
         # truncates the box at the horizon and flags it, instead of raising.
         bb = compute_footprint_bounding_box(0.0, 0.0, 8.5, 0.0, 85.0, altitude_km=ALT)
         assert isinstance(bb, geo.BoundingBox)
@@ -161,24 +189,10 @@ class TestComputeBoundingBoxEdgeCases:
             compute_footprint_bounding_box(0.0, 0.0, 0.5, 0.0, 10.0, altitude_km=ALT, on_limb="bogus")
 
 
-class TestEffectiveConeAngle:
-    def test_zero_cross_reduces_to_inplane(self):
-        # With no cross-scan offset, the effective cone angle is just the in-plane one.
-        assert geo._effective_cone_angle_deg(50.0, 0.0) == pytest.approx(50.0)
-
-    def test_cross_offset_increases_cone_angle(self):
-        # Adding a perpendicular (cross-scan) leg can only increase the total angle.
-        assert geo._effective_cone_angle_deg(50.0, 5.0) > 50.0
-
-    def test_nadir_plus_cross_equals_cross(self):
-        # From nadir, a pure cross-scan offset is the cone angle itself.
-        assert geo._effective_cone_angle_deg(0.0, 3.0) == pytest.approx(3.0)
-
-
 class TestPartialOffLimb:
     def test_default_flags_partial_coverage(self):
-        # Boresight is well on Earth (VZA 85 -> cone angle ~61 deg < limb ~62 deg),
-        # but the limb-ward box corner is off-limb. Default policy: truncate + flag.
+        # Boresight is well on Earth (VZA 85 < 90), but the limb-ward box corner is
+        # off-limb. Default policy: truncate + flag.
         bb = compute_footprint_bounding_box(0.0, 0.0, 8.5, 0.0, 85.0, altitude_km=ALT)
         assert bb.truncated is True
 
@@ -211,41 +225,19 @@ class TestPartialOffLimb:
         assert not isinstance(excinfo.value, PartialFootprintError)
 
 
-class TestCheckBoxWithinLimb:
-    def test_passthrough_when_fully_on_earth(self):
-        reh = EARTH_RADIUS_KM + NOMINAL_ALTITUDE_KM
-        result = geo._check_box_within_limb(30.0, 1.34, 1.26, reh, EARTH_RADIUS_KM, "flag")
-        assert result == (1.34, 1.26, False)
-
-    def test_flag_truncates_corner_inside_limb(self):
-        reh = EARTH_RADIUS_KM + NOMINAL_ALTITUDE_KM
-        limb = geo._limb_cone_angle_deg(reh, EARTH_RADIUS_KM)
-        alpha0 = limb - 0.5  # close enough to the limb that the corner overshoots
-        # Raise mode rejects it.
-        with pytest.raises(PartialFootprintError):
-            geo._check_box_within_limb(alpha0, 1.34, 1.26, reh, EARTH_RADIUS_KM, "raise")
-        # Flag mode shrinks the along-scan extent so the corner sits inside the limb
-        # and reports the truncation.
-        new_along, new_cross, truncated = geo._check_box_within_limb(alpha0, 1.34, 1.26, reh, EARTH_RADIUS_KM, "flag")
-        assert truncated is True
-        assert new_along < 1.34
-        assert new_cross == 1.26
-        corner = geo._effective_cone_angle_deg(alpha0 + new_along, new_cross)
-        assert corner <= limb + 1e-6
-
-
 class TestAltitudeRecoveryPath:
     def test_box_without_altitude_matches_box_with_altitude(self):
-        # Build a self-consistent footprint/subsatellite pair for a known altitude,
-        # then confirm the no-altitude path (recovering Re+h from positions) gives a
-        # box close to the altitude-supplied path.
-        theta = math.radians(50.0)
-        reh = EARTH_RADIUS_KM + ALT
-        alpha = math.asin(EARTH_RADIUS_KM * math.sin(theta) / reh)
-        gamma = theta - alpha
-        subsat_lat = math.degrees(EARTH_RADIUS_KM * gamma / EARTH_RADIUS_KM)
+        # Build a self-consistent footprint/subsatellite pair for a known altitude
+        # (placing the satellite over the subsatellite point and computing the VZA the
+        # footprint implies), then confirm the no-altitude path (recovering the range
+        # from positions) gives a box close to the altitude-supplied path.
+        subsat_lat = 2.0
+        satellite = geo._geodetic_to_ecef(subsat_lat, 0.0, ALT)
+        ground = geo._geodetic_to_ecef(0.0, 0.0, 0.0)
+        normal_p = geo._ellipsoid_normal(0.0, 0.0)
+        vza = math.degrees(math.acos(np.dot(normal_p, satellite - ground) / np.linalg.norm(satellite - ground)))
 
-        with_alt = compute_footprint_bounding_box(0.0, 0.0, subsat_lat, 0.0, 50.0, altitude_km=ALT)
-        without_alt = compute_footprint_bounding_box(0.0, 0.0, subsat_lat, 0.0, 50.0)
+        with_alt = compute_footprint_bounding_box(0.0, 0.0, subsat_lat, 0.0, vza, altitude_km=ALT)
+        without_alt = compute_footprint_bounding_box(0.0, 0.0, subsat_lat, 0.0, vza)
         assert without_alt.lat_min == pytest.approx(with_alt.lat_min, abs=0.05)
         assert without_alt.lat_max == pytest.approx(with_alt.lat_max, abs=0.05)
