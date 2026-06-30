@@ -68,6 +68,23 @@ class Scene:
                 bounded_vars.append(var_name)
         return bounded_vars
 
+    def get_bin_bounds(self, variable: str) -> tuple[float | None, float | None]:
+        """Get the (min, max) bin bounds for a single variable in this scene.
+
+        Parameters
+        ----------
+        variable : str
+            Name of the classification variable.
+
+        Returns
+        -------
+        tuple of (float or None, float or None)
+            The (min, max) bounds for the variable. ``None`` indicates an
+            unbounded side. Variables not constrained by this scene return
+            ``(None, None)``.
+        """
+        return self.variable_ranges.get(variable, (None, None))
+
     def matches(self, data_point: dict[str, float]) -> bool:
         """Check if a data point falls within all variable ranges for this scene.
 
@@ -269,18 +286,28 @@ class SceneDefinition:
 
         return ranges
 
-    def identify_and_update(self, data: xr.Dataset) -> xr.Dataset:
+    def identify_and_update(self, data: xr.Dataset, report_bin_bounds: bool = True) -> xr.Dataset:
         """Identify scene IDs for all data points.
 
         Parameters
         ----------
         data : xr.Dataset
             Dataset containing all required variables for scene identification
+        report_bin_bounds : bool, optional
+            If True (default), also add, for each classification variable, two
+            variables reporting the (min, max) bounds of the property bin that
+            each footprint's matched scene occupies. These are named
+            ``scene_bin_{type}_{variable}_min`` and
+            ``scene_bin_{type}_{variable}_max``. Unbounded bin sides and
+            unmatched footprints (scene ID 0) are reported as NaN. Set to False
+            to emit only the scene ID and reduce output size.
 
         Returns
         -------
         xr.Dataset
-            Input dataset with scene ID variable added as f"scene_id_{self.type.lower()}"
+            Input dataset with scene ID variable added as f"scene_id_{self.type.lower()}",
+            and, when ``report_bin_bounds`` is True, the per-variable bin bound
+            variables described above.
 
         """
         self._validate_footprint_data_columns_present(data)
@@ -301,7 +328,83 @@ class SceneDefinition:
             dims=dims,
             coords={dim: data.coords[dim] for dim in dims if dim in data.coords},
         )
+
+        if report_bin_bounds:
+            bin_arrays = self._compute_property_bins(scene_ids)
+            for bin_var_name, bin_values in bin_arrays.items():
+                data[bin_var_name] = xr.DataArray(
+                    bin_values,
+                    dims=dims,
+                    coords={dim: data.coords[dim] for dim in dims if dim in data.coords},
+                )
+            logger.info(f"Added property bin bounds for {self.type}: {list(bin_arrays.keys())}")
+
         return data
+
+    def get_bin_bounds_for_scene_id(self, scene_id: int) -> dict[str, tuple[float | None, float | None]]:
+        """Get the property bin (min, max) bounds for a given scene ID.
+
+        Parameters
+        ----------
+        scene_id : int
+            The scene ID to look up.
+
+        Returns
+        -------
+        dict of str to tuple of (float or None, float or None)
+            Mapping of each classification variable to its (min, max) bounds for
+            the requested scene. ``None`` indicates an unbounded side.
+
+        Raises
+        ------
+        KeyError
+            If ``scene_id`` does not correspond to a scene in this definition.
+            Note that scene ID 0 is reserved for unmatched footprints and is
+            therefore not a valid lookup value.
+        """
+        for scene in self.scenes:
+            if scene.scene_id == scene_id:
+                return {var: scene.get_bin_bounds(var) for var in self.classification_variables}
+        raise KeyError(f"Scene ID {scene_id} not found in {self.type} scene definition")
+
+    def _compute_property_bins(self, scene_ids: np.ndarray) -> dict[str, np.ndarray]:
+        """Compute per-footprint property bin bounds from matched scene IDs.
+
+        For each classification variable, builds two arrays holding the (min,
+        max) bounds of the bin occupied by each footprint's matched scene.
+
+        Parameters
+        ----------
+        scene_ids : np.ndarray
+            Integer array of matched scene IDs (0 for unmatched footprints), as
+            produced by :meth:`_identify_vectorized`.
+
+        Returns
+        -------
+        dict of str to np.ndarray
+            Mapping of output variable name (``scene_bin_{type}_{variable}_min``
+            / ``_max``) to a float64 array the same shape as ``scene_ids``.
+            Unbounded bin sides and unmatched footprints are filled with NaN.
+        """
+        scene_type = self.type.lower()
+        bin_arrays: dict[str, np.ndarray] = {}
+
+        for var_name in self.classification_variables:
+            min_arr = np.full(scene_ids.shape, np.nan, dtype=np.float64)
+            max_arr = np.full(scene_ids.shape, np.nan, dtype=np.float64)
+
+            for scene in self.scenes:
+                min_val, max_val = scene.get_bin_bounds(var_name)
+                assigned = scene_ids == scene.scene_id
+                if min_val is not None:
+                    min_arr[assigned] = min_val
+                if max_val is not None:
+                    max_arr[assigned] = max_val
+
+            bin_arrays[f"scene_bin_{scene_type}_{var_name}_min"] = min_arr
+            bin_arrays[f"scene_bin_{scene_type}_{var_name}_max"] = max_arr
+
+        return bin_arrays
 
     def _identify_vectorized(self, data: xr.Dataset, shape: tuple[int, ...]) -> np.ndarray:
         """Vectorized scene identification using numpy arrays."""

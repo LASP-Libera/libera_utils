@@ -666,3 +666,30 @@ class TestIdentifyScenes:
 
         # Should not raise an error
         footprint_data.identify_scenes([scene_def])
+
+    def test_identify_scenes_reports_bin_bounds_by_default(self, sample_footprint_data, simple_scene_definition_csv):
+        """Test that bin min/max columns are added alongside the scene ID by default."""
+        scene_def = SceneDefinition(simple_scene_definition_csv)
+        sample_footprint_data.identify_scenes([scene_def])
+
+        data = sample_footprint_data._data
+        # clear_area [80, 50, 20] -> cloud_fraction [20, 50, 80] -> scenes [1, 2, 2]
+        np.testing.assert_array_equal(data["scene_id_test_scenes"].values, [1, 2, 2])
+
+        min_col = "scene_bin_test_scenes_cloud_fraction_min"
+        max_col = "scene_bin_test_scenes_cloud_fraction_max"
+        assert min_col in data.data_vars
+        assert max_col in data.data_vars
+        assert data[min_col].dims == ("footprint",)
+        np.testing.assert_array_equal(data[min_col].values, [0.0, 50.0, 50.0])
+        np.testing.assert_array_equal(data[max_col].values, [50.0, 100.0, 100.0])
+
+    def test_identify_scenes_report_bin_bounds_false(self, sample_footprint_data, simple_scene_definition_csv):
+        """Test that bin columns are omitted when report_bin_bounds is False."""
+        scene_def = SceneDefinition(simple_scene_definition_csv)
+        sample_footprint_data.identify_scenes([scene_def], report_bin_bounds=False)
+
+        data = sample_footprint_data._data
+        assert "scene_id_test_scenes" in data.data_vars
+        bin_columns = [name for name in data.data_vars if str(name).startswith("scene_bin_")]
+        assert bin_columns == []
