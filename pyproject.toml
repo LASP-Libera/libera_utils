@@ -57,6 +57,21 @@ dependencies = [
     "python-ulid>=2.4.0,<3",
     "pyyaml>=6.0.2,<7",
     "pandas (>=2.3.2,<3.0.0)",
+    # pyproj is required by NISEReader to convert the EASE-Grid North polar projection
+    # to geographic lat/lon coordinates at runtime. See libera_utils/footprint_matching/readers/nsidc.py.
+    # Documentation: https://pyproj4.github.io/pyproj/stable/
+    "pyproj>=3.0.0",
+    # pyhdf is required by IGBPReader and NISEReader to open HDF4/HDF-EOS files.
+    # IMPORTANT: pyhdf requires the HDF4 C library (libhdf4-dev) to be installed on the system
+    # before pip/poetry can build its wheel. On Debian/Ubuntu: sudo apt-get install libhdf4-dev.
+    # conda-forge provides a bundled binary: conda install -c conda-forge pyhdf
+    # Documentation: https://fhs.github.io/pyhdf/
+    # HDF4 format reference: https://support.hdfgroup.org/products/hdf4/
+    "pyhdf>=0.11.0",
+    # h5py is required by VIIRSBRDFReader to open HDF5/HDF-EOS5 files (VJ143C1 BRDF).
+    # Documentation: https://docs.h5py.org/en/stable/
+    # HDF5 format reference: https://www.hdfgroup.org/solutions/hdf5/
+    "h5py>=3.0.0",
 ]
 
 [project.urls]

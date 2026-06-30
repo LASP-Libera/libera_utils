@@ -199,7 +199,16 @@ class DataProductIdentifier(StrEnum):
     # ==================
     # TODO[LIBSDC-544]: Add in additional expected products
     anc_adm = ("ADM", DataLevel.ANC)
-    anc_scene_id = ("SCENE-ID", DataLevel.ANC)
+    anc_fmatch_cam = ("FMATCH-CAM", DataLevel.ANC)  # radiometer timescale, camera/NRT latency
+    anc_fmatch_cam_camtime = ("FMATCH-CAM-CAMTIME", DataLevel.ANC)  # camera timescale, camera/NRT latency
+    anc_fmatch_imager_flash = ("FMATCH-IMAGER-FLASH", DataLevel.ANC)  # radiometer timescale, RBSP Flash latency
+    anc_fmatch_imager = ("FMATCH-IMAGER", DataLevel.ANC)  # radiometer timescale, RBSP Climate Quality latency
+    anc_fmatch_imager_camtime = ("FMATCH-IMAGER-CAMTIME", DataLevel.ANC)  # camera timescale, Climate Quality latency
+    anc_scene_id_cam = ("SCENE-ID-CAM", DataLevel.ANC)
+    anc_scene_id_cam_camtime = ("SCENE-ID-CAM-CAMTIME", DataLevel.ANC)
+    anc_scene_id_imager = ("SCENE-ID-IMAGER", DataLevel.ANC)
+    anc_scene_id_imager_camtime = ("SCENE-ID-IMAGER-CAMTIME", DataLevel.ANC)
+    anc_scene_id_imager_flash = ("SCENE-ID-IMAGER-FLASH", DataLevel.ANC)
 
     @property
     def product_name(self) -> str:
@@ -314,7 +323,16 @@ class ProcessingStepIdentifier(StrEnum):
 
     # SDC Intermediate Processing Steps
     # TODO: LIBSDC-544 What is this?
-    int_footprint_scene_id = ("int-footprint-scene-id", [DataProductIdentifier.anc_scene_id])
+    fmatch_cam = ("footprint-match-cam", [DataProductIdentifier.anc_fmatch_cam])
+    fmatch_imager = ("footprint-match-imager", [DataProductIdentifier.anc_fmatch_imager])
+    fmatch_imager_flash = ("footprint-match-imager-flash", [DataProductIdentifier.anc_fmatch_imager_flash])
+    fmatch_cam_camtime = ("footprint-match-cam-camtime", [DataProductIdentifier.anc_fmatch_cam_camtime])
+    fmatch_imager_camtime = ("footprint-match-imager-camtime", [DataProductIdentifier.anc_fmatch_imager_camtime])
+    scene_id_cam = ("scene-id-cam", [DataProductIdentifier.anc_scene_id_cam])
+    scene_id_imager = ("scene-id-imager", [DataProductIdentifier.anc_scene_id_imager])
+    scene_id_imager_flash = ("scene-id-imager-flash", [DataProductIdentifier.anc_scene_id_imager_flash])
+    scene_id_cam_camtime = ("scene-id-cam-camtime", [DataProductIdentifier.anc_scene_id_cam_camtime])
+    scene_id_imager_camtime = ("scene-id-imager-camtime", [DataProductIdentifier.anc_scene_id_imager_camtime])
 
     # L2 processing steps
     # Camera Cloud Fraction (CF) products
