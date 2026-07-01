@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         # No LFS checkout here so we can use the LFS cache in our setup-env action
 
       # Reuse CI setup so Copilot and CI environments stay in parity.
