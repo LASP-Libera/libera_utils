@@ -227,6 +227,58 @@ class TestSceneDefinitionLoading:
         assert trmm_def.type != erbe_def.type, "TRMM and ERBE should have different types"
 
 
+class TestViewingGeometryClassificationVariables:
+    """Tests that the viewing-geometry angles are required, bounded classification variables everywhere.
+
+    The three viewing-geometry angles (solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle) were added
+    to every standard scene definition with the full physical range as a placeholder bin. Because those bins are
+    defined (not empty), the angles behave like any other classification variable: they are required inputs, they
+    are validated, and their bin bounds are reported. These tests lock in that behavior so a future change that
+    subdivides the geometry space does not accidentally drop the angles from the required/classification sets.
+    """
+
+    # The full physical range placeholder bins, shared by every scene (degrees). These match the CERES SSF
+    # valid_range attributes and the values written into the scene definition CSVs.
+    GEOMETRY_BINS = {
+        "solar_zenith_angle": (0.0, 180.0),
+        "viewing_zenith_angle": (0.0, 90.0),
+        "relative_azimuth_angle": (0.0, 360.0),
+    }
+
+    @pytest.mark.parametrize(
+        "config_key", ["TRMM_SCENE_DEFINITION", "ERBE_SCENE_DEFINITION", "UNFILTERING_SCENE_DEFINITION"]
+    )
+    def test_geometry_angles_are_required_and_classification_variables(self, config_key):
+        """Every standard definition must require and classify on all three geometry angles."""
+        scene_def = SceneDefinition(pathlib.Path(config.get(config_key)))
+        for variable in self.GEOMETRY_BINS:
+            assert variable in scene_def.required_columns
+            assert variable in scene_def.classification_variables
+
+    @pytest.mark.parametrize(
+        "config_key", ["TRMM_SCENE_DEFINITION", "ERBE_SCENE_DEFINITION", "UNFILTERING_SCENE_DEFINITION"]
+    )
+    def test_every_scene_uses_full_range_geometry_placeholder_bins(self, config_key):
+        """Each scene's geometry bins are the full physical range placeholder (no special-casing needed)."""
+        scene_def = SceneDefinition(pathlib.Path(config.get(config_key)))
+        for scene in scene_def.scenes:
+            for variable, expected_bounds in self.GEOMETRY_BINS.items():
+                assert scene.get_bin_bounds(variable) == expected_bounds
+
+    def test_geometry_bins_reported_by_compute_property_bins(self):
+        """_compute_property_bins emits bounded geometry bins for matched footprints and NaN for unmatched."""
+        scene_def = SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION")))
+        scene_ids = np.array([1, 0])  # one matched scene, one unmatched footprint
+        bins = scene_def._compute_property_bins(scene_ids)
+
+        for variable, (bin_min, bin_max) in self.GEOMETRY_BINS.items():
+            min_name = f"scene_bin_{scene_def.type}_{variable}_min"
+            max_name = f"scene_bin_{scene_def.type}_{variable}_max"
+            # Matched footprint gets the placeholder bounds; unmatched footprint gets NaN.
+            np.testing.assert_array_equal(bins[min_name], [bin_min, np.nan])
+            np.testing.assert_array_equal(bins[max_name], [bin_max, np.nan])
+
+
 class TestPropertyBins:
     """Tests for property bin reporting (min/max bounds alongside scene IDs)."""
 

@@ -1,15 +1,4 @@
 ## Dockerfile that installs libera_utils and runs the Libera SCENE-ID-CAM algorithm.
-##
-## This is written in the same style as l1b_example/Dockerfile, with one deliberate difference: scene
-## identification does not use SPICE (it classifies footprints from CERES SSF scene properties, with no geolocation
-## or ephemeris math), so the NAIF CSPICE toolkit install that the L1B image needs is intentionally omitted here.
-##
-## The scene-ID algorithm and the thin manifest-driven runner both live inside libera_utils itself
-## (libera_utils/scene_identification/cam/scene_id_cam.py). We therefore install the libera_utils package and run
-## that runner module as the container entrypoint.
-##
-## Build context is the repository root (the COPY paths below are relative to it), e.g.:
-##   docker build -f libera_utils/scene_identification/cam/Dockerfile .
 
 ARG BUILDPLATFORM=linux/amd64
 

@@ -66,8 +66,14 @@ class TestEndToEndSceneIdentification:
         # The reference fixture predates the property-bin output; compare the
         # variables it contains and verify the new bin columns separately below.
         xr.testing.assert_equal(fp._data[list(expected.data_vars)], expected)
-        assert_property_bins_consistent(fp._data, "trmm", ["surface_type", "cloud_fraction"])
-        assert_property_bins_consistent(fp._data, "erbe", ["surface_type", "cloud_fraction"])
+        # Viewing-geometry angles are classification variables on every scene definition, so the property-bin
+        # bounds must be reported and internally consistent alongside surface_type and cloud_fraction.
+        geometry_variables = ["solar_zenith_angle", "viewing_zenith_angle", "relative_azimuth_angle"]
+        assert_property_bins_consistent(fp._data, "trmm", ["surface_type", "cloud_fraction", *geometry_variables])
+        assert_property_bins_consistent(fp._data, "erbe", ["surface_type", "cloud_fraction", *geometry_variables])
+        # The geometry angles themselves must be carried through from the CERES SSF input.
+        for geometry_variable in geometry_variables:
+            assert geometry_variable in fp._data.data_vars
 
     @pytest.mark.parametrize(
         "scene_definition",
