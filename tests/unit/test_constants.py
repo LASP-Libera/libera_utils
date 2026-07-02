@@ -168,7 +168,11 @@ class TestDataProductIdentifier:
             "l2_ssw_surf",
             # Ancillary Products
             "anc_adm",
-            "anc_scene_id",
+            "scene_id_cam",
+            "scene_id_cam_camtime",
+            "scene_id_imager_flash",
+            "scene_id_imager",
+            "scene_id_imager_camtime",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names

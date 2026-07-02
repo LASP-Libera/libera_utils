@@ -199,7 +199,20 @@ class DataProductIdentifier(StrEnum):
     # ==================
     # TODO[LIBSDC-544]: Add in additional expected products
     anc_adm = ("ADM", DataLevel.ANC)
-    anc_scene_id = ("SCENE-ID", DataLevel.ANC)
+    # Scene Identification (SCENE-ID) products.
+    # Like FMATCH, SCENE-ID produces five distinct products defined by two dimensions: the timestamp source
+    # (radiometer vs. camera timescale) and the data latency tier (camera/NRT, RBSP Flash, RBSP Climate Quality).
+    # See the "Footprint Matching and Scene ID" design document, section 1.3 ("The Five-Mode Data Product
+    # Structure"). Only the CAM mode (radiometer timescale, lowest latency, available in year 1) is wired up in
+    # the processing code today; the other four are declared here so the product identifiers exist for the
+    # pipeline and file naming as those modes come online.
+    # The three radiometer-timescale modes (CAM, IMAGER, IMAGER-FLASH) are written on the L1B "RADIOMETER_TIME"
+    # axis; the two *-CAMTIME modes are on the camera image timescale.
+    scene_id_cam = ("SCENE-ID-CAM", DataLevel.ANC)  # radiometer timescale, camera/NRT latency (year 1)
+    scene_id_cam_camtime = ("SCENE-ID-CAM-CAMTIME", DataLevel.ANC)  # camera timescale, camera/NRT latency (year 1)
+    scene_id_imager_flash = ("SCENE-ID-IMAGER-FLASH", DataLevel.ANC)  # radiometer timescale, RBSP Flash latency
+    scene_id_imager = ("SCENE-ID-IMAGER", DataLevel.ANC)  # radiometer timescale, RBSP Climate Quality latency
+    scene_id_imager_camtime = ("SCENE-ID-IMAGER-CAMTIME", DataLevel.ANC)  # camera timescale, Climate Quality latency
 
     @property
     def product_name(self) -> str:
@@ -313,8 +326,10 @@ class ProcessingStepIdentifier(StrEnum):
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
 
     # SDC Intermediate Processing Steps
-    # TODO: LIBSDC-544 What is this?
-    int_footprint_scene_id = ("int-footprint-scene-id", [DataProductIdentifier.anc_scene_id])
+    # Scene identification consumes the FMATCH footprint products and emits the SCENE-ID products. Only the CAM
+    # mode is implemented today (see libera_utils/scene_identification/cam/scene_id_cam.py); the remaining modes
+    # will be added to this step's product list as they come online.
+    int_footprint_scene_id = ("int-footprint-scene-id", [DataProductIdentifier.scene_id_cam])
 
     # L2 processing steps
     # Camera Cloud Fraction (CF) products
