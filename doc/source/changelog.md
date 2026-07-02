@@ -1,5 +1,13 @@
 # Version Changes
 
+## 5.10.0
+
+- BREAKING: Scene identification code moved into a `libera_utils.scene_identification` package. Import from `libera_utils.scene_identification.scene_id` and `libera_utils.scene_identification.scene_definitions` (previously `libera_utils.scene_id` / `libera_utils.scene_definitions`); the module and class APIs are otherwise unchanged.
+- FEAT: Add the `unfiltering` scene definition (`data/scene_definitions/unfiltering.csv`, config key `UNFILTERING_SCENE_DEFINITION`) to the default classifications run by `FootprintData.identify_scenes`. Defaults are now TRMM, ERBE, and unfiltering. New helpers `standard_scene_definitions`/`default_scene_definitions` build the standard definitions (optionally a subset by type). Calling `identify_scenes()` with no arguments uses the defaults; an explicit `None` or empty list still raises.
+- FEAT: `FootprintData` now extracts the CERES SSF observation time as a `radiometer_time` variable and adds `to_radiometer_time_product()`, which reshapes the footprint data onto the L1B `RADIOMETER_TIME` axis for writing as a Libera data product.
+- FEAT: Add SCENE-ID data product identifiers for the five product modes (`scene_id_cam`, `scene_id_cam_camtime`, `scene_id_imager_flash`, `scene_id_imager`, `scene_id_imager_camtime`), replacing the generic `anc_scene_id`.
+- FEAT: Add the SCENE-ID-CAM algorithm runner (`libera_utils/scene_identification/cam/`, with a Dockerfile) and its product definition (`scene_id_cam.yml`). The runner reads CERES SSF files from an input manifest, runs the ERBE and unfiltering classifications (not TRMM), and writes a NetCDF data product on the `RADIOMETER_TIME` axis plus an output manifest.
+
 ## 5.9.1
 
 - FEAT: Scene Identification now reports the property bin min/max bounds alongside the scene ID. For each footprint and classification variable, `identify_scenes` adds `scene_bin_{type}_{variable}_min`/`_max` variables giving the bounds of the matched scene's bin (unbounded sides and unmatched footprints reported as `NaN`). Controlled by the new `report_bin_bounds` flag (default `True`) on `FootprintData.identify_scenes` and `SceneDefinition.identify_and_update`; existing `scene_id_{type}` columns are unchanged.
