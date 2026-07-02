@@ -11,7 +11,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.config import config
-from libera_utils.scene_id import (
+from libera_utils.scene_identification.scene_id import (
     FootprintData,
     FootprintVariables,
     SceneDefinition,

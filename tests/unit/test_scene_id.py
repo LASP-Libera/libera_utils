@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.scene_definitions import SceneDefinition
-from libera_utils.scene_id import (
+from libera_utils.scene_identification.scene_definitions import SceneDefinition
+from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
     CalculationSpec,
     FootprintData,
