@@ -7,6 +7,7 @@
 - FEAT: `FootprintData` now extracts the CERES SSF observation time as a `radiometer_time` variable and adds `to_radiometer_time_product()`, which reshapes the footprint data onto the L1B `RADIOMETER_TIME` axis for writing as a Libera data product.
 - FEAT: Add SCENE-ID data product identifiers for the five product modes (`scene_id_cam`, `scene_id_cam_camtime`, `scene_id_imager_flash`, `scene_id_imager`, `scene_id_imager_camtime`), replacing the generic `anc_scene_id`.
 - FEAT: Add the SCENE-ID-CAM algorithm runner (`libera_utils/scene_identification/cam/`, with a Dockerfile) and its product definition (`scene_id_cam.yml`). The runner reads CERES SSF files from an input manifest, runs the ERBE and unfiltering classifications (not TRMM), and writes a NetCDF data product on the `RADIOMETER_TIME` axis plus an output manifest.
+- FEAT: Scene identification now includes viewing geometry. `FootprintData` extracts the three CERES SSF `Viewing_Angles` angles (`solar_zenith_angle`, `viewing_zenith_angle`, `relative_azimuth_angle`) as required classification variables, and every standard scene definition (TRMM, ERBE, unfiltering) gains min/max columns for them. The bins currently span the full physical range (`[0,180]`/`[0,90]`/`[0,360]` degrees) as a placeholder pending future subdivision, so scene IDs are unchanged; the SCENE-ID-CAM product now carries the geometry angles plus their `scene_bin_{erbe,unfiltering}_{angle}_min/max` bounds.
 
 ## 5.9.1
 

@@ -1,15 +1,4 @@
 # Libera SCENE-ID-CAM product definition.
-#
-# SCENE-ID-CAM is the radiometer-timescale, lowest-latency (camera/NRT) scene-identification product, available
-# from year 1 of the mission (see the "Footprint Matching and Scene ID" design document, section 1.3). It carries,
-# for every radiometer footprint, the input scene properties read from the CERES SSF file, the derived physical
-# variables, and the resulting scene IDs (ERBE and unfiltering classifications) plus the property-bin bounds each
-# matched scene occupies. SCENE-ID-CAM runs the ERBE and unfiltering classifications, but not TRMM.
-#
-# The product is written on the "RADIOMETER_TIME" dimension with a "radiometer_time" coordinate, exactly mirroring
-# the upstream L1B_RAD product, so scene IDs line up 1:1 with L1B radiometer footprints. The variable set and dtypes
-# below match what FootprintData.identify_scenes() + FootprintData.to_radiometer_time_product() produce; see
-# libera_utils/scene_identification/scene_id.py.
 
 attributes:
   ProductID: SCENE-ID-CAM
@@ -36,12 +25,9 @@ coordinates:
       dtype: int64
 
 variables:
-  #########################################
-  # Input scene properties (from CERES SSF)
-  #########################################
-  # These ten variables are read directly from the CERES SSF file. See scene_id.py
-  # (_extract_data_from_CeresSSFNOAA20FM6Ed1C) for the exact NetCDF groups/variables and the CERES SSF reference:
-  # https://ceres.larc.nasa.gov/data/#ssf-level-2
+  ########################
+  # Input scene properties
+  ########################
   igbp_surface_type:
     dtype: int16
     dimensions: ["RADIOMETER_TIME"]
@@ -69,15 +55,31 @@ variables:
       long_name: Cloud fraction for the upper atmospheric layer
       units: percent
       valid_range: [0, 100]
-  
-  ###########################################
-  # Derived scene properties (computed by SDC)
-  ###########################################
-  # SCENE-ID-CAM runs the ERBE and unfiltering classifications, which both key off surface_type and cloud_fraction.
-  # Only those two derived variables are therefore computed for this product (by
-  # FootprintData._calculate_required_fields(); see the _CALCULATED_VARIABLE_MAP in scene_id.py). The other derived
-  # variables (surface_wind, optical_depth, cloud_phase) are only needed by the TRMM classification, which this
-  # product does not run, so they are intentionally omitted here.
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Solar zenith angle at the footprint surface
+      units: degrees
+      valid_range: [0, 180]
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Instrument viewing zenith angle at the footprint surface (SSF "view_zenith_angle")
+      units: degrees
+      valid_range: [0, 90]
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface
+      units: degrees
+      valid_range: [0, 360]
+
+  ##########################
+  # Derived scene properties
+  ##########################
   surface_type:
     dtype: int64
     dimensions: ["RADIOMETER_TIME"]
@@ -95,11 +97,6 @@ variables:
   ############
   # Scene IDs
   ############
-  # Each scene_id_{type} column holds the classification result for one scene definition. A value of 0 means the
-  # footprint matched no scene in that definition. The accompanying scene_bin_{type}_{variable}_min/_max columns
-  # report the (min, max) bounds of the property bin the matched scene occupies for each classification variable
-  # (NaN for unmatched footprints). See scene_definitions.py (identify_and_update, report_bin_bounds=True).
-  # SCENE-ID-CAM runs the ERBE and unfiltering classifications (not TRMM).
   scene_id_erbe:
     dtype: int32
     dimensions: ["RADIOMETER_TIME"]
@@ -116,7 +113,6 @@ variables:
   ##############################
   # ERBE scene property-bin bounds
   ##############################
-  # The ERBE classification uses two variables (surface_type and cloud_fraction); each contributes a min/max pair.
   scene_bin_erbe_cloud_fraction_min:
     dtype: float64
     dimensions: ["RADIOMETER_TIME"]
@@ -139,12 +135,46 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_solar_zenith_angle_min:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_solar_zenith_angle_max:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_min:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_max:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_min:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_max:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
 
   #####################################
   # Unfiltering scene property-bin bounds
   #####################################
-  # The unfiltering classification uses two variables (surface_type and cloud_fraction); each contributes a
-  # min/max pair. Bounds are float64 so unbounded edges and unmatched footprints can be represented as NaN.
   scene_bin_unfiltering_cloud_fraction_min:
     dtype: float64
     dimensions: ["RADIOMETER_TIME"]
@@ -167,3 +197,45 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_solar_zenith_angle_min:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_solar_zenith_angle_max:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_min:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_max:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_min:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_max:
+    dtype: float64
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  Quality_Flag:
+    dtype: uint32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Bit flags indicating the quality of the data
+      value_meaning: TBD. Example file from PREFIRE has this information laid out per-bit using [b0], [b1], etc.
