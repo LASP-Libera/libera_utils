@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 RADIOMETER_TIME_VARIABLE = "radiometer_time"
 
+# Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
+# (scene_id_cam.yml).
+QUALITY_FLAG_VARIABLE = "Quality_Flag"
+
 # Standard scene definitions shipped with libera_utils, keyed by scene "type". The type is the lowercased stem of
 # the CSV filename and also becomes the output column name (scene_id_{type}). The value is the config.json key that
 # resolves to the CSV path. Consumers can select a subset by type (e.g. the SCENE-ID-CAM product runs "erbe" and
@@ -40,10 +44,7 @@ STANDARD_SCENE_DEFINITION_CONFIG_KEYS: dict[str, str] = {
     "unfiltering": "UNFILTERING_SCENE_DEFINITION",
 }
 
-# Sentinel marking "the caller did not pass scene_definitions, so use the defaults". We can't use None for this
-# because identify_scenes() treats an explicit None as an error (it signals a caller bug), and we can't use a
-# mutable list literal as a default argument (that would be shared across calls and is a well-known Python
-# foot-gun: https://docs.python-guide.org/writing/gotchas/#mutable-default-arguments).
+# Sentinel marking "the caller did not pass scene_definitions, so use the defaults".
 _USE_DEFAULT_SCENE_DEFINITIONS = object()
 
 
@@ -80,6 +81,38 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
         config_key = STANDARD_SCENE_DEFINITION_CONFIG_KEYS[scene_type]
         definitions.append(SceneDefinition(pathlib.Path(config.get(config_key))))
     return definitions
+
+
+def add_placeholder_quality_flag(product: xr.Dataset) -> xr.Dataset:
+    """Add the SCENE-ID ``Quality_Flag`` variable as an all-zero placeholder.
+
+    The SCENE-ID product definitions (e.g. ``scene_id_cam.yml``) declare a per-footprint ``Quality_Flag`` bit-flag
+    variable. Per-footprint quality flagging is not implemented yet, so this fills every footprint with ``0``
+    ("no flags set") so the product still conforms to its definition. The variable is added on the existing
+    ``RADIOMETER_TIME`` dimension, so the input must already be on that axis.
+
+    Parameters
+    ----------
+    product : xr.Dataset
+        A radiometer-time product dataset (on the ``RADIOMETER_TIME`` dimension) to add the flag to.
+
+    Returns
+    -------
+    xr.Dataset
+        The same dataset with a ``Quality_Flag`` variable added (or overwritten).
+
+    Notes
+    -----
+    The placeholder is emitted as ``uint32`` to match the ``Quality_Flag`` dtype in the product definition; the
+    NetCDF writer's conformance step will re-cast if the definition ever changes.
+    """
+    # TODO[LIBSDC-673]: replace this all-zero placeholder with real per-footprint quality flagging (for example,
+    # flagging unmatched footprints, fill/NaN inputs, and out-of-range viewing geometry). Until then every
+    # footprint is reported as "no flags set" (0).
+    number_of_footprints = product.sizes[RADIOMETER_TIME_DIMENSION]
+    quality_flag = np.zeros(number_of_footprints, dtype=np.uint32)
+    product[QUALITY_FLAG_VARIABLE] = (RADIOMETER_TIME_DIMENSION, quality_flag)
+    return product
 
 
 def default_scene_definitions() -> list[SceneDefinition]:
@@ -482,6 +515,13 @@ class FootprintVariables(enum.StrEnum):
         Cloud phase for lower layer, 1=liquid, 2=ice (input variable)
     CLOUD_PHASE_UPPER : str
         Cloud phase for upper layer, 1=liquid, 2=ice (input variable)
+    SOLAR_ZENITH_ANGLE : str
+        Solar zenith angle at the surface, in degrees, 0-180 (input variable)
+    VIEWING_ZENITH_ANGLE : str
+        Instrument viewing zenith angle at the surface, in degrees, 0-90 (input variable)
+    RELATIVE_AZIMUTH_ANGLE : str
+        Relative azimuth angle (between solar and viewing directions) at the surface, in degrees, 0-360
+        (input variable)
     CLOUD_FRACTION : str
         Total cloud fraction across all layers (calculated variable)
     OPTICAL_DEPTH : str
@@ -505,6 +545,16 @@ class FootprintVariables(enum.StrEnum):
     CLOUD_FRACTION_UPPER = "cloud_fraction_upper"
     CLOUD_PHASE_LOWER = "cloud_phase_lower"
     CLOUD_PHASE_UPPER = "cloud_phase_upper"
+
+    # Viewing-geometry angles (input variables). These are measured per footprint and read directly from the CERES
+    # SSF "Viewing_Angles" group. They are required classification variables for every scene definition (each scene
+    # CSV carries solar_zenith_angle/viewing_zenith_angle/relative_azimuth_angle min/max columns). The string values
+    # here must match those CSV variable names exactly, otherwise SceneDefinition.required_columns will not line up
+    # with the dataset variables. Note the SSF file names the viewing-zenith variable "view_zenith_angle"; we rename
+    # it to "viewing_zenith_angle" on extraction so the pipeline uses one consistent name.
+    SOLAR_ZENITH_ANGLE = "solar_zenith_angle"
+    VIEWING_ZENITH_ANGLE = "viewing_zenith_angle"
+    RELATIVE_AZIMUTH_ANGLE = "relative_azimuth_angle"
 
     # Calculated columns
     CLOUD_FRACTION = "cloud_fraction"
@@ -1029,6 +1079,30 @@ class FootprintData:
             clear_area_np = np.array(dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"][:])
             logger.debug(f"Clear area shape: {clear_area_np.shape}")
 
+            # Viewing-geometry angles, one value per footprint, read from the CERES SSF "Viewing_Angles" group. These
+            # feed the geometry classification bins on every scene definition. The SSF stores them as float32 degrees;
+            # solar zenith spans 0-180, viewing zenith 0-90, relative azimuth 0-360 (see the variables' valid_range
+            # attributes and https://ceres.larc.nasa.gov/data/#ssf-level-2). NOTE the SSF variable is named
+            # "view_zenith_angle"; we carry it forward under the pipeline name "viewing_zenith_angle".
+            viewing_angles_group = dataset.groups["Viewing_Angles"]
+            solar_zenith_angle_np = np.array(viewing_angles_group.variables["solar_zenith_angle"][:])
+            viewing_zenith_angle_np = np.array(viewing_angles_group.variables["view_zenith_angle"][:])
+            relative_azimuth_angle_np = np.array(viewing_angles_group.variables["relative_azimuth_angle"][:])
+
+            # The SSF marks missing angles with a large float32 sentinel (_FillValue ~ 3.4e38). Convert those to NaN
+            # so they are treated as "no value" downstream: the scene matcher passes NaN through its range checks
+            # rather than excluding the footprint, and NetCDF writing re-encodes NaN as the product's fill value.
+            for angle_name, angle_array in (
+                ("solar_zenith_angle", solar_zenith_angle_np),
+                ("view_zenith_angle", viewing_zenith_angle_np),
+                ("relative_azimuth_angle", relative_azimuth_angle_np),
+            ):
+                angle_variable = viewing_angles_group.variables[angle_name]
+                angle_fill_value = angle_variable._FillValue if hasattr(angle_variable, "_FillValue") else None
+                if angle_fill_value is not None:
+                    angle_array[angle_array == angle_fill_value] = np.nan
+            logger.debug("Converted viewing-angle fill values to NaN")
+
             # Time of observation, one value per footprint. The downstream Libera SCENE-ID product is written on
             # the same "RADIOMETER_TIME" axis as its L1B input (see the L1B_RAD product), so we carry the CERES SSF
             # observation time through the pipeline as the radiometer_time coordinate. In the CERES SSF format the
@@ -1093,6 +1167,9 @@ class FootprintData:
                 FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], cloud_fraction_upper),
                 FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], cloud_phase_lower),
                 FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], cloud_phase_upper),
+                FootprintVariables.SOLAR_ZENITH_ANGLE: ([RADIOMETER_TIME_DIMENSION], solar_zenith_angle_np),
+                FootprintVariables.VIEWING_ZENITH_ANGLE: ([RADIOMETER_TIME_DIMENSION], viewing_zenith_angle_np),
+                FootprintVariables.RELATIVE_AZIMUTH_ANGLE: ([RADIOMETER_TIME_DIMENSION], relative_azimuth_angle_np),
                 # radiometer_time is kept as a plain data variable (not a coordinate) at this stage so that it
                 # simply rides along through scene identification. The runner promotes it to the RADIOMETER_TIME
                 # coordinate via to_radiometer_time_product() right before writing the Libera data product.
@@ -1134,6 +1211,8 @@ class FootprintData:
         # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
         # representation (set_coords otherwise mutates the shared dataset).
         product = self._data.set_coords(RADIOMETER_TIME_VARIABLE)
+        # TODO[LIBSDC-673]: Add real quality flag to the product
+        product = add_placeholder_quality_flag(product)
         return product
 
     def export_to_netcdf(self, netcdf_path):
