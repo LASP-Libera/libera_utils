@@ -12,6 +12,7 @@ import xarray as xr
 
 from libera_utils.config import config
 from libera_utils.scene_identification.scene_id import (
+    RADIOMETER_TIME_DIMENSION,
     FootprintData,
     FootprintVariables,
     SceneDefinition,
@@ -59,6 +60,9 @@ class TestEndToEndSceneIdentification:
         fp = FootprintData.from_ceres_ssf(input_file_path)
         fp.identify_scenes()
         expected = xr.open_dataset(expected_file_path)
+        # The reference fixture predates the rename of the internal dimension to RADIOMETER_TIME (it was written
+        # on the old "footprint" dimension); align its dimension name before comparing values.
+        expected = expected.rename({"footprint": RADIOMETER_TIME_DIMENSION})
         # The reference fixture predates the property-bin output; compare the
         # variables it contains and verify the new bin columns separately below.
         xr.testing.assert_equal(fp._data[list(expected.data_vars)], expected)
@@ -78,6 +82,8 @@ class TestEndToEndSceneIdentification:
         fp.identify_scenes(scene_definitions=[scene_definition])
         expected_file_path = test_scene_id / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
         expected = xr.open_dataset(expected_file_path)
+        # The reference fixture was written on the old "footprint" dimension; align its name before comparing.
+        expected = expected.rename({"footprint": RADIOMETER_TIME_DIMENSION})
         id_column = f"scene_id_{scene_definition.type.lower()}"
         xr.testing.assert_equal(fp._data[id_column], expected[id_column])
 
