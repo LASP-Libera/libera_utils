@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from libera_utils.config import config
-from libera_utils.scene_definitions import Scene, SceneDefinition
+from libera_utils.scene_identification.scene_definitions import Scene, SceneDefinition
 
 
 class TestScene:

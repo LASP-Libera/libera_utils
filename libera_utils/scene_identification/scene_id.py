@@ -17,9 +17,84 @@ import xarray as xr
 from numpy.typing import NDArray
 
 from libera_utils.config import config
-from libera_utils.scene_definitions import SceneDefinition
+from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
 logger = logging.getLogger(__name__)
+
+# Internal dimension name used while footprint data is being processed. It is deliberately generic because the
+# same FootprintData machinery serves several inputs (CERES SSF, and future direct/synthetic datasets).
+FOOTPRINT_DIMENSION = "footprint"
+
+# Names used when emitting a Libera SCENE-ID product. The radiometer-timescale scene-ID products (CAM, IMAGER,
+# FLASH) are written on the "RADIOMETER_TIME" dimension with a "radiometer_time" coordinate to exactly mirror the
+# upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. These constants are shared with the
+# product runner (see libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition YAML.
+RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
+RADIOMETER_TIME_VARIABLE = "radiometer_time"
+
+# Standard scene definitions shipped with libera_utils, keyed by scene "type". The type is the lowercased stem of
+# the CSV filename and also becomes the output column name (scene_id_{type}). The value is the config.json key that
+# resolves to the CSV path. Consumers can select a subset by type (e.g. the SCENE-ID-CAM product runs "erbe" and
+# "unfiltering" but not "trmm").
+STANDARD_SCENE_DEFINITION_CONFIG_KEYS: dict[str, str] = {
+    "trmm": "TRMM_SCENE_DEFINITION",
+    "erbe": "ERBE_SCENE_DEFINITION",
+    "unfiltering": "UNFILTERING_SCENE_DEFINITION",
+}
+
+# Sentinel marking "the caller did not pass scene_definitions, so use the defaults". We can't use None for this
+# because identify_scenes() treats an explicit None as an error (it signals a caller bug), and we can't use a
+# mutable list literal as a default argument (that would be shared across calls and is a well-known Python
+# foot-gun: https://docs.python-guide.org/writing/gotchas/#mutable-default-arguments).
+_USE_DEFAULT_SCENE_DEFINITIONS = object()
+
+
+def standard_scene_definitions(scene_types: list[str] | None = None) -> list[SceneDefinition]:
+    """Build the standard libera_utils scene definitions, optionally limited to specific types.
+
+    Parameters
+    ----------
+    scene_types : list of str or None
+        Scene types to include, drawn from the keys of :data:`STANDARD_SCENE_DEFINITION_CONFIG_KEYS`
+        (``"trmm"``, ``"erbe"``, ``"unfiltering"``). If None (default), all standard definitions are returned in
+        that dictionary's insertion order.
+
+    Returns
+    -------
+    list[SceneDefinition]
+        The requested standard scene definitions, loaded from the CSV paths configured in ``config.json``.
+
+    Raises
+    ------
+    ValueError
+        If a requested scene type is not a known standard definition.
+    """
+    if scene_types is None:
+        scene_types = list(STANDARD_SCENE_DEFINITION_CONFIG_KEYS)
+
+    definitions: list[SceneDefinition] = []
+    for scene_type in scene_types:
+        if scene_type not in STANDARD_SCENE_DEFINITION_CONFIG_KEYS:
+            raise ValueError(
+                f"Unknown standard scene definition type '{scene_type}'. "
+                f"Valid types are: {sorted(STANDARD_SCENE_DEFINITION_CONFIG_KEYS)}"
+            )
+        config_key = STANDARD_SCENE_DEFINITION_CONFIG_KEYS[scene_type]
+        definitions.append(SceneDefinition(pathlib.Path(config.get(config_key))))
+    return definitions
+
+
+def default_scene_definitions() -> list[SceneDefinition]:
+    """Return the scene definitions applied by :meth:`FootprintData.identify_scenes` when none are specified.
+
+    These are the full set of standard definitions: TRMM, ERBE, and unfiltering.
+
+    Returns
+    -------
+    list[SceneDefinition]
+        The default TRMM, ERBE, and unfiltering scene definitions.
+    """
+    return standard_scene_definitions()
 
 
 class TRMMSurfaceType(enum.IntEnum):
@@ -681,10 +756,7 @@ class FootprintData:
 
     def identify_scenes(
         self,
-        scene_definitions: list[SceneDefinition] = [
-            SceneDefinition(pathlib.Path(config.get("TRMM_SCENE_DEFINITION"))),
-            SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
-        ],
+        scene_definitions: list[SceneDefinition] | None = _USE_DEFAULT_SCENE_DEFINITIONS,  # type: ignore[assignment]
         additional_scene_definitions_files: list[pathlib.Path] | None = None,
         report_bin_bounds: bool = True,
     ):
@@ -695,8 +767,10 @@ class FootprintData:
 
         Parameters
         ----------
-        scene_definitions : list[SceneDefinition]
-            List of SceneDefinition objects from standard libera_utils definitions
+        scene_definitions : list[SceneDefinition] or None, optional
+            List of SceneDefinition objects to apply. If omitted, the default standard definitions are used
+            (TRMM, ERBE, and unfiltering; see :func:`default_scene_definitions`). Passing an explicit ``None`` or
+            an empty list is treated as a caller error and raises ``ValueError``.
         additional_scene_definitions_files : list of pathlib.Path or None
             List of scene definition files containing classification rules for custom analysis.
         report_bin_bounds : bool, optional
@@ -716,13 +790,15 @@ class FootprintData:
 
         Footprints that don't match any scene are assigned a scene ID of 0.
 
-        TODO: LIBSDC-674 - Add unfiltering scene ID algorithm
-
         Examples
         --------
         >>> footprint_data = FootprintData(dataset)
         >>> footprint_data.identify_scenes()
         """
+        # Resolve the default set only when the caller omitted the argument entirely (the sentinel). An explicit
+        # None is still treated as a caller error, preserving the previous contract.
+        if scene_definitions is _USE_DEFAULT_SCENE_DEFINITIONS:
+            scene_definitions = default_scene_definitions()
         if scene_definitions is None:
             raise ValueError("No scene definitions provided.")
         if len(scene_definitions) == 0:
@@ -955,6 +1031,14 @@ class FootprintData:
             clear_area_np = np.array(dataset.groups["Clear_Footprint_Area"].variables["clear_coverage"][:])
             logger.debug(f"Clear area shape: {clear_area_np.shape}")
 
+            # Time of observation, one value per footprint. The downstream Libera SCENE-ID product is written on
+            # the same "RADIOMETER_TIME" axis as its L1B input (see the L1B_RAD product), so we carry the CERES SSF
+            # observation time through the pipeline as the radiometer_time coordinate. In the CERES SSF format the
+            # time is stored as floating-point "days since 1970-01-01 00:00:00" UTC.
+            # Reference: https://ceres.larc.nasa.gov/data/#ssf-level-2
+            observation_time_np = np.array(dataset.groups["Time_and_Position"].variables["time"][:])
+            logger.debug(f"Observation time shape: {observation_time_np.shape}")
+
             logger.info("NetCDF data read successfully")
 
         except KeyError as e:
@@ -987,6 +1071,15 @@ class FootprintData:
             ~np.isnan(cloud_phase_upper), np.round(np.clip(cloud_phase_upper, 1, 2)), cloud_phase_upper
         )
 
+        # Convert the CERES SSF observation time ("days since 1970-01-01") into absolute datetime64[ns] values.
+        # We build the timestamps by adding the (fractional) day offsets to the 1970-01-01 epoch. Using
+        # timedelta64[ns] keeps sub-second precision (the SSF sampling is well under a second apart). The absolute
+        # datetime representation lets write_libera_data_product re-encode it with whatever epoch/units the product
+        # definition specifies (the Libera convention is "nanoseconds since 1958-01-01").
+        ssf_epoch = np.datetime64("1970-01-01T00:00:00", "ns")
+        nanoseconds_per_day = 24 * 60 * 60 * 1_000_000_000
+        radiometer_time = ssf_epoch + (observation_time_np * nanoseconds_per_day).astype("timedelta64[ns]")
+
         # Create xarray Dataset with numpy arrays
         logger.info("Creating xarray Dataset...")
 
@@ -1002,12 +1095,49 @@ class FootprintData:
                 FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], cloud_fraction_upper),
                 FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], cloud_phase_lower),
                 FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], cloud_phase_upper),
+                # radiometer_time is kept as a plain data variable (not a coordinate) at this stage so that it
+                # simply rides along through scene identification. The runner promotes it to the RADIOMETER_TIME
+                # coordinate via to_radiometer_time_product() right before writing the Libera data product.
+                RADIOMETER_TIME_VARIABLE: (["footprint"], radiometer_time),
             }
         )
 
         logger.info(f"Dataset created successfully with {len(parsed_dataset.footprint)} footprints")
 
         return parsed_dataset
+
+    def to_radiometer_time_product(self) -> xr.Dataset:
+        """Return the footprint data reshaped onto the Libera ``RADIOMETER_TIME`` axis.
+
+        The scene-ID CAM/IMAGER/FLASH products contain exactly one footprint per radiometer time and are written
+        on the same ``RADIOMETER_TIME`` dimension as their upstream L1B radiometer product, so downstream consumers
+        can align scene IDs to L1B records positionally. Internally :class:`FootprintData` works on a generic
+        ``footprint`` dimension; this method renames that dimension to ``RADIOMETER_TIME`` and promotes the
+        ``radiometer_time`` variable to a coordinate so the result is ready to hand to
+        :func:`libera_utils.io.netcdf.write_libera_data_product` with ``time_variable="radiometer_time"``.
+
+        Returns
+        -------
+        xr.Dataset
+            A copy of the internal dataset with dimension ``RADIOMETER_TIME`` and coordinate ``radiometer_time``.
+
+        Raises
+        ------
+        ValueError
+            If the ``radiometer_time`` variable is not present (e.g. the instance was built directly from a
+            synthetic dataset that did not include observation times).
+        """
+        if RADIOMETER_TIME_VARIABLE not in self._data.variables:
+            raise ValueError(
+                f"Cannot build a radiometer-time product: '{RADIOMETER_TIME_VARIABLE}' is not present in the "
+                "footprint data. It is populated by FootprintData.from_ceres_ssf(); datasets constructed directly "
+                "must add it themselves."
+            )
+        # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
+        # footprint-dimensioned representation (renaming/set_coords otherwise mutate the shared dataset).
+        product = self._data.rename({FOOTPRINT_DIMENSION: RADIOMETER_TIME_DIMENSION})
+        product = product.set_coords(RADIOMETER_TIME_VARIABLE)
+        return product
 
     def export_to_netcdf(self, netcdf_path):
         self._data.to_netcdf(path=netcdf_path, mode="w")

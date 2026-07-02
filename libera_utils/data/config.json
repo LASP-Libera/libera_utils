@@ -56,5 +56,6 @@
   },
   "TEST_KEY": -999,
   "TRMM_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/trmm.csv",
-  "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/erbe.csv"
+  "ERBE_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/erbe.csv",
+  "UNFILTERING_SCENE_DEFINITION": "{LIBERA_UTILS_DATA_DIR}/scene_definitions/unfiltering.csv"
 }
