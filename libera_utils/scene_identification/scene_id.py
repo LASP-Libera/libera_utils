@@ -21,14 +21,12 @@ from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
 logger = logging.getLogger(__name__)
 
-# Internal dimension name used while footprint data is being processed. It is deliberately generic because the
-# same FootprintData machinery serves several inputs (CERES SSF, and future direct/synthetic datasets).
-FOOTPRINT_DIMENSION = "footprint"
-
-# Names used when emitting a Libera SCENE-ID product. The radiometer-timescale scene-ID products (CAM, IMAGER,
-# FLASH) are written on the "RADIOMETER_TIME" dimension with a "radiometer_time" coordinate to exactly mirror the
-# upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. These constants are shared with the
-# product runner (see libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition YAML.
+# Names used throughout footprint data processing and when emitting a Libera SCENE-ID product. FootprintData
+# carries data on the "RADIOMETER_TIME" dimension from creation onward: the radiometer-timescale scene-ID
+# products (CAM, IMAGER, FLASH) are written on that dimension with a "radiometer_time" coordinate to exactly
+# mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. These constants are shared
+# with the product runner (see libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition
+# YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 RADIOMETER_TIME_VARIABLE = "radiometer_time"
 
@@ -1085,41 +1083,41 @@ class FootprintData:
 
         parsed_dataset = xr.Dataset(
             {
-                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], igbp_surface_type),
-                FootprintVariables.SURFACE_WIND_U: (["footprint"], surface_wind_u_np),
-                FootprintVariables.SURFACE_WIND_V: (["footprint"], surface_wind_v_np),
-                FootprintVariables.CLEAR_AREA: (["footprint"], clear_area_np),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], optical_depth_lower),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], optical_depth_upper),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], cloud_fraction_lower),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], cloud_fraction_upper),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], cloud_phase_lower),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], cloud_phase_upper),
+                FootprintVariables.IGBP_SURFACE_TYPE: ([RADIOMETER_TIME_DIMENSION], igbp_surface_type),
+                FootprintVariables.SURFACE_WIND_U: ([RADIOMETER_TIME_DIMENSION], surface_wind_u_np),
+                FootprintVariables.SURFACE_WIND_V: ([RADIOMETER_TIME_DIMENSION], surface_wind_v_np),
+                FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], clear_area_np),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: ([RADIOMETER_TIME_DIMENSION], optical_depth_lower),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: ([RADIOMETER_TIME_DIMENSION], optical_depth_upper),
+                FootprintVariables.CLOUD_FRACTION_LOWER: ([RADIOMETER_TIME_DIMENSION], cloud_fraction_lower),
+                FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], cloud_fraction_upper),
+                FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], cloud_phase_lower),
+                FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], cloud_phase_upper),
                 # radiometer_time is kept as a plain data variable (not a coordinate) at this stage so that it
                 # simply rides along through scene identification. The runner promotes it to the RADIOMETER_TIME
                 # coordinate via to_radiometer_time_product() right before writing the Libera data product.
-                RADIOMETER_TIME_VARIABLE: (["footprint"], radiometer_time),
+                RADIOMETER_TIME_VARIABLE: ([RADIOMETER_TIME_DIMENSION], radiometer_time),
             }
         )
 
-        logger.info(f"Dataset created successfully with {len(parsed_dataset.footprint)} footprints")
+        logger.info(f"Dataset created successfully with {parsed_dataset.sizes[RADIOMETER_TIME_DIMENSION]} footprints")
 
         return parsed_dataset
 
     def to_radiometer_time_product(self) -> xr.Dataset:
-        """Return the footprint data reshaped onto the Libera ``RADIOMETER_TIME`` axis.
+        """Return the footprint data ready to write on the Libera ``RADIOMETER_TIME`` axis.
 
         The scene-ID CAM/IMAGER/FLASH products contain exactly one footprint per radiometer time and are written
         on the same ``RADIOMETER_TIME`` dimension as their upstream L1B radiometer product, so downstream consumers
-        can align scene IDs to L1B records positionally. Internally :class:`FootprintData` works on a generic
-        ``footprint`` dimension; this method renames that dimension to ``RADIOMETER_TIME`` and promotes the
-        ``radiometer_time`` variable to a coordinate so the result is ready to hand to
+        can align scene IDs to L1B records positionally. :class:`FootprintData` already carries data on the
+        ``RADIOMETER_TIME`` dimension, so this method only promotes the ``radiometer_time`` variable to a
+        coordinate so the result is ready to hand to
         :func:`libera_utils.io.netcdf.write_libera_data_product` with ``time_variable="radiometer_time"``.
 
         Returns
         -------
         xr.Dataset
-            A copy of the internal dataset with dimension ``RADIOMETER_TIME`` and coordinate ``radiometer_time``.
+            A copy of the internal dataset with the ``radiometer_time`` variable promoted to a coordinate.
 
         Raises
         ------
@@ -1134,9 +1132,8 @@ class FootprintData:
                 "must add it themselves."
             )
         # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
-        # footprint-dimensioned representation (renaming/set_coords otherwise mutate the shared dataset).
-        product = self._data.rename({FOOTPRINT_DIMENSION: RADIOMETER_TIME_DIMENSION})
-        product = product.set_coords(RADIOMETER_TIME_VARIABLE)
+        # representation (set_coords otherwise mutates the shared dataset).
+        product = self._data.set_coords(RADIOMETER_TIME_VARIABLE)
         return product
 
     def export_to_netcdf(self, netcdf_path):

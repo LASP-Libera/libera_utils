@@ -212,8 +212,8 @@ def create_and_write_data_product(
     if not PRODUCT_DEFINITION_PATH.exists():
         raise FileNotFoundError(f"SCENE-ID-CAM product definition not found: {PRODUCT_DEFINITION_PATH}")
 
-    # Reshape onto the Libera RADIOMETER_TIME axis (rename the internal "footprint" dimension to RADIOMETER_TIME and
-    # promote radiometer_time to a coordinate) so the product aligns 1:1 with its upstream L1B radiometer product.
+    # Finalize onto the Libera RADIOMETER_TIME axis (promote radiometer_time to a coordinate; the data already
+    # lives on the RADIOMETER_TIME dimension) so the product aligns 1:1 with its upstream L1B radiometer product.
     product_dataset = footprint_data.to_radiometer_time_product()
 
     # Dynamic (per-file) global attributes required by the product definition. Static attributes (ProjectShortName,
