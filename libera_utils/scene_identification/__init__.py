@@ -7,7 +7,7 @@ footprint observed (see the "Footprint Matching and Scene ID" design document, s
 Modules
 -------
 scene_id
-    The :class:`FootprintData` container plus the derived-variable calculations and CERES SSF extraction logic.
+    The :class:`FootprintData` container plus the derived-variable calculations and extraction logic.
 scene_definitions
     :class:`Scene` and :class:`SceneDefinition` — the CSV-backed classification rules (TRMM, ERBE, custom).
 

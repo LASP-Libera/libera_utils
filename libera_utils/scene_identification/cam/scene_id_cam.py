@@ -1,18 +1,4 @@
-"""Scene ID CAM processing code for the Libera radiometer.
-
-This module is the processing entrypoint for the SCENE-ID-CAM data product: the radiometer-timescale,
-lowest-latency (camera / near-real-time) scene-identification product that is available from year 1 of the mission
-(see the "Footprint Matching and Scene ID" design document, section 1.3, "The Five-Mode Data Product Structure").
-
-It is written in the same style as the L1B example runner (``l1b_example/l1b.py``): the algorithm is driven by a
-Libera *manifest*. The input manifest lists the CERES SSF (Single Scanner Footprint) NetCDF file(s) to process;
-the runner classifies each footprint into scene IDs and writes a Libera NetCDF data product plus an output
-manifest into the processing dropbox.
-
-The heavy lifting lives in :mod:`libera_utils.scene_identification.scene_id` (the :class:`FootprintData` class).
-This runner is intentionally thin: its job is to translate between the Libera pipeline's manifest-based I/O
-contract and that algorithm code.
-"""
+"""Scene ID CAM processing code for the Libera radiometer."""
 
 import argparse
 import logging
@@ -35,13 +21,11 @@ from libera_utils.scene_identification.scene_id import standard_scene_definition
 logger = logging.getLogger(__name__)
 
 # Scene classifications produced by the SCENE-ID-CAM product. CAM runs the ERBE and unfiltering classifications
-# (both keyed off surface_type and cloud_fraction) but deliberately not the heavier TRMM classification. Keep this
+# (both keyed off surface_type and cloud_fraction) but deliberately not TRMM classification. Keep this
 # list in sync with the scene_id_* / scene_bin_* variables declared in scene_id_cam.yml.
 SCENE_ID_CAM_SCENE_TYPES = ["erbe", "unfiltering"]
 
-# Path to the SCENE-ID-CAM product definition that ships with libera_utils. Using importlib-free resolution via the
-# installed package keeps this runner independent of the current working directory (important inside a container).
-# The product definition declares the RADIOMETER_TIME axis, variable dtypes, and metadata; see the YAML for detail.
+# Path to the SCENE-ID-CAM product definition that ships with libera_utils.
 PRODUCT_DEFINITION_PATH = (
     Path(__import__("libera_utils").__file__).parent / "data" / "product_definitions" / "scene_id_cam.yml"
 )
@@ -49,10 +33,6 @@ PRODUCT_DEFINITION_PATH = (
 
 def algorithm(manifest_path: Path | S3Path) -> Path | S3Path:
     """Run the SCENE-ID-CAM processing workflow from an input manifest.
-
-    This mirrors the manifest-driven workflow used by the L1B example runner: read the input manifest, process
-    every CERES SSF file it references into scene IDs, write the resulting Libera data product(s), and emit an
-    output manifest describing what was produced.
 
     Parameters
     ----------
@@ -75,8 +55,6 @@ def algorithm(manifest_path: Path | S3Path) -> Path | S3Path:
 
     # Step 1: Read the input manifest.
     logger.info("Step 1: Reading the input manifest file")
-    # When called from the CLI, argparse hands us a Namespace; unwrap the manifest path from it. Otherwise we were
-    # called directly (e.g. from a test) with a path-like object.
     if isinstance(manifest_path, argparse.Namespace):
         manifest = AnyPath(manifest_path.manifest)
     else:
@@ -84,19 +62,18 @@ def algorithm(manifest_path: Path | S3Path) -> Path | S3Path:
     input_manifest = Manifest.from_file(manifest)
     logger.info(f"Loaded manifest with {len(input_manifest.files)} files")
 
-    # The SDC provides the output location via an environment variable so the same image can write to different
-    # dropboxes without code changes. This matches the L1B example's contract.
     dropbox_path = os.getenv("PROCESSING_PATH")
     if not dropbox_path:
         raise ValueError("PROCESSING_PATH environment variable is not set")
 
     # Step 2: Collect the CERES SSF input file(s) from the manifest.
+    # TODO[LIBSDC-673]: read FMATCH-CAM files instead of placeholder CERES SSF files once the FMATCH step is implemented.
     logger.info("Step 2: Collecting CERES SSF input files from the manifest")
     ssf_file_paths = collect_ssf_input_files(input_manifest)
     if not ssf_file_paths:
         raise ValueError("No CERES SSF input files found in the input manifest")
 
-    # Step 3: Run scene identification and write one Libera data product per SSF input.
+    # Step 3: Run scene identification and write data product.
     logger.info("Step 3: Running scene identification and writing data products")
     output_data_file_paths: list[LiberaDataProductFilename] = []
     for ssf_file_path in ssf_file_paths:
@@ -108,7 +85,7 @@ def algorithm(manifest_path: Path | S3Path) -> Path | S3Path:
         )
         output_data_file_paths.append(output_file)
 
-    # Step 4: Create the output manifest from the input manifest (carries provenance/config forward).
+    # Step 4: Create the output manifest from the input manifest.
     logger.info("Step 4: Creating the output manifest")
     output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest)
 
@@ -213,13 +190,9 @@ def create_and_write_data_product(
         raise FileNotFoundError(f"SCENE-ID-CAM product definition not found: {PRODUCT_DEFINITION_PATH}")
 
     # Finalize onto the Libera RADIOMETER_TIME axis (promote radiometer_time to a coordinate; the data already
-    # lives on the RADIOMETER_TIME dimension) so the product aligns 1:1 with its upstream L1B radiometer product.
+    # lives on the RADIOMETER_TIME dimension) so the product aligns 1:1 with its upstream product.
     product_dataset = footprint_data.to_radiometer_time_product()
 
-    # Dynamic (per-file) global attributes required by the product definition. Static attributes (ProjectShortName,
-    # Conventions, ProductID, ...) are filled in automatically from the product definition during conformance.
-    # NOTE: when passing a Dataset (rather than a dict of arrays) to write_libera_data_product, dynamic attributes
-    # must be set on the Dataset directly; the function rejects the dynamic_product_attributes keyword in that case.
     product_dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
     product_dataset.attrs["input_files"] = input_file_name
     # TODO[LIBSDC-673]: source the algorithm version from package metadata once SCENE-ID is versioned/released.
@@ -230,8 +203,6 @@ def create_and_write_data_product(
         data_product_definition=PRODUCT_DEFINITION_PATH,
         data=product_dataset,
         output_path=output_path,
-        # radiometer_time carries the per-footprint observation time; the writer uses it to derive the file's
-        # start/end time for the Libera filename.
         time_variable="radiometer_time",
         strict=True,
     )
