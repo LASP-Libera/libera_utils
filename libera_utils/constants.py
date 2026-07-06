@@ -402,6 +402,22 @@ class ProcessingStepIdentifier(StrEnum):
         """
         return f"{str(self)}-docker-repo"
 
+    @property
+    def l2_team_iam_role(self) -> str | None:
+        """Get the L2 Team IAM role name permitted to push this algorithm's image to its ECR repo.
+
+        L2 (and ADM) algorithms are owned by an L2 team whose IAM role grants ECR push permissions for that
+        algorithm. The role name is unqualified by IAM path (e.g. ``"L2-CloudFraction"``); callers prepend the
+        shared L2 developer path prefix.
+
+        Returns
+        -------
+        str | None
+            The L2 Team IAM role name, or None for steps not owned by an L2 team (e.g. SPICE, L1B, and SDC
+            intermediate steps).
+        """
+        return _L2_TEAM_IAM_ROLE_BY_STEP.get(self)
+
     def get_archive_bucket_name(
         self, account_suffix: str | LiberaAccountSuffix = LiberaAccountSuffix.STAGE
     ) -> str | None:
@@ -449,6 +465,22 @@ class ProcessingStepIdentifier(StrEnum):
             if data_product in step.products:
                 return step
         return None
+
+
+# Maps L2 (and ADM) processing steps to the name of the L2 Team IAM role permitted to push that algorithm's image
+# to its ECR repo. Sibling steps share a team's role (e.g. both cloud-fraction steps -> L2-CloudFraction). Steps not
+# listed here are not owned by an L2 team. Exposed via ProcessingStepIdentifier.l2_team_iam_role.
+_L2_TEAM_IAM_ROLE_BY_STEP: dict[ProcessingStepIdentifier, str] = {
+    ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
+    ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
+    ProcessingStepIdentifier.l2_unfiltered: "L2-Unfiltering",
+    ProcessingStepIdentifier.l2_ssw_toa_osse: "L2-SSW-TOA-Flux",
+    ProcessingStepIdentifier.l2_ssw_toa_erbe: "L2-SSW-TOA-Flux",
+    ProcessingStepIdentifier.l2_ssw_toa_trmm: "L2-SSW-TOA-Flux",
+    ProcessingStepIdentifier.l2_ssw_toa_rt: "L2-SSW-TOA-Flux",
+    ProcessingStepIdentifier.l2_surface_flux: "L2-SFC-Flux",
+    ProcessingStepIdentifier.adm_binning: "L2-ADM",
+}
 
 
 class LiberaApid(IntEnum):

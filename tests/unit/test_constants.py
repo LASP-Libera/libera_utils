@@ -359,6 +359,32 @@ class TestProcessingStepIdentifier:
             assert isinstance(name, str)
             assert name.endswith("-docker-repo")
 
+    def test_l2_team_iam_role_property(self):
+        """Test l2_team_iam_role maps L2/ADM steps to their team role and returns None otherwise."""
+        expected_roles = {
+            ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
+            ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
+            ProcessingStepIdentifier.l2_unfiltered: "L2-Unfiltering",
+            ProcessingStepIdentifier.l2_ssw_toa_osse: "L2-SSW-TOA-Flux",
+            ProcessingStepIdentifier.l2_ssw_toa_erbe: "L2-SSW-TOA-Flux",
+            ProcessingStepIdentifier.l2_ssw_toa_trmm: "L2-SSW-TOA-Flux",
+            ProcessingStepIdentifier.l2_ssw_toa_rt: "L2-SSW-TOA-Flux",
+            ProcessingStepIdentifier.l2_surface_flux: "L2-SFC-Flux",
+            ProcessingStepIdentifier.adm_binning: "L2-ADM",
+        }
+        for step, role in expected_roles.items():
+            assert step.l2_team_iam_role == role
+
+        # Steps not owned by an L2 team return None.
+        for step in (
+            ProcessingStepIdentifier.spice_azel,
+            ProcessingStepIdentifier.spice_jpss,
+            ProcessingStepIdentifier.l1b_rad,
+            ProcessingStepIdentifier.l1b_cam,
+            ProcessingStepIdentifier.int_footprint_scene_id,
+        ):
+            assert step.l2_team_iam_role is None
+
     def test_from_data_product_method(self):
         """Test from_data_product class method"""
         # Test that all products that appear in steps can be found

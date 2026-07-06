@@ -13,6 +13,7 @@ from botocore.exceptions import ClientError
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils.aws.utils import (
+    SDC_EVENT_BUS_PARTIAL_NAME,
     find_bucket_in_account_by_partial_name,
     find_dynamodb_table_in_account_by_partial_name,
     find_event_bus_in_account_by_partial_name,
@@ -25,9 +26,9 @@ from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
 
-# Partial names used to uniquely identify SDC resources by regex search (see find_*_by_partial_name in aws.utils).
+# Partial name used to uniquely identify the SDC Ingest Dropbox bucket by regex search (see find_*_by_partial_name in
+# aws.utils). The SDC event bus partial name is shared via aws.utils.SDC_EVENT_BUS_PARTIAL_NAME.
 INGEST_DROPBOX_BUCKET_PARTIAL_NAME = "ingestdropbox"
-SDC_EVENT_BUS_PARTIAL_NAME = "LiberaSDCEventBus"
 DATA_AVAILABILITY_TABLE_PARTIAL_NAME = "DataAvailabilityTable"
 FILE_METADATA_TABLE_PARTIAL_NAME = "FileMetadataTable"
 
