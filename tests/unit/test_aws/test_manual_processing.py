@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 from datetime import datetime
 from unittest.mock import patch
 
@@ -59,6 +60,20 @@ class TestStepFunctionTrigger:
         _, detail = _detail_from_capture(captured)
         assert detail["start_processing_step_ids"] == ["l1b-cam"]
         assert detail["applicable_dates"] == ["2030-01-01"]
+
+    @patch("libera_utils.aws.manual_processing._verify_start_nodes_running")
+    @patch("libera_utils.aws.manual_processing._verify_jobs_created")
+    def test_verify_checks_job_created_and_start_node_running(
+        self, mock_verify_created, mock_verify_running, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """With verify=True, step-function-trigger confirms job creation AND its start node reaches RUNNING."""
+        session, _ = make_event_capturing_session()
+        job_ids = mp.step_function_trigger("l1b-rad", "2030-01-01", boto_session=session, verify=True)
+
+        mock_verify_created.assert_called_once()
+        mock_verify_running.assert_called_once()
+        assert mock_verify_running.call_args.args[0] == job_ids
+        assert mock_verify_running.call_args.args[1] == [ProcessingStepIdentifier.l1b_rad]
 
 
 class TestStartManualProcessing:
@@ -157,15 +172,30 @@ class TestStartManualProcessing:
         with pytest.raises(RuntimeError, match="Failed to put ManualProcessing event"):
             mp.start_manual_processing(["2026-06-01"], boto_session=session, verify=False)
 
+    @patch("libera_utils.aws.manual_processing._verify_start_nodes_running")
+    @patch("libera_utils.aws.manual_processing._verify_jobs_created")
+    def test_verify_skips_start_node_running_check(
+        self, mock_verify_created, mock_verify_running, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """General manual-processing verification confirms job creation but does not check node RUNNING status."""
+        session, _ = make_event_capturing_session()
+        mp.start_manual_processing(
+            ["2026-06-01"], boto_session=session, start_processing_step_ids=["l1b-rad"], verify=True
+        )
+
+        mock_verify_created.assert_called_once()
+        mock_verify_running.assert_not_called()
+
 
 class TestVerifyJobsCreated:
-    """Tests for the Coordination Table verification helper directly."""
+    """Tests for the job-creation verification helper (used by both CLIs)."""
 
-    def test_found(self, make_coordination_table):
+    def test_job_metadata_found(self, make_coordination_table):
+        """The helper confirms job creation via the #JOBMETADATA record."""
         session = boto3.Session(profile_name="test-profile")
         _, seed = make_coordination_table
         job_id = _ulid()
-        seed(job_id)
+        seed(job_id)  # #JOBMETADATA record
         # Should not raise.
         mp._verify_jobs_created([job_id], boto_session=session, wait_time=5)
 
@@ -175,6 +205,44 @@ class TestVerifyJobsCreated:
         # Not seeded; wait_time=0 makes the poll loop exit immediately.
         mp._verify_jobs_created([job_id], boto_session=session, wait_time=0)
         assert any("did not appear" in record.message for record in caplog.records)
+
+
+class TestVerifyStartNodesRunning:
+    """Tests for the start-node RUNNING verification helper (used only by step-function-trigger)."""
+
+    @pytest.mark.parametrize("status", ["RUNNING", "SUCCEEDED"])
+    def test_start_node_running_succeeds(self, make_coordination_table, status):
+        """A start node in RUNNING (or SUCCEEDED) is verified without warnings."""
+        session = boto3.Session(profile_name="test-profile")
+        _, seed = make_coordination_table
+        job_id = _ulid()
+        seed(job_id, sort_key="l1b-rad", status=status)
+        mp._verify_start_nodes_running([job_id], [ProcessingStepIdentifier.l1b_rad], boto_session=session, wait_time=5)
+
+    @pytest.mark.parametrize(
+        ("status", "match"),
+        [
+            ("NOTRUN", "reached final status NOTRUN.*input data products"),
+            ("FAILED", "reached final status FAILED"),
+        ],
+    )
+    def test_start_node_final_non_running_warns(self, make_coordination_table, caplog, status, match):
+        """A start node that reaches NOTRUN/FAILED is warned about (not raised); NOTRUN mentions missing inputs."""
+        session = boto3.Session(profile_name="test-profile")
+        _, seed = make_coordination_table
+        job_id = _ulid()
+        seed(job_id, sort_key="l1b-rad", status=status)
+        mp._verify_start_nodes_running([job_id], [ProcessingStepIdentifier.l1b_rad], boto_session=session, wait_time=5)
+        assert any(re.search(match, record.message) for record in caplog.records)
+
+    def test_start_node_stuck_pending_warns(self, make_coordination_table, caplog):
+        """A start node still PENDING at timeout is warned about, not raised."""
+        session = boto3.Session(profile_name="test-profile")
+        _, seed = make_coordination_table
+        job_id = _ulid()
+        seed(job_id, sort_key="l1b-rad", status="PENDING")
+        mp._verify_start_nodes_running([job_id], [ProcessingStepIdentifier.l1b_rad], boto_session=session, wait_time=0)
+        assert any("did not reach RUNNING" in record.message for record in caplog.records)
 
 
 class TestValidateDagConfig:
@@ -226,13 +294,6 @@ class TestValidateDagConfig:
         node["upstream-nodes"] = ["l1b-cam"]
         with pytest.raises(ValueError, match="not a key in the DAG nodes"):
             mp._validate_dag_config({"nodes": {"l1b-rad": node}})
-
-
-def test_get_state_machine_console_url():
-    """The console URL embeds the deterministic state machine ARN and region."""
-    url = mp.get_state_machine_console_url(ProcessingStepIdentifier.l1b_rad, "123456789012", "us-west-2")
-    assert "arn:aws:states:us-west-2:123456789012:stateMachine:l1b-rad-processing-step-function" in url
-    assert url.startswith("https://us-west-2.console.aws.amazon.com/states/home?region=us-west-2")
 
 
 @patch("libera_utils.aws.manual_processing.step_function_trigger")
@@ -300,3 +361,60 @@ def test_manual_processing_cli_handler(mock_get_session, mock_start, tmp_path):
         verify=True,
         wait_time=60,
     )
+
+
+def _manual_processing_args(applicable_dates):
+    """Build a manual-processing Namespace with the given dates and otherwise-default options."""
+    return argparse.Namespace(
+        func=mp.manual_processing_cli_handler,
+        applicable_dates=applicable_dates,
+        dag_config=None,
+        start_steps=None,
+        process_downstream=True,
+        wait_time=60,
+        verify=False,
+        profile=None,
+    )
+
+
+@pytest.mark.parametrize("confirmation", ["yes", "Y"])
+@patch("builtins.input")
+@patch("libera_utils.aws.manual_processing.start_manual_processing")
+@patch("libera_utils.aws.manual_processing.get_l2_team_role_session")
+def test_manual_processing_cli_handler_many_dates_confirmed(mock_get_session, mock_start, mock_input, confirmation):
+    """More than 3 applicable dates prompts for confirmation and proceeds when the user confirms."""
+    mock_input.return_value = confirmation
+    dates = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]
+
+    mp.manual_processing_cli_handler(_manual_processing_args(dates))
+
+    mock_input.assert_called_once()
+    mock_start.assert_called_once()
+    assert mock_start.call_args.args[0] == dates
+
+
+@patch("builtins.input", return_value="no")
+@patch("libera_utils.aws.manual_processing.start_manual_processing")
+@patch("libera_utils.aws.manual_processing.get_l2_team_role_session")
+def test_manual_processing_cli_handler_many_dates_aborted(mock_get_session, mock_start, mock_input):
+    """More than 3 applicable dates aborts (no session, no submission) when the user does not confirm."""
+    dates = ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]
+
+    mp.manual_processing_cli_handler(_manual_processing_args(dates))
+
+    mock_input.assert_called_once()
+    mock_get_session.assert_not_called()
+    mock_start.assert_not_called()
+
+
+@patch("builtins.input")
+@patch("libera_utils.aws.manual_processing.start_manual_processing")
+@patch("libera_utils.aws.manual_processing.get_l2_team_role_session")
+def test_manual_processing_cli_handler_three_dates_no_prompt(mock_get_session, mock_start, mock_input):
+    """Three or fewer applicable dates do not trigger the confirmation prompt."""
+    dates = ["2026-06-01", "2026-06-02", "2026-06-03"]
+
+    mp.manual_processing_cli_handler(_manual_processing_args(dates))
+
+    mock_input.assert_not_called()
+    mock_start.assert_called_once()

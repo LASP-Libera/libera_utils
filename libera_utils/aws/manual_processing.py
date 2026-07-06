@@ -49,6 +49,14 @@ DEFAULT_AWS_REGION = "us-west-2"
 # How long to wait between Coordination Table polls when verifying job creation.
 VERIFY_POLL_INTERVAL_SECONDS = 5
 
+# Node statuses (Coordination Table "status" attribute) that mean a start node has been scheduled to run.
+_RUNNING_NODE_STATUSES = frozenset({"RUNNING", "SUCCEEDED"})
+# Final node statuses that mean a start node did not run (or failed). Reported as warnings, not errors.
+_FINAL_NON_RUNNING_NODE_STATUSES = frozenset({"NOTRUN", "FAILED"})
+
+# Number of applicable dates above which the manual-processing CLI asks the user to confirm before submitting.
+MAX_UNCONFIRMED_APPLICABLE_DATES = 3
+
 # Kebab-case keys allowed on a custom DAG node. The SDC model rejects snake_case, so we do too (early validation).
 _REQUIRED_NODE_KEYS = frozenset({"description", "output-products", "input-products", "upstream-nodes"})
 _OPTIONAL_NODE_KEYS = frozenset({"algorithm-version"})
@@ -62,14 +70,6 @@ def _to_date(value: str | date | datetime) -> date:
     if isinstance(value, datetime):
         value = value.date()
     return value
-
-
-def _validate_product_id(product_id: str, node_id: str, field: str) -> None:
-    """Validate that a product id is a known DataProductIdentifier, raising a clear error if not."""
-    try:
-        DataProductIdentifier(product_id)
-    except ValueError as err:
-        raise ValueError(f"Invalid data product id '{product_id}' in node '{node_id}' {field}.") from err
 
 
 def _validate_dag_config(dag: dict) -> None:
@@ -115,11 +115,19 @@ def _validate_dag_config(dag: dict) -> None:
             raise ValueError(f"Node '{node_id}' is missing required key(s) {sorted(missing_keys)}.")
 
         for product in node["output-products"]:
-            _validate_product_id(product, node_id, "output-products")
+            try:
+                DataProductIdentifier(product)
+            except ValueError as err:
+                raise ValueError(f"Invalid data product id '{product}' in node '{node_id}' output-products.") from err
         for input_product in node["input-products"]:
             if not isinstance(input_product, dict) or "id" not in input_product:
                 raise ValueError(f"Each entry in node '{node_id}' input-products must be a mapping with an 'id' key.")
-            _validate_product_id(input_product["id"], node_id, "input-products")
+            try:
+                DataProductIdentifier(input_product["id"])
+            except ValueError as err:
+                raise ValueError(
+                    f"Invalid data product id '{input_product['id']}' in node '{node_id}' input-products."
+                ) from err
         for upstream in node["upstream-nodes"]:
             if upstream not in node_ids:
                 raise ValueError(
@@ -127,68 +135,18 @@ def _validate_dag_config(dag: dict) -> None:
                 )
 
 
-def get_state_machine_console_url(step: ProcessingStepIdentifier, account_id: str, region: str) -> str:
-    """Build the AWS Console URL for a processing step's Step Function state machine.
-
-    We can no longer link directly to a specific execution (the SDC orchestrator starts and names the execution, so the
-    CLI never sees its ARN), but the state machine ARN is deterministic from the processing step. The returned URL
-    points at the state machine's view page, where the triggered execution appears once the job starts.
-
-    Parameters
-    ----------
-    step : ProcessingStepIdentifier
-        The processing step whose state machine to link to.
-    account_id : str
-        The AWS account ID hosting the state machine.
-    region : str
-        The AWS region hosting the state machine.
-
-    Returns
-    -------
-    str
-        The AWS Console URL for the state machine.
-    """
-    state_machine_arn = f"arn:aws:states:{region}:{account_id}:stateMachine:{step.step_function_name}"
-    return (
-        f"https://{region}.console.aws.amazon.com/states/home?region={region}#/statemachines/view/{state_machine_arn}"
-    )
-
-
-def _log_monitoring_urls(
-    start_processing_step_ids: list[ProcessingStepIdentifier] | None, *, boto_session: boto3.Session
-) -> None:
-    """Log AWS Console URL(s) the user can use to monitor the triggered processing.
-
-    When the start nodes are known, one state machine URL is logged per start node. Otherwise (default-DAG root nodes
-    or a many-node custom DAG) a generic Step Functions console link is logged.
-    """
-    account_id = boto_session.client("sts").get_caller_identity()["Account"]
-    region = boto_session.region_name or DEFAULT_AWS_REGION
-
-    if start_processing_step_ids:
-        for step in start_processing_step_ids:
-            logger.info(
-                f"View the '{step}' step function (executions appear once the job starts): "
-                f"{get_state_machine_console_url(step, account_id, region)}"
-            )
-    else:
-        logger.info(
-            "View the Step Functions console to monitor executions: "
-            f"https://{region}.console.aws.amazon.com/states/home?region={region}#/statemachines"
-        )
-
-
 def _verify_jobs_created(job_ids: list[ULID], *, boto_session: boto3.Session, wait_time: float) -> None:
     """Poll the SDC Coordination Table to confirm a job metadata record exists for each job id.
 
     This is a basic check that the event was well-formed enough for the Job Creator to create the job(s). It does not
     guarantee the processing will succeed, since the job can still fail after creation. Jobs that do not appear within
-    ``wait_time`` are logged as warnings rather than raising, since job creation is asynchronous.
+    ``wait_time`` are logged as warnings rather than raising, since job creation is asynchronous. Used by both the
+    ``manual-processing`` and ``step-function-trigger`` CLIs.
 
     Parameters
     ----------
     job_ids : list[ULID]
-        The job ids to look for (PK of the metadata record).
+        The job ids to look for (PK of the metadata record), one per applicable date.
     boto_session : boto3.Session
         Boto3 session used to discover and read the Coordination Table.
     wait_time : float
@@ -201,8 +159,7 @@ def _verify_jobs_created(job_ids: list[ULID], *, boto_session: boto3.Session, wa
     deadline = time.monotonic() + wait_time
     while pending and time.monotonic() < deadline:
         for job_id in list(pending):
-            response = table.get_item(Key={"PK": job_id, "SK": JOB_METADATA_SORT_KEY})
-            if "Item" in response:
+            if "Item" in table.get_item(Key={"PK": job_id, "SK": JOB_METADATA_SORT_KEY}):
                 logger.info(f"Verified job {job_id} was created in the Coordination Table ({table_name}).")
                 pending.discard(job_id)
         if pending:
@@ -212,6 +169,70 @@ def _verify_jobs_created(job_ids: list[ULID], *, boto_session: boto3.Session, wa
         logger.warning(
             f"Job {job_id} did not appear in the Coordination Table ({table_name}) within {wait_time} seconds. "
             f"The event may still be processing; check the AWS console for job status."
+        )
+
+
+def _verify_start_nodes_running(
+    job_ids: list[ULID],
+    start_processing_step_ids: list[ProcessingStepIdentifier],
+    *,
+    boto_session: boto3.Session,
+    wait_time: float,
+) -> None:
+    """Poll the SDC Coordination Table to confirm each job's start node(s) move from PENDING to RUNNING.
+
+    For each job, this waits for every start node record (``PK=job_id``, ``SK=<processing-step-id>``) to move from
+    PENDING to RUNNING; SUCCEEDED is also accepted in case a node finishes very quickly. A node that reaches a final
+    non-running state (NOTRUN or FAILED) or never leaves PENDING within ``wait_time`` is logged as a warning rather
+    than raising, since node scheduling is asynchronous. A common cause of NOTRUN is that the node's input data
+    products are not yet available in the SDC.
+
+    This is used only by the ``step-function-trigger`` CLI, which runs a single node for a single applicable date.
+    General ``manual-processing`` runs only confirm job creation (see ``_verify_jobs_created``).
+
+    Parameters
+    ----------
+    job_ids : list[ULID]
+        The job ids to check, one per applicable date.
+    start_processing_step_ids : list[ProcessingStepIdentifier]
+        The start nodes to check the status of within each job graph.
+    boto_session : boto3.Session
+        Boto3 session used to discover and read the Coordination Table.
+    wait_time : float
+        Maximum number of seconds to wait.
+    """
+    table_name = find_dynamodb_table_in_account_by_partial_name(boto_session, COORDINATION_TABLE_PARTIAL_NAME)
+    table = boto_session.resource("dynamodb").Table(table_name)
+
+    pending = {(str(job_id), str(step)) for job_id in job_ids for step in start_processing_step_ids}
+    deadline = time.monotonic() + wait_time
+    while pending and time.monotonic() < deadline:
+        for job_id, step in list(pending):
+            item = table.get_item(Key={"PK": job_id, "SK": step}).get("Item")
+            if item is None:
+                continue  # node record not created yet
+            status = item.get("status")
+            if status in _RUNNING_NODE_STATUSES:
+                logger.info(f"Verified start node '{step}' for job {job_id} is {status}.")
+                pending.discard((job_id, step))
+            elif status in _FINAL_NON_RUNNING_NODE_STATUSES:
+                reason = (
+                    " This commonly means the node's input data products are not yet available in the SDC."
+                    if status == "NOTRUN"
+                    else ""
+                )
+                logger.warning(
+                    f"Start node '{step}' for job {job_id} reached final status {status} without running.{reason}"
+                )
+                pending.discard((job_id, step))
+            # otherwise still PENDING (or an unknown status); keep waiting
+        if pending:
+            time.sleep(VERIFY_POLL_INTERVAL_SECONDS)
+
+    for job_id, step in pending:
+        logger.warning(
+            f"Start node '{step}' for job {job_id} did not reach RUNNING within {wait_time} seconds (still PENDING or "
+            f"the node record was never created). Check the AWS console for job status."
         )
 
 
@@ -315,7 +336,24 @@ def start_manual_processing(
         f"{[d.isoformat() for d in normalized_dates]}."
     )
 
-    _log_monitoring_urls(normalized_steps, boto_session=boto_session)
+    # Log AWS Console URL(s) for monitoring. The SDC orchestrator starts and names executions, so we link to the state
+    # machine's view page (not a specific execution); the triggered execution appears there once the job starts. When
+    # the start nodes are known, one state machine URL is logged per start node; otherwise a generic console link.
+    account_id = boto_session.client("sts").get_caller_identity()["Account"]
+    region = boto_session.region_name or DEFAULT_AWS_REGION
+    if normalized_steps:
+        for step in normalized_steps:
+            state_machine_arn = f"arn:aws:states:{region}:{account_id}:stateMachine:{step.step_function_name}"
+            logger.info(
+                f"View the '{step}' step function (executions appear once the job starts): "
+                f"https://{region}.console.aws.amazon.com/states/home?region={region}"
+                f"#/statemachines/view/{state_machine_arn}"
+            )
+    else:
+        logger.info(
+            "View the Step Functions console to monitor executions: "
+            f"https://{region}.console.aws.amazon.com/states/home?region={region}#/statemachines"
+        )
 
     if verify:
         _verify_jobs_created(job_ids, boto_session=boto_session, wait_time=wait_time)
@@ -347,10 +385,10 @@ def step_function_trigger(
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions.
     verify : bool, optional
-        When True, poll the Coordination Table to confirm the job was created. Defaults to False. The step function
-        console URL is logged regardless of this flag.
+        When True, poll the Coordination Table to confirm the job was created and that its single start node moves
+        from PENDING to RUNNING. Defaults to False. The step function console URL is logged regardless of this flag.
     wait_time : float, optional
-        Maximum seconds to wait when verifying job creation, by default 60.
+        Maximum seconds to wait for each verification stage (job creation, then start node running), by default 60.
 
     Returns
     -------
@@ -362,7 +400,7 @@ def step_function_trigger(
         if isinstance(algorithm_name, ProcessingStepIdentifier)
         else ProcessingStepIdentifier(algorithm_name)
     )
-    return start_manual_processing(
+    job_ids = start_manual_processing(
         [_to_date(applicable_day)],
         boto_session=boto_session,
         start_processing_step_ids=[step],
@@ -370,6 +408,11 @@ def step_function_trigger(
         verify=verify,
         wait_time=wait_time,
     )
+    # Unlike general manual-processing runs, a single-step trigger also confirms its one start node actually starts
+    # running (a common failure is the job being created but the node never leaving PENDING due to missing inputs).
+    if verify:
+        _verify_start_nodes_running(job_ids, [step], boto_session=boto_session, wait_time=wait_time)
+    return job_ids
 
 
 def step_function_trigger_cli_handler(parsed_args: argparse.Namespace) -> None:
@@ -413,6 +456,20 @@ def manual_processing_cli_handler(parsed_args: argparse.Namespace) -> None:
     )
     logger.debug(f"CLI args: {parsed_args}")
 
+    applicable_dates = parsed_args.applicable_dates
+
+    # Guard against accidentally submitting a huge processing run (e.g. a year of data). One job is created per date.
+    if len(applicable_dates) > MAX_UNCONFIRMED_APPLICABLE_DATES:
+        confirmation = input(
+            f"You are about to submit manual processing for {len(applicable_dates)} applicable dates "
+            f"({', '.join(applicable_dates)}), creating one job per date. Type 'y' or 'yes' to continue: "
+        )
+        if confirmation.strip().lower() not in ("y", "yes"):
+            logger.info(
+                "Aborted: user did not confirm manual processing for %d applicable dates.", len(applicable_dates)
+            )
+            return
+
     custom_dag_config = None
     if parsed_args.dag_config:
         custom_dag_config = json.loads(AnyPath(parsed_args.dag_config).read_text())
@@ -423,7 +480,7 @@ def manual_processing_cli_handler(parsed_args: argparse.Namespace) -> None:
 
     boto_session = get_l2_team_role_session(profile_name=parsed_args.profile)
     start_manual_processing(
-        parsed_args.applicable_dates,
+        applicable_dates,
         boto_session=boto_session,
         custom_dag_config=custom_dag_config,
         start_processing_step_ids=start_processing_step_ids,

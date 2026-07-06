@@ -282,8 +282,12 @@ def make_coordination_table(mock_s3_context_with_profile):
     )
     table = session.resource("dynamodb", region_name=session.region_name).Table(table_name)
 
-    def _seed(job_id) -> None:
-        table.put_item(Item={"PK": str(job_id), "SK": "#JOBMETADATA", "created-time": "2026-06-24T00:00:00Z"})
+    def _seed(job_id, sort_key: str = "#JOBMETADATA", **attributes) -> None:
+        """Write a Coordination Table item. Defaults to a #JOBMETADATA record; pass ``sort_key`` (a node id) and
+        e.g. ``status="RUNNING"`` to seed a node record."""
+        item = {"PK": str(job_id), "SK": sort_key}
+        item.update(attributes)
+        table.put_item(Item=item)
 
     return table_name, _seed
 

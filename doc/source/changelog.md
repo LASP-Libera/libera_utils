@@ -2,9 +2,8 @@
 
 ## 5.8.6
 
-- FEAT: `step-function-trigger` no longer calls the AWS Step Functions API directly. It now emits a single `ManualProcessing` event to the SDC event bus (`LiberaSDCEventBus`), running the requested step through the SDC's standard event-driven orchestration. It uses the default DAG with `process_downstream=False` and the step as the start node, so input/output products come from the SDC and no custom DAG is needed. Input products must already be ingested.
-- FEAT: Add `manual-processing` CLI for submitting arbitrary custom DAGs (or the default DAG, for reprocessing) for one or more applicable dates.
-- FEAT: `ecr-upload` now assumes the algorithm's L2 Team Role (via `get_l2_team_role_session`) when uploading an L2 (or ADM) image, so non-admin L2 developers can push to their algorithm's ECR repo without admin permissions. The role is selected per `ProcessingStepIdentifier.l2_team_iam_role` (e.g. `l2-cf-rad`/`l2-cf-cam` → `L2Developer/L2-CloudFraction`); non-L2 steps (SPICE, L1B, scene-id) use the default/`--profile` session unchanged. If the base profile can't assume the required role, the handler logs guidance naming the required L2 Team Role and re-raises. Removes the now-unused `get_aws_account_number` from `aws/utils.py` (the ECR account id is derived from the session).
+- FEAT: Manual processing now runs through the SDC event bus instead of triggering Step Functions directly. `step-function-trigger` emits a `ManualProcessing` event for a single step, and a new `manual-processing` CLI submits arbitrary custom DAGs (or the default DAG) across one or more dates, with an optional `--verify` that polls the Coordination Table.
+- FEAT: `ecr-upload` assumes the algorithm's per-team L2 Team Role for L2/ADM images so non-admin L2 developers can push to their ECR repos; non-L2 steps use the default/`--profile` session unchanged.
 
 ## 5.8.5
 
