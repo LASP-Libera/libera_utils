@@ -11,7 +11,7 @@
       },
       "spk_type": "INTERP_LAGRANGE_EVEN",
       "polynom_degree": 1,
-      "frame_kernel": "libera_v01.frames.fk.tf"
+      "frame_kernel": "libera.frames.fk.tf"
     }
   },
   "input_data": {

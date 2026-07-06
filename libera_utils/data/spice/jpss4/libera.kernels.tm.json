@@ -44,9 +44,9 @@
     }
   },
   "mission_kernels": [
-    "libera_v01.frames.fk.tf",
-    "libera_v01.instruments.ik.ti",
-    "jpss4_v01.fakeclock.sclk.tsc"
+    "libera.frames.fk.tf",
+    "libera.instruments.ik.ti",
+    "jpss4.fakeclock.sclk.tsc"
   ],
   "sds_kernels": []
 }

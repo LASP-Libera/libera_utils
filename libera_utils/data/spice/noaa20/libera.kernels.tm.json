@@ -44,9 +44,9 @@
     }
   },
   "mission_kernels": [
-    "libera_v01.frames.fk.tf",
-    "libera_v01.instruments.ik.ti",
-    "noaa20_v01.fakeclock.sclk.tsc"
+    "libera.frames.fk.tf",
+    "libera.instruments.ik.ti",
+    "noaa20.fakeclock.sclk.tsc"
   ],
   "sds_kernels": [
     "earth_assoc_itrf93.tf",

@@ -10,8 +10,8 @@
       "input_angular_rate": "MAKE UP",
       "input_gap_threshold": "30s",
       "ck_type": "LINEAR_QUAT",
-      "frame_kernel": "libera_v01.frames.fk.tf",
-      "clock_kernel": "noaa20_v01.fakeclock.sclk.tsc"
+      "frame_kernel": "libera.frames.fk.tf",
+      "clock_kernel": "noaa20.fakeclock.sclk.tsc"
     }
   },
   "input_data": null,
