@@ -610,3 +610,64 @@ class TestEncoderCorrection:
         kernel_maker.reverse_encoder_corrections(df)
 
         pd.testing.assert_frame_equal(df, before)
+
+    def test_golden_reference_values(self, test_data_path):
+        """Our Az/El correction reproduces independently-computed reference values (LIBSDC-668).
+
+        Golden test against a CSV of raw and corrected mechanism angles (radians) produced by an
+        independent implementation of the correction equations. Skipped until that file is delivered.
+        Validates that the equations are coded correctly here, not their physical correctness (which
+        comes from the engineering characterization).
+        """
+        golden_csv = test_data_path / "encoder_correction" / "encoder_correction_golden.csv"
+        if not golden_csv.exists():
+            pytest.skip(f"Awaiting independently-computed validation data at {golden_csv}")
+
+        golden = pd.read_csv(golden_csv)
+        # Column names and tolerance to reconcile with the delivered file; equations operate in radians.
+        np.testing.assert_allclose(
+            kernel_maker.correct_azimuth(golden["az_raw_rad"].to_numpy()),
+            golden["az_corrected_rad"].to_numpy(),
+            atol=1e-6,
+        )
+        np.testing.assert_allclose(
+            kernel_maker.correct_elevation(golden["el_raw_rad"].to_numpy()),
+            golden["el_corrected_rad"].to_numpy(),
+            atol=1e-6,
+        )
+
+
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V2-5-2")
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.libera_spice.spice_utils.make_kernel", return_value=AnyPath("/fake/kernel.bc"))
+@mock.patch("libera_utils.kernel_maker.KernelManager")
+def test_create_kernel_from_l1a_applies_encoder_corrections(mock_kernel_manager_class, mock_make_kernel, mock_version):
+    """create_kernel_from_l1a corrects the raw Az/El encoder angles before handing them to make_kernel."""
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    mock_kernel_manager_class.return_value = mock.Mock()
+
+    raw_az = np.array([0.1, 0.5, 1.0])
+    raw_el = np.array([0.2, 0.6, 1.1])
+    raw_df = pd.DataFrame(
+        {
+            "AXIS_SAMPLE_ICIE_ET": [10.0, 20.0, 30.0],
+            kernel_maker.AZ_ENCODER_FIELD: raw_az.copy(),
+            kernel_maker.EL_ENCODER_FIELD: raw_el.copy(),
+        }
+    )
+    time_range = (datetime.fromisoformat("2020-01-01T00:00:00"), datetime.fromisoformat("2020-01-01T23:59:59"))
+
+    with mock.patch("libera_utils.kernel_maker.create_kernel_dataframe_from_l1a", return_value=(raw_df, time_range)):
+        kernel_maker.create_kernel_from_l1a(
+            l1a_data=xr.Dataset(),
+            kernel_identifier=DataProductIdentifier("AZROT-CK"),
+            output_dir="/fake/dropbox",
+            overwrite=False,
+        )
+
+    passed_df = mock_make_kernel.call_args.kwargs["input_data"]
+    np.testing.assert_allclose(passed_df[kernel_maker.AZ_ENCODER_FIELD], kernel_maker.correct_azimuth(raw_az))
+    np.testing.assert_allclose(passed_df[kernel_maker.EL_ENCODER_FIELD], kernel_maker.correct_elevation(raw_el))
+    # The correction is a genuine change, not a pass-through.
+    assert not np.allclose(passed_df[kernel_maker.AZ_ENCODER_FIELD], raw_az)
+    assert not np.allclose(passed_df[kernel_maker.EL_ENCODER_FIELD], raw_el)

@@ -21,16 +21,19 @@ Preparation:
 """
 
 import shutil
+from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
+import xarray as xr
 from curryer import meta, spicetime
 from curryer import spicierpy as sp
 
-from libera_utils import time
+from libera_utils import kernel_maker, time
 from libera_utils.config import config
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
@@ -278,3 +281,62 @@ def test_make_spacecraft_azel_kernels(
             el_angles.append(sp.m2eul(tmat, 1, 2, 3)[0])
         el_angles = np.array(el_angles)
         npt.assert_allclose(noaa20_azel_data["ICIE__AXIS_EL_FILT"].values, el_angles, rtol=7e-5)
+
+
+def test_make_spacecraft_azel_kernels_apply_encoder_correction(
+    noaa20_environment,
+    curryer_lsk,
+    noaa20_azel_data,
+    short_tmp_path,
+    spice_test_data_path,
+    monkeypatch,
+):
+    """Az/El CKs built through create_kernel_from_l1a recover telemetry + correction (LIBSDC-668).
+
+    Drives the production create_kernel_from_l1a path with raw CERES angles (mocking only the L1A read)
+    so the deterministic encoder correction is applied during kernel generation, then queries the CKs
+    and checks the recovered mechanism angle equals correct(raw), not the raw telemetry.
+    """
+    assert not sorted(short_tmp_path.glob("*"))
+    assert shutil.which("msopck")
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+
+    raw_az = noaa20_azel_data["ICIE__AXIS_AZ_FILT"].to_numpy()
+    raw_el = noaa20_azel_data["ICIE__AXIS_EL_FILT"].to_numpy()
+    et_times = noaa20_azel_data["AXIS_SAMPLE_ICIE_ET"].to_numpy()
+    utc_range = (datetime.fromisoformat("2021-04-09T12:00:06"), datetime.fromisoformat("2021-04-09T12:02:05"))
+
+    # Build the CKs via the production L1A path. Each call gets a fresh copy of the raw data so the
+    # in-place correction is applied exactly once per kernel.
+    generated_kernels = []
+    with mock.patch(
+        "libera_utils.kernel_maker.create_kernel_dataframe_from_l1a",
+        side_effect=lambda *a, **k: (noaa20_azel_data.copy(), utc_range),
+    ):
+        for dpi in ("AZROT-CK", "ELSCAN-CK"):
+            generated_kernels.append(
+                kernel_maker.create_kernel_from_l1a(xr.Dataset(), dpi, short_tmp_path, overwrite=True)
+            )
+
+    mkrn = meta.MetaKernel.from_json(config.get("LIBERA_KERNEL_META"), relative=True, sds_dir=spice_test_data_path)
+
+    with sp.ext.load_kernel([mkrn.mission_kernels, generated_kernels]):
+        az_recovered = (
+            np.array([sp.m2eul(sp.pxform("LIBERA_BASE_COORD", "LIBERA_AZ_COORD", et), 1, 2, 3)[2] for et in et_times])
+            + 2 * np.pi
+        )
+        el_recovered = np.array(
+            [sp.m2eul(sp.pxform("LIBERA_AZ_COORD", "LIBERA_EL_COORD", et), 1, 2, 3)[0] for et in et_times]
+        )
+
+        # Recovered angle equals telemetry + correction, not the raw telemetry.
+        npt.assert_allclose(az_recovered, kernel_maker.correct_azimuth(raw_az))
+        npt.assert_allclose(el_recovered, kernel_maker.correct_elevation(raw_el), rtol=7e-5)
+        # The correction is genuinely present (elevation amplitude ~4.6e-4 rad, well above CK round-trip noise).
+        assert np.max(np.abs(el_recovered - raw_el)) > 1e-4
+
+        # Between telemetered samples the CK interpolates the corrected angles.
+        mid_et = 0.5 * (et_times[0] + et_times[1])
+        el_mid = sp.m2eul(sp.pxform("LIBERA_AZ_COORD", "LIBERA_EL_COORD", mid_et), 1, 2, 3)[0]
+        lo, hi = sorted(kernel_maker.correct_elevation(raw_el[:2]))
+        assert lo - 1e-5 <= el_mid <= hi + 1e-5
