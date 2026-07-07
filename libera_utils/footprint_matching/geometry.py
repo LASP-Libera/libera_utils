@@ -22,9 +22,9 @@ angle truncation), which raises :class:`PartialFootprintError`.
 Earth model: WGS84 ellipsoid (ECEF ray-trace)
 ---------------------------------------------
 The footprint is anchored at the reported L1B footprint latitude/longitude (the
-box centre). From the viewing zenith angle and the bearing toward the subsatellite
+box center). From the viewing zenith angle and the bearing toward the subsatellite
 point we build the boresight line of sight at that ground point, locate the
-satellite in Earth-Centred-Earth-Fixed (ECEF) coordinates, then rotate the boresight
+satellite in Earth-Centered-Earth-Fixed (ECEF) coordinates, then rotate the boresight
 by the PSF's angular half-extents and intersect each resulting ray with the WGS84
 ellipsoid. The intersection points, converted back to geodetic latitude/longitude,
 give the box. Because the model is the true ellipsoid:
@@ -95,9 +95,16 @@ POLAR_LATITUDE_THRESHOLD_DEG: float = 85.0
 # and an arbitrary scan orientation. 1e-6 deg is far smaller than any real footprint.
 _NADIR_CONE_ANGLE_EPS_DEG: float = 1e-6
 
-# L1B fill value. Footprints that did not intersect the Earth (space/cal views) are
-# stored as this sentinel; we treat such inputs as "no footprint".
-_L1B_FILL_VALUE: float = -999.0
+# L1B fill value. Footprints (or camera pixels) that did not intersect the Earth
+# (space/cal views) are stored as this sentinel; we treat such inputs as "no
+# footprint" / "off-Earth pixel". Public because the camera-segmentation tool
+# (which reads the same L1B fill convention) shares it -- keeping a single source of
+# truth so a change to the L1B fill value propagates to both call sites.
+L1B_FILL_VALUE: float = -999.0
+
+# Backwards-compatible private alias. The value was originally module-private; keep
+# the old name working for any existing importers while the public name is adopted.
+_L1B_FILL_VALUE: float = L1B_FILL_VALUE
 
 # Number of samples around the PSF angular-extent ellipse perimeter. 72 == every 5 deg.
 _N_PERIMETER_SAMPLES: int = 72
@@ -308,7 +315,7 @@ def _viewing_geometry(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build the boresight line of sight and locate the satellite in ECEF.
 
-    The footprint ground point ``P`` (the box centre) is the reported L1B
+    The footprint ground point ``P`` (the box center) is the reported L1B
     latitude/longitude. The boresight ray to the satellite makes the viewing zenith
     angle with the local vertical at ``P``, in the vertical plane that also contains
     the subsatellite point. The satellite ``S`` lies along that ray and on the
@@ -434,14 +441,27 @@ def _perimeter_point(
 # ---------------------------------------------------------------------------
 
 
-def _assemble_bounding_box(
-    boresight_lat_deg: float,
-    boresight_lon_deg: float,
+def bounding_box_from_points(
+    center_lat_deg: float,
+    center_lon_deg: float,
     lats: list[float],
     lons: list[float],
-    truncated: bool,
+    *,
+    truncated: bool = False,
 ) -> BoundingBox:
-    """Build a lat/lon bounding box from the projected footprint perimeter points.
+    """Build a lat/lon bounding box from a set of footprint boundary points.
+
+    This is the shared box-assembly step used by two producers:
+
+    * the radiometer path (:func:`compute_footprint_bounding_box`), which passes the
+      ray-traced PSF *perimeter* samples, and
+    * the camera path (:mod:`libera_utils.footprint_matching.camera_segmentation`),
+      which passes the four *corner pixels* of a pseudo-footprint's pixel block.
+
+    Both need identical pole/dateline handling, so keeping one implementation avoids
+    two subtly different box builders. ``center_lat_deg``/``center_lon_deg`` is the
+    footprint anchor (the radiometer boresight, or the camera block's center pixel)
+    and is used only for the pole-enclosure reach test, not for the box extent.
 
     Handles the three structural edge cases:
 
@@ -459,11 +479,11 @@ def _assemble_bounding_box(
 
     # Pole enclosure: compare the footprint's reach to the distance to each pole.
     perimeter_distances_m = [
-        geod.inv(boresight_lon_deg, boresight_lat_deg, lon, lat)[2] for lat, lon in zip(lats, lons, strict=True)
+        geod.inv(center_lon_deg, center_lat_deg, lon, lat)[2] for lat, lon in zip(lats, lons, strict=True)
     ]
     max_reach_m = max(perimeter_distances_m)
-    dist_north_pole_m = geod.inv(boresight_lon_deg, boresight_lat_deg, boresight_lon_deg, 90.0)[2]
-    dist_south_pole_m = geod.inv(boresight_lon_deg, boresight_lat_deg, boresight_lon_deg, -90.0)[2]
+    dist_north_pole_m = geod.inv(center_lon_deg, center_lat_deg, center_lon_deg, 90.0)[2]
+    dist_south_pole_m = geod.inv(center_lon_deg, center_lat_deg, center_lon_deg, -90.0)[2]
 
     if dist_north_pole_m <= max_reach_m:
         return BoundingBox(min(lats), 90.0, -180.0, 180.0, wraps_dateline=False, is_polar=True, truncated=truncated)
@@ -524,7 +544,7 @@ def compute_footprint_bounding_box(
     describe sun geometry and do not affect which ground patch the radiometer sees,
     so they are intentionally not parameters here.)
 
-    The box is always centred on the reported footprint latitude/longitude; the
+    The box is always centered on the reported footprint latitude/longitude; the
     viewing zenith angle and the bearing toward the subsatellite point set the
     footprint's size and orientation. When ``altitude_km`` is supplied it fixes the
     satellite range along the boresight; otherwise the range is recovered from the
@@ -636,4 +656,4 @@ def compute_footprint_bounding_box(
 
     # 4. Assemble the lat/lon box (handles poles and dateline), carrying the
     #    partial-coverage truncation flag onto the returned box.
-    return _assemble_bounding_box(boresight_lat_deg, boresight_lon_deg, lats, lons, truncated)
+    return bounding_box_from_points(boresight_lat_deg, boresight_lon_deg, lats, lons, truncated=truncated)
