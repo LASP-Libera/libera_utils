@@ -519,3 +519,94 @@ class TestCreateJpssKernelDataframeFromCsv:
         # ET is seconds since J2000 epoch, so should be on the order of 10^8 or higher
         assert df["ADGPS_JPSS_ET"].iloc[0] > 1e8
         assert df["ADCFA_JPSS_ET"].iloc[0] > 1e8
+
+
+class TestEncoderCorrection:
+    """Deterministic Az/El encoder angle corrections (LIBSDC-668)."""
+
+    def test_azimuth_error_matches_reference_equation(self):
+        """Azimuth error reproduces the reference equation independently of module constants."""
+        angle = np.array([0.0, 1.2345, 3.5, 6.0])
+        expected = -7.3510e-05 * np.sin(angle + 4.3042)
+        np.testing.assert_allclose(kernel_maker.azimuth_error(angle), expected, atol=1e-15)
+
+    def test_elevation_error_matches_reference_equation(self):
+        """Elevation error reproduces the reference equation independently of module constants."""
+        angle = np.array([0.0, 0.6789, 2.5, 5.0])
+        expected = 4.6318e-04 * np.sin(angle - 1.1128)
+        np.testing.assert_allclose(kernel_maker.elevation_error(angle), expected, atol=1e-15)
+
+    def test_corrected_is_telemetry_minus_error(self):
+        """Correction convention is corrected = telemetry - error."""
+        angle = np.array([0.0, 2.0, 4.5])
+        np.testing.assert_allclose(
+            kernel_maker.correct_azimuth(angle), angle - kernel_maker.azimuth_error(angle), atol=1e-15
+        )
+        np.testing.assert_allclose(
+            kernel_maker.correct_elevation(angle), angle - kernel_maker.elevation_error(angle), atol=1e-15
+        )
+
+    def test_known_values_pin_sign(self):
+        """Hand-computed corrected values at angle 0 pin the correction sign for each axis."""
+        assert kernel_maker.correct_azimuth(0.0) == pytest.approx(7.3510e-05 * np.sin(4.3042), abs=1e-12)
+        assert kernel_maker.correct_elevation(0.0) == pytest.approx(-4.6318e-04 * np.sin(-1.1128), abs=1e-12)
+
+    def test_inverse_round_trips_to_machine_precision(self):
+        """uncorrect(correct(angle)) recovers the original telemetry to machine precision."""
+        angle = np.linspace(-np.pi, np.pi, 25)
+        np.testing.assert_allclose(
+            kernel_maker.uncorrect_azimuth(kernel_maker.correct_azimuth(angle)), angle, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            kernel_maker.uncorrect_elevation(kernel_maker.correct_elevation(angle)), angle, atol=1e-12
+        )
+
+    def test_forward_round_trips_from_corrected(self):
+        """correct(uncorrect(corrected)) recovers the corrected value (inverse both directions)."""
+        corrected = np.linspace(-np.pi, np.pi, 25)
+        np.testing.assert_allclose(
+            kernel_maker.correct_azimuth(kernel_maker.uncorrect_azimuth(corrected)), corrected, atol=1e-12
+        )
+        np.testing.assert_allclose(
+            kernel_maker.correct_elevation(kernel_maker.uncorrect_elevation(corrected)), corrected, atol=1e-12
+        )
+
+    def test_apply_encoder_corrections_updates_both_columns(self):
+        """apply_encoder_corrections corrects both encoder columns and leaves others untouched."""
+        raw_az = np.array([0.0, 1.0, 2.0])
+        raw_el = np.array([0.5, 1.5, 2.5])
+        df = pd.DataFrame(
+            {
+                kernel_maker.AZ_ENCODER_FIELD: raw_az.copy(),
+                kernel_maker.EL_ENCODER_FIELD: raw_el.copy(),
+                "AXIS_SAMPLE_ICIE_ET": [10.0, 20.0, 30.0],
+            }
+        )
+
+        returned = kernel_maker.apply_encoder_corrections(df)
+
+        assert returned is df  # mutates in place
+        np.testing.assert_allclose(df[kernel_maker.AZ_ENCODER_FIELD], kernel_maker.correct_azimuth(raw_az))
+        np.testing.assert_allclose(df[kernel_maker.EL_ENCODER_FIELD], kernel_maker.correct_elevation(raw_el))
+        np.testing.assert_array_equal(df["AXIS_SAMPLE_ICIE_ET"], [10.0, 20.0, 30.0])
+
+    def test_apply_then_reverse_recovers_raw_dataframe(self):
+        """reverse_encoder_corrections inverts apply_encoder_corrections on a DataFrame."""
+        raw_az = np.linspace(-np.pi, np.pi, 11)
+        raw_el = np.linspace(0.0, 2.0, 11)
+        df = pd.DataFrame({kernel_maker.AZ_ENCODER_FIELD: raw_az.copy(), kernel_maker.EL_ENCODER_FIELD: raw_el.copy()})
+
+        kernel_maker.reverse_encoder_corrections(kernel_maker.apply_encoder_corrections(df))
+
+        np.testing.assert_allclose(df[kernel_maker.AZ_ENCODER_FIELD], raw_az, atol=1e-12)
+        np.testing.assert_allclose(df[kernel_maker.EL_ENCODER_FIELD], raw_el, atol=1e-12)
+
+    def test_apply_encoder_corrections_noop_without_encoder_columns(self):
+        """apply/reverse leave non-AXIS_SAMPLE DataFrames unchanged."""
+        df = pd.DataFrame({"ADGPSPOSX": [1.0, 2.0], "ADGPSPOSY": [3.0, 4.0]})
+        before = df.copy()
+
+        kernel_maker.apply_encoder_corrections(df)
+        kernel_maker.reverse_encoder_corrections(df)
+
+        pd.testing.assert_frame_equal(df, before)

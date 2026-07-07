@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.8.7
+
+- FEAT: Az/El mechanism CKs now apply deterministic sinusoidal encoder-angle corrections during kernel generation, so the stored quaternions reflect the true mechanism rotation rather than the raw encoder readout. Corrections are applied to the filtered encoder angles in `create_kernel_from_l1a` (L1A telemetry is left unchanged), with matching forward/inverse helpers (`correct_azimuth`/`correct_elevation`, `uncorrect_azimuth`/`uncorrect_elevation`, and DataFrame-level `apply_encoder_corrections`/`reverse_encoder_corrections`).
+
 ## 5.8.6
 
 - FEAT: Manual processing now runs through the SDC event bus instead of triggering Step Functions directly. `step-function-trigger` emits a `ManualProcessing` event for a single step, and a new `manual-processing` CLI submits arbitrary custom DAGs (or the default DAG) across one or more dates, with an optional `--verify` that polls the Coordination Table.
