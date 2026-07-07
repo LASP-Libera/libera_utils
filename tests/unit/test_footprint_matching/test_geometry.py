@@ -241,3 +241,28 @@ class TestAltitudeRecoveryPath:
         without_alt = compute_footprint_bounding_box(0.0, 0.0, subsat_lat, 0.0, vza)
         assert without_alt.lat_min == pytest.approx(with_alt.lat_min, abs=0.05)
         assert without_alt.lat_max == pytest.approx(with_alt.lat_max, abs=0.05)
+
+
+class TestBoundingBoxFromPoints:
+    """The box assembler was extracted to a public helper shared with the camera path.
+
+    These tests pin its behaviour directly (the radiometer entry point above still
+    exercises it end-to-end, guarding the extraction).
+    """
+
+    def test_simple_box_from_corner_points(self):
+        # Four corner points -> the enclosing lat/lon rectangle, centred anchor irrelevant.
+        box = geo.bounding_box_from_points(10.0, 20.0, [9.0, 11.0, 9.0, 11.0], [19.0, 19.0, 21.0, 21.0])
+        assert (box.lat_min, box.lat_max, box.lon_min, box.lon_max) == (9.0, 11.0, 19.0, 21.0)
+        assert not box.wraps_dateline
+        assert not box.truncated
+
+    def test_dateline_crossing_points(self):
+        # Points straddling the antimeridian choose the [0, 360) representation.
+        box = geo.bounding_box_from_points(0.0, 179.5, [-1.0, 1.0], [179.0, -179.0])
+        assert box.wraps_dateline
+        assert box.lon_max > 180.0
+
+    def test_truncated_flag_passes_through(self):
+        box = geo.bounding_box_from_points(0.0, 0.0, [-1.0, 1.0], [-1.0, 1.0], truncated=True)
+        assert box.truncated
