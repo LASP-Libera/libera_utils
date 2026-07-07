@@ -82,28 +82,32 @@ EL_ERROR_PHASE = -1.1128
 # contraction (|error'| <= |amplitude| << 1), reaching machine precision within a couple of steps.
 _INVERSE_ITERATIONS = 4
 
+# Angle inputs may be a Python scalar, a NumPy array, or a pandas Series (the DataFrame helpers pass
+# columns); the corrections preserve the input type.
+AngleLike = float | np.ndarray | pd.Series
 
-def azimuth_error(angle):
+
+def azimuth_error(angle: AngleLike) -> AngleLike:
     """Azimuth encoder error at the telemetered angle(s), in radians."""
     return AZ_ERROR_AMPLITUDE * np.sin(angle + AZ_ERROR_PHASE)
 
 
-def elevation_error(angle):
+def elevation_error(angle: AngleLike) -> AngleLike:
     """Elevation encoder error at the telemetered angle(s), in radians."""
     return EL_ERROR_AMPLITUDE * np.sin(angle + EL_ERROR_PHASE)
 
 
-def correct_azimuth(angle):
+def correct_azimuth(angle: AngleLike) -> AngleLike:
     """Corrected azimuth from telemetered angle(s): ``corrected = telemetry - error``."""
     return angle - azimuth_error(angle)
 
 
-def correct_elevation(angle):
+def correct_elevation(angle: AngleLike) -> AngleLike:
     """Corrected elevation from telemetered angle(s): ``corrected = telemetry - error``."""
     return angle - elevation_error(angle)
 
 
-def uncorrect_azimuth(corrected):
+def uncorrect_azimuth(corrected: AngleLike) -> AngleLike:
     """Recover telemetered azimuth angle(s) from corrected value(s).
 
     Inverse of :func:`correct_azimuth`, solved by fixed-point iteration on
@@ -115,7 +119,7 @@ def uncorrect_azimuth(corrected):
     return telemetry
 
 
-def uncorrect_elevation(corrected):
+def uncorrect_elevation(corrected: AngleLike) -> AngleLike:
     """Recover telemetered elevation angle(s) from corrected value(s).
 
     Inverse of :func:`correct_elevation`, solved by fixed-point iteration on

@@ -40,7 +40,7 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
         input_az_data = input_az_data.rename(columns={"Command Azimuth (deg)": "ICIE__AXIS_AZ_FILT"})
 
         az_timetags = pd.to_datetime(input_az_data.index.values)
-        input_dataset = input_az_data[["ICIE__AXIS_AZ_FILT"]]
+        input_dataset = input_az_data[["ICIE__AXIS_AZ_FILT"]].copy()
         # CSV angles are ideal commanded pointing; kernel generation applies the encoder correction, so
         # pre-apply its inverse here to represent the raw encoder telemetry the correction maps back.
         input_dataset["ICIE__AXIS_AZ_FILT"] = kernel_maker.uncorrect_azimuth(
