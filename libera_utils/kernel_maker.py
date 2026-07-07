@@ -18,6 +18,7 @@ import pandas as pd
 import xarray as xr
 from cloudpathlib import AnyPath
 from curryer import spicetime
+from curryer import spicierpy as sp
 
 from libera_utils.config import config
 from libera_utils.constants import DataLevel, DataProductIdentifier
@@ -219,6 +220,57 @@ def reverse_encoder_corrections(df: pd.DataFrame) -> pd.DataFrame:
         df[AZ_ENCODER_FIELD] = uncorrect_azimuth(df[AZ_ENCODER_FIELD])
     if EL_ENCODER_FIELD in df.columns:
         df[EL_ENCODER_FIELD] = uncorrect_elevation(df[EL_ENCODER_FIELD])
+    return df
+
+
+# Measured mechanism rotation-axis keywords in the Libera frame kernel (LIBSDC-806, OAV3 ground testing).
+# Each maps an encoder column to the FK pool variable holding that mechanism's axis of rotation.
+MECHANISM_AXIS_POOL_VAR = {
+    AZ_ENCODER_FIELD: "LIBERA_AZ_AOR_IN_STAND",
+    EL_ENCODER_FIELD: "LIBERA_EL_AOR_IN_STAND",
+}
+
+# Per-mechanism CK quaternion column names (SPICE scalar-first: c, x, y, z). Kept distinct so an
+# AXIS_SAMPLE DataFrame carrying both encoder columns yields separate Az and El quaternion sets,
+# each mapped to ``quaternion_*`` by its own CK config.
+MECHANISM_QUATERNION_COLUMNS = {
+    AZ_ENCODER_FIELD: ("AZ_QUATERNION_C", "AZ_QUATERNION_X", "AZ_QUATERNION_Y", "AZ_QUATERNION_Z"),
+    EL_ENCODER_FIELD: ("EL_QUATERNION_C", "EL_QUATERNION_X", "EL_QUATERNION_Y", "EL_QUATERNION_Z"),
+}
+
+
+def _read_alignment_axis(pool_var: str) -> np.ndarray:
+    """Read a measured unit-vector axis from the Libera frame kernel pool (furnished on demand)."""
+    sp.furnsh(str(config.get("LIBERA_KERNEL_FRAME")))
+    return np.asarray(sp.gdpool(pool_var, 0, 3), dtype=float)
+
+
+def mechanism_quaternions(angles: AngleLike, axis: np.ndarray) -> np.ndarray:
+    """SPICE scalar-first quaternions for rotation by each ``angle`` about ``axis``.
+
+    ``q = [cos(theta/2), sin(theta/2) * axis]`` represents ``R(axis, theta)``, the mechanism
+    frame's rotation relative to its parent. Returns an ``(N, 4)`` array ordered (c, x, y, z).
+    """
+    axis = np.asarray(axis, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    half = 0.5 * np.asarray(angles, dtype=float)
+    sin_half = np.sin(half)
+    return np.column_stack([np.cos(half), sin_half * axis[0], sin_half * axis[1], sin_half * axis[2]])
+
+
+def add_mechanism_ck_quaternions(df: pd.DataFrame) -> pd.DataFrame:
+    """Add CK quaternion columns for whichever Az/El encoder column is present, in place.
+
+    Converts the (corrected) encoder angle into per-sample quaternions about the mechanism's
+    measured axis of rotation (read from the frame kernel, LIBSDC-806), so the generated CK
+    encodes rotation about the true axis rather than a nominal coordinate axis. A no-op when
+    neither encoder column is present (e.g. spacecraft kernels). Returns the same DataFrame.
+    """
+    for field, pool_var in MECHANISM_AXIS_POOL_VAR.items():
+        if field in df.columns:
+            quaternions = mechanism_quaternions(df[field].to_numpy(), _read_alignment_axis(pool_var))
+            for name, column in zip(MECHANISM_QUATERNION_COLUMNS[field], quaternions.T, strict=True):
+                df[name] = column
     return df
 
 
@@ -558,10 +610,14 @@ def create_kernel_from_l1a(
         sample_group_name=sample_group_name,
     )
 
-    # Apply deterministic Az/El encoder angle corrections so the generated CK quaternions
-    # reflect the true mechanism rotation. No-op when the DataFrame lacks the AXIS_SAMPLE
-    # encoder columns (e.g. spacecraft ephemeris/attitude kernels).
+    # Apply deterministic Az/El encoder angle corrections so the generated CK reflects the true
+    # mechanism rotation. No-op when the DataFrame lacks the AXIS_SAMPLE encoder columns
+    # (e.g. spacecraft ephemeris/attitude kernels).
     apply_encoder_corrections(kernel_df)
+
+    # Convert the corrected Az/El encoder angles into CK quaternions about the mechanism's measured
+    # axis of rotation (LIBSDC-806). No-op for kernels without the encoder columns.
+    add_mechanism_ck_quaternions(kernel_df)
 
     # Store as a single-element list for compatibility with the existing kernel creation loop
     input_dataframe = kernel_df
