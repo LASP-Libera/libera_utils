@@ -71,6 +71,22 @@ Frame offsets
     ==========          ========            ================
     <all>               <all>>              [ 0.0,       0.0,      0.0]
 
+Measured frame misalignments (LIBSDC-806)
+--------------------------------------------------------
+    OAV3 ground-test unit vectors in the LIBERA_BASE (STAND) frame (J. Fernandez,
+    OAV3 Confluence Table 5). Libera-internal and spacecraft-independent. kernel_maker
+    reads the axis-of-rotation vectors (*_AOR_*) to build the AZ/EL mechanism CKs; the
+    radiometer boresight quaternions in the frame definitions below are derived from
+    LIBERA_EL0_Z_IN_STAND (minimal rotation of +Z onto that line-of-sight).
+
+        \begindata
+
+        LIBERA_EL0_Z_IN_STAND  = ( -0.00459575167882055,  -0.00030501098366856,   0.999989392961149   )
+        LIBERA_EL_AOR_IN_STAND = (  0.999987800152187,      0.00276809474781597,   0.00409111210523636 )
+        LIBERA_AZ_AOR_IN_STAND = ( -0.000926750267457724,  -0.00066424424979518,   0.999999349956548   )
+
+        \begintext
+
 Frame definitions
 --------------------------------------------------------
 
@@ -165,6 +181,14 @@ Frame definitions
 
         \begintext
 
+    Radiometer boresight (LIBSDC-806)
+    ---------------------------------
+        The four radiometer TK frames below carry a measured boresight rotation (not a
+        translation): each orients its +Z boresight to the Total-radiometer line-of-sight
+        at corrected elevation = 0 deg (EL0_Z in LIBERA_BASE, ~0.264 deg off +Z), from OAV3
+        ground testing. All four share this value until per-radiometer boresights exist.
+        Derived from LIBERA_EL0_Z_IN_STAND (see Measured frame misalignments above).
+
     Libera SW Radiometer (-143013011) - Instrument (TK)
     ---------------------------------------------------
 
@@ -177,7 +201,7 @@ Frame definitions
         FRAME_-143013011_CENTER     = -143013003
         TKFRAME_-143013011_RELATIVE = 'LIBERA_EL_COORD'
         TKFRAME_-143013011_SPEC     = 'QUATERNION'
-        TKFRAME_-143013011_Q        = ( 1.0,   0.0,   0.0,   0.0 )
+        TKFRAME_-143013011_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
 
         OBJECT_-143013011_FRAME     = 'LIBERA_SW_RAD_COORD'
 
@@ -195,7 +219,7 @@ Frame definitions
         FRAME_-143013012_CENTER     = -143013003
         TKFRAME_-143013012_RELATIVE = 'LIBERA_EL_COORD'
         TKFRAME_-143013012_SPEC     = 'QUATERNION'
-        TKFRAME_-143013012_Q        = ( 1.0,   0.0,   0.0,   0.0 )
+        TKFRAME_-143013012_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
 
         OBJECT_-143013012_FRAME     = 'LIBERA_SSW_RAD_COORD'
 
@@ -213,7 +237,7 @@ Frame definitions
         FRAME_-143013013_CENTER     = -143013003
         TKFRAME_-143013013_RELATIVE = 'LIBERA_EL_COORD'
         TKFRAME_-143013013_SPEC     = 'QUATERNION'
-        TKFRAME_-143013013_Q        = ( 1.0,   0.0,   0.0,   0.0 )
+        TKFRAME_-143013013_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
 
         OBJECT_-143013013_FRAME     = 'LIBERA_LW_RAD_COORD'
 
@@ -231,7 +255,7 @@ Frame definitions
         FRAME_-143013014_CENTER     = -143013003
         TKFRAME_-143013014_RELATIVE = 'LIBERA_EL_COORD'
         TKFRAME_-143013014_SPEC     = 'QUATERNION'
-        TKFRAME_-143013014_Q        = ( 1.0,   0.0,   0.0,   0.0 )
+        TKFRAME_-143013014_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
 
         OBJECT_-143013014_FRAME     = 'LIBERA_TOT_RAD_COORD'
 
