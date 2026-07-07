@@ -1,13 +1,12 @@
 {
   "kernel": {
-    "class_path": "curryer.kernels.attitude.AttitudeEulerProperties",
+    "class_path": "curryer.kernels.attitude.AttitudeQuaternionProperties",
     "properties": {
       "input_body": "LIBERA_EL",
       "input_frame": "LIBERA_AZ_COORD",
-      "input_data_type": "EULER ANGLES",
+      "input_data_type": "FLIP SPICE QUATERNIONS",
       "input_time_type": "et",
       "input_time_columns": ["et"],
-      "input_angle_units": "RADIANS",
       "input_angular_rate": "MAKE UP",
       "input_gap_threshold": "30s",
       "ck_type": "LINEAR_QUAT",
@@ -18,6 +17,9 @@
   "input_data": null,
   "input_columns": {
     "AXIS_SAMPLE_ICIE_ET": "et",
-    "ICIE__AXIS_EL_FILT": "angle_x"
+    "EL_QUATERNION_C": "quaternion_c",
+    "EL_QUATERNION_X": "quaternion_x",
+    "EL_QUATERNION_Y": "quaternion_y",
+    "EL_QUATERNION_Z": "quaternion_z"
   }
 }
