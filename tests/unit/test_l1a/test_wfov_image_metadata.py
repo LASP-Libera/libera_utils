@@ -1,4 +1,4 @@
-"""Unit tests for WFOV image FSW and FPGA metadata extraction."""
+"""Unit tests for WFOV image stitching, metadata extraction, and L1A enhancement."""
 
 import struct
 
@@ -8,18 +8,26 @@ import pytest
 import xarray as xr
 
 from libera_utils.l1a.wfov_image_metadata import (
+    BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
     FPGA_HEADER_SIZE,
+    FPGA_TRAILING_FOOTER_SIZE,
     FSW_HEADER_SIZE,
-    FSW_TIMESTAMP_MIN_SIZE,
+    PACKET_IMAGE_ID_VAR,
     SOP_FPGA_MIN_SIZE,
     TIMESTAMP_SECONDS_OFFSET,
     TIMESTAMP_SUBSECONDS_OFFSET,
-    assess_wfov_image_completeness,
-    build_wfov_camera_metadata_dataset,
+    WFOV_CRC_VALID_NOT_VALIDATED,
+    WFOV_CRC_VALID_VAR,
+    WFOV_IMAGE_BLOB_LENGTH_VAR,
+    WFOV_IMAGE_BLOB_VAR,
+    encode_trailing_footer_bytes,
+    enhance_wfov_l1a_dataset,
+    extract_compressed_payload,
     extract_fpga_metadata_from_blob,
     extract_fsw_metadata_from_blob,
-    find_qualifying_sop_indices,
+    extract_trailing_footer_from_blob,
+    stitch_wfov_images,
     swap_32bit_words,
 )
 from libera_utils.time import multipart_to_dt64
@@ -140,6 +148,46 @@ def _make_wfov_packet_dataset(
     )
 
 
+def _build_complete_image_blob(
+    payload: bytes,
+    *,
+    timestamp_seconds: int = 100,
+    timestamp_subseconds: int = 1,
+    trailing_footer: bytes | None = None,
+) -> bytes:
+    trailing_footer = trailing_footer or encode_trailing_footer_bytes(
+        pixel_sum=111,
+        dark=222,
+        white=333,
+        sync_error=1,
+        crc_error=1,
+    )
+    return _build_fsw_blob(timestamp_seconds, timestamp_subseconds) + _encode_fpga_block() + payload + trailing_footer
+
+
+def _pad_packet(blob: bytes, packet_len: int | None = None) -> bytes:
+    packet_len = packet_len or len(blob)
+    return blob.ljust(972, b"\x00")
+
+
+def _split_full_blob_for_packets(full_blob: bytes, payload_split: int) -> tuple[bytes, bytes, bytes]:
+    """Split a stitched blob into SOP, MOP, and EOP packet payloads."""
+    payload_start = SOP_FPGA_MIN_SIZE
+    payload_end = len(full_blob) - FPGA_TRAILING_FOOTER_SIZE
+    sop_blob = full_blob[: payload_start + payload_split]
+    mop_blob = full_blob[payload_start + payload_split : payload_end]
+    eop_blob = full_blob[payload_end:]
+    return sop_blob, mop_blob, eop_blob
+
+
+def _complete_rows(blob: bytes) -> list[tuple[str, int, int, bytes]]:
+    """Build minimal SOP+EOP rows that stitch to ``blob``."""
+    return [
+        ("SOP", 0, len(blob), _pad_packet(blob)),
+        ("EOP", len(blob), 0, _pad_packet(b"\x00" * 972)),
+    ]
+
+
 class TestSwap32BitWords:
     def test_reverses_each_word(self):
         data = b"\x01\x02\x03\x04\xaa\xbb\xcc\xdd"
@@ -191,98 +239,208 @@ class TestExtractFpgaMetadataFromBlob:
             extract_fpga_metadata_from_blob(_build_fsw_blob())
 
 
-class TestFindQualifyingSopIndices:
-    def test_returns_zero_offset_sops_in_order(self):
-        flags = np.array(["MOP", "SOP", "SOP", "SOP"], dtype="S8")
-        offsets = np.array([0, 512, 0, 0], dtype=np.uint32)
-        assert np.array_equal(find_qualifying_sop_indices(flags, offsets), np.array([2, 3]))
+class TestExtractCompressedPayload:
+    def test_extracts_payload_between_fpga_block_and_trailing_footer(self):
+        payload = b"\xff\xd8\xff\xe0" + b"\x00" * 10 + b"\x00"
+        raw_blob = _build_complete_image_blob(payload)
+        assert extract_compressed_payload(raw_blob) == payload
+
+    def test_payload_ending_in_null_bytes_unchanged(self):
+        payload = b"\xaa\xbb\xcc\x00\x00\x00"
+        raw_blob = _build_complete_image_blob(payload)
+        assert extract_compressed_payload(raw_blob) == payload
 
 
-class TestAssessWfovImageCompleteness:
-    def test_complete_image(self):
-        flags = np.array(["SOP", "MOP", "EOP"], dtype="S8")
-        offsets = np.array([0, 100, 200], dtype=np.uint32)
-        lengths = np.array([100, 100, 50], dtype=np.uint32)
-        complete = assess_wfov_image_completeness(flags, offsets, lengths)
-        assert complete.tolist() == [True, False, False]
-
-    def test_missing_eop(self):
-        flags = np.array(["SOP", "MOP"], dtype="S8")
-        offsets = np.array([0, 100], dtype=np.uint32)
-        lengths = np.array([100, 100], dtype=np.uint32)
-        complete = assess_wfov_image_completeness(flags, offsets, lengths)
-        assert complete.tolist() == [False, False]
-
-    def test_offset_gap(self):
-        flags = np.array(["SOP", "MOP", "EOP"], dtype="S8")
-        offsets = np.array([0, 100, 250], dtype=np.uint32)
-        lengths = np.array([100, 100, 50], dtype=np.uint32)
-        complete = assess_wfov_image_completeness(flags, offsets, lengths)
-        assert complete.tolist() == [False, False, False]
+class TestTrailingFooterDecode:
+    def test_round_trip(self):
+        footer = encode_trailing_footer_bytes(
+            pixel_sum=0x12345678,
+            dark=0xABCDEF,
+            white=0x112233,
+            sync_error=1,
+            pid_error=0,
+            spare=1,
+        )
+        raw_blob = _build_complete_image_blob(b"\x01\x02", trailing_footer=footer)
+        decoded = extract_trailing_footer_from_blob(raw_blob)
+        assert decoded["pixel_sum"] == 0x12345678
+        assert decoded["dark"] == 0xABCDEF
+        assert decoded["sync_error"] == 1
+        assert decoded["spare"] == 1
+        assert decoded["delta"] == 333
+        assert decoded["crc"] == 0xDEADBEEF
+        assert decoded["white"] == 222
 
 
-class TestBuildWfovCameraMetadataDataset:
+class TestStitchWfovImages:
+    def test_multi_packet_stitch(self):
+        payload = b"\xde\xad\xbe\xef"
+        full_blob = _build_complete_image_blob(payload)
+        sop_blob, mop_blob, eop_blob = _split_full_blob_for_packets(full_blob, payload_split=2)
+        ds = _make_wfov_packet_dataset(
+            [
+                ("SOP", 0, len(sop_blob), _pad_packet(sop_blob)),
+                ("MOP", len(sop_blob), len(mop_blob), _pad_packet(mop_blob)),
+                ("EOP", len(sop_blob) + len(mop_blob), len(eop_blob), _pad_packet(eop_blob)),
+            ]
+        )
+        stitched, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert stats.n_complete_images == 1
+        assert len(stitched) == 1
+        assert extract_compressed_payload(stitched[0].raw_blob) == payload
+
+    def test_orphan_eop_increments_missing_sop_or_eop(self):
+        ds = _make_wfov_packet_dataset([("EOP", 0, 10, _pad_packet(b"\x00" * 10))])
+        _, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert stats.n_missing_sop_or_eop == 1
+        assert stats.n_bad_images == 0
+
+    def test_sop_without_eop_increments_missing_sop_or_eop(self):
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), _pad_packet(blob))])
+        _, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert stats.n_missing_sop_or_eop == 1
+
+    def test_non_zero_sop_offset_counts_bad_image(self):
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset([("SOP", 512, len(blob), _pad_packet(blob))])
+        _, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert stats.n_bad_images == 1
+        assert stats.n_complete_images == 0
+
+    def test_offset_gap_counts_bad_image(self):
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(
+            [
+                ("SOP", 0, len(blob), _pad_packet(blob)),
+                ("MOP", len(blob), len(blob), _pad_packet(blob)),
+                ("EOP", len(blob) + 100, len(blob), _pad_packet(blob)),
+            ]
+        )
+        _, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert stats.n_bad_images == 1
+        assert stats.n_complete_images == 0
+
+    def test_new_sop_aborts_prior_collection(self):
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(
+            [
+                ("SOP", 0, len(blob), _pad_packet(blob)),
+                ("MOP", len(blob), len(blob), _pad_packet(blob)),
+                ("SOP", 0, len(blob), _pad_packet(blob)),
+            ]
+        )
+        _, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert stats.n_missing_sop_or_eop == 2
+
+
+class TestEnhanceWfovL1aDataset:
+    def test_complete_sequence_creates_camera_time_and_zeros_packets(self):
+        payload = b"\xca\xfe"
+        blob = _build_complete_image_blob(payload)
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        original_bytes = bytes(ds["ICIE__WFOV_DATA"].values[0])
+
+        enhanced = enhance_wfov_l1a_dataset(ds)
+        assert enhanced.sizes[CAMERA_TIME_COORD] == 1
+        length = int(enhanced[WFOV_IMAGE_BLOB_LENGTH_VAR].values[0])
+        blob_bytes = enhanced[WFOV_IMAGE_BLOB_VAR].values[0, :length].tobytes()
+        assert blob_bytes == payload
+        assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0]
+        assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) != original_bytes
+        assert np.all(enhanced["ICIE__WFOV_DATA"].values[0].view(np.uint8) == 0)
+        assert enhanced.attrs["n_complete_images"] == 1
+        assert enhanced[WFOV_CRC_VALID_VAR].values[0] == WFOV_CRC_VALID_NOT_VALIDATED
+
+    def test_incomplete_sequence_preserves_packet_data(self):
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), _pad_packet(blob))])
+        original_bytes = bytes(ds["ICIE__WFOV_DATA"].values[0])
+
+        enhanced = enhance_wfov_l1a_dataset(ds)
+        assert enhanced.sizes[CAMERA_TIME_COORD] == 0
+        assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [-1]
+        assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) == original_bytes
+
     def test_camera_time_from_fsw_timestamps(self):
-        blob = _build_fsw_blob(100, 1) + _encode_fpga_block()
-        ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), blob.ljust(972, b"\x00"))])
-        camera_ds = build_wfov_camera_metadata_dataset(ds)
+        blob = _build_complete_image_blob(b"\x01", timestamp_seconds=100, timestamp_subseconds=1)
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        enhanced = enhance_wfov_l1a_dataset(ds)
 
-        assert camera_ds.sizes[CAMERA_TIME_COORD] == 1
-        np.testing.assert_equal(camera_ds[CAMERA_TIME_COORD].values[0], _expected_datetime64(100, 1))
-        assert camera_ds["WFOV_FSW_PARSE_VALID"].values[0]
-        assert camera_ds["WFOV_FPGA_PARSE_VALID"].values[0]
+        np.testing.assert_equal(enhanced[CAMERA_TIME_COORD].values[0], _expected_datetime64(100, 1))
+        assert enhanced["WFOV_FSW_PARSE_VALID"].values[0]
+        assert enhanced["WFOV_FPGA_PARSE_VALID"].values[0]
 
-    def test_partial_length_sop_decodes_fsw_only(self):
-        blob = _build_fsw_blob(200, 2).ljust(100, b"\x00")
-        ds = _make_wfov_packet_dataset([("SOP", 0, 100, blob.ljust(972, b"\x00"))])
-        camera_ds = build_wfov_camera_metadata_dataset(ds)
-
-        assert camera_ds["WFOV_FSW_PARSE_VALID"].values[0]
-        assert not camera_ds["WFOV_FPGA_PARSE_VALID"].values[0]
-
-    def test_short_sop_marks_fsw_invalid(self):
-        blob = b"\x00" * (FSW_TIMESTAMP_MIN_SIZE - 1)
-        ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), blob.ljust(972, b"\x00"))])
-        camera_ds = build_wfov_camera_metadata_dataset(ds)
-
-        assert not camera_ds["WFOV_FSW_PARSE_VALID"].values[0]
-        assert not camera_ds["WFOV_FPGA_PARSE_VALID"].values[0]
-        assert np.isnat(camera_ds[CAMERA_TIME_COORD].values[0])
+    def test_multi_packet_complete_image(self):
+        payload = b"\x11\x22\x33\x44"
+        full_blob = _build_complete_image_blob(payload)
+        sop_blob, mop_blob, eop_blob = _split_full_blob_for_packets(full_blob, payload_split=2)
+        ds = _make_wfov_packet_dataset(
+            [
+                ("SOP", 0, len(sop_blob), _pad_packet(sop_blob)),
+                ("MOP", len(sop_blob), len(mop_blob), _pad_packet(mop_blob)),
+                ("EOP", len(sop_blob) + len(mop_blob), len(eop_blob), _pad_packet(eop_blob)),
+            ]
+        )
+        enhanced = enhance_wfov_l1a_dataset(ds)
+        assert enhanced.sizes[CAMERA_TIME_COORD] == 1
+        length = int(enhanced[WFOV_IMAGE_BLOB_LENGTH_VAR].values[0])
+        assert enhanced[WFOV_IMAGE_BLOB_VAR].values[0, :length].tobytes() == payload
+        assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0, 0]
+        assert BLOB_BYTE_COORD in enhanced.dims
 
     def test_preserves_packet_order_not_acquisition_time_order(self):
-        later_blob = _build_fsw_blob(300, 3)
-        earlier_blob = _build_fsw_blob(100, 1)
+        later_blob = _build_complete_image_blob(b"\x01", timestamp_seconds=300, timestamp_subseconds=3)
+        earlier_blob = _build_complete_image_blob(b"\x02", timestamp_seconds=100, timestamp_subseconds=1)
         ds = _make_wfov_packet_dataset(
             [
-                ("SOP", 0, len(later_blob), later_blob.ljust(972, b"\x00")),
-                ("SOP", 0, len(earlier_blob), earlier_blob.ljust(972, b"\x00")),
+                *_complete_rows(later_blob),
+                *_complete_rows(earlier_blob),
             ]
         )
-        camera_ds = build_wfov_camera_metadata_dataset(ds)
-
+        enhanced = enhance_wfov_l1a_dataset(ds)
         np.testing.assert_equal(
-            camera_ds[CAMERA_TIME_COORD].values,
+            enhanced[CAMERA_TIME_COORD].values,
             np.array([_expected_datetime64(300, 3), _expected_datetime64(100, 1)], dtype="datetime64[us]"),
         )
-        np.testing.assert_array_equal(camera_ds["CAMERA_PACKET_INDEX"].values, np.array([0, 1], dtype=np.int32))
+        np.testing.assert_array_equal(enhanced["CAMERA_PACKET_INDEX"].values, np.array([0, 2], dtype=np.int32))
 
-    def test_image_complete_flag(self):
-        blob = _build_fsw_blob(100, 1)
-        ds = _make_wfov_packet_dataset(
-            [
-                ("SOP", 0, len(blob), blob.ljust(972, b"\x00")),
-                ("MOP", len(blob), len(blob), blob.ljust(972, b"\x00")),
-                ("EOP", 2 * len(blob), len(blob), blob.ljust(972, b"\x00")),
-            ]
-        )
-        camera_ds = build_wfov_camera_metadata_dataset(ds)
-        assert camera_ds["WFOV_IMAGE_COMPLETE"].values[0]
-
-    def test_ignores_non_qualifying_sops(self):
-        blob = _build_fsw_blob(100, 1)
-        ds = _make_wfov_packet_dataset([("SOP", 512, len(blob), blob.ljust(972, b"\x00"))])
-        camera_ds = build_wfov_camera_metadata_dataset(ds)
-        assert camera_ds.sizes[CAMERA_TIME_COORD] == 0
-        assert "WFOV_FSW_PARSE_VALID" in camera_ds.data_vars
-        assert "CAMERA_PACKET_INDEX" in camera_ds.data_vars
-        assert len(camera_ds["WFOV_FSW_PARSE_VALID"]) == 0
+    def test_stitch_with_trailing_null_padding_in_packet_buffer(self):
+        payload = b"\xaa\xbb\x00\x00"
+        blob = _build_complete_image_blob(payload)
+        rows = _complete_rows(blob)
+        rows[0] = ("SOP", rows[0][1], rows[0][2], _pad_packet(blob, packet_len=len(blob)))
+        ds = _make_wfov_packet_dataset(rows)
+        enhanced = enhance_wfov_l1a_dataset(ds)
+        length = int(enhanced[WFOV_IMAGE_BLOB_LENGTH_VAR].values[0])
+        assert enhanced[WFOV_IMAGE_BLOB_VAR].values[0, :length].tobytes() == payload
