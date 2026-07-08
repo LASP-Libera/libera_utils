@@ -255,6 +255,14 @@ def mechanism_quaternions(angles: AngleLike, axis: np.ndarray) -> np.ndarray:
 
     ``q = [cos(theta/2), sin(theta/2) * axis]`` represents ``R(axis, theta)``, the mechanism
     frame's rotation relative to its parent. Returns an ``(N, 4)`` array ordered (c, x, y, z).
+
+    Notes
+    -----
+    The Az/El CK configs must declare ``FLIP SPICE QUATERNIONS`` (not plain ``SPICE QUATERNIONS``) for
+    these to load correctly. With FLIP, MSOPCK yields ``pxform(mechanism, parent) = R(axis, +angle)``;
+    plain ``SPICE QUATERNIONS`` stores the transpose (the inverse rotation), which shows up as a large
+    pointing error. This pairing of the scalar-first half-angle form with the FLIP declaration was
+    pinned empirically against a controlled single-axis rotation, so the two must stay in sync.
     """
     axis = np.asarray(axis, dtype=float)
     axis = axis / np.linalg.norm(axis)
