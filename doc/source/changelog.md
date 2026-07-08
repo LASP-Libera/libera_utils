@@ -1,5 +1,11 @@
 # Version Changes
 
+## 5.9.0
+
+- BREAKING: Rename `DataLevel.ANC` to `DataLevel.AUX` and split ancillary archive routing into separate AUX and CAL archive buckets.
+- BREAKING: Replace provisional L2/ANC `DataProductIdentifier` and `ProcessingStepIdentifier` values with the camera cloud-fraction and RBSP+VIIRS imager product sets for July delivery (renamed product strings, new AUX/L2 members, and updated L2 team IAM role mappings).
+- DOCS: Update user docs for the new product/level identifiers.
+
 ## 5.8.6
 
 - FEAT: Manual processing now runs through the SDC event bus instead of triggering Step Functions directly. `step-function-trigger` emits a `ManualProcessing` event for a single step, and a new `manual-processing` CLI submits arbitrary custom DAGs (or the default DAG) across one or more dates, with an optional `--verify` that polls the Coordination Table.
