@@ -67,6 +67,15 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
         "psf_bbox_lon_min",
         "psf_bbox_lon_max",
         "q_flags",
+        # Camera pixel-block provenance: which L1B camera pixels this pseudo-footprint
+        # was segmented from (centre/boresight pixel and the block's [start, stop) extent
+        # on each pixel axis). Real per-footprint integers straight off the PseudoFootprint.
+        "center_pixel_x",
+        "center_pixel_y",
+        "camera_pixel_x_start",
+        "camera_pixel_x_stop",
+        "camera_pixel_y_start",
+        "camera_pixel_y_stop",
     }
 )
 
@@ -390,6 +399,15 @@ def _assemble_camtime_dataset(
         "psf_bbox_lon_min": [_normalize_longitude(f.bbox.lon_min) for f in footprints],
         "psf_bbox_lon_max": [_normalize_longitude(f.bbox.lon_max) for f in footprints],
         "q_flags": [int(f.q_flags) for f in footprints],
+        # Pixel-block provenance. slice_x/slice_y follow Python's half-open [start, stop)
+        # convention, matching the product definition's inclusive-start / exclusive-stop
+        # documentation for the camera_pixel_*_start / *_stop variables.
+        "center_pixel_x": [f.center_ix for f in footprints],
+        "center_pixel_y": [f.center_iy for f in footprints],
+        "camera_pixel_x_start": [f.slice_x.start for f in footprints],
+        "camera_pixel_x_stop": [f.slice_x.stop for f in footprints],
+        "camera_pixel_y_start": [f.slice_y.start for f in footprints],
+        "camera_pixel_y_stop": [f.slice_y.stop for f in footprints],
     }
 
     # Start the data dict with the time coordinate (nanosecond datetimes; note the

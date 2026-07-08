@@ -41,8 +41,14 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Spacecraft altitude above reference ellipsoid
+      # This value is the center-pixel geolocated SURFACE height taken straight from
+      # the L1B Daily Camera `Altitude` field (camera_segmentation._build_footprint),
+      # i.e. terrain elevation above the WGS84 ellipsoid at the footprint boresight --
+      # NOT the ~835 km spacecraft altitude. The L1B field declares valid_range
+      # [-1000, 30000] m, which is mirrored here so the two products agree.
+      long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
       units: meters
+      valid_range: [-1000, 30000]
   solar_zenith_angle:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
@@ -384,8 +390,61 @@ variables:
       units: "1"
       valid_range: [0, 1]
   q_flags:
-    dtype: int64
+    # int32 (not int64): only a handful of bits are defined, and the previous
+    # int64 dtype paired with an int32-max valid_range was internally inconsistent.
+    dtype: int32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Quality flags (bitwise)
-      valid_range: [0, 2147483647]
+      # CF flag metadata for the bits set by camera_segmentation.CameraFootprintQualityFlag.
+      # flag_masks/flag_meanings let a consumer decode each bit without reading source:
+      #   1 = partial_coverage           (some -- not all -- block corners were off-Earth,
+      #                                    so the bounding box covers only part of the block)
+      #   2 = center_pixel_substituted   (the geometric centre pixel was off-Earth, so the
+      #                                    nearest valid pixel was used as the boresight)
+      # valid_range spans 0 (clean) through all defined bits OR-combined (1 | 2 == 3).
+      flag_masks: [1, 2]
+      flag_meanings: "partial_coverage center_pixel_substituted"
+      valid_range: [0, 3]
+
+  # ---------------------------------------------------------------------------
+  # (f) Camera pixel-block provenance (FMATCH-CAM-CAMTIME only).
+  #     Each pseudo-footprint is a contiguous block of L1B camera pixels
+  #     (camera_segmentation.PseudoFootprint). These indices trace a footprint back
+  #     to its source pixels in the L1B Daily Camera grid (dimensions
+  #     CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y). The *_start indices are
+  #     inclusive and the *_stop indices are exclusive (Python slice convention), so
+  #     the block spans pixels [start, stop) on each axis. The centre-pixel indices
+  #     point at the boresight stand-in, after any nearest-valid substitution (see
+  #     the center_pixel_substituted q_flags bit).
+  # ---------------------------------------------------------------------------
+  center_pixel_x:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Boresight center) pixel index along CAMERA_PIXEL_COUNT_X
+  center_pixel_y:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
+  camera_pixel_x_start:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Inclusive start pixel index of the block along CAMERA_PIXEL_COUNT_X
+  camera_pixel_x_stop:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Exclusive stop pixel index of the block along CAMERA_PIXEL_COUNT_X
+  camera_pixel_y_start:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Inclusive start pixel index of the block along CAMERA_PIXEL_COUNT_Y
+  camera_pixel_y_stop:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Exclusive stop pixel index of the block along CAMERA_PIXEL_COUNT_Y

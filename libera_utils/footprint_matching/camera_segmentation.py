@@ -199,7 +199,7 @@ def _estimate_ground_sampling_distance_km(lat2d: np.ndarray, lon2d: np.ndarray) 
     """Estimate the ground distance between adjacent pixels, in km.
 
     We sample near the image centre (where the grid is most likely populated and
-    least distorted) and measure the geodesic distance to the neighbouring pixel in
+    least distorted) and measure the geodesic distance to the neighboring pixel in
     each grid direction, averaging whatever samples are valid. This tells us how many
     pixels span the target footprint diameter.
 
