@@ -2,8 +2,10 @@
 
 ## 5.10.1
 
-- FEAT: WFOV SCI (APID 1040) L1A parsing decodes FSW (36B) and FPGA (140B) headers from every qualifying SOP packet into the `CAMERA_TIME` dimension, preserving packet stream order.
-- FEAT: Add `CAMERA_TIME` coordinate with per-image metadata (`WFOV_FSW_*`, `WFOV_FPGA_*`, parse-valid flags, and image completeness) so `write_libera_data_product(..., time_variable="CAMERA_TIME")` produces filenames from first/last SOP FSW times in packet order.
+- FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_IMAGE_BLOB` (`uint8`/`BLOB_BYTE` + `WFOV_IMAGE_BLOB_LENGTH`), and deduplicates packet-level `ICIE__WFOV_DATA` with `PACKET_IMAGE_ID` traceability.
+- FEAT: Decode trailing 8-byte NAND footer metadata into `WFOV_TRAILING_FOOTER_*` variables; add file-level quality attrs `n_missing_sop_or_eop`, `n_bad_images`, and `n_complete_images`.
+- FEAT: Add `WFOV_CRC_VALID` placeholder (`-1` = not validated) and `validate_wfov_image_crc` stub pending LIBSDC-747.
+- BREAKING: `CAMERA_TIME` now contains one row per **complete** stitched image only (not every qualifying SOP). Removed redundant `WFOV_IMAGE_COMPLETE`.
 
 ## 5.10.0
 

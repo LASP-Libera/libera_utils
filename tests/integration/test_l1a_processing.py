@@ -15,7 +15,12 @@ from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
-from libera_utils.l1a.wfov_image_metadata import CAMERA_TIME_COORD
+from libera_utils.l1a.wfov_image_metadata import (
+    BLOB_BYTE_COORD,
+    CAMERA_TIME_COORD,
+    WFOV_IMAGE_BLOB_LENGTH_VAR,
+    WFOV_IMAGE_BLOB_VAR,
+)
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -88,7 +93,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
             "PACKET_ICIE_TIME",
             8,
         ),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, CAMERA_TIME_COORD, 8),
+        (["test_ditl_camera_with_duplicate_packet"], LiberaApid.icie_wfov_sci, CAMERA_TIME_COORD, 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
@@ -135,7 +140,11 @@ def test_process_packets_to_l1a_product(
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", str(skip_header_bytes))
 
     print("Parsing packets to L1A dataset...")
-    dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
+    if apid == LiberaApid.icie_wfov_sci:
+        with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+            dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
+    else:
+        dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
 
     # Verify basic structure
     assert isinstance(dataset, type(dataset)), "Should return an xarray Dataset"
@@ -176,10 +185,17 @@ def test_process_packets_to_l1a_product(
     if apid == LiberaApid.icie_wfov_sci:
         assert CAMERA_TIME_COORD in dataset.coords
         assert CAMERA_TIME_COORD in dataset.dims
+        assert BLOB_BYTE_COORD in dataset.dims
         assert "CAMERA_PACKET_INDEX" in dataset.data_vars
+        assert "PACKET_IMAGE_ID" in dataset.data_vars
         assert "WFOV_FSW_PARSE_VALID" in dataset.data_vars
         assert "WFOV_FPGA_PARSE_VALID" in dataset.data_vars
+        assert WFOV_IMAGE_BLOB_VAR in dataset.data_vars
+        assert WFOV_IMAGE_BLOB_LENGTH_VAR in dataset.data_vars
         assert dataset.sizes[CAMERA_TIME_COORD] > 0
+        assert dataset.sizes[CAMERA_TIME_COORD] == dataset.attrs["n_complete_images"]
+        assert "n_missing_sop_or_eop" in dataset.attrs
+        assert "n_bad_images" in dataset.attrs
 
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
@@ -239,7 +255,7 @@ def test_wfov_sci_filename_uses_image_time_bounds(
         )
 
     expected_first = np.datetime64("2028-02-14T04:23:03.681622", "us")
-    expected_last = np.datetime64("2028-02-14T04:23:18.577840", "us")
+    expected_last = np.datetime64("2028-02-14T04:23:13.564655", "us")
 
     camera_times = dataset[CAMERA_TIME_COORD].values
     np.testing.assert_equal(camera_times[0], expected_first)
@@ -261,9 +277,66 @@ def test_wfov_sci_filename_uses_image_time_bounds(
     parsed_filename = LiberaDataProductFilename.from_file_path(output_filename.path)
     filename = parsed_filename.path.name
     assert "20280214T042303" in filename
-    assert "20280214T042318" in filename
+    assert "20280214T042313" in filename
     assert "20280215T131631" not in filename
     assert "20280215T131727" not in filename
+
+
+@pytest.mark.filterwarnings("error")
+def test_ditl_camera_wfov_image_blob_round_trip_and_decompress(
+    test_ditl_camera_with_duplicate_packet,
+    monkeypatch,
+    tmp_path,
+):
+    """DITL WFOV SCI: parse, write, read back, and smoke-test JPEG-LS decompression."""
+    from io import BytesIO
+
+    import pillow_jpls  # noqa: F401 - registers JPEG-LS plugin with Pillow
+    from PIL import Image
+
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+    apid = LiberaApid.icie_wfov_sci
+
+    with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+        dataset = packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ditl_camera_with_duplicate_packet],
+            apid=apid.value,
+        )
+
+    n_complete = dataset.sizes[CAMERA_TIME_COORD]
+    assert n_complete == dataset.attrs["n_complete_images"]
+    assert n_complete < dataset.sizes["PACKET"]
+
+    pre_write_payloads = []
+    for image_index in range(n_complete):
+        length = int(dataset[WFOV_IMAGE_BLOB_LENGTH_VAR].values[image_index])
+        pre_write_payloads.append(dataset[WFOV_IMAGE_BLOB_VAR].values[image_index, :length].tobytes())
+
+    product_definition_path = get_l1a_product_definition_path(apid)
+    output_filename = write_libera_data_product(
+        data_product_definition=product_definition_path,
+        data=dataset,
+        output_path=tmp_path,
+        time_variable=CAMERA_TIME_COORD,
+        strict=True,
+    )
+
+    with xr.open_dataset(output_filename.path) as read_dataset:
+        product_config = LiberaDataProductDefinition.from_yaml(product_definition_path)
+        errors = product_config.check_dataset_conformance(read_dataset, strict=False)
+        assert not errors, errors
+
+        assert read_dataset.sizes[CAMERA_TIME_COORD] == n_complete
+        for image_index, expected_payload in enumerate(pre_write_payloads):
+            length = int(read_dataset[WFOV_IMAGE_BLOB_LENGTH_VAR].values[image_index])
+            round_tripped = read_dataset[WFOV_IMAGE_BLOB_VAR].values[image_index, :length].tobytes()
+            assert round_tripped == expected_payload
+
+        for image_index in range(min(3, n_complete)):
+            length = int(read_dataset[WFOV_IMAGE_BLOB_LENGTH_VAR].values[image_index])
+            payload = read_dataset[WFOV_IMAGE_BLOB_VAR].values[image_index, :length].tobytes()
+            with Image.open(BytesIO(payload)) as img:
+                assert img.size == (2048, 2048)
 
 
 @pytest.mark.filterwarnings("error")

@@ -3,6 +3,9 @@ attributes:
   algorithm_version: null
   date_created: null
   input_files: null
+  n_missing_sop_or_eop: null
+  n_bad_images: null
+  n_complete_images: null
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]
@@ -160,6 +163,12 @@ variables:
     dimensions: ["PACKET"]
     attributes:
       long_name: ICIE WFOV camera science data checksum
+  PACKET_IMAGE_ID:
+    dtype: int32
+    dimensions: ["PACKET"]
+    attributes:
+      long_name: Complete WFOV image index for packet (-1 if not part of a complete image)
+      comment: Maps each packet to its stitched image index on CAMERA_TIME, or -1 when incomplete
   CAMERA_PACKET_INDEX:
     dtype: int32
     dimensions: ["CAMERA_TIME"]
@@ -175,12 +184,23 @@ variables:
     dtype: bool
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Whether FPGA header block was parsed from SOP packet slice
-  WFOV_IMAGE_COMPLETE:
-    dtype: bool
+      long_name: Whether FPGA header block was parsed from stitched image blob
+  WFOV_IMAGE_BLOB:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME", "BLOB_BYTE"]
+    attributes:
+      long_name: Compressed JPEG-LS image payload (headers and footers excluded)
+      comment: Use WFOV_IMAGE_BLOB_LENGTH to determine valid bytes; padding beyond length is zero
+  WFOV_IMAGE_BLOB_LENGTH:
+    dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Whether mem-dump sequence from SOP to EOP is contiguous
+      long_name: Valid byte length of WFOV_IMAGE_BLOB for each complete image
+  WFOV_CRC_VALID:
+    dtype: int8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: WFOV compressed payload CRC validation result (-1 = not validated)
   WFOV_FSW_FSW_LENGTH:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
@@ -447,3 +467,68 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FPGA drop error status flag
+  WFOV_TRAILING_FOOTER_PIXEL_SUM:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer pixel sum
+  WFOV_TRAILING_FOOTER_DARK:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer dark level
+  WFOV_TRAILING_FOOTER_WHITE:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer white level
+  WFOV_TRAILING_FOOTER_DELTA:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer delta
+  WFOV_TRAILING_FOOTER_CRC:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer CRC (metadata only; not validated in L1A)
+  WFOV_TRAILING_FOOTER_SPARE:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer spare status bit
+  WFOV_TRAILING_FOOTER_DROP_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer drop error status flag
+  WFOV_TRAILING_FOOTER_CRC_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer CRC error status flag
+  WFOV_TRAILING_FOOTER_EEP_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer EEP error status flag
+  WFOV_TRAILING_FOOTER_EOP_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer EOP error status flag
+  WFOV_TRAILING_FOOTER_SIZE_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer size error status flag
+  WFOV_TRAILING_FOOTER_PID_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer PID error status flag
+  WFOV_TRAILING_FOOTER_SYNC_ERROR:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Trailing NAND footer sync error status flag
