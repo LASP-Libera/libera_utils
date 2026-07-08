@@ -170,12 +170,14 @@ def test_geolocate_earth_target(
         # frame misalignments (LIBSDC-806) active. The footprint stays tightly clustered but lands offset
         # from the Libya-4 command point (lon=23.39, lat=28.55) by ~the misalignment; the correctness of
         # that offset is validated against Javier's LOS in test_los_alignment.py. Here we confirm the
-        # pipeline lands the footprint at the expected (misaligned) location. The mean is used rather than
-        # a 2D-histogram argmax, which flips bins under sub-degree shifts.
+        # pipeline lands the footprint at the expected (misaligned) location. The median (not the mean or a
+        # 2D-histogram argmax) is used because the wide cross-track scan grazes the limb at its extremes: a
+        # few near-limb samples flip between hit and ellipsoid-miss (NaN) across platforms/Python builds,
+        # which shifts the mean longitude by ~0.02 deg but leaves the median unmoved.
         slc = slice(*spicetime.adapt(["2028-01-02 00:21:22", "2028-01-02 00:21:36"], "iso"))
-        mean_lat = np.nanmean(ellips_lla_df.loc[slc]["lat"])
-        mean_lon = np.nanmean(ellips_lla_df.loc[slc]["lon"])
-        print("Mean Lat: ", mean_lat)
-        print("Mean Lon: ", mean_lon)
-        np.testing.assert_allclose(mean_lat, 29.021377484955146, atol=0.01)
-        np.testing.assert_allclose(mean_lon, 21.149353320006902, atol=0.01)
+        median_lat = np.nanmedian(ellips_lla_df.loc[slc]["lat"])
+        median_lon = np.nanmedian(ellips_lla_df.loc[slc]["lon"])
+        print("Median Lat: ", median_lat)
+        print("Median Lon: ", median_lon)
+        np.testing.assert_allclose(median_lat, 29.294386632783574, atol=0.01)
+        np.testing.assert_allclose(median_lon, 21.264297907053034, atol=0.01)
