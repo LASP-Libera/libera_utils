@@ -1,9 +1,13 @@
 KPL/FK
 
-Frame definitions for the JPSS-1 spacecraft & CERES instrument
+Frozen nominal (misalignment-free) Libera frame kernel for tier-0 geolocation tests
 --------------------------------------------------------
 
-    Frame definitions required for the CPRS mission.
+    Copy of the production NOAA-20 Libera frame kernel with the OAV3 measured frame
+    misalignments (LIBSDC-806) omitted: identity radiometer boresight quaternions and no
+    axis-of-rotation keywords. test_tier0_geolocation.py loads this so its geolocation-vs-CERES
+    math check runs on nominal geometry; the real misalignments (in the production frame kernel)
+    are validated separately in test_los_alignment.py. Frozen test data -- do not regenerate.
 
     Frame Name              Relative to Frame   Frame Type  Frame ID
     ==========              =================   ==========  ========

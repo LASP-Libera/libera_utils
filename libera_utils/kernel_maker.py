@@ -240,8 +240,13 @@ MECHANISM_QUATERNION_COLUMNS = {
 
 
 def _read_alignment_axis(pool_var: str) -> np.ndarray:
-    """Read a measured unit-vector axis from the Libera frame kernel pool (furnished on demand)."""
-    sp.furnsh(str(config.get("LIBERA_KERNEL_FRAME")))
+    """Read a measured unit-vector axis from the Libera frame kernel pool.
+
+    Furnishes the frame kernel only if the keyword is not already in the pool (static kernels are
+    normally furnished via :meth:`KernelManager.load_static_kernels`), to avoid redundant loads.
+    """
+    if not sp.expool(pool_var):
+        sp.furnsh(str(config.get("LIBERA_KERNEL_FRAME")))
     return np.asarray(sp.gdpool(pool_var, 0, 3), dtype=float)
 
 
