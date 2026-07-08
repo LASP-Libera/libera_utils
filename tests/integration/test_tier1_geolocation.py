@@ -166,24 +166,16 @@ def test_geolocate_earth_target(
         per_good = qf_counts[0] / qf_counts.sum()
         assert per_good >= 0.78, per_good
 
+        # This is the only end-to-end kernel-generation -> geolocation test, so it runs with the measured
+        # frame misalignments (LIBSDC-806) active. The footprint stays tightly clustered but lands offset
+        # from the Libya-4 command point (lon=23.39, lat=28.55) by ~the misalignment; the correctness of
+        # that offset is validated against Javier's LOS in test_los_alignment.py. Here we confirm the
+        # pipeline lands the footprint at the expected (misaligned) location. The mean is used rather than
+        # a 2D-histogram argmax, which flips bins under sub-degree shifts.
         slc = slice(*spicetime.adapt(["2028-01-02 00:21:22", "2028-01-02 00:21:36"], "iso"))
-        print("Mean Lat: ", np.nanmean(ellips_lla_df.loc[slc]["lat"]))
-        print("Mean Lon: ", np.nanmean(ellips_lla_df.loc[slc]["lon"]))
-
-        clon, clat = 23.39, 28.55
-        hist, xedge, yedge = np.histogram2d(
-            ellips_lla_df.loc[slc]["lon"],
-            ellips_lla_df.loc[slc]["lat"],
-            bins=(13, 13),
-            range=[[clon - 3, clon + 3], [clat - 3, clat + 3]],
-        )
-        idx = np.where(hist == hist.max())
-        ix, iy = idx[0][0], idx[1][0]
-
-        print(f"Expected focus point:    lon=[{clon}],          lat=[{clat}]")
-        print(
-            f"2D histogram max between lon=[{xedge[ix]:.3f}, {xedge[ix + 1]:.3f}],"
-            f" lat=[{yedge[iy]:.3f}, {yedge[iy + 1]:.3f}]"
-        )
-        assert ix == hist.shape[0] // 2, ix
-        assert iy == hist.shape[0] // 2, iy
+        mean_lat = np.nanmean(ellips_lla_df.loc[slc]["lat"])
+        mean_lon = np.nanmean(ellips_lla_df.loc[slc]["lon"])
+        print("Mean Lat: ", mean_lat)
+        print("Mean Lon: ", mean_lon)
+        np.testing.assert_allclose(mean_lat, 29.021377484955146, atol=0.01)
+        np.testing.assert_allclose(mean_lon, 21.149353320006902, atol=0.01)
