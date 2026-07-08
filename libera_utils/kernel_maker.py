@@ -82,28 +82,72 @@ EL_ERROR_PHASE = -1.1128
 # contraction (|error'| <= |amplitude| << 1), reaching machine precision within a couple of steps.
 _INVERSE_ITERATIONS = 4
 
-# Angle inputs may be a Python scalar, a NumPy array, or a pandas Series (the DataFrame helpers pass
-# columns); the corrections preserve the input type.
-AngleLike = float | np.ndarray | pd.Series
+# Angle inputs may be a Python scalar, a NumPy array/scalar, or a pandas Series (the DataFrame helpers
+# pass columns); a Python-scalar input is returned as a NumPy scalar.
+AngleLike = float | np.floating | np.ndarray | pd.Series
 
 
 def azimuth_error(angle: AngleLike) -> AngleLike:
-    """Azimuth encoder error at the telemetered angle(s), in radians."""
+    """Azimuth encoder error at the telemetered angle(s).
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered azimuth angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Encoder error, in radians, to subtract from the telemetry.
+    """
     return AZ_ERROR_AMPLITUDE * np.sin(angle + AZ_ERROR_PHASE)
 
 
 def elevation_error(angle: AngleLike) -> AngleLike:
-    """Elevation encoder error at the telemetered angle(s), in radians."""
+    """Elevation encoder error at the telemetered angle(s).
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered elevation angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Encoder error, in radians, to subtract from the telemetry.
+    """
     return EL_ERROR_AMPLITUDE * np.sin(angle + EL_ERROR_PHASE)
 
 
 def correct_azimuth(angle: AngleLike) -> AngleLike:
-    """Corrected azimuth from telemetered angle(s): ``corrected = telemetry - error``."""
+    """Corrected azimuth from telemetered angle(s): ``corrected = telemetry - error``.
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered azimuth angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Corrected azimuth angle(s), in radians.
+    """
     return angle - azimuth_error(angle)
 
 
 def correct_elevation(angle: AngleLike) -> AngleLike:
-    """Corrected elevation from telemetered angle(s): ``corrected = telemetry - error``."""
+    """Corrected elevation from telemetered angle(s): ``corrected = telemetry - error``.
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered elevation angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Corrected elevation angle(s), in radians.
+    """
     return angle - elevation_error(angle)
 
 
@@ -112,6 +156,16 @@ def uncorrect_azimuth(corrected: AngleLike) -> AngleLike:
 
     Inverse of :func:`correct_azimuth`, solved by fixed-point iteration on
     ``telemetry = corrected + azimuth_error(telemetry)``.
+
+    Parameters
+    ----------
+    corrected : AngleLike
+        Corrected azimuth angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Telemetered azimuth angle(s), in radians.
     """
     telemetry = corrected
     for _ in range(_INVERSE_ITERATIONS):
@@ -124,6 +178,16 @@ def uncorrect_elevation(corrected: AngleLike) -> AngleLike:
 
     Inverse of :func:`correct_elevation`, solved by fixed-point iteration on
     ``telemetry = corrected + elevation_error(telemetry)``.
+
+    Parameters
+    ----------
+    corrected : AngleLike
+        Corrected elevation angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Telemetered elevation angle(s), in radians.
     """
     telemetry = corrected
     for _ in range(_INVERSE_ITERATIONS):
