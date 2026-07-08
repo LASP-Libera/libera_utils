@@ -47,12 +47,9 @@ def test_los_alignment_vs_javier(
     km = KernelManager()
     km.load_static_kernels()
 
-    # RAP scan: already-corrected Az/El mechanism angles plus Javier's computed LOS in LIBERA_BASE.
-    scan = (
-        pd.read_csv(test_data_path / "los_alignment" / "sampleElAzAngles_wLosVec_RAPS_20260707T152556.csv")
-        .iloc[::200]
-        .reset_index(drop=True)
-    )
+    # RAP scan (sub-sampled to every 200th telemetry sample to keep the fixture small): already-corrected
+    # Az/El mechanism angles plus Javier's computed LOS in the LIBERA_BASE (STAND) frame.
+    scan = pd.read_csv(test_data_path / "los_alignment" / "sampleElAzAngles_wLosVec_RAPS_20260707T152556.csv")
     base_et = spicetime.adapt("2021-04-09T12:00:07", "iso", "et")
     et = base_et + scan["time_sec"].to_numpy()
     corrected_az = scan["measAngle_Az_rad"].to_numpy()
