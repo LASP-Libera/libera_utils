@@ -1,10 +1,10 @@
 """Goal-2 line-of-sight alignment test (LIBSDC-806).
 
 Validates that the measured Libera frame misalignments (Az/El axes of rotation + radiometer
-boresight, stored in the frame kernel) reproduce Javier Fernandez's independently-computed
+boresight, stored in the frame kernel) reproduce the independent engineering computation of the
 line-of-sight in the LIBERA_BASE (STAND) frame over a RAP scan.
 
-This is a partial check: Javier's computation stops at the LIBERA_BASE frame (it does not yet
+This is a partial check: the engineering computation stops at the LIBERA_BASE frame (it does not
 reach the spacecraft/JPSS ephemeris or geolocation stages), so we compare LOS unit vectors in
 LIBERA_BASE, not geolocated lat/lon.
 """
@@ -39,25 +39,26 @@ def _angle_between(a, b):
     return np.degrees(np.arccos(np.clip(np.sum(a * b, axis=-1), -1.0, 1.0)))
 
 
-def test_los_alignment_vs_javier(
+def test_los_alignment_vs_engineering(
     noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch
 ):
-    """LIBERA_BASE -> radiometer LOS reproduces Javier's u_LOS_STAND over a RAP scan (LIBSDC-806)."""
+    """LIBERA_BASE -> radiometer LOS reproduces the engineering u_LOS_STAND over a RAP scan (LIBSDC-806)."""
     monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
     km = KernelManager()
     km.load_static_kernels()
 
-    # RAP scan (sub-sampled to every 200th telemetry sample to keep the fixture small): already-corrected
-    # Az/El mechanism angles plus Javier's computed LOS in the LIBERA_BASE (STAND) frame.
+    # RAP scan (sub-sampled to ~100 evenly-spaced samples to keep the fixture small): already-corrected
+    # Az/El mechanism angles plus the engineering-computed LOS in the LIBERA_BASE (STAND) frame.
     scan = pd.read_csv(test_data_path / "los_alignment" / "sampleElAzAngles_wLosVec_RAPS_20260707T152556.csv")
     base_et = spicetime.adapt("2021-04-09T12:00:07", "iso", "et")
     et = base_et + scan["time_sec"].to_numpy()
     corrected_az = scan["measAngle_Az_rad"].to_numpy()
     corrected_el = scan["measAngle_El_rad"].to_numpy()
-    javier_los = scan[["u_LOS_STAND_x", "u_LOS_STAND_y", "u_LOS_STAND_z"]].to_numpy()
+    engineering_los = scan[["u_LOS_STAND_x", "u_LOS_STAND_y", "u_LOS_STAND_z"]].to_numpy()
 
     # Build the mechanism quaternions directly from the already-corrected angles (the encoder correction
-    # is exercised separately in the tier0 kernel test; here the input is post-correction, as Javier's is).
+    # is exercised separately in the tier0 kernel test; here the input is post-correction, as the
+    # engineering reference is).
     kernel_df = pd.DataFrame(
         {"AXIS_SAMPLE_ICIE_ET": et, "ICIE__AXIS_AZ_FILT": corrected_az, "ICIE__AXIS_EL_FILT": corrected_el}
     )
@@ -76,17 +77,17 @@ def test_los_alignment_vs_javier(
         el0_z = np.array(sp.gdpool("LIBERA_EL0_Z_IN_STAND", 0, 3))
 
         spice_los = np.array([sp.pxform("LIBERA_TOT_RAD_COORD", "LIBERA_BASE_COORD", e) @ boresight for e in et])
-        # Independent recompute of Javier's rotateVectorAboutAxis process from the same measured vectors.
+        # Independent recompute of the engineering rotateVectorAboutAxis process from the same measured vectors.
         rodrigues_los = np.array(
             [_rotation(az_axis, az) @ _rotation(el_axis, el) @ el0_z for az, el in zip(corrected_az, corrected_el)]
         )
 
-    # The misalignment is a real, non-trivial effect: Javier's LOS is well off the nominal +Z boresight.
-    assert _angle_between(javier_los, np.tile(boresight, (len(et), 1))).max() > 0.1
+    # The misalignment is a real, non-trivial effect: the engineering LOS is well off the nominal +Z boresight.
+    assert _angle_between(engineering_los, np.tile(boresight, (len(et), 1))).max() > 0.1
 
-    # Our understanding of the geometry (measured vectors + rotateVectorAboutAxis) matches his numbers.
-    assert _angle_between(rodrigues_los, javier_los).max() < 1e-4
+    # Our understanding of the geometry (measured vectors + rotateVectorAboutAxis) matches the engineering numbers.
+    assert _angle_between(rodrigues_los, engineering_los).max() < 1e-4
 
-    # Our SPICE frame chain (measured-axis Az/El CKs + boresight frame kernel) reproduces his LOS. The
-    # residual is dominated by the Az CK down-sample tolerance (~0.006 deg), far below the misalignment.
-    assert _angle_between(spice_los, javier_los).max() < 0.02
+    # Our SPICE frame chain (measured-axis Az/El CKs + boresight frame kernel) reproduces the engineering
+    # LOS. The residual is dominated by the Az CK down-sample tolerance (~0.006 deg), far below the misalignment.
+    assert _angle_between(spice_los, engineering_los).max() < 0.02
