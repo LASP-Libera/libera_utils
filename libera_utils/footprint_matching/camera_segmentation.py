@@ -30,7 +30,7 @@ What this module computes for each pseudo-footprint
    path uses, so both products get identical edge-case behaviour.
 2. The per-footprint scalar geolocation/geometry (latitude, longitude, altitude,
    solar/viewing zenith and relative azimuth angles) taken from the block's
-   **centre pixel** -- the pseudo-footprint's stand-in for the radiometer
+   **center pixel** -- the pseudo-footprint's stand-in for the radiometer
    boresight.
 
 Off-Earth pixels
@@ -44,7 +44,7 @@ limb. Following the chosen policy:
   the footprint is flagged :data:`CameraFootprintQualityFlag.PARTIAL_COVERAGE`;
 * all four corners fill -> there is effectively no footprint, so the block is
   dropped entirely;
-* the centre pixel itself fill -> the nearest valid pixel in the block is
+* the center pixel itself fill -> the nearest valid pixel in the block is
   substituted for the boresight and the footprint is flagged
   :data:`CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED`.
 
@@ -90,7 +90,7 @@ CAMERA_TIME_NAME: str = "CAMERA_TIME"
 PIXEL_X_DIM: str = "CAMERA_PIXEL_COUNT_X"
 PIXEL_Y_DIM: str = "CAMERA_PIXEL_COUNT_Y"
 
-# Per-pixel geolocation fields reduced to the footprint's centre-pixel scalars.
+# Per-pixel geolocation fields reduced to the footprint's center-pixel scalars.
 # We use the plain (non terrain-corrected) latitude/longitude to match the
 # "Footprint boresight" convention used elsewhere in the FMATCH pipeline
 # (see scripts/generate_fmatch_example_products.py).
@@ -112,7 +112,7 @@ RELATIVE_AZIMUTH_NAME: str = "Relative_Azimuth_Surface"
 TARGET_FOOTPRINT_DIAMETER_KM: float = 2.0 * NOMINAL_ALTITUDE_KM * math.tan(math.radians(LIBERA_FOV_HALFANGLE_DEG))
 
 # Fallback ground-sampling distance (km per pixel) used only when the per-image GSD
-# cannot be estimated (e.g. an image whose centre pixels are all fill). Chosen so a
+# cannot be estimated (e.g. an image whose center pixels are all fill). Chosen so a
 # block is at least a handful of pixels; it only affects degenerate images.
 _FALLBACK_GSD_KM: float = 1.0
 
@@ -131,7 +131,7 @@ class CameraFootprintQualityFlag(enum.IntFlag):
         (fill), so the bounding box was shrunk to the valid corners and covers only
         part of the nominal block.
     CENTER_PIXEL_SUBSTITUTED
-        The geometric centre pixel was off-Earth (fill), so the nearest valid pixel
+        The geometric center pixel was off-Earth (fill), so the nearest valid pixel
         in the block was substituted as the footprint boresight.
     """
 
@@ -154,14 +154,14 @@ class PseudoFootprint:
         pixel grid. Kept for provenance and for the (future) PSF-weighted
         aggregation of the block's pixels.
     center_ix, center_iy : int
-        Pixel indices of the footprint's centre (the boresight stand-in), after any
+        Pixel indices of the footprint's center (the boresight stand-in), after any
         nearest-valid-pixel substitution.
     latitude, longitude : float
-        Centre-pixel geodetic latitude/longitude, degrees.
+        center-pixel geodetic latitude/longitude, degrees.
     altitude : float
-        Centre-pixel altitude, metres (as stored in L1B).
+        center-pixel altitude, metres (as stored in L1B).
     solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : float
-        Centre-pixel viewing-geometry angles, degrees.
+        center-pixel viewing-geometry angles, degrees.
     bbox : BoundingBox
         Geographic box enclosing the block's valid corner pixels, with pole/dateline
         handling from :func:`geometry.bounding_box_from_points`.
@@ -198,7 +198,7 @@ def _is_valid(value: float) -> bool:
 def _estimate_ground_sampling_distance_km(lat2d: np.ndarray, lon2d: np.ndarray) -> float:
     """Estimate the ground distance between adjacent pixels, in km.
 
-    We sample near the image centre (where the grid is most likely populated and
+    We sample near the image center (where the grid is most likely populated and
     least distorted) and measure the geodesic distance to the neighboring pixel in
     each grid direction, averaging whatever samples are valid. This tells us how many
     pixels span the target footprint diameter.
@@ -219,7 +219,7 @@ def _estimate_ground_sampling_distance_km(lat2d: np.ndarray, lon2d: np.ndarray) 
     cx, cy = nx // 2, ny // 2
 
     distances_km: list[float] = []
-    # Compare the centre pixel with its +x and +y neighbours where those exist.
+    # Compare the center pixel with its +x and +y neighbors where those exist.
     for dx, dy in ((1, 0), (0, 1)):
         ax, ay = cx, cy
         bx, by = min(cx + dx, nx - 1), min(cy + dy, ny - 1)
@@ -274,7 +274,7 @@ def _corner_indices(slice_x: slice, slice_y: slice) -> list[tuple[int, int]]:
 def _select_center_pixel(slice_x: slice, slice_y: slice, valid: np.ndarray) -> tuple[int, int, bool] | None:
     """Pick the block's boresight pixel, substituting the nearest valid one if needed.
 
-    Prefers the geometric centre of the block. If that pixel is off-Earth (fill), the
+    Prefers the geometric center of the block. If that pixel is off-Earth (fill), the
     nearest valid pixel (by Chebyshev/grid distance) within the block is used instead.
 
     Parameters
@@ -297,8 +297,8 @@ def _select_center_pixel(slice_x: slice, slice_y: slice, valid: np.ndarray) -> t
     if valid[cx, cy]:
         return cx, cy, False
 
-    # Centre pixel is fill: search the block for the valid pixel closest to the
-    # geometric centre. The block is small (a few pixels on a side), so a direct
+    # center pixel is fill: search the block for the valid pixel closest to the
+    # geometric center. The block is small (a few pixels on a side), so a direct
     # scan is cheap and clearer than anything fancier.
     best: tuple[int, int] | None = None
     best_distance = math.inf
@@ -370,7 +370,7 @@ def _build_footprint(
     """Build one pseudo-footprint from a pixel block, or ``None`` if it has no footprint.
 
     Applies the off-Earth policy: all corners fill -> drop; some corners fill ->
-    partial-coverage flag; centre pixel fill -> nearest-valid substitution flag.
+    partial-coverage flag; center pixel fill -> nearest-valid substitution flag.
     """
     q_flags = CameraFootprintQualityFlag(0)
 
@@ -391,7 +391,7 @@ def _build_footprint(
     if len(corner_lats) < n_corners:
         q_flags |= CameraFootprintQualityFlag.PARTIAL_COVERAGE
 
-    # --- Centre pixel (boresight stand-in), with nearest-valid substitution -
+    # --- center pixel (boresight stand-in), with nearest-valid substitution -
     center = _select_center_pixel(slice_x, slice_y, valid)
     if center is None:
         # No valid pixel anywhere in the block (should not happen if a corner was
@@ -444,7 +444,7 @@ def segment_l1b_camera(dataset: xr.Dataset, *, log: logging.Logger | None = None
 
     TODO[LIBSDC-794]: this scalar, per-block loop is written for clarity. To meet the
     real-time latency budget it can be vectorised over the pixel grid (the corner and
-    centre selections are all pure index math).
+    center selections are all pure index math).
 
     Parameters
     ----------
