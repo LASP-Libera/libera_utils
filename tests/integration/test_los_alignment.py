@@ -39,10 +39,10 @@ def _angle_between(a, b):
     return np.degrees(np.arccos(np.clip(np.sum(a * b, axis=-1), -1.0, 1.0)))
 
 
-def test_los_alignment_vs_engineering(
-    noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch
-):
+def test_los_alignment_vs_engineering(curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch):
     """LIBERA_BASE -> radiometer LOS reproduces the engineering u_LOS_STAND over a RAP scan (LIBSDC-806)."""
+    # Runs on the default (jpss4) kernel set -- the production frame kernel that carries the measured
+    # misalignment. No spacecraft ephemeris is needed: the check stays in the LIBERA_BASE frame.
     monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
     km = KernelManager()
     km.load_static_kernels()

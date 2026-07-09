@@ -240,7 +240,6 @@ def test_make_spacecraft_kernels(
 
 
 def test_make_spacecraft_azel_kernels(
-    noaa20_environment,
     curryer_lsk,
     noaa20_azel_data,
     short_tmp_path,
@@ -248,6 +247,8 @@ def test_make_spacecraft_azel_kernels(
     monkeypatch,
 ):
     """Tier-0 test for creating pointing kernels"""
+    # Builds the Az/El CKs about the measured axes read from the frame kernel, so it runs on the default
+    # (jpss4) misaligned set rather than the nominal NOAA-20 stand-in.
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
 
@@ -307,7 +308,6 @@ def test_make_spacecraft_azel_kernels(
 
 
 def test_make_spacecraft_azel_kernels_apply_encoder_correction(
-    noaa20_environment,
     curryer_lsk,
     noaa20_azel_data,
     short_tmp_path,
@@ -318,7 +318,8 @@ def test_make_spacecraft_azel_kernels_apply_encoder_correction(
 
     Drives the production create_kernel_from_l1a path with raw CERES angles (mocking only the L1A read)
     so the deterministic encoder correction is applied during kernel generation, then queries the CKs
-    and checks the recovered mechanism angle equals correct(raw), not the raw telemetry.
+    and checks the recovered mechanism angle equals correct(raw), not the raw telemetry. Runs on the
+    default (jpss4) misaligned set: the CKs rotate about the measured axes read from the frame kernel.
     """
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
