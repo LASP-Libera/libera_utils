@@ -12,8 +12,7 @@ Fake SCLK Kernel for Spacecraft with ID -143013
    years. It has two fields -- seconds and milliseconds. The clock's
    granularity is 1 millisecond.
 
-   This file was created by LASP_SDS_TEAM
-   on 2017-06-21/17:09:38.
+   This file was created by LASP_SDS_TEAM.
 
 Kernel data
 --------------------------------------------------------

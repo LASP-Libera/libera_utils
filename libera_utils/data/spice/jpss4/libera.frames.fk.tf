@@ -1,11 +1,11 @@
 KPL/FK
 
-Frame definitions for the JPSS spacecraft & CPRS mission
+Frame definitions for Libera on the JPSS-4 spacecraft
 --------------------------------------------------------
 
     TODO[LIBSDC-601]: Uses NOAA-20 (JPSS-1) base ID, needs updating to JPSS-4 at launch.
 
-    Frame definitions required for the CPRS mission.
+    Frame definitions required for Libera geolocation processing.
 
     Frame Name              Relative to Frame   Frame Type  Frame ID
     ==========              =================   ==========  ========
@@ -59,8 +59,7 @@ Frame definitions for the JPSS spacecraft & CPRS mission
     References
     ----------
 
-    This file was created by LASP_SDS_TEAM
-    on 2024-11-01/00:00:00.
+    This file was created by LASP_SDS_TEAM.
 
 Frame offsets
 --------------------------------------------------------

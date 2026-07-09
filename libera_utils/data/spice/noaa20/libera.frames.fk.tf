@@ -1,9 +1,9 @@
 KPL/FK
 
-Frame definitions for the JPSS-1 spacecraft & CERES instrument
+Frame definitions for Libera on the NOAA-20 (JPSS-1) spacecraft
 --------------------------------------------------------
 
-    Frame definitions required for the CPRS mission.
+    Frame definitions required for Libera geolocation processing.
 
     Frame Name              Relative to Frame   Frame Type  Frame ID
     ==========              =================   ==========  ========
@@ -57,8 +57,7 @@ Frame definitions for the JPSS-1 spacecraft & CERES instrument
     References
     ----------
 
-    This file was created by LASP_SDS_TEAM
-    on 2024-11-01/00:00:00.
+    This file was created by LASP_SDS_TEAM.
 
 Frame offsets
 --------------------------------------------------------

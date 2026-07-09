@@ -19,8 +19,7 @@ SCLK Kernel for JPSS-4
        Since we assume JPSS seconds are "perfect", rate should always be 1.0
        We only have one partition currently
  
-   This file was created by Gavin Medley (for Libera SDC)
-   on 2021-08-02/12:08:57.
+   This file was created by Gavin Medley (for Libera SDC).
 
 Kernel data
 --------------------------------------------------------

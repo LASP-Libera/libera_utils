@@ -8,8 +8,7 @@ Instrument kernel for Libera
     NOTE: Only the FOV and BORESIGHT variables are official IK variables. All
     others require manual reading from the SPICE variable pool.
 
-    This file was created by LASP_SDS_TEAM
-    on 2024-11-07/00:00:00.
+    This file was created by LASP_SDS_TEAM.
 
 
 Kernel data
