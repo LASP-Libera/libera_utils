@@ -79,7 +79,7 @@ def collect_fmatch_cam_input_files(input_manifest: Manifest) -> list[str]:
     In operational daily processing the SCENE-ID-CAM input manifest references one or more FMATCH-CAM files. Those
     *are* Libera data products, so they parse as :class:`~libera_utils.io.filenaming.LiberaDataProductFilename` and
     carry a :class:`~libera_utils.constants.DataProductIdentifier`. We keep exactly the files whose product ID is
-    ``FMATCH-CAM`` and skip everything else (unparseable names or other Libera products that might share the
+    ``FMATCH-CAM`` and skip everything else (unparsable names or other Libera products that might share the
     manifest). This is the inverse of the CERES SSF selection heritage, where the raw SSF inputs were the files that
     did *not* parse as Libera products.
 

@@ -22,9 +22,9 @@ angle truncation), which raises :class:`PartialFootprintError`.
 Earth model: WGS84 ellipsoid (ECEF ray-trace)
 ---------------------------------------------
 The footprint is anchored at the reported L1B footprint latitude/longitude (the
-box centre). From the viewing zenith angle and the bearing toward the subsatellite
+box center). From the viewing zenith angle and the bearing toward the subsatellite
 point we build the boresight line of sight at that ground point, locate the
-satellite in Earth-Centred-Earth-Fixed (ECEF) coordinates, then rotate the boresight
+satellite in Earth-Centered-Earth-Fixed (ECEF) coordinates, then rotate the boresight
 by the PSF's angular half-extents and intersect each resulting ray with the WGS84
 ellipsoid. The intersection points, converted back to geodetic latitude/longitude,
 give the box. Because the model is the true ellipsoid:
@@ -315,7 +315,7 @@ def _viewing_geometry(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build the boresight line of sight and locate the satellite in ECEF.
 
-    The footprint ground point ``P`` (the box centre) is the reported L1B
+    The footprint ground point ``P`` (the box center) is the reported L1B
     latitude/longitude. The boresight ray to the satellite makes the viewing zenith
     angle with the local vertical at ``P``, in the vertical plane that also contains
     the subsatellite point. The satellite ``S`` lies along that ray and on the
@@ -460,7 +460,7 @@ def bounding_box_from_points(
 
     Both need identical pole/dateline handling, so keeping one implementation avoids
     two subtly different box builders. ``center_lat_deg``/``center_lon_deg`` is the
-    footprint anchor (the radiometer boresight, or the camera block's centre pixel)
+    footprint anchor (the radiometer boresight, or the camera block's center pixel)
     and is used only for the pole-enclosure reach test, not for the box extent.
 
     Handles the three structural edge cases:
@@ -544,7 +544,7 @@ def compute_footprint_bounding_box(
     describe sun geometry and do not affect which ground patch the radiometer sees,
     so they are intentionally not parameters here.)
 
-    The box is always centred on the reported footprint latitude/longitude; the
+    The box is always centered on the reported footprint latitude/longitude; the
     viewing zenith angle and the bearing toward the subsatellite point set the
     footprint's size and orientation. When ``altitude_km`` is supplied it fixes the
     satellite range along the boresight; otherwise the range is recovered from the
