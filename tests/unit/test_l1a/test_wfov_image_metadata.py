@@ -10,6 +10,8 @@ import xarray as xr
 from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
+    COMPLETE_IMAGE_COUNT_ATTR,
+    CRC_ERROR_COUNT_ATTR,
     FPGA_HEADER_SIZE,
     FPGA_TRAILING_FOOTER_SIZE,
     FSW_HEADER_SIZE,
@@ -17,8 +19,6 @@ from libera_utils.l1a.wfov_image_metadata import (
     SOP_FPGA_MIN_SIZE,
     TIMESTAMP_SECONDS_OFFSET,
     TIMESTAMP_SUBSECONDS_OFFSET,
-    WFOV_CRC_VALID_NOT_VALIDATED,
-    WFOV_CRC_VALID_VAR,
     WFOV_IMAGE_BLOB_LENGTH_VAR,
     WFOV_IMAGE_BLOB_VAR,
     encode_trailing_footer_bytes,
@@ -379,8 +379,24 @@ class TestEnhanceWfovL1aDataset:
         assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0]
         assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) != original_bytes
         assert np.all(enhanced["ICIE__WFOV_DATA"].values[0].view(np.uint8) == 0)
-        assert enhanced.attrs["n_complete_images"] == 1
-        assert enhanced[WFOV_CRC_VALID_VAR].values[0] == WFOV_CRC_VALID_NOT_VALIDATED
+        assert enhanced.attrs[COMPLETE_IMAGE_COUNT_ATTR] == 1
+        assert enhanced.attrs[CRC_ERROR_COUNT_ATTR] == 0
+
+    def test_crc_error_count_and_warning(self, caplog):
+        import logging
+
+        payload = b"\xca\xfe"
+        fpga_block = _encode_fpga_block(status_meta={"crc_error": 1})
+        trailing_footer = encode_trailing_footer_bytes()
+        blob = _build_fsw_blob() + fpga_block + payload + trailing_footer
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+
+        with caplog.at_level(logging.WARNING):
+            enhanced = enhance_wfov_l1a_dataset(ds)
+
+        assert enhanced.attrs[CRC_ERROR_COUNT_ATTR] == 1
+        assert enhanced["WFOV_FPGA_CRC_ERROR"].values[0] == 1
+        assert "FPGA CRC errors" in caplog.text
 
     def test_incomplete_sequence_preserves_packet_data(self):
         blob = _build_complete_image_blob(b"\x01")

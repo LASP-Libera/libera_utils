@@ -16,8 +16,12 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
 from libera_utils.l1a.wfov_image_metadata import (
+    BAD_IMAGE_COUNT_ATTR,
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
+    COMPLETE_IMAGE_COUNT_ATTR,
+    CRC_ERROR_COUNT_ATTR,
+    MISSING_SOP_OR_EOP_COUNT_ATTR,
     WFOV_IMAGE_BLOB_LENGTH_VAR,
     WFOV_IMAGE_BLOB_VAR,
 )
@@ -193,9 +197,10 @@ def test_process_packets_to_l1a_product(
         assert WFOV_IMAGE_BLOB_VAR in dataset.data_vars
         assert WFOV_IMAGE_BLOB_LENGTH_VAR in dataset.data_vars
         assert dataset.sizes[CAMERA_TIME_COORD] > 0
-        assert dataset.sizes[CAMERA_TIME_COORD] == dataset.attrs["n_complete_images"]
-        assert "n_missing_sop_or_eop" in dataset.attrs
-        assert "n_bad_images" in dataset.attrs
+        assert dataset.sizes[CAMERA_TIME_COORD] == dataset.attrs[COMPLETE_IMAGE_COUNT_ATTR]
+        assert MISSING_SOP_OR_EOP_COUNT_ATTR in dataset.attrs
+        assert BAD_IMAGE_COUNT_ATTR in dataset.attrs
+        assert CRC_ERROR_COUNT_ATTR in dataset.attrs
 
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
@@ -304,8 +309,9 @@ def test_ditl_camera_wfov_image_blob_round_trip_and_decompress(
         )
 
     n_complete = dataset.sizes[CAMERA_TIME_COORD]
-    assert n_complete == dataset.attrs["n_complete_images"]
+    assert n_complete == dataset.attrs[COMPLETE_IMAGE_COUNT_ATTR]
     assert n_complete < dataset.sizes["PACKET"]
+    assert dataset.attrs[CRC_ERROR_COUNT_ATTR] == 0
 
     pre_write_payloads = []
     for image_index in range(n_complete):

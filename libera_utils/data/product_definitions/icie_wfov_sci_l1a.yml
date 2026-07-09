@@ -3,9 +3,10 @@ attributes:
   algorithm_version: null
   date_created: null
   input_files: null
-  n_missing_sop_or_eop: null
-  n_bad_images: null
-  n_complete_images: null
+  MissingSOPOrEOPCount: null
+  BadImageCount: null
+  CompleteImageCount: null
+  CRCErrorCount: null
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]
@@ -196,11 +197,6 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Valid byte length of WFOV_IMAGE_BLOB for each complete image
-  WFOV_CRC_VALID:
-    dtype: int8
-    dimensions: ["CAMERA_TIME"]
-    attributes:
-      long_name: WFOV compressed payload CRC validation result (-1 = not validated)
   WFOV_FSW_FSW_LENGTH:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
