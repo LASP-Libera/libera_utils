@@ -615,16 +615,13 @@ class TestEncoderCorrection:
         """Our Az/El correction reproduces independently-computed reference values (LIBSDC-668).
 
         Golden test against a CSV of raw and corrected mechanism angles (radians) produced by an
-        independent implementation of the correction equations. Skipped until that file is delivered.
-        Validates that the equations are coded correctly here, not their physical correctness (which
-        comes from the engineering characterization).
+        independent implementation of the correction equations. Validates that the equations are
+        coded correctly here, not their physical correctness (which comes from the engineering
+        characterization).
         """
         golden_csv = test_data_path / "encoder_correction" / "encoder_correction_golden.csv"
-        if not golden_csv.exists():
-            pytest.skip(f"Awaiting independently-computed validation data at {golden_csv}")
-
         golden = pd.read_csv(golden_csv)
-        # Column names and tolerance to reconcile with the delivered file; equations operate in radians.
+        # Equations operate in radians.
         np.testing.assert_allclose(
             kernel_maker.correct_azimuth(golden["az_raw_rad"].to_numpy()),
             golden["az_corrected_rad"].to_numpy(),
