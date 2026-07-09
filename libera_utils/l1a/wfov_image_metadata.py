@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import struct
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -13,6 +14,8 @@ import xarray as xr
 
 from libera_utils.time import multipart_to_dt64
 
+logger = logging.getLogger(__name__)
+
 CAMERA_TIME_COORD = "CAMERA_TIME"
 BLOB_BYTE_COORD = "BLOB_BYTE"
 CAMERA_PACKET_INDEX_VAR = "CAMERA_PACKET_INDEX"
@@ -21,8 +24,11 @@ WFOV_FSW_PARSE_VALID_VAR = "WFOV_FSW_PARSE_VALID"
 WFOV_FPGA_PARSE_VALID_VAR = "WFOV_FPGA_PARSE_VALID"
 WFOV_IMAGE_BLOB_VAR = "WFOV_IMAGE_BLOB"
 WFOV_IMAGE_BLOB_LENGTH_VAR = "WFOV_IMAGE_BLOB_LENGTH"
-WFOV_CRC_VALID_VAR = "WFOV_CRC_VALID"
-WFOV_CRC_VALID_NOT_VALIDATED = np.int8(-1)
+
+MISSING_SOP_OR_EOP_COUNT_ATTR = "MissingSOPOrEOPCount"
+BAD_IMAGE_COUNT_ATTR = "BadImageCount"
+COMPLETE_IMAGE_COUNT_ATTR = "CompleteImageCount"
+CRC_ERROR_COUNT_ATTR = "CRCErrorCount"
 
 FSW_HEADER_SIZE = 36
 FPGA_HEADER_SIZE = 140
@@ -218,6 +224,7 @@ class StitchStats:
     n_missing_sop_or_eop: int = 0
     n_bad_images: int = 0
     n_complete_images: int = 0
+    n_crc_errors: int = 0
     n_unexpected_eop: int = dataclass_field(default=0, repr=False)
     n_images_discarded_sop: int = dataclass_field(default=0, repr=False)
     n_images_discarded_gap: int = dataclass_field(default=0, repr=False)
@@ -433,19 +440,6 @@ def extract_trailing_footer_from_blob(raw_blob: bytes) -> dict:
     return decoded
 
 
-def validate_wfov_image_crc(compressed_payload: bytes, metadata: dict) -> int:
-    """Validate WFOV image CRC over the compressed payload.
-
-    Returns
-    -------
-    int
-        ``1`` if CRC matches, ``0`` if mismatch, ``-1`` if validation is not performed.
-    """
-    _ = (compressed_payload, metadata)
-    # TODO[LIBSDC-747]: Validate the CRC algorithm. Might be proprietary and we won't be able to reproduce it.
-    return WFOV_CRC_VALID_NOT_VALIDATED
-
-
 def _stitch_packet_range(
     packet_data: np.ndarray,
     lengths: np.ndarray,
@@ -516,6 +510,12 @@ def stitch_wfov_images(
                         raw_blob=raw_blob,
                     )
                 )
+                try:
+                    fpga_meta = extract_fpga_metadata_from_blob(raw_blob)
+                except (ValueError, struct.error, IndexError):
+                    fpga_meta = {}
+                if int(fpga_meta.get("crc_error", 0)) != 0:
+                    stats.n_crc_errors += 1
                 image_id += 1
                 stats.n_complete_images += 1
                 state = "SEEKING"
@@ -614,7 +614,6 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
     packet_indices = np.zeros(n_images, dtype=np.int32)
     fsw_parse_valid = np.zeros(n_images, dtype=bool)
     fpga_parse_valid = np.zeros(n_images, dtype=bool)
-    crc_valid = np.full(n_images, WFOV_CRC_VALID_NOT_VALIDATED, dtype=np.int8)
 
     fsw_arrays = {field: np.zeros(n_images, dtype=FSW_FIELD_DTYPES[field]) for field in FSW_FIELDS}
     fpga_arrays = {
@@ -639,7 +638,6 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
         packet_indices[row] = image.sop_index
         fsw_parse_valid[row] = fsw_valid
         fpga_parse_valid[row] = fpga_valid
-        crc_valid[row] = validate_wfov_image_crc(payloads[row], {**fsw_meta, **fpga_meta, **trailing_meta})
 
         for field in FSW_FIELDS:
             fsw_arrays[field][row] = fsw_meta.get(field, _fsw_fill_value(field))
@@ -656,7 +654,6 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
         WFOV_FPGA_PARSE_VALID_VAR: ((CAMERA_TIME_COORD,), fpga_parse_valid),
         WFOV_IMAGE_BLOB_VAR: ((CAMERA_TIME_COORD, BLOB_BYTE_COORD), blob_array),
         WFOV_IMAGE_BLOB_LENGTH_VAR: ((CAMERA_TIME_COORD,), payload_lengths),
-        WFOV_CRC_VALID_VAR: ((CAMERA_TIME_COORD,), crc_valid),
     }
 
     for field in FSW_FIELDS:
@@ -711,7 +708,14 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     camera_ds = _build_camera_dataset(stitched_images)
 
     packet_ds = packet_ds.merge(camera_ds)
-    packet_ds.attrs["n_missing_sop_or_eop"] = stats.n_missing_sop_or_eop
-    packet_ds.attrs["n_bad_images"] = stats.n_bad_images
-    packet_ds.attrs["n_complete_images"] = stats.n_complete_images
+    packet_ds.attrs[MISSING_SOP_OR_EOP_COUNT_ATTR] = stats.n_missing_sop_or_eop
+    packet_ds.attrs[BAD_IMAGE_COUNT_ATTR] = stats.n_bad_images
+    packet_ds.attrs[COMPLETE_IMAGE_COUNT_ATTR] = stats.n_complete_images
+    packet_ds.attrs[CRC_ERROR_COUNT_ATTR] = stats.n_crc_errors
+    if stats.n_crc_errors:
+        logger.warning(
+            "WFOV images with FPGA CRC errors: %d of %d",
+            stats.n_crc_errors,
+            stats.n_complete_images,
+        )
     return packet_ds
