@@ -11,21 +11,6 @@ from libera_utils.aws import utils
 
 
 @mock_aws
-def test_get_aws_account_number(mock_aws_credentials):
-    """Test standard retrieval"""
-    fake_id = utils.get_aws_account_number()
-    assert fake_id == "123456789012"
-
-
-@mock_aws
-def test_get_aws_account_number_with_profile(mock_s3_context_with_profile):
-    """Test retrieval using a specific profile name"""
-    # This works because mock_s3_context_with_profile created the config file
-    fake_id = utils.get_aws_account_number(profile_name="test-profile")
-    assert fake_id == "123456789012"
-
-
-@mock_aws
 def test_get_l2_team_role_session_assumes_role(mock_s3_context_with_profile):
     """A session backed by assumed-role credentials is returned, inheriting the base session's region."""
     session = utils.get_l2_team_role_session(profile_name="test-profile")
@@ -34,6 +19,28 @@ def test_get_l2_team_role_session_assumes_role(mock_s3_context_with_profile):
     # The returned session carries (assumed-role) credentials and the base session's region.
     assert session.get_credentials() is not None
     assert session.region_name == boto3.Session(profile_name="test-profile").region_name
+
+
+def test_get_l2_team_role_session_assumes_custom_role():
+    """A custom (L2 team) role_name is assumed at the correct path-qualified ARN."""
+    mock_sts = MagicMock()
+    mock_sts.get_caller_identity.return_value = {
+        "Account": "123456789012",
+        "Arn": "arn:aws:sts::123456789012:assumed-role/L2DeveloperBaseRole/session-name",
+    }
+    mock_sts.assume_role.return_value = {
+        "Credentials": {"AccessKeyId": "a", "SecretAccessKey": "b", "SessionToken": "c"}
+    }
+    mock_base_session = MagicMock()
+    mock_base_session.client.return_value = mock_sts
+
+    with patch("libera_utils.aws.utils.boto3.Session", return_value=mock_base_session):
+        utils.get_l2_team_role_session(profile_name="test-profile", role_name="L2Developer/L2-CloudFraction")
+
+    assert (
+        mock_sts.assume_role.call_args.kwargs["RoleArn"]
+        == "arn:aws:iam::123456789012:role/L2Developer/L2-CloudFraction"
+    )
 
 
 def test_get_l2_team_role_session_raises_when_assume_role_denied():

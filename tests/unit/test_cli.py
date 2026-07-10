@@ -6,7 +6,7 @@ import pytest
 
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import ecr_upload, s3_utilities
-from libera_utils.aws import processing_step_function_trigger as psfn
+from libera_utils.aws import manual_processing as mp
 
 
 @pytest.mark.parametrize(("cli_args", "parsed"), [(["--version"], argparse.Namespace(func=cli.print_version_info))])
@@ -55,10 +55,11 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
         (
             ["step-function-trigger", "l1b-rad", "2030-01-01"],
             argparse.Namespace(
-                func=psfn.step_function_trigger_cli_handler,
+                func=mp.step_function_trigger_cli_handler,
                 algorithm_name="l1b-rad",
                 applicable_day="2030-01-01",
-                wait_time=5,
+                verify=False,
+                wait_time=60,
                 profile=None,
             ),
         ),
@@ -67,13 +68,15 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
                 "step-function-trigger",
                 "l1b-cam",
                 "2030-01-01",
+                "--verify",
                 "--wait-time=5",
                 "--profile=test-profile",
             ],
             argparse.Namespace(
-                func=psfn.step_function_trigger_cli_handler,
+                func=mp.step_function_trigger_cli_handler,
                 algorithm_name="l1b-cam",
                 applicable_day="2030-01-01",
+                verify=True,
                 wait_time=5,
                 profile="test-profile",
             ),
@@ -83,6 +86,58 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
 def test_step_function_trigger_parse_cli_args(cli_args, parsed):
     """
     Test that cli args are parsed properly
+    """
+    print(f"CLI ARGS \n{cli_args}\n")
+    print(f"Parsed args: {parsed} \n")
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["manual-processing", "2026-06-01"],
+            argparse.Namespace(
+                func=mp.manual_processing_cli_handler,
+                applicable_dates=["2026-06-01"],
+                dag_config=None,
+                start_steps=None,
+                process_downstream=True,
+                verify=False,
+                wait_time=60,
+                profile=None,
+            ),
+        ),
+        (
+            [
+                "manual-processing",
+                "2026-06-01",
+                "2026-06-02",
+                "--dag-config=my_dag.json",
+                "--start-steps",
+                "l1b-rad",
+                "l1b-cam",
+                "--no-process-downstream",
+                "--verify",
+                "--wait-time=10",
+                "--profile=test-profile",
+            ],
+            argparse.Namespace(
+                func=mp.manual_processing_cli_handler,
+                applicable_dates=["2026-06-01", "2026-06-02"],
+                dag_config="my_dag.json",
+                start_steps=["l1b-rad", "l1b-cam"],
+                process_downstream=False,
+                verify=True,
+                wait_time=10,
+                profile="test-profile",
+            ),
+        ),
+    ],
+)
+def test_manual_processing_parse_cli_args(cli_args, parsed):
+    """
+    Test that manual-processing cli args are parsed properly
     """
     print(f"CLI ARGS \n{cli_args}\n")
     print(f"Parsed args: {parsed} \n")
@@ -243,6 +298,7 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
         ["s3-utils", "ls", "NOT-A-PRODUCT"],
         ["ecr-upload", "not-an-alg", "test-image"],
         ["step-function-trigger", "not-an-alg", "2030-01-01"],
+        ["manual-processing", "2026-06-01", "--start-steps", "not-a-step"],
     ],
 )
 def test_wrong_libera_ids(cli_args):

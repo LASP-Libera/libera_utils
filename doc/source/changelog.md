@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.8.6
+
+- FEAT: Manual processing now runs through the SDC event bus instead of triggering Step Functions directly. `step-function-trigger` emits a `ManualProcessing` event for a single step, and a new `manual-processing` CLI submits arbitrary custom DAGs (or the default DAG) across one or more dates, with an optional `--verify` that polls the Coordination Table.
+- FEAT: `ecr-upload` assumes the algorithm's per-team L2 Team Role for L2/ADM images so non-admin L2 developers can push to their ECR repos; non-L2 steps use the default/`--profile` session unchanged.
+
 ## 5.8.5
 
 - FEAT: `s3-utils put` now performs manual SDC data ingest instead of a direct archive upload. It accepts multiple file paths, stages each file to the SDC Ingest Dropbox bucket, and emits a single `NewFilesAvailable` event to the SDC event bus; the SDC Data Ingester then handles archiving and metadata/data-availability records. Accepts L0 and data product filenames (manifests rejected).

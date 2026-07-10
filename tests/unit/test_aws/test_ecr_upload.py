@@ -75,14 +75,22 @@ def test_build_docker_image(test_data_path):
     [
         ("l1b-cam", "test-image", "latest", None, True, None),
         ("l1b-rad", "test-image", "latest", ["latest", "v1.0"], False, "test-profile"),
+        ("l2-cf-rad", "test-image", "latest", ["latest"], False, "test-profile"),
     ],
 )
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_ecr_session")
 def test_ecr_upload_cli_handler(
-    mock_push_image_to_ecr, image_name, algorithm_name, image_tag, ecr_tags, ignore_docker_config, profile
+    mock_resolve_session,
+    mock_push_image_to_ecr,
+    image_name,
+    algorithm_name,
+    image_tag,
+    ecr_tags,
+    ignore_docker_config,
+    profile,
 ):
-    """Test the ECR upload CLI handler for file upload."""
-    # Make the input namespace object
+    """The handler resolves the (possibly role-assumed) session and forwards it to push_image_to_ecr."""
     args = argparse.Namespace(
         func=ecr_upload.ecr_upload_cli_handler,
         algorithm_name=algorithm_name,
@@ -96,29 +104,96 @@ def test_ecr_upload_cli_handler(
     ecr_upload.ecr_upload_cli_handler(args)
 
     expected_algorithm = ProcessingStepIdentifier(algorithm_name)
+    mock_resolve_session.assert_called_once_with(expected_algorithm, profile)
     mock_push_image_to_ecr.assert_called_once_with(
         image_name,
         image_tag,
         expected_algorithm,
         ecr_image_tags=ecr_tags,
         ignore_docker_config=ignore_docker_config,
-        profile_name=profile,
+        boto_session=mock_resolve_session.return_value,
     )
+
+
+@mock.patch("libera_utils.aws.ecr_upload.logger")
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_ecr_session")
+def test_ecr_upload_cli_handler_reraises_role_assumption_error(
+    mock_resolve_session, mock_push_image_to_ecr, mock_logger
+):
+    """If the L2 Team Role cannot be assumed, the handler logs guidance and re-raises (does not push)."""
+    mock_resolve_session.side_effect = ValueError("Could not assume role L2Developer/L2-CloudFraction ...")
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l2-cf-rad",
+        image_name="test-image",
+        image_tag="latest",
+        ecr_tags=None,
+        ignore_docker_config=False,
+        profile=None,
+    )
+
+    with pytest.raises(ValueError, match="Could not assume role"):
+        ecr_upload.ecr_upload_cli_handler(args)
+
+    # The image is not pushed, and algorithm-specific guidance naming the required L2 Team Role is logged.
+    mock_push_image_to_ecr.assert_not_called()
+    mock_logger.error.assert_called_once()
+    log_args = mock_logger.error.call_args.args
+    assert "L2-CloudFraction" in log_args
+
+
+class TestResolveEcrSession:
+    """Tests for mapping a processing step to the session used for its ECR upload."""
+
+    @pytest.mark.parametrize(
+        ("algorithm", "expected_role"),
+        [
+            (ProcessingStepIdentifier.l2_cf_rad, "L2Developer/L2-CloudFraction"),
+            (ProcessingStepIdentifier.l2_cf_cam, "L2Developer/L2-CloudFraction"),
+            (ProcessingStepIdentifier.l2_unfiltered, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_ssw_toa_osse, "L2Developer/L2-SSW-TOA-Flux"),
+            (ProcessingStepIdentifier.l2_ssw_toa_rt, "L2Developer/L2-SSW-TOA-Flux"),
+            (ProcessingStepIdentifier.l2_surface_flux, "L2Developer/L2-SFC-Flux"),
+            (ProcessingStepIdentifier.adm_binning, "L2Developer/L2-ADM"),
+        ],
+    )
+    @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")
+    def test_l2_step_assumes_team_role(self, mock_get_session, algorithm, expected_role):
+        """L2 (and ADM) steps assume their team's L2 Team Role."""
+        result = ecr_upload._resolve_ecr_session(algorithm, "test-profile")
+
+        mock_get_session.assert_called_once_with(profile_name="test-profile", role_name=expected_role)
+        assert result is mock_get_session.return_value
+
+    @pytest.mark.parametrize(
+        "algorithm",
+        [
+            ProcessingStepIdentifier.l1b_rad,
+            ProcessingStepIdentifier.l1b_cam,
+            ProcessingStepIdentifier.spice_jpss,
+            ProcessingStepIdentifier.int_footprint_scene_id,
+        ],
+    )
+    @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")
+    @mock.patch("libera_utils.aws.ecr_upload.boto3.Session")
+    def test_non_l2_step_uses_default_session(self, mock_session, mock_get_session, algorithm):
+        """Non-L2 steps use the default/--profile session with no role assumption."""
+        result = ecr_upload._resolve_ecr_session(algorithm, "test-profile")
+
+        mock_session.assert_called_once_with(profile_name="test-profile")
+        mock_get_session.assert_not_called()
+        assert result is mock_session.return_value
 
 
 class TestGetFreshEcrAuth:
     """Test the _get_fresh_ecr_auth function."""
 
-    @pytest.mark.parametrize("profile_name", [None, "my-custom-profile"])
-    @mock.patch("boto3.Session")
-    def test_get_fresh_ecr_auth_success(self, mock_boto_session, profile_name):
-        """Test successful ECR authentication token retrieval with various profiles."""
-        # 1. Mock the session and client
-        mock_session_instance = MagicMock()
-        mock_boto_session.return_value = mock_session_instance
-
+    def test_get_fresh_ecr_auth_success(self):
+        """Test successful ECR authentication token retrieval using the provided session."""
+        mock_session = MagicMock()
         mock_ecr_client = MagicMock()
-        mock_session_instance.client.return_value = mock_ecr_client
+        mock_session.client.return_value = mock_ecr_client
 
         # Mock the token response
         username = "AWS"
@@ -129,42 +204,38 @@ class TestGetFreshEcrAuth:
         }
 
         # Run the function
-        result = _get_fresh_ecr_auth("us-west-2", profile_name=profile_name)
+        result = _get_fresh_ecr_auth("us-west-2", boto_session=mock_session)
 
         assert result == {"username": username, "password": password}
 
-        # CRITICAL CHANGE: Verify the profile was passed to the Session constructor
-        mock_boto_session.assert_called_with(profile_name=profile_name)
+        # Verify the ECR client was created from the provided session for the requested region.
+        mock_session.client.assert_called_with("ecr", region_name="us-west-2")
 
-    @mock.patch("boto3.Session")
-    def test_get_fresh_ecr_auth_failure(self, mock_boto_session):
+    def test_get_fresh_ecr_auth_failure(self):
         """Test ECR authentication failure handling."""
-        # Chain the mocks: Session -> client -> raise Exception
-        mock_session_instance = MagicMock()
-        mock_boto_session.return_value = mock_session_instance
-
+        mock_session = MagicMock()
         mock_ecr_client = MagicMock()
-        mock_session_instance.client.return_value = mock_ecr_client
+        mock_session.client.return_value = mock_ecr_client
 
         # Set the side effect on the client method
         mock_ecr_client.get_authorization_token.side_effect = Exception("ECR error")
 
         with pytest.raises(Exception, match="ECR error"):
-            _get_fresh_ecr_auth("us-west-2")
+            _get_fresh_ecr_auth("us-west-2", boto_session=mock_session)
 
 
 class TestPushSingleTag:
     """Test the _push_single_tag function."""
 
-    @pytest.mark.parametrize("profile_name", [None, "deploy-profile"])
     @mock.patch("libera_utils.aws.ecr_upload._get_fresh_ecr_auth")
-    def test_push_single_tag_success(self, mock_get_auth, profile_name):
-        """Test successful single tag push with profile propagation."""
+    def test_push_single_tag_success(self, mock_get_auth):
+        """Test successful single tag push with session propagation."""
         # Mock authentication
         mock_get_auth.return_value = {"username": "AWS", "password": "test-password"}
 
         mock_docker_client = MagicMock()
         mock_local_image = MagicMock()
+        mock_session = MagicMock()
         mock_docker_client.api.push.return_value = [{"status": "Pushed"}]
 
         _push_single_tag(
@@ -173,11 +244,11 @@ class TestPushSingleTag:
             full_ecr_tag="repo:latest",
             region_name="us-west-2",
             max_retries=3,
-            profile_name=profile_name,  # Pass the parameterized profile
+            boto_session=mock_session,
         )
 
-        # CRITICAL CHANGE: Verify the profile was propagated to the auth helper
-        mock_get_auth.assert_called_once_with("us-west-2", profile_name=profile_name)
+        # Verify the session was propagated to the auth helper
+        mock_get_auth.assert_called_once_with("us-west-2", boto_session=mock_session)
 
     @mock.patch("libera_utils.aws.ecr_upload._get_fresh_ecr_auth")
     def test_push_single_tag_with_errors_in_logs(self, mock_get_auth):
@@ -225,10 +296,9 @@ class TestPushSingleTag:
 
 @pytest.mark.parametrize("ecr_tags", [None, ["latest"], ["latest", "v1.0"]])
 @mock_aws
-@mock.patch("libera_utils.aws.utils.get_aws_account_number", return_value="123456789012")
 @mock.patch("docker.from_env")
 @mock.patch("libera_utils.aws.ecr_upload._push_single_tag")
-def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, mock_get_account, ecr_tags):
+def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags):
     """Test the push_image_to_ecr function."""
     # Mock Docker client and image
     mock_docker_client = MagicMock()
@@ -236,7 +306,8 @@ def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, mock_get_
     mock_docker_client.images.get.return_value = mock_local_image
     mock_docker_from_env.return_value = mock_docker_client
 
-    # Test the function
+    # The account id is derived from the session (moto returns 123456789012). No boto_session passed exercises the
+    # default-session fallback used by callers like libera_cdk.
     push_image_to_ecr(
         "test-image", "latest", ProcessingStepIdentifier.l1b_rad, ecr_image_tags=ecr_tags, ignore_docker_config=True
     )
@@ -261,9 +332,8 @@ def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, mock_get_
 
 
 @mock_aws
-@mock.patch("libera_utils.aws.utils.get_aws_account_number", return_value="123456789012")
 @mock.patch("docker.from_env")
-def test_push_image_to_ecr_image_not_found(mock_docker_from_env, mock_get_account):
+def test_push_image_to_ecr_image_not_found(mock_docker_from_env):
     """Test push_image_to_ecr when local image is not found."""
     mock_docker_client = MagicMock()
     mock_docker_client.images.get.side_effect = docker.errors.ImageNotFound("Image not found")
@@ -285,10 +355,9 @@ def test_push_image_to_ecr_invalid_processing_step():
 
 
 @mock_aws
-@mock.patch("libera_utils.aws.utils.get_aws_account_number", return_value="123456789012")
 @mock.patch("docker.from_env")
 @mock.patch("libera_utils.aws.ecr_upload._push_single_tag")
-def test_push_image_to_ecr_partial_failure(mock_push_single_tag, mock_docker_from_env, mock_get_account):
+def test_push_image_to_ecr_partial_failure(mock_push_single_tag, mock_docker_from_env):
     """Test push_image_to_ecr when one tag succeeds and another fails."""
     mock_docker_client = MagicMock()
     mock_local_image = MagicMock()
