@@ -223,7 +223,7 @@ def reverse_encoder_corrections(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# Measured mechanism rotation-axis keywords in the Libera frame kernel (LIBSDC-806, OAV3 ground testing).
+# Measured mechanism rotation-axis keywords in the Libera frame kernel (OAV3 ground testing).
 # Each maps an encoder column to the FK pool variable holding that mechanism's axis of rotation.
 MECHANISM_AXIS_POOL_VAR = {
     AZ_ENCODER_FIELD: "LIBERA_AZ_AOR_IN_STAND",
@@ -275,7 +275,7 @@ def add_mechanism_ck_quaternions(df: pd.DataFrame) -> pd.DataFrame:
     """Add CK quaternion columns for whichever Az/El encoder column is present, in place.
 
     Converts the (corrected) encoder angle into per-sample quaternions about the mechanism's
-    measured axis of rotation (read from the frame kernel, LIBSDC-806), so the generated CK
+    measured axis of rotation (read from the frame kernel), so the generated CK
     encodes rotation about the true axis rather than a nominal coordinate axis. A no-op when
     neither encoder column is present (e.g. spacecraft kernels). Returns the same DataFrame.
     """
@@ -623,14 +623,21 @@ def create_kernel_from_l1a(
         sample_group_name=sample_group_name,
     )
 
-    # Apply deterministic Az/El encoder angle corrections so the generated CK reflects the true
-    # mechanism rotation. No-op when the DataFrame lacks the AXIS_SAMPLE encoder columns
-    # (e.g. spacecraft ephemeris/attitude kernels).
-    apply_encoder_corrections(kernel_df)
-
-    # Convert the corrected Az/El encoder angles into CK quaternions about the mechanism's measured
-    # axis of rotation (LIBSDC-806). No-op for kernels without the encoder columns.
-    add_mechanism_ck_quaternions(kernel_df)
+    # The Az/El mechanism CKs are generated from encoder angles: apply the deterministic encoder
+    # correction, then convert to quaternions about the measured axis of rotation. Spacecraft
+    # ephemeris/attitude kernels are not mechanism CKs and skip this step entirely.
+    if kernel_identifier in (DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck):
+        encoder_fields = [field for field in (AZ_ENCODER_FIELD, EL_ENCODER_FIELD) if field in kernel_df.columns]
+        if not encoder_fields:
+            raise ValueError(
+                f"Kernel {kernel_identifier} requires Az/El encoder columns "
+                f"({AZ_ENCODER_FIELD!r}, {EL_ENCODER_FIELD!r}), but the L1A input has none."
+            )
+        for field in encoder_fields:
+            if kernel_df[field].isna().any():
+                logger.warning("Encoder column '%s' for kernel %s contains missing values.", field, kernel_identifier)
+        apply_encoder_corrections(kernel_df)
+        add_mechanism_ck_quaternions(kernel_df)
 
     # Store as a single-element list for compatibility with the existing kernel creation loop
     input_dataframe = kernel_df

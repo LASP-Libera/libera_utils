@@ -42,6 +42,8 @@ from libera_utils.libera_spice.kernel_manager import KernelManager
 pytestmark = pytest.mark.integration
 
 
+# TODO LIBSDC-703: _rotation is duplicated in test_los_alignment.py; extract these geometry helpers
+# into a shared test module during the geolocation-test rework.
 def _rotation(axis, angle):
     """Rotation matrix for ``angle`` radians about unit ``axis`` (Rodrigues)."""
     axis = np.asarray(axis, dtype=float)
@@ -247,8 +249,7 @@ def test_make_spacecraft_azel_kernels(
     monkeypatch,
 ):
     """Tier-0 test for creating pointing kernels"""
-    # Builds the Az/El CKs about the measured axes read from the frame kernel, so it runs on the default
-    # (jpss4) misaligned set rather than the nominal NOAA-20 stand-in.
+    # Builds the Az/El CKs about the measured axes read from the frame kernel.
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
 

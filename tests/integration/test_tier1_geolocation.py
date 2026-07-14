@@ -166,14 +166,9 @@ def test_geolocate_earth_target(
         per_good = qf_counts[0] / qf_counts.sum()
         assert per_good >= 0.78, per_good
 
-        # End-to-end smoke test: confirm the misalignment-active pipeline lands the footprint in the
-        # correct region. A relaxed bounding box is used rather than an exact coordinate on purpose -- the
-        # wide cross-track scan grazes the Earth limb, where a few samples flip between hit and
-        # ellipsoid-miss (NaN) across Python/msopck builds and move the footprint's exact center (a tight
-        # mean-location assertion here broke on Python 3.14). Precise checks live elsewhere: sub-km
-        # geolocation accuracy under nominal geometry vs CERES in test_tier0_geolocation, and the
-        # misalignment's magnitude vs nominal in test_misalignment_shifts_geolocation. Here we only need
-        # the pipeline to reach the right place.
+        # Relaxed bounding box rather than an exact footprint: the wide cross-track scan grazes the limb,
+        # where samples flip between hit and ellipsoid-miss across builds and move the exact center.
+        # TODO LIBSDC-703: re-evaluate this assertion during the geolocation-test rework.
         slc = slice(*spicetime.adapt(["2028-01-02 00:21:22", "2028-01-02 00:21:36"], "iso"))
         median_lat = np.nanmedian(ellips_lla_df.loc[slc]["lat"])
         median_lon = np.nanmedian(ellips_lla_df.loc[slc]["lon"])
@@ -182,8 +177,8 @@ def test_geolocate_earth_target(
         assert 20.0 < median_lon < 23.0, median_lon
 
 
-# Ideal orthogonal-gimbal axes. The measured axes of rotation (LIBSDC-806) are small perturbations of
-# these, so building the Az/El CKs about them with an identity radiometer boresight reproduces the
+# Ideal orthogonal-gimbal axes. The measured axes of rotation are small perturbations of these, so
+# building the Az/El CKs about them with an identity radiometer boresight reproduces the
 # nominal, misalignment-free geometry; the measured-minus-nominal footprint shift is then purely the
 # misalignment.
 NOMINAL_AZ_AXIS = np.array([0.0, 0.0, 1.0])
@@ -213,7 +208,7 @@ def test_misalignment_shifts_geolocation(
     test_data_path,
     monkeypatch,
 ):
-    """A/B geolocation: the measured misalignments (LIBSDC-806) shift the footprint from nominal.
+    """A/B geolocation: the measured misalignments shift the footprint from nominal.
 
     Geolocates the same Libya-4 scan twice from one set of spacecraft kernels -- once with the ideal
     orthogonal gimbal (Az about +Z, El about +X, identity radiometer boresight) and once with the

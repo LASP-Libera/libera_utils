@@ -67,13 +67,17 @@ def test_create_kernel_from_packets(
 @mock.patch(
     "libera_utils.kernel_maker.create_kernel_dataframe_from_l1a",
     return_value=(
-        pd.DataFrame(),
+        pd.DataFrame({kernel_maker.AZ_ENCODER_FIELD: [0.0], kernel_maker.EL_ENCODER_FIELD: [0.0]}),
         (datetime.fromisoformat("2020-01-01T00:00:00"), datetime.fromisoformat("2020-01-01T23:59:59")),
     ),
 )
 @mock.patch("libera_utils.libera_spice.spice_utils.make_kernel", return_value=AnyPath("/fake/kernel.spk"))
 @mock.patch("libera_utils.kernel_maker.KernelManager")
+@mock.patch("libera_utils.kernel_maker.add_mechanism_ck_quaternions")
+@mock.patch("libera_utils.kernel_maker.apply_encoder_corrections")
 def test_create_kernel_from_l1a(
+    mock_apply_encoder_corrections,
+    mock_add_mechanism_ck_quaternions,
     mock_kernel_manager_class,
     mock_make_kernel,
     mock_create_kernel_dataframe_from_l1a,
@@ -115,7 +119,36 @@ def test_create_kernel_from_l1a(
     )
     kernel_maker.datetime.now.assert_called()
 
+    # Encoder correction + mechanism-quaternion generation run only for the Az/El mechanism CKs.
+    if kernel_dpi in ("AZROT-CK", "ELSCAN-CK"):
+        mock_apply_encoder_corrections.assert_called_once()
+        mock_add_mechanism_ck_quaternions.assert_called_once()
+    else:
+        mock_apply_encoder_corrections.assert_not_called()
+        mock_add_mechanism_ck_quaternions.assert_not_called()
+
     assert isinstance(out, AnyPath)
+
+
+@mock.patch(
+    "libera_utils.kernel_maker.create_kernel_dataframe_from_l1a",
+    return_value=(
+        pd.DataFrame(),
+        (datetime.fromisoformat("2020-01-01T00:00:00"), datetime.fromisoformat("2020-01-01T23:59:59")),
+    ),
+)
+@mock.patch("libera_utils.kernel_maker.KernelManager")
+def test_create_kernel_from_l1a_missing_encoder_columns_raises(
+    mock_kernel_manager_class, mock_create_kernel_dataframe_from_l1a
+):
+    """An Az/El CK build whose L1A input lacks the encoder columns raises rather than silently skipping."""
+    with pytest.raises(ValueError, match="requires Az/El encoder columns"):
+        kernel_maker.create_kernel_from_l1a(
+            l1a_data=xr.Dataset(),
+            kernel_identifier=DataProductIdentifier("AZROT-CK"),
+            output_dir="/fake/dropbox",
+            overwrite=False,
+        )
 
 
 @mock.patch(

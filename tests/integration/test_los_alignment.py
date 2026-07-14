@@ -1,4 +1,4 @@
-"""Goal-2 line-of-sight alignment test (LIBSDC-806).
+"""Line-of-sight alignment test.
 
 Validates that the measured Libera frame misalignments (Az/El axes of rotation + radiometer
 boresight, stored in the frame kernel) reproduce the independent engineering computation of the
@@ -40,7 +40,7 @@ def _angle_between(a, b):
 
 
 def test_los_alignment_vs_engineering(curryer_lsk, short_tmp_path, spice_test_data_path, test_data_path, monkeypatch):
-    """LIBERA_BASE -> radiometer LOS reproduces the engineering u_LOS_STAND over a RAP scan (LIBSDC-806)."""
+    """LIBERA_BASE -> radiometer LOS reproduces the engineering u_LOS_STAND over a RAP scan."""
     # Runs on the default (jpss4) kernel set -- the production frame kernel that carries the measured
     # misalignment. No spacecraft ephemeris is needed: the check stays in the LIBERA_BASE frame.
     monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))

@@ -61,8 +61,8 @@ def test_geolocate_noaa20(
     ugps_times = noaa20_expected.index.values
 
     # This validates the ellipsoid-intersection math against CERES under nominal Libera geometry; the
-    # measured frame misalignments (LIBSDC-806) are validated separately in test_los_alignment.py. Swap
-    # the production frame kernel for a frozen misalignment-free copy so the CERES comparison holds.
+    # measured frame misalignments are validated separately in test_los_alignment.py. Swap the
+    # production frame kernel for a frozen misalignment-free copy so the CERES comparison holds.
     nominal_fk = test_data_path / "tier0_geo" / "libera_nominal_v01.frames.fk.tf"
     mission_kernels = [nominal_fk, *(k for k in mkrn.mission_kernels if "frames.fk" not in str(k))]
 
