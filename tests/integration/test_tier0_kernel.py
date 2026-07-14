@@ -315,7 +315,7 @@ def test_make_spacecraft_azel_kernels_apply_encoder_correction(
     spice_test_data_path,
     monkeypatch,
 ):
-    """Az/El CKs built through create_kernel_from_l1a recover telemetry + correction (LIBSDC-668).
+    """Az/El CKs built through create_kernel_from_l1a recover telemetry + correction.
 
     Drives the production create_kernel_from_l1a path with raw CERES angles (mocking only the L1A read)
     so the deterministic encoder correction is applied during kernel generation, then queries the CKs
