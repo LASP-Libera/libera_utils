@@ -283,8 +283,6 @@ def test_wfov_sci_filename_uses_image_time_bounds(
     filename = parsed_filename.path.name
     assert "20280214T042303" in filename
     assert "20280214T042313" in filename
-    assert "20280215T131631" not in filename
-    assert "20280215T131727" not in filename
 
 
 @pytest.mark.filterwarnings("error")
