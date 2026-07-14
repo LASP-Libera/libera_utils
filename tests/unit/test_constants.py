@@ -63,7 +63,7 @@ class TestDataLevel:
 
         This ensures API compatibility - the names are part of the contract.
         """
-        expected_names = ["L0", "SPICE", "CAL", "L1A", "L1B", "L2", "ANC"]
+        expected_names = ["L0", "SPICE", "CAL", "L1A", "L1B", "L2", "AUX"]
         actual_names = [member.name for member in DataLevel]
         assert actual_names == expected_names
 
@@ -83,9 +83,9 @@ class TestDataLevel:
             assert "libera" in bucket_name.lower()
 
     def test_archive_bucket_name_consistency(self):
-        """Test that CAL and ANC share the same bucket"""
-        # This is a business rule that should be maintained
-        assert DataLevel.CAL.archive_bucket_name == DataLevel.ANC.archive_bucket_name
+        """Test that CAL and AUX route to dedicated archive buckets."""
+        assert DataLevel.CAL.archive_bucket_name == "libera-calibration-data"
+        assert DataLevel.AUX.archive_bucket_name == "libera-auxiliary-data"
 
 
 class TestDataProductIdentifier:
@@ -157,18 +157,23 @@ class TestDataProductIdentifier:
             # L1B Products
             "l1b_rad",
             "l1b_cam",
-            # L2 Products
-            "l2_unf",
-            "l2_cf_rad",
-            "l2_cf_cam",
-            "l2_ssw_toa_osse",
-            "l2_ssw_toa_erbe",
-            "l2_ssw_toa_trmm",
-            "l2_ssw_toa_rt",
-            "l2_ssw_surf",
-            # Ancillary Products
-            "anc_adm",
-            "anc_scene_id",
+            # L2 Products — camera cloud fraction track
+            "l2_unf_cam",
+            "l2_cf_rad_time",
+            "l2_cf_cam_time",
+            "l2_nb_bb_cam_time",
+            "l2_toa_flux_cam",
+            # AUX Products — camera cloud fraction track
+            "aux_fmatch_cam",
+            "aux_fmatch_cam_camtime",
+            "aux_scene_id_cam",
+            "aux_scene_id_cam_camtime",
+            "aux_adm_stats_cam",
+            "aux_adm_cam",
+            # L2 Products — RBSP + VIIRS imager track
+            "l2_comp_flux",
+            # AUX Products — RBSP + VIIRS imager track
+            "aux_fmatch_imager",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
@@ -224,7 +229,7 @@ class TestDataProductIdentifier:
             assert product.data_level is DataLevel.CAL
             assert product.value == expected_value
             assert product.associated_apid is None
-            assert product.data_level.archive_bucket_name == DataLevel.ANC.archive_bucket_name
+            assert product.data_level.archive_bucket_name == DataLevel.CAL.archive_bucket_name
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
@@ -255,19 +260,23 @@ class TestProcessingStepIdentifier:
             # L1B steps
             "l1b_rad",
             "l1b_cam",
-            # Intermediate steps
-            "int_footprint_scene_id",
-            # L2 steps
+            # L2 steps — camera cloud fraction track
+            "l2_unf_cam",
             "l2_cf_rad",
             "l2_cf_cam",
-            "l2_unfiltered",
-            "l2_ssw_toa_osse",
-            "l2_ssw_toa_erbe",
-            "l2_ssw_toa_trmm",
-            "l2_ssw_toa_rt",
-            "l2_surface_flux",
-            # ADM steps
-            "adm_binning",
+            "l2_nb_bb_cam_time",
+            "l2_toa_flux_cam",
+            # L2 steps — RBSP + VIIRS imager track
+            "l2_comp_flux",
+            # AUX steps — camera cloud fraction track
+            "aux_fmatch_cam",
+            "aux_fmatch_cam_camtime",
+            "aux_scene_id_cam",
+            "aux_scene_id_cam_camtime",
+            "aux_adm_stats_cam",
+            "aux_adm_cam",
+            # AUX steps — RBSP + VIIRS imager track
+            "aux_fmatch_imager",
         ]
         actual_names = [member.name for member in ProcessingStepIdentifier]
         assert actual_names == expected_names
@@ -326,7 +335,7 @@ class TestProcessingStepIdentifier:
         # Create a test step with products of different levels
         step = ProcessingStepIdentifier.l1b_rad
         original_products = step._products
-        step._products = [DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_rad]
+        step._products = [DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_rad_time]
 
         try:
             with pytest.raises(ValueError, match="products of multiple levels"):
@@ -364,13 +373,12 @@ class TestProcessingStepIdentifier:
         expected_roles = {
             ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
             ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
-            ProcessingStepIdentifier.l2_unfiltered: "L2-Unfiltering",
-            ProcessingStepIdentifier.l2_ssw_toa_osse: "L2-SSW-TOA-Flux",
-            ProcessingStepIdentifier.l2_ssw_toa_erbe: "L2-SSW-TOA-Flux",
-            ProcessingStepIdentifier.l2_ssw_toa_trmm: "L2-SSW-TOA-Flux",
-            ProcessingStepIdentifier.l2_ssw_toa_rt: "L2-SSW-TOA-Flux",
-            ProcessingStepIdentifier.l2_surface_flux: "L2-SFC-Flux",
-            ProcessingStepIdentifier.adm_binning: "L2-ADM",
+            ProcessingStepIdentifier.l2_unf_cam: "L2-Unfiltering",
+            ProcessingStepIdentifier.l2_toa_flux_cam: "L2-SSW-TOA-Flux",
+            ProcessingStepIdentifier.l2_comp_flux: "L2-SFC-Flux",
+            ProcessingStepIdentifier.aux_adm_stats_cam: "L2-ADM",
+            ProcessingStepIdentifier.aux_adm_cam: "L2-ADM",
+            ProcessingStepIdentifier.l2_nb_bb_cam_time: "L2-ADM",
         }
         for step, role in expected_roles.items():
             assert step.l2_team_iam_role == role
@@ -381,7 +389,8 @@ class TestProcessingStepIdentifier:
             ProcessingStepIdentifier.spice_jpss,
             ProcessingStepIdentifier.l1b_rad,
             ProcessingStepIdentifier.l1b_cam,
-            ProcessingStepIdentifier.int_footprint_scene_id,
+            ProcessingStepIdentifier.aux_fmatch_cam,
+            ProcessingStepIdentifier.aux_fmatch_imager,
         ):
             assert step.l2_team_iam_role is None
 

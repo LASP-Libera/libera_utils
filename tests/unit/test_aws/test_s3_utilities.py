@@ -70,7 +70,7 @@ class TestManualIngestPut:
                 "P1590011SOMESCIENCEAAA99030231459000.PDS",
                 "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
                 "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             ],
         ],
     )
@@ -344,17 +344,17 @@ def test_s3_utils_list_cli_handler(mock_s3_list_files, product_name, profile):
             ],
         ),
         (
-            DataProductIdentifier.l2_cf_cam,
+            DataProductIdentifier.l2_cf_cam_time,
             [
-                "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
+                "LIBERA_L2_CF-CAM-CAMTIME_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L2_CF-CAM-CAMTIME_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
             ],
         ),
         (
-            DataProductIdentifier.l2_ssw_toa_osse,
+            DataProductIdentifier.l2_toa_flux_cam,
             [
-                "LIBERA_L2_SSW-TOA-FLUXES-OSSE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L2_SSW-TOA-FLUXES-OSSE_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
+                "LIBERA_L2_TOA-FLUX-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "LIBERA_L2_TOA-FLUX-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",
             ],
         ),
     ],

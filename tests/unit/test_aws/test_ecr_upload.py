@@ -151,11 +151,11 @@ class TestResolveEcrSession:
         [
             (ProcessingStepIdentifier.l2_cf_rad, "L2Developer/L2-CloudFraction"),
             (ProcessingStepIdentifier.l2_cf_cam, "L2Developer/L2-CloudFraction"),
-            (ProcessingStepIdentifier.l2_unfiltered, "L2Developer/L2-Unfiltering"),
-            (ProcessingStepIdentifier.l2_ssw_toa_osse, "L2Developer/L2-SSW-TOA-Flux"),
-            (ProcessingStepIdentifier.l2_ssw_toa_rt, "L2Developer/L2-SSW-TOA-Flux"),
-            (ProcessingStepIdentifier.l2_surface_flux, "L2Developer/L2-SFC-Flux"),
-            (ProcessingStepIdentifier.adm_binning, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_unf_cam, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_toa_flux_cam, "L2Developer/L2-SSW-TOA-Flux"),
+            (ProcessingStepIdentifier.l2_comp_flux, "L2Developer/L2-SFC-Flux"),
+            (ProcessingStepIdentifier.aux_adm_stats_cam, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_cam_time, "L2Developer/L2-ADM"),
         ],
     )
     @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")
@@ -172,7 +172,7 @@ class TestResolveEcrSession:
             ProcessingStepIdentifier.l1b_rad,
             ProcessingStepIdentifier.l1b_cam,
             ProcessingStepIdentifier.spice_jpss,
-            ProcessingStepIdentifier.int_footprint_scene_id,
+            ProcessingStepIdentifier.aux_fmatch_cam,
         ],
     )
     @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")

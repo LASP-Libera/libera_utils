@@ -541,7 +541,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         data_level : str | DataLevel | None
             L1B or L2 identifying the level of the data product. Default None will infer the data level from the product name (DataProductIdentifier)
         product_name : str | DataProductIdentifier
-            Product type. e.g. CF-RAD for L2 or RAD-4CH for L1B. May contain anything except for underscores.
+            Product type. e.g. CF-CAM for L2 or RAD-4CH for L1B. May contain anything except for underscores.
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.

@@ -181,7 +181,7 @@ Example usage:
 ```shell
 libera-utils s3-utils --profile my-profile put \
   LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc \
-  LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc
+  LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc
 
 # Stage one file and block until it is confirmed fully ingested (or 10 minutes elapse):
 libera-utils s3-utils --profile my-profile put --verify --timeout 600 \
