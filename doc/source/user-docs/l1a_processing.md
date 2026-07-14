@@ -373,6 +373,20 @@ When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
 `write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
 packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
 
+#### Dual exposure and VIDEO timing
+
+- **`CAMERA_TIME` is the first integration.** FSW stamps one acquisition time per complete image.
+  In DUAL mode (`WFOV_FSW_IMG_MODE == 0`), the second sequential exposure lags the first by about
+  **111–350 ms**. That offset is not stored as a separate L1A time coordinate (also noted on the
+  `WFOV_FSW_IMG_MODE` variable attributes).
+- **Which pixels used which exposure** is encoded in the **13th bit** of each decompressed pixel.
+  L1A keeps the JPEG-LS payload compressed in `WFOV_IMAGE_BLOB`, so per-pixel exposure masks and
+  per-pixel times are an L1B responsibility after decompression.
+- **VIDEO mode** (`WFOV_FSW_IMG_MODE == 1`) can produce two NAND images from one camera trigger with
+  identical FSW timestamps. Distinguish members with `CAMERA_PACKET_INDEX` (and packet stream order);
+  do not assume `CAMERA_TIME` alone is a unique image key. `WFOV_FPGA_READOUT` is independent of
+  `WFOV_FSW_IMG_MODE` and should not be used to infer VIDEO pairing.
+
 **Downstream (libera_cam):** L1B processing can read `WFOV_IMAGE_BLOB[:WFOV_IMAGE_BLOB_LENGTH]` directly
 instead of re-stitching packets and slicing headers from the NAND blob. Metadata variables on
 `CAMERA_TIME` may eliminate re-parsing FSW/FPGA headers when present.

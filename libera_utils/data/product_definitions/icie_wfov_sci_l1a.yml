@@ -22,6 +22,11 @@ coordinates:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: WFOV camera image acquisition time from FSW header
+      comment: >-
+        First-exposure FSW acquisition time for each complete stitched image.
+        In DUAL img_mode the second sequential exposure lags by about 111-350 ms
+        and is not stored as a separate L1A time. Under VIDEO (img_mode==1),
+        CAMERA_TIME may duplicate; use (CAMERA_TIME, CAMERA_PACKET_INDEX).
     encoding:
       units: nanoseconds since 1958-01-01
       calendar: standard
@@ -190,7 +195,7 @@ variables:
     dtype: uint8
     dimensions: ["CAMERA_TIME", "BLOB_BYTE"]
     attributes:
-      long_name: Compressed JPEG-LS image payload (headers and footers excluded)
+      long_name: Compressed JPEG-LS pixel payload (FPGA DATA frame contents after headers/footers)
       comment: Use WFOV_IMAGE_BLOB_LENGTH to determine valid bytes; padding beyond length is zero
   WFOV_IMAGE_BLOB_LENGTH:
     dtype: uint32
@@ -206,32 +211,41 @@ variables:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FSW JPEG bypass flag
+      long_name: FSW JPEG bypass flag (1 = JPEG compression disabled)
   WFOV_FSW_BITMASK_DISABLE:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FSW bitmask disable flag
+      long_name: FSW bitmask disable flag (1 = pixel bitmask processing disabled)
   WFOV_FSW_TESTPATTERN:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FSW test pattern flag
+      long_name: FSW test pattern flag (1 = test pattern enabled)
   WFOV_FSW_BITMASK_ID:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FSW bitmask partition identifier
+      long_name: FSW custom bitmask slot identifier
+      comment: Custom mask slot 0-3 when using CUSTOM_* masks; do not confuse with WFOV_FSW_PIXEL_MASK_ID
   WFOV_FSW_IMG_MODE:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FSW imaging mode identifier
+      long_name: FSW FPGA processing select (img_mode), not WFOV_CAM_START command mode
+      comment: >-
+        0=DUAL, 1=VIDEO, 2=IMGA, 3=IMGB. In DUAL, CAMERA_TIME is the first
+        integration; the second sequential exposure lags by about 111-350 ms and
+        is not a second L1A timestamp. VIDEO may yield two NAND images with
+        identical FSW timestamps; distinguish via CAMERA_PACKET_INDEX.
   WFOV_FSW_PIXEL_MASK_ID:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FSW pixel mask identifier
+      long_name: FSW pixel mask type from WFOV_CAM_START
+      comment: >-
+        Mask type (e.g. 0=FF, 1=NADIR, 2=FORWARD, 8=ADM, 128=RAPS). Later frames
+        in a sequence may show 0 even when a mask was applied on the first frame.
   WFOV_FSW_SIMULATOR:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
@@ -242,6 +256,7 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW imaging cadence
+      units: milliseconds
   WFOV_FSW_IMAGE_TOTAL:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
@@ -262,11 +277,15 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW acquisition timestamp seconds
+      units: integer seconds
+      comment: Combined with WFOV_FSW_TIMESTAMP_SUBSECONDS to form CAMERA_TIME; first integration in DUAL
   WFOV_FSW_TIMESTAMP_SUBSECONDS:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW acquisition timestamp subseconds
+      units: integer microseconds
+      comment: Combined with WFOV_FSW_TIMESTAMP_SECONDS to form CAMERA_TIME; first integration in DUAL
   WFOV_FSW_RAD_OBS_ID:
     dtype: uint16
     dimensions: ["CAMERA_TIME"]
@@ -282,147 +301,166 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW commanded exposure time 1
+      units: milliseconds
   WFOV_FSW_COMMANDED_EXP_TIME_2:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW commanded exposure time 2
+      units: milliseconds
   WFOV_FSW_AZIMUTH_ANGLE:
     dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW azimuth angle
       units: radians
+      comment: FSW-reported instrument azimuth; distinct from L1B geometric viewing/solar azimuth angles
   WFOV_FPGA_IMAGE_LENGTH:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA image length
+      long_name: FPGA SpaceWire packet length (bytes)
+      comment: >-
+        Expected SpaceWire packet size: 98-byte header (49 x 2-byte fields) + 2 protocol
+        bytes + (frames_per_readout x 2 x width x height) + footer_size.
   WFOV_FPGA_FLAGS:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA header flags
+      long_name: FPGA header flags (EOS, PIX_RES, BIN_TYPE, FRAME_TYPE packed)
+      comment: >-
+        EOS = last frame of sequence. PIX_RES b0=12 bits/pixel, b1=10 bits/pixel.
+        BIN_TYPE b0=no binning, b1=2x2 average. FRAME_TYPE b000=normal sensor frame,
+        b111=FPGA test mode; other values reserved.
   WFOV_FPGA_FRAME_ID:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA frame identifier
+      long_name: FPGA frame ID in video sequence (0 for single images; starts at 0)
   WFOV_FPGA_TAG:
     dtype: uint64
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA tag field
+      long_name: FPGA user-configured 8-byte frame tag (same for all frames in a video)
   WFOV_FPGA_ACTUAL_EXP_TIME_1:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA actual exposure time 1
+      long_name: >-
+        FPGA sensor integration time register 1 (raw counts; ms = (value + 0.43*20) * 129.0 * 0.15625 / 1000)
+      units: raw counts
   WFOV_FPGA_TEMPERATURE:
     dtype: uint16
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA sensor temperature
+      long_name: FPGA sensor temperature register
   WFOV_FPGA_GAIN:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA gain setting
+      long_name: FPGA sensor ADC gain register
   WFOV_FPGA_WIDTH:
     dtype: uint16
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA image width
+      long_name: FPGA window width (pixels)
   WFOV_FPGA_HEIGHT:
     dtype: uint16
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA image height
+      long_name: FPGA window height (pixels)
   WFOV_FPGA_OFFSET_X:
     dtype: uint16
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA readout X offset
+      long_name: FPGA window X offset (pixels)
   WFOV_FPGA_OFFSET_Y:
     dtype: uint16
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA readout Y offset
+      long_name: FPGA window Y offset (pixels)
   WFOV_FPGA_READOUT:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA readout mode
+      long_name: FPGA sensor readout/exposure mode
+      comment: >-
+        Sensor readout SINGLE/DUAL; independent of FSW
+        WFOV_FSW_IMG_MODE. Do not use to infer command mode or VIDEO pairing.
   WFOV_FPGA_ACTUAL_EXP_TIME_2:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA actual exposure time 2
+      long_name: >-
+        FPGA exposure time 2 for interleaved/dual mode (odd-row or second-frame
+        integration; raw counts; ms = (value + 0.43*20) * 129.0 * 0.15625 / 1000)
+      units: raw counts
   WFOV_FPGA_DELTA:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA delta field
+      long_name: >-
+        FPGA DELTA_EXP between two frame requests in dual exposure (Exp step in multi-frame readout)
   WFOV_FPGA_EXPOSURE_STEP:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA exposure step
+      long_name: FPGA EXP_STEP exposure step between frames in the same multi-readout group
   WFOV_FPGA_NR_SLOPES:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA number of slopes
+      long_name: FPGA NR_SLOPES piecewise number of slopes
   WFOV_FPGA_KP1:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA KP1 parameter
+      long_name: FPGA EXP_KP1 piecewise exposure kneepoint 1
   WFOV_FPGA_KP2:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA KP2 parameter
+      long_name: FPGA EXP_KP2 piecewise exposure kneepoint 2
   WFOV_FPGA_VLOW_3:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA VLOW 3 parameter
+      long_name: FPGA VLOW3 piecewise voltage threshold 3
   WFOV_FPGA_VLOW_2:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA VLOW 2 parameter
+      long_name: FPGA VLOW2 piecewise voltage threshold 2
   WFOV_FPGA_EXP_SEQ:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA exposure sequence
+      long_name: FPGA EXP_SEQ number of frames in the readout sequence
   WFOV_FPGA_FOOTER_SIZE:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA footer size
+      long_name: FPGA footer size in words (typically 18; pixel sum, dark/white counts, etc.)
   WFOV_FPGA_PIXEL_SUM:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA internal footer pixel sum
+      long_name: FPGA footer PIX_SUM sum of all pixel values
   WFOV_FPGA_DARK:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA internal footer dark level
+      long_name: FPGA footer NB_DARK count of pixels below the sensor black limit register
   WFOV_FPGA_WHITE:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA internal footer white level
+      long_name: FPGA footer NB_WHITE count of pixels above the sensor white limit register
   WFOV_FPGA_FOOTER_DELTA:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: FPGA internal footer delta
+      long_name: FPGA footer FRAME_DELTA_TIME difference vs previous frame timestamp
   WFOV_FPGA_CRC:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
@@ -467,22 +505,22 @@ variables:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Trailing NAND footer pixel sum
+      long_name: Trailing NAND footer PIX_SUM sum of all pixel values
   WFOV_TRAILING_FOOTER_DARK:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Trailing NAND footer dark level
+      long_name: Trailing NAND footer dark count/level (NB_DARK-related)
   WFOV_TRAILING_FOOTER_WHITE:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Trailing NAND footer white level
+      long_name: Trailing NAND footer white count (from FPGA internal footer when available)
   WFOV_TRAILING_FOOTER_DELTA:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Trailing NAND footer delta
+      long_name: Trailing NAND footer FRAME_DELTA_TIME (from FPGA internal footer when available)
   WFOV_TRAILING_FOOTER_CRC:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
