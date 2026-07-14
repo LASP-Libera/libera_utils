@@ -59,7 +59,7 @@ SPICE_DPI_TO_KERNEL_CONFIG_KEY_MAP = {
     DataProductIdentifier.spice_el_ck: "LIBERA_KERNEL_EL_CK_CONFIG",
 }
 
-# --- Az/El encoder angle corrections (LIBSDC-668) --------------------------------------------------
+# --- Az/El encoder angle corrections --------------------------------------------------------------
 # The Az and El mechanism encoders have small, deterministic, angle-dependent errors characterized by
 # the Libera engineering team. These corrections are applied to the raw (filtered) encoder readings
 # during CK generation so that the CK quaternions reflect the true mechanism rotation rather than the
