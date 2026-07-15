@@ -1,8 +1,14 @@
 # Version Changes
 
-## 5.8.7
+## 5.9.1
 
 - FEAT: Az/El mechanism CKs now apply deterministic sinusoidal encoder-angle corrections during kernel generation, so the stored quaternions reflect the true mechanism rotation rather than the raw encoder readout. Corrections are applied to the filtered encoder angles in `create_kernel_from_l1a` (L1A telemetry is left unchanged), with matching forward/inverse helpers (`correct_azimuth`/`correct_elevation`, `uncorrect_azimuth`/`uncorrect_elevation`, and DataFrame-level `apply_encoder_corrections`/`reverse_encoder_corrections`).
+
+## 5.9.0
+
+- BREAKING: Rename `DataLevel.ANC` to `DataLevel.AUX` and split ancillary archive routing into separate AUX and CAL archive buckets.
+- BREAKING: Replace provisional L2/ANC `DataProductIdentifier` and `ProcessingStepIdentifier` values with the camera cloud-fraction and RBSP+VIIRS imager product sets for July delivery (renamed product strings, new AUX/L2 members, and updated L2 team IAM role mappings).
+- DOCS: Update user docs for the new product/level identifiers.
 
 ## 5.8.6
 
