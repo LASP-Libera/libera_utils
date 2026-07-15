@@ -25,7 +25,7 @@ from libera_utils.io import filenaming
             filenaming.LiberaDataProductFilename,
         ),
         (
-            "/some/fake/path/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "/some/fake/path/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             filenaming.LiberaDataProductFilename,
         ),
         (
@@ -59,11 +59,11 @@ def test_from_filename(filename, filename_type):
             ),
         ),
         (
-            "LIBERA_L2_CF-RAD_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc",
+            "LIBERA_L2_CF-CAM_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc",
             "/absolute/local",
             Path(
-                "/absolute/local/CF-RAD/2027/01/02/"
-                "LIBERA_L2_CF-RAD_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc"
+                "/absolute/local/CF-CAM/2027/01/02/"
+                "LIBERA_L2_CF-CAM_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc"
             ),
         ),
         (
@@ -188,13 +188,13 @@ def test_L0Filename_parts(filename, basepath, parts):
         S3Path("s3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
         "~/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
         "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        "/some/fake/path/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        Path("/fake-path/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
-        "s3://fake-bucket/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        S3Path("s3://fake-bucket/LIBERA_L2_UNF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
-        "~/LIBERA_L2_SSW-TOA-FLUXES-ERBE_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        "LIBERA_L2_SFC-FLUXES_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        "LIBERA_L2_SFC-FLUXES_V3-14-159RC1_20270102T112233_20270102T122233_R27002112233.nc",  # Release candidate version
+        "/some/fake/path/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+        Path("/fake-path/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
+        "s3://fake-bucket/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+        S3Path("s3://fake-bucket/LIBERA_L2_UNF-RAD-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"),
+        "~/LIBERA_L2_TOA-FLUX-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+        "LIBERA_L2_COMP-FLUX_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+        "LIBERA_L2_COMP-FLUX_V3-14-159RC1_20270102T112233_20270102T122233_R27002112233.nc",  # Release candidate version
         # SPICE filenames
         "/some/fake/path/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
         Path("/fake-path/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc"),
@@ -250,11 +250,11 @@ def test_LiberaDataProductFilename(filename):
             ),
         ),
         (
-            "LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             None,
             dict(
                 data_level=DataLevel.L2,
-                product_name=DataProductIdentifier.l2_cf_rad,
+                product_name=DataProductIdentifier.l2_cf_rad_time,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 version="3.14.159",
@@ -263,11 +263,11 @@ def test_LiberaDataProductFilename(filename):
             ),
         ),
         (
-            "/tmp/foo/LIBERA_L2_SSW-TOA-FLUXES-ERBE_V3-14-159_20250102T112233_20250102T122233_R27002112233.nc",
+            "/tmp/foo/LIBERA_L2_TOA-FLUX-CAM_V3-14-159_20250102T112233_20250102T122233_R27002112233.nc",
             "/tmp/foo",
             dict(
                 data_level=DataLevel.L2,
-                product_name=DataProductIdentifier.l2_ssw_toa_erbe,
+                product_name=DataProductIdentifier.l2_toa_flux_cam,
                 utc_start=dt.datetime(2025, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2025, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 version="V3-14-159",
@@ -276,11 +276,11 @@ def test_LiberaDataProductFilename(filename):
             ),
         ),
         (
-            "s3://bucket/LIBERA_L2_CF-RAD_V3-14-159RC1_20270102T112233_20270102T122233_R27002112233.nc",
+            "s3://bucket/LIBERA_L2_CF-CAM_V3-14-159RC1_20270102T112233_20270102T122233_R27002112233.nc",
             "s3://bucket/",
             dict(
                 data_level=DataLevel.L2,
-                product_name=DataProductIdentifier.l2_cf_rad,
+                product_name=DataProductIdentifier.l2_cf_rad_time,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 version="3.14.159RC1",  # Release candidate version
@@ -593,7 +593,7 @@ def test_applicable_date_midpoint_calculation():
 
     filename = filenaming.LiberaDataProductFilename.from_filename_parts(
         data_level="L2",
-        product_name="CF-RAD",
+        product_name="CF-CAM",
         version="V1-0-0",
         utc_start=utc_start,
         utc_end=utc_end,
@@ -632,8 +632,8 @@ def test_applicable_date_warning_message():
             "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.cmr.json",
         ),
         (
-            "/tmp/foo/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-            "/tmp/foo/LIBERA_L2_CF-RAD_V3-14-159_20270102T112233_20270102T122233_R27002112233.cmr.json",
+            "/tmp/foo/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+            "/tmp/foo/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.cmr.json",
         ),
         (
             "s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
