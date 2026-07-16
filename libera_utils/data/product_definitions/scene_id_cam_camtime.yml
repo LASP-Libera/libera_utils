@@ -1,0 +1,339 @@
+# Libera SCENE-ID-CAM-CAMTIME product definition.
+#
+# This is the *camera-timescale* sibling of SCENE-ID-CAM (see scene_id_cam.yml). Both products carry the exact same
+# scene-classification content (ERBE + unfiltering scene IDs and their property-bin bounds), computed the same way; the
+# only structural difference is the time axis:
+#
+#   * SCENE-ID-CAM          -> one footprint per RADIOMETER_TIME (radiometer sample cadence), input FMATCH-CAM.
+#   * SCENE-ID-CAM-CAMTIME  -> one pseudo-footprint per CAMERA_TIME (WFOV camera image cadence), input FMATCH-CAM-CAMTIME.
+#
+# Because the camera-timescale record is a *pseudo-footprint* (a contiguous block of L1B WFOV camera pixels; see
+# libera_utils/footprint_matching/camera_segmentation.py::PseudoFootprint), this product additionally carries the
+# footprint *identifier* variables straight through from FMATCH-CAM-CAMTIME (camera pixel-block indices, PSF bounding
+# box, and boresight geolocation). Those let a downstream consumer trace any classified scene back to the exact camera
+# pixels and ground footprint it came from. See the "(identifiers)" section at the bottom.
+
+attributes:
+  ProductID: SCENE-ID-CAM-CAMTIME
+  # These are populated at write time by the runner / write_libera_data_product (they must be present but their
+  # values vary per file), matching the pattern used by the other Libera product definitions.
+  algorithm_version: null
+  date_created: null
+  input_files: null
+
+coordinates:
+  # Time of observation, one value per pseudo-footprint. Copied from the FMATCH-CAM-CAMTIME CAMERA_TIME coordinate so
+  # downstream code can treat scene IDs and the camera image cadence on a common time axis. The values are absolute
+  # datetimes; the encoding re-expresses them as int64 "nanoseconds since 1958-01-01" (the CCSDS epoch used across
+  # Libera products). NOTE the convention (shared with scene_id_cam.yml) that the dimension is upper-case (CAMERA_TIME)
+  # while the coordinate *variable* is lower-case (camera_time).
+  camera_time:
+    dtype: datetime64[ns]
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: >-
+        Time of each camera pseudo-footprint observation (UTC) against a base reference of the CCSDS Epoch
+        (January 1, 1958). Uniquely identifies each camera pseudo-footprint.
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  ########################
+  # Input scene properties
+  ########################
+  igbp_surface_type:
+    dtype: int16
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+      valid_range: [1, 20]
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Solar zenith angle at the footprint surface
+      units: degrees
+      valid_range: [0, 180]
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Instrument viewing zenith angle at the footprint surface (SSF "view_zenith_angle")
+      units: degrees
+      valid_range: [0, 90]
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface
+      units: degrees
+      valid_range: [0, 360]
+
+  ##########################
+  # Derived scene properties
+  ##########################
+  surface_type:
+    dtype: int64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
+      valid_range: [0, 5]
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Total cloud fraction over the footprint, 100 - clear_area
+      units: percent
+      valid_range: [0, 100]
+
+  ############
+  # Scene IDs
+  ############
+  scene_id_erbe:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: ERBE-like scene classification ID (0 = unmatched, 1-11 = scene)
+      valid_range: [0, 11]
+  scene_id_unfiltering:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
+      valid_range: [0, 11]
+
+  ##############################
+  # ERBE scene property-bin bounds
+  ##############################
+  scene_bin_erbe_cloud_fraction_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched ERBE scene
+      units: percent
+  scene_bin_erbe_cloud_fraction_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched ERBE scene
+      units: percent
+  scene_bin_erbe_surface_type_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_surface_type_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_solar_zenith_angle_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_solar_zenith_angle_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+
+  #####################################
+  # Unfiltering scene property-bin bounds
+  #####################################
+  scene_bin_unfiltering_cloud_fraction_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched unfiltering scene
+      units: percent
+  scene_bin_unfiltering_cloud_fraction_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched unfiltering scene
+      units: percent
+  scene_bin_unfiltering_surface_type_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_surface_type_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_solar_zenith_angle_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_solar_zenith_angle_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_min:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_max:
+    dtype: float64
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  Quality_Flag:
+    dtype: uint32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Bit flags indicating the quality of the data
+      value_meaning: TBD. Example file from PREFIRE has this information laid out per-bit using [b0], [b1], etc.
+
+  # ===========================================================================================================
+  # Footprint identifiers (passed straight through from FMATCH-CAM-CAMTIME)
+  # ===========================================================================================================
+  # These variables are NOT produced by scene identification; they are copied verbatim from the FMATCH-CAM-CAMTIME
+  # input so a consumer can trace each classified scene back to its source. They are unique to the camera-timescale
+  # product (SCENE-ID-CAM has no equivalent). Definitions mirror fmatch_cam_camtime.yml exactly (dtype + attributes)
+  # so the two products agree bit-for-bit.
+
+  # --- Boresight geolocation -----------------------------------------------------------------------------------------
+  # Center-pixel geolocation of the pseudo-footprint (the boresight stand-in). Passed through from the L1B Daily Camera
+  # geolocation via FMATCH-CAM-CAMTIME.
+  latitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+      valid_range: [-90, 90]
+  longitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+      valid_range: [-180, 180]
+  altitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      # Center-pixel geolocated SURFACE height (terrain elevation above the WGS84 ellipsoid at the footprint
+      # boresight) -- NOT the ~835 km spacecraft altitude. valid_range mirrors the FMATCH-CAM-CAMTIME field.
+      long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
+      units: meters
+      valid_range: [-1000, 30000]
+
+  # --- PSF bounding box ----------------------------------------------------------------------------------------------
+  # Geographic extent of the pseudo-footprint's point-spread-function bounding box, passed through from
+  # FMATCH-CAM-CAMTIME. Together these four bounds describe the ground footprint the scene was classified over.
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+      valid_range: [-90, 90]
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+      valid_range: [-90, 90]
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+      valid_range: [-180, 180]
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+      valid_range: [-180, 180]
+
+  # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
+  # Each pseudo-footprint is a contiguous block of L1B camera pixels (camera_segmentation.PseudoFootprint). These
+  # indices trace a footprint back to its source pixels in the L1B Daily Camera grid (dimensions CAMERA_PIXEL_COUNT_X x
+  # CAMERA_PIXEL_COUNT_Y). The *_start indices are inclusive and the *_stop indices are exclusive (Python slice
+  # convention), so the block spans pixels [start, stop) on each axis. The center-pixel indices point at the boresight
+  # stand-in, after any nearest-valid substitution. Passed through verbatim from FMATCH-CAM-CAMTIME.
+  center_pixel_x:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Boresight center) pixel index along CAMERA_PIXEL_COUNT_X
+  center_pixel_y:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
+  camera_pixel_x_start:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Inclusive start pixel index of the block along CAMERA_PIXEL_COUNT_X
+  camera_pixel_x_stop:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Exclusive stop pixel index of the block along CAMERA_PIXEL_COUNT_X
+  camera_pixel_y_start:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Inclusive start pixel index of the block along CAMERA_PIXEL_COUNT_Y
+  camera_pixel_y_stop:
+    dtype: int32
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: Exclusive stop pixel index of the block along CAMERA_PIXEL_COUNT_Y
