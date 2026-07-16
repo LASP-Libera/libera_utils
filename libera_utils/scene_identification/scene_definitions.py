@@ -9,6 +9,15 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
+# Storage dtype for each classification variable's property-bin bounds (the scene_bin_{type}_{variable}_min/max
+# variables produced by _compute_property_bins). surface_type is a small categorical code (0-6), so its bounds are
+# stored as a compact uint8; every other (continuous) variable uses float32. There is no fill value: a float bound
+# uses NaN for an unbounded side or an unmatched footprint, while an integer bound is simply left at 0 for those
+# cases -- scene_id == 0 is the authoritative flag for an unmatched footprint, so consumers key off that rather
+# than a missing/sentinel bound value.
+_BIN_BOUND_DTYPES: dict[str, type] = {"surface_type": np.uint8}
+_DEFAULT_BIN_BOUND_DTYPE: type = np.float32
+
 
 @dataclass
 class Scene:
@@ -383,25 +392,43 @@ class SceneDefinition:
         -------
         dict of str to np.ndarray
             Mapping of output variable name (``scene_bin_{type}_{variable}_min``
-            / ``_max``) to a float64 array the same shape as ``scene_ids``.
-            Unbounded bin sides and unmatched footprints are filled with NaN.
+            / ``_max``) to an array the same shape as ``scene_ids``. Continuous
+            variables use ``float32`` with ``NaN`` marking an unbounded bin side
+            or an unmatched footprint; ``surface_type`` uses a compact ``uint8``
+            left at ``0`` for those cases (scene_id 0 flags the unmatched case).
         """
         scene_type = self.type.lower()
         bin_arrays: dict[str, np.ndarray] = {}
 
         max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
+        # scene_ids may be a narrow unsigned integer dtype (see _identify_vectorized); widen a copy to the platform
+        # index type so it can be used to fancy-index the per-scene lookup arrays below.
         scene_ids_int = scene_ids.astype(np.intp, copy=False)
 
         for var_name in self.classification_variables:
-            min_by_id = np.full(max_scene_id + 1, np.nan, dtype=np.float64)
-            max_by_id = np.full(max_scene_id + 1, np.nan, dtype=np.float64)
+            dtype = _BIN_BOUND_DTYPES.get(var_name, _DEFAULT_BIN_BOUND_DTYPE)
+            is_float = np.issubdtype(np.dtype(dtype), np.floating)
+
+            # Float bounds represent an unbounded bin side with NaN. Integer bounds cannot hold NaN, so an unbounded
+            # side of a *matched* scene is clamped to the variable's global range instead (e.g. an unbounded
+            # surface_type max becomes the top of the surface_type range) -- equivalent to "unbounded" for a
+            # categorical code, and unambiguous. Unmatched footprints (scene_id 0) are left at the initial value:
+            # NaN for float bounds, 0 for integer bounds, with scene_id == 0 the authoritative "unmatched" flag.
+            if is_float:
+                min_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
+                max_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
+                unbounded_min = unbounded_max = np.nan
+            else:
+                min_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
+                max_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
+                global_min, global_max = self._compute_global_bounds([var_name])[var_name]
+                unbounded_min = 0 if global_min is None else global_min
+                unbounded_max = 0 if global_max is None else global_max
 
             for scene in self.scenes:
                 min_val, max_val = scene.get_bin_bounds(var_name)
-                if min_val is not None:
-                    min_by_id[scene.scene_id] = min_val
-                if max_val is not None:
-                    max_by_id[scene.scene_id] = max_val
+                min_by_id[scene.scene_id] = unbounded_min if min_val is None else min_val
+                max_by_id[scene.scene_id] = unbounded_max if max_val is None else max_val
 
             bin_arrays[f"scene_bin_{scene_type}_{var_name}_min"] = min_by_id[scene_ids_int]
             bin_arrays[f"scene_bin_{scene_type}_{var_name}_max"] = max_by_id[scene_ids_int]
@@ -410,8 +437,11 @@ class SceneDefinition:
 
     def _identify_vectorized(self, data: xr.Dataset, shape: tuple[int, ...]) -> np.ndarray:
         """Vectorized scene identification using numpy arrays."""
-        # Initialize scene_ids with zeros
-        scene_ids = np.zeros(shape, dtype=np.int32)
+        # Initialize scene_ids with zeros. Scene IDs are small non-negative codes (0 = unmatched, 1-11 = a scene), so a
+        # single unsigned byte is plenty and matches the uint8 scene_id_* variables in the product definition. This
+        # array is only ever used as a set of small labels and is widened to np.intp before being used as an index (see
+        # _compute_property_bins), so the narrow dtype is safe.
+        scene_ids = np.zeros(shape, dtype=np.uint8)
 
         # For each scene, create a mask and assign IDs
         for scene in self.scenes:

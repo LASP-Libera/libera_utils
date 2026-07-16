@@ -109,7 +109,7 @@ def add_placeholder_quality_flag(product: xr.Dataset, dimension: str = RADIOMETE
     The placeholder is emitted as ``uint32`` to match the ``Quality_Flag`` dtype in the product definition; the
     NetCDF writer's conformance step will re-cast if the definition ever changes.
     """
-    # TODO[LIBSDC-673]: replace this all-zero placeholder with real per-footprint quality flagging (for example,
+    # TODO[LIBSDC-810]: replace this all-zero placeholder with real per-footprint quality flagging (for example,
     # flagging unmatched footprints, fill/NaN inputs, and out-of-range viewing geometry). Until then every
     # footprint is reported as "no flags set" (0).
     number_of_footprints = product.sizes[dimension]
@@ -625,7 +625,7 @@ _CALCULATED_VARIABLE_MAP = {
         output_var=FootprintVariables.SURFACE_TYPE,
         function=calculate_trmm_surface_type,
         input_vars=[FootprintVariables.IGBP_SURFACE_TYPE],
-        output_datatype=int,
+        output_datatype=np.uint8,
     ),
     FootprintVariables.OPTICAL_DEPTH: CalculationSpec(
         output_var=FootprintVariables.OPTICAL_DEPTH,
@@ -765,43 +765,6 @@ class FootprintData:
         return footprint_data
 
     @classmethod
-    def from_cldpx_viirs_geos_cam_groundscene(cls):
-        """Process cloud pixel/VIIRS/GEOS/camera/ground scene data format.
-
-        Raises
-        ------
-        NotImplementedError
-            This data format is not yet supported
-
-        Notes
-        -----
-        TODO: LIBSDC-672 Implement processing for alternative data formats including:
-        - Cloud pixel data
-        - VIIRS observations
-        - GEOS model data
-        - Camera data
-        - Ground scene classifications
-        """
-        raise NotImplementedError(
-            "Calculating scene IDs not implemented for cldpx/viirs/geos/cam/ground scene data format."
-        )
-
-    @classmethod
-    def from_clouds_groundscene(cls):
-        """Process clouds/ground scene data format.
-
-        Raises
-        ------
-        NotImplementedError
-            This data format is not yet supported
-
-        Notes
-        -----
-        TODO: LIBSDC-673 Implement processing for cloud and ground scene data formats.
-        """
-        raise NotImplementedError("Calculating scene IDs not implemented for clouds/ground scene data format.")
-
-    @classmethod
     def from_fmatch_cam(cls, fmatch_path: pathlib.Path) -> "FootprintData":
         """Read a FMATCH-CAM product into a FootprintData (radiometer timescale).
 
@@ -824,7 +787,7 @@ class FootprintData:
         NotImplementedError
             Always, until the FMATCH-CAM product format is finalized and this reader is implemented.
         """
-        # TODO[LIBSDC-673]: implement once the FMATCH-CAM product definition/format is available (tracked with the
+        # TODO[LIBSDC-794]: implement once the FMATCH-CAM product definition/format is available (tracked with the
         # FMATCH reader milestone). The SceneIdRunnerConfig for cam_camtime already wires this in as its reader.
         raise NotImplementedError(
             "FootprintData.from_fmatch_cam is not implemented yet: the FMATCH-CAM input product format is not "
@@ -855,7 +818,7 @@ class FootprintData:
         NotImplementedError
             Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
         """
-        # TODO[LIBSDC-673]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
+        # TODO[LIBSDC-794]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
         # also carry through the identifier variables declared in scene_id_cam_camtime.yml.
         raise NotImplementedError(
             "FootprintData.from_fmatch_cam_camtime is not implemented yet: the FMATCH-CAM-CAMTIME input product "
@@ -1025,6 +988,16 @@ class FootprintData:
                 output_dtypes=[spec.output_datatype],
                 keep_attrs=True,
             )
+            # ``output_dtypes`` is only a *hint* for apply_ufunc (it is used for dask graph metadata and is ignored for
+            # eager numpy execution), so the array's real dtype is whatever the calculation function returns. For
+            # *integer* outputs we enforce the declared dtype explicitly: calculate_trmm_surface_type returns int64
+            # from np.where, but surface_type must be emitted as uint8 to match the product definition -- and the
+            # write-time conformance check only performs *safe* casts, so it would refuse an automatic int64->uint8
+            # narrowing and raise. Float outputs are left at their naturally computed precision (narrowing them here
+            # would change long-standing numerical results), and the product definition / conformance step handles any
+            # float dtype reconciliation at write time.
+            if np.issubdtype(np.dtype(spec.output_datatype), np.integer):
+                result = result.astype(spec.output_datatype)
             self._data[spec.output_var] = result
         else:
             raise ValueError(f"Cannot calculate fields - missing dependencies {spec.input_vars}")
@@ -1151,8 +1124,9 @@ class FootprintData:
             relative_azimuth_angle_np = np.array(viewing_angles_group.variables["relative_azimuth_angle"][:])
 
             # The SSF marks missing angles with a large float32 sentinel (_FillValue ~ 3.4e38). Convert those to NaN
-            # so they are treated as "no value" downstream: the scene matcher passes NaN through its range checks
-            # rather than excluding the footprint, and NetCDF writing re-encodes NaN as the product's fill value.
+            # so they are treated as "no value" downstream: a NaN in any classification variable leaves the footprint
+            # unmatched (scene ID 0) in the scene matcher (see Scene.matches / _identify_vectorized), and NetCDF
+            # writing stores the NaN as-is (float variables carry no declared fill value; NaN is inherently missing).
             for angle_name, angle_array in (
                 ("solar_zenith_angle", solar_zenith_angle_np),
                 ("view_zenith_angle", viewing_zenith_angle_np),
@@ -1182,7 +1156,7 @@ class FootprintData:
         # Slice 2D arrays to extract specific layers/estimates
         logger.info("Extracting layers from 2D arrays...")
 
-        igbp_surface_type = igbp_surface_type_np[:, 0]
+        igbp_surface_type = igbp_surface_type_np[:, 0].astype(np.uint8)
         cloud_fraction_lower = cloud_fraction_np[:, 1]
         cloud_fraction_upper = cloud_fraction_np[:, 2]
         cloud_phase_lower = cloud_phase_np[:, 0]
@@ -1280,7 +1254,7 @@ class FootprintData:
         product = self._data.set_coords(time_variable)
         # The per-footprint dimension is whatever axis the time variable lives on (RADIOMETER_TIME / CAMERA_TIME).
         (time_dimension,) = product[time_variable].dims
-        # TODO[LIBSDC-673]: Add real quality flag to the product
+        # TODO[LIBSDC-810]: Add real quality flag to the product
         product = add_placeholder_quality_flag(product, dimension=time_dimension)
         return product
 

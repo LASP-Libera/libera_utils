@@ -87,7 +87,9 @@ class TestCalculatedVariableMap:
             assert callable(spec.function)
             assert isinstance(spec.input_vars, list)
             assert len(spec.input_vars) > 0
-            assert spec.output_datatype in (float, int)
+            # output_datatype is the numpy/python type the calculated variable is cast to. Most are python float/int,
+            # but surface_type is emitted as np.uint8 to match its (uint8) product-definition dtype.
+            assert spec.output_datatype in (float, int, np.uint8)
 
     def test_map_contains_expected_variables(self):
         """Test that map contains all expected calculated variables."""
@@ -735,3 +737,48 @@ class TestToRadiometerTimeProduct:
         data = xr.Dataset({FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0])})
         with pytest.raises(ValueError, match=RADIOMETER_TIME_VARIABLE):
             FootprintData(data).to_radiometer_time_product()
+
+
+class TestSceneIdCamProductDtypes:
+    """Verify the narrowed SCENE-ID-CAM product-definition dtypes survive a NetCDF write/read round-trip."""
+
+    @staticmethod
+    def _scene_id_cam_definition():
+        """Load the shipped SCENE-ID-CAM product definition."""
+        import pathlib
+
+        from libera_utils.io.product_definition import LiberaDataProductDefinition
+
+        definition_path = (
+            pathlib.Path(__import__("libera_utils").__file__).parent
+            / "data"
+            / "product_definitions"
+            / "scene_id_cam.yml"
+        )
+        return LiberaDataProductDefinition.from_yaml(definition_path)
+
+    def test_surface_type_variables_are_uint8(self):
+        """The categorical surface_type / scene_id variables are declared as compact uint8."""
+        definition = self._scene_id_cam_definition()
+        assert definition.variables["surface_type"].dtype == "uint8"
+        assert definition.variables["igbp_surface_type"].dtype == "uint8"
+        assert definition.variables["scene_id_erbe"].dtype == "uint8"
+        assert definition.variables["scene_id_unfiltering"].dtype == "uint8"
+
+    def test_continuous_bin_bounds_are_float32(self):
+        """The continuous scene-bin bounds are declared as float32 rather than float64."""
+        definition = self._scene_id_cam_definition()
+        assert definition.variables["scene_bin_erbe_cloud_fraction_min"].dtype == "float32"
+        assert definition.variables["scene_bin_unfiltering_relative_azimuth_angle_max"].dtype == "float32"
+
+    def test_surface_type_bin_bounds_are_uint8(self):
+        """surface_type bin bounds are declared as compact uint8, and no variable declares a _FillValue.
+
+        surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
+        (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
+        """
+        definition = self._scene_id_cam_definition()
+        assert definition.variables["scene_bin_erbe_surface_type_min"].dtype == "uint8"
+        assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"
+        # And no variable in the definition declares a _FillValue.
+        assert not any("_FillValue" in var.encoding for var in definition.variables.values())

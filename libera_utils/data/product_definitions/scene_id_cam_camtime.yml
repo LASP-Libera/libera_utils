@@ -1,18 +1,4 @@
 # Libera SCENE-ID-CAM-CAMTIME product definition.
-#
-# This is the *camera-timescale* sibling of SCENE-ID-CAM (see scene_id_cam.yml). Both products carry the exact same
-# scene-classification content (ERBE + unfiltering scene IDs and their property-bin bounds), computed the same way; the
-# only structural difference is the time axis:
-#
-#   * SCENE-ID-CAM          -> one footprint per RADIOMETER_TIME (radiometer sample cadence), input FMATCH-CAM.
-#   * SCENE-ID-CAM-CAMTIME  -> one pseudo-footprint per CAMERA_TIME (WFOV camera image cadence), input FMATCH-CAM-CAMTIME.
-#
-# Because the camera-timescale record is a *pseudo-footprint* (a contiguous block of L1B WFOV camera pixels; see
-# libera_utils/footprint_matching/camera_segmentation.py::PseudoFootprint), this product additionally carries the
-# footprint *identifier* variables straight through from FMATCH-CAM-CAMTIME (camera pixel-block indices, PSF bounding
-# box, and boresight geolocation). Those let a downstream consumer trace any classified scene back to the exact camera
-# pixels and ground footprint it came from. See the "(identifiers)" section at the bottom.
-
 attributes:
   ProductID: SCENE-ID-CAM-CAMTIME
   # These are populated at write time by the runner / write_libera_data_product (they must be present but their
@@ -25,8 +11,7 @@ coordinates:
   # Time of observation, one value per pseudo-footprint. Copied from the FMATCH-CAM-CAMTIME CAMERA_TIME coordinate so
   # downstream code can treat scene IDs and the camera image cadence on a common time axis. The values are absolute
   # datetimes; the encoding re-expresses them as int64 "nanoseconds since 1958-01-01" (the CCSDS epoch used across
-  # Libera products). NOTE the convention (shared with scene_id_cam.yml) that the dimension is upper-case (CAMERA_TIME)
-  # while the coordinate *variable* is lower-case (camera_time).
+  # Libera products).
   camera_time:
     dtype: datetime64[ns]
     dimensions: ["CAMERA_TIME"]
@@ -44,7 +29,7 @@ variables:
   # Input scene properties
   ########################
   igbp_surface_type:
-    dtype: int16
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
@@ -75,7 +60,7 @@ variables:
   # Derived scene properties
   ##########################
   surface_type:
-    dtype: int64
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
@@ -92,13 +77,13 @@ variables:
   # Scene IDs
   ############
   scene_id_erbe:
-    dtype: int32
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: ERBE-like scene classification ID (0 = unmatched, 1-11 = scene)
       valid_range: [0, 11]
   scene_id_unfiltering:
-    dtype: int32
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
@@ -108,59 +93,59 @@ variables:
   # ERBE scene property-bin bounds
   ##############################
   scene_bin_erbe_cloud_fraction_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched ERBE scene
       units: percent
   scene_bin_erbe_cloud_fraction_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched ERBE scene
       units: percent
   scene_bin_erbe_surface_type_min:
-    dtype: float64
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the surface_type bin of the matched ERBE scene
   scene_bin_erbe_surface_type_max:
-    dtype: float64
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the surface_type bin of the matched ERBE scene
   scene_bin_erbe_solar_zenith_angle_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched ERBE scene
       units: degrees
   scene_bin_erbe_solar_zenith_angle_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched ERBE scene
       units: degrees
   scene_bin_erbe_viewing_zenith_angle_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched ERBE scene
       units: degrees
   scene_bin_erbe_viewing_zenith_angle_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched ERBE scene
       units: degrees
   scene_bin_erbe_relative_azimuth_angle_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched ERBE scene
       units: degrees
   scene_bin_erbe_relative_azimuth_angle_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched ERBE scene
@@ -170,59 +155,59 @@ variables:
   # Unfiltering scene property-bin bounds
   #####################################
   scene_bin_unfiltering_cloud_fraction_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched unfiltering scene
       units: percent
   scene_bin_unfiltering_cloud_fraction_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched unfiltering scene
       units: percent
   scene_bin_unfiltering_surface_type_min:
-    dtype: float64
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the surface_type bin of the matched unfiltering scene
   scene_bin_unfiltering_surface_type_max:
-    dtype: float64
+    dtype: uint8
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the surface_type bin of the matched unfiltering scene
   scene_bin_unfiltering_solar_zenith_angle_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched unfiltering scene
       units: degrees
   scene_bin_unfiltering_solar_zenith_angle_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched unfiltering scene
       units: degrees
   scene_bin_unfiltering_viewing_zenith_angle_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
       units: degrees
   scene_bin_unfiltering_viewing_zenith_angle_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
       units: degrees
   scene_bin_unfiltering_relative_azimuth_angle_min:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
       units: degrees
   scene_bin_unfiltering_relative_azimuth_angle_max:
-    dtype: float64
+    dtype: float32
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
@@ -311,7 +296,7 @@ variables:
     dtype: int32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Boresight center) pixel index along CAMERA_PIXEL_COUNT_X
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
   center_pixel_y:
     dtype: int32
     dimensions: ["CAMERA_TIME"]
