@@ -226,7 +226,7 @@ class SceneDefinition:
         """
         variable_names = set()
         for col in columns:
-            if "_id" in col:
+            if "scene_id" in col:
                 continue
 
             # Remove _min or _max suffix to get variable name
@@ -423,13 +423,16 @@ class SceneDefinition:
                 min_val, max_val = scene.variable_ranges[var_name]
                 var_data = data[var_name].values  # Get numpy array from xarray
 
+                # A NaN classification value (e.g. a missing viewing angle) never matches any scene, so a footprint
+                # with a NaN in any bounded classification variable is left unmatched (scene ID 0). Seeding the mask
+                # with ~is_nan enforces that and keeps this vectorized path consistent with Scene.matches().
                 is_nan = np.isnan(var_data)
-                var_mask = np.ones(shape, dtype=bool)
+                var_mask = ~is_nan
 
                 if min_val is not None:
-                    var_mask &= (var_data >= min_val) | is_nan
+                    var_mask &= var_data >= min_val
                 if max_val is not None:
-                    var_mask &= (var_data < max_val) | is_nan
+                    var_mask &= var_data < max_val
 
                 mask &= var_mask
 
