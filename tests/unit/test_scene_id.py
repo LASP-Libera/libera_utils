@@ -6,9 +6,11 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.scene_definitions import SceneDefinition
-from libera_utils.scene_id import (
+from libera_utils.scene_identification.scene_definitions import SceneDefinition
+from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
+    RADIOMETER_TIME_DIMENSION,
+    RADIOMETER_TIME_VARIABLE,
     CalculationSpec,
     FootprintData,
     FootprintVariables,
@@ -85,7 +87,9 @@ class TestCalculatedVariableMap:
             assert callable(spec.function)
             assert isinstance(spec.input_vars, list)
             assert len(spec.input_vars) > 0
-            assert spec.output_datatype in (float, int)
+            # output_datatype is the numpy/python type the calculated variable is cast to. Most are python float/int,
+            # but surface_type is emitted as np.uint8 to match its (uint8) product-definition dtype.
+            assert spec.output_datatype in (float, int, np.uint8)
 
     def test_map_contains_expected_variables(self):
         """Test that map contains all expected calculated variables."""
@@ -614,16 +618,16 @@ class TestIdentifyScenes:
         """Create sample footprint data for testing."""
         data = xr.Dataset(
             {
-                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 17, 15]),
-                FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0]),
-                FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0]),
-                FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0]),
+                FootprintVariables.IGBP_SURFACE_TYPE: ([RADIOMETER_TIME_DIMENSION], [1, 17, 15]),
+                FootprintVariables.SURFACE_WIND_U: ([RADIOMETER_TIME_DIMENSION], [3.0, 4.0, 5.0]),
+                FootprintVariables.SURFACE_WIND_V: ([RADIOMETER_TIME_DIMENSION], [4.0, 3.0, 12.0]),
+                FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0]),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: ([RADIOMETER_TIME_DIMENSION], [2.0, 5.0, 3.0]),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: ([RADIOMETER_TIME_DIMENSION], [3.0, 10.0, 7.0]),
+                FootprintVariables.CLOUD_FRACTION_LOWER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
+                FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
+                FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], [1.0, 1.0, 2.0]),
+                FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], [2.0, 2.0, 2.0]),
             }
         )
         return FootprintData(data)
@@ -649,16 +653,16 @@ class TestIdentifyScenes:
         """Test that identify_scenes handles NaN values in data."""
         data = xr.Dataset(
             {
-                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 3, 15]),
-                FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, np.nan]),
-                FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0]),
-                FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 20.0, 50.0]),
-                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, np.nan, 3.0]),
-                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0]),
-                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 40.0, 25.0]),
-                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0]),
-                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0]),
+                FootprintVariables.IGBP_SURFACE_TYPE: ([RADIOMETER_TIME_DIMENSION], [1, 3, 15]),
+                FootprintVariables.SURFACE_WIND_U: ([RADIOMETER_TIME_DIMENSION], [3.0, 4.0, np.nan]),
+                FootprintVariables.SURFACE_WIND_V: ([RADIOMETER_TIME_DIMENSION], [4.0, 3.0, 12.0]),
+                FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 20.0, 50.0]),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: ([RADIOMETER_TIME_DIMENSION], [2.0, np.nan, 3.0]),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: ([RADIOMETER_TIME_DIMENSION], [3.0, 10.0, 7.0]),
+                FootprintVariables.CLOUD_FRACTION_LOWER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
+                FootprintVariables.CLOUD_FRACTION_UPPER: ([RADIOMETER_TIME_DIMENSION], [10.0, 40.0, 25.0]),
+                FootprintVariables.CLOUD_PHASE_LOWER: ([RADIOMETER_TIME_DIMENSION], [1.0, 1.0, 2.0]),
+                FootprintVariables.CLOUD_PHASE_UPPER: ([RADIOMETER_TIME_DIMENSION], [2.0, 2.0, 2.0]),
             }
         )
         footprint_data = FootprintData(data)
@@ -680,7 +684,7 @@ class TestIdentifyScenes:
         max_col = "scene_bin_test_scenes_cloud_fraction_max"
         assert min_col in data.data_vars
         assert max_col in data.data_vars
-        assert data[min_col].dims == ("footprint",)
+        assert data[min_col].dims == (RADIOMETER_TIME_DIMENSION,)
         np.testing.assert_array_equal(data[min_col].values, [0.0, 50.0, 50.0])
         np.testing.assert_array_equal(data[max_col].values, [50.0, 100.0, 100.0])
 
@@ -693,3 +697,88 @@ class TestIdentifyScenes:
         assert "scene_id_test_scenes" in data.data_vars
         bin_columns = [name for name in data.data_vars if str(name).startswith("scene_bin_")]
         assert bin_columns == []
+
+    def test_identify_scenes_preserves_radiometer_time_dimension(
+        self, sample_footprint_data, simple_scene_definition_csv
+    ):
+        """Scene identification keeps footprint data on the RADIOMETER_TIME dimension."""
+        scene_def = SceneDefinition(simple_scene_definition_csv)
+        sample_footprint_data.identify_scenes([scene_def])
+
+        assert sample_footprint_data._data["scene_id_test_scenes"].dims == (RADIOMETER_TIME_DIMENSION,)
+
+
+class TestToRadiometerTimeProduct:
+    """Test cases for FootprintData.to_radiometer_time_product."""
+
+    @pytest.fixture
+    def footprint_data_with_time(self):
+        """FootprintData already on the RADIOMETER_TIME dimension with a radiometer_time variable."""
+        times = np.array(["2023-01-01T00:00:00", "2023-01-01T00:00:01", "2023-01-01T00:00:02"], dtype="datetime64[ns]")
+        data = xr.Dataset(
+            {
+                FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0]),
+                RADIOMETER_TIME_VARIABLE: ([RADIOMETER_TIME_DIMENSION], times),
+            }
+        )
+        return FootprintData(data)
+
+    def test_promotes_radiometer_time_to_coordinate(self, footprint_data_with_time):
+        """radiometer_time is promoted to a coordinate on the (unchanged) RADIOMETER_TIME dimension."""
+        product = footprint_data_with_time.to_radiometer_time_product()
+
+        assert RADIOMETER_TIME_DIMENSION in product.dims
+        assert RADIOMETER_TIME_VARIABLE in product.coords
+        # The internal representation is left untouched (we operate on a copy).
+        assert RADIOMETER_TIME_VARIABLE not in footprint_data_with_time._data.coords
+
+    def test_missing_radiometer_time_raises(self):
+        """A dataset without radiometer_time cannot be turned into a product."""
+        data = xr.Dataset({FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0])})
+        with pytest.raises(ValueError, match=RADIOMETER_TIME_VARIABLE):
+            FootprintData(data).to_radiometer_time_product()
+
+
+class TestSceneIdCamProductDtypes:
+    """Verify the narrowed SCENE-ID-CAM product-definition dtypes survive a NetCDF write/read round-trip."""
+
+    @staticmethod
+    def _scene_id_cam_definition():
+        """Load the shipped SCENE-ID-CAM product definition."""
+        import pathlib
+
+        from libera_utils.io.product_definition import LiberaDataProductDefinition
+
+        definition_path = (
+            pathlib.Path(__import__("libera_utils").__file__).parent
+            / "data"
+            / "product_definitions"
+            / "scene_id_cam.yml"
+        )
+        return LiberaDataProductDefinition.from_yaml(definition_path)
+
+    def test_surface_type_variables_are_uint8(self):
+        """The categorical surface_type / scene_id variables are declared as compact uint8."""
+        definition = self._scene_id_cam_definition()
+        assert definition.variables["surface_type"].dtype == "uint8"
+        assert definition.variables["igbp_surface_type"].dtype == "uint8"
+        assert definition.variables["scene_id_erbe"].dtype == "uint8"
+        assert definition.variables["scene_id_unfiltering"].dtype == "uint8"
+
+    def test_continuous_bin_bounds_are_float32(self):
+        """The continuous scene-bin bounds are declared as float32 rather than float64."""
+        definition = self._scene_id_cam_definition()
+        assert definition.variables["scene_bin_erbe_cloud_fraction_min"].dtype == "float32"
+        assert definition.variables["scene_bin_unfiltering_relative_azimuth_angle_max"].dtype == "float32"
+
+    def test_surface_type_bin_bounds_are_uint8(self):
+        """surface_type bin bounds are declared as compact uint8, and no variable declares a _FillValue.
+
+        surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
+        (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
+        """
+        definition = self._scene_id_cam_definition()
+        assert definition.variables["scene_bin_erbe_surface_type_min"].dtype == "uint8"
+        assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"
+        # And no variable in the definition declares a _FillValue.
+        assert not any("_FillValue" in var.encoding for var in definition.variables.values())
