@@ -83,18 +83,21 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
     return definitions
 
 
-def add_placeholder_quality_flag(product: xr.Dataset) -> xr.Dataset:
+def add_placeholder_quality_flag(product: xr.Dataset, dimension: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
     """Add the SCENE-ID ``Quality_Flag`` variable as an all-zero placeholder.
 
     The SCENE-ID product definitions (e.g. ``scene_id_cam.yml``) declare a per-footprint ``Quality_Flag`` bit-flag
     variable. Per-footprint quality flagging is not implemented yet, so this fills every footprint with ``0``
-    ("no flags set") so the product still conforms to its definition. The variable is added on the existing
-    ``RADIOMETER_TIME`` dimension, so the input must already be on that axis.
+    ("no flags set") so the product still conforms to its definition. The variable is added on the product's
+    per-footprint time dimension, so the input must already be on that axis.
 
     Parameters
     ----------
     product : xr.Dataset
-        A radiometer-time product dataset (on the ``RADIOMETER_TIME`` dimension) to add the flag to.
+        A per-footprint product dataset to add the flag to.
+    dimension : str, optional
+        Name of the per-footprint dimension to add the flag along. Defaults to ``RADIOMETER_TIME`` (the
+        radiometer-timescale products); the camera-timescale product passes ``CAMERA_TIME``.
 
     Returns
     -------
@@ -109,9 +112,9 @@ def add_placeholder_quality_flag(product: xr.Dataset) -> xr.Dataset:
     # TODO[LIBSDC-673]: replace this all-zero placeholder with real per-footprint quality flagging (for example,
     # flagging unmatched footprints, fill/NaN inputs, and out-of-range viewing geometry). Until then every
     # footprint is reported as "no flags set" (0).
-    number_of_footprints = product.sizes[RADIOMETER_TIME_DIMENSION]
+    number_of_footprints = product.sizes[dimension]
     quality_flag = np.zeros(number_of_footprints, dtype=np.uint32)
-    product[QUALITY_FLAG_VARIABLE] = (RADIOMETER_TIME_DIMENSION, quality_flag)
+    product[QUALITY_FLAG_VARIABLE] = (dimension, quality_flag)
     return product
 
 
@@ -302,36 +305,39 @@ def calculate_surface_wind(
 
 
 def calculate_trmm_surface_type(igbp_surface_type: int | NDArray[np.integer]) -> int | NDArray[np.integer]:
-    """Convert TRMM surface type to IGBP surface type classification.
+    """Convert an IGBP surface type code to its TRMM surface type classification.
+
+    This maps IGBP -> TRMM (the direction used by scene identification): each IGBP land-cover code (1-20) is
+    collapsed onto one of the six coarser TRMM surface types via :meth:`IGBPSurfaceType.trmm_surface_type`.
 
     Parameters
     ----------
     igbp_surface_type : int or ndarray of int
-        IGBP surface type codes
+        IGBP surface type codes (valid range 1-20)
 
     Returns
     -------
     int or ndarray of int
-        TRMM surface type codes
+        TRMM surface type codes (0=ocean ... 5=snow)
 
     Raises
     ------
     ValueError
-        If any input values cannot be converted to a valid IGBP surface type
+        If any input value is not a valid IGBP surface type (outside 1-20)
 
     Notes
     -----
-    The conversion uses a lookup table derived from the TRMMSurfaceType.value property.
-    Values that don't correspond to valid TRMM surface types will raise a ValueError.
+    The conversion uses a lookup table derived from the IGBP->TRMM map on :class:`IGBPSurfaceType`.
+    Values that don't correspond to a valid IGBP surface type will raise a ValueError.
 
     Examples
     --------
-    >>> calculate_trmm_surface_type(1)
-    5  # Maps IGBP HI_SHRUB back to TRMM type 5
-    >>> calculate_trmm_surface_type(np.array([1, 0]))
-    array([5, 17])
+    >>> calculate_trmm_surface_type(1)  # IGBP EVERGREEN_NEEDLELEAF_FOREST -> TRMM HI_SHRUB (1)
+    1
+    >>> calculate_trmm_surface_type(np.array([1, 17]))  # 17 = WATER_BODIES -> OCEAN (0)
+    array([1, 0])
     >>> calculate_trmm_surface_type(999)
-    ValueError: Cannot convert IGBP surface type value(s) to TRMM surface type: [999]
+    ValueError: Cannot convert IGBP surface type value to TRMM surface type: [999]
     """
     all_surfaces = list()
     for igbp_surface_enum in IGBPSurfaceType:
@@ -598,8 +604,6 @@ class CalculationSpec:
     output_var: str
     function: Callable
     input_vars: list[str]
-    function: Callable
-    input_vars: list[str]
     output_datatype: type
     dependent_calculations: list[str] | None = None
 
@@ -706,14 +710,12 @@ class FootprintData:
         ----------
         ssf_path : pathlib.Path
             Path to the SSF NetCDF file (CeresSSFNOAA20FM6Ed1C format)
-        scene_definitions : list of SceneDefinition
-            List of scene definition objects to apply for classification
 
         Returns
         -------
         FootprintData
-            Processed footprint data object containing original variables, calculated
-            derived fields, and scene IDs.
+            Processed footprint data object containing the extracted footprint variables. Scene IDs are added
+            later by :meth:`identify_scenes`.
 
         Raises
         ------
@@ -735,11 +737,8 @@ class FootprintData:
 
         Examples
         --------
-        >>> scene_defs = [SceneDefinition(Path("trmm.csv"))]
-        >>> footprint_data = FootprintData.from_ceres_ssf(
-        ...     Path("CERES_SSF_NOAA20_2024001.nc"),
-        ...     scene_defs
-        ... )
+        >>> footprint_data = FootprintData.from_ceres_ssf(Path("CERES_SSF_NOAA20_2024001.nc"))
+        >>> footprint_data.identify_scenes()
         """
         try:
             with nc.Dataset(ssf_path) as file:
@@ -802,6 +801,67 @@ class FootprintData:
         """
         raise NotImplementedError("Calculating scene IDs not implemented for clouds/ground scene data format.")
 
+    @classmethod
+    def from_fmatch_cam(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+        """Read a FMATCH-CAM product into a FootprintData (radiometer timescale).
+
+        FMATCH-CAM is the operational input to SCENE-ID-CAM: one footprint per ``RADIOMETER_TIME``, carrying the
+        Libera-camera-derived cloud fraction and the scene properties needed for classification. This reader will
+        replace the placeholder CERES SSF path (:meth:`from_ceres_ssf`) once the FMATCH step is producing files.
+
+        Parameters
+        ----------
+        fmatch_path : pathlib.Path
+            Path to a Libera FMATCH-CAM NetCDF product file.
+
+        Returns
+        -------
+        FootprintData
+            Footprint data on the ``RADIOMETER_TIME`` dimension, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, until the FMATCH-CAM product format is finalized and this reader is implemented.
+        """
+        # TODO[LIBSDC-673]: implement once the FMATCH-CAM product definition/format is available (tracked with the
+        # FMATCH reader milestone). The SceneIdRunnerConfig for cam_camtime already wires this in as its reader.
+        raise NotImplementedError(
+            "FootprintData.from_fmatch_cam is not implemented yet: the FMATCH-CAM input product format is not "
+            "available. SCENE-ID-CAM currently reads placeholder CERES SSF input via from_ceres_ssf()."
+        )
+
+    @classmethod
+    def from_fmatch_cam_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+        """Read a FMATCH-CAM-CAMTIME product into a FootprintData (camera timescale).
+
+        FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME: one pseudo-footprint per
+        ``CAMERA_TIME`` (a contiguous block of L1B WFOV camera pixels), carrying both the scene properties and the
+        footprint *identifier* variables (camera pixel-block indices, PSF bounding box, boresight geolocation) that
+        the camera-timescale product passes straight through.
+
+        Parameters
+        ----------
+        fmatch_path : pathlib.Path
+            Path to a Libera FMATCH-CAM-CAMTIME NetCDF product file.
+
+        Returns
+        -------
+        FootprintData
+            Footprint data on the ``CAMERA_TIME`` dimension, ready for :meth:`identify_scenes`.
+
+        Raises
+        ------
+        NotImplementedError
+            Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
+        """
+        # TODO[LIBSDC-673]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
+        # also carry through the identifier variables declared in scene_id_cam_camtime.yml.
+        raise NotImplementedError(
+            "FootprintData.from_fmatch_cam_camtime is not implemented yet: the FMATCH-CAM-CAMTIME input product "
+            "format is not available."
+        )
+
     def identify_scenes(
         self,
         scene_definitions: list[SceneDefinition] | None = _USE_DEFAULT_SCENE_DEFINITIONS,  # type: ignore[assignment]
@@ -855,6 +915,9 @@ class FootprintData:
         # Calculate required fields for each scene
         required_calculated_fields = list()
         if additional_scene_definitions_files:
+            # Copy first so appending the caller-supplied extra definitions does not mutate the list the caller
+            # passed in (which may be reused across calls, e.g. the shared standard_scene_definitions() result).
+            scene_definitions = list(scene_definitions)
             for additional_scene_definition in additional_scene_definitions_files:
                 scene_definitions.append(SceneDefinition(additional_scene_definition))
         for scene_definition in scene_definitions:
@@ -933,7 +996,7 @@ class FootprintData:
             if loop_check > 30:
                 raise ValueError(f"Cannot calculate fields {remaining} - dependencies not found")
 
-    def _calculate_single_field_from_spec(self, spec: CalculationSpec, calculated: list[str]):
+    def _calculate_single_field_from_spec(self, spec: CalculationSpec, calculated: set[str]):
         """Calculate a single field from input FootprintVariables.
 
         Applies the calculation function specified in the CalculationSpec to the input variables, creating a new
@@ -943,8 +1006,8 @@ class FootprintData:
         ----------
         spec : CalculationSpec
             Specification defining the calculation to perform
-        calculated : list of str
-            List of variable names already available in the dataset
+        calculated : set of str
+            Set of variable names already available in the dataset
 
         Raises
         ------
@@ -970,7 +1033,7 @@ class FootprintData:
         """Convert input missing values in footprint data to output missing values.
 
         This method standardizes missing value representations by converting from the input dataset's missing value
-        convention to the output convention used in FootprintData processing (np.NaN).
+        convention to the output convention used in FootprintData processing (np.nan).
 
         Parameters
         ----------
@@ -984,7 +1047,7 @@ class FootprintData:
         - If input_missing_value is numeric: Uses direct equality comparison
 
         Modifies self._data in place, replacing all occurrences of input_missing_value
-        with np.NaN.
+        with np.nan.
 
         Examples
         --------
@@ -995,13 +1058,13 @@ class FootprintData:
         """
         if np.isnan(input_missing_value):
             # For NaN input missing values, use isnan
-            result = self._data.where(~np.isnan(self._data), np.NaN)
+            result = self._data.where(~np.isnan(self._data), np.nan)
         else:
             # For numeric input missing values, use direct comparison
-            result = self._data.where(self._data != input_missing_value, np.NaN)
+            result = self._data.where(self._data != input_missing_value, np.nan)
         self._data = result
 
-    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value=np.NaN):
+    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value: float = np.nan):
         """Replace values above threshold with fill value for specified column.
 
         Parameters
@@ -1038,8 +1101,6 @@ class FootprintData:
         ----------
         dataset : netCDF4.Dataset
             Open NetCDF4 dataset in CeresSSFNOAA20FM6Ed1C format
-        chunk_size : int, optional
-            Number of footprints per chunk along the first dimension (parameter kept for compatibility but not used)
 
         Returns
         -------
@@ -1181,39 +1242,70 @@ class FootprintData:
 
         return parsed_dataset
 
+    def to_time_product(self, time_variable: str = RADIOMETER_TIME_VARIABLE) -> xr.Dataset:
+        """Return the footprint data ready to write on its per-footprint time axis.
+
+        The scene-ID CAM/IMAGER/FLASH products contain exactly one footprint per observation time and are written
+        on the same time dimension as their upstream product, so downstream consumers can align scene IDs to the
+        upstream records positionally. :class:`FootprintData` already carries data on that dimension, so this
+        method only promotes the time variable to a coordinate so the result is ready to hand to
+        :func:`libera_utils.io.netcdf.write_libera_data_product` with the matching ``time_variable``.
+
+        Parameters
+        ----------
+        time_variable : str, optional
+            Name of the time variable to promote to a coordinate. Defaults to ``radiometer_time`` (the
+            radiometer-timescale products); the camera-timescale product passes ``camera_time``.
+
+        Returns
+        -------
+        xr.Dataset
+            A copy of the internal dataset with the time variable promoted to a coordinate and a placeholder
+            ``Quality_Flag`` added on the same dimension.
+
+        Raises
+        ------
+        ValueError
+            If ``time_variable`` is not present (e.g. the instance was built directly from a synthetic dataset
+            that did not include observation times).
+        """
+        if time_variable not in self._data.variables:
+            raise ValueError(
+                f"Cannot build a time product: '{time_variable}' is not present in the footprint data. It is "
+                "populated by the FootprintData reader (e.g. from_ceres_ssf()); datasets constructed directly "
+                "must add it themselves."
+            )
+        # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
+        # representation (set_coords otherwise mutates the shared dataset).
+        product = self._data.set_coords(time_variable)
+        # The per-footprint dimension is whatever axis the time variable lives on (RADIOMETER_TIME / CAMERA_TIME).
+        (time_dimension,) = product[time_variable].dims
+        # TODO[LIBSDC-673]: Add real quality flag to the product
+        product = add_placeholder_quality_flag(product, dimension=time_dimension)
+        return product
+
     def to_radiometer_time_product(self) -> xr.Dataset:
         """Return the footprint data ready to write on the Libera ``RADIOMETER_TIME`` axis.
 
-        The scene-ID CAM/IMAGER/FLASH products contain exactly one footprint per radiometer time and are written
-        on the same ``RADIOMETER_TIME`` dimension as their upstream L1B radiometer product, so downstream consumers
-        can align scene IDs to L1B records positionally. :class:`FootprintData` already carries data on the
-        ``RADIOMETER_TIME`` dimension, so this method only promotes the ``radiometer_time`` variable to a
-        coordinate so the result is ready to hand to
-        :func:`libera_utils.io.netcdf.write_libera_data_product` with ``time_variable="radiometer_time"``.
+        Backward-compatible wrapper around :meth:`to_time_product` pinned to the ``radiometer_time`` variable.
 
         Returns
         -------
         xr.Dataset
             A copy of the internal dataset with the ``radiometer_time`` variable promoted to a coordinate.
-
-        Raises
-        ------
-        ValueError
-            If the ``radiometer_time`` variable is not present (e.g. the instance was built directly from a
-            synthetic dataset that did not include observation times).
         """
-        if RADIOMETER_TIME_VARIABLE not in self._data.variables:
-            raise ValueError(
-                f"Cannot build a radiometer-time product: '{RADIOMETER_TIME_VARIABLE}' is not present in the "
-                "footprint data. It is populated by FootprintData.from_ceres_ssf(); datasets constructed directly "
-                "must add it themselves."
-            )
-        # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
-        # representation (set_coords otherwise mutates the shared dataset).
-        product = self._data.set_coords(RADIOMETER_TIME_VARIABLE)
-        # TODO[LIBSDC-673]: Add real quality flag to the product
-        product = add_placeholder_quality_flag(product)
-        return product
+        return self.to_time_product(RADIOMETER_TIME_VARIABLE)
 
-    def export_to_netcdf(self, netcdf_path):
+    def export_to_netcdf(self, netcdf_path: str | pathlib.Path) -> None:
+        """Write the internal footprint dataset straight to a NetCDF file.
+
+        This is a raw dump of the working dataset (no product-definition conformance step); use it for debugging
+        or intermediate inspection. Operational products are written via
+        :func:`libera_utils.io.netcdf.write_libera_data_product`.
+
+        Parameters
+        ----------
+        netcdf_path : str or pathlib.Path
+            Destination path for the NetCDF file. An existing file is overwritten.
+        """
         self._data.to_netcdf(path=netcdf_path, mode="w")
