@@ -152,10 +152,15 @@ class TestResolveEcrSession:
             (ProcessingStepIdentifier.l2_cf_rad, "L2Developer/L2-CloudFraction"),
             (ProcessingStepIdentifier.l2_cf_cam, "L2Developer/L2-CloudFraction"),
             (ProcessingStepIdentifier.l2_unf_cam, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_unf_imager, "L2Developer/L2-Unfiltering"),
             (ProcessingStepIdentifier.l2_toa_flux_cam, "L2Developer/L2-SSW-TOA-Flux"),
+            (ProcessingStepIdentifier.l2_toa_flux_imager, "L2Developer/L2-SSW-TOA-Flux"),
             (ProcessingStepIdentifier.l2_comp_flux, "L2Developer/L2-SFC-Flux"),
             (ProcessingStepIdentifier.aux_adm_stats_cam, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.l2_nb_bb_cam_time, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_cam, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.aux_adm_stats_imager, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.aux_adm_imager, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_imager, "L2Developer/L2-ADM"),
         ],
     )
     @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")

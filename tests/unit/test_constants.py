@@ -161,7 +161,7 @@ class TestDataProductIdentifier:
             "l2_unf_cam",
             "l2_cf_rad_time",
             "l2_cf_cam_time",
-            "l2_nb_bb_cam_time",
+            "l2_nb_bb_cam",
             "l2_toa_flux_cam",
             # AUX Products — camera cloud fraction track
             "aux_fmatch_cam",
@@ -171,9 +171,17 @@ class TestDataProductIdentifier:
             "aux_adm_stats_cam",
             "aux_adm_cam",
             # L2 Products — RBSP + VIIRS imager track
+            "l2_unf_imager",
             "l2_comp_flux",
+            "l2_nb_bb_imager",
+            "l2_toa_flux_imager",
             # AUX Products — RBSP + VIIRS imager track
             "aux_fmatch_imager",
+            "aux_fmatch_imager_camtime",
+            "aux_scene_id_imager",
+            "aux_scene_id_imager_camtime",
+            "aux_adm_stats_imager",
+            "aux_adm_imager",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
@@ -264,10 +272,13 @@ class TestProcessingStepIdentifier:
             "l2_unf_cam",
             "l2_cf_rad",
             "l2_cf_cam",
-            "l2_nb_bb_cam_time",
+            "l2_nb_bb_cam",
             "l2_toa_flux_cam",
             # L2 steps — RBSP + VIIRS imager track
+            "l2_unf_imager",
             "l2_comp_flux",
+            "l2_nb_bb_imager",
+            "l2_toa_flux_imager",
             # AUX steps — camera cloud fraction track
             "aux_fmatch_cam",
             "aux_fmatch_cam_camtime",
@@ -277,6 +288,11 @@ class TestProcessingStepIdentifier:
             "aux_adm_cam",
             # AUX steps — RBSP + VIIRS imager track
             "aux_fmatch_imager",
+            "aux_fmatch_imager_camtime",
+            "aux_scene_id_imager",
+            "aux_scene_id_imager_camtime",
+            "aux_adm_stats_imager",
+            "aux_adm_imager",
         ]
         actual_names = [member.name for member in ProcessingStepIdentifier]
         assert actual_names == expected_names
@@ -374,11 +390,16 @@ class TestProcessingStepIdentifier:
             ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
             ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
             ProcessingStepIdentifier.l2_unf_cam: "L2-Unfiltering",
+            ProcessingStepIdentifier.l2_unf_imager: "L2-Unfiltering",
             ProcessingStepIdentifier.l2_toa_flux_cam: "L2-SSW-TOA-Flux",
+            ProcessingStepIdentifier.l2_toa_flux_imager: "L2-SSW-TOA-Flux",
             ProcessingStepIdentifier.l2_comp_flux: "L2-SFC-Flux",
             ProcessingStepIdentifier.aux_adm_stats_cam: "L2-ADM",
             ProcessingStepIdentifier.aux_adm_cam: "L2-ADM",
-            ProcessingStepIdentifier.l2_nb_bb_cam_time: "L2-ADM",
+            ProcessingStepIdentifier.l2_nb_bb_cam: "L2-ADM",
+            ProcessingStepIdentifier.aux_adm_stats_imager: "L2-ADM",
+            ProcessingStepIdentifier.aux_adm_imager: "L2-ADM",
+            ProcessingStepIdentifier.l2_nb_bb_imager: "L2-ADM",
         }
         for step, role in expected_roles.items():
             assert step.l2_team_iam_role == role
@@ -391,6 +412,9 @@ class TestProcessingStepIdentifier:
             ProcessingStepIdentifier.l1b_cam,
             ProcessingStepIdentifier.aux_fmatch_cam,
             ProcessingStepIdentifier.aux_fmatch_imager,
+            ProcessingStepIdentifier.aux_fmatch_imager_camtime,
+            ProcessingStepIdentifier.aux_scene_id_imager,
+            ProcessingStepIdentifier.aux_scene_id_imager_camtime,
         ):
             assert step.l2_team_iam_role is None
 
