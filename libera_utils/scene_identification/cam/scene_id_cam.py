@@ -1,10 +1,6 @@
 """Scene ID CAM processing code for the Libera radiometer.
 
-This is the *radiometer*-timescale runner: it identifies scenes for one footprint per ``RADIOMETER_TIME`` and writes
-``SCENE-ID-CAM``. It is the sibling of the camera-timescale runner in ``../cam_camtime/scene_id_cam_camtime.py`` and
-shares the same manifest/dropbox plumbing from :mod:`libera_utils.scene_identification._runner`; the two differ only by
-their input product, the :class:`~libera_utils.scene_identification.FootprintData` factory used to read it, and the
-output product definition / time axis.
+This is the *radiometer*-timescale runner for the lowest-latency (camera / near-real-time) scene-identification product.
 
 The operational input to this product is FMATCH-CAM (see :meth:`FootprintData.from_fmatch_cam`). That reader is not
 implemented yet (the FMATCH step is a separate milestone), so this runner currently reads placeholder **CERES SSF**
@@ -12,7 +8,7 @@ files via :meth:`FootprintData.from_ceres_ssf`. CERES SSF files are not Libera p
 ``input_product_id=None`` to select the "keep non-Libera-product files" input-collection mode in
 :func:`libera_utils.scene_identification._runner.collect_input_files`.
 
-TODO[LIBSDC-673]: switch ``reader`` to ``FootprintData.from_fmatch_cam`` and ``input_product_id`` to
+TODO[LIBSDC-794]: switch ``reader`` to ``FootprintData.from_fmatch_cam`` and ``input_product_id`` to
 ``DataProductIdentifier.aux_fmatch_cam`` once the FMATCH-CAM product format is available.
 """
 
@@ -34,11 +30,10 @@ from libera_utils.scene_identification._runner import (
 )
 
 # Scene classifications produced by the SCENE-ID-CAM product. CAM runs the ERBE and unfiltering classifications (both
-# keyed off surface_type and cloud_fraction) but deliberately not TRMM. Keep this list in sync with the scene_id_* /
-# scene_bin_* variables declared in scene_id_cam.yml.
+# keyed off surface_type and cloud_fraction) but not TRMM since the classification variables are unavailable.
 SCENE_ID_CAM_SCENE_TYPES = ["erbe", "unfiltering"]
 
-# Path to the SCENE-ID-CAM product definition that ships with libera_utils.
+# Path to the SCENE-ID-CAM product definition.
 PRODUCT_DEFINITION_PATH = (
     Path(__import__("libera_utils").__file__).parent / "data" / "product_definitions" / "scene_id_cam.yml"
 )

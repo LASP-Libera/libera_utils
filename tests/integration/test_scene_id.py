@@ -44,15 +44,30 @@ def assert_scene_ids_match_reference_off_nan(dataset, expected, scene_definition
     np.testing.assert_array_equal(new[~nan_input], old[~nan_input])
 
 
+def _absent_bin_mask(array):
+    """Return a boolean mask of "no bound present" entries in a bin-bound or value array.
+
+    Continuous (float) bounds mark an unbounded side / unmatched footprint with NaN. Integer bounds (surface_type)
+    and integer value arrays carry no missing marker (an unmatched footprint is flagged separately by scene_id 0),
+    so they report all-present.
+    """
+    if np.issubdtype(array.dtype, np.floating):
+        return np.isnan(array)
+    return np.zeros(array.shape, dtype=bool)
+
+
 def assert_property_bins_consistent(dataset, scene_type, variables):
     """Assert that the reported property bin bounds are consistent with the data.
 
     For each classification variable, checks that the
     ``scene_bin_{scene_type}_{variable}_min`` / ``_max`` columns exist, that
-    unmatched footprints (scene ID 0) have NaN bounds, and that each footprint's
-    (non-NaN) value falls within the reported bin (min inclusive, max exclusive).
+    unmatched footprints (scene ID 0) carry no bin (NaN for the float bounds; the
+    integer surface_type bounds are just 0, flagged by scene_id 0), and that each
+    matched footprint's value falls within the reported bin (min inclusive, max
+    exclusive).
     """
     scene_ids = dataset[f"scene_id_{scene_type}"].values
+    matched = scene_ids != 0
     for variable in variables:
         min_name = f"scene_bin_{scene_type}_{variable}_min"
         max_name = f"scene_bin_{scene_type}_{variable}_max"
@@ -63,15 +78,18 @@ def assert_property_bins_consistent(dataset, scene_type, variables):
         bin_max = dataset[max_name].values
         values = dataset[variable].values
 
-        # Unmatched footprints carry no bin bounds.
-        unmatched = scene_ids == 0
-        assert np.all(np.isnan(bin_min[unmatched]))
-        assert np.all(np.isnan(bin_max[unmatched]))
+        # Float bounds mark unmatched footprints as NaN; integer (surface_type) bounds instead carry 0 and rely on
+        # scene_id 0 to flag "unmatched", so we only assert the NaN convention for the float bounds.
+        if np.issubdtype(bin_min.dtype, np.floating):
+            assert np.all(np.isnan(bin_min[~matched]))
+            assert np.all(np.isnan(bin_max[~matched]))
 
-        # Where a value and a bound are both present, the value must lie in-bin.
-        has_value = ~np.isnan(values)
-        lower_ok = np.isnan(bin_min) | ~has_value | (values >= bin_min)
-        upper_ok = np.isnan(bin_max) | ~has_value | (values < bin_max)
+        # For matched footprints, where a value and a bound are both present, the value must lie in-bin.
+        min_present = ~_absent_bin_mask(bin_min)
+        max_present = ~_absent_bin_mask(bin_max)
+        has_value = ~_absent_bin_mask(values)
+        lower_ok = ~matched | ~min_present | ~has_value | (values >= bin_min)
+        upper_ok = ~matched | ~max_present | ~has_value | (values < bin_max)
         assert np.all(lower_ok)
         assert np.all(upper_ok)
 

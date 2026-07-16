@@ -330,3 +330,36 @@ class TestPropertyBins:
         bins = scene_definition._compute_property_bins(np.array([1, 2]))
         np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_min"], [np.nan, 50.0])
         np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_max"], [50.0, np.nan])
+
+    def test_continuous_bin_bounds_are_float32(self, scene_definition):
+        """Continuous (non-categorical) bin bounds are stored as compact float32, not float64."""
+        bins = scene_definition._compute_property_bins(np.array([1, 4, 0]))
+        # cloud_fraction / optical_depth are continuous, so they use the default float32 storage dtype.
+        assert bins["scene_bin_bins_cloud_fraction_min"].dtype == np.float32
+        assert bins["scene_bin_bins_optical_depth_max"].dtype == np.float32
+
+    def test_surface_type_bin_bounds_are_uint8(self, tmp_path):
+        """surface_type bin bounds are stored as compact uint8; unmatched footprints get 0.
+
+        surface_type is a small categorical code, so its bin bounds are kept as uint8 rather than float32 to save
+        storage. There is no fill value: an unmatched footprint (scene_id 0) simply gets 0 for its bounds, and
+        scene_id == 0 is the authoritative flag that the footprint was not classified.
+        """
+        # Two contiguous bins covering surface_type [0, 6) so the SceneDefinition coverage check passes.
+        csv_content = "scene_id,surface_type_min,surface_type_max\n1,0,3\n2,3,6\n"
+        csv_file = tmp_path / "surface.csv"
+        csv_file.write_text(csv_content)
+        scene_definition = SceneDefinition(csv_file)
+
+        # Two matched footprints (scenes 1 and 2) and one unmatched footprint (scene_id 0).
+        bins = scene_definition._compute_property_bins(np.array([1, 2, 0]))
+
+        min_bounds = bins["scene_bin_surface_surface_type_min"]
+        max_bounds = bins["scene_bin_surface_surface_type_max"]
+
+        # Bounds are stored as compact unsigned bytes.
+        assert min_bounds.dtype == np.uint8
+        assert max_bounds.dtype == np.uint8
+        # Matched footprints report their bounds; the unmatched footprint gets 0 (disambiguated by scene_id 0).
+        np.testing.assert_array_equal(min_bounds, np.array([0, 3, 0], dtype=np.uint8))
+        np.testing.assert_array_equal(max_bounds, np.array([3, 6, 0], dtype=np.uint8))

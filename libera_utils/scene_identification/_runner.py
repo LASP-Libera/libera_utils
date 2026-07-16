@@ -30,6 +30,7 @@ from libera_utils import Manifest, smart_copy_file
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
+from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.io.smart_open import is_s3
 from libera_utils.logutil import configure_task_logging
 from libera_utils.scene_identification import FootprintData
@@ -40,13 +41,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SceneIdRunnerConfig:
-    """Everything that distinguishes one SCENE-ID CAM-family runner from another.
+    """Everything that distinguishes one SCENE-ID runner from another.
 
     Attributes
     ----------
     input_product_id : DataProductIdentifier or None
         The Libera product id that counts as an input for this runner (e.g. ``aux_fmatch_cam`` or
-        ``aux_fmatch_cam_camtime``). Files with any other product id (or unparseable names) are skipped. Pass
+        ``aux_fmatch_cam_camtime``). Files with any other product id (or unparsable names) are skipped. Pass
         ``None`` for the placeholder mode used by SCENE-ID-CAM today, where the input is a raw CERES SSF file that
         is *not* a Libera product: in that mode the runner keeps exactly the manifest files that do **not** parse
         as a Libera product filename. See :func:`collect_input_files`.
@@ -76,7 +77,7 @@ class SceneIdRunnerConfig:
 
 
 def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> Path | S3Path:
-    """Run a SCENE-ID CAM-family processing workflow from an input manifest.
+    """Run a SCENE-ID processing workflow from an input manifest.
 
     Parameters
     ----------
@@ -155,11 +156,8 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
     This supports two modes, distinguished by ``input_product_id``:
 
     * **Libera-product mode** (``input_product_id`` is a :class:`~libera_utils.constants.DataProductIdentifier`):
-      the operational case. The FMATCH inputs *are* Libera data products, so they parse as
-      :class:`~libera_utils.io.filenaming.LiberaDataProductFilename` and carry a product id. We keep exactly the
-      files whose product id matches ``input_product_id`` and skip everything else (unparseable names or other
-      Libera products that might share the manifest).
-    * **Placeholder mode** (``input_product_id`` is ``None``): the case SCENE-ID-CAM uses today, where the input is
+      the operational case.
+    * **Placeholder mode** (``input_product_id`` is ``None``): the case SCENE-ID-CAM uses, where the input is
       a raw CERES SSF file. CERES SSF files are *not* Libera products, so they do not parse as a
       ``LiberaDataProductFilename``. We use that fact to keep exactly the files that do **not** parse, and skip any
       Libera-named ancillary files that might also appear in the manifest.
@@ -170,7 +168,7 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
         The input manifest to inspect.
     input_product_id : DataProductIdentifier or None
         The Libera product id to keep (e.g. ``aux_fmatch_cam`` or ``aux_fmatch_cam_camtime``), or ``None`` for the
-        CERES SSF placeholder mode described above.
+        CERES SSF placeholder mode.
 
     Returns
     -------
@@ -215,7 +213,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
     Parameters
     ----------
     fmatch_file_path : str | pathlib.Path | cloudpathlib.S3Path
-        Path (local or S3) to a Libera FMATCH NetCDF product file.
+        Path (local or S3) to a FMATCH NetCDF product file.
     config : SceneIdRunnerConfig
         Runner parameters supplying the reader and scene types.
 
@@ -277,9 +275,18 @@ def create_and_write_data_product(
     # correct dimension) so the product aligns 1:1 with its upstream product.
     product_dataset = footprint_data.to_time_product(config.time_variable)
 
+    # Keep only the variables/coordinates declared in the product definition. FootprintData carries intermediate
+    # inputs (e.g. surface_wind_u/v, optical_depth_*, cloud_phase_*) that the classification consumes but that are
+    # not part of the SCENE-ID product; dropping them here keeps the written product to exactly its definition
+    # rather than leaking undeclared variables (the conformance check does not flag extras).
+    definition = LiberaDataProductDefinition.from_yaml(config.product_definition_path)
+    declared = set(definition.coordinates) | set(definition.variables)
+    keep = [name for name in product_dataset.variables if name in declared]
+    product_dataset = product_dataset[keep]
+
     product_dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
     product_dataset.attrs["input_files"] = input_file_name
-    # TODO[LIBSDC-673]: source the algorithm version from package metadata once SCENE-ID is versioned/released.
+    # TODO[LIBSDC-672]: source the algorithm version from package metadata once SCENE-ID is versioned/released.
     product_dataset.attrs["algorithm_version"] = "0.1.0"
 
     logger.info("Writing %s data product for input %s", config.output_product_id.value, input_file_name)

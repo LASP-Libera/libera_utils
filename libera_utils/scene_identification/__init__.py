@@ -2,7 +2,7 @@
 
 This package groups all scene-ID and scene-definition code for the Libera Science Data Center. It classifies
 radiometer footprints into discrete "scene IDs" that characterize the atmospheric and surface conditions each
-footprint observed (see the "Footprint Matching and Scene ID" design document, section 3, Scene Identification).
+footprint observed.
 
 Modules
 -------
