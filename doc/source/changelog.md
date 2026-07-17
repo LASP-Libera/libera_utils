@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.9.2
+
+- FEAT: Expand the RBSP+VIIRS imager `DataProductIdentifier` set (`l2_unf_rad_imager`, `l2_nb_bb_imager_camtime`, `l2_toa_flux_imager`, and matching AUX scene-ID/FMATCH/ADM members)
+- BUGFIX: rename camera/imager DPI and `ProcessingStepIdentifier` members for consistency with product strings: `l2_unf_cam`→`l2_unf_rad_cam`/`l2-unf-rad-cam`, `l2_cf_rad_time`/`l2_cf_rad`→`l2_cf_cam`/`l2-cf-cam`, `l2_cf_cam_time`/`l2_cf_cam`→`l2_cf_cam_camtime`/`l2-cf-cam-camtime`, `l2_nb_bb_cam_time`/`NB-BB-CAM-TIME`→`l2_nb_bb_cam_camtime`/`NB-BB-CAM-CAMTIME`/`l2-nb-bb-cam-camtime`, `l2_unf_imager`→`l2_unf_rad_imager`/`l2-unf-rad-imager`, `l2_nb_bb_imager`→`l2_nb_bb_imager_camtime`/`l2-nb-bb-imager-camtime`
+
 ## 5.9.1
 
 - FEAT: Scene Identification now reports the property bin min/max bounds alongside the scene ID. For each footprint and classification variable, `identify_scenes` adds `scene_bin_{type}_{variable}_min`/`_max` variables giving the bounds of the matched scene's bin (unbounded sides and unmatched footprints reported as `NaN`). Controlled by the new `report_bin_bounds` flag (default `True`) on `FootprintData.identify_scenes` and `SceneDefinition.identify_and_update`; existing `scene_id_{type}` columns are unchanged.
