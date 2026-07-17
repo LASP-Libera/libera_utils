@@ -184,10 +184,10 @@ class DataProductIdentifier(StrEnum):
 
     # L2 Products using Libera camera data for cloud fraction
     # ========================================================
-    l2_unf_cam = ("UNF-RAD-CAM", DataLevel.L2)  # unfiltered radiances using Libera camera data for cloud fraction
-    l2_cf_rad_time = ("CF-CAM", DataLevel.L2)  # cloud fraction on the radiometer timescale
-    l2_cf_cam_time = ("CF-CAM-CAMTIME", DataLevel.L2)  # cloud fraction on the camera timescale
-    l2_nb_bb_cam = (
+    l2_unf_rad_cam = ("UNF-RAD-CAM", DataLevel.L2)  # unfiltered radiances using Libera camera data for cloud fraction
+    l2_cf_cam = ("CF-CAM", DataLevel.L2)  # cloud fraction on the radiometer timescale
+    l2_cf_cam_camtime = ("CF-CAM-CAMTIME", DataLevel.L2)  # cloud fraction on the camera timescale
+    l2_nb_bb_cam_camtime = (
         "NB-BB-CAM-CAMTIME",
         DataLevel.L2,
     )  # narrowband to broadband radiances for camera pseudo-footprints
@@ -216,7 +216,7 @@ class DataProductIdentifier(StrEnum):
 
     # L2 Products using RBSP + VIIRS data for cloud properties
     # ========================================================
-    l2_unf_imager = (
+    l2_unf_rad_imager = (
         "UNF-RAD-IMAGER",
         DataLevel.L2,
     )  # unfiltered radiances using RBSP + VIIRS imager data for cloud properties
@@ -224,7 +224,7 @@ class DataProductIdentifier(StrEnum):
         "COMP-FLUX",
         DataLevel.L2,
     )  # Computed surface fluxes using RBSP + VIIRS imager data for cloud properties
-    l2_nb_bb_imager = (
+    l2_nb_bb_imager_camtime = (
         "NB-BB-IMAGER-CAMTIME",
         DataLevel.L2,
     )  # narrowband to broadband radiances for imager pseudo-footprints
@@ -372,16 +372,16 @@ class ProcessingStepIdentifier(StrEnum):
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
 
     # L2 processing steps — camera cloud fraction track
-    l2_unf_cam = ("l2-unf-cam", [DataProductIdentifier.l2_unf_cam])
-    l2_cf_rad = ("l2-cf-rad", [DataProductIdentifier.l2_cf_rad_time])
-    l2_cf_cam = ("l2-cf-cam", [DataProductIdentifier.l2_cf_cam_time])
-    l2_nb_bb_cam = ("l2-nb-bb-cam", [DataProductIdentifier.l2_nb_bb_cam])
+    l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])
+    l2_cf_cam = ("l2-cf-cam", [DataProductIdentifier.l2_cf_cam])
+    l2_cf_cam_camtime = ("l2-cf-cam-camtime", [DataProductIdentifier.l2_cf_cam_camtime])
+    l2_nb_bb_cam_camtime = ("l2-nb-bb-cam-camtime", [DataProductIdentifier.l2_nb_bb_cam_camtime])
     l2_toa_flux_cam = ("l2-toa-flux-cam", [DataProductIdentifier.l2_toa_flux_cam])
 
     # L2 processing steps — RBSP + VIIRS imager track
-    l2_unf_imager = ("l2-unf-imager", [DataProductIdentifier.l2_unf_imager])
+    l2_unf_rad_imager = ("l2-unf-rad-imager", [DataProductIdentifier.l2_unf_rad_imager])
     l2_comp_flux = ("l2-comp-flux", [DataProductIdentifier.l2_comp_flux])
-    l2_nb_bb_imager = ("l2-nb-bb-imager", [DataProductIdentifier.l2_nb_bb_imager])
+    l2_nb_bb_imager_camtime = ("l2-nb-bb-imager-camtime", [DataProductIdentifier.l2_nb_bb_imager_camtime])
     l2_toa_flux_imager = ("l2-toa-flux-imager", [DataProductIdentifier.l2_toa_flux_imager])
 
     # AUX processing steps — camera cloud fraction track
@@ -535,19 +535,19 @@ class ProcessingStepIdentifier(StrEnum):
 # to its ECR repo. Sibling steps share a team's role (e.g. both cloud-fraction steps -> L2-CloudFraction). Steps not
 # listed here are not owned by an L2 team. Exposed via ProcessingStepIdentifier.l2_team_iam_role.
 _L2_TEAM_IAM_ROLE_BY_STEP: dict[ProcessingStepIdentifier, str] = {
-    ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
     ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
-    ProcessingStepIdentifier.l2_unf_cam: "L2-Unfiltering",
-    ProcessingStepIdentifier.l2_unf_imager: "L2-Unfiltering",
+    ProcessingStepIdentifier.l2_cf_cam_camtime: "L2-CloudFraction",
+    ProcessingStepIdentifier.l2_unf_rad_cam: "L2-Unfiltering",
+    ProcessingStepIdentifier.l2_unf_rad_imager: "L2-Unfiltering",
     ProcessingStepIdentifier.l2_toa_flux_cam: "L2-SSW-TOA-Flux",
     ProcessingStepIdentifier.l2_toa_flux_imager: "L2-SSW-TOA-Flux",
     ProcessingStepIdentifier.l2_comp_flux: "L2-SFC-Flux",
     ProcessingStepIdentifier.aux_adm_stats_cam: "L2-ADM",
     ProcessingStepIdentifier.aux_adm_cam: "L2-ADM",
-    ProcessingStepIdentifier.l2_nb_bb_cam: "L2-ADM",
+    ProcessingStepIdentifier.l2_nb_bb_cam_camtime: "L2-ADM",
     ProcessingStepIdentifier.aux_adm_stats_imager: "L2-ADM",
     ProcessingStepIdentifier.aux_adm_imager: "L2-ADM",
-    ProcessingStepIdentifier.l2_nb_bb_imager: "L2-ADM",
+    ProcessingStepIdentifier.l2_nb_bb_imager_camtime: "L2-ADM",
 }
 
 

@@ -75,7 +75,7 @@ def test_build_docker_image(test_data_path):
     [
         ("l1b-cam", "test-image", "latest", None, True, None),
         ("l1b-rad", "test-image", "latest", ["latest", "v1.0"], False, "test-profile"),
-        ("l2-cf-rad", "test-image", "latest", ["latest"], False, "test-profile"),
+        ("l2-cf-cam", "test-image", "latest", ["latest"], False, "test-profile"),
     ],
 )
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
@@ -125,7 +125,7 @@ def test_ecr_upload_cli_handler_reraises_role_assumption_error(
     mock_resolve_session.side_effect = ValueError("Could not assume role L2Developer/L2-CloudFraction ...")
     args = argparse.Namespace(
         func=ecr_upload.ecr_upload_cli_handler,
-        algorithm_name="l2-cf-rad",
+        algorithm_name="l2-cf-cam",
         image_name="test-image",
         image_tag="latest",
         ecr_tags=None,
@@ -149,18 +149,18 @@ class TestResolveEcrSession:
     @pytest.mark.parametrize(
         ("algorithm", "expected_role"),
         [
-            (ProcessingStepIdentifier.l2_cf_rad, "L2Developer/L2-CloudFraction"),
             (ProcessingStepIdentifier.l2_cf_cam, "L2Developer/L2-CloudFraction"),
-            (ProcessingStepIdentifier.l2_unf_cam, "L2Developer/L2-Unfiltering"),
-            (ProcessingStepIdentifier.l2_unf_imager, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_cf_cam_camtime, "L2Developer/L2-CloudFraction"),
+            (ProcessingStepIdentifier.l2_unf_rad_cam, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_unf_rad_imager, "L2Developer/L2-Unfiltering"),
             (ProcessingStepIdentifier.l2_toa_flux_cam, "L2Developer/L2-SSW-TOA-Flux"),
             (ProcessingStepIdentifier.l2_toa_flux_imager, "L2Developer/L2-SSW-TOA-Flux"),
             (ProcessingStepIdentifier.l2_comp_flux, "L2Developer/L2-SFC-Flux"),
             (ProcessingStepIdentifier.aux_adm_stats_cam, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.l2_nb_bb_cam, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_cam_camtime, "L2Developer/L2-ADM"),
             (ProcessingStepIdentifier.aux_adm_stats_imager, "L2Developer/L2-ADM"),
             (ProcessingStepIdentifier.aux_adm_imager, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.l2_nb_bb_imager, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_imager_camtime, "L2Developer/L2-ADM"),
         ],
     )
     @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")

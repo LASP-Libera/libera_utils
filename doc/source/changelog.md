@@ -2,7 +2,8 @@
 
 ## 5.9.2
 
-- BREAKING: Expand the RBSP+VIIRS imager `DataProductIdentifier` set (`l2_unf_imager`, `l2_nb_bb_imager`, `l2_toa_flux_imager`, and matching AUX scene-ID/FMATCH/ADM members) and rename the camera NB-BB `DataProductIdentifier` from `l2_nb_bb_cam_time`/`NB-BB-CAM-TIME` to `l2_nb_bb_cam`/`NB-BB-CAM-CAMTIME`
+- FEAT: Expand the RBSP+VIIRS imager `DataProductIdentifier` set (`l2_unf_rad_imager`, `l2_nb_bb_imager_camtime`, `l2_toa_flux_imager`, and matching AUX scene-ID/FMATCH/ADM members)
+- BUGFIX: rename camera/imager DPI and `ProcessingStepIdentifier` members for consistency with product strings: `l2_unf_cam`→`l2_unf_rad_cam`/`l2-unf-rad-cam`, `l2_cf_rad_time`/`l2_cf_rad`→`l2_cf_cam`/`l2-cf-cam`, `l2_cf_cam_time`/`l2_cf_cam`→`l2_cf_cam_camtime`/`l2-cf-cam-camtime`, `l2_nb_bb_cam_time`/`NB-BB-CAM-TIME`→`l2_nb_bb_cam_camtime`/`NB-BB-CAM-CAMTIME`/`l2-nb-bb-cam-camtime`, `l2_unf_imager`→`l2_unf_rad_imager`/`l2-unf-rad-imager`, `l2_nb_bb_imager`→`l2_nb_bb_imager_camtime`/`l2-nb-bb-imager-camtime`
 
 ## 5.9.1
 

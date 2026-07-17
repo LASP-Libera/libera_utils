@@ -158,10 +158,10 @@ class TestDataProductIdentifier:
             "l1b_rad",
             "l1b_cam",
             # L2 Products — camera cloud fraction track
-            "l2_unf_cam",
-            "l2_cf_rad_time",
-            "l2_cf_cam_time",
-            "l2_nb_bb_cam",
+            "l2_unf_rad_cam",
+            "l2_cf_cam",
+            "l2_cf_cam_camtime",
+            "l2_nb_bb_cam_camtime",
             "l2_toa_flux_cam",
             # AUX Products — camera cloud fraction track
             "aux_fmatch_cam",
@@ -171,9 +171,9 @@ class TestDataProductIdentifier:
             "aux_adm_stats_cam",
             "aux_adm_cam",
             # L2 Products — RBSP + VIIRS imager track
-            "l2_unf_imager",
+            "l2_unf_rad_imager",
             "l2_comp_flux",
-            "l2_nb_bb_imager",
+            "l2_nb_bb_imager_camtime",
             "l2_toa_flux_imager",
             # AUX Products — RBSP + VIIRS imager track
             "aux_fmatch_imager",
@@ -269,15 +269,15 @@ class TestProcessingStepIdentifier:
             "l1b_rad",
             "l1b_cam",
             # L2 steps — camera cloud fraction track
-            "l2_unf_cam",
-            "l2_cf_rad",
+            "l2_unf_rad_cam",
             "l2_cf_cam",
-            "l2_nb_bb_cam",
+            "l2_cf_cam_camtime",
+            "l2_nb_bb_cam_camtime",
             "l2_toa_flux_cam",
             # L2 steps — RBSP + VIIRS imager track
-            "l2_unf_imager",
+            "l2_unf_rad_imager",
             "l2_comp_flux",
-            "l2_nb_bb_imager",
+            "l2_nb_bb_imager_camtime",
             "l2_toa_flux_imager",
             # AUX steps — camera cloud fraction track
             "aux_fmatch_cam",
@@ -351,7 +351,7 @@ class TestProcessingStepIdentifier:
         # Create a test step with products of different levels
         step = ProcessingStepIdentifier.l1b_rad
         original_products = step._products
-        step._products = [DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_rad_time]
+        step._products = [DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_cam]
 
         try:
             with pytest.raises(ValueError, match="products of multiple levels"):
@@ -387,19 +387,19 @@ class TestProcessingStepIdentifier:
     def test_l2_team_iam_role_property(self):
         """Test l2_team_iam_role maps L2/ADM steps to their team role and returns None otherwise."""
         expected_roles = {
-            ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
             ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
-            ProcessingStepIdentifier.l2_unf_cam: "L2-Unfiltering",
-            ProcessingStepIdentifier.l2_unf_imager: "L2-Unfiltering",
+            ProcessingStepIdentifier.l2_cf_cam_camtime: "L2-CloudFraction",
+            ProcessingStepIdentifier.l2_unf_rad_cam: "L2-Unfiltering",
+            ProcessingStepIdentifier.l2_unf_rad_imager: "L2-Unfiltering",
             ProcessingStepIdentifier.l2_toa_flux_cam: "L2-SSW-TOA-Flux",
             ProcessingStepIdentifier.l2_toa_flux_imager: "L2-SSW-TOA-Flux",
             ProcessingStepIdentifier.l2_comp_flux: "L2-SFC-Flux",
             ProcessingStepIdentifier.aux_adm_stats_cam: "L2-ADM",
             ProcessingStepIdentifier.aux_adm_cam: "L2-ADM",
-            ProcessingStepIdentifier.l2_nb_bb_cam: "L2-ADM",
+            ProcessingStepIdentifier.l2_nb_bb_cam_camtime: "L2-ADM",
             ProcessingStepIdentifier.aux_adm_stats_imager: "L2-ADM",
             ProcessingStepIdentifier.aux_adm_imager: "L2-ADM",
-            ProcessingStepIdentifier.l2_nb_bb_imager: "L2-ADM",
+            ProcessingStepIdentifier.l2_nb_bb_imager_camtime: "L2-ADM",
         }
         for step, role in expected_roles.items():
             assert step.l2_team_iam_role == role
