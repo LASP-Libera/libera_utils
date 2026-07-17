@@ -140,15 +140,52 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
-            # Calibration Event Products
-            "cal_solar_face1_combined",
-            "cal_solar_face2_combined",
-            "cal_solar_face3_combined",
-            "cal_lw_temp1_combined",
-            "cal_lw_temp2_combined",
-            "cal_lw_temp3_combined",
-            "cal_gain_combined",
-            "cal_sw_combined",
+            # L1A ObsID-trimmed NOM-HK products
+            "l1a_icie_nom_hk_gain_trimmed",
+            "l1a_icie_nom_hk_swc_365nm_trimmed",
+            "l1a_icie_nom_hk_swc_405nm_trimmed",
+            "l1a_icie_nom_hk_swc_520nm_trimmed",
+            "l1a_icie_nom_hk_swc_635nm_trimmed",
+            "l1a_icie_nom_hk_swc_840nm_trimmed",
+            "l1a_icie_nom_hk_swc_1550nm_trimmed",
+            "l1a_icie_nom_hk_lwc_temp1_trimmed",
+            "l1a_icie_nom_hk_lwc_temp2_trimmed",
+            "l1a_icie_nom_hk_lwc_temp3_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_tot_pri_trimmed",
+            "l1a_icie_nom_hk_solar_lw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_sw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_tot_sec_trimmed",
+            "l1a_icie_nom_hk_solar_lw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_sw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_ter_trimmed",
+            "l1a_icie_nom_hk_solar_tot_ter_trimmed",
+            "l1a_icie_nom_hk_solar_lw_ter_trimmed",
+            "l1a_icie_nom_hk_solar_sw_ter_trimmed",
+            # Calibration Event Products (per ObsID)
+            "cal_gain",
+            "cal_swc_365nm",
+            "cal_swc_405nm",
+            "cal_swc_520nm",
+            "cal_swc_635nm",
+            "cal_swc_840nm",
+            "cal_swc_1550nm",
+            "cal_lwc_temp1",
+            "cal_lwc_temp2",
+            "cal_lwc_temp3",
+            "cal_solar_ssw_pri",
+            "cal_solar_tot_pri",
+            "cal_solar_lw_pri",
+            "cal_solar_sw_pri",
+            "cal_solar_ssw_sec",
+            "cal_solar_tot_sec",
+            "cal_solar_lw_sec",
+            "cal_solar_sw_sec",
+            "cal_solar_ssw_ter",
+            "cal_solar_tot_ter",
+            "cal_solar_lw_ter",
+            "cal_solar_sw_ter",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
@@ -221,16 +258,17 @@ class TestDataProductIdentifier:
                 assert apid is None
 
     def test_calibration_event_products_metadata(self):
-        """Test metadata consistency for merged calibration event products."""
+        """Test metadata consistency for ObsID-specific calibration event products."""
         expected_products = {
-            DataProductIdentifier.cal_solar_face1_combined: "SOLAR-FACE1-COMBINED",
-            DataProductIdentifier.cal_solar_face2_combined: "SOLAR-FACE2-COMBINED",
-            DataProductIdentifier.cal_solar_face3_combined: "SOLAR-FACE3-COMBINED",
-            DataProductIdentifier.cal_lw_temp1_combined: "LW-TEMP1-COMBINED",
-            DataProductIdentifier.cal_lw_temp2_combined: "LW-TEMP2-COMBINED",
-            DataProductIdentifier.cal_lw_temp3_combined: "LW-TEMP3-COMBINED",
-            DataProductIdentifier.cal_gain_combined: "GAIN-COMBINED",
-            DataProductIdentifier.cal_sw_combined: "SW-COMBINED",
+            DataProductIdentifier.cal_gain: "GAIN",
+            DataProductIdentifier.cal_swc_365nm: "SWC-365NM",
+            DataProductIdentifier.cal_swc_405nm: "SWC-405NM",
+            DataProductIdentifier.cal_lwc_temp1: "LWC-TEMP1",
+            DataProductIdentifier.cal_lwc_temp2: "LWC-TEMP2",
+            DataProductIdentifier.cal_lwc_temp3: "LWC-TEMP3",
+            DataProductIdentifier.cal_solar_ssw_pri: "SOLAR-SSW-PRI",
+            DataProductIdentifier.cal_solar_tot_sec: "SOLAR-TOT-SEC",
+            DataProductIdentifier.cal_solar_sw_ter: "SOLAR-SW-TER",
         }
 
         for product, expected_value in expected_products.items():
@@ -238,6 +276,13 @@ class TestDataProductIdentifier:
             assert product.value == expected_value
             assert product.associated_apid is None
             assert product.data_level.archive_bucket_name == DataLevel.CAL.archive_bucket_name
+
+    def test_trimmed_nom_hk_products_metadata(self):
+        """Test L1A ObsID-trimmed NOM-HK products associate with NOM-HK APID."""
+        trimmed = DataProductIdentifier.l1a_icie_nom_hk_gain_trimmed
+        assert trimmed.data_level is DataLevel.L1A
+        assert trimmed.value == "NOM-HK-GAIN-TRIMMED"
+        assert trimmed.associated_apid is LiberaApid.icie_nom_hk
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
@@ -268,6 +313,29 @@ class TestProcessingStepIdentifier:
             # L1B steps
             "l1b_rad",
             "l1b_cam",
+            # Radiometer calibration combine steps
+            "cal_gain",
+            "cal_swc_365nm",
+            "cal_swc_405nm",
+            "cal_swc_520nm",
+            "cal_swc_635nm",
+            "cal_swc_840nm",
+            "cal_swc_1550nm",
+            "cal_lwc_temp1",
+            "cal_lwc_temp2",
+            "cal_lwc_temp3",
+            "cal_solar_ssw_pri",
+            "cal_solar_tot_pri",
+            "cal_solar_lw_pri",
+            "cal_solar_sw_pri",
+            "cal_solar_ssw_sec",
+            "cal_solar_tot_sec",
+            "cal_solar_lw_sec",
+            "cal_solar_sw_sec",
+            "cal_solar_ssw_ter",
+            "cal_solar_tot_ter",
+            "cal_solar_lw_ter",
+            "cal_solar_sw_ter",
             # L2 steps — camera cloud fraction track
             "l2_unf_rad_cam",
             "l2_cf_cam",
@@ -383,6 +451,14 @@ class TestProcessingStepIdentifier:
             name = step.ecr_name
             assert isinstance(name, str)
             assert name.endswith("-docker-repo")
+
+    def test_cal_steps_share_ecr_name(self):
+        """Radiometer cal-combine steps share one ECR repository name for CDK reuse."""
+        cal_steps = [step for step in ProcessingStepIdentifier if str(step).startswith("cal-")]
+        assert len(cal_steps) == 22
+        shared = {step.ecr_name for step in cal_steps}
+        assert shared == {"cal-rad-docker-repo"}
+        assert ProcessingStepIdentifier.l1b_rad.ecr_name == "l1b-rad-docker-repo"
 
     def test_l2_team_iam_role_property(self):
         """Test l2_team_iam_role maps L2/ADM steps to their team role and returns None otherwise."""

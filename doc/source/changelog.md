@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.10.0
+
+- BREAKING: Replace calibration event `DataProductIdentifier` values `*-COMBINED` with ObsID-specific products (`GAIN`, `SWC-{λ}NM`, `LWC-TEMP{1,2,3}`, `SOLAR-{ch}-{PRI,SEC,TER}`) and add matching L1A `NOM-HK-*-TRIMMED` products for Step-1 preprocessor outputs.
+- FEAT: Add ObsID-specific `ProcessingStepIdentifier` members (`cal-gain`, `cal-swc-*`, `cal-lwc-*`, `cal-solar-*`) that produce the new CAL products.
+- FEAT: `ProcessingStepIdentifier.ecr_name` supports an optional shared ECR name so all radiometer cal steps resolve to `cal-rad-docker-repo` (CDK should create one repo and reuse it across Batch job definitions; set `LIBERA_CAL_OBSID` per job).
+- NOTE: Lunar calibration identifiers are deferred until ObsIDs are confirmed (`TODO[LIBSDC-564]`).
+
 ## 5.9.2
 
 - FEAT: Expand the RBSP+VIIRS imager `DataProductIdentifier` set (`l2_unf_rad_imager`, `l2_nb_bb_imager_camtime`, `l2_toa_flux_imager`, and matching AUX scene-ID/FMATCH/ADM members)
