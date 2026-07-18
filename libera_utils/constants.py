@@ -184,10 +184,23 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_nom_hk_solar_tot_ter_trimmed = ("NOM-HK-SOLAR-TOT-TER-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_solar_lw_ter_trimmed = ("NOM-HK-SOLAR-LW-TER-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_solar_sw_ter_trimmed = ("NOM-HK-SOLAR-SW-TER-TRIMMED", DataLevel.L1A)
+    # Camera ObsID-trimmed NOM-HK (WFOV source field)
+    l1a_icie_nom_hk_ct_video_6min_trimmed = ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_ct_video_12min_trimmed = ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_ct_video_18min_trimmed = ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_6min_trimmed = ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_12min_trimmed = ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_18min_trimmed = ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_viirs_lunar_cal_trimmed = ("NOM-HK-VIIRS-LUNAR-CAL-TRIMMED", DataLevel.L1A)
+    # Radiometer lunar calibration ObsID-trimmed NOM-HK (RAD source field)
+    l1a_icie_nom_hk_lunar_cal1_trimmed = ("NOM-HK-LUNAR-CAL1-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lunar_cal2_trimmed = ("NOM-HK-LUNAR-CAL2-TRIMMED", DataLevel.L1A)
 
-    # Calibration Event Products (one product per radiometer calibration ObsID)
-    # ========================================================================
-    # TODO[LIBSDC-564]: Lunar cal products (e.g. LUNAR-CAL1) deferred until ObsIDs are confirmed.
+    # Calibration Event Products (one product per radiometer / camera calibration ObsID)
+    # ==================================================================================
     # Gain and Noise Calibration (ObsID 512)
     cal_gain = ("GAIN", DataLevel.CAL)
     # Shortwave LED Calibration (ObsIDs 256-261)
@@ -216,6 +229,20 @@ class DataProductIdentifier(StrEnum):
     cal_solar_tot_ter = ("SOLAR-TOT-TER", DataLevel.CAL)
     cal_solar_lw_ter = ("SOLAR-LW-TER", DataLevel.CAL)
     cal_solar_sw_ter = ("SOLAR-SW-TER", DataLevel.CAL)
+    # Lunar Calibration (ObsIDs 448-449); cal-combine / ProcessingStepIdentifiers deferred
+    cal_lunar_cal1 = ("LUNAR-CAL1", DataLevel.CAL)
+    cal_lunar_cal2 = ("LUNAR-CAL2", DataLevel.CAL)
+    # Camera calibration events (WFOV ObsIDs; ProcessingStepIdentifiers deferred)
+    cal_ct_video_6min = ("CT-VIDEO-6MIN", DataLevel.CAL)
+    cal_ct_video_12min = ("CT-VIDEO-12MIN", DataLevel.CAL)
+    cal_ct_video_18min = ("CT-VIDEO-18MIN", DataLevel.CAL)
+    cal_raps_video_6min = ("RAPS-VIDEO-6MIN", DataLevel.CAL)
+    cal_raps_video_12min = ("RAPS-VIDEO-12MIN", DataLevel.CAL)
+    cal_raps_video_18min = ("RAPS-VIDEO-18MIN", DataLevel.CAL)
+    cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL)
+    cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL)
+    cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL)
+    cal_viirs_lunar_cal = ("VIIRS-LUNAR-CAL", DataLevel.CAL)
 
     # SPICE kernels
     # =============

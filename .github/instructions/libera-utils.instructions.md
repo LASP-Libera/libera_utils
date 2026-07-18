@@ -23,6 +23,7 @@ generation, Libera file naming, and AWS pipeline integration.
 | `l1a/`          | CCSDS telemetry packet parsing, XTCE-based packet configs                    |
 | `libera_spice/` | SPICE kernel generation via SpiceyPy + Curryer                               |
 | `constants.py`  | Canonical enums: `DataLevel`, `DataProductIdentifier`, `LiberaApid`          |
+| `obsids.py`     | ICIE ObsID catalog (RAD/WFOV source, CAL/TRIMMED ProductIDs, science modes)  |
 | `logutil.py`    | Structured JSON logging; use `configure_task_logging()` for task-level setup |
 | `config.py`     | JSON config with env-var override and templated string formatting            |
 | `cli.py`        | `libera-utils` CLI entry point                                               |
