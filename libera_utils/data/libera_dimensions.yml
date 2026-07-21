@@ -72,19 +72,19 @@ WFOV_SCI_PACKET:
   long_name: "Packet index for WFOV-SCI packets in calibration event"
 
 # ADM Specific dimensions
-# Viewing geometry. Used for both Libera-only (ERBE-like) and Libera+VIIRS (CERES-TRMM-like) products so no size is specified.
+# Viewing geometry. Used for both Libera-Camera (ERBE-like using only the Libera WFOV camera) and Libera-Imager (CERES-TRMM-like including VIIRS data) products so no size is specified.
 SZA_BIN:
-  long_name: "Solar zenith angle bin index. 10 bins for Libera-only products, 9 bins for Libera+VIIRS scene types."
+  long_name: "Solar zenith angle bin index. 10 bins for Libera-Camera products, 9 bins for Libera-Imager scene types."
 SZA_BIN_EDGES:
-  long_name: "Solar zenith angle bin edges. Defines the upper bound of each bin and is inclusive. 11 bins for Libera-only products, 10 bins for Libera+VIIRS scene types."
+  long_name: "Solar zenith angle bin edges. Defines the upper bound of each bin and is inclusive. 11 bins for Libera-Camera products, 10 bins for Libera-Imager scene types."
 VZA_BIN:
-  long_name: "Viewing zenith angle bin index. 7 bins for Libera-only products, 9 bins for Libera+VIIRS scene types."
+  long_name: "Viewing zenith angle bin index. 7 bins for Libera-Camera products, 9 bins for Libera-Imager scene types."
 VZA_BIN_EDGES:
-  long_name: "Viewing zenith angle bin edges. Defines the upper bound of each bin and is inclusive. 8 bins for Libera-only products, 10 bins for Libera+VIIRS scene types."
+  long_name: "Viewing zenith angle bin edges. Defines the upper bound of each bin and is inclusive. 8 bins for Libera-Camera products, 10 bins for Libera-Imager scene types."
 RAA_BIN:
-  long_name: "Relative azimuth angle bin index. 8 bins for Libera-only products, 10 bins for Libera+VIIRS scene types."
+  long_name: "Relative azimuth angle bin index. 8 bins for Libera-Camera products, 10 bins for Libera-Imager scene types."
 RAA_BIN_EDGES:
-  long_name: "Relative azimuth angle bin edges. Defines the upper bound of each bin and is inclusive. 9 bins for Libera-only products, 11 bins for Libera+VIIRS products."
+  long_name: "Relative azimuth angle bin edges. Defines the upper bound of each bin and is inclusive. 9 bins for Libera-Camera products, 11 bins for Libera-Imager scene types."
 
 # Surface types
 SURFACE_TYPE_BIN:
@@ -99,23 +99,23 @@ CLOUD_FRACTION_BIN:
   long_name: "Cloud fraction bin index. Used for Libera-only cloud fraction bins"
   size: 4
 CLOUD_OPTICAL_DEPTH_LAND_BIN:
-  long_name: "Land scene cloud optical depth bin index. Used for Libera+VIIRS scene types cloud optical depth bins"
+  long_name: "Land scene cloud optical depth bin index. Used for Libera-Imager scene types cloud optical depth bins"
   size: 6
 CLOUD_OPTICAL_DEPTH_LAND_BIN_EDGES:
-  long_name: "Land scene cloud optical depth bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera+VIIRS scene types cloud optical depth bins"
+  long_name: "Land scene cloud optical depth bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera-Imager scene types cloud optical depth bins"
   size: 7
 CLOUD_OPTICAL_DEPTH_OCEAN_BIN:
-  long_name: "Ocean scene cloud optical depth bin index. Used for Libera+VIIRS scene types cloud optical depth bins"
+  long_name: "Ocean scene cloud optical depth bin index. Used for Libera-Imager scene types cloud optical depth bins"
   size: 14
 CLOUD_OPTICAL_DEPTH_OCEAN_BIN_EDGES:
-  long_name: "Ocean scene cloud optical depth bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera+VIIRS scene types cloud optical depth bins"
+  long_name: "Ocean scene cloud optical depth bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera-Imager scene types cloud optical depth bins"
   size: 15
 CLOUD_PHASE_BIN:
-  long_name: "Cloud phase bin index. 1:Liquid, 2:Ice Used for Libera+VIIRS scene types cloud phase"
+  long_name: "Cloud phase bin index. 1:Liquid, 2:Ice. Used for Libera-Imager scene types cloud phase"
   size: 2
 WIND_SPEED_BIN:
-  long_name: "10m wind speed bin index. Used for Libera+VIIRS scene types wind speed bins"
+  long_name: "10m wind speed bin index. Used for Libera-Imager scene types wind speed bins"
   size: 4
 WIND_SPEED_BIN_EDGES:
-  long_name: "10m wind speed bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera+VIIRS scene types wind speed bins"
+  long_name: "10m wind speed bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera-Imager scene types wind speed bins"
   size: 5
