@@ -140,15 +140,76 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
-            # Calibration Event Products
-            "cal_solar_face1_combined",
-            "cal_solar_face2_combined",
-            "cal_solar_face3_combined",
-            "cal_lw_temp1_combined",
-            "cal_lw_temp2_combined",
-            "cal_lw_temp3_combined",
-            "cal_gain_combined",
-            "cal_sw_combined",
+            # L1A ObsID-trimmed NOM-HK products
+            "l1a_icie_nom_hk_gain_trimmed",
+            "l1a_icie_nom_hk_swc_365nm_trimmed",
+            "l1a_icie_nom_hk_swc_405nm_trimmed",
+            "l1a_icie_nom_hk_swc_520nm_trimmed",
+            "l1a_icie_nom_hk_swc_635nm_trimmed",
+            "l1a_icie_nom_hk_swc_840nm_trimmed",
+            "l1a_icie_nom_hk_swc_1550nm_trimmed",
+            "l1a_icie_nom_hk_lwc_temp1_trimmed",
+            "l1a_icie_nom_hk_lwc_temp2_trimmed",
+            "l1a_icie_nom_hk_lwc_temp3_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_tot_pri_trimmed",
+            "l1a_icie_nom_hk_solar_lw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_sw_pri_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_tot_sec_trimmed",
+            "l1a_icie_nom_hk_solar_lw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_sw_sec_trimmed",
+            "l1a_icie_nom_hk_solar_ssw_ter_trimmed",
+            "l1a_icie_nom_hk_solar_tot_ter_trimmed",
+            "l1a_icie_nom_hk_solar_lw_ter_trimmed",
+            "l1a_icie_nom_hk_solar_sw_ter_trimmed",
+            "l1a_icie_nom_hk_ct_video_6min_trimmed",
+            "l1a_icie_nom_hk_ct_video_12min_trimmed",
+            "l1a_icie_nom_hk_ct_video_18min_trimmed",
+            "l1a_icie_nom_hk_raps_video_6min_trimmed",
+            "l1a_icie_nom_hk_raps_video_12min_trimmed",
+            "l1a_icie_nom_hk_raps_video_18min_trimmed",
+            "l1a_icie_nom_hk_darks_of_darks_trimmed",
+            "l1a_icie_nom_hk_led_of_dark_trimmed",
+            "l1a_icie_nom_hk_nominal_darks_trimmed",
+            "l1a_icie_nom_hk_viirs_lunar_cal_trimmed",
+            "l1a_icie_nom_hk_lunar_cal1_trimmed",
+            "l1a_icie_nom_hk_lunar_cal2_trimmed",
+            # Calibration Event Products (per ObsID)
+            "cal_gain",
+            "cal_swc_365nm",
+            "cal_swc_405nm",
+            "cal_swc_520nm",
+            "cal_swc_635nm",
+            "cal_swc_840nm",
+            "cal_swc_1550nm",
+            "cal_lwc_temp1",
+            "cal_lwc_temp2",
+            "cal_lwc_temp3",
+            "cal_solar_ssw_pri",
+            "cal_solar_tot_pri",
+            "cal_solar_lw_pri",
+            "cal_solar_sw_pri",
+            "cal_solar_ssw_sec",
+            "cal_solar_tot_sec",
+            "cal_solar_lw_sec",
+            "cal_solar_sw_sec",
+            "cal_solar_ssw_ter",
+            "cal_solar_tot_ter",
+            "cal_solar_lw_ter",
+            "cal_solar_sw_ter",
+            "cal_lunar_cal1",
+            "cal_lunar_cal2",
+            "cal_ct_video_6min",
+            "cal_ct_video_12min",
+            "cal_ct_video_18min",
+            "cal_raps_video_6min",
+            "cal_raps_video_12min",
+            "cal_raps_video_18min",
+            "cal_darks_of_darks",
+            "cal_led_of_dark",
+            "cal_nominal_darks",
+            "cal_viirs_lunar_cal",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
@@ -221,16 +282,17 @@ class TestDataProductIdentifier:
                 assert apid is None
 
     def test_calibration_event_products_metadata(self):
-        """Test metadata consistency for merged calibration event products."""
+        """Test metadata consistency for ObsID-specific calibration event products."""
         expected_products = {
-            DataProductIdentifier.cal_solar_face1_combined: "SOLAR-FACE1-COMBINED",
-            DataProductIdentifier.cal_solar_face2_combined: "SOLAR-FACE2-COMBINED",
-            DataProductIdentifier.cal_solar_face3_combined: "SOLAR-FACE3-COMBINED",
-            DataProductIdentifier.cal_lw_temp1_combined: "LW-TEMP1-COMBINED",
-            DataProductIdentifier.cal_lw_temp2_combined: "LW-TEMP2-COMBINED",
-            DataProductIdentifier.cal_lw_temp3_combined: "LW-TEMP3-COMBINED",
-            DataProductIdentifier.cal_gain_combined: "GAIN-COMBINED",
-            DataProductIdentifier.cal_sw_combined: "SW-COMBINED",
+            DataProductIdentifier.cal_gain: "GAIN",
+            DataProductIdentifier.cal_swc_365nm: "SWC-365NM",
+            DataProductIdentifier.cal_swc_405nm: "SWC-405NM",
+            DataProductIdentifier.cal_lwc_temp1: "LWC-TEMP1",
+            DataProductIdentifier.cal_lwc_temp2: "LWC-TEMP2",
+            DataProductIdentifier.cal_lwc_temp3: "LWC-TEMP3",
+            DataProductIdentifier.cal_solar_ssw_pri: "SOLAR-SSW-PRI",
+            DataProductIdentifier.cal_solar_tot_sec: "SOLAR-TOT-SEC",
+            DataProductIdentifier.cal_solar_sw_ter: "SOLAR-SW-TER",
         }
 
         for product, expected_value in expected_products.items():
@@ -238,6 +300,13 @@ class TestDataProductIdentifier:
             assert product.value == expected_value
             assert product.associated_apid is None
             assert product.data_level.archive_bucket_name == DataLevel.CAL.archive_bucket_name
+
+    def test_trimmed_nom_hk_products_metadata(self):
+        """Test L1A ObsID-trimmed NOM-HK products associate with NOM-HK APID."""
+        trimmed = DataProductIdentifier.l1a_icie_nom_hk_gain_trimmed
+        assert trimmed.data_level is DataLevel.L1A
+        assert trimmed.value == "NOM-HK-GAIN-TRIMMED"
+        assert trimmed.associated_apid is LiberaApid.icie_nom_hk
 
     def test_get_partial_archive_bucket_name_deprecation(self):
         """Test deprecated get_partial_archive_bucket_name method"""
