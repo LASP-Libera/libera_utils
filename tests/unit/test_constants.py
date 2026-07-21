@@ -337,6 +337,29 @@ class TestProcessingStepIdentifier:
             # L1B steps
             "l1b_rad",
             "l1b_cam",
+            # Radiometer calibration combine steps
+            "cal_gain",
+            "cal_swc_365nm",
+            "cal_swc_405nm",
+            "cal_swc_520nm",
+            "cal_swc_635nm",
+            "cal_swc_840nm",
+            "cal_swc_1550nm",
+            "cal_lwc_temp1",
+            "cal_lwc_temp2",
+            "cal_lwc_temp3",
+            "cal_solar_ssw_pri",
+            "cal_solar_tot_pri",
+            "cal_solar_lw_pri",
+            "cal_solar_sw_pri",
+            "cal_solar_ssw_sec",
+            "cal_solar_tot_sec",
+            "cal_solar_lw_sec",
+            "cal_solar_sw_sec",
+            "cal_solar_ssw_ter",
+            "cal_solar_tot_ter",
+            "cal_solar_lw_ter",
+            "cal_solar_sw_ter",
             # L2 steps — camera cloud fraction track
             "l2_unf_rad_cam",
             "l2_cf_cam",
@@ -452,6 +475,14 @@ class TestProcessingStepIdentifier:
             name = step.ecr_name
             assert isinstance(name, str)
             assert name.endswith("-docker-repo")
+
+    def test_cal_steps_share_ecr_name(self):
+        """Radiometer cal-combine steps share one ECR repository name for CDK reuse."""
+        cal_steps = [step for step in ProcessingStepIdentifier if str(step).startswith("cal-")]
+        assert len(cal_steps) == 22
+        shared = {step.ecr_name for step in cal_steps}
+        assert shared == {"cal-rad-docker-repo"}
+        assert ProcessingStepIdentifier.l1b_rad.ecr_name == "l1b-rad-docker-repo"
 
     def test_l2_team_iam_role_property(self):
         """Test l2_team_iam_role maps L2/ADM steps to their team role and returns None otherwise."""
