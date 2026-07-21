@@ -70,3 +70,52 @@ CAL_SAMPLE_PACKET:
   long_name: "Packet index for CAL-SAMPLE packets in calibration event"
 WFOV_SCI_PACKET:
   long_name: "Packet index for WFOV-SCI packets in calibration event"
+
+# ADM Specific dimensions
+# Viewing geometry. Used for both Libera-only (ERBE-like) and Libera+VIIRS (CERES-TRMM-like) products so no size is specified.
+SZA_BIN:
+  long_name: "Solar zenith angle bin index. 10 bins for Libera-only products, 9 bins for Libera+VIIRS scene types."
+SZA_BIN_EDGES:
+  long_name: "Solar zenith angle bin edges. Defines the upper bound of each bin and is inclusive. 11 bins for Libera-only products, 10 bins for Libera+VIIRS scene types."
+VZA_BIN:
+  long_name: "Viewing zenith angle bin index. 7 bins for Libera-only products, 9 bins for Libera+VIIRS scene types."
+VZA_BIN_EDGES:
+  long_name: "Viewing zenith angle bin edges. Defines the upper bound of each bin and is inclusive. 8 bins for Libera-only products, 10 bins for Libera+VIIRS scene types."
+RAA_BIN:
+  long_name: "Relative azimuth angle bin index. 8 bins for Libera-only products, 10 bins for Libera+VIIRS scene types."
+RAA_BIN_EDGES:
+  long_name: "Relative azimuth angle bin edges. Defines the upper bound of each bin and is inclusive. 9 bins for Libera-only products, 11 bins for Libera+VIIRS products."
+
+# Surface types
+SURFACE_TYPE_BIN:
+  long_name: "Surface type bin index. 1:Ocean, 2:Land, 3:Snow, 4:Desert. Used for Libera-only surface types"
+  size: 4
+LAND_SURFACE_TYPE_BIN:
+  long_name: "Land surface type bin index. 1: Mod-hi_tree/shrub_coverage, 2:Low-mod tree/shrub coverage, 3:Dark desert, 4:Bright desert, 5:Snow/ice, 6:Other. Used for Libera+VIIRS scene types land surface types"
+  size: 5
+
+# Atmospheric Properties
+CLOUD_FRACTION_BIN:
+  long_name: "Cloud fraction bin index. Used for Libera-only cloud fraction bins"
+  size: 4
+CLOUD_OPTICAL_DEPTH_LAND_BIN:
+  long_name: "Land scene cloud optical depth bin index. Used for Libera+VIIRS scene types cloud optical depth bins"
+  size: 6
+CLOUD_OPTICAL_DEPTH_LAND_BIN_EDGES:
+  long_name: "Land scene cloud optical depth bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera+VIIRS scene types cloud optical depth bins"
+  size: 7
+CLOUD_OPTICAL_DEPTH_OCEAN_BIN:
+  long_name: "Ocean scene cloud optical depth bin index. Used for Libera+VIIRS scene types cloud optical depth bins"
+  size: 14
+CLOUD_OPTICAL_DEPTH_OCEAN_BIN_EDGES:
+  long_name: "Ocean scene cloud optical depth bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera+VIIRS scene types cloud optical depth bins"
+  size: 15
+CLOUD_PHASE_BIN:
+  long_name: "Cloud phase bin index. 1:Liquid, 2:Ice Used for Libera+VIIRS scene types cloud phase"
+  size: 2
+WIND_SPEED_BIN:
+  long_name: "10m wind speed bin index. Used for Libera+VIIRS scene types wind speed bins"
+  size: 4
+WIND_SPEED_BIN_EDGES:
+  long_name: "10m wind speed bin edges. Defines the upper bound of each bin and is inclusive. Used for Libera+VIIRS scene types wind speed bins"
+  size: 5
