@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.10.4
+
+- FEAT: Register ADM-specific standard dimensions in `libera_dimensions.yml` (viewing-geometry, surface-type, and cloud/wind property bins for ERBE-like and TRMM-like ADM products)
+
 ## 5.10.3
 
 - FEAT: Replace the eight alpha calibration `DataProductIdentifier` members (`cal_solar_face{1,2,3}_combined`, `cal_lw_temp{1,2,3}_combined`, `cal_gain_combined`, `cal_sw_combined` / `SOLAR-FACE1-COMBINED`, `LW-TEMP1-COMBINED`, `GAIN-COMBINED`, `SW-COMBINED`, ...) with one CAL product per calibration ObsID (`cal_gain`/`GAIN`, `cal_swc_365nm`/`SWC-365NM`, `cal_lwc_310k`/`LWC-310K`, `cal_solar_ssw_pri`/`SOLAR-SSW-PRI`, the lunar/VIIRS-lunar and camera cal products, etc.). Downstream consumers must move to the new members; no aliases are kept.
