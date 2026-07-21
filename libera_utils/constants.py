@@ -25,7 +25,7 @@ class DataLevel(StrEnum):
     L1A = "L1A"
     L1B = "L1B"
     L2 = "L2"
-    ANC = "ANC"
+    AUX = "AUX"
 
     @property
     def archive_bucket_name(self) -> str:
@@ -225,6 +225,14 @@ class DataProductIdentifier(StrEnum):
         "FMATCH-IMAGER",
         DataLevel.AUX,
     )  # Footprint matching using RBSP + VIIRS imager data for cloud properties
+    aux_fmatch_imager_camtime = (
+        "FMATCH-IMAGER-CAMTIME",
+        DataLevel.AUX,
+    )  # Footprint matching (camera timescale) using RBSP + VIIRS imager data for cloud properties
+    aux_fmatch_imager_flash = (
+        "FMATCH-IMAGER-FLASH",
+        DataLevel.AUX,
+    )  # Footprint matching (flash) using RBSP + VIIRS imager data for cloud properties
 
     @property
     def product_name(self) -> str:
@@ -357,6 +365,11 @@ class ProcessingStepIdentifier(StrEnum):
 
     # AUX processing steps — RBSP + VIIRS imager track
     aux_fmatch_imager = ("aux-fmatch-imager", [DataProductIdentifier.aux_fmatch_imager])
+    aux_fmatch_imager_camtime = (
+        "aux-fmatch-imager-camtime",
+        [DataProductIdentifier.aux_fmatch_imager_camtime],
+    )
+    aux_fmatch_imager_flash = ("aux-fmatch-imager-flash", [DataProductIdentifier.aux_fmatch_imager_flash])
 
     @property
     def processing_step_name(self) -> str:

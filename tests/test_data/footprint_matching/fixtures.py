@@ -672,3 +672,72 @@ def make_cldpix_fixture(
         _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3))
 
     return out_path
+
+
+def make_fmatch_product_fixture(
+    directory: Path,
+    mode: "OperationalMode | None" = None,
+    n_footprints: int = 8,
+) -> Path:
+    """Write a synthetic, conformant FMATCH product NetCDF file (input to the SCENE-ID runners).
+
+    Introspects the FMATCH product definition for ``mode`` so the written file always matches the shipped YAML (dtype
+    and variable set), then writes it with :func:`libera_utils.io.netcdf.write_libera_data_product` under a proper
+    Libera filename. This is the FMATCH-CAM / FMATCH-CAM-CAMTIME input that the SCENE-ID-CAM(-CAMTIME) readers consume,
+    replacing the old CERES-SSF placeholder input.
+
+    Every variable is filled with zeros except ``igbp_MODIS_surface_type``, which is set to valid IGBP land-cover codes
+    (1..17) so that ``calculate_trmm_surface_type`` accepts them when the reader-fed data is classified. The time
+    coordinate is a monotonically increasing 100 Hz series (``write_libera_data_product`` stamps the filename's
+    start/end from its first/last values).
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the product file into (e.g. pytest ``tmp_path``).
+    mode : OperationalMode, optional
+        The FMATCH operational mode whose definition drives the file. Defaults to ``OperationalMode.CAM``.
+    n_footprints : int, optional
+        Number of footprints (length of the time axis). Defaults to 8.
+
+    Returns
+    -------
+    Path
+        Path to the written FMATCH product NetCDF file.
+    """
+    from libera_utils.footprint_matching.product import (  # noqa: PLC0415
+        OperationalMode,
+        fmatch_time_variable,
+        load_fmatch_definition,
+    )
+    from libera_utils.io.netcdf import write_libera_data_product  # noqa: PLC0415
+
+    if mode is None:
+        mode = OperationalMode.CAM
+    definition = load_fmatch_definition(mode)
+    time_variable = fmatch_time_variable(mode)
+
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
+    times = base_time + np.arange(n_footprints, dtype="int64") * cadence
+
+    data: dict[str, np.ndarray] = {time_variable: times}
+    for name, var_def in definition.variables.items():
+        if name == "igbp_MODIS_surface_type":
+            data[name] = (np.arange(n_footprints) % 17 + 1).astype(var_def.dtype)
+        else:
+            data[name] = np.zeros(n_footprints, dtype=var_def.dtype)
+
+    dynamic_attrs = {
+        "algorithm_version": "0.1.0",
+        "date_created": "2026-06-11T00:00:00Z",
+        "input_files": "SYNTHETIC EXAMPLE - no real input files were used",
+    }
+    written = write_libera_data_product(
+        definition,
+        data,
+        output_path=directory,
+        time_variable=time_variable,
+        dynamic_product_attributes=dynamic_attrs,
+    )
+    return Path(str(written.path))

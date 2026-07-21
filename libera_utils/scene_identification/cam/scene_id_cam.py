@@ -2,14 +2,11 @@
 
 This is the *radiometer*-timescale runner for the lowest-latency (camera / near-real-time) scene-identification product.
 
-The operational input to this product is FMATCH-CAM (see :meth:`FootprintData.from_fmatch_cam`). That reader is not
-implemented yet (the FMATCH step is a separate milestone), so this runner currently reads placeholder **CERES SSF**
-files via :meth:`FootprintData.from_ceres_ssf`. CERES SSF files are not Libera products, so the runner config sets
-``input_product_id=None`` to select the "keep non-Libera-product files" input-collection mode in
-:func:`libera_utils.scene_identification._runner.collect_input_files`.
-
-TODO[LIBSDC-794]: switch ``reader`` to ``FootprintData.from_fmatch_cam`` and ``input_product_id`` to
-``DataProductIdentifier.aux_fmatch_cam`` once the FMATCH-CAM product format is available.
+The operational input to this product is FMATCH-CAM (see :meth:`FootprintData.from_fmatch_cam`): one footprint per
+``RADIOMETER_TIME`` carrying the Libera-camera-derived cloud fraction and the scene properties the classifier needs.
+The runner config sets ``input_product_id=DataProductIdentifier.aux_fmatch_cam`` so
+:func:`libera_utils.scene_identification._runner.collect_input_files` keeps the FMATCH-CAM files from the input
+manifest.
 """
 
 import argparse
@@ -38,12 +35,12 @@ PRODUCT_DEFINITION_PATH = (
     Path(__import__("libera_utils").__file__).parent / "data" / "product_definitions" / "scene_id_cam.yml"
 )
 
-# All the parameters that make this the radiometer-timescale CAM runner (see SceneIdRunnerConfig). Note input_product_id
-# is None: the current input is a placeholder CERES SSF file (not a Libera product), and the reader is from_ceres_ssf.
+# All the parameters that make this the radiometer-timescale CAM runner (see SceneIdRunnerConfig). The input is the
+# FMATCH-CAM Libera product, read by from_fmatch_cam onto the RADIOMETER_TIME axis.
 RUNNER_CONFIG = SceneIdRunnerConfig(
-    input_product_id=None,
+    input_product_id=DataProductIdentifier.aux_fmatch_cam,
     output_product_id=DataProductIdentifier.aux_scene_id_cam,
-    reader=FootprintData.from_ceres_ssf,
+    reader=FootprintData.from_fmatch_cam,
     product_definition_path=PRODUCT_DEFINITION_PATH,
     time_variable="RADIOMETER_TIME",
     scene_types=SCENE_ID_CAM_SCENE_TYPES,
@@ -73,9 +70,8 @@ def algorithm(manifest_path: Path | S3Path) -> Path | S3Path:
 def collect_fmatch_cam_input_files(input_manifest: Manifest) -> list[str]:
     """Select the FMATCH-CAM input files referenced by a manifest.
 
-    Wrapper around :func:`libera_utils.scene_identification._runner.collect_input_files` in placeholder mode
-    (``input_product_id=None``), which keeps exactly the manifest files that do not parse as a Libera product
-    filename (i.e. the raw CERES SSF inputs).
+    Wrapper around :func:`libera_utils.scene_identification._runner.collect_input_files` for the configured
+    FMATCH-CAM product id, which keeps exactly the manifest files whose Libera product id is FMATCH-CAM.
 
     Parameters
     ----------
@@ -90,9 +86,9 @@ def collect_fmatch_cam_input_files(input_manifest: Manifest) -> list[str]:
     return collect_input_files(input_manifest, RUNNER_CONFIG.input_product_id)
 
 
-def run_scene_identification_cam(ssf_file_path: str | Path | S3Path) -> FootprintData:
-    """Classify all footprints in a single CERES SSF file into scene IDs (CAM configuration)."""
-    return run_scene_identification(ssf_file_path, RUNNER_CONFIG)
+def run_scene_identification_cam(fmatch_file_path: str | Path | S3Path) -> FootprintData:
+    """Classify all footprints in a single FMATCH-CAM file into scene IDs (CAM configuration)."""
+    return run_scene_identification(fmatch_file_path, RUNNER_CONFIG)
 
 
 def create_and_write_data_product_cam(

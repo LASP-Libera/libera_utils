@@ -13,13 +13,14 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
+from libera_utils.footprint_matching.product import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.cam.scene_id_cam import (
     PRODUCT_DEFINITION_PATH,
-    collect_ssf_input_files,
+    collect_fmatch_cam_input_files,
     create_and_write_data_product_cam,
     run_scene_identification_cam,
 )
@@ -27,8 +28,7 @@ from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import (
     create_and_write_data_product_cam_camtime,
 )
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
-
-SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
+from tests.test_data.footprint_matching.fixtures import make_fmatch_product_fixture
 
 
 def _libera_product_name(product_id: DataProductIdentifier) -> str:
@@ -44,9 +44,9 @@ def _libera_product_name(product_id: DataProductIdentifier) -> str:
 class TestSceneIdCamWrite:
     """The CAM runner must produce a conformant SCENE-ID-CAM product with only declared variables."""
 
-    def test_write_data_product_is_conformant(self, test_scene_id, tmp_path):
+    def test_write_data_product_is_conformant(self, tmp_path):
         """A full run + write succeeds under strict conformance and re-opens."""
-        input_path = test_scene_id / SSF_INPUT_NAME
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
         footprint_data = run_scene_identification_cam(input_path)
 
         # create_and_write_data_product_cam writes with strict=True; if the product definition and dataset are not
@@ -59,9 +59,9 @@ class TestSceneIdCamWrite:
         assert reopened.attrs["InputGranules"] == input_path.name
         assert reopened.attrs["algorithm_version"] == "0.1.0"
 
-    def test_written_product_has_no_undeclared_variables(self, test_scene_id, tmp_path):
-        """Intermediate FootprintData inputs must not leak into the written product."""
-        input_path = test_scene_id / SSF_INPUT_NAME
+    def test_written_product_has_no_undeclared_variables(self, tmp_path):
+        """Reader-sourced FMATCH inputs the classifier does not emit must not leak into the written product."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
         footprint_data = run_scene_identification_cam(input_path)
         output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
 
@@ -72,31 +72,35 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
-        # And the intermediate scene-property inputs specifically must be gone.
-        for leaked in ("surface_wind_u", "surface_wind_v", "optical_depth_lower", "cloud_phase_lower"):
-            assert leaked not in reopened.variables
+
+
+SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
 
 class TestCollectInputFiles:
-    """collect_input_files selects the right manifest entries in placeholder vs product mode."""
+    """collect_input_files keeps only the manifest entries whose Libera product id matches the runner's input."""
 
     # Manifest records must be absolute paths; the runner keys off the filename (basename) when parsing.
     _INPUT_DIR = "/dropbox/inputs"
 
     def _manifest(self, *filenames: str) -> Manifest:
+        # Distinct checksums so the manifest keeps every record (it de-duplicates on identical checksums).
         return Manifest(
             manifest_type=ManifestType.INPUT,
-            files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}", checksum="0") for name in filenames],
+            files=[
+                ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}", checksum=str(index))
+                for index, name in enumerate(filenames)
+            ],
         )
 
-    def test_placeholder_mode_keeps_non_libera_files(self):
-        """The CAM runner runs in placeholder mode: keep the CERES SSF (non-Libera) file, skip Libera products."""
-        libera_name = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
-        manifest = self._manifest(SSF_INPUT_NAME, libera_name)
+    def test_cam_runner_keeps_only_fmatch_cam(self):
+        """The CAM runner keeps FMATCH-CAM files and skips other Libera products and non-Libera (CERES SSF) files."""
+        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam)
+        manifest = self._manifest(SSF_INPUT_NAME, wanted)
 
-        selected = collect_ssf_input_files(manifest)
+        selected = collect_fmatch_cam_input_files(manifest)
 
-        assert selected == [f"{self._INPUT_DIR}/{SSF_INPUT_NAME}"]
+        assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
@@ -128,11 +132,12 @@ class TestToTimeProduct:
 
 
 class TestFmatchReaders:
-    """The operational FMATCH readers are not implemented yet."""
+    """The operational FMATCH readers ingest a FMATCH product into a classifiable FootprintData."""
 
-    def test_from_fmatch_cam_not_implemented(self, tmp_path):
-        with pytest.raises(NotImplementedError):
-            FootprintData.from_fmatch_cam(tmp_path / "fmatch.nc")
+    def test_from_fmatch_cam_reads_classification_inputs(self, tmp_path):
+        """from_fmatch_cam maps the FMATCH-CAM inputs onto the RADIOMETER_TIME classification variables."""
+        footprint_data = FootprintData.from_fmatch_cam(make_fmatch_product_fixture(tmp_path, OperationalMode.CAM))
+        dataset = footprint_data._data
 
     def test_from_fmatch_cam_camtime_not_implemented(self, tmp_path):
         with pytest.raises(NotImplementedError):

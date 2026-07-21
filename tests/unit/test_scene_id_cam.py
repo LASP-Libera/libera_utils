@@ -19,9 +19,9 @@ class TestCollectFmatchCamInputFiles:
     """Test cases for collect_fmatch_cam_input_files."""
 
     # A real, parseable FMATCH-CAM Libera product filename (ProductID FMATCH-CAM).
-    FMATCH_CAM_FILE = "LIBERA_ANC_FMATCH-CAM_V0-1-0_20280212T033945_20280212T052007_R26175214729.nc"
+    FMATCH_CAM_FILE = "LIBERA_AUX_FMATCH-CAM_V0-1-0_20280212T033945_20280212T052007_R26175214729.nc"
     # A different Libera product (parses, but is not FMATCH-CAM) that might share a manifest.
-    FMATCH_IMAGER_FILE = "LIBERA_ANC_FMATCH-IMAGER_V0-1-0_20280212T033945_20280212T052007_R26175214729.nc"
+    FMATCH_IMAGER_FILE = "LIBERA_AUX_FMATCH-IMAGER_V0-1-0_20280212T033945_20280212T052007_R26175214729.nc"
     # A non-Libera filename (e.g. a raw CERES SSF input) that must never be selected here.
     CERES_SSF_FILE = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 

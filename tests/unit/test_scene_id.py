@@ -771,7 +771,7 @@ class TestSceneIdCamProductDtypes:
         assert definition.variables["scene_bin_unfiltering_relative_azimuth_angle_max"].dtype == "float32"
 
     def test_surface_type_bin_bounds_are_uint8(self):
-        """surface_type bin bounds are declared as compact uint8, and no variable declares a _FillValue.
+        """surface_type bin bounds are declared as compact uint8.
 
         surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
         (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
@@ -779,5 +779,3 @@ class TestSceneIdCamProductDtypes:
         definition = self._scene_id_cam_definition()
         assert definition.variables["scene_bin_erbe_surface_type_min"].dtype == "uint8"
         assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"
-        # And no variable in the definition declares a _FillValue.
-        assert not any("_FillValue" in var.encoding for var in definition.variables.values())

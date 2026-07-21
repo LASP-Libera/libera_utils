@@ -2,7 +2,7 @@
 
 There is one SSF-style product definition per FMATCH operational mode. These
 tests confirm, for every mode, that:
-- The product ID is registered as an ancillary (ANC) DataProductIdentifier and
+- The product ID is registered as an auxiliary (AUX) DataProductIdentifier and
   matches the OperationalMode value string.
 - The product definition YAML loads and validates via LiberaDataProductDefinition.
 - The schema declares the expected geolocation, derived-geometry, and QA variables
@@ -83,12 +83,12 @@ def definitions() -> dict[OperationalMode, LiberaDataProductDefinition]:
 
 
 class TestFmatchIdentifiers:
-    """Every mode's product ID must be an ANC member matching the mode string."""
+    """Every mode's product ID must be an AUX member matching the mode string."""
 
     @pytest.mark.parametrize("mode", ALL_MODES)
-    def test_product_id_registered_as_anc(self, mode):
+    def test_product_id_registered_as_aux(self, mode):
         product = DataProductIdentifier(mode.value)
-        assert product.data_level is DataLevel.ANC
+        assert product.data_level is DataLevel.AUX
 
     def test_all_modes_have_a_definition_file(self):
         # The product module must map every operational mode to a YAML file.

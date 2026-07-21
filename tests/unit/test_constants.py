@@ -174,6 +174,8 @@ class TestDataProductIdentifier:
             "l2_comp_flux",
             # AUX Products — RBSP + VIIRS imager track
             "aux_fmatch_imager",
+            "aux_fmatch_imager_camtime",
+            "aux_fmatch_imager_flash",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
@@ -277,6 +279,8 @@ class TestProcessingStepIdentifier:
             "aux_adm_cam",
             # AUX steps — RBSP + VIIRS imager track
             "aux_fmatch_imager",
+            "aux_fmatch_imager_camtime",
+            "aux_fmatch_imager_flash",
         ]
         actual_names = [member.name for member in ProcessingStepIdentifier]
         assert actual_names == expected_names

@@ -30,6 +30,32 @@ logger = logging.getLogger(__name__)
 # libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
+# The camera-timescale counterparts of the constants above. The camera-timescale scene-ID product (CAM-CAMTIME) is
+# written on the "CAMERA_TIME" dimension with a "camera_time" coordinate, mirroring its FMATCH-CAM-CAMTIME input (one
+# pseudo-footprint per camera image).
+CAMERA_TIME_DIMENSION = "CAMERA_TIME"
+CAMERA_TIME_VARIABLE = "camera_time"
+
+# Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
+# straight through (camera pixel-block indices, PSF bounding box, and boresight geolocation) so a scene can be traced
+# back to the exact camera pixels and ground footprint. These are copied verbatim by from_fmatch_cam_camtime and are
+# not consumed by the classification; they simply ride along to the written product.
+_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
+    "latitude",
+    "longitude",
+    "altitude",
+    "psf_bbox_lat_min",
+    "psf_bbox_lat_max",
+    "psf_bbox_lon_min",
+    "psf_bbox_lon_max",
+    "center_pixel_x",
+    "center_pixel_y",
+    "camera_pixel_x_start",
+    "camera_pixel_x_stop",
+    "camera_pixel_y_start",
+    "camera_pixel_y_stop",
+)
+
 # Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
 # (scene_id_cam.yml).
 QUALITY_FLAG_VARIABLE = "Quality_Flag"
@@ -770,8 +796,7 @@ class FootprintData:
         """Read a FMATCH-CAM product into a FootprintData (radiometer timescale).
 
         FMATCH-CAM is the operational input to SCENE-ID-CAM: one footprint per ``RADIOMETER_TIME``, carrying the
-        Libera-camera-derived cloud fraction and the scene properties needed for classification. This reader will
-        replace the placeholder CERES SSF path (:meth:`from_ceres_ssf`) once the FMATCH step is producing files.
+        Libera-camera-derived cloud fraction and the scene properties needed for classification.
 
         Parameters
         ----------
@@ -782,18 +807,13 @@ class FootprintData:
         -------
         FootprintData
             Footprint data on the ``RADIOMETER_TIME`` dimension, ready for :meth:`identify_scenes`.
-
-        Raises
-        ------
-        NotImplementedError
-            Always, until the FMATCH-CAM product format is finalized and this reader is implemented.
         """
-        # TODO[LIBSDC-794]: implement once the FMATCH-CAM product definition/format is available (tracked with the
-        # FMATCH reader milestone). The SceneIdRunnerConfig for cam_camtime already wires this in as its reader.
-        raise NotImplementedError(
-            "FootprintData.from_fmatch_cam is not implemented yet: the FMATCH-CAM input product format is not "
-            "available. SCENE-ID-CAM currently reads placeholder CERES SSF input via from_ceres_ssf()."
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            time_dimension=RADIOMETER_TIME_DIMENSION,
+            time_variable=RADIOMETER_TIME_VARIABLE,
         )
+        return cls(extracted_data)
 
     @classmethod
     def from_fmatch_cam_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
@@ -822,12 +842,99 @@ class FootprintData:
         NotImplementedError
             Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
         """
-        # TODO[LIBSDC-794]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
-        # also carry through the identifier variables declared in scene_id_cam_camtime.yml.
-        raise NotImplementedError(
-            "FootprintData.from_fmatch_cam_camtime is not implemented yet: the FMATCH-CAM-CAMTIME input product "
-            "format is not available."
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            time_dimension=CAMERA_TIME_DIMENSION,
+            time_variable=CAMERA_TIME_VARIABLE,
+            passthrough_variables=_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES,
         )
+        return cls(extracted_data)
+
+    @staticmethod
+    def _extract_data_from_fmatch(
+        fmatch_path: pathlib.Path,
+        *,
+        time_dimension: str,
+        time_variable: str,
+        passthrough_variables: tuple[str, ...] = (),
+    ) -> xr.Dataset:
+        """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
+
+        The radiometer- and camera-timescale FMATCH products share a flat, one-value-per-footprint layout; they
+        differ only in their time dimension/coordinate name and in the identifier variables that the camera-timescale
+        product carries. This helper reads whichever the caller specifies and returns a dataset on ``time_dimension``
+        carrying the standardized :class:`FootprintVariables` the scene classifier consumes:
+
+        * ``igbp_surface_type`` (from the FMATCH ``igbp_MODIS_surface_type``) -- ``surface_type`` is derived from it
+          during :meth:`identify_scenes`,
+        * ``cloud_fraction`` (from the Libera-camera ``cloud_fraction_camera``) -- provided directly so it is not
+          re-derived from the CERES-SSF ``clear_area`` (which FMATCH products do not carry), and
+        * the three viewing-geometry angles, read straight through.
+
+        The time coordinate is carried as a plain ``time_variable`` data variable so it rides along through scene
+        identification; the runner promotes it to a coordinate via :meth:`to_time_product` before writing.
+
+        Parameters
+        ----------
+        fmatch_path : pathlib.Path
+            Path to a Libera FMATCH NetCDF product file.
+        time_dimension : str
+            The per-footprint dimension of the product (``RADIOMETER_TIME`` or ``CAMERA_TIME``); also the name of the
+            time coordinate variable in the FMATCH file.
+        time_variable : str
+            The lowercase time variable name to emit (``radiometer_time`` or ``camera_time``).
+        passthrough_variables : tuple of str, optional
+            FMATCH variables to copy verbatim onto the output (e.g. the camera-timescale identifier variables). Empty
+            for the radiometer-timescale product.
+
+        Returns
+        -------
+        xr.Dataset
+            Footprint data on ``time_dimension`` ready for :meth:`identify_scenes`.
+        """
+        logger.info("Reading FMATCH product %s", fmatch_path)
+        try:
+            with xr.open_dataset(fmatch_path) as opened_dataset:
+                fmatch_dataset = opened_dataset.load()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Unable to parse input file: {fmatch_path}")
+
+        data_variables: dict[str, tuple[list[str], NDArray]] = {
+            # IGBP land-cover code; cast to uint8 to match the SCENE-ID product definition (the FMATCH product stores
+            # it as int16). surface_type is derived from this by calculate_trmm_surface_type during classification.
+            FootprintVariables.IGBP_SURFACE_TYPE: (
+                [time_dimension],
+                fmatch_dataset["igbp_MODIS_surface_type"].to_numpy().astype(np.uint8),
+            ),
+            # The Libera-camera-derived total cloud fraction is the FMATCH replacement for the CERES-SSF clear_area /
+            # layer cloud fractions; provide it directly under the calculated "cloud_fraction" name so identify_scenes
+            # uses it as-is instead of trying (and failing) to derive it from clear_area.
+            FootprintVariables.CLOUD_FRACTION: (
+                [time_dimension],
+                fmatch_dataset["cloud_fraction_camera"].to_numpy().astype(np.float32),
+            ),
+            FootprintVariables.SOLAR_ZENITH_ANGLE: (
+                [time_dimension],
+                fmatch_dataset["solar_zenith_angle"].to_numpy().astype(np.float32),
+            ),
+            FootprintVariables.VIEWING_ZENITH_ANGLE: (
+                [time_dimension],
+                fmatch_dataset["viewing_zenith_angle"].to_numpy().astype(np.float32),
+            ),
+            FootprintVariables.RELATIVE_AZIMUTH_ANGLE: (
+                [time_dimension],
+                fmatch_dataset["relative_azimuth_angle"].to_numpy().astype(np.float32),
+            ),
+            # The FMATCH time coordinate (named after the dimension) is decoded to datetime64[ns] by xarray; carry it
+            # as a plain data variable so to_time_product can promote it to the product's time coordinate.
+            time_variable: ([time_dimension], fmatch_dataset[time_dimension].to_numpy()),
+        }
+        for variable_name in passthrough_variables:
+            data_variables[variable_name] = ([time_dimension], fmatch_dataset[variable_name].to_numpy())
+
+        parsed_dataset = xr.Dataset(data_variables)
+        logger.info("FMATCH product read successfully with %d footprints", parsed_dataset.sizes[time_dimension])
+        return parsed_dataset
 
     def identify_scenes(
         self,

@@ -45,12 +45,10 @@ class SceneIdRunnerConfig:
 
     Attributes
     ----------
-    input_product_id : DataProductIdentifier or None
+    input_product_id : DataProductIdentifier
         The Libera product id that counts as an input for this runner (e.g. ``aux_fmatch_cam`` or
-        ``aux_fmatch_cam_camtime``). Files with any other product id (or unparsable names) are skipped. Pass
-        ``None`` for the placeholder mode used by SCENE-ID-CAM today, where the input is a raw CERES SSF file that
-        is *not* a Libera product: in that mode the runner keeps exactly the manifest files that do **not** parse
-        as a Libera product filename. See :func:`collect_input_files`.
+        ``aux_fmatch_cam_camtime``). Files with any other product id (or unparsable names) are skipped. See
+        :func:`collect_input_files`.
     output_product_id : DataProductIdentifier
         The SCENE-ID product this runner emits. Used only for documentation/logging; the written filename's product id
         is driven by the product definition's ``ProductID`` attribute.
@@ -67,7 +65,7 @@ class SceneIdRunnerConfig:
         Short label used in task-log filenames (e.g. ``scene_id_cam`` / ``scene_id_cam_camtime``).
     """
 
-    input_product_id: DataProductIdentifier | None
+    input_product_id: DataProductIdentifier
     output_product_id: DataProductIdentifier
     reader: Callable[[Path], FootprintData]
     product_definition_path: Path
@@ -113,9 +111,8 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     if not dropbox_path:
         raise ValueError("PROCESSING_PATH environment variable is not set")
 
-    # Step 2: Collect the input file(s) from the manifest. In placeholder mode (input_product_id is None) these are
-    # non-Libera CERES SSF files; otherwise they are the configured Libera FMATCH product.
-    input_label = config.input_product_id.value if config.input_product_id is not None else "CERES SSF (placeholder)"
+    # Step 2: Collect the configured Libera FMATCH product file(s) from the manifest.
+    input_label = config.input_product_id.value
     logger.info("Step 2: Collecting %s input files from the manifest", input_label)
     input_file_paths = collect_input_files(input_manifest, config.input_product_id)
     if not input_file_paths:
@@ -150,51 +147,37 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     return output_manifest_filepath
 
 
-def collect_input_files(input_manifest: Manifest, input_product_id: DataProductIdentifier | None) -> list[str]:
+def collect_input_files(input_manifest: Manifest, input_product_id: DataProductIdentifier) -> list[str]:
     """Select the input files referenced by a manifest for this runner.
 
-    This supports two modes, distinguished by ``input_product_id``:
-
-    * **Libera-product mode** (``input_product_id`` is a :class:`~libera_utils.constants.DataProductIdentifier`):
-      the operational case.
-    * **Placeholder mode** (``input_product_id`` is ``None``): the case SCENE-ID-CAM uses, where the input is
-      a raw CERES SSF file. CERES SSF files are *not* Libera products, so they do not parse as a
-      ``LiberaDataProductFilename``. We use that fact to keep exactly the files that do **not** parse, and skip any
-      Libera-named ancillary files that might also appear in the manifest.
+    Keeps exactly the manifest files whose Libera product id equals ``input_product_id`` (e.g. ``aux_fmatch_cam`` or
+    ``aux_fmatch_cam_camtime``). Files with any other product id, and files whose names do not parse as a
+    ``LiberaDataProductFilename``, are skipped.
 
     Parameters
     ----------
     input_manifest : Manifest
         The input manifest to inspect.
-    input_product_id : DataProductIdentifier or None
-        The Libera product id to keep (e.g. ``aux_fmatch_cam`` or ``aux_fmatch_cam_camtime``), or ``None`` for the
-        CERES SSF placeholder mode.
+    input_product_id : DataProductIdentifier
+        The Libera product id to keep (e.g. ``aux_fmatch_cam`` or ``aux_fmatch_cam_camtime``).
 
     Returns
     -------
     list[str]
         The manifest filenames identified as inputs, in manifest order.
     """
-    input_label = input_product_id.value if input_product_id is not None else "CERES SSF (placeholder)"
+    input_label = input_product_id.value
     input_file_paths: list[str] = []
     for file_record in input_manifest.files:
         filename = file_record.filename
         try:
             libera_filename = LiberaDataProductFilename.from_file_path(filename)
         except Exception:
-            # Not a Libera product name. In placeholder mode that is exactly the CERES SSF input we want; in
-            # Libera-product mode it cannot be an FMATCH input, so skip it.
-            if input_product_id is None:
-                logger.info("Recording %s input file: %s", input_label, filename)
-                input_file_paths.append(filename)
-            else:
-                logger.info("Skipping non-Libera-product file (not a %s input): %s", input_label, filename)
+            # Not a Libera product name, so it cannot be an FMATCH input.
+            logger.info("Skipping non-Libera-product file (not a %s input): %s", input_label, filename)
             continue
-        # Parsed as a Libera product.
-        if input_product_id is None:
-            # Placeholder mode wants only non-Libera files, so a Libera-named file is not an input here.
-            logger.info("Skipping Libera-named file (not a %s input): %s", input_label, filename)
-        elif libera_filename.data_product_id is input_product_id:
+        # Parsed as a Libera product; keep it only if it is the configured input product.
+        if libera_filename.data_product_id is input_product_id:
             logger.info("Recording %s input file: %s", input_label, filename)
             input_file_paths.append(filename)
         else:
