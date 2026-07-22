@@ -190,6 +190,7 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A)
+    # VIIRS lunar (ObsID 513 on RAD and WFOV)
     l1a_icie_nom_hk_viirs_lunar_cal_trimmed = ("NOM-HK-VIIRS-LUNAR-CAL-TRIMMED", DataLevel.L1A)
     # Radiometer lunar calibration ObsID-trimmed NOM-HK (RAD source field)
     l1a_icie_nom_hk_lunar_cal1_trimmed = ("NOM-HK-LUNAR-CAL1-TRIMMED", DataLevel.L1A)
@@ -238,6 +239,7 @@ class DataProductIdentifier(StrEnum):
     cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL)
     cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL)
     cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL)
+    # VIIRS lunar cal (ObsID 513 on both RAD and WFOV); ProcessingStepIdentifiers deferred
     cal_viirs_lunar_cal = ("VIIRS-LUNAR-CAL", DataLevel.CAL)
 
     # SPICE kernels

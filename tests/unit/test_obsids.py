@@ -77,9 +77,9 @@ class TestObsidRegistry:
             assert spec.cal_product.value == cal_val
 
     def test_rad_cal_count(self):
-        """Twenty-four radiometer cal ObsIDs are registered (22 gain/SWC/LWC/solar + 2 lunar)."""
+        """Twenty-five radiometer cal ObsIDs (22 gain/SWC/LWC/solar + 2 lunar + VIIRS lunar)."""
         rad_cal = [s for s in OBSID_REGISTRY.values() if s.kind is ObsIdKind.RAD_CAL]
-        assert len(rad_cal) == 24
+        assert len(rad_cal) == 25
 
     def test_lunar_cal_obsids(self):
         """Radiometer lunar ObsIDs 448/449 map to LUNAR-CAL1/2 products."""
@@ -92,6 +92,17 @@ class TestObsidRegistry:
         assert "Monthly" in lunar1.description
         assert "Quarterly" in lunar2.description
 
+    def test_rad_viirs_lunar_cal_obsid(self):
+        """RAD ObsID 513 shares VIIRS-LUNAR-CAL products with WFOV ObsID 513."""
+        rad = get_obsid_spec(NomHkObsidSource.RAD, 513)
+        wfov = get_obsid_spec(NomHkObsidSource.WFOV, 513)
+        assert rad.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_viirs_lunar_cal_trimmed
+        assert rad.cal_product is DataProductIdentifier.cal_viirs_lunar_cal
+        assert rad.trimmed_product is wfov.trimmed_product
+        assert rad.cal_product is wfov.cal_product
+        assert rad.kind is ObsIdKind.RAD_CAL
+        assert wfov.kind is ObsIdKind.CAM_CAL
+
     def test_cam_cal_count(self):
         """Ten camera cal ObsIDs are registered."""
         cam_cal = [s for s in OBSID_REGISTRY.values() if s.kind is ObsIdKind.CAM_CAL]
@@ -101,7 +112,7 @@ class TestObsidRegistry:
         """Source filter restricts iter_trim_eligible."""
         rad = list(iter_trim_eligible(NomHkObsidSource.RAD))
         wfov = list(iter_trim_eligible(NomHkObsidSource.WFOV))
-        assert len(rad) == 24
+        assert len(rad) == 25
         assert len(wfov) == 10
         assert all(s.source is NomHkObsidSource.RAD for s in rad)
         assert all(s.source is NomHkObsidSource.WFOV for s in wfov)
