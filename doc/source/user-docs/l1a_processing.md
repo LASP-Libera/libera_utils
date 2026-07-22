@@ -422,8 +422,8 @@ trimmed_paths = write_trimmed_nom_hk_products(
 ```
 
 TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (and thus
-the filename product token) changes. Science/scan modes (ObsIDs 136–140) are cataloged
-but do not emit TRIMMED files.
+the filename product token) changes. Science/scan modes (ObsIDs 128, 132, and 136–140)
+are cataloged but do not emit TRIMMED files.
 
 Normal operations expect each calibration ObsID at most once per day. If the same
 `(source, obsid)` appears in multiple disjoint runs, each run is written as a separate
