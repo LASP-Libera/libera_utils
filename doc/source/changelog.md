@@ -7,7 +7,7 @@
 - FEAT: `ProcessingStepIdentifier.ecr_name` supports an optional shared ECR name so all radiometer cal steps resolve to `cal-rad-docker-repo` (CDK should create one repo and reuse it across Batch job definitions; set `LIBERA_CAL_OBSID` per job).
 - FEAT: Add `libera_utils.obsids` registry (`NomHkObsidSource`, `ObsIdSpec`, `OBSID_REGISTRY`) as the sole ObsID → CAL/TRIMMED ProductID catalog (radiometer, camera, and shared science modes). RAD and WFOV namespaces are keyed separately because numeric ObsIDs overlap.
 - FEAT: Add camera TRIMMED and CAL `DataProductIdentifier` members (CT/RAPS video, darks, VIIRS lunar); camera `ProcessingStepIdentifier`s deferred.
-- FEAT: Add radiometer lunar ObsIDs 448/449 (`LUNAR-CAL1` / `LUNAR-CAL2` and matching `NOM-HK-LUNAR-CAL*-TRIMMED`); cal-combine / PSIs deferred.
+- FEAT: Add radiometer lunar ObsIDs 448/449 (`LUNAR-CAL1` / `LUNAR-CAL2`) and RAD ObsID 513 (`VIIRS-LUNAR-CAL`, shared ProductIDs with WFOV 513); cal-combine / PSIs deferred.
 - FEAT: Add `libera_utils.l1a.nom_hk_trim` helpers to detect contiguous ObsID runs in decoded NOM-HK and write one `NOM-HK-*-TRIMMED` product per run (warns if the same ObsID recurs in a day). Intended for the L1A preprocessor (CDK wiring follow-on).
 
 ## 5.9.2

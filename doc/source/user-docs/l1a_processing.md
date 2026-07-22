@@ -399,13 +399,15 @@ known calibration ObsIDs and write one `NOM-HK-*-TRIMMED` NetCDF per run.
 NOM-HK carries two ObsID fields. Which field to scan is declared in
 `libera_utils.obsids.OBSID_REGISTRY` via `NomHkObsidSource`:
 
-| Source | NOM-HK variable       | Typical events                                 |
-| ------ | --------------------- | ---------------------------------------------- |
-| `RAD`  | `ICIE__SW_OBSID_RAD`  | Radiometer cal (gain, SWC, LWC, solar, lunar)  |
-| `WFOV` | `ICIE__SW_OBSID_WFOV` | Camera cal (CT/RAPS video, darks, VIIRS lunar) |
+| Source | NOM-HK variable       | Typical events                                       |
+| ------ | --------------------- | ---------------------------------------------------- |
+| `RAD`  | `ICIE__SW_OBSID_RAD`  | Radiometer cal (gain, SWC, LWC, solar, lunar, VIIRS) |
+| `WFOV` | `ICIE__SW_OBSID_WFOV` | Camera cal (CT/RAPS video, darks, VIIRS lunar)       |
 
 Numeric ObsIDs are **not** unique across those fields (e.g. RAD `256` is SWC-365NM;
-WFOV `256` is Darks of Darks). Registry keys are `(source, obsid)`.
+WFOV `256` is Darks of Darks). Registry keys are `(source, obsid)`. ObsID `513`
+(VIIRS lunar) is registered under both sources and shares the same TRIMMED/CAL
+ProductIDs.
 
 ```python
 from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
