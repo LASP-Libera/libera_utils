@@ -596,11 +596,11 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
         }
 
         with warnings.catch_warnings(record=True) as recorded:
-            warnings.simplefilter("always")
+            warnings.simplefilter("ignore")
+            warnings.simplefilter("always", UserWarning)
             fixed_ds = definition.enforce_dataset_conformance(test_dataset)
 
-        extra_encoding_warnings = [w for w in recorded if "unexpected extra encoding setting" in str(w.message)]
-        assert extra_encoding_warnings == []
+        assert recorded == []
 
         encoding = fixed_ds["fil_rad"].encoding
         for runtime_key in (
