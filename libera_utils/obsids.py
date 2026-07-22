@@ -263,6 +263,13 @@ OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = dict(
             DPI.l1a_icie_nom_hk_lunar_cal2_trimmed,
             DPI.cal_lunar_cal2,
         ),
+        _rad_cal(
+            513,
+            "VIIRS LUNAR CAL",
+            "VIIRS lunar calibration several times a year",
+            DPI.l1a_icie_nom_hk_viirs_lunar_cal_trimmed,
+            DPI.cal_viirs_lunar_cal,
+        ),
         # Camera calibration (ICIE__SW_OBSID_WFOV)
         _cam_cal(
             129,
