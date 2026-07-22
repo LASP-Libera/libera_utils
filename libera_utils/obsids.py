@@ -342,6 +342,10 @@ OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = dict(
             DPI.cal_viirs_lunar_cal,
         ),
         # Shared science / scan modes (both RAD and WFOV; catalog only)
+        _science(128, NomHkObsidSource.RAD, "Cross Track", "Cross Track Scan Mode"),
+        _science(128, NomHkObsidSource.WFOV, "Cross Track", "Cross Track Scan Mode"),
+        _science(132, NomHkObsidSource.RAD, "RAP Scan", "RAP Scan Mode"),
+        _science(132, NomHkObsidSource.WFOV, "RAP Scan", "RAP Scan Mode"),
         _science(136, NomHkObsidSource.RAD, "Along Track", "Along Track Scan Mode"),
         _science(136, NomHkObsidSource.WFOV, "Along Track", "Along Track Scan Mode"),
         _science(137, NomHkObsidSource.RAD, "Earth Target", "Earth Target Scan Mode"),

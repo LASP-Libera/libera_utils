@@ -38,16 +38,25 @@ class TestObsidRegistry:
     def test_science_entries_have_no_products(self):
         """Science/scan modes are catalog-only."""
         science = [s for s in OBSID_REGISTRY.values() if s.kind is ObsIdKind.SCIENCE]
-        assert len(science) == 10  # 5 ObsIDs × 2 sources
+        assert len(science) == 14  # 7 ObsIDs × 2 sources
         for spec in science:
             assert spec.trimmed_product is None
             assert spec.cal_product is None
 
     def test_science_modes_on_both_sources(self):
-        """Science ObsIDs 136–140 are registered under RAD and WFOV."""
-        for obsid in range(136, 141):
+        """Science ObsIDs 128, 132, and 136–140 are registered under RAD and WFOV."""
+        for obsid in (128, 132, *range(136, 141)):
             get_obsid_spec(NomHkObsidSource.RAD, obsid)
             get_obsid_spec(NomHkObsidSource.WFOV, obsid)
+
+    def test_cross_track_and_rap_science_modes(self):
+        """ObsIDs 128 and 132 are Cross Track and RAP scan science modes."""
+        cross = get_obsid_spec(NomHkObsidSource.RAD, 128)
+        rap = get_obsid_spec(NomHkObsidSource.WFOV, 132)
+        assert cross.name == "Cross Track"
+        assert cross.description == "Cross Track Scan Mode"
+        assert rap.name == "RAP Scan"
+        assert rap.description == "RAP Scan Mode"
 
     def test_trimmed_products_associate_with_nom_hk_apid(self):
         """All TRIMMED DPIs associate with the NOM-HK APID."""
