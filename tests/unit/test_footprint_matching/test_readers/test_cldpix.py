@@ -15,7 +15,7 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, GridTile, OperationalMode, TileKey
 from tests.test_data.footprint_matching.fixtures import make_cldpix_fixture
 
 # Local tile containing the default pixel cluster (lon −15° == 345°).
@@ -40,6 +40,11 @@ class TestCLDPIXReaderClassAttributes:
 
     def test_required_mode_is_imager(self):
         assert CLDPIXReader.REQUIRED_MODE == OperationalMode.IMAGER
+
+    def test_required_variant_is_post_year_one(self):
+        # RBSP CLDPIX products are unavailable in year one, so this reader must
+        # only be active post-year-one (year-one IMAGER substitutes ERA5 fields).
+        assert CLDPIXReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
 
     def test_expected_variable_names(self):
         names = {v.name for v in CLDPIXReader.VARIABLES}
@@ -106,6 +111,37 @@ class TestCLDPIXReaderLoadSpatialRegion:
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.allclose(_finite(data, "cloud_mask"), 1.0)
         assert np.allclose(_finite(data, "cloud_particle_phase"), 1.0)
+
+    def test_southern_hemisphere_pixels_are_kept(self, tmp_path):
+        # Regression: CLDPIX stores COLATITUDE under the name "Latitude", so a
+        # southern-hemisphere pixel is written as colatitude > 90. Reading the
+        # field as a true latitude and filtering on −90..90 silently dropped the
+        # entire southern hemisphere. Pixels placed at 40° S must survive and
+        # land in the southern tile, not the northern one.
+        lats = np.full((3, 4), -40.0, dtype=np.float32)
+        fixture = make_cldpix_fixture(tmp_path, lats=lats)
+        reader = CLDPIXReader(fixture)
+
+        southern, _, _ = reader._load_spatial_region(BoundingBox(-41.0, -39.0, -16.0, -14.0))
+        assert np.isfinite(southern).any()
+
+        # The mirrored northern tile must be empty — a sign-flip bug would put
+        # the pixels there instead.
+        northern, _, _ = reader._load_spatial_region(_BBOX)
+        assert not np.isfinite(northern).any()
+
+    def test_top_cloud_height_fill_is_dropped(self, tmp_path):
+        # Regression: Top_Cld_Height is the one field with no valid_range, so
+        # the float32 fill (3.4028235e38) had to be caught by the fill test
+        # alone. Widening the stored float32 fill to float64 does not equal the
+        # decimal literal the reader declares, so the fill leaked through as a
+        # ~3.4e38 "cloud top height". Every retained value must be the
+        # fixture's 6.0 km.
+        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
+        data, _, _ = reader._load_spatial_region(_BBOX)
+        heights = _finite(data, "cloud_top_height")
+        assert heights.size > 0
+        assert np.allclose(heights, 6.0, atol=1e-3)
 
 
 class TestCLDPIXReaderLoadTile:

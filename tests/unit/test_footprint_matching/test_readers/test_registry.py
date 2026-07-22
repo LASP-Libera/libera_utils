@@ -5,7 +5,8 @@ Tests confirm:
 - get() returns the correct class
 - get() raises KeyError for unknown keys
 - list_readers() returns sorted keys
-- get_readers_for_mode() filters by operational mode rank
+- get_readers_for_mode() filters by operational mode rank AND by the
+  input-availability variant (year-one vs post-year-one)
 """
 
 from __future__ import annotations
@@ -19,12 +20,13 @@ from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5 import ERA5Reader
+from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
-from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
 
 
 class TestListReaders:
@@ -33,6 +35,7 @@ class TestListReaders:
         for expected in (
             "cldpix",
             "era5",
+            "era5_pressure",
             "igbp",
             "nise",
             "ssf",
@@ -61,6 +64,9 @@ class TestGetReader:
 
     def test_get_era5_returns_era5_class(self):
         assert ReaderRegistry.get("era5") is ERA5Reader
+
+    def test_get_era5_pressure_returns_pressure_class(self):
+        assert ReaderRegistry.get("era5_pressure") is ERA5PressureLevelReader
 
     def test_get_viirs_cloud_returns_viirs_cloud_class(self):
         assert ReaderRegistry.get("viirs_cloud") is VIIRSCloudReader
@@ -100,15 +106,36 @@ class TestGetReadersForMode:
 
     def test_climate_quality_readers_excluded_from_cam_mode(self):
         # AOD/SSF/CLDPIX are climate-quality (post-Year-1) dependencies and must
-        # not be active in the CAM/NRT mode.
-        cam_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
-        for key in ("viirs_aod", "ssf", "cldpix"):
-            assert key not in cam_readers
+        # not be active in the CAM/NRT mode, in either variant.
+        for variant in FmatchVariant:
+            cam_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM, variant)
+            for key in ("viirs_aod", "ssf", "cldpix", "era5_pressure"):
+                assert key not in cam_readers
 
-    def test_imager_mode_includes_climate_quality_readers(self):
+    def test_imager_mode_default_variant_is_year_one(self):
+        # Production default: RBSP readers (ssf, cldpix) are excluded because
+        # those products do not exist in year one; the ERA5 substitutes are in.
         imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
+        assert "era5_pressure" in imager_readers
+        assert "viirs_aod" in imager_readers
+        for key in ("ssf", "cldpix"):
+            assert key not in imager_readers
+
+    def test_imager_mode_post_year_one_includes_rbsp_readers(self):
+        imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
         for key in ("viirs_aod", "ssf", "cldpix"):
             assert key in imager_readers
+        # The year-one-only ERA5 pressure-level reader is replaced by RBSP inputs.
+        assert "era5_pressure" not in imager_readers
+
+    def test_variant_gating_matches_reader_attributes(self):
+        # The RBSP readers must declare POST_YEAR_ONE; the ERA5 pressure reader
+        # YEAR_ONE; everything else must be variant-neutral.
+        assert SSFReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
+        assert CLDPIXReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
+        assert ERA5PressureLevelReader.REQUIRED_VARIANT is FmatchVariant.YEAR_ONE
+        for cls in (ERA5Reader, IGBPReader, NISEReader, VIIRSCloudReader):
+            assert cls.REQUIRED_VARIANT is None
 
     def test_returns_dict_of_reader_classes(self):
         readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)

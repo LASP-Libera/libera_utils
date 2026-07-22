@@ -1,5 +1,13 @@
 # =============================================================================
-# FMATCH-IMAGER Data Product Definition
+# FMATCH-IMAGER Data Product Definition — year-one (ERA5-based) production variant
+# =============================================================================
+# During the first year of operation the RBSP products (CERES CLDPIX / SSF) that
+# feed the post-year-one FMATCH-IMAGER definition are not available, so this
+# production definition substitutes ERA5 reanalysis fields: single-level fields
+# from the era5 reader and pressure-level fields from the era5_pressure reader
+# (13 levels, see _ERA5_PRESSURE_LEVELS in readers/era5_pressure.py).
+# The RBSP-based definition is kept as fmatch_imager_post_year_one.yml and is
+# selected manually via FmatchVariant.POST_YEAR_ONE once RBSP data flows.
 # =============================================================================
 
 attributes:
@@ -79,109 +87,6 @@ variables:
   # ---------------------------------------------------------------------------
   # (c) PSF-aggregated external variables (one value per footprint).
   # ---------------------------------------------------------------------------
-  # --- source reader: cldpix (resolution 1.0 km) ---
-  cldpix_NOAA20_cloud_optical_depth:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud optical depth (RBSP CLDPIX)
-      units: "1"
-      valid_range: [0.25, 150]
-  cldpix_NOAA20_cloud_optical_depth_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud optical depth (RBSP CLDPIX) (within-footprint standard deviation)
-      units: "1"
-  cldpix_NOAA20_cloud_water_path:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud water path
-      units: "g/m^2"
-      valid_range: [0, 10000]
-  cldpix_NOAA20_cloud_water_path_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud water path (within-footprint standard deviation)
-      units: "g/m^2"
-  cldpix_NOAA20_cloud_effective_temperature:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud effective temperature
-      units: "K"
-      valid_range: [190, 350]
-  cldpix_NOAA20_cloud_effective_temperature_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud effective temperature (within-footprint standard deviation)
-      units: "K"
-  cldpix_NOAA20_cloud_effective_height:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud effective height
-      units: "km"
-      valid_range: [0, 18]
-  cldpix_NOAA20_cloud_effective_height_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud effective height (within-footprint standard deviation)
-      units: "km"
-  cldpix_NOAA20_cloud_effective_pressure:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud effective pressure
-      units: "hPa"
-      valid_range: [10, 1100]
-  cldpix_NOAA20_cloud_effective_pressure_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud effective pressure (within-footprint standard deviation)
-      units: "hPa"
-  cldpix_NOAA20_cloud_top_height:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud top height
-      units: "km"
-  cldpix_NOAA20_cloud_top_height_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud top height (within-footprint standard deviation)
-      units: "km"
-  cldpix_NOAA20_cloud_particle_radius:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius)
-      units: "um"
-      valid_range: [2, 60]
-  cldpix_NOAA20_cloud_particle_radius_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius) (within-footprint standard deviation)
-      units: "um"
-  cldpix_NOAA20_cloud_particle_phase:
-    dtype: int16
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud particle phase
-      valid_range: [1, 5]
-  cldpix_NOAA20_cloud_mask:
-    dtype: int16
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES cloud mask
-      valid_range: [0, 3]
   # --- source reader: era5 (resolution 25.0 km) ---
   era5_ECMWF_wind_u10:
     dtype: float32
@@ -207,6 +112,890 @@ variables:
     attributes:
       long_name: Northward wind component at 10 m (within-footprint standard deviation)
       units: "m/s"
+  era5_ECMWF_temperature_2m:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 2 m
+      units: "K"
+      valid_range: [170, 350]
+  era5_ECMWF_temperature_2m_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 2 m (within-footprint standard deviation)
+      units: "K"
+  era5_ECMWF_dew_point_temperature_2m:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Dewpoint temperature at 2 m
+      units: "K"
+      valid_range: [170, 350]
+  era5_ECMWF_dew_point_temperature_2m_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Dewpoint temperature at 2 m (within-footprint standard deviation)
+      units: "K"
+  era5_ECMWF_surface_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface pressure
+      units: "Pa"
+      valid_range: [45000, 110000]
+  era5_ECMWF_surface_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface pressure (within-footprint standard deviation)
+      units: "Pa"
+  era5_ECMWF_surface_geopotential:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface geopotential (orography x standard gravity)
+      units: "m^2/s^2"
+  era5_ECMWF_surface_geopotential_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface geopotential (orography x standard gravity) (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_ECMWF_forecast_albedo:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Forecast albedo (broadband surface albedo)
+      units: "1"
+      valid_range: [0, 1]
+  era5_ECMWF_forecast_albedo_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Forecast albedo (broadband surface albedo) (within-footprint standard deviation)
+      units: "1"
+  # --- source reader: era5_pressure (resolution 25.0 km) ---
+  era5_pressure_ECMWF_temperature_10hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 10 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_10hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 10 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_30hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 30 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_30hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 30 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_50hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 50 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_50hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 50 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_70hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 70 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_70hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 70 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_100hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 100 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_100hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 100 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_200hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 200 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_200hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 200 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_250hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 250 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_250hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 250 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_300hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 300 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_300hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 300 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_500hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 500 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_500hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 500 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_700hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 700 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_700hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 700 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_850hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 850 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_850hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 850 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_925hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 925 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_925hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 925 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_temperature_1000hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 1000 hPa
+      units: "K"
+      valid_range: [150, 350]
+  era5_pressure_ECMWF_temperature_1000hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Air temperature at 1000 hPa (within-footprint standard deviation)
+      units: "K"
+  era5_pressure_ECMWF_geopotential_10hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 10 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_10hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 10 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_30hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 30 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_30hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 30 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_50hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 50 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_50hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 50 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_70hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 70 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_70hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 70 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_100hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 100 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_100hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 100 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_200hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 200 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_200hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 200 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_250hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 250 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_250hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 250 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_300hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 300 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_300hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 300 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_500hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 500 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_500hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 500 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_700hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 700 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_700hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 700 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_850hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 850 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_850hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 850 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_925hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 925 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_925hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 925 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_1000hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 1000 hPa
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_geopotential_1000hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Geopotential at 1000 hPa (within-footprint standard deviation)
+      units: "m^2/s^2"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_10hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 10 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_10hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 10 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_30hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 30 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_30hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 30 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_50hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 50 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_50hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 50 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_70hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 70 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_70hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 70 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_100hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 100 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_100hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 100 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_200hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 200 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_200hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 200 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_250hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 250 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_250hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 250 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_300hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 300 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_300hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 300 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_500hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 500 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_500hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 500 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_700hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 700 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_700hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 700 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_850hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 850 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_850hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 850 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_925hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 925 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_925hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 925 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_1000hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 1000 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.0001]
+  era5_pressure_ECMWF_ozone_mass_mixing_ratio_1000hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Ozone mass mixing ratio at 1000 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_10hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 10 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_10hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 10 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_30hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 30 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_30hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 30 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_50hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 50 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_50hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 50 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_70hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 70 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_70hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 70 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_100hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 100 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_100hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 100 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_200hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 200 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_200hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 200 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_250hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 250 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_250hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 250 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_300hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 300 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_300hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 300 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_500hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 500 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_500hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 500 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_700hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 700 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_700hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 700 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_850hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 850 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_850hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 850 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_925hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 925 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_925hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 925 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_specific_humidity_1000hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 1000 hPa
+      units: "kg/kg"
+      valid_range: [0, 0.05]
+  era5_pressure_ECMWF_specific_humidity_1000hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Specific humidity at 1000 hPa (within-footprint standard deviation)
+      units: "kg/kg"
+  era5_pressure_ECMWF_relative_humidity_10hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 10 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_10hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 10 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_30hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 30 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_30hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 30 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_50hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 50 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_50hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 50 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_70hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 70 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_70hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 70 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_100hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 100 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_100hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 100 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_200hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 200 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_200hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 200 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_250hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 250 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_250hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 250 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_300hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 300 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_300hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 300 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_500hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 500 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_500hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 500 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_700hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 700 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_700hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 700 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_850hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 850 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_850hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 850 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_925hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 925 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_925hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 925 hPa (within-footprint standard deviation)
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_1000hPa:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 1000 hPa
+      units: "percent"
+  era5_pressure_ECMWF_relative_humidity_1000hPa_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative humidity at 1000 hPa (within-footprint standard deviation)
+      units: "percent"
   # --- source reader: igbp (resolution 1.0 km) ---
   igbp_MODIS_surface_type:
     dtype: int16
@@ -298,90 +1087,6 @@ variables:
     attributes:
       long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (within-footprint standard deviation)
       units: "1"
-  # --- source reader: ssf (resolution 20.0 km) ---
-  ssf_NOAA20_aerosol_optical_depth:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Aerosol optical depth (CERES SSF)
-      units: "1"
-      valid_range: [0, 8]
-  ssf_NOAA20_aerosol_optical_depth_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Aerosol optical depth (CERES SSF) (within-footprint standard deviation)
-      units: "1"
-  ssf_NOAA20_clear_coverage:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Clear-sky areal coverage
-      units: "percent"
-      valid_range: [0, 100]
-  ssf_NOAA20_clear_coverage_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Clear-sky areal coverage (within-footprint standard deviation)
-      units: "percent"
-  ssf_NOAA20_cloud_optical_depth:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud optical depth (CERES SSF imager layer)
-      units: "1"
-      valid_range: [0, 512]
-  ssf_NOAA20_cloud_optical_depth_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud optical depth (CERES SSF imager layer) (within-footprint standard deviation)
-      units: "1"
-  ssf_NOAA20_cloud_water_particle_radius:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer)
-      units: "um"
-      valid_range: [2, 60]
-  ssf_NOAA20_cloud_water_particle_radius_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation)
-      units: "um"
-  ssf_NOAA20_cloud_ice_particle_radius:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer)
-      units: "um"
-      valid_range: [5, 90]
-  ssf_NOAA20_cloud_ice_particle_radius_standard_deviation:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation)
-      units: "um"
-  ssf_NOAA20_cloud_classification:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES cloud classification code (encoded)
-      valid_range: [0, 32766]
-  ssf_NOAA20_shortwave_adm_type:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES shortwave ADM scene type (encoded)
-      valid_range: [0, 5000]
-  ssf_NOAA20_longwave_adm_type:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: CERES longwave ADM scene type (encoded)
-      valid_range: [0, 5000]
   # --- source reader: viirs_aod (resolution 111.0 km) ---
   viirs_aod_NOAA20_aod_550:
     dtype: float32

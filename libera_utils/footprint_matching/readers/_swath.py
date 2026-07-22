@@ -110,7 +110,24 @@ def apply_fill_and_valid_range(
         arr = np.asarray(raw, dtype=np.float64)
 
     if fill_value is not None:
-        arr[arr == float(fill_value)] = np.nan
+        # Compare against BOTH the given sentinel and its float32 round-trip.
+        # The CERES float fill is written in the file as a float32 (the float32
+        # maximum, 0x7F7FFFFF). Widening that stored value to float64 yields
+        # 3.4028234663852886e+38, which is NOT equal to the decimal literal
+        # 3.4028235e+38 that the readers declare — so a plain
+        # ``arr == float(fill_value)`` test silently misses every fill pixel.
+        # Fields that also declare a ``valid_range`` were masked by the range
+        # test and hid the problem; fields without one (e.g. CLDPIX
+        # ``Top_Cld_Height``) leaked raw 3.4e38 fill into the output.
+        # ``np.float32(...)`` reproduces the stored bit pattern exactly, so the
+        # second comparison matches. Integer sentinels (32767, 127, -1) are
+        # exactly representable in float32, so the extra test is a harmless
+        # duplicate for them.
+        # See https://numpy.org/doc/stable/user/basics.types.html for the
+        # float32/float64 conversion rules behind this.
+        fill_candidates = {float(fill_value), float(np.float32(fill_value))}
+        for candidate in fill_candidates:
+            arr[arr == candidate] = np.nan
 
     if valid_range is not None:
         low, high = float(valid_range[0]), float(valid_range[1])

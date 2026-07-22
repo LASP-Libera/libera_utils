@@ -102,7 +102,7 @@ from libera_utils.footprint_matching.product import (
     fmatch_time_variable,
     load_fmatch_definition,
 )
-from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaVariableDefinition
 
@@ -366,6 +366,7 @@ def build_synthetic_data(
     mode: OperationalMode,
     n_footprints: int | None,
     l1b_passthrough: dict[str, np.ndarray] | None = None,
+    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
 ) -> tuple[dict[str, np.ndarray], str]:
     """Build the full {name: array} data dict for one operational mode.
 
@@ -392,6 +393,10 @@ def build_synthetic_data(
     l1b_passthrough : dict[str, np.ndarray] | None
         Real pass-through arrays from :func:`load_l1b_passthrough`, or ``None``
         for the original fully-synthetic behavior.
+    variant : FmatchVariant
+        Input-availability variant used to resolve the product definition.
+        ``YEAR_ONE`` (default) is production; ``POST_YEAR_ONE`` selects the
+        RBSP-based FMATCH-IMAGER definition.
 
     Returns
     -------
@@ -399,7 +404,7 @@ def build_synthetic_data(
         The data dict (keyed by coordinate/variable name) and the name of the
         time coordinate to pass to ``write_libera_data_product``.
     """
-    definition = load_fmatch_definition(mode)
+    definition = load_fmatch_definition(mode, variant)
     time_variable = fmatch_time_variable(mode)
 
     # Pass-through applies only when we have L1B data AND the mode is indexed on
@@ -437,6 +442,7 @@ def generate_example_product(
     output_dir: Path,
     n_footprints: int | None,
     l1b_passthrough: dict[str, np.ndarray] | None = None,
+    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
 ) -> Path:
     """Generate and write one example NetCDF file for a single operational mode.
 
@@ -453,14 +459,19 @@ def generate_example_product(
     l1b_passthrough : dict[str, np.ndarray] | None
         Real pass-through arrays from :func:`load_l1b_passthrough`, or ``None`` for
         fully synthetic output.
+    variant : FmatchVariant
+        Input-availability variant used to resolve the product definition
+        (``YEAR_ONE`` production default; ``POST_YEAR_ONE`` for the RBSP-based
+        FMATCH-IMAGER definition).
 
     Returns
     -------
     Path
         Path to the written NetCDF file.
     """
-    definition = load_fmatch_definition(mode)
-    data, time_variable = build_synthetic_data(mode, n_footprints, l1b_passthrough)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    definition = load_fmatch_definition(mode, variant)
+    data, time_variable = build_synthetic_data(mode, n_footprints, l1b_passthrough, variant)
 
     # Supply the three required *dynamic* product attributes that every FMATCH
     # definition leaves null (algorithm_version, date_created, input_files - see
@@ -520,6 +531,17 @@ def main() -> None:
             "(default: keep every valid L1B footprint)."
         ),
     )
+    parser.add_argument(
+        "--post-year-one",
+        action="store_true",
+        help=(
+            "Additionally generate the FMATCH-IMAGER post-year-one (RBSP CLDPIX/SSF) "
+            "example product. It is written to a 'post_year_one/' subdirectory of the "
+            "output directory because both FMATCH-IMAGER variants encode the same "
+            "ProductID (and would therefore collide on filename). The default run "
+            "generates only the five production (year-one) definitions."
+        ),
+    )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -539,6 +561,21 @@ def main() -> None:
         used_l1b = l1b_passthrough is not None and fmatch_time_variable(mode) == "RADIOMETER_TIME"
         source = "L1B lat/lon/angles" if used_l1b else "synthetic"
         print(f"  [{mode.value:>22}] ({source:>16}) -> {path.name}")
+
+    if args.post_year_one:
+        # The RBSP-based FMATCH-IMAGER variant, written to a subdirectory so its
+        # (identically named) file cannot clobber the production example above.
+        post_dir = args.output_dir / "post_year_one"
+        path = generate_example_product(
+            OperationalMode.IMAGER,
+            post_dir,
+            args.n_footprints,
+            l1b_passthrough,
+            variant=FmatchVariant.POST_YEAR_ONE,
+        )
+        used_l1b = l1b_passthrough is not None
+        source = "L1B lat/lon/angles" if used_l1b else "synthetic"
+        print(f"  [{OperationalMode.IMAGER.value + ' (post-yr-1)':>22}] ({source:>16}) -> post_year_one/{path.name}")
     print("Done.")
 
 

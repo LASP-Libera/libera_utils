@@ -1,36 +1,59 @@
-"""ERA5 wind speed reader plugin for the footprint matching pipeline.
+"""ERA5 single-level reader plugin for the footprint matching pipeline.
 
-Data source: ECMWF ERA5 Reanalysis (single-level surface wind components)
-- Variables: u10 (10 m U wind component) and v10 (10 m V wind component)
+Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 - Format: NetCDF4 (.nc), distributed via the Copernicus Climate Data Store
 - Spatial resolution: ~0.25° (~28 km); stored as 25 km in RESOLUTION_KM
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90)
 - Temporal resolution: Hourly
-- Temporal coverage: 1940-present
+- Temporal coverage: 1940-present. ERA5 final data lags real time by ~5 days
+  (the preliminary ERA5T stream lags ~1 day), which is what makes ERA5 usable
+  as the year-one substitute for the RBSP cloud products (see FmatchVariant).
+
+Variables read
+--------------
+Wind components (every product, from mission start):
+- u10 / v10: 10 m U/V wind components
+
+Year-one FMATCH-IMAGER substitutes for the unavailable RBSP inputs
+(``required_variant=YEAR_ONE``, ``required_mode=IMAGER``):
+- t2m: 2 m temperature
+- d2m: 2 m dewpoint temperature
+- sp:  surface pressure
+- z:   geopotential (surface; orography × g)
+- fal: forecast albedo
 
 References
 ----------
 CDS dataset:  https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels
 CDS API docs: https://cds.climate.copernicus.eu/how-to-api
 Variable list:https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
-u10 variable: https://apps.ecmwf.int/codes/grib/param-db?id=165
-v10 variable: https://apps.ecmwf.int/codes/grib/param-db?id=166
+Param DB (id): u10=165, v10=166, t2m=167, d2m=168, sp=134, z=129, fal=243
+              e.g. https://apps.ecmwf.int/codes/grib/param-db?id=165
 """
 
 from __future__ import annotations
 
+import abc
 from functools import cached_property
 
 import numpy as np
 import xarray as xr
 
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, OperationalMode, VariableSpec
 
-# ERA5 variable names as stored in CDS NetCDF4 files.
-# These must match the dimension/variable names in the downloaded .nc files.
-_ERA5_U10_VAR: str = "u10"
-_ERA5_V10_VAR: str = "v10"
+# Ordered mapping of FMATCH spec name -> ERA5 variable name as stored in CDS
+# NetCDF4 files. The order here defines axis 0 of the reader's data array and
+# MUST match the order of the VARIABLES tuple below (guarded by a unit test).
+_ERA5_SINGLE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
+    ("wind_u10", "u10"),
+    ("wind_v10", "v10"),
+    ("temperature_2m", "t2m"),
+    ("dew_point_temperature_2m", "d2m"),
+    ("surface_pressure", "sp"),
+    ("surface_geopotential", "z"),
+    ("forecast_albedo", "fal"),
+)
 
 # The ERA5 latitude dimension is stored in DESCENDING order (90° → -90°) in
 # files downloaded from the CDS. xarray.sel() works correctly regardless of
@@ -40,113 +63,95 @@ _ERA5_V10_VAR: str = "v10"
 _ERA5_LAT_DESCENDING: bool = True
 
 
-class ERA5Reader(GriddedDataReader):
-    """Read ERA5 10-m wind components (u10, v10) from a NetCDF4 file.
+class ERA5ReaderBase(GriddedDataReader, abc.ABC):
+    """Shared machinery for the ERA5 reader family (single-level and pressure-level).
 
-    Returns a 3-D data array of shape ``(2, n_lat, n_lon)`` where axis 0
-    corresponds to [u10, v10] in ``VARIABLES`` order.
+    Both ERA5 CDS datasets share the same file conventions — a regular global
+    lat/lon grid with descending latitudes, longitudes in either −180..180 or
+    0..360 convention, and a time-like leading dimension (``time`` or the newer
+    ``valid_time``). This intermediate class owns:
 
-    Class Attributes
-    ----------------
-    READER_KEY : str
-        Registry key ``"era5"``.
-    RESOLUTION_KM : float
-        25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
-    REQUIRED_MODE : OperationalMode
-        Active in all modes starting from CAM.
-    VARIABLES : tuple[VariableSpec, ...]
-        Two variables: ``"wind_u10"`` and ``"wind_v10"`` (continuous, float32).
+    * the per-instance cache of the full normalized global grid
+      (:attr:`_native_grid`, populated once by the subclass hook
+      :meth:`_read_native_grid`), and
+    * the inclusive bounding-box slicing of that cached grid
+      (:meth:`_load_spatial_region`).
 
-    Parameters
-    ----------
-    file_path : Path
-        Path to an ERA5 NetCDF4 file containing ``u10`` and ``v10`` variables.
+    Subclasses implement :meth:`_read_native_grid` to open their specific CDS
+    file layout and return the whole normalized global grid.
+
+    This class is abstract, so ``GriddedDataReader.__init_subclass__`` skips it
+    during reader registration; only the concrete subclasses register.
     """
-
-    READER_KEY: str = "era5"
-    # ERA5 is a reanalysis (no single instrument); use the producing center so the
-    # `<source>_<instrument>_<var>` naming stays uniform across every source.
-    INSTRUMENT: str = "ECMWF"
-    RESOLUTION_KM: float = 25.0
-    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
-    VARIABLES: tuple[VariableSpec, ...] = (
-        VariableSpec(
-            name="wind_u10",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="wind_v10",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-    )
 
     @cached_property
     def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read the full ERA5 u10/v10 grid once and cache it on the instance.
+        """Read the full ERA5 grid once and cache it on the instance.
 
-        Opens the NetCDF4 file, normalizes longitude to −180..180, drops any
-        time-like dimension (first step only), and returns the whole global grid
-        with latitudes in ASCENDING order. Cached per reader instance so the file
-        is opened and read once, then every tile slices these in-memory arrays
-        (see :meth:`_load_spatial_region`) instead of re-opening the file.
+        Cached per reader instance so the file is opened and read once, then
+        every tile slices these in-memory arrays (see :meth:`_load_spatial_region`)
+        instead of re-opening the file.
 
         Returns
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(2, n_lat, n_lon)`` — [u10, v10] — and ``lats`` (ASCENDING) / ``lons``
-            are float64 1-D coordinate arrays, both sorted ascending.
-
-        Notes
-        -----
-        If the ERA5 file has a ``time`` dimension, only the first time step is
-        loaded. Callers that need a specific time slice should pre-filter the
-        file (e.g., via CDO or xarray ``isel``) before passing it to this reader.
+            ``(n_specs, n_lat, n_lon)`` — axis 0 in ``VARIABLES`` order — and
+            ``lats`` (ASCENDING) / ``lons`` are float64 1-D coordinate arrays,
+            both sorted ascending.
         """
-        ds = xr.open_dataset(self._file_path, engine="netcdf4")
-        try:
-            # ERA5 files from CDS can use either –180→180 or 0→360 longitude convention
-            # depending on how the download was configured. Normalize to –180→180 so that
-            # the bbox slice (which always uses –180→180) works correctly.
-            if float(ds["longitude"].min()) >= 0:
-                ds = ds.assign_coords(longitude=((ds["longitude"] + 180) % 360) - 180).sortby("longitude")
+        return self._read_native_grid()
 
-            u10 = ds[_ERA5_U10_VAR]
-            v10 = ds[_ERA5_V10_VAR]
+    @abc.abstractmethod
+    def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Open the file and return the whole normalized global grid.
 
-            # Drop any time-like dimension (covers both "time" and "valid_time", which
-            # the CDS API uses in newer downloads). Take the first time step only.
-            time_dims = [d for d in u10.dims if "time" in d]
-            if time_dims:
-                u10 = u10.isel({d: 0 for d in time_dims})
-                v10 = v10.isel({d: 0 for d in time_dims})
+        Implementations must return ``(data, lats, lons)`` with data float32
+        shape ``(n_specs, n_lat, n_lon)`` (axis 0 matching ``VARIABLES`` order),
+        latitudes ASCENDING, and longitudes normalized to −180..180 ascending.
+        """
 
-            lats = u10["latitude"].values.astype(np.float64)
-            lons = u10["longitude"].values.astype(np.float64)
-            u10_arr = u10.values.astype(np.float32)
-            v10_arr = v10.values.astype(np.float32)
+    @staticmethod
+    def _normalize_longitudes(ds: xr.Dataset) -> xr.Dataset:
+        """Normalize a CDS dataset's longitude coordinate to −180..180.
 
-            if _ERA5_LAT_DESCENDING and lats.size > 1 and lats[0] > lats[-1]:
-                # Flip to ascending order for consistency with other readers.
-                lats = lats[::-1]
-                u10_arr = u10_arr[::-1, :]
-                v10_arr = v10_arr[::-1, :]
+        ERA5 files from the CDS can use either −180→180 or 0→360 longitude
+        convention depending on how the download was configured. Normalizing to
+        −180→180 means the bbox slice (which always uses −180→180) works
+        correctly for both.
+        """
+        if float(ds["longitude"].min()) >= 0:
+            ds = ds.assign_coords(longitude=((ds["longitude"] + 180) % 360) - 180).sortby("longitude")
+        return ds
 
-            # Stack into (2, n_lat, n_lon) — axis 0 matches VARIABLES ordering.
-            data = np.stack([u10_arr, v10_arr], axis=0)
-        finally:
-            ds.close()
+    @staticmethod
+    def _first_time_step(data_array: xr.DataArray) -> xr.DataArray:
+        """Drop any time-like dimension from a DataArray, keeping the first step.
 
-        return data, lats, lons
+        Covers both ``time`` and ``valid_time`` (which the CDS API uses in newer
+        downloads). Callers that need a specific time slice should pre-filter the
+        file (e.g., via CDO or xarray ``isel``) before passing it to the reader.
+        """
+        time_dims = [d for d in data_array.dims if "time" in d]
+        if time_dims:
+            data_array = data_array.isel({d: 0 for d in time_dims})
+        return data_array
+
+    @staticmethod
+    def _flip_lats_ascending(lats: np.ndarray, layers: list[np.ndarray]) -> tuple[np.ndarray, list[np.ndarray]]:
+        """Return lats (and each 2-D layer) flipped to ASCENDING latitude order.
+
+        ERA5 stores latitudes descending (see ``_ERA5_LAT_DESCENDING``); every
+        other reader in the pipeline emits ascending latitudes, so we flip here
+        for consistency. No-op if the coordinate is already ascending.
+        """
+        if _ERA5_LAT_DESCENDING and lats.size > 1 and lats[0] > lats[-1]:
+            lats = lats[::-1]
+            layers = [layer[::-1, :] for layer in layers]
+        return lats, layers
 
     def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Slice the cached ERA5 u10/v10 grid to ``bbox``.
+        """Slice the cached ERA5 grid to ``bbox``.
 
         Slices the full ascending-latitude grid from :attr:`_native_grid` with an
         inclusive bounding-box mask (matching xarray's endpoint-inclusive ``.sel``
@@ -162,7 +167,7 @@ class ERA5Reader(GriddedDataReader):
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(data, lats, lons)`` where:
 
-            - ``data`` is float32 shape ``(2, n_lat, n_lon)`` — [u10, v10].
+            - ``data`` is float32 shape ``(n_specs, n_lat, n_lon)``.
             - ``lats`` is float64 shape ``(n_lat,)``, ASCENDING order.
             - ``lons`` is float64 shape ``(n_lon,)``.
         """
@@ -175,3 +180,150 @@ class ERA5Reader(GriddedDataReader):
 
         sub = data[:, lat_mask, :][:, :, lon_mask]
         return sub, lats[lat_mask], lons[lon_mask]
+
+
+class ERA5Reader(ERA5ReaderBase):
+    """Read ERA5 single-level fields from a CDS NetCDF4 file.
+
+    Returns a 3-D data array of shape ``(7, n_lat, n_lon)`` where axis 0
+    corresponds to ``_ERA5_SINGLE_LEVEL_VARIABLES`` / ``VARIABLES`` order.
+
+    Class Attributes
+    ----------------
+    READER_KEY : str
+        Registry key ``"era5"``.
+    RESOLUTION_KM : float
+        25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
+    REQUIRED_MODE : OperationalMode
+        Active in all modes starting from CAM (the winds are needed everywhere;
+        the year-one substitute fields carry their own per-spec gating).
+    VARIABLES : tuple[VariableSpec, ...]
+        Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
+        are unrestricted; the five year-one substitute fields are gated to
+        ``required_mode=IMAGER`` + ``required_variant=YEAR_ONE`` so they appear
+        only in the year-one FMATCH-IMAGER product.
+
+    Parameters
+    ----------
+    file_path : Path
+        Path to an ERA5 single-levels NetCDF4 file containing all the variables
+        in ``_ERA5_SINGLE_LEVEL_VARIABLES``.
+    """
+
+    READER_KEY: str = "era5"
+    # ERA5 is a reanalysis (no single instrument); use the producing center so the
+    # `<source>_<instrument>_<var>` naming stays uniform across every source.
+    INSTRUMENT: str = "ECMWF"
+    RESOLUTION_KM: float = 25.0
+    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
+    VARIABLES: tuple[VariableSpec, ...] = (
+        # --- Wind components: every product, every variant, from mission start ---
+        VariableSpec(
+            name="wind_u10",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        VariableSpec(
+            name="wind_v10",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.CAM,
+            n_categories=None,
+        ),
+        # --- Year-one FMATCH-IMAGER substitutes for the unavailable RBSP inputs.
+        # Gated per-spec (not per-reader) so the wind components above keep
+        # flowing to the CAM products in every variant.
+        VariableSpec(
+            name="temperature_2m",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            n_categories=None,
+            required_variant=FmatchVariant.YEAR_ONE,
+        ),
+        VariableSpec(
+            name="dew_point_temperature_2m",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            n_categories=None,
+            required_variant=FmatchVariant.YEAR_ONE,
+        ),
+        VariableSpec(
+            name="surface_pressure",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            n_categories=None,
+            required_variant=FmatchVariant.YEAR_ONE,
+        ),
+        VariableSpec(
+            name="surface_geopotential",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            n_categories=None,
+            required_variant=FmatchVariant.YEAR_ONE,
+        ),
+        VariableSpec(
+            name="forecast_albedo",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            n_categories=None,
+            required_variant=FmatchVariant.YEAR_ONE,
+        ),
+    )
+
+    def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read every single-level variable from the file into one stacked grid.
+
+        Opens the NetCDF4 file, normalizes longitude to −180..180, drops any
+        time-like dimension (first step only), and returns the whole global grid
+        with latitudes in ASCENDING order.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(data, lats, lons)`` with ``data`` float32 shape ``(7, n_lat, n_lon)``
+            — axis 0 in ``_ERA5_SINGLE_LEVEL_VARIABLES`` order.
+
+        Raises
+        ------
+        KeyError
+            If the file is missing any of the expected ERA5 variables (e.g. a
+            download configured with only a subset of the required fields).
+        """
+        ds = xr.open_dataset(self._file_path, engine="netcdf4")
+        try:
+            ds = self._normalize_longitudes(ds)
+
+            missing = [nc_name for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES if nc_name not in ds]
+            if missing:
+                raise KeyError(
+                    f"ERA5 single-levels file {self._file_path} is missing variable(s) {missing}. "
+                    f"The CDS download must include every variable in "
+                    f"{[nc for _, nc in _ERA5_SINGLE_LEVEL_VARIABLES]}."
+                )
+
+            layers: list[np.ndarray] = []
+            lats: np.ndarray | None = None
+            lons: np.ndarray | None = None
+            for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES:
+                da = self._first_time_step(ds[nc_name])
+                if lats is None:
+                    # All variables share the same grid; read the coordinates once.
+                    lats = da["latitude"].values.astype(np.float64)
+                    lons = da["longitude"].values.astype(np.float64)
+                layers.append(da.values.astype(np.float32))
+
+            lats, layers = self._flip_lats_ascending(lats, layers)
+
+            # Stack into (n_specs, n_lat, n_lon) — axis 0 matches VARIABLES ordering.
+            data = np.stack(layers, axis=0)
+        finally:
+            ds.close()
+
+        return data, lats, lons

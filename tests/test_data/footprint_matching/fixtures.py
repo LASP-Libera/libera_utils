@@ -18,8 +18,12 @@ NISE Sea Ice (HDF-EOS4):
     Example filename: NISE_SSMISF18_20260115.HDFEOS
     EarthData login required: https://urs.earthdata.nasa.gov/
 
-ERA5 Wind (NetCDF4):
+ERA5 single-level fields (NetCDF4):
     Copernicus CDS: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels
+    CDS login required: https://cds.climate.copernicus.eu/user/register
+
+ERA5 pressure-level fields (NetCDF4):
+    Copernicus CDS: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels
     CDS login required: https://cds.climate.copernicus.eu/user/register
 
 VIIRS Cloud CLDPROP_D3 (NetCDF4 with groups):
@@ -43,12 +47,85 @@ CERES CLDPIX (NetCDF4, imager-pixel swath):
     NASA CERES: https://ceres.larc.nasa.gov/data/
     Example filename: CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
+
+# Constant fill values for the five non-wind ERA5 single-level variables written
+# by the ERA5 fixtures. Chosen to be physically plausible AND mutually distinct
+# so tests can assert that each output layer came from the right file variable.
+# Winds keep their historical u10_fill/v10_fill keyword parameters.
+ERA5_SINGLE_LEVEL_FILLS: dict[str, float] = {
+    "t2m": 285.0,  # 2 m temperature (K)
+    "d2m": 280.0,  # 2 m dewpoint temperature (K)
+    "sp": 101325.0,  # surface pressure (Pa)
+    "z": 500.0,  # surface geopotential (m^2/s^2)
+    "fal": 0.3,  # forecast albedo (0-1)
+}
+
+# Metadata written on each single-level fixture variable, mirroring real CDS files.
+_ERA5_SINGLE_LEVEL_ATTRS: dict[str, dict[str, str]] = {
+    "u10": {"units": "m s**-1", "long_name": "10 metre U wind component"},
+    "v10": {"units": "m s**-1", "long_name": "10 metre V wind component"},
+    "t2m": {"units": "K", "long_name": "2 metre temperature"},
+    "d2m": {"units": "K", "long_name": "2 metre dewpoint temperature"},
+    "sp": {"units": "Pa", "long_name": "Surface pressure"},
+    "z": {"units": "m**2 s**-2", "long_name": "Geopotential"},
+    "fal": {"units": "(0 - 1)", "long_name": "Forecast albedo"},
+}
+
+
+def _era5_single_level_dataset(
+    lat_min: float,
+    lat_max: float,
+    lon_min: float,
+    lon_max: float,
+    n_lat: int,
+    n_lon: int,
+    u10_fill: float,
+    v10_fill: float,
+    with_valid_time: bool,
+) -> xr.Dataset:
+    """Build the in-memory Dataset shared by the two single-level fixture makers.
+
+    Contains all seven single-level variables the ERA5Reader expects (u10, v10,
+    t2m, d2m, sp, z, fal), each a constant-valued grid, with latitudes stored
+    DESCENDING (real ERA5 convention). When ``with_valid_time`` is True, every
+    variable gains a leading length-1 ``valid_time`` dimension, matching files
+    produced by the new CDS API.
+    """
+    lats = np.linspace(lat_max, lat_min, n_lat)  # descending, real ERA5 convention
+    lons = np.linspace(lon_min, lon_max, n_lon)
+
+    fills = {"u10": u10_fill, "v10": v10_fill, **ERA5_SINGLE_LEVEL_FILLS}
+    shape = (1, n_lat, n_lon) if with_valid_time else (n_lat, n_lon)
+    dims = ["valid_time", "latitude", "longitude"] if with_valid_time else ["latitude", "longitude"]
+
+    coords = {
+        "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
+        "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
+    }
+    if with_valid_time:
+        coords["valid_time"] = xr.DataArray(
+            np.array(["2026-01-01T00:00:00"], dtype="datetime64[ns]"),
+            dims=["valid_time"],
+        )
+
+    return xr.Dataset(
+        {
+            name: xr.DataArray(
+                np.full(shape, fill, dtype=np.float32),
+                dims=dims,
+                attrs=_ERA5_SINGLE_LEVEL_ATTRS[name],
+            )
+            for name, fill in fills.items()
+        },
+        coords=coords,
+    )
 
 
 def make_era5_netcdf_fixture(
@@ -62,11 +139,13 @@ def make_era5_netcdf_fixture(
     u10_fill: float = 2.5,
     v10_fill: float = -1.5,
 ) -> Path:
-    """Write a synthetic ERA5 NetCDF4 file to ``tmp_path``.
+    """Write a synthetic ERA5 single-levels NetCDF4 file to ``tmp_path``.
 
-    The real ERA5 files from CDS contain u10 and v10 variables on a global
+    The real ERA5 files from CDS contain the single-level variables on a global
     lat/lon grid with the latitude dimension in DESCENDING order (90 → -90).
-    This factory reproduces that convention in a small grid for testing.
+    This factory reproduces that convention in a small grid for testing, writing
+    all seven variables the ERA5Reader expects (u10, v10, t2m, d2m, sp, z, fal).
+    The non-wind variables carry the constant ``ERA5_SINGLE_LEVEL_FILLS`` values.
 
     The real file format reference:
     https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
@@ -92,32 +171,9 @@ def make_era5_netcdf_fixture(
     Path
         Path to the created NetCDF4 fixture file.
     """
-    # Real ERA5 has latitudes in DESCENDING order; replicate here.
-    lats = np.linspace(lat_max, lat_min, n_lat)  # descending
-    lons = np.linspace(lon_min, lon_max, n_lon)
-
-    u10_data = np.full((n_lat, n_lon), u10_fill, dtype=np.float32)
-    v10_data = np.full((n_lat, n_lon), v10_fill, dtype=np.float32)
-
-    ds = xr.Dataset(
-        {
-            "u10": xr.DataArray(
-                u10_data,
-                dims=["latitude", "longitude"],
-                attrs={"units": "m s**-1", "long_name": "10 metre U wind component"},
-            ),
-            "v10": xr.DataArray(
-                v10_data,
-                dims=["latitude", "longitude"],
-                attrs={"units": "m s**-1", "long_name": "10 metre V wind component"},
-            ),
-        },
-        coords={
-            "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
-            "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
-        },
+    ds = _era5_single_level_dataset(
+        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, with_valid_time=False
     )
-
     out_path = tmp_path / "era5_fixture.nc"
     ds.to_netcdf(out_path)
     return out_path
@@ -134,12 +190,12 @@ def make_era5_valid_time_fixture(
     u10_fill: float = 2.5,
     v10_fill: float = -1.5,
 ) -> Path:
-    """Write a synthetic ERA5 NetCDF4 file with a ``valid_time`` time dimension.
+    """Write a synthetic ERA5 single-levels NetCDF4 file with a ``valid_time`` dimension.
 
-    Identical to :func:`make_era5_netcdf_fixture` except that the u10/v10
-    variables have an extra ``valid_time`` dimension of length 1, matching the
-    format produced by the new CDS API. This exercises the reader's time-dim
-    detection logic which uses a substring match on ``"time"``.
+    Identical to :func:`make_era5_netcdf_fixture` except that every variable has
+    an extra ``valid_time`` dimension of length 1, matching the format produced
+    by the new CDS API. This exercises the reader's time-dim detection logic
+    which uses a substring match on ``"time"``.
 
     Parameters
     ----------
@@ -161,37 +217,117 @@ def make_era5_valid_time_fixture(
     Path
         Path to the created NetCDF4 fixture file.
     """
-    lats = np.linspace(lat_max, lat_min, n_lat)  # descending
-    lons = np.linspace(lon_min, lon_max, n_lon)
+    ds = _era5_single_level_dataset(
+        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, with_valid_time=True
+    )
+    out_path = tmp_path / "era5_valid_time_fixture.nc"
+    ds.to_netcdf(out_path)
+    return out_path
 
-    # Shape: (1, n_lat, n_lon) with a leading valid_time dimension.
-    u10_data = np.full((1, n_lat, n_lon), u10_fill, dtype=np.float32)
-    v10_data = np.full((1, n_lat, n_lon), v10_fill, dtype=np.float32)
 
-    ds = xr.Dataset(
-        {
-            "u10": xr.DataArray(
-                u10_data,
-                dims=["valid_time", "latitude", "longitude"],
-                attrs={"units": "m s**-1", "long_name": "10 metre U wind component"},
-            ),
-            "v10": xr.DataArray(
-                v10_data,
-                dims=["valid_time", "latitude", "longitude"],
-                attrs={"units": "m s**-1", "long_name": "10 metre V wind component"},
-            ),
-        },
-        coords={
-            "valid_time": xr.DataArray(
-                np.array(["2026-01-01T00:00:00"], dtype="datetime64[ns]"),
-                dims=["valid_time"],
-            ),
-            "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
-            "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
-        },
+def era5_pressure_fixture_value(var_index: int, level: float) -> float:
+    """Deterministic fixture value for pressure-level variable ``var_index`` at ``level``.
+
+    ``var_index`` is the position in ``_ERA5_PRESSURE_LEVEL_VARIABLES`` (0 = t,
+    1 = z, ...). The formula keeps every (variable, level) layer distinct so
+    tests can assert exact layer ordering in the stacked output array.
+    """
+    return float(var_index * 10000 + level)
+
+
+def make_era5_pressure_netcdf_fixture(
+    tmp_path: Path,
+    lat_min: float = 0.0,
+    lat_max: float = 2.0,
+    lon_min: float = 10.0,
+    lon_max: float = 12.0,
+    n_lat: int = 4,
+    n_lon: int = 4,
+    levels: tuple[int, ...] | None = None,
+    with_valid_time: bool = True,
+) -> Path:
+    """Write a synthetic ERA5 pressure-levels NetCDF4 file to ``tmp_path``.
+
+    Replicates the structure of a real CDS pressure-levels download: variables
+    ``t``, ``z``, ``o3``, ``q``, ``r`` on ``(valid_time, pressure_level,
+    latitude, longitude)`` with latitudes DESCENDING. Each (variable, level)
+    layer is filled with the deterministic constant
+    :func:`era5_pressure_fixture_value` so tests can verify exact layer ordering
+    in the reader's stacked output.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        pytest ``tmp_path`` fixture directory.
+    lat_min, lat_max : float
+        Latitude range (stored DESCENDING). Default: 0 → 2° N.
+    lon_min, lon_max : float
+        Longitude range. Default: 10 → 12° E.
+    n_lat, n_lon : int
+        Number of grid points in each dimension. Default 4.
+    levels : tuple[int, ...] | None
+        Pressure levels (hPa) to write, stored descending like real CDS files
+        (1000 first). Defaults to the reader's configured ``_ERA5_PRESSURE_LEVELS``
+        so the fixture always satisfies the reader; pass a subset to exercise the
+        missing-level error path.
+    with_valid_time : bool
+        Write the leading length-1 ``valid_time`` dimension (new CDS API format).
+        Default True; False writes plain (pressure_level, latitude, longitude)
+        variables.
+
+    Returns
+    -------
+    Path
+        Path to the created NetCDF4 fixture file.
+    """
+    # Import here so the fixtures module does not require the reader at import
+    # time (and so the default always tracks the reader's configured levels).
+    from libera_utils.footprint_matching.readers.era5_pressure import (  # noqa: PLC0415
+        _ERA5_PRESSURE_LEVEL_VARIABLES,
+        _ERA5_PRESSURE_LEVELS,
     )
 
-    out_path = tmp_path / "era5_valid_time_fixture.nc"
+    if levels is None:
+        levels = _ERA5_PRESSURE_LEVELS
+    # Real CDS files store pressure levels descending (1000 → 1); replicate that
+    # to prove the reader selects by value, not by position.
+    stored_levels = np.array(sorted(levels, reverse=True), dtype=np.float64)
+
+    lats = np.linspace(lat_max, lat_min, n_lat)  # descending, real ERA5 convention
+    lons = np.linspace(lon_min, lon_max, n_lon)
+
+    n_lev = stored_levels.size
+    shape = (1, n_lev, n_lat, n_lon) if with_valid_time else (n_lev, n_lat, n_lon)
+    dims = (
+        ["valid_time", "pressure_level", "latitude", "longitude"]
+        if with_valid_time
+        else ["pressure_level", "latitude", "longitude"]
+    )
+
+    data_vars = {}
+    for var_index, (_, nc_name) in enumerate(_ERA5_PRESSURE_LEVEL_VARIABLES):
+        data = np.empty(shape, dtype=np.float32)
+        for level_index, level in enumerate(stored_levels):
+            value = era5_pressure_fixture_value(var_index, float(level))
+            if with_valid_time:
+                data[0, level_index, :, :] = value
+            else:
+                data[level_index, :, :] = value
+        data_vars[nc_name] = xr.DataArray(data, dims=dims)
+
+    coords = {
+        "pressure_level": xr.DataArray(stored_levels, dims=["pressure_level"], attrs={"units": "hPa"}),
+        "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
+        "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
+    }
+    if with_valid_time:
+        coords["valid_time"] = xr.DataArray(
+            np.array(["2026-01-01T00:00:00"], dtype="datetime64[ns]"),
+            dims=["valid_time"],
+        )
+
+    ds = xr.Dataset(data_vars, coords=coords)
+    out_path = tmp_path / "era5_pressure_fixture.nc"
     ds.to_netcdf(out_path)
     return out_path
 
@@ -427,7 +563,9 @@ def make_aod_noaa20_fixture(
         grp = ds.createGroup("NOAA20_VIIRS")
         # Note: dimension order (Latitude, Longitude) — matches the real product.
         aod_var = grp.createVariable(
-            "Aerosol_Optical_Thickness_550_Land_Ocean", "f4", ("Latitude", "Longitude"),
+            "Aerosol_Optical_Thickness_550_Land_Ocean",
+            "f4",
+            ("Latitude", "Longitude"),
             fill_value=-999.0,
         )
         data = np.full((n_lat, n_lon), aod_fill, dtype=np.float32)
@@ -441,7 +579,9 @@ def make_aod_noaa20_fixture(
         if merged_decoy_value is not None:
             decoy_grp = ds.createGroup("Merged")
             decoy_var = decoy_grp.createVariable(
-                "Aerosol_Optical_Thickness_550_Land_Ocean", "f4", ("Latitude", "Longitude"),
+                "Aerosol_Optical_Thickness_550_Land_Ocean",
+                "f4",
+                ("Latitude", "Longitude"),
                 fill_value=-999.0,
             )
             decoy_var[:] = np.full((n_lat, n_lon), merged_decoy_value, dtype=np.float32)
@@ -524,11 +664,9 @@ def make_ssf_fixture(
     # Water and ice particle radii use distinct deterministic values so each
     # variable can be asserted independently in tests.
     if cloud_water_particle_radius_lower is None:
-        cloud_water_particle_radius_lower = np.array(
-            [5.0, 6.0, 7.0, 8.0, 9.0, 10.0], dtype=np.float32)[:n]
+        cloud_water_particle_radius_lower = np.array([5.0, 6.0, 7.0, 8.0, 9.0, 10.0], dtype=np.float32)[:n]
     if cloud_ice_particle_radius_lower is None:
-        cloud_ice_particle_radius_lower = np.array(
-            [20.0, 25.0, 30.0, 35.0, 40.0, 45.0], dtype=np.float32)[:n]
+        cloud_ice_particle_radius_lower = np.array([20.0, 25.0, 30.0, 35.0, 40.0, 45.0], dtype=np.float32)[:n]
     if cloud_classification is None:
         # Four of one code, one of another → modal code is 1001.
         cloud_classification = np.array([1001, 1001, 1001, 1001, 1191, 2000], dtype=np.int16)[:n]
@@ -570,14 +708,15 @@ def make_ssf_fixture(
         _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
 
         cif = ds.createGroup("Cloudy_Imager_Footprint_Layer")
-        _add_lower_upper(cif, "cloud_optical_depth_mean",
-                         cloud_optical_depth_lower, fill_f, (0.0, 512.0))
+        _add_lower_upper(cif, "cloud_optical_depth_mean", cloud_optical_depth_lower, fill_f, (0.0, 512.0))
         # Phase-separated effective particle radii. SSF does not provide a single
         # blended radius — water and ice clouds are retrieved independently at 3.7 μm.
-        _add_lower_upper(cif, "cloud_water_particle_radius_37um_mean",
-                         cloud_water_particle_radius_lower, fill_f, (2.0, 60.0))
-        _add_lower_upper(cif, "cloud_ice_particle_radius_37um_mean",
-                         cloud_ice_particle_radius_lower, fill_f, (5.0, 90.0))
+        _add_lower_upper(
+            cif, "cloud_water_particle_radius_37um_mean", cloud_water_particle_radius_lower, fill_f, (2.0, 60.0)
+        )
+        _add_lower_upper(
+            cif, "cloud_ice_particle_radius_37um_mean", cloud_ice_particle_radius_lower, fill_f, (5.0, 90.0)
+        )
 
         scn = ds.createGroup("Scene_Type")
         _add(scn, "cloud_classification", cloud_classification.astype(np.int16), fill_i, (0, 32766))
@@ -596,8 +735,12 @@ def make_cldpix_fixture(
 
     Replicates the flat, 2-D ``(Scanlines, Pixels)`` structure of the real
     CLDPIX product:
-    - 2-D ``Latitude`` / ``Longitude`` arrays (**longitude in the 0..360
-      convention**)
+    - 2-D ``Latitude`` / ``Longitude`` arrays, written in the real product's
+      geolocation conventions: ``Latitude`` holds **colatitude** (0° = North
+      Pole → 180° = South Pole, ``valid_range`` ``[0, 180]``) and ``Longitude``
+      is in the **0..360 convention**. The ``lats`` argument below is given as
+      an ordinary −90..90 latitude and converted on write, so tests can express
+      their expectations in normal latitudes.
     - A minimal set of float cloud variables (fill ``3.4028235e38``) and int8
       categorical variables (fill ``127``)
     - ``Eff_Cld_Pressure`` is written with a **descending** ``valid_range``
@@ -613,9 +756,10 @@ def make_cldpix_fixture(
     tmp_path : Path
         pytest ``tmp_path`` fixture directory.
     lats, lons_0360 : np.ndarray, optional
-        2-D ``(Scanlines, Pixels)`` geolocation arrays. ``lons_0360`` is in the
-        0..360 convention. Defaults place all pixels near lat ≈ 40°, lon ≈ −15°
-        (written as 345° in the file).
+        2-D ``(Scanlines, Pixels)`` geolocation arrays. ``lats`` is given as a
+        true −90..90 latitude (converted to colatitude on write); ``lons_0360``
+        is in the 0..360 convention. Defaults place all pixels near lat ≈ 40°,
+        lon ≈ −15° (written as colatitude 50° and longitude 345° in the file).
 
     Returns
     -------
@@ -650,7 +794,11 @@ def make_cldpix_fixture(
             if valid_range is not None:
                 var.valid_range = np.array(valid_range, dtype=data.dtype)
 
-        _add("Latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
+        # Real CLDPIX files store colatitude under the name "Latitude", with a
+        # [0, 180] valid_range. Convert the caller's true latitudes so the
+        # fixture exercises the reader's colatitude → latitude conversion.
+        colatitudes = 90.0 - lats.astype(np.float32)
+        _add("Latitude", colatitudes.astype(np.float32), fill_f, (0.0, 180.0))
         _add("Longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
 
         # Continuous cloud properties (constant values for easy assertions).
@@ -660,7 +808,13 @@ def make_cldpix_fixture(
         _add("Eff_Cld_Height", np.full(shape, 5.0, np.float32), fill_f, (0.0, 18.0))
         # Reversed valid_range exactly like the real file.
         _add("Eff_Cld_Pressure", np.full(shape, 800.0, np.float32), fill_f, (1100.0, 10.0))
-        _add("Top_Cld_Height", np.full(shape, 6.0, np.float32), fill_f)
+        # Top_Cld_Height is the only field the reader configures with no
+        # valid_range, so its fill pixels can only be caught by the fill-value
+        # test. One pixel is set to the float32 fill sentinel to exercise that
+        # path (see test_top_cloud_height_fill_is_dropped).
+        top_height = np.full(shape, 6.0, np.float32)
+        top_height.flat[0] = fill_f
+        _add("Top_Cld_Height", top_height, fill_f)
         # Effective cloud particle radius (μm) — blended water+ice value from
         # the CERES retrieval algorithm. Constant 10.0 μm for easy assertions.
         _add("Cld_Radius", np.full(shape, 10.0, np.float32), fill_f, (2.0, 60.0))

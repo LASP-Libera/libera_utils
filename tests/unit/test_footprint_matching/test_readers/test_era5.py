@@ -13,9 +13,27 @@ from __future__ import annotations
 
 import numpy as np
 
-from libera_utils.footprint_matching.readers.era5 import ERA5Reader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
-from tests.test_data.footprint_matching.fixtures import make_era5_netcdf_fixture
+from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
+from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    FmatchVariant,
+    GridTile,
+    OperationalMode,
+    TileKey,
+)
+from tests.test_data.footprint_matching.fixtures import (
+    ERA5_SINGLE_LEVEL_FILLS,
+    make_era5_netcdf_fixture,
+)
+
+# The five year-one substitute fields added alongside the original winds.
+_YEAR_ONE_SPEC_NAMES = (
+    "temperature_2m",
+    "dew_point_temperature_2m",
+    "surface_pressure",
+    "surface_geopotential",
+    "forecast_albedo",
+)
 
 
 class TestERA5ReaderClassAttributes:
@@ -28,13 +46,33 @@ class TestERA5ReaderClassAttributes:
     def test_required_mode_is_cam(self):
         assert ERA5Reader.REQUIRED_MODE == OperationalMode.CAM
 
-    def test_variables_has_two_entries(self):
-        assert len(ERA5Reader.VARIABLES) == 2
+    def test_reader_active_in_every_variant(self):
+        # The reader itself must stay unrestricted (the winds feed every product);
+        # only the year-one substitute *specs* are variant-gated.
+        assert ERA5Reader.REQUIRED_VARIANT is None
+
+    def test_variables_has_seven_entries(self):
+        assert len(ERA5Reader.VARIABLES) == 7
 
     def test_variable_names(self):
         names = [v.name for v in ERA5Reader.VARIABLES]
-        assert "wind_u10" in names
-        assert "wind_v10" in names
+        assert names == ["wind_u10", "wind_v10", *_YEAR_ONE_SPEC_NAMES]
+
+    def test_variables_order_matches_file_mapping(self):
+        # Axis 0 of the data array follows _ERA5_SINGLE_LEVEL_VARIABLES, which
+        # must therefore agree with the VARIABLES tuple order exactly.
+        assert [v.name for v in ERA5Reader.VARIABLES] == [name for name, _ in _ERA5_SINGLE_LEVEL_VARIABLES]
+
+    def test_wind_variables_are_unrestricted(self):
+        for v in ERA5Reader.VARIABLES[:2]:
+            assert v.required_mode == OperationalMode.CAM
+            assert v.required_variant is None
+
+    def test_year_one_variables_are_gated(self):
+        # The substitute fields only exist in the year-one FMATCH-IMAGER product.
+        for v in ERA5Reader.VARIABLES[2:]:
+            assert v.required_mode == OperationalMode.IMAGER
+            assert v.required_variant is FmatchVariant.YEAR_ONE
 
     def test_variables_have_no_categories(self):
         for v in ERA5Reader.VARIABLES:
@@ -49,18 +87,22 @@ class TestERA5ReaderLoadSpatialRegion:
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, lats, lons = reader._load_spatial_region(bbox)
-        # 3D: (2 variables, n_lat, n_lon)
+        # 3D: (7 variables, n_lat, n_lon)
         assert data.ndim == 3
-        assert data.shape[0] == 2
+        assert data.shape[0] == 7
 
     def test_data_axis0_is_variables(self, tmp_path):
         fixture_path = make_era5_netcdf_fixture(tmp_path, u10_fill=2.5, v10_fill=-1.5, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = reader._load_spatial_region(bbox)
-        # data[0] should be u10 (all 2.5) and data[1] should be v10 (all -1.5)
+        # data[0] should be u10 (all 2.5) and data[1] should be v10 (all -1.5);
+        # the remaining layers follow the file-variable mapping order with the
+        # distinct constant fills the fixture writes for each variable.
         assert np.allclose(data[0], 2.5, atol=1e-4)
         assert np.allclose(data[1], -1.5, atol=1e-4)
+        for i, (_, nc_name) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES[2:], start=2):
+            assert np.allclose(data[i], ERA5_SINGLE_LEVEL_FILLS[nc_name], rtol=1e-6), nc_name
 
     def test_lats_are_ascending_order(self, tmp_path):
         # The fixture stores lats in DESCENDING order (ERA5 convention);
@@ -149,9 +191,9 @@ class TestERA5ReaderValidTimeDimension:
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, lats, lons = reader._load_spatial_region(bbox)
-        # Without the fix the shape would be (2, 1, n_lat, n_lon); the time dim must be gone.
+        # Without the fix the shape would be (7, 1, n_lat, n_lon); the time dim must be gone.
         assert data.ndim == 3
-        assert data.shape[0] == 2
+        assert data.shape[0] == 7
 
     def test_valid_time_values_correct(self, tmp_path):
         from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
@@ -172,3 +214,32 @@ class TestERA5ReaderValidTimeDimension:
         data, _, _ = reader._load_spatial_region(bbox)
         assert np.allclose(data[0], 3.0, atol=1e-4)
         assert np.allclose(data[1], -2.0, atol=1e-4)
+
+
+class TestERA5ReaderMissingVariables:
+    """A partial CDS download (missing required variables) must fail loudly."""
+
+    def test_file_missing_variables_raises_key_error(self, tmp_path):
+        import pytest
+        import xarray as xr
+
+        # A legacy wind-only download: valid ERA5 format but missing the five
+        # year-one substitute variables (t2m, d2m, sp, z, fal).
+        lats = np.linspace(2.0, 0.0, 4)
+        lons = np.linspace(10.0, 12.0, 4)
+        ds = xr.Dataset(
+            {
+                "u10": xr.DataArray(np.zeros((4, 4), dtype=np.float32), dims=["latitude", "longitude"]),
+                "v10": xr.DataArray(np.zeros((4, 4), dtype=np.float32), dims=["latitude", "longitude"]),
+            },
+            coords={
+                "latitude": xr.DataArray(lats, dims=["latitude"]),
+                "longitude": xr.DataArray(lons, dims=["longitude"]),
+            },
+        )
+        path = tmp_path / "era5_winds_only.nc"
+        ds.to_netcdf(path)
+
+        reader = ERA5Reader(path)
+        with pytest.raises(KeyError, match="missing variable"):
+            reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))

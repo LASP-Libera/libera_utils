@@ -4,8 +4,8 @@ Importing this package triggers the registration of all built-in reader
 subclasses via the ``__init_subclass__`` hook defined in
 :class:`~libera_utils.footprint_matching.readers.base.GriddedDataReader`.
 After this import, :class:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry`
-will list all readers: ``cldpix``, ``era5``, ``igbp``, ``nise``, ``ssf``,
-``viirs_aod``, ``viirs_brdf``, ``viirs_cloud``.
+will list all readers: ``cldpix``, ``era5``, ``era5_pressure``, ``igbp``,
+``nise``, ``ssf``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cloud``.
 
 Public API
 ----------
@@ -21,7 +21,7 @@ Examples
 >>> import libera_utils.footprint_matching.readers as readers_pkg
 >>> from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 >>> ReaderRegistry.list_readers()
-['cldpix', 'era5', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cloud']
+['cldpix', 'era5', 'era5_pressure', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cloud']
 """
 
 # Importing each reader module causes its class to be defined, which triggers
@@ -31,6 +31,7 @@ from libera_utils.footprint_matching.readers import (  # noqa: F401
     brdf,
     cldpix,
     era5,
+    era5_pressure,
     igbp,
     nsidc,
     ssf,
@@ -41,6 +42,7 @@ from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 
 __all__ = [
     "CLDPIXReader",
+    "ERA5PressureLevelReader",
     "ERA5Reader",
     "GriddedDataReader",
     "IGBPReader",

@@ -4,9 +4,31 @@ Data source: CERES Cloud Pixel (CLDPIX) imager-resolution cloud retrievals
 - Example product: CER_CLDPIX_NOAA20-VIIRS
 - Format: NetCDF4 with flat (root-level) variables on a 2-D imager swath
   ``(Scanlines, Pixels)`` grid (e.g. 16120 × 400).
-- Geolocation: per-pixel 2-D ``Latitude`` / ``Longitude`` arrays (longitude
-  stored 0..360 — normalized here).
+- Geolocation: per-pixel 2-D ``Latitude`` / ``Longitude`` arrays. Despite its
+  name, ``Latitude`` holds **colatitude** (see below); longitude is stored
+  0..360. Both are normalized here.
 - Native scale: ~1 km (VIIRS imager pixel).
+
+Geolocation conventions: colatitude and 0..360 longitude
+---------------------------------------------------------
+CERES products store geolocation in the colatitude convention inherited from the
+CERES processing system: the root-level variable *named* ``Latitude`` carries
+**colatitude in degrees**, 0° at the North Pole increasing to 180° at the South
+Pole, i.e. ``latitude = 90 − colatitude``. The file itself advertises this via
+the variable's ``valid_range`` attribute of ``[0, 180]`` (a true latitude would
+be ``[-90, 90]``), and it is confirmed physically: binning the granule's 10.8 µm
+brightness temperature (``BTemp1080``) by the raw value peaks near 90 (the
+equator, ~285 K) and is coldest near 0 and 180 (the poles, ~245 K).
+
+Reading the raw values as latitudes would place every pixel at the wrong
+latitude *and* discard the entire southern hemisphere (colatitude > 90 falls
+outside a −90..90 valid-range filter), so the conversion below is mandatory.
+Longitude uses the CERES 0..360 degrees-east convention and is wrapped to
+−180..180 by :func:`~libera_utils.footprint_matching.readers._swath.normalize_longitude`.
+
+CERES SSF stores its footprint geolocation the same way, but under explicitly
+named variables (``instrument_fov_latitude`` is a true −90..90 latitude), so
+:mod:`~libera_utils.footprint_matching.readers.ssf` needs no such conversion.
 
 Why rasterize?
 --------------
@@ -56,15 +78,24 @@ from libera_utils.footprint_matching.readers._swath import (
     rasterize_points_to_grid,
 )
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, OperationalMode, VariableSpec
 
 # Fill sentinels: floats use the float32 max; int8 categoricals use 127.
 _FILL_FLOAT: float = 3.4028235e38
 _FILL_INT8: int = 127
 
-# Root-level 2-D geolocation variable names.
+# Root-level 2-D geolocation variable names. NOTE: ``Latitude`` holds
+# COLATITUDE (0° = North Pole, 180° = South Pole) — see the module docstring.
 _LAT_VAR: str = "Latitude"
 _LON_VAR: str = "Longitude"
+
+# Valid range of the raw colatitude field, matching the file's own
+# ``valid_range`` attribute on ``Latitude``. Filtering on this (rather than on
+# −90..90) keeps the southern hemisphere, which colatitude encodes as > 90°.
+_COLATITUDE_VALID_RANGE: tuple[float, float] = (0.0, 180.0)
+
+# Colatitude of the North Pole; ``latitude = _NORTH_POLE_COLATITUDE − colatitude``.
+_NORTH_POLE_COLATITUDE: float = 90.0
 
 
 class _CLDPIXField(NamedTuple):
@@ -133,6 +164,10 @@ class CLDPIXReader(GriddedDataReader):
         Edge length of the rasterized output cells (degrees).
     REQUIRED_MODE : OperationalMode
         ``IMAGER`` — active for the Imager and Imager-camera-time products.
+    REQUIRED_VARIANT : FmatchVariant
+        ``POST_YEAR_ONE`` — the RBSP CLDPIX products do not exist during the
+        first year of operation; year-one FMATCH-IMAGER substitutes ERA5 fields
+        (see the ``era5`` and ``era5_pressure`` readers).
     VARIABLES : tuple[VariableSpec, ...]
         Minimal starter set (see module docstring).
 
@@ -149,6 +184,8 @@ class CLDPIXReader(GriddedDataReader):
     RESOLUTION_KM: float = 1.0
     OUTPUT_CELL_DEG: float = 0.05
     REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER
+    # RBSP product: unavailable in year one, so this reader only runs post-year-one.
+    REQUIRED_VARIANT: FmatchVariant = FmatchVariant.POST_YEAR_ONE
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,
@@ -175,7 +212,8 @@ class CLDPIXReader(GriddedDataReader):
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_pixels,)`` (longitude normalized to −180..180) and ``values``
+            ``(n_pixels,)`` in ordinary WGS84 degrees (latitude converted from
+            the file's colatitude, longitude normalized to −180..180) and ``values``
             is ``(n_var, n_pixels)`` float64 with fill / out-of-range entries
             as NaN.
         """
@@ -195,9 +233,18 @@ class CLDPIXReader(GriddedDataReader):
             ds.set_auto_mask(False)
 
             # 2-D geolocation → flatten to point lists.
-            lats = apply_fill_and_valid_range(
-                ds.variables[_LAT_VAR][:], fill_value=_FILL_FLOAT, valid_range=(-90.0, 90.0)
+            # ``Latitude`` is colatitude (0 = North Pole → 180 = South Pole), so
+            # it is range-checked against 0..180 and then converted to a true
+            # −90..90 latitude. Doing the range check *before* the conversion
+            # keeps fill/out-of-range pixels as NaN (NaN survives the
+            # subtraction), and doing the conversion at read time means every
+            # downstream consumer — the rasterizer, the tile bbox test, the
+            # notebook — sees ordinary latitudes. See the module docstring for
+            # the evidence that this field really is colatitude.
+            colatitudes = apply_fill_and_valid_range(
+                ds.variables[_LAT_VAR][:], fill_value=_FILL_FLOAT, valid_range=_COLATITUDE_VALID_RANGE
             ).ravel()
+            lats = _NORTH_POLE_COLATITUDE - colatitudes
             lons_raw = apply_fill_and_valid_range(
                 ds.variables[_LON_VAR][:], fill_value=_FILL_FLOAT, valid_range=(0.0, 360.0)
             ).ravel()
