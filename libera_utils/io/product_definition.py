@@ -327,10 +327,10 @@ class LiberaVariableDefinition(BaseModel):
         """Update a variable or coordinate DataArray to conform to specifications in data product definition.
 
         This method attempts to bring a DataArray into conformance with a variable definition. When making changes, the
-        data variable definition takes precedence over any existing metadata or settings on the DataArray. Logs are
-        emitted for all changes made. When the DataArray configuration contradicts the data product definition, warnings
-        are also issued. This method is not responsible for validating the final result and does not guarantee that the
-        resulting DataArray will pass the validation checks because some problems simply can't be fixed.
+        data variable definition takes precedence over any existing metadata or settings on the DataArray. When the DataArray
+        configuration contradicts the data product definition, warnings are issued. This method is not responsible
+        for validating the final result and does not guarantee that the resulting DataArray will pass the validation
+        checks because some problems simply can't be fixed.
 
         Parameters
         ----------
