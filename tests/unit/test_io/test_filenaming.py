@@ -254,7 +254,7 @@ def test_LiberaDataProductFilename(filename):
             None,
             dict(
                 data_level=DataLevel.L2,
-                product_name=DataProductIdentifier.l2_cf_rad_time,
+                product_name=DataProductIdentifier.l2_cf_cam,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 version="3.14.159",
@@ -280,7 +280,7 @@ def test_LiberaDataProductFilename(filename):
             "s3://bucket/",
             dict(
                 data_level=DataLevel.L2,
-                product_name=DataProductIdentifier.l2_cf_rad_time,
+                product_name=DataProductIdentifier.l2_cf_cam,
                 utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 version="3.14.159RC1",  # Release candidate version

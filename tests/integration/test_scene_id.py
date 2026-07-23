@@ -18,6 +18,38 @@ from libera_utils.scene_id import (
 )
 
 
+def assert_property_bins_consistent(dataset, scene_type, variables):
+    """Assert that the reported property bin bounds are consistent with the data.
+
+    For each classification variable, checks that the
+    ``scene_bin_{scene_type}_{variable}_min`` / ``_max`` columns exist, that
+    unmatched footprints (scene ID 0) have NaN bounds, and that each footprint's
+    (non-NaN) value falls within the reported bin (min inclusive, max exclusive).
+    """
+    scene_ids = dataset[f"scene_id_{scene_type}"].values
+    for variable in variables:
+        min_name = f"scene_bin_{scene_type}_{variable}_min"
+        max_name = f"scene_bin_{scene_type}_{variable}_max"
+        assert min_name in dataset.data_vars
+        assert max_name in dataset.data_vars
+
+        bin_min = dataset[min_name].values
+        bin_max = dataset[max_name].values
+        values = dataset[variable].values
+
+        # Unmatched footprints carry no bin bounds.
+        unmatched = scene_ids == 0
+        assert np.all(np.isnan(bin_min[unmatched]))
+        assert np.all(np.isnan(bin_max[unmatched]))
+
+        # Where a value and a bound are both present, the value must lie in-bin.
+        has_value = ~np.isnan(values)
+        lower_ok = np.isnan(bin_min) | ~has_value | (values >= bin_min)
+        upper_ok = np.isnan(bin_max) | ~has_value | (values < bin_max)
+        assert np.all(lower_ok)
+        assert np.all(upper_ok)
+
+
 class TestEndToEndSceneIdentification:
     """Integration tests for complete scene identification workflow."""
 
@@ -27,7 +59,11 @@ class TestEndToEndSceneIdentification:
         fp = FootprintData.from_ceres_ssf(input_file_path)
         fp.identify_scenes()
         expected = xr.open_dataset(expected_file_path)
-        xr.testing.assert_equal(fp._data, expected)
+        # The reference fixture predates the property-bin output; compare the
+        # variables it contains and verify the new bin columns separately below.
+        xr.testing.assert_equal(fp._data[list(expected.data_vars)], expected)
+        assert_property_bins_consistent(fp._data, "trmm", ["surface_type", "cloud_fraction"])
+        assert_property_bins_consistent(fp._data, "erbe", ["surface_type", "cloud_fraction"])
 
     @pytest.mark.parametrize(
         "scene_definition",
@@ -65,6 +101,7 @@ class TestEndToEndSceneIdentification:
         fp = FootprintData(input_dataset)
         fp.identify_scenes(scene_definitions=[scene_definition])
         expected = xr.open_dataset(test_scene_id / expected_file_name)
+        # Fixtures include the property-bin columns, so the full dataset must match.
         xr.testing.assert_equal(fp._data, expected)
         # Each synthetic dataset should contain one of every scene.
         # Loop below confirms that we have coverage of all scenes for each scene type

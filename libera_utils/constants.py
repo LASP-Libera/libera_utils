@@ -184,11 +184,11 @@ class DataProductIdentifier(StrEnum):
 
     # L2 Products using Libera camera data for cloud fraction
     # ========================================================
-    l2_unf_cam = ("UNF-RAD-CAM", DataLevel.L2)  # unfiltered radiances using Libera camera data for cloud fraction
-    l2_cf_rad_time = ("CF-CAM", DataLevel.L2)  # cloud fraction on the radiometer timescale
-    l2_cf_cam_time = ("CF-CAM-CAMTIME", DataLevel.L2)  # cloud fraction on the camera timescale
-    l2_nb_bb_cam_time = (
-        "NB-BB-CAM-TIME",
+    l2_unf_rad_cam = ("UNF-RAD-CAM", DataLevel.L2)  # unfiltered radiances using Libera camera data for cloud fraction
+    l2_cf_cam = ("CF-CAM", DataLevel.L2)  # cloud fraction on the radiometer timescale
+    l2_cf_cam_camtime = ("CF-CAM-CAMTIME", DataLevel.L2)  # cloud fraction on the camera timescale
+    l2_nb_bb_cam_camtime = (
+        "NB-BB-CAM-CAMTIME",
         DataLevel.L2,
     )  # narrowband to broadband radiances for camera pseudo-footprints
     l2_toa_flux_cam = (
@@ -202,12 +202,12 @@ class DataProductIdentifier(StrEnum):
     aux_fmatch_cam_camtime = (
         "FMATCH-CAM-CAMTIME",
         DataLevel.AUX,
-    )  # Footprint matching using Libera camera data for cloud fraction
+    )  # Footprint matching using Libera camera data for cloud fraction on the camera timescale
     aux_scene_id_cam = ("SCENE-ID-CAM", DataLevel.AUX)  # Scene IDs using Libera camera data for cloud fraction
     aux_scene_id_cam_camtime = (
         "SCENE-ID-CAM-CAMTIME",
         DataLevel.AUX,
-    )  # Scene IDs using Libera camera data for cloud fraction
+    )  # Scene IDs using Libera camera data for cloud fraction on the camera timescale
     aux_adm_stats_cam = (
         "ADM-STATS-CAM",
         DataLevel.AUX,
@@ -216,8 +216,22 @@ class DataProductIdentifier(StrEnum):
 
     # L2 Products using RBSP + VIIRS data for cloud properties
     # ========================================================
-    l2_comp_flux = ("COMP-FLUX", DataLevel.L2)  # Computed surface fluxes
-    # This list will be expanded in the future
+    l2_unf_rad_imager = (
+        "UNF-RAD-IMAGER",
+        DataLevel.L2,
+    )  # unfiltered radiances using RBSP + VIIRS imager data for cloud properties
+    l2_comp_flux = (
+        "COMP-FLUX",
+        DataLevel.L2,
+    )  # Computed surface fluxes using RBSP + VIIRS imager data for cloud properties
+    l2_nb_bb_imager_camtime = (
+        "NB-BB-IMAGER-CAMTIME",
+        DataLevel.L2,
+    )  # narrowband to broadband radiances for imager pseudo-footprints
+    l2_toa_flux_imager = (
+        "TOA-FLUX-IMAGER",
+        DataLevel.L2,
+    )  # TRMM-like + ERBE-like TOA SSW irradiance using RBSP + VIIRS imager data for cloud properties
 
     # Auxiliary Products using RBSP + VIIRS data for cloud properties
     # ============================================================
@@ -225,6 +239,26 @@ class DataProductIdentifier(StrEnum):
         "FMATCH-IMAGER",
         DataLevel.AUX,
     )  # Footprint matching using RBSP + VIIRS imager data for cloud properties
+    aux_fmatch_imager_camtime = (
+        "FMATCH-IMAGER-CAMTIME",
+        DataLevel.AUX,
+    )  # Footprint matching using RBSP + VIIRS imager data for cloud properties on the camera timescale
+    aux_scene_id_imager = (
+        "SCENE-ID-IMAGER",
+        DataLevel.AUX,
+    )  # Scene IDs using RBSP + VIIRS imager data for cloud properties
+    aux_scene_id_imager_camtime = (
+        "SCENE-ID-IMAGER-CAMTIME",
+        DataLevel.AUX,
+    )  # Scene IDs using RBSP + VIIRS imager data for cloud properties on the camera timescale
+    aux_adm_stats_imager = (
+        "ADM-STATS-IMAGER",
+        DataLevel.AUX,
+    )  # TRMM-like + ERBE-like ADM daily binned statistics using RBSP + VIIRS imager data for cloud properties
+    aux_adm_imager = (
+        "ADM-IMAGER",
+        DataLevel.AUX,
+    )  # TRMM-like + ERBE-like ADMs using RBSP + VIIRS imager data for cloud properties
 
     @property
     def product_name(self) -> str:
@@ -338,14 +372,17 @@ class ProcessingStepIdentifier(StrEnum):
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
 
     # L2 processing steps — camera cloud fraction track
-    l2_unf_cam = ("l2-unf-cam", [DataProductIdentifier.l2_unf_cam])
-    l2_cf_rad = ("l2-cf-rad", [DataProductIdentifier.l2_cf_rad_time])
-    l2_cf_cam = ("l2-cf-cam", [DataProductIdentifier.l2_cf_cam_time])
-    l2_nb_bb_cam_time = ("l2-nb-bb-cam-time", [DataProductIdentifier.l2_nb_bb_cam_time])
+    l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])
+    l2_cf_cam = ("l2-cf-cam", [DataProductIdentifier.l2_cf_cam])
+    l2_cf_cam_camtime = ("l2-cf-cam-camtime", [DataProductIdentifier.l2_cf_cam_camtime])
+    l2_nb_bb_cam_camtime = ("l2-nb-bb-cam-camtime", [DataProductIdentifier.l2_nb_bb_cam_camtime])
     l2_toa_flux_cam = ("l2-toa-flux-cam", [DataProductIdentifier.l2_toa_flux_cam])
 
     # L2 processing steps — RBSP + VIIRS imager track
+    l2_unf_rad_imager = ("l2-unf-rad-imager", [DataProductIdentifier.l2_unf_rad_imager])
     l2_comp_flux = ("l2-comp-flux", [DataProductIdentifier.l2_comp_flux])
+    l2_nb_bb_imager_camtime = ("l2-nb-bb-imager-camtime", [DataProductIdentifier.l2_nb_bb_imager_camtime])
+    l2_toa_flux_imager = ("l2-toa-flux-imager", [DataProductIdentifier.l2_toa_flux_imager])
 
     # AUX processing steps — camera cloud fraction track
     aux_fmatch_cam = ("aux-fmatch-cam", [DataProductIdentifier.aux_fmatch_cam])
@@ -357,6 +394,11 @@ class ProcessingStepIdentifier(StrEnum):
 
     # AUX processing steps — RBSP + VIIRS imager track
     aux_fmatch_imager = ("aux-fmatch-imager", [DataProductIdentifier.aux_fmatch_imager])
+    aux_fmatch_imager_camtime = ("aux-fmatch-imager-camtime", [DataProductIdentifier.aux_fmatch_imager_camtime])
+    aux_scene_id_imager = ("aux-scene-id-imager", [DataProductIdentifier.aux_scene_id_imager])
+    aux_scene_id_imager_camtime = ("aux-scene-id-imager-camtime", [DataProductIdentifier.aux_scene_id_imager_camtime])
+    aux_adm_stats_imager = ("aux-adm-stats-imager", [DataProductIdentifier.aux_adm_stats_imager])
+    aux_adm_imager = ("aux-adm-imager", [DataProductIdentifier.aux_adm_imager])
 
     @property
     def processing_step_name(self) -> str:
@@ -493,14 +535,19 @@ class ProcessingStepIdentifier(StrEnum):
 # to its ECR repo. Sibling steps share a team's role (e.g. both cloud-fraction steps -> L2-CloudFraction). Steps not
 # listed here are not owned by an L2 team. Exposed via ProcessingStepIdentifier.l2_team_iam_role.
 _L2_TEAM_IAM_ROLE_BY_STEP: dict[ProcessingStepIdentifier, str] = {
-    ProcessingStepIdentifier.l2_cf_rad: "L2-CloudFraction",
     ProcessingStepIdentifier.l2_cf_cam: "L2-CloudFraction",
-    ProcessingStepIdentifier.l2_unf_cam: "L2-Unfiltering",
+    ProcessingStepIdentifier.l2_cf_cam_camtime: "L2-CloudFraction",
+    ProcessingStepIdentifier.l2_unf_rad_cam: "L2-Unfiltering",
+    ProcessingStepIdentifier.l2_unf_rad_imager: "L2-Unfiltering",
     ProcessingStepIdentifier.l2_toa_flux_cam: "L2-SSW-TOA-Flux",
+    ProcessingStepIdentifier.l2_toa_flux_imager: "L2-SSW-TOA-Flux",
     ProcessingStepIdentifier.l2_comp_flux: "L2-SFC-Flux",
     ProcessingStepIdentifier.aux_adm_stats_cam: "L2-ADM",
     ProcessingStepIdentifier.aux_adm_cam: "L2-ADM",
-    ProcessingStepIdentifier.l2_nb_bb_cam_time: "L2-ADM",
+    ProcessingStepIdentifier.l2_nb_bb_cam_camtime: "L2-ADM",
+    ProcessingStepIdentifier.aux_adm_stats_imager: "L2-ADM",
+    ProcessingStepIdentifier.aux_adm_imager: "L2-ADM",
+    ProcessingStepIdentifier.l2_nb_bb_imager_camtime: "L2-ADM",
 }
 
 
