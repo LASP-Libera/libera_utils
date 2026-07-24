@@ -48,11 +48,5 @@
     "libera.instruments.ik.ti",
     "jpss4.fakeclock.sclk.tsc"
   ],
-  "sds_kernels": [
-    "earth_assoc_itrf93.tf",
-    "de440s.bsp",
-    "earth_000101_211220_210926.bpc",
-    "naif0012.tls",
-    "pck00010.tpc"
-  ]
+  "sds_kernels": []
 }

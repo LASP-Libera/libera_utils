@@ -686,6 +686,7 @@ class FootprintData:
             SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
         ],
         additional_scene_definitions_files: list[pathlib.Path] | None = None,
+        report_bin_bounds: bool = True,
     ):
         """Identify and assign scene IDs to all footprints based on scene definitions.
 
@@ -698,6 +699,11 @@ class FootprintData:
             List of SceneDefinition objects from standard libera_utils definitions
         additional_scene_definitions_files : list of pathlib.Path or None
             List of scene definition files containing classification rules for custom analysis.
+        report_bin_bounds : bool, optional
+            If True (default), also report, for each classification variable, the
+            (min, max) bounds of the property bin that each footprint's matched
+            scene occupies, as ``scene_bin_{type}_{variable}_min`` / ``_max``
+            variables. Set to False to emit only the scene ID columns.
 
         Notes
         -----
@@ -733,7 +739,7 @@ class FootprintData:
         self._calculate_required_fields(required_calculated_fields)
         for scene_definition in scene_definitions:
             logger.info(f"Identifying {scene_definition.type} scenes...")
-            self._data = scene_definition.identify_and_update(self._data)
+            self._data = scene_definition.identify_and_update(self._data, report_bin_bounds=report_bin_bounds)
             logger.info(f"Added scene_id_{scene_definition.type.lower()} to dataset")
 
     def _calculate_required_fields(self, result_fields: list[str]):
@@ -840,7 +846,7 @@ class FootprintData:
         """Convert input missing values in footprint data to output missing values.
 
         This method standardizes missing value representations by converting from the input dataset's missing value
-        convention to the output convention used in FootprintData processing (np.NaN).
+        convention to the output convention used in FootprintData processing (np.nan).
 
         Parameters
         ----------
@@ -854,7 +860,7 @@ class FootprintData:
         - If input_missing_value is numeric: Uses direct equality comparison
 
         Modifies self._data in place, replacing all occurrences of input_missing_value
-        with np.NaN.
+        with np.nan.
 
         Examples
         --------
@@ -865,13 +871,13 @@ class FootprintData:
         """
         if np.isnan(input_missing_value):
             # For NaN input missing values, use isnan
-            result = self._data.where(~np.isnan(self._data), np.NaN)
+            result = self._data.where(~np.isnan(self._data), np.nan)
         else:
             # For numeric input missing values, use direct comparison
-            result = self._data.where(self._data != input_missing_value, np.NaN)
+            result = self._data.where(self._data != input_missing_value, np.nan)
         self._data = result
 
-    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value=np.NaN):
+    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value=np.nan):
         """Replace values above threshold with fill value for specified column.
 
         Parameters
