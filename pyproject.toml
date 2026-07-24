@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.10.0"
+version = "5.10.1"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -85,6 +85,7 @@ memory-profiler = "*"
 moto = {extras = ["s3"], version = "*"}
 pre-commit = "*"
 psutil = "*"  # Speeds up memory-profiler
+pillow-jpls = "*"
 pytest-cov = "*"
 pytest-profiling = "*"
 pytest-randomly = "*"

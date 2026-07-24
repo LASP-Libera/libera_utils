@@ -22,6 +22,7 @@ from libera_utils.l1a.l1a_packet_configs import (
     TimeFieldMapping,
     get_packet_config,
 )
+from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
 
@@ -256,6 +257,9 @@ def parse_packets_to_l1a_dataset(
     }
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
+
+    if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
+        packet_ds = enhance_wfov_l1a_dataset(packet_ds)
 
     return packet_ds
 

@@ -1,5 +1,12 @@
 # Version Changes
 
+## 5.10.1
+
+- FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_IMAGE_BLOB` (`uint8`/`BLOB_BYTE` + `WFOV_IMAGE_BLOB_LENGTH`), and deduplicates packet-level `ICIE__WFOV_DATA` with `PACKET_IMAGE_ID` traceability.
+- FEAT: Decode trailing 8-byte NAND footer metadata into `WFOV_TRAILING_FOOTER_*` variables; add file-level quality attrs `n_missing_sop_or_eop`, `n_bad_images`, and `n_complete_images`.
+- FEAT: Add `WFOV_CRC_VALID` placeholder (`-1` = not validated) and `validate_wfov_image_crc` stub pending LIBSDC-747.
+- BREAKING: `CAMERA_TIME` now contains one row per **complete** stitched image only (not every qualifying SOP). Removed redundant `WFOV_IMAGE_COMPLETE`.
+
 ## 5.10.0
 
 - FEAT: Kernel generation applies the measured Libera opto-mechanical frame misalignments from OAV3 ground testing. The Az/El mechanism CKs now encode rotation about the measured axes of rotation, and the radiometer frames carry the measured line-of-sight boresight, so the generated kernels reflect the true instrument geometry instead of nominal placeholders. The three source unit vectors (`LIBERA_AZ_AOR_IN_STAND`, `LIBERA_EL_AOR_IN_STAND`, `LIBERA_EL0_Z_IN_STAND`) are stored as keywords in the frame kernel; the Az/El CK configs switch from Euler angles to quaternions, and `kernel_maker.add_mechanism_ck_quaternions` builds the per-sample rotations about the measured axes (applied after the encoder correction).

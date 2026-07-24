@@ -332,6 +332,65 @@ This varies by packet but there is some consistent behavior:
   data) that maps each sample back to its originating packet index in the `PACKET` dimension.
   This enables efficient joins between per-packet metadata and per-sample science data.
 
+### WFOV camera science (APID 1040) image metadata
+
+WFOV science packets carry two independent time sources:
+
+- **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every mem-dump
+  packet (SOP, MOP, and EOP). This coordinate is used for packet ordering and deduplication.
+- **`CAMERA_TIME`**: FSW image acquisition time decoded from each **complete** stitched image (SOP→EOP with
+  valid offsets). One row is added per successfully stitched image in **packet stream order**.
+
+During L1A parsing for APID 1040, libera_utils:
+
+1. Stitches mem-dump packets from qualifying SOP (`ICIE__MEM_DUMP_FLAGS_WFOV == "SOP"` and
+   `ICIE__MEM_DUMP_OFFSET_WFOV == 0`) through EOP into a full NAND image blob.
+2. Stores only the compressed JPEG-LS payload on `CAMERA_TIME` as `WFOV_IMAGE_BLOB` (`uint8`/`BLOB_BYTE`
+   with `WFOV_IMAGE_BLOB_LENGTH`; readers must use `blob[:length]`).
+3. Decodes FSW (36 bytes), FPGA internal footer (140-byte block), and trailing 8-byte footer metadata
+   into separate `WFOV_FSW_*`, `WFOV_FPGA_*`, and `WFOV_TRAILING_FOOTER_*` variables.
+4. Zeros `ICIE__WFOV_DATA` on contributing packets and sets `PACKET_IMAGE_ID` (0..N-1, or `-1` for
+   incomplete sequences).
+
+Incomplete or failed images retain per-packet `ICIE__WFOV_DATA` slices and do not receive a
+`CAMERA_TIME` row.
+
+File-level quality attributes (integers ≥ 0):
+
+- `n_missing_sop_or_eop`: orphan EOP or SOP without matching EOP
+- `n_bad_images`: SOP+EOP present but stitch rejected (non-zero SOP offset, offset gap, etc.)
+- `n_complete_images`: number of complete images (= `CAMERA_TIME` size)
+
+Decoded metadata on the `CAMERA_TIME` dimension:
+
+- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_FSW_PARSE_VALID`, `WFOV_FPGA_PARSE_VALID`,
+  `WFOV_IMAGE_BLOB`, `WFOV_IMAGE_BLOB_LENGTH`, `WFOV_CRC_VALID` (always `-1` until LIBSDC-747)
+- FSW fields: `WFOV_FSW_*` (19 uppercase field names matching the libera_cam FSW header layout)
+- FPGA fields: `WFOV_FPGA_*` (header, internal footer, and status flags)
+- Trailing footer: `WFOV_TRAILING_FOOTER_*` from the last 8 bytes of the stitched blob
+
+When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
+`write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
+packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
+
+#### Dual exposure and VIDEO timing
+
+- **`CAMERA_TIME` is the first integration.** FSW stamps one acquisition time per complete image.
+  In DUAL mode (`WFOV_FSW_IMG_MODE == 0`), the second sequential exposure lags the first by about
+  **111–350 ms**. That offset is not stored as a separate L1A time coordinate (also noted on the
+  `WFOV_FSW_IMG_MODE` variable attributes).
+- **Which pixels used which exposure** is encoded in the **13th bit** of each decompressed pixel.
+  L1A keeps the JPEG-LS payload compressed in `WFOV_IMAGE_BLOB`, so per-pixel exposure masks and
+  per-pixel times are an L1B responsibility after decompression.
+- **VIDEO mode** (`WFOV_FSW_IMG_MODE == 1`) can produce two NAND images from one camera trigger with
+  identical FSW timestamps. Distinguish members with `CAMERA_PACKET_INDEX` (and packet stream order);
+  do not assume `CAMERA_TIME` alone is a unique image key. `WFOV_FPGA_READOUT` is independent of
+  `WFOV_FSW_IMG_MODE` and should not be used to infer VIDEO pairing.
+
+**Downstream (libera_cam):** L1B processing can read `WFOV_IMAGE_BLOB[:WFOV_IMAGE_BLOB_LENGTH]` directly
+instead of re-stitching packets and slicing headers from the NAND blob. Metadata variables on
+`CAMERA_TIME` may eliminate re-parsing FSW/FPGA headers when present.
+
 For example, for `N` packets, the `AXIS_SAMPLE` packet containing Azimuth and Elevation mechanism data
 comes down with 50 Az and El samples per packet (a sample group). It's L1A product has:
 

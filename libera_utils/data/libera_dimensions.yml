@@ -70,3 +70,5 @@ CAL_SAMPLE_PACKET:
   long_name: "Packet index for CAL-SAMPLE packets in calibration event"
 WFOV_SCI_PACKET:
   long_name: "Packet index for WFOV-SCI packets in calibration event"
+BLOB_BYTE:
+  long_name: "Byte index within a variable-length binary blob"
