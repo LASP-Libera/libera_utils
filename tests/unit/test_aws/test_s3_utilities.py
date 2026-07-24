@@ -344,7 +344,7 @@ def test_s3_utils_list_cli_handler(mock_s3_list_files, product_name, profile):
             ],
         ),
         (
-            DataProductIdentifier.l2_cf_cam_time,
+            DataProductIdentifier.l2_cf_cam_camtime,
             [
                 "LIBERA_L2_CF-CAM-CAMTIME_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
                 "LIBERA_L2_CF-CAM-CAMTIME_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc",

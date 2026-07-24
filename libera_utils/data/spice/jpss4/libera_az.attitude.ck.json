@@ -1,0 +1,26 @@
+{
+  "kernel": {
+    "class_path": "curryer.kernels.attitude.AttitudeQuaternionProperties",
+    "properties": {
+      "input_body": "LIBERA_AZ",
+      "input_frame": "LIBERA_BASE_COORD",
+      "input_data_type": "FLIP SPICE QUATERNIONS",
+      "input_time_type": "et",
+      "input_time_columns": ["et"],
+      "input_angular_rate": "MAKE UP",
+      "input_gap_threshold": "30s",
+      "ck_type": "LINEAR_QUAT",
+      "down_sample_tolerance": 0.0001,
+      "frame_kernel": "libera.frames.fk.tf",
+      "clock_kernel": "jpss4.fakeclock.sclk.tsc"
+    }
+  },
+  "input_data": null,
+  "input_columns": {
+    "AXIS_SAMPLE_ICIE_ET": "et",
+    "AZ_QUATERNION_C": "quaternion_c",
+    "AZ_QUATERNION_X": "quaternion_x",
+    "AZ_QUATERNION_Y": "quaternion_y",
+    "AZ_QUATERNION_Z": "quaternion_z"
+  }
+}

@@ -4,9 +4,20 @@
 
 - FEAT: Kernel generation applies the measured Libera opto-mechanical frame misalignments from OAV3 ground testing. The Az/El mechanism CKs now encode rotation about the measured axes of rotation, and the radiometer frames carry the measured line-of-sight boresight, so the generated kernels reflect the true instrument geometry instead of nominal placeholders. The three source unit vectors (`LIBERA_AZ_AOR_IN_STAND`, `LIBERA_EL_AOR_IN_STAND`, `LIBERA_EL0_Z_IN_STAND`) are stored as keywords in the frame kernel; the Az/El CK configs switch from Euler angles to quaternions, and `kernel_maker.add_mechanism_ck_quaternions` builds the per-sample rotations about the measured axes (applied after the encoder correction).
 
+## 5.9.3
+
+- FEAT: Az/El mechanism CKs now apply deterministic sinusoidal encoder-angle corrections during kernel generation, so the stored quaternions reflect the true mechanism rotation rather than the raw encoder readout. Corrections are applied to the filtered encoder angles in `create_kernel_from_l1a` (L1A telemetry is left unchanged), with matching forward/inverse helpers (`correct_azimuth`/`correct_elevation`, `uncorrect_azimuth`/`uncorrect_elevation`, and DataFrame-level `apply_encoder_corrections`/`reverse_encoder_corrections`)
+- BUGFIX: Remove np.NaN as curryer no longer pins Numpy < 2
+
+## 5.9.2
+
+- FEAT: Expand the RBSP+VIIRS imager `DataProductIdentifier` set (`l2_unf_rad_imager`, `l2_nb_bb_imager_camtime`, `l2_toa_flux_imager`, and matching AUX scene-ID/FMATCH/ADM members)
+- BUGFIX: rename camera/imager DPI and `ProcessingStepIdentifier` members for consistency with product strings: `l2_unf_cam`→`l2_unf_rad_cam`/`l2-unf-rad-cam`, `l2_cf_rad_time`/`l2_cf_rad`→`l2_cf_cam`/`l2-cf-cam`, `l2_cf_cam_time`/`l2_cf_cam`→`l2_cf_cam_camtime`/`l2-cf-cam-camtime`, `l2_nb_bb_cam_time`/`NB-BB-CAM-TIME`→`l2_nb_bb_cam_camtime`/`NB-BB-CAM-CAMTIME`/`l2-nb-bb-cam-camtime`, `l2_unf_imager`→`l2_unf_rad_imager`/`l2-unf-rad-imager`, `l2_nb_bb_imager`→`l2_nb_bb_imager_camtime`/`l2-nb-bb-imager-camtime`
+
 ## 5.9.1
 
-- FEAT: Az/El mechanism CKs now apply deterministic sinusoidal encoder-angle corrections during kernel generation, so the stored quaternions reflect the true mechanism rotation rather than the raw encoder readout. Corrections are applied to the filtered encoder angles in `create_kernel_from_l1a` (L1A telemetry is left unchanged), with matching forward/inverse helpers (`correct_azimuth`/`correct_elevation`, `uncorrect_azimuth`/`uncorrect_elevation`, and DataFrame-level `apply_encoder_corrections`/`reverse_encoder_corrections`).
+- FEAT: Scene Identification now reports the property bin min/max bounds alongside the scene ID. For each footprint and classification variable, `identify_scenes` adds `scene_bin_{type}_{variable}_min`/`_max` variables giving the bounds of the matched scene's bin (unbounded sides and unmatched footprints reported as `NaN`). Controlled by the new `report_bin_bounds` flag (default `True`) on `FootprintData.identify_scenes` and `SceneDefinition.identify_and_update`; existing `scene_id_{type}` columns are unchanged.
+- FEAT: Add `SceneDefinition.get_bin_bounds_for_scene_id` and `Scene.get_bin_bounds` to look up the property bin bounds for a given scene ID.
 
 ## 5.9.0
 

@@ -9,7 +9,8 @@ The CLI is installed as an executable in your virtual environment during install
 This is the top level command that contains all the nested sub-commands.
 
 ```shell
-usage: libera-utils [-h] [--version] {make-kernel,ecr-upload,step-function-trigger} ...
+usage: libera-utils [-h] [--version]
+                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,s3-utils} ...
 
 Libera SDC utilities CLI
 
@@ -20,45 +21,63 @@ options:
 subcommands:
   sub-commands for libera-utils CLI
 
-  {make-kernel,ecr-upload,step-function-trigger}
-    make-kernel         generate SPICE kernel from telemetry data
+  {make-kernel,ecr-upload,step-function-trigger,manual-processing,s3-utils}
+    make-kernel         generate SPICE kernels from a manifest file
     ecr-upload          Upload docker image to ECR repository for a specific algorithm
     step-function-trigger
-                        Manually trigger a specific step function
+                        Manually trigger a single processing step for one applicable date
+    manual-processing   Manually run a custom processing DAG (or the default DAG) for one or more applicable dates
+    s3-utils            Utilities for working with S3 archives for processing steps
 
 ```
 
 ### Sub-Command `ecr-upload`
 
 This is a tool to upload a docker image to AWS ECR. The image name and tag identify the local docker image while
-the --ecr-image-tags option specifies the tags to apply to the image in the ECR (remote tags). If `--ecr-image-tags`
-is not provided, only the `latest` tag is applied by default. If `--ecr-image-tags` is specified, you must include
-`latest` explicitly.
+the `--ecr-tags` option specifies the tags to apply to the image in ECR. If `--ecr-tags` is not provided, only the
+`latest` tag is applied by default. If `--ecr-tags` is specified, include `latest` explicitly if it should also be
+applied.
 
 ```shell
-usage: libera-utils ecr-upload [-h] [--ecr-image-tags ECR_IMAGE_TAGS [ECR_IMAGE_TAGS ...]] [--ignore-docker-config] image_name image_tag algorithm_name
+usage: libera-utils ecr-upload [-h] [--image-tag IMAGE_TAG]
+                               [--ecr-tags ECR_TAGS [ECR_TAGS ...]]
+                               [--ignore-docker-config] [--profile PROFILE]
+                               algorithm_name image_name
 
 positional arguments:
-  image_name            Image name of image to upload (image-name:image-tag)
-  image_tag             Image tag of image to upload (image-name:image-tag)
-  algorithm_name        Algorithm name that matches an ECR repo name, inputs to names:
-                        ['cal-rad', 'cal-cam', 'spice-azel', 'spice-jpss', 'l1b-rad', 'l1b-cam', 'int-footprint-scene-id',
-                        'l2-cf-rad', 'l2-cf-cam', 'l2-unfiltered', 'l2-ssw-toa-osse', 'l2-ssw-toa-erbe', 'l2-ssw-toa-trmm',
-                        'l2-ssw-toa-rt', 'l2-ssw-surface-flux', 'adm-binning']
+  algorithm_name        Processing step identifier used to determine the ECR repository name
+  image_name            Image name to upload
 
 options:
   -h, --help            show this help message and exit
-  --ecr-image-tags ECR_IMAGE_TAGS [ECR_IMAGE_TAGS ...]
-                        List of tags to apply to the uploaded image in the ECR (e.g. `--ecr-image-tags latest 1.3.4`) Note, latest is applied if this option is not set. If it is set, you must specify
-                        latest if you want it tagged as such in the ECR.
+  --image-tag IMAGE_TAG
+                        Current tag of the local image. Default is latest.
+  --ecr-tags ECR_TAGS [ECR_TAGS ...]
+                        Tags to apply in ECR. Default is latest.
   --ignore-docker-config
                         Ignore the standard docker config.json to bypass the credential store
+  --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
+```
+
+Current L2 processing step identifiers include:
+
+```text
+l2-unf-rad-cam
+l2-cf-cam
+l2-cf-cam-camtime
+l2-nb-bb-cam-camtime
+l2-toa-flux-cam
+l2-unf-rad-imager
+l2-comp-flux
+l2-nb-bb-imager-camtime
+l2-toa-flux-imager
 ```
 
 Example usage:
 
 ```shell
-libera-utils ecr-upload recently-built-ssw-sfc-flux latest l2-ssw-surface-flux --ecr-image-tags latest --ignore-docker-config
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux \
+  --image-tag latest --ecr-tags latest --ignore-docker-config
 ```
 
 To get a list of specific algorithm names allowed in this command, run `libera-utils ecr-upload -h`
@@ -120,17 +139,20 @@ options:
 ### Sub-Command `step-function-trigger`
 
 ```shell
-usage: libera-utils step-function-trigger [-h] [-w] [-v] algorithm_name applicable_day
+usage: libera-utils step-function-trigger [-h] [--verify] [--wait-time WAIT_TIME]
+                                          [--profile PROFILE]
+                                          algorithm_name applicable_day
 
 positional arguments:
-  algorithm_name        Algorithm name you want to run
-  applicable_day        Day of data you want to rerun. Format of date: YYYY-MM-DD
+  algorithm_name        Processing step identifier to run
+  applicable_day        Day of data to run. Format: YYYY-MM-DD
 
 options:
   -h, --help            show this help message and exit
-  -w, --wait_for_finish
-                        Block command line until step function completes (may be a long time)
-  -v, --verbose         Prints out the result of the step_function_trigger run
+  --verify              Poll the Coordination Table to verify that the job was created
+  --wait-time WAIT_TIME
+                        Maximum verification wait in seconds. Default is 60.
+  --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
 ```
 
 ### Sub-Command `s3-utils`

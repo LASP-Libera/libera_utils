@@ -134,14 +134,14 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
     # Assert that the expected kernel file exists, contains the correct SPICE
     # object and correct time coverage.
     static_pairings = [
-        ("LIBERA_BASE", "libera_base_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_AZ", "libera_az_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_WFOV_CAM", "libera_wfov_cam_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_EL", "libera_el_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_SW_RAD", "libera_sw_rad_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_SSW_RAD", "libera_ssw_rad_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_LW_RAD", "libera_lw_rad_v01.fixed_offset.spk.bsp"),
-        ("LIBERA_TOT_RAD", "libera_tot_rad_v01.fixed_offset.spk.bsp"),
+        ("LIBERA_BASE", "libera_base.fixed_offset.spk.bsp"),
+        ("LIBERA_AZ", "libera_az.fixed_offset.spk.bsp"),
+        ("LIBERA_WFOV_CAM", "libera_wfov_cam.fixed_offset.spk.bsp"),
+        ("LIBERA_EL", "libera_el.fixed_offset.spk.bsp"),
+        ("LIBERA_SW_RAD", "libera_sw_rad.fixed_offset.spk.bsp"),
+        ("LIBERA_SSW_RAD", "libera_ssw_rad.fixed_offset.spk.bsp"),
+        ("LIBERA_LW_RAD", "libera_lw_rad.fixed_offset.spk.bsp"),
+        ("LIBERA_TOT_RAD", "libera_tot_rad.fixed_offset.spk.bsp"),
     ]
     for obj_key, kernel_file in static_pairings:
         span = sp.ext.kernel_coverage(short_tmp_path / kernel_file, mkrn.mappings[obj_key], to_fmt="iso")
@@ -201,14 +201,14 @@ def test_make_spacecraft_kernels(
     # Assert that the expected kernel file exists, contains the correct SPICE
     # object and correct time coverage.
     span = sp.ext.kernel_coverage(
-        short_tmp_path / "noaa20_sc_v01.ephemeris.spk.bsp", mkrn.mappings["NOAA20_SC"], to_fmt="iso"
+        short_tmp_path / "noaa20_sc.ephemeris.spk.bsp", mkrn.mappings["NOAA20_SC"], to_fmt="iso"
     )
     assert span == ("2021-04-09 12:00:06.030922", "2021-04-09 12:02:05.030923")
 
     # Clock kernel must be loaded to inspect CK kernels.
     with sp.ext.load_kernel(config.get("LIBERA_KERNEL_CLOCK")):
         span = sp.ext.kernel_coverage(
-            short_tmp_path / "noaa20_sc_v01.attitude.ck.bc", mkrn.mappings["NOAA20_SC"], to_fmt="iso"
+            short_tmp_path / "noaa20_sc.attitude.ck.bc", mkrn.mappings["NOAA20_SC"], to_fmt="iso"
         )
         assert span == ("2021-04-09 12:00:05.930922", "2021-04-09 12:02:04.930923")
 
@@ -283,11 +283,11 @@ def test_make_spacecraft_azel_kernels(
     # Clock kernel must be loaded to inspect CK kernels.
     with sp.ext.load_kernel(config.get("LIBERA_KERNEL_CLOCK")):
         span = sp.ext.kernel_coverage(
-            short_tmp_path / "libera_az_v01.attitude.ck.bc", mkrn.mappings["LIBERA_AZ"], to_fmt="iso"
+            short_tmp_path / "libera_az.attitude.ck.bc", mkrn.mappings["LIBERA_AZ"], to_fmt="iso"
         )
         assert span == ("2021-04-09 12:00:06.173775", "2021-04-09 12:02:04.964132")
         span = sp.ext.kernel_coverage(
-            short_tmp_path / "libera_el_v01.attitude.ck.bc", mkrn.mappings["LIBERA_EL"], to_fmt="iso"
+            short_tmp_path / "libera_el.attitude.ck.bc", mkrn.mappings["LIBERA_EL"], to_fmt="iso"
         )
         assert span == ("2021-04-09 12:00:06.173775", "2021-04-09 12:02:04.964132")
 

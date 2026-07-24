@@ -155,7 +155,7 @@ def test_ls_kernels(furnish_sclk, caplog):
     caplog.set_level(logging.DEBUG)
     result = spice_utils.ls_kernels(verbose=True, log=True)
     assert result == [spice_utils.KernelFileRecord("TEXT", config.get("JPSS_SCLK"))]
-    assert "jpss_sclk_v01.tsc" in caplog.records[0].message
+    assert "jpss_sclk.tsc" in caplog.records[0].message
 
 
 def test_ls_spice_constants(furnish_test_lsk, furnish_fk):

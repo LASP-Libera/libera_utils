@@ -5,6 +5,7 @@ description = "Utility package for Libera Science Data Processing and the Libera
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
     { name = "Heather Cronk" },
+    { name = "Caitlin Kessler" },
     { name = "Kim Kokkonen" },
     { name = "Matthew Maclay" },
     { name = "Gavin Medley" },
