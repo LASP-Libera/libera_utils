@@ -6,6 +6,10 @@ from typing import Union
 
 from libera_utils.aws.constants import LiberaAccountSuffix, LiberaDataBucketName
 
+# Shared ECR repository name for radiometer ObsID-specific calibration combine steps.
+# CDK should create one ECR repo with this name and attach it to each cal-* Batch job.
+CAL_RAD_SHARED_ECR_NAME = "cal-rad-docker-repo"
+
 
 class ManifestType(StrEnum):
     """Enumerated legal manifest type values"""
@@ -155,20 +159,92 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_ana_hk_decoded = ("ANA-HK-DECODED", DataLevel.L1A)
     l1a_icie_temp_hk_decoded = ("TEMP-HK-DECODED", DataLevel.L1A)
 
-    # Calibration Event Products
-    # ==========================
-    # Solar Calibration Event Products (merged NOM-HK, PEV-SW, RAD-SAMPLE per face)
-    cal_solar_face1_combined = ("SOLAR-FACE1-COMBINED", DataLevel.CAL)
-    cal_solar_face2_combined = ("SOLAR-FACE2-COMBINED", DataLevel.CAL)
-    cal_solar_face3_combined = ("SOLAR-FACE3-COMBINED", DataLevel.CAL)
-    # LW Calibration Event Product (merged NOM-HK, PEV-SW, PEC-SW, RAD-SAMPLE, AXIS-SAMPLE)
-    cal_lw_temp1_combined = ("LW-TEMP1-COMBINED", DataLevel.CAL)
-    cal_lw_temp2_combined = ("LW-TEMP2-COMBINED", DataLevel.CAL)
-    cal_lw_temp3_combined = ("LW-TEMP3-COMBINED", DataLevel.CAL)
-    # Gain and Noise Calibration Event Product (merged RAD-FULL, CAL-FULL, NOM-HK)
-    cal_gain_combined = ("GAIN-COMBINED", DataLevel.CAL)
-    # SW Calibration Event Product (merged PEV-SW, PEC-SW, RAD-SAMPLE, CAL-SAMPLE, AXIS-SAMPLE, NOM-HK)
-    cal_sw_combined = ("SW-COMBINED", DataLevel.CAL)
+    # L1A ObsID-trimmed NOM-HK products (daily NOM-HK subset to one calibration ObsID)
+    # =============================================================================
+    # Produced by L1A preprocessing (Step 1); consumed by ObsID-specific cal-combine steps.
+    l1a_icie_nom_hk_gain_trimmed = ("NOM-HK-GAIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_365nm_trimmed = ("NOM-HK-SWC-365NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_405nm_trimmed = ("NOM-HK-SWC-405NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_520nm_trimmed = ("NOM-HK-SWC-520NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_635nm_trimmed = ("NOM-HK-SWC-635NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_840nm_trimmed = ("NOM-HK-SWC-840NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_1550nm_trimmed = ("NOM-HK-SWC-1550NM-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lwc_temp1_trimmed = ("NOM-HK-LWC-TEMP1-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lwc_temp2_trimmed = ("NOM-HK-LWC-TEMP2-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lwc_temp3_trimmed = ("NOM-HK-LWC-TEMP3-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_ssw_pri_trimmed = ("NOM-HK-SOLAR-SSW-PRI-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_tot_pri_trimmed = ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_lw_pri_trimmed = ("NOM-HK-SOLAR-LW-PRI-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_sw_pri_trimmed = ("NOM-HK-SOLAR-SW-PRI-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_ssw_sec_trimmed = ("NOM-HK-SOLAR-SSW-SEC-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_tot_sec_trimmed = ("NOM-HK-SOLAR-TOT-SEC-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_lw_sec_trimmed = ("NOM-HK-SOLAR-LW-SEC-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_sw_sec_trimmed = ("NOM-HK-SOLAR-SW-SEC-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_ssw_ter_trimmed = ("NOM-HK-SOLAR-SSW-TER-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_tot_ter_trimmed = ("NOM-HK-SOLAR-TOT-TER-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_lw_ter_trimmed = ("NOM-HK-SOLAR-LW-TER-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_sw_ter_trimmed = ("NOM-HK-SOLAR-SW-TER-TRIMMED", DataLevel.L1A)
+    # Camera ObsID-trimmed NOM-HK (WFOV source field)
+    l1a_icie_nom_hk_ct_video_6min_trimmed = ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_ct_video_12min_trimmed = ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_ct_video_18min_trimmed = ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_6min_trimmed = ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_12min_trimmed = ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_18min_trimmed = ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A)
+    # VIIRS lunar (ObsID 513 on RAD and WFOV)
+    l1a_icie_nom_hk_viirs_lunar_cal_trimmed = ("NOM-HK-VIIRS-LUNAR-CAL-TRIMMED", DataLevel.L1A)
+    # Radiometer lunar calibration ObsID-trimmed NOM-HK (RAD source field)
+    l1a_icie_nom_hk_lunar_cal1_trimmed = ("NOM-HK-LUNAR-CAL1-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lunar_cal2_trimmed = ("NOM-HK-LUNAR-CAL2-TRIMMED", DataLevel.L1A)
+
+    # Calibration Event Products (one product per radiometer / camera calibration ObsID)
+    # ==================================================================================
+    # Gain and Noise Calibration (ObsID 512)
+    cal_gain = ("GAIN", DataLevel.CAL)
+    # Shortwave LED Calibration (ObsIDs 256-261)
+    cal_swc_365nm = ("SWC-365NM", DataLevel.CAL)
+    cal_swc_405nm = ("SWC-405NM", DataLevel.CAL)
+    cal_swc_520nm = ("SWC-520NM", DataLevel.CAL)
+    cal_swc_635nm = ("SWC-635NM", DataLevel.CAL)
+    cal_swc_840nm = ("SWC-840NM", DataLevel.CAL)
+    cal_swc_1550nm = ("SWC-1550NM", DataLevel.CAL)
+    # Longwave Blackbody Calibration (ObsIDs 320-322)
+    cal_lwc_temp1 = ("LWC-TEMP1", DataLevel.CAL)
+    cal_lwc_temp2 = ("LWC-TEMP2", DataLevel.CAL)
+    cal_lwc_temp3 = ("LWC-TEMP3", DataLevel.CAL)
+    # Solar Diffuser Calibration — Face 1 / primary (ObsIDs 384-387)
+    cal_solar_ssw_pri = ("SOLAR-SSW-PRI", DataLevel.CAL)
+    cal_solar_tot_pri = ("SOLAR-TOT-PRI", DataLevel.CAL)
+    cal_solar_lw_pri = ("SOLAR-LW-PRI", DataLevel.CAL)
+    cal_solar_sw_pri = ("SOLAR-SW-PRI", DataLevel.CAL)
+    # Solar Diffuser Calibration — Face 2 / secondary (ObsIDs 388-391)
+    cal_solar_ssw_sec = ("SOLAR-SSW-SEC", DataLevel.CAL)
+    cal_solar_tot_sec = ("SOLAR-TOT-SEC", DataLevel.CAL)
+    cal_solar_lw_sec = ("SOLAR-LW-SEC", DataLevel.CAL)
+    cal_solar_sw_sec = ("SOLAR-SW-SEC", DataLevel.CAL)
+    # Solar Diffuser Calibration — Face 3 / tertiary (ObsIDs 392-395)
+    cal_solar_ssw_ter = ("SOLAR-SSW-TER", DataLevel.CAL)
+    cal_solar_tot_ter = ("SOLAR-TOT-TER", DataLevel.CAL)
+    cal_solar_lw_ter = ("SOLAR-LW-TER", DataLevel.CAL)
+    cal_solar_sw_ter = ("SOLAR-SW-TER", DataLevel.CAL)
+    # Lunar Calibration (ObsIDs 448-449); cal-combine / ProcessingStepIdentifiers deferred
+    cal_lunar_cal1 = ("LUNAR-CAL1", DataLevel.CAL)
+    cal_lunar_cal2 = ("LUNAR-CAL2", DataLevel.CAL)
+    # Camera calibration events (WFOV ObsIDs; ProcessingStepIdentifiers deferred)
+    cal_ct_video_6min = ("CT-VIDEO-6MIN", DataLevel.CAL)
+    cal_ct_video_12min = ("CT-VIDEO-12MIN", DataLevel.CAL)
+    cal_ct_video_18min = ("CT-VIDEO-18MIN", DataLevel.CAL)
+    cal_raps_video_6min = ("RAPS-VIDEO-6MIN", DataLevel.CAL)
+    cal_raps_video_12min = ("RAPS-VIDEO-12MIN", DataLevel.CAL)
+    cal_raps_video_18min = ("RAPS-VIDEO-18MIN", DataLevel.CAL)
+    cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL)
+    cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL)
+    cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL)
+    # VIIRS lunar cal (ObsID 513 on both RAD and WFOV); ProcessingStepIdentifiers deferred
+    cal_viirs_lunar_cal = ("VIIRS-LUNAR-CAL", DataLevel.CAL)
 
     # SPICE kernels
     # =============
@@ -327,9 +403,10 @@ class ProcessingStepIdentifier(StrEnum):
 
     The string values are the processing step names used in orchestration.
 
-    Each member is defined as a tuple: (step_name, products_list)
+    Each member is defined as a tuple: (step_name, products_list[, shared_ecr_name])
     - step_name: The string value used in orchestration and AWS resources
     - products_list: List of DataProductIdentifier members that this step produces
+    - shared_ecr_name: Optional ECR repository name shared by multiple steps (e.g. cal-rad steps)
 
     Example:
         >>> step = ProcessingStepIdentifier.l1b_rad
@@ -339,20 +416,31 @@ class ProcessingStepIdentifier(StrEnum):
 
     When adding new processing steps:
         1. Add the enum member with its step name and list of produced products
-        2. No need to update any lookup dictionaries - relationships are embedded!
+        2. Optionally pass a shared ECR name when multiple steps use one image repository
+        3. No need to update any lookup dictionaries - relationships are embedded!
     """
 
     _products: list["DataProductIdentifier"]
+    _shared_ecr_name: str | None
 
-    def __new__(cls, value: str, products: list[DataProductIdentifier] = None):  # type: ignore
+    def __new__(
+        cls,
+        value: str,
+        products: list[DataProductIdentifier] | None = None,
+        shared_ecr_name: str | None = None,
+    ):  # type: ignore
         """Create a new ProcessingStepIdentifier with embedded metadata.
 
         Parameters
         ----------
         value : str
             The string value for this processing step (used in orchestration)
-        products : list
+        products : list, optional
             List of DataProductIdentifier members that this step produces
+        shared_ecr_name : str, optional
+            Shared ECR repository name. When set, ``ecr_name`` returns this value
+            instead of ``{step}-docker-repo``. Used so ObsID-specific cal steps
+            can share one radiometer calibration image repository.
         """
         if value != value.lower():
             raise ValueError(
@@ -361,6 +449,7 @@ class ProcessingStepIdentifier(StrEnum):
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj._products = products or []
+        obj._shared_ecr_name = shared_ecr_name
         return obj
 
     # SPICE processing steps
@@ -370,6 +459,30 @@ class ProcessingStepIdentifier(StrEnum):
     # L1B processing steps
     l1b_rad = ("l1b-rad", [DataProductIdentifier.l1b_rad])
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
+
+    # Radiometer calibration event combination steps (shared cal-rad ECR; one step per ObsID product)
+    cal_gain = ("cal-gain", [DataProductIdentifier.cal_gain], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_365nm = ("cal-swc-365nm", [DataProductIdentifier.cal_swc_365nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_405nm = ("cal-swc-405nm", [DataProductIdentifier.cal_swc_405nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_520nm = ("cal-swc-520nm", [DataProductIdentifier.cal_swc_520nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_635nm = ("cal-swc-635nm", [DataProductIdentifier.cal_swc_635nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_840nm = ("cal-swc-840nm", [DataProductIdentifier.cal_swc_840nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_1550nm = ("cal-swc-1550nm", [DataProductIdentifier.cal_swc_1550nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_temp1 = ("cal-lwc-temp1", [DataProductIdentifier.cal_lwc_temp1], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_temp2 = ("cal-lwc-temp2", [DataProductIdentifier.cal_lwc_temp2], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_temp3 = ("cal-lwc-temp3", [DataProductIdentifier.cal_lwc_temp3], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_ssw_pri = ("cal-solar-ssw-pri", [DataProductIdentifier.cal_solar_ssw_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_tot_pri = ("cal-solar-tot-pri", [DataProductIdentifier.cal_solar_tot_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_lw_pri = ("cal-solar-lw-pri", [DataProductIdentifier.cal_solar_lw_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_sw_pri = ("cal-solar-sw-pri", [DataProductIdentifier.cal_solar_sw_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_ssw_sec = ("cal-solar-ssw-sec", [DataProductIdentifier.cal_solar_ssw_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_tot_sec = ("cal-solar-tot-sec", [DataProductIdentifier.cal_solar_tot_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_lw_sec = ("cal-solar-lw-sec", [DataProductIdentifier.cal_solar_lw_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_sw_sec = ("cal-solar-sw-sec", [DataProductIdentifier.cal_solar_sw_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_ssw_ter = ("cal-solar-ssw-ter", [DataProductIdentifier.cal_solar_ssw_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_tot_ter = ("cal-solar-tot-ter", [DataProductIdentifier.cal_solar_tot_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_lw_ter = ("cal-solar-lw-ter", [DataProductIdentifier.cal_solar_lw_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_sw_ter = ("cal-solar-sw-ter", [DataProductIdentifier.cal_solar_sw_ter], CAL_RAD_SHARED_ECR_NAME)
 
     # L2 processing steps — camera cloud fraction track
     l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])
@@ -463,7 +576,13 @@ class ProcessingStepIdentifier(StrEnum):
 
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
         with on a regular basis.
+
+        When a step was created with ``shared_ecr_name`` (e.g. radiometer cal-combine steps),
+        that shared repository name is returned so CDK can attach one ECR to many Batch jobs.
+        Otherwise returns ``{step}-docker-repo``.
         """
+        if self._shared_ecr_name is not None:
+            return self._shared_ecr_name
         return f"{str(self)}-docker-repo"
 
     @property

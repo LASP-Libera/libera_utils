@@ -389,3 +389,46 @@ variables:
       long_name: Packet index for axis sample data
       comment: Maps each axis sample to its originating packet index
 ```
+
+## ObsID-trimmed NOM-HK products
+
+After a daily `NOM-HK-DECODED` product is produced, calibration pipelines need a per-ObsID
+subset of that file. Helpers in `libera_utils.l1a.nom_hk_trim` detect contiguous runs of
+known calibration ObsIDs and write one `NOM-HK-*-TRIMMED` NetCDF per run.
+
+NOM-HK carries two ObsID fields. Which field to scan is declared in
+`libera_utils.obsids.OBSID_REGISTRY` via `NomHkObsidSource`:
+
+| Source | NOM-HK variable       | Typical events                                       |
+| ------ | --------------------- | ---------------------------------------------------- |
+| `RAD`  | `ICIE__SW_OBSID_RAD`  | Radiometer cal (gain, SWC, LWC, solar, lunar, VIIRS) |
+| `WFOV` | `ICIE__SW_OBSID_WFOV` | Camera cal (CT/RAPS video, darks, VIIRS lunar)       |
+
+Numeric ObsIDs are **not** unique across those fields (e.g. RAD `256` is SWC-365NM;
+WFOV `256` is Darks of Darks). Registry keys are `(source, obsid)`. ObsID `513`
+(VIIRS lunar) is registered under both sources and shares the same TRIMMED/CAL
+ProductIDs.
+
+```python
+from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
+
+# After parse_packets_to_l1a_dataset(...) for NOM-HK:
+trimmed_paths = write_trimmed_nom_hk_products(
+    nom_hk_ds,
+    output_dir,
+    time_variable="PACKET_ICIE_TIME",
+    add_archive_path_prefix=True,  # L1A preprocessor / ingest dropbox
+)
+```
+
+TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (and thus
+the filename product token) changes. Science/scan modes (ObsIDs 128, 132, and 136–140)
+are cataloged but do not emit TRIMMED files.
+
+Normal operations expect each calibration ObsID at most once per day. If the same
+`(source, obsid)` appears in multiple disjoint runs, each run is written as a separate
+file and a warning is logged.
+
+**Preprocessor note (CDK follow-on):** after writing `NOM-HK-DECODED`, call
+`write_trimmed_nom_hk_products` and stage each TRIMMED path the same way as other L1A
+outputs so ingest can trigger ObsID-specific cal steps.
