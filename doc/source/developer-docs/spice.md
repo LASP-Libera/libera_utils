@@ -10,19 +10,19 @@ These kernels are part of the package data, are manually edited, and change rare
 
 ### Frame Kernel (FK)
 
-e.g. `libera_fk_v01.tf`
+e.g. `libera_fk.tf`
 
 Contains reference frame definitions for JPSS and Libera.
 
 ### Spacecraft Clock Kernel (SCLK)
 
-e.g. `jpss_sclk_v01.tsc`
+e.g. `jpss_sclk.tsc`
 
 Contains specification of the spacecraft clock on JPSS.
 
 ### Instrument Kernel (IK)
 
-e.g. `libera_cam_ik_v01.ti`, `libera_rad_ik_v01.ti`
+e.g. `libera_cam_ik.ti`, `libera_rad_ik.ti`
 
 Contains geometry specification data of the Libera instruments.
 

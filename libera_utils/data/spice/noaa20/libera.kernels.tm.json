@@ -1,6 +1,6 @@
 {
   "mappings": {
-    "JPSS4_SC": {
+    "NOAA20_SC": {
       "id_code": -143013,
       "frame": true,
       "clock": true,
@@ -16,15 +16,15 @@
       "frame": true,
       "attitude": true
     },
+    "LIBERA_WFOV_CAM": {
+      "id_code": -143013010,
+      "frame": true
+    },
     "LIBERA_EL": {
       "id_code": -143013003,
       "clock": -143013,
       "frame": true,
       "attitude": true
-    },
-    "LIBERA_WFOV_CAM": {
-      "id_code": -143013010,
-      "frame": true
     },
     "LIBERA_SW_RAD": {
       "id_code": -143013011,
@@ -46,13 +46,12 @@
   "mission_kernels": [
     "libera.frames.fk.tf",
     "libera.instruments.ik.ti",
-    "jpss4.fakeclock.sclk.tsc"
+    "noaa20.fakeclock.sclk.tsc"
   ],
   "sds_kernels": [
     "earth_assoc_itrf93.tf",
-    "de440s.bsp",
     "earth_000101_211220_210926.bpc",
     "naif0012.tls",
-    "pck00010.tpc"
+    "pck00011.tpc"
   ]
 }

@@ -254,12 +254,12 @@ class TestStaticKernelLoading:
     def test_output_basename_for_static_kernel_config(self):
         """SPK/CK JSON configs map to the expected binary kernel basenames."""
         assert (
-            KernelManager._output_basename_for_static_kernel_config(Path("libera_base_v01.fixed_offset.spk.json"))
-            == "libera_base_v01.fixed_offset.spk.bsp"
+            KernelManager._output_basename_for_static_kernel_config(Path("libera_base.fixed_offset.spk.json"))
+            == "libera_base.fixed_offset.spk.bsp"
         )
         assert (
-            KernelManager._output_basename_for_static_kernel_config(Path("jpss4_sc_v01.attitude.ck.json"))
-            == "jpss4_sc_v01.attitude.ck.bc"
+            KernelManager._output_basename_for_static_kernel_config(Path("jpss4_sc.attitude.ck.json"))
+            == "jpss4_sc.attitude.ck.bc"
         )
 
     @patch("libera_utils.config.config.get")
@@ -267,15 +267,15 @@ class TestStaticKernelLoading:
         """Static generated manifest includes only .bc/.bsp derived from static JSON config entries."""
         mock_config_get.side_effect = lambda key: {
             "LIBERA_KERNEL_STATIC_CONFIGS": [
-                "/tmp/libera_base_v01.fixed_offset.spk.json",
-                "/tmp/jpss4_sc_v01.attitude.ck.json",
+                "/tmp/libera_base.fixed_offset.spk.json",
+                "/tmp/jpss4_sc.attitude.ck.json",
             ],
             "LIBERA_KERNEL_DIR": "/tmp/mission",
         }[key]
 
         assert KernelManager._static_generated_kernel_basenames() == [
-            "jpss4_sc_v01.attitude.ck.bc",
-            "libera_base_v01.fixed_offset.spk.bsp",
+            "jpss4_sc.attitude.ck.bc",
+            "libera_base.fixed_offset.spk.bsp",
         ]
 
     @patch.object(KernelManager, "_static_generated_kernel_basenames", return_value=["x.bsp"])
@@ -336,7 +336,7 @@ class TestStaticKernelLoading:
 
         mission_dir = tmp_path / "mission"
         mission_dir.mkdir()
-        (mission_dir / "libera_fk_v01.tf").write_text("fake kernel")
+        (mission_dir / "libera_fk.tf").write_text("fake kernel")
         meta_file = tmp_path / "meta.json"
         meta_file.write_text("{}")
 
@@ -346,7 +346,7 @@ class TestStaticKernelLoading:
             "LIBERA_KERNEL_META": str(meta_file),
             "GENERIC_KERNEL_DIR": str(tmp_path),
             "LIBERA_KERNEL_STATIC_CONFIGS": [],
-            "LIBERA_KERNEL_INSTRUMENT": str(mission_dir / "libera_v01.instruments.ik.ti"),
+            "LIBERA_KERNEL_INSTRUMENT": str(mission_dir / "libera.instruments.ik.ti"),
         }[key]
 
         # Trigger an OSError during copy
