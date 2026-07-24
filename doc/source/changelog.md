@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.10.0
+
+- FEAT: Kernel generation applies the measured Libera opto-mechanical frame misalignments from OAV3 ground testing. The Az/El mechanism CKs now encode rotation about the measured axes of rotation, and the radiometer frames carry the measured line-of-sight boresight, so the generated kernels reflect the true instrument geometry instead of nominal placeholders. The three source unit vectors (`LIBERA_AZ_AOR_IN_STAND`, `LIBERA_EL_AOR_IN_STAND`, `LIBERA_EL0_Z_IN_STAND`) are stored as keywords in the frame kernel; the Az/El CK configs switch from Euler angles to quaternions, and `kernel_maker.add_mechanism_ck_quaternions` builds the per-sample rotations about the measured axes (applied after the encoder correction).
+
 ## 5.9.3
 
 - FEAT: Az/El mechanism CKs now apply deterministic sinusoidal encoder-angle corrections during kernel generation, so the stored quaternions reflect the true mechanism rotation rather than the raw encoder readout. Corrections are applied to the filtered encoder angles in `create_kernel_from_l1a` (L1A telemetry is left unchanged), with matching forward/inverse helpers (`correct_azimuth`/`correct_elevation`, `uncorrect_azimuth`/`uncorrect_elevation`, and DataFrame-level `apply_encoder_corrections`/`reverse_encoder_corrections`)

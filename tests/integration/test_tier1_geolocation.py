@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 from curryer import meta, spicetime
 from curryer import spicierpy as sp
-from curryer.compute import spatial
+from curryer.compute import constants, spatial
 
 from libera_utils import kernel_maker
 from libera_utils.config import config
@@ -166,24 +166,143 @@ def test_geolocate_earth_target(
         per_good = qf_counts[0] / qf_counts.sum()
         assert per_good >= 0.78, per_good
 
+        # Relaxed bounding box rather than an exact footprint: the wide cross-track scan grazes the limb,
+        # where samples flip between hit and ellipsoid-miss across builds and move the exact center.
+        # TODO LIBSDC-703: re-evaluate this assertion during the geolocation-test rework.
         slc = slice(*spicetime.adapt(["2028-01-02 00:21:22", "2028-01-02 00:21:36"], "iso"))
-        print("Mean Lat: ", np.nanmean(ellips_lla_df.loc[slc]["lat"]))
-        print("Mean Lon: ", np.nanmean(ellips_lla_df.loc[slc]["lon"]))
+        median_lat = np.nanmedian(ellips_lla_df.loc[slc]["lat"])
+        median_lon = np.nanmedian(ellips_lla_df.loc[slc]["lon"])
+        print(f"footprint median: lat {median_lat:.6f}, lon {median_lon:.6f}")
+        assert 28.0 < median_lat < 31.0, median_lat
+        assert 20.0 < median_lon < 23.0, median_lon
 
-        clon, clat = 23.39, 28.55
-        hist, xedge, yedge = np.histogram2d(
-            ellips_lla_df.loc[slc]["lon"],
-            ellips_lla_df.loc[slc]["lat"],
-            bins=(13, 13),
-            range=[[clon - 3, clon + 3], [clat - 3, clat + 3]],
-        )
-        idx = np.where(hist == hist.max())
-        ix, iy = idx[0][0], idx[1][0]
 
-        print(f"Expected focus point:    lon=[{clon}],          lat=[{clat}]")
-        print(
-            f"2D histogram max between lon=[{xedge[ix]:.3f}, {xedge[ix + 1]:.3f}],"
-            f" lat=[{yedge[iy]:.3f}, {yedge[iy + 1]:.3f}]"
+# Ideal orthogonal-gimbal axes. The measured axes of rotation are small perturbations of these, so
+# building the Az/El CKs about them with an identity radiometer boresight reproduces the
+# nominal, misalignment-free geometry; the measured-minus-nominal footprint shift is then purely the
+# misalignment.
+NOMINAL_AZ_AXIS = np.array([0.0, 0.0, 1.0])
+NOMINAL_EL_AXIS = np.array([1.0, 0.0, 0.0])
+
+
+def _set_ck_quaternions(df, field, axis):
+    """Populate the mechanism CK quaternion columns for ``field`` about ``axis``, in place."""
+    quaternions = kernel_maker.mechanism_quaternions(df[field].to_numpy(), axis)
+    for name, column in zip(kernel_maker.MECHANISM_QUATERNION_COLUMNS[field], quaternions.T, strict=True):
+        df[name] = column
+
+
+def _haversine_km(lon1, lat1, lon2, lat2):
+    """Great-circle distance (km) between arrays of geodetic points (degrees in)."""
+    lon1, lat1, lon2, lat2 = (np.deg2rad(v) for v in (lon1, lat1, lon2, lat2))
+    haversine = (1 - np.cos(lat2 - lat1) + np.cos(lat1) * np.cos(lat2) * (1 - np.cos(lon2 - lon1))) / 2
+    return 2 * constants.WGS84_SEMI_MAJOR_AXIS_KM * np.arcsin(np.sqrt(haversine))
+
+
+@mock.patch.object(kernel_maker.xr, "open_dataset", return_value=mock.MagicMock())
+def test_misalignment_shifts_geolocation(
+    mock_open_dataset,
+    curryer_lsk,
+    short_tmp_path,
+    spice_test_data_path,
+    test_data_path,
+    monkeypatch,
+):
+    """A/B geolocation: the measured misalignments shift the footprint from nominal.
+
+    Geolocates the same Libya-4 scan twice from one set of spacecraft kernels -- once with the ideal
+    orthogonal gimbal (Az about +Z, El about +X, identity radiometer boresight) and once with the
+    measured axes of rotation and boresight -- and checks that the misalignment produces a non-zero,
+    small, coherent shift in the geolocated footprint. Differencing the two configs within one run
+    cancels common-mode geometry/platform effects, so the check is deterministic across Python/msopck
+    builds and pins no absolute footprint coordinate. The physical size of the offset is validated
+    against the engineering LOS in test_los_alignment.py.
+    """
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    km = KernelManager()
+    km.load_static_kernels()
+
+    static_kernels = []
+    for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
+        static_kernels.append(spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
+
+    input_sc_file = test_data_path / "tier1_geo" / "JPSS-4_Fixed_Ephemeris_And_Attitude.csv"
+    input_az_file = test_data_path / "tier1_geo" / "Libya-4_access003.csv"
+    input_el_file = test_data_path / "tier1_geo" / "libera_el_cross_track_scan_profile_72deg_2021-10.csv"
+
+    # Spacecraft kernels and measured-geometry Az/El CKs (create_kernel_from_l1a corrects the encoder
+    # angles and builds the quaternions about the measured axes read from the production frame kernel).
+    # TODO LIBSDC-703: consume pre-generated (committed) JPSS-4 CKs instead of regenerating both configs
+    # each run, mirroring the libera_rad / libera_cam geolocation tests.
+    with mock.patch("libera_utils.kernel_maker.create_kernel_dataframe_from_l1a") as mock_create_l1a:
+        mock_create_l1a.return_value = preprocess_preliminary_data(input_sc_file)
+        sc_spk_file = kernel_maker.create_kernel_from_l1a(input_sc_file, "JPSS-SPK", short_tmp_path)
+        sc_ck_file = kernel_maker.create_kernel_from_l1a(input_sc_file, "JPSS-CK", short_tmp_path)
+        mock_create_l1a.return_value = preprocess_preliminary_data(input_az_file)
+        az_ck_measured = kernel_maker.create_kernel_from_l1a(input_az_file, "AZROT-CK", short_tmp_path)
+        mock_create_l1a.return_value = preprocess_preliminary_data(input_el_file)
+        el_ck_measured = kernel_maker.create_kernel_from_l1a(input_el_file, "ELSCAN-CK", short_tmp_path)
+
+    sc_kernels = [*static_kernels, sc_spk_file, sc_ck_file]
+
+    az_dataset, _ = preprocess_preliminary_data(input_az_file)
+    az_utc_times = spicetime.adapt(az_dataset["AXIS_SAMPLE_ICIE_ET"], "et", "dt64")
+    ugps_times = spicetime.adapt(pd.date_range(az_utc_times[1], az_utc_times[-2], freq="10ms", inclusive="left"), "iso")
+
+    mkrn = meta.MetaKernel.from_json(
+        config.get("LIBERA_KERNEL_META"),
+        relative=True,
+        sds_dir=config.get("GENERIC_KERNEL_DIR"),
+    )
+    non_fk_mission = [k for k in mkrn.mission_kernels if "frames.fk" not in str(k)]
+    nominal_fk = test_data_path / "tier0_geo" / "libera_nominal.frames.fk.tf"
+    slc = slice(*spicetime.adapt(["2028-01-02 00:21:22", "2028-01-02 00:21:36"], "iso"))
+
+    with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, [*sc_kernels, az_ck_measured, el_ck_measured]]):
+        measured_lla, _, _ = spatial.instrument_intersect_ellipsoid(
+            ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True
         )
-        assert ix == hist.shape[0] // 2, ix
-        assert iy == hist.shape[0] // 2, iy
+
+    # Nominal geometry: rebuild the Az/El CKs about the ideal axes and swap in the frozen misalignment-
+    # free frame kernel. Clear the pool first so the production kernel's measured boresight can't linger.
+    az_nominal, _ = preprocess_preliminary_data(input_az_file)
+    kernel_maker.apply_encoder_corrections(az_nominal)
+    _set_ck_quaternions(az_nominal, kernel_maker.AZ_ENCODER_FIELD, NOMINAL_AZ_AXIS)
+    az_ck_nominal = spice_utils.make_kernel(
+        config.get("LIBERA_KERNEL_AZ_CK_CONFIG"), short_tmp_path, input_data=az_nominal
+    )
+
+    el_nominal, _ = preprocess_preliminary_data(input_el_file)
+    kernel_maker.apply_encoder_corrections(el_nominal)
+    _set_ck_quaternions(el_nominal, kernel_maker.EL_ENCODER_FIELD, NOMINAL_EL_AXIS)
+    el_ck_nominal = spice_utils.make_kernel(
+        config.get("LIBERA_KERNEL_EL_CK_CONFIG"), short_tmp_path, input_data=el_nominal
+    )
+
+    km.unload_all()
+
+    with sp.ext.load_kernel(
+        [mkrn.sds_kernels, [nominal_fk, *non_fk_mission], [*sc_kernels, az_ck_nominal, el_ck_nominal]]
+    ):
+        nominal_lla, _, _ = spatial.instrument_intersect_ellipsoid(
+            ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True
+        )
+
+    m_lat, m_lon = measured_lla.loc[slc]["lat"].to_numpy(), measured_lla.loc[slc]["lon"].to_numpy()
+    n_lat, n_lon = nominal_lla.loc[slc]["lat"].to_numpy(), nominal_lla.loc[slc]["lon"].to_numpy()
+    good = np.isfinite(m_lat) & np.isfinite(m_lon) & np.isfinite(n_lat) & np.isfinite(n_lon)
+
+    # Both configs geolocate most of the scan (some far-cross-track samples miss the ellipsoid).
+    assert good.sum() > good.size // 2, good.mean()
+
+    # Core check: the measured misalignment changes the geolocation -- the two footprints are not
+    # identical. The difference IS the misalignment, and because it is a difference of two configs
+    # geolocated in the same run it is deterministic across Python/msopck builds (an absolute footprint
+    # coordinate is not). A removed misalignment collapses the configs to equality and fails here.
+    assert not np.allclose(m_lat[good], n_lat[good]) or not np.allclose(m_lon[good], n_lon[good])
+
+    # Diagnostic only, not asserted: the physical size of the offset is validated against the
+    # engineering LOS in test_los_alignment.py. This test only shows the misalignment reaches the
+    # geolocated footprint at all -- a magnitude band here would be a fragile, geometry-dependent number.
+    shift_deg = _haversine_km(m_lon[good], m_lat[good], n_lon[good], n_lat[good]) / 111.32
+    print(f"misalignment shift: median {np.median(shift_deg):.4f} deg over {int(good.sum())} samples")

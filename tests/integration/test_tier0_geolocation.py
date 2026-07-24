@@ -45,7 +45,9 @@ def noaa20_expected(test_data_path):
     return input_data
 
 
-def test_geolocate_noaa20(noaa20_environment, curryer_lsk, noaa20_kernels, noaa20_expected, spice_test_data_path):
+def test_geolocate_noaa20(
+    noaa20_environment, curryer_lsk, noaa20_kernels, noaa20_expected, spice_test_data_path, test_data_path
+):
     """Tier-0 test for geolocating points from kernels."""
     # Load meta kernel details.
     mkrn = meta.MetaKernel.from_json(
@@ -58,7 +60,13 @@ def test_geolocate_noaa20(noaa20_environment, curryer_lsk, noaa20_kernels, noaa2
     noaa20_expected = noaa20_expected.set_index("UGPS")
     ugps_times = noaa20_expected.index.values
 
-    with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, noaa20_kernels]):
+    # This validates the ellipsoid-intersection math against CERES under nominal Libera geometry; the
+    # measured frame misalignments are validated separately in test_los_alignment.py. Swap the
+    # production frame kernel for a frozen misalignment-free copy so the CERES comparison holds.
+    nominal_fk = test_data_path / "tier0_geo" / "libera_nominal.frames.fk.tf"
+    mission_kernels = [nominal_fk, *(k for k in mkrn.mission_kernels if "frames.fk" not in str(k))]
+
+    with sp.ext.load_kernel([mkrn.sds_kernels, mission_kernels, noaa20_kernels]):
         # Geolocate to the ellipsoid.
         ellips_lla_df, sc_xyz_df, ellips_qf_ds = spatial.instrument_intersect_ellipsoid(
             ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True

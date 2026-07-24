@@ -42,6 +42,27 @@ from libera_utils.libera_spice.kernel_manager import KernelManager
 pytestmark = pytest.mark.integration
 
 
+# TODO LIBSDC-703: _rotation is duplicated in test_los_alignment.py; extract these geometry helpers
+# into a shared test module during the geolocation-test rework.
+def _rotation(axis, angle):
+    """Rotation matrix for ``angle`` radians about unit ``axis`` (Rodrigues)."""
+    axis = np.asarray(axis, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    cos, sin = np.cos(angle), np.sin(angle)
+    skew = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    return np.eye(3) * cos + np.outer(axis, axis) * (1 - cos) + skew * sin
+
+
+def _angle_about(rotation, axis):
+    """Signed rotation angle (radians) of ``rotation`` about unit ``axis``."""
+    axis = np.asarray(axis, dtype=float)
+    axis = axis / np.linalg.norm(axis)
+    vee = 0.5 * np.array(
+        [rotation[2, 1] - rotation[1, 2], rotation[0, 2] - rotation[2, 0], rotation[1, 0] - rotation[0, 1]]
+    )
+    return np.arctan2(vee @ axis, 0.5 * (np.trace(rotation) - 1.0))
+
+
 @pytest.fixture
 def noaa20_spacecraft_data(test_data_path):
     """Load NOAA-20 spacecraft test data."""
@@ -221,7 +242,6 @@ def test_make_spacecraft_kernels(
 
 
 def test_make_spacecraft_azel_kernels(
-    noaa20_environment,
     curryer_lsk,
     noaa20_azel_data,
     short_tmp_path,
@@ -229,6 +249,7 @@ def test_make_spacecraft_azel_kernels(
     monkeypatch,
 ):
     """Tier-0 test for creating pointing kernels"""
+    # Builds the Az/El CKs about the measured axes read from the frame kernel.
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
 
@@ -236,6 +257,10 @@ def test_make_spacecraft_azel_kernels(
     monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
     km = KernelManager()
     km.load_static_kernels()
+
+    # Az/El CKs are quaternion-valued; build the mechanism quaternions (about the measured axes) from
+    # the raw telemetered angles for the direct make_kernel calls below.
+    kernel_maker.add_mechanism_ck_quaternions(noaa20_azel_data)
 
     # Create the dynamic kernel from the JSONs definition and given data.
     generated_kernels = []
@@ -266,25 +291,24 @@ def test_make_spacecraft_azel_kernels(
         )
         assert span == ("2021-04-09 12:00:06.173775", "2021-04-09 12:02:04.964132")
 
-    # Load the kernels to verify the values match what we put in.
+    # Load the kernels to verify each CK encodes rotation about the measured axis by the input angle.
     with sp.ext.load_kernel([mkrn.mission_kernels, generated_kernels]):
-        az_angles = []
-        for et_time in noaa20_azel_data["AXIS_SAMPLE_ICIE_ET"].values:
-            tmat = sp.pxform("LIBERA_BASE_COORD", "LIBERA_AZ_COORD", et_time)
-            az_angles.append(sp.m2eul(tmat, 1, 2, 3)[2])
-        az_angles = np.array(az_angles) + 2 * np.pi  # Range (0, 2*pi) instead of (-pi, pi).
-        npt.assert_allclose(noaa20_azel_data["ICIE__AXIS_AZ_FILT"].values, az_angles)
-
-        el_angles = []
-        for et_time in noaa20_azel_data["AXIS_SAMPLE_ICIE_ET"].values:
-            tmat = sp.pxform("LIBERA_AZ_COORD", "LIBERA_EL_COORD", et_time)
-            el_angles.append(sp.m2eul(tmat, 1, 2, 3)[0])
-        el_angles = np.array(el_angles)
-        npt.assert_allclose(noaa20_azel_data["ICIE__AXIS_EL_FILT"].values, el_angles, rtol=7e-5)
+        az_axis = kernel_maker._read_alignment_axis("LIBERA_AZ_AOR_IN_STAND")
+        el_axis = kernel_maker._read_alignment_axis("LIBERA_EL_AOR_IN_STAND")
+        for et_time, az, el in zip(
+            noaa20_azel_data["AXIS_SAMPLE_ICIE_ET"].values,
+            noaa20_azel_data["ICIE__AXIS_AZ_FILT"].values,
+            noaa20_azel_data["ICIE__AXIS_EL_FILT"].values,
+        ):
+            npt.assert_allclose(
+                sp.pxform("LIBERA_AZ_COORD", "LIBERA_BASE_COORD", et_time), _rotation(az_axis, az), atol=1e-4
+            )
+            npt.assert_allclose(
+                sp.pxform("LIBERA_EL_COORD", "LIBERA_AZ_COORD", et_time), _rotation(el_axis, el), atol=1e-4
+            )
 
 
 def test_make_spacecraft_azel_kernels_apply_encoder_correction(
-    noaa20_environment,
     curryer_lsk,
     noaa20_azel_data,
     short_tmp_path,
@@ -295,7 +319,8 @@ def test_make_spacecraft_azel_kernels_apply_encoder_correction(
 
     Drives the production create_kernel_from_l1a path with raw CERES angles (mocking only the L1A read)
     so the deterministic encoder correction is applied during kernel generation, then queries the CKs
-    and checks the recovered mechanism angle equals correct(raw), not the raw telemetry.
+    and checks the recovered mechanism angle equals correct(raw), not the raw telemetry. Runs on the
+    default (jpss4) misaligned set: the CKs rotate about the measured axes read from the frame kernel.
     """
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
@@ -321,22 +346,28 @@ def test_make_spacecraft_azel_kernels_apply_encoder_correction(
     mkrn = meta.MetaKernel.from_json(config.get("LIBERA_KERNEL_META"), relative=True, sds_dir=spice_test_data_path)
 
     with sp.ext.load_kernel([mkrn.mission_kernels, generated_kernels]):
-        az_recovered = (
-            np.array([sp.m2eul(sp.pxform("LIBERA_BASE_COORD", "LIBERA_AZ_COORD", et), 1, 2, 3)[2] for et in et_times])
-            + 2 * np.pi
-        )
-        el_recovered = np.array(
-            [sp.m2eul(sp.pxform("LIBERA_AZ_COORD", "LIBERA_EL_COORD", et), 1, 2, 3)[0] for et in et_times]
-        )
+        az_axis = kernel_maker._read_alignment_axis("LIBERA_AZ_AOR_IN_STAND")
+        el_axis = kernel_maker._read_alignment_axis("LIBERA_EL_AOR_IN_STAND")
 
-        # Recovered angle equals telemetry + correction, not the raw telemetry.
-        npt.assert_allclose(az_recovered, kernel_maker.correct_azimuth(raw_az))
-        npt.assert_allclose(el_recovered, kernel_maker.correct_elevation(raw_el), rtol=7e-5)
+        # Each CK encodes rotation about the mechanism's measured axis by the corrected angle (telemetry
+        # + correction), not the raw telemetry.
+        for et, corrected_az in zip(et_times, kernel_maker.correct_azimuth(raw_az)):
+            npt.assert_allclose(
+                sp.pxform("LIBERA_AZ_COORD", "LIBERA_BASE_COORD", et), _rotation(az_axis, corrected_az), atol=1e-4
+            )
+        for et, corrected_el in zip(et_times, kernel_maker.correct_elevation(raw_el)):
+            npt.assert_allclose(
+                sp.pxform("LIBERA_EL_COORD", "LIBERA_AZ_COORD", et), _rotation(el_axis, corrected_el), atol=1e-4
+            )
+
         # The correction is genuinely present (elevation amplitude ~4.6e-4 rad, well above CK round-trip noise).
-        assert np.max(np.abs(el_recovered - raw_el)) > 1e-4
+        el_recovered = np.array(
+            [_angle_about(sp.pxform("LIBERA_EL_COORD", "LIBERA_AZ_COORD", et), el_axis) for et in et_times]
+        )
+        assert np.max(np.abs((el_recovered - raw_el + np.pi) % (2 * np.pi) - np.pi)) > 1e-4
 
         # Between telemetered samples the CK interpolates the corrected angles.
         mid_et = 0.5 * (et_times[0] + et_times[1])
-        el_mid = sp.m2eul(sp.pxform("LIBERA_AZ_COORD", "LIBERA_EL_COORD", mid_et), 1, 2, 3)[0]
+        el_mid = _angle_about(sp.pxform("LIBERA_EL_COORD", "LIBERA_AZ_COORD", mid_et), el_axis)
         lo, hi = sorted(kernel_maker.correct_elevation(raw_el[:2]))
         assert lo - 1e-5 <= el_mid <= hi + 1e-5
