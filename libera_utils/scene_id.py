@@ -846,7 +846,7 @@ class FootprintData:
         """Convert input missing values in footprint data to output missing values.
 
         This method standardizes missing value representations by converting from the input dataset's missing value
-        convention to the output convention used in FootprintData processing (np.NaN).
+        convention to the output convention used in FootprintData processing (np.nan).
 
         Parameters
         ----------
@@ -860,7 +860,7 @@ class FootprintData:
         - If input_missing_value is numeric: Uses direct equality comparison
 
         Modifies self._data in place, replacing all occurrences of input_missing_value
-        with np.NaN.
+        with np.nan.
 
         Examples
         --------
@@ -871,13 +871,13 @@ class FootprintData:
         """
         if np.isnan(input_missing_value):
             # For NaN input missing values, use isnan
-            result = self._data.where(~np.isnan(self._data), np.NaN)
+            result = self._data.where(~np.isnan(self._data), np.nan)
         else:
             # For numeric input missing values, use direct comparison
-            result = self._data.where(self._data != input_missing_value, np.NaN)
+            result = self._data.where(self._data != input_missing_value, np.nan)
         self._data = result
 
-    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value=np.NaN):
+    def _fill_column_above_max_value(self, column_name: str, threshold: float, fill_value=np.nan):
         """Replace values above threshold with fill value for specified column.
 
         Parameters
