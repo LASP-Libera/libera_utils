@@ -36,15 +36,18 @@ runs:
 
     - name: Get CSPICE remote metadata
       # Gets last modified time header of the CSPICE URL to use as a cache key.
+      # Falls back to a weekly key if the remote is unreachable or returns no header.
       id: cspice-meta
       shell: bash
       run: |
         CSPICE_URL="https://naif.jpl.nasa.gov/pub/naif/toolkit//C/PC_Linux_GCC_64bit/packages/cspice.tar.Z"
-        LAST_MOD=$(curl -sI "$CSPICE_URL" | grep -i '^last-modified:' | tr -d '\r\n' | sed 's/[Ll]ast-[Mm]odified: //')
-        # Hash the value to produce a cache-key-safe string
-        HASHED=$(echo "$LAST_MOD" | sha256sum | cut -d' ' -f1)
-        # Fallback to a stable weekly key if the header is absent
-        CACHE_KEY="${HASHED:-week-$(date +'%Y-%W')}"
+        LAST_MOD=$(curl --max-time 30 --connect-timeout 10 -sI "$CSPICE_URL" | grep -i '^last-modified:' | tr -d '\r\n' | sed 's/[Ll]ast-[Mm]odified: //') || true
+        # Hash the value to produce a cache-key-safe string, falling back to a weekly key
+        if [[ -n "$LAST_MOD" ]]; then
+          CACHE_KEY=$(echo "$LAST_MOD" | sha256sum | cut -d' ' -f1)
+        else
+          CACHE_KEY="week-$(date +'%Y-%W')"
+        fi
         echo "key=${CACHE_KEY}" >> $GITHUB_OUTPUT
 
     - name: Cache SPICE utilities
