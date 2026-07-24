@@ -255,7 +255,7 @@ def test_misalignment_shifts_geolocation(
         sds_dir=config.get("GENERIC_KERNEL_DIR"),
     )
     non_fk_mission = [k for k in mkrn.mission_kernels if "frames.fk" not in str(k)]
-    nominal_fk = test_data_path / "tier0_geo" / "libera_nominal_v01.frames.fk.tf"
+    nominal_fk = test_data_path / "tier0_geo" / "libera_nominal.frames.fk.tf"
     slc = slice(*spicetime.adapt(["2028-01-02 00:21:22", "2028-01-02 00:21:36"], "iso"))
 
     with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, [*sc_kernels, az_ck_measured, el_ck_measured]]):
