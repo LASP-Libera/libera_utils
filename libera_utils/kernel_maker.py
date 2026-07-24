@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 from cloudpathlib import AnyPath
@@ -57,6 +58,168 @@ SPICE_DPI_TO_KERNEL_CONFIG_KEY_MAP = {
     DataProductIdentifier.spice_az_ck: "LIBERA_KERNEL_AZ_CK_CONFIG",
     DataProductIdentifier.spice_el_ck: "LIBERA_KERNEL_EL_CK_CONFIG",
 }
+
+# --- Az/El encoder angle corrections --------------------------------------------------------------
+# The Az and El mechanism encoders have small, deterministic, angle-dependent errors characterized by
+# the Libera engineering team. These corrections are applied to the raw (filtered) encoder readings
+# during CK generation so that the CK quaternions reflect the true mechanism rotation rather than the
+# raw encoder readout. Error equations (radians) provided by J. Fernandez (LASP):
+#     Elevation Error =  4.6318e-04 * sin(Elevation Telemetry Angle - 1.1128)
+#     Azimuth Error   = -7.3510e-05 * sin(Azimuth Telemetry Angle   + 4.3042)
+# Convention: corrected = telemetry - error.
+
+# Raw filtered encoder columns in the AXIS_SAMPLE L1A product (radians).
+AZ_ENCODER_FIELD = "ICIE__AXIS_AZ_FILT"
+EL_ENCODER_FIELD = "ICIE__AXIS_EL_FILT"
+
+# error(angle) = amplitude * sin(angle + phase), radians.
+AZ_ERROR_AMPLITUDE = -7.3510e-05
+AZ_ERROR_PHASE = 4.3042
+EL_ERROR_AMPLITUDE = 4.6318e-04
+EL_ERROR_PHASE = -1.1128
+
+# Fixed-point iterations for the inverse correction. The tiny amplitudes make the iteration a strong
+# contraction (|error'| <= |amplitude| << 1), reaching machine precision within a couple of steps.
+_INVERSE_ITERATIONS = 4
+
+# Angle inputs may be a Python scalar, a NumPy array/scalar, or a pandas Series (the DataFrame helpers
+# pass columns); a Python-scalar input is returned as a NumPy scalar.
+AngleLike = float | np.floating | np.ndarray | pd.Series
+
+
+def azimuth_error(angle: AngleLike) -> AngleLike:
+    """Azimuth encoder error at the telemetered angle(s).
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered azimuth angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Encoder error, in radians, to subtract from the telemetry.
+    """
+    return AZ_ERROR_AMPLITUDE * np.sin(angle + AZ_ERROR_PHASE)
+
+
+def elevation_error(angle: AngleLike) -> AngleLike:
+    """Elevation encoder error at the telemetered angle(s).
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered elevation angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Encoder error, in radians, to subtract from the telemetry.
+    """
+    return EL_ERROR_AMPLITUDE * np.sin(angle + EL_ERROR_PHASE)
+
+
+def correct_azimuth(angle: AngleLike) -> AngleLike:
+    """Corrected azimuth from telemetered angle(s): ``corrected = telemetry - error``.
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered azimuth angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Corrected azimuth angle(s), in radians.
+    """
+    return angle - azimuth_error(angle)
+
+
+def correct_elevation(angle: AngleLike) -> AngleLike:
+    """Corrected elevation from telemetered angle(s): ``corrected = telemetry - error``.
+
+    Parameters
+    ----------
+    angle : AngleLike
+        Telemetered elevation angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Corrected elevation angle(s), in radians.
+    """
+    return angle - elevation_error(angle)
+
+
+def uncorrect_azimuth(corrected: AngleLike) -> AngleLike:
+    """Recover telemetered azimuth angle(s) from corrected value(s).
+
+    Inverse of :func:`correct_azimuth`, solved by fixed-point iteration on
+    ``telemetry = corrected + azimuth_error(telemetry)``.
+
+    Parameters
+    ----------
+    corrected : AngleLike
+        Corrected azimuth angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Telemetered azimuth angle(s), in radians.
+    """
+    telemetry = corrected
+    for _ in range(_INVERSE_ITERATIONS):
+        telemetry = corrected + azimuth_error(telemetry)
+    return telemetry
+
+
+def uncorrect_elevation(corrected: AngleLike) -> AngleLike:
+    """Recover telemetered elevation angle(s) from corrected value(s).
+
+    Inverse of :func:`correct_elevation`, solved by fixed-point iteration on
+    ``telemetry = corrected + elevation_error(telemetry)``.
+
+    Parameters
+    ----------
+    corrected : AngleLike
+        Corrected elevation angle(s), in radians.
+
+    Returns
+    -------
+    AngleLike
+        Telemetered elevation angle(s), in radians.
+    """
+    telemetry = corrected
+    for _ in range(_INVERSE_ITERATIONS):
+        telemetry = corrected + elevation_error(telemetry)
+    return telemetry
+
+
+def apply_encoder_corrections(df: pd.DataFrame) -> pd.DataFrame:
+    """Correct the Az/El encoder columns of a kernel-input DataFrame, in place.
+
+    Corrects whichever of ``ICIE__AXIS_AZ_FILT`` / ``ICIE__AXIS_EL_FILT`` (radians) are present and
+    leaves other columns untouched, so it is a no-op for non-AXIS_SAMPLE kernel inputs (spacecraft
+    ephemeris/attitude). Returns the same DataFrame instance for convenience.
+    """
+    if AZ_ENCODER_FIELD in df.columns:
+        df[AZ_ENCODER_FIELD] = correct_azimuth(df[AZ_ENCODER_FIELD])
+    if EL_ENCODER_FIELD in df.columns:
+        df[EL_ENCODER_FIELD] = correct_elevation(df[EL_ENCODER_FIELD])
+    return df
+
+
+def reverse_encoder_corrections(df: pd.DataFrame) -> pd.DataFrame:
+    """Recover the raw telemetered Az/El encoder columns from corrected values, in place.
+
+    Inverse of :func:`apply_encoder_corrections`; a no-op for DataFrames without the encoder columns.
+    Returns the same DataFrame instance for convenience.
+    """
+    if AZ_ENCODER_FIELD in df.columns:
+        df[AZ_ENCODER_FIELD] = uncorrect_azimuth(df[AZ_ENCODER_FIELD])
+    if EL_ENCODER_FIELD in df.columns:
+        df[EL_ENCODER_FIELD] = uncorrect_elevation(df[EL_ENCODER_FIELD])
+    return df
 
 
 def create_kernel_dataframe_from_l1a(
@@ -394,6 +557,11 @@ def create_kernel_from_l1a(
         apid=apid,
         sample_group_name=sample_group_name,
     )
+
+    # Apply deterministic Az/El encoder angle corrections so the generated CK quaternions
+    # reflect the true mechanism rotation. No-op when the DataFrame lacks the AXIS_SAMPLE
+    # encoder columns (e.g. spacecraft ephemeris/attitude kernels).
+    apply_encoder_corrections(kernel_df)
 
     # Store as a single-element list for compatibility with the existing kernel creation loop
     input_dataframe = kernel_df

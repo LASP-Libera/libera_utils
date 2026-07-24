@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.9.3
+
+- FEAT: Az/El mechanism CKs now apply deterministic sinusoidal encoder-angle corrections during kernel generation, so the stored quaternions reflect the true mechanism rotation rather than the raw encoder readout. Corrections are applied to the filtered encoder angles in `create_kernel_from_l1a` (L1A telemetry is left unchanged), with matching forward/inverse helpers (`correct_azimuth`/`correct_elevation`, `uncorrect_azimuth`/`uncorrect_elevation`, and DataFrame-level `apply_encoder_corrections`/`reverse_encoder_corrections`)
+- BUGFIX: Remove np.NaN as curryer no longer pins Numpy < 2
+
 ## 5.9.2
 
 - FEAT: Expand the RBSP+VIIRS imager `DataProductIdentifier` set (`l2_unf_rad_imager`, `l2_nb_bb_imager_camtime`, `l2_toa_flux_imager`, and matching AUX scene-ID/FMATCH/ADM members)

@@ -40,8 +40,12 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
         input_az_data = input_az_data.rename(columns={"Command Azimuth (deg)": "ICIE__AXIS_AZ_FILT"})
 
         az_timetags = pd.to_datetime(input_az_data.index.values)
-        input_dataset = input_az_data[["ICIE__AXIS_AZ_FILT"]]
-        input_dataset["ICIE__AXIS_AZ_FILT"] = np.deg2rad(input_dataset["ICIE__AXIS_AZ_FILT"].to_numpy())
+        input_dataset = input_az_data[["ICIE__AXIS_AZ_FILT"]].copy()
+        # CSV angles are ideal commanded pointing; kernel generation applies the encoder correction, so
+        # pre-apply its inverse here to represent the raw encoder telemetry the correction maps back.
+        input_dataset["ICIE__AXIS_AZ_FILT"] = kernel_maker.uncorrect_azimuth(
+            np.deg2rad(input_dataset["ICIE__AXIS_AZ_FILT"].to_numpy())
+        )
         input_dataset["AXIS_SAMPLE_ICIE_ET"] = spicetime.adapt(az_timetags, "dt64", "et")
 
         time_span = [az_timetags[0], az_timetags[-1]]
@@ -74,7 +78,8 @@ def preprocess_preliminary_data(input_data_file, nominal_time_field=None, pkt_ti
         el_timetags = pd.to_datetime(np.hstack(el_timetags))
         el_values = np.hstack(el_values)
         el_values = el_values[el_timetags <= az_timetags[-1]]
-        el_values = np.deg2rad(el_values)
+        # Inverse encoder correction (see azimuth branch): raw telemetry that kernel generation corrects.
+        el_values = kernel_maker.uncorrect_elevation(np.deg2rad(el_values))
         el_timetags = el_timetags[el_timetags <= az_timetags[-1]]
 
         input_dataset = pd.DataFrame(

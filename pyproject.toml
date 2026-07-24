@@ -1,12 +1,13 @@
 [project]
 name = "libera_utils"
-version = "5.9.2"
+version = "5.9.3"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
     { name = "Heather Cronk" },
     { name = "Caitlin Kessler" },
     { name = "Kim Kokkonen" },
+    { name = "Matthew Maclay" },
     { name = "Gavin Medley" },
     { name = "Laura Sandoval" },
     { name = "Matt Watwood" },
@@ -139,5 +140,5 @@ ignore = [
 ]
 
 [tool.codespell]
-ignore-words-list = "ANC"
+ignore-words-list = "ANC,uncorrect"
 
