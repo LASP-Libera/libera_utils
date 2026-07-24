@@ -568,6 +568,63 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
         errors = definition.check_dataset_conformance(fixed_ds, strict=True)
         assert not errors
 
+    def test_enforce_dataset_conformance_drops_xarray_runtime_encoding_quietly(
+        self, test_product_definition, test_dataset
+    ):
+        """Extra xarray/NetCDF encoding keys are stripped silently (no warnings)."""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+
+        # Typical metadata attached when opening an existing NetCDF with xarray
+        test_dataset["fil_rad"].encoding = {
+            "zlib": True,
+            "complevel": 4,
+            "source": "/tmp/example_l1a.nc",
+            "original_shape": (10,),
+            "preferred_chunks": {"RADIOMETER_TIME": 10},
+            "coordinates": "radiometer_time",
+            "fletcher32": False,
+            "contiguous": False,
+            "chunksizes": (10,),
+            "szip": None,
+            "zstd": None,
+            "bzip2": None,
+            "blosc": None,
+            "shuffle": False,
+            "dtype": np.dtype("float64"),
+            "_FillValue": np.nan,
+            "char_dim_name": "string10",
+        }
+
+        with warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("ignore")
+            warnings.simplefilter("always", UserWarning)
+            fixed_ds = definition.enforce_dataset_conformance(test_dataset)
+
+        assert recorded == []
+
+        encoding = fixed_ds["fil_rad"].encoding
+        for runtime_key in (
+            "source",
+            "original_shape",
+            "preferred_chunks",
+            "coordinates",
+            "fletcher32",
+            "contiguous",
+            "chunksizes",
+            "szip",
+            "zstd",
+            "bzip2",
+            "blosc",
+            "shuffle",
+            "dtype",
+            "_FillValue",
+            "char_dim_name",
+        ):
+            assert runtime_key not in encoding
+
+        assert encoding["zlib"] is True
+        assert encoding["complevel"] == 4
+
     def test_enforce_dataset_conformance_undefined_dimension_exception(self, test_product_definition):
         """Test that enforce_dataset_conformance raises an exception for undefined dimension."""
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)

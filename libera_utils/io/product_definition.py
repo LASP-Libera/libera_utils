@@ -327,10 +327,10 @@ class LiberaVariableDefinition(BaseModel):
         """Update a variable or coordinate DataArray to conform to specifications in data product definition.
 
         This method attempts to bring a DataArray into conformance with a variable definition. When making changes, the
-        data variable definition takes precedence over any existing metadata or settings on the DataArray. Logs are
-        emitted for all changes made. When the DataArray configuration contradicts the data product definition, warnings
-        are also issued. This method is not responsible for validating the final result and does not guarantee that the
-        resulting DataArray will pass the validation checks because some problems simply can't be fixed.
+        data variable definition takes precedence over any existing metadata or settings on the DataArray. When the DataArray
+        configuration contradicts the data product definition, warnings are issued. This method is not responsible
+        for validating the final result and does not guarantee that the resulting DataArray will pass the validation
+        checks because some problems simply can't be fixed.
 
         Parameters
         ----------
@@ -348,7 +348,8 @@ class LiberaVariableDefinition(BaseModel):
         Warns
         -----
         UserWarning
-            If any conflicts are found between the DataArray and the product definition attributes or encoding settings.
+            If attribute or encoding values conflict with the product definition. Extra encoding
+            keys not listed in the product definition are removed without a warning.
 
         Raises
         ------
@@ -420,19 +421,13 @@ class LiberaVariableDefinition(BaseModel):
                     f"Could not convert dtype of '{variable_name}' from {current_dtype} to {expected_dtype}"
                 ) from e
 
-        # Update encoding configuration to match product definition
-        # Settings that are set on the DataArray but not in the product definition are removed and cause warnings
-        extra_encoding_settings = [k for k in data_array.encoding if k not in self.encoding]
-        for key in extra_encoding_settings:
-            old_value = data_array.encoding[key]
+        # Update encoding configuration to match product definition.
+        # Extra encoding keys (commonly injected by xarray when opening NetCDF files, e.g. source,
+        # original_shape, preferred_chunks, compression filter stubs) are dropped silently: check_*
+        # already allows extras, and the product definition is authoritative for output encoding.
+        # Only conflicting values for keys that *are* in the product definition warrant UserWarnings.
+        for key in [k for k in data_array.encoding if k not in self.encoding]:
             del data_array.encoding[key]
-            warnings.warn(
-                f"Variable {variable_name} has unexpected extra encoding setting '{key}' with value '{old_value}' that is not "
-                "defined in the product definition. Remove this encoding setting from the input DataArray or update your product definition."
-            )
-            logger.warning(
-                f"Removed unexpected encoding setting '{key}' from '{variable_name}' with value '{old_value}'"
-            )
 
         # Settings that are different in the DataArray and product definition are overwritten by product definition
         # and warnings are issued
