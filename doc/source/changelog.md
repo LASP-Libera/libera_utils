@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.10.4
+
+- FEAT: Add `libera_utils.l1a.data_time_extractors` for lightweight camera/radiometer data-time spans (SOP FSW image times / sample epoch+period) without full L1A assembly. Ground headers use `SKIP_PACKET_HEADER_BYTES` (same as L1A parsing), not a `ground_data` flag.
+
 ## 5.10.3
 
 - FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_COMPRESSED_IMAGE` (`uint8`/`BLOB_BYTE` + `WFOV_COMPRESSED_IMAGE_LENGTH`), and traces packets back to their image with `PACKET_IMAGE_ID`.
