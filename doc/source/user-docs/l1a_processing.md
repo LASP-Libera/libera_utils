@@ -52,10 +52,10 @@ In test code, override it with `monkeypatch`:
 monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 ```
 
-The value is read once per call to `parse_packets_to_l1a_dataset()` and forwarded to Space Packet
-Parser as `skip_header_bytes`. Helpers such as `extract_data_time_range` and
-`scan_ground_ccsds_file` also accept an explicit `skip_header_bytes=` argument so callers need not
-rely on process-wide config alone.
+The value is read once per call to `parse_packets_to_l1a_dataset()` (or overridden via its
+`skip_header_bytes=` argument) and forwarded to Space Packet Parser as `skip_header_bytes`.
+Helpers such as `extract_data_time_range` and `scan_ground_ccsds_file` also accept an explicit
+`skip_header_bytes=` argument so callers need not rely on process-wide config alone.
 
 ### Ground CCSDS filename
 
@@ -69,6 +69,9 @@ Example: `ccsds_2025_318_13_53_06`. Use `LiberaGroundCcsdsFilename` /
 `AbstractValidFilename.from_file_path` to validate and to derive the L0 archive prefix
 `GroundCCSDS/<yyyy>/<mm>/<dd>/` from the capture UTC encoded in the name. The DPI is
 `DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`), distinct from EDOS PDS products.
+Canonical ground names are accepted by the manual ingest CLI (`s3-utils put` /
+`manual_ingest_data_products`) so captures can be staged into the SDC Ingest Dropbox
+without CNM/ASDC delivery.
 
 Unlike flight PDS files (one APID per file + Construction Record), a ground CCSDS file is a
 **multi-APID** stream. Use `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to list all

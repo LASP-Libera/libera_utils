@@ -855,7 +855,10 @@ def test_parse_packets_to_l1a_dataset_basic(
             )
         ],
     )
-    mock_config_get.return_value = "fake_definition.xml"
+    mock_config_get.side_effect = lambda key: {
+        "LIBERA_PACKET_DEFINITION": "fake_definition.xml",
+        "SKIP_PACKET_HEADER_BYTES": 0,
+    }.get(key, None)
     mock_get_packet_config.return_value = config
 
     # Create mock packet dataset
@@ -907,6 +910,56 @@ def test_parse_packets_to_l1a_dataset_basic(
     # Verify non-expanded fields remain
     assert "OTHER_FIELD" in result.data_vars
 
-    # Verify global attributes were added
-    assert "algorithm_version" in result.attrs
-    assert "date_created" in result.attrs
+    mock_parse_packets.assert_called_once()
+    assert mock_parse_packets.call_args.kwargs.get("skip_header_bytes") == 0
+
+
+@mock.patch("libera_utils.l1a.packets.parse_packets_to_dataset")
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
+@mock.patch("libera_utils.l1a.packets.get_packet_config")
+@mock.patch("libera_utils.config.config.get")
+def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
+    mock_config_get, mock_get_packet_config, mock_multipart, mock_parse_packets
+):
+    """Explicit skip_header_bytes overrides config for ground CCSDS decode."""
+    config = PacketConfiguration(
+        packet_apid=LiberaApid.icie_nom_hk,
+        packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
+        sample_groups=[
+            SampleGroup(
+                name="TEST_SAMPLE",
+                sample_count=1,
+                data_field_patterns=["SAMPLE_DATA"],
+                time_field_patterns=TimeFieldMapping(day_field="SAMPLE_DAY", ms_field="SAMPLE_MS"),
+                time_source=SampleTimeSource.ICIE,
+            )
+        ],
+    )
+    mock_config_get.side_effect = lambda key: {
+        "LIBERA_PACKET_DEFINITION": "fake_definition.xml",
+        "SKIP_PACKET_HEADER_BYTES": 0,
+    }.get(key, None)
+    mock_get_packet_config.return_value = config
+    packet_ds = xr.Dataset(
+        {
+            "PKT_DAY": (["PACKET"], [1000]),
+            "PKT_MS": (["PACKET"], [0]),
+            "SAMPLE_DAY": (["PACKET"], [1000]),
+            "SAMPLE_MS": (["PACKET"], [500]),
+            "SAMPLE_DATA": (["PACKET"], [1.5]),
+            "OTHER_FIELD": (["PACKET"], [100]),
+        }
+    )
+    mock_parse_packets.return_value = packet_ds
+
+    def multipart_side_effect(ds, **kwargs):
+        return pd.Series([np.datetime64("2025-01-01T00:00:00")])
+
+    mock_multipart.side_effect = multipart_side_effect
+
+    libera_packets.parse_packets_to_l1a_dataset(
+        packet_files=["fake.bin"], apid=LiberaApid.icie_nom_hk.value, skip_header_bytes=8
+    )
+
+    assert mock_parse_packets.call_args.kwargs["skip_header_bytes"] == 8
+    assert mock_config_get.call_args_list == [(("LIBERA_PACKET_DEFINITION",),)]

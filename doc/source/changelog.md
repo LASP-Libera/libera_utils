@@ -5,6 +5,8 @@
 - FEAT: Add `LiberaGroundCcsdsFilename` and `DataProductIdentifier.l0_ground_ccsds` for canonical ground-test CCSDS captures (`ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>`), with L0 archive prefix `GroundCCSDS/<yyyy>/<mm>/<dd>/`.
 - FEAT: Add `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default).
 - FEAT: `extract_data_time_range` accepts optional `skip_header_bytes=` so ground ingest need not mutate process-wide config.
+- FEAT: `parse_packets_to_l1a_dataset` accepts optional `skip_header_bytes=` (same config fallback as extractors).
+- FEAT: Manual ingest (`s3-utils put` / `manual_ingest_data_products`) accepts canonical `LiberaGroundCcsdsFilename` ground CCSDS captures.
 
 ## 5.10.2
 
