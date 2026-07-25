@@ -196,6 +196,41 @@ sample-time ranges itself from the samples in the file. The span in File Metadat
 done that for it, and a file whose span covers a given instant does not guarantee both timeseries
 cover it.
 
+## Day-window trim and uniqueness
+
+After decoding L1A, use `libera_utils.l1a.day_window.trim_l1a_to_day_window` to keep data in
+`[day 00:00 UTC − buffer, day+1 00:00 UTC + buffer)` (default buffer 10 minutes). Set
+`keep_whole_groups=True` with a `packet_index_var` so radiometer packets are not split across the
+cut. When `packet_index_var` is set and a `PACKET` dimension exists, trim also calls
+`sync_packet_dim_to_index` so orphan PACKET rows are dropped and indices are densified (dtype-safe).
+Use `assert_data_times_unique_monotonic` after packet dedupe to enforce unique, non-decreasing
+data times (`ground_data=True` warns instead of raising).
+
+## Day coverage gates (combine readiness)
+
+The L1A Preprocessor evaluates File Metadata time spans with
+`libera_utils.l1a.day_coverage.evaluate_day_coverage` before decoding:
+
+- **Left buffer** `[D − B, D)`, **day core** `[D, D+1)`, **right buffer** `[D+1, D+1 + B)`.
+- Dense APIDs require configurable coverage fractions (defaults: day 0.9, buffers 1.0).
+- Sparse WFOV uses “any overlap” for day core (still requires both buffers).
+- File count (e.g. nominal ~14 two-hour chunks) is **not** the gate — only time coverage.
+- Incomplete days skip combine without error; ops can force via `ManualL1APreprocessingEventDetail`.
+
+## Shared day assembly (flight and ground)
+
+Production daily L1A uses the **same** combine sequence for flight PDS and ground CCSDS:
+
+1. `evaluate_day_coverage` on File Metadata effective time spans (skip incomplete days unless forced).
+2. `parse_packets_to_l1a_dataset(..., ground_data=, skip_header_bytes=)` — flight defaults
+   `ground_data=False` / header skip `0`; ground triggers use `ground_data=True` / `skip_header_bytes=8`.
+3. `trim_l1a_to_day_window` to the applicable UTC day ± buffer.
+4. `assert_data_times_unique_monotonic(..., ground_data=)` — with `ground_data=True`, duplicate or
+   non-monotonic data times **warn** instead of raising (same semantics as packet dedupe).
+
+There is no separate ground combiner. Offline concatenation of finished L1A NetCDFs is diagnostic
+only and is not part of the production path.
+
 ## L1A Packet Processing Configurations
 
 Per-APID processing configurations are defined in `l1a_processing_configs.yml` (path resolved from
