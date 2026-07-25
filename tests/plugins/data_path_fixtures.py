@@ -170,6 +170,16 @@ def test_ditl_demux_path(test_data_path):
     return test_data_path / "packets/libera_ditl_demux"
 
 
+@pytest.fixture(scope="session")
+def test_ground_day_ccsds_dir(test_data_path):
+    """Directory of canonical ground CCSDS captures spanning DOY 192–194 (2026).
+
+    ~2hr-spaced short captures around UTC day 2026-07-12 (DOY 193), including D−1 and D+1
+    edges for day-window buffer exercises. Copied from libera_cdk ``ground_data_ccsds``.
+    """
+    return test_data_path / "packets" / "libera_ground_day_ccsds"
+
+
 # SPICE test data
 # ---------------
 @pytest.fixture(scope="session")
