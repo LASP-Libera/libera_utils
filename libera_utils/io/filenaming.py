@@ -64,6 +64,17 @@ LIBERA_L0_REGEX = re.compile(
     r"(?P<signal>.XFR)?$"
 )
 
+# Canonical ground-test CCSDS capture names (no extension): ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
+LIBERA_GROUND_CCSDS_REGEX = re.compile(
+    r"^ccsds_(?P<year>[0-9]{4})_(?P<doy>[0-9]{3})"
+    r"_(?P<hour>[0-9]{2})_(?P<minute>[0-9]{2})_(?P<second>[0-9]{2})$"
+)
+
+# Legacy informal ground names missing the year (e.g. TVAC ccsds_324_17_59_52)
+LIBERA_GROUND_CCSDS_LEGACY_REGEX = re.compile(
+    r"^ccsds_(?P<doy>[0-9]{3})_(?P<hour>[0-9]{2})_(?P<minute>[0-9]{2})_(?P<second>[0-9]{2})$"
+)
+
 # Get all data levels for the regex
 DATA_LEVELS = "|".join([level.value for level in DataLevel])
 
@@ -131,6 +142,7 @@ class AbstractValidFilename(ABC):
         """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)"""
         for CandidateClass in (
             L0Filename,
+            LiberaGroundCcsdsFilename,
             LiberaDataProductFilename,
             ManifestFilename,
         ):
@@ -441,6 +453,105 @@ class L0Filename(AbstractDataProductFilename):
         d["file_number"] = int(d["file_number"])
         d["created_time"] = datetime.strptime(d["created_time"], NUMERIC_DOY_TS_FORMAT)
         return SimpleNamespace(**d)
+
+
+class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
+    """Filename validation class for ground-test multi-APID CCSDS captures.
+
+    Canonical form: ``ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>`` (no extension), e.g.
+    ``ccsds_2025_318_13_53_06``. Capture UTC is derived from the filename and used
+    for the L0 archive prefix ``GroundCCSDS/<yyyy>/<mm>/<dd>/``.
+    """
+
+    _regex = LIBERA_GROUND_CCSDS_REGEX
+    _fmt = "ccsds_{year:04d}_{doy:03d}_{hour:02d}_{minute:02d}_{second:02d}"
+
+    @property
+    def data_product_id(self) -> DataProductIdentifier:
+        """Property that contains the DataProductIdentifier for this file type."""
+        return DataProductIdentifier.l0_ground_ccsds
+
+    @property
+    def capture_time(self) -> datetime:
+        """UTC capture time encoded in the filename."""
+        return self.filename_parts.capture_time
+
+    @property
+    def archive_prefix(self) -> str:
+        """L0 archive prefix from filename capture UTC (not per-APID)."""
+        capture = self.capture_time
+        return f"GroundCCSDS/{capture.year:04d}/{capture.month:02d}/{capture.day:02d}"
+
+    @classmethod
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        *,
+        year: int,
+        doy: int,
+        hour: int,
+        minute: int,
+        second: int,
+        basepath: str | Path | S3Path | None = None,
+    ):
+        """Create instance from filename parts.
+
+        Parameters
+        ----------
+        year : int
+            Four-digit UTC year of the capture.
+        doy : int
+            Day of year (1-366).
+        hour, minute, second : int
+            Capture time-of-day in UTC.
+        basepath : Optional[Union[str, Path, S3Path]]
+            Optional directory or S3 prefix prepended to the basename.
+
+        Returns
+        -------
+        LiberaGroundCcsdsFilename
+        """
+        return cls._from_filename_parts(
+            basepath=basepath,
+            year=year,
+            doy=doy,
+            hour=hour,
+            minute=minute,
+            second=second,
+        )
+
+    @classmethod
+    def _format_filename_parts(
+        cls,
+        *,
+        year: int,
+        doy: int,
+        hour: int,
+        minute: int,
+        second: int,
+    ):
+        """Construct a basename from filename parts."""
+        # Validate by round-tripping through datetime (rejects invalid DOY/HMS)
+        datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
+        return cls._fmt.format(year=year, doy=doy, hour=hour, minute=minute, second=second)
+
+    def _parse_filename_parts(self):
+        """Parse the filename parts into objects from regex matched strings."""
+        d = self.regex_match(self.path)
+        year = int(d["year"])
+        doy = int(d["doy"])
+        hour = int(d["hour"])
+        minute = int(d["minute"])
+        second = int(d["second"])
+        capture_time = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
+        capture_time = _ensure_utc_timezone(capture_time)
+        return SimpleNamespace(
+            year=year,
+            doy=doy,
+            hour=hour,
+            minute=minute,
+            second=second,
+            capture_time=capture_time,
+        )
 
 
 class LiberaDataProductFilename(AbstractDataProductFilename):

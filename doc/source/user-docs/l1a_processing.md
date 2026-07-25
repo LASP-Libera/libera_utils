@@ -53,7 +53,28 @@ monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 ```
 
 The value is read once per call to `parse_packets_to_l1a_dataset()` and forwarded to Space Packet
-Parser as `skip_header_bytes`.
+Parser as `skip_header_bytes`. Helpers such as `extract_data_time_range` and
+`scan_ground_ccsds_file` also accept an explicit `skip_header_bytes=` argument so callers need not
+rely on process-wide config alone.
+
+### Ground CCSDS filename
+
+Canonical ground-test capture basenames (no extension) match:
+
+```text
+ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
+```
+
+Example: `ccsds_2025_318_13_53_06`. Use `LiberaGroundCcsdsFilename` /
+`AbstractValidFilename.from_file_path` to validate and to derive the L0 archive prefix
+`GroundCCSDS/<yyyy>/<mm>/<dd>/` from the capture UTC encoded in the name. The DPI is
+`DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`), distinct from EDOS PDS products.
+
+Unlike flight PDS files (one APID per file + Construction Record), a ground CCSDS file is a
+**multi-APID** stream. Use `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to list all
+APIDs present (including unknowns outside `LiberaApid`) and per-known-APID packet/data time spans
+for File Metadata indexing. Unknown APIDs are recorded on the discovery list only; searchable
+metadata is limited to known `LiberaApid` values that have an L1A packet configuration.
 
 ## Data-time extraction (ingest applicable dates)
 

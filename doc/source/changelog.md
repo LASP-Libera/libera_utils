@@ -1,5 +1,11 @@
 # Version Changes
 
+## 5.11.0
+
+- FEAT: Add `LiberaGroundCcsdsFilename` and `DataProductIdentifier.l0_ground_ccsds` for canonical ground-test CCSDS captures (`ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>`), with L0 archive prefix `GroundCCSDS/<yyyy>/<mm>/<dd>/`.
+- FEAT: Add `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default).
+- FEAT: `extract_data_time_range` accepts optional `skip_header_bytes=` so ground ingest need not mutate process-wide config.
+
 ## 5.10.2
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for lightweight camera/radiometer data-time spans (SOP FSW image times / sample epoch+period) without full L1A assembly. Ground headers use `SKIP_PACKET_HEADER_BYTES` (same as L1A parsing), not a `ground_data` flag.

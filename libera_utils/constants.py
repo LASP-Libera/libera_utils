@@ -102,6 +102,8 @@ class DataProductIdentifier(StrEnum):
     # ==================================
     # PDS Construction Record (metadata file)
     l0_pds_cr = ("PDS-CR", DataLevel.L0)
+    # Ground-test multi-APID CCSDS captures (TVAC/DITL/ISTR/IOV); not EDOS PDS
+    l0_ground_ccsds = ("GROUND-CCSDS", DataLevel.L0)
     # PDS data files (contain CCSDS packets for a single APID)
     # NOTE: These names are derived directly from the packet names used by Libera FSW (see LiberaApid)
     # JPSS spacecraft position (attitude quaternions and ephemeris coordinates) in 1Hz packets with 1 sample per packet for 1Hz samples
