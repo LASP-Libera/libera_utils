@@ -99,6 +99,7 @@ class TestDataProductIdentifier:
         expected_names = [
             # L0 PDS Products
             "l0_pds_cr",
+            "l0_ground_ccsds",
             "l0_jpss_sc_pos_pds",
             "l0_icie_rad_sample_pds",
             "l0_icie_wfov_sci_pds",
@@ -208,7 +209,7 @@ class TestDataProductIdentifier:
 
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
-        _no_single_apid = {DataProductIdentifier.l0_pds_cr}
+        _no_single_apid = {DataProductIdentifier.l0_pds_cr, DataProductIdentifier.l0_ground_ccsds}
         for product in DataProductIdentifier:
             apid = product.associated_apid
             # L0 and L1A products should have an associated APID, others should be None.

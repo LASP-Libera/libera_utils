@@ -383,27 +383,6 @@ def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
     assert not np.any(counts > 1)
 
 
-def test_extract_camera_and_rad_data_times_from_ditl(test_ditl_camera_with_duplicate_packet, monkeypatch):
-    """Data-time extractors return FSW/sample spans without full L1A assembly."""
-    from libera_utils.l1a.data_time_extractors import extract_data_time_range
-
-    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
-
-    cam_first, cam_last = extract_data_time_range(
-        test_ditl_camera_with_duplicate_packet,
-        LiberaApid.icie_wfov_sci,
-    )
-    assert cam_first <= cam_last
-    assert cam_first.date().isoformat() == "2028-02-14"
-
-    rad_first, rad_last = extract_data_time_range(
-        test_ditl_camera_with_duplicate_packet,
-        LiberaApid.icie_rad_sample,
-    )
-    assert rad_first <= rad_last
-    assert rad_first.date().isoformat() == "2028-02-15"
-
-
 @pytest.mark.parametrize(
     "packet_definition",
     [

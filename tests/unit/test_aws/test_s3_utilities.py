@@ -72,6 +72,8 @@ class TestManualIngestPut:
                 "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
                 "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             ],
+            # Canonical ground CCSDS capture basename (no extension)
+            ["ccsds_2025_318_13_53_06"],
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
@@ -127,7 +129,7 @@ class TestManualIngestPut:
         Path.touch(tmp_path / bad_name)
 
         session, captured = make_event_capturing_session()
-        with pytest.raises(ValueError, match="not a valid Libera L0 or data product filename"):
+        with pytest.raises(ValueError, match="not a valid Libera L0, ground CCSDS, or data product filename"):
             s3_utilities.manual_ingest_data_products([tmp_path / good_name, tmp_path / bad_name], boto_session=session)
 
         # Nothing was staged and no event was emitted.
@@ -142,7 +144,7 @@ class TestManualIngestPut:
         filenaming.ManifestFilename(manifest_name)
 
         session = boto3.Session(profile_name="test-profile")
-        with pytest.raises(ValueError, match="not a valid Libera L0 or data product filename"):
+        with pytest.raises(ValueError, match="not a valid Libera L0, ground CCSDS, or data product filename"):
             s3_utilities.manual_ingest_data_products([AnyPath(manifest_name)], boto_session=session)
 
     def test_put_event_raises_on_failed_entry(self, make_sdc_event_bus):

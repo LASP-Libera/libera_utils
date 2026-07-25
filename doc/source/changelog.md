@@ -1,8 +1,12 @@
 # Version Changes
 
-## 5.10.4
+## 5.11.0
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for lightweight camera/radiometer data-time spans (SOP FSW image times / sample epoch+period) without full L1A assembly. Ground headers use `SKIP_PACKET_HEADER_BYTES` (same as L1A parsing), not a `ground_data` flag.
+- FEAT: Add `LiberaGroundCcsdsFilename` and `DataProductIdentifier.l0_ground_ccsds` for canonical ground-test CCSDS captures (`ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>`), with L0 archive prefix `GroundCCSDS/<yyyy>/<mm>/<dd>/`.
+- FEAT: Add `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default).
+- FEAT: Manual ingest (`s3-utils put` / `manual_ingest_data_products`) accepts canonical `LiberaGroundCcsdsFilename` ground CCSDS captures.
+- BUGFIX: Packet/data-time span extraction (`scan_ground_ccsds_file`, `extract_data_time_range`) now drops timestamps at or before `MIN_VALID_TELEMETRY_TIME` (default `2020-01-01`, config-overridable) before computing min/max. Ground-test captures can include a leading packet with an unset onboard clock, which decodes to just after `CCSDS_EPOCH` (1958-01-01); left unfiltered, a single such packet drove the File Metadata searchable-row day-walk across ~68 years instead of the real capture span.
 
 ## 5.10.3
 

@@ -16,7 +16,7 @@ from cloudpathlib import AnyPath
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
-from libera_utils.l1a.packets import DATETIME_USEC_DTYPE, parse_packets_to_dataset
+from libera_utils.l1a.packets import DATETIME_USEC_DTYPE, drop_unsynced_clock_times, parse_packets_to_dataset
 from libera_utils.l1a.wfov_image_metadata import (
     FSW_HEADER_SIZE,
     MEM_DUMP_FLAGS_VAR,
@@ -56,6 +56,8 @@ def is_data_time_indexed_apid(apid: LiberaApid | int) -> bool:
 def extract_data_time_range(
     packet_file: PathLike | str,
     apid: int,
+    *,
+    skip_header_bytes: int | None = None,
 ) -> tuple[datetime, datetime]:
     """Extract the min/max science data time span from a single packet file.
 
@@ -69,6 +71,10 @@ def extract_data_time_range(
         Path to a PDS or ground CCSDS packet file.
     apid : int
         Application Process Identifier.
+    skip_header_bytes : int | None, optional
+        Bytes to skip before each CCSDS primary header. When ``None``, uses
+        ``SKIP_PACKET_HEADER_BYTES`` from config (default ``0`` for flight PDS;
+        pass ``8`` for ground CCSDS).
 
     Returns
     -------
@@ -78,7 +84,7 @@ def extract_data_time_range(
     Notes
     -----
     Ground CCSDS with an 8-byte record header is handled via ``SKIP_PACKET_HEADER_BYTES``
-    (same as ``parse_packets_to_l1a_dataset``).
+    (same as ``parse_packets_to_l1a_dataset``) or the ``skip_header_bytes`` argument.
 
     Raises
     ------
@@ -94,7 +100,9 @@ def extract_data_time_range(
     packet_config = get_packet_config(libera_apid)
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
     # Ground test data: set SKIP_PACKET_HEADER_BYTES=8 (see l1a_processing user docs)
-    skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
+    # or pass skip_header_bytes=8 explicitly.
+    if skip_header_bytes is None:
+        skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
 
     try:
         packet_ds = parse_packets_to_dataset(
@@ -184,6 +192,10 @@ def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64]:
         raise DataTimeUndeterminedError("No valid SOP FSW image timestamps found in WFOV packet file")
 
     arr = np.asarray(camera_times, dtype=DATETIME_USEC_DTYPE)
+    try:
+        arr = drop_unsynced_clock_times(arr, context="WFOV SOP FSW image timestamps")
+    except ValueError as exc:
+        raise DataTimeUndeterminedError(str(exc)) from exc
     return arr.min(), arr.max()
 
 
@@ -220,4 +232,8 @@ def _sample_group_time_span(packet_ds, apid: LiberaApid) -> tuple[np.datetime64,
         raise DataTimeUndeterminedError(f"No sample times found for APID {apid}")
 
     combined = np.concatenate(all_times)
+    try:
+        combined = drop_unsynced_clock_times(combined, context=f"APID {apid} ({apid.name}) sample times")
+    except ValueError as exc:
+        raise DataTimeUndeterminedError(str(exc)) from exc
     return combined.min(), combined.max()
