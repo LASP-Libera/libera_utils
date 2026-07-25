@@ -1,6 +1,13 @@
 # Version Changes
 
-## 5.11.0
+## 5.12.0
+
+- FEAT: Add `libera_utils.l1a.day_window` helpers to trim L1A datasets to midnight ± buffer and assert unique monotonic data times.
+- FEAT: `trim_l1a_to_day_window` syncs the `PACKET` dimension to remaining packet-index values via `sync_packet_dim_to_index` after science-dim selection (drops orphan packets; densifies indices with source dtype).
+- FEAT: Add `libera_utils.l1a.day_coverage.evaluate_day_coverage` for L1A combine completeness gates (day core + left/right midnight buffer time coverage; sparse WFOV can use any day-core overlap).
+- DOCS: Document shared flight/ground daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → uniqueness assert).
+
+## 5.10.3
 
 - FEAT: Add `LiberaGroundCcsdsFilename` and `DataProductIdentifier.l0_ground_ccsds` for canonical ground-test CCSDS captures (`ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>`), with L0 archive prefix `GroundCCSDS/<yyyy>/<mm>/<dd>/`.
 - FEAT: Add `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default).
