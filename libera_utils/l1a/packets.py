@@ -37,6 +37,49 @@ SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variab
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
 
+def drop_unsynced_clock_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
+    """Filter out packet/sample times at or before the clock-not-yet-synced sanity floor.
+
+    Onboard clocks read out a near-zero day/second counter before the first time-sync command
+    is applied on the ground, which decodes as a timestamp just after ``CCSDS_EPOCH``
+    (1958-01-01). A single such packet is enough to poison a ``min()``/``max()`` time-span
+    calculation (e.g. driving a File Metadata applicable-date walk across ~68 years), so these
+    are dropped before span extraction rather than treated as real telemetry times.
+
+    Parameters
+    ----------
+    times_us : np.ndarray
+        Array of ``datetime64[us]`` packet or sample times.
+    context : str
+        Description of what is being processed (APID/file), used in the warning log and in the
+        error raised if nothing remains.
+
+    Returns
+    -------
+    np.ndarray
+        ``times_us`` with any pre-floor entries removed.
+
+    Raises
+    ------
+    ValueError
+        If no times remain after filtering.
+    """
+    floor = np.datetime64(config.get("MIN_VALID_TELEMETRY_TIME"), "us")
+    valid_mask = times_us >= floor
+    n_excluded = int((~valid_mask).sum())
+    if n_excluded:
+        logger.warning(
+            "Excluded %d time(s) before sanity floor %s (likely clock not yet time-synced) for %s",
+            n_excluded,
+            floor,
+            context,
+        )
+    filtered = times_us[valid_mask]
+    if filtered.size == 0:
+        raise ValueError(f"All times for {context} were before the sanity floor {floor}; none remain.")
+    return filtered
+
+
 def parse_packets_to_dataset(
     packet_files: list[PathLike | str], packet_definition: str | PathLike, apid: int, **generator_kwargs
 ) -> xr.Dataset:
@@ -87,7 +130,12 @@ def parse_packets_to_dataset(
 
 
 def parse_packets_to_l1a_dataset(
-    packet_files: list[PathLike | str], apid: int, ground_data: bool = False, verbose: bool = False
+    packet_files: list[PathLike | str],
+    apid: int,
+    ground_data: bool = False,
+    verbose: bool = False,
+    *,
+    skip_header_bytes: int | None = None,
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
 
@@ -107,6 +155,9 @@ def parse_packets_to_l1a_dataset(
         test data where duplicate timestamps with differing data may be expected. Default is False.
     verbose : bool, optional
         If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
+    skip_header_bytes : int | None, optional
+        Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
+        config (default ``0`` for flight PDS; pass ``8`` for ground CCSDS).
 
     Returns
     -------
@@ -126,9 +177,10 @@ def parse_packets_to_l1a_dataset(
     _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
     packet_config = get_packet_config(LiberaApid(apid))
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
-    # Ground test data packets have extra 8 byte headers that need to be skipped
-    # When running ground test data, set SKIP_PACKET_HEADER_BYTES environment variable to 8
-    skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
+    # Ground test data packets have extra 8 byte headers that need to be skipped.
+    # Prefer the explicit argument; otherwise read SKIP_PACKET_HEADER_BYTES from config.
+    if skip_header_bytes is None:
+        skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
     packet_ds = parse_packets_to_dataset(
         _packet_files, packet_definition_path, apid, skip_header_bytes=skip_header_bytes
     )
