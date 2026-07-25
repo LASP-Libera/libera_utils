@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.11.0
+
+- FEAT: Add `libera_utils.l1a.data_time_extractors` for lightweight camera/radiometer data-time spans (SOP FSW image times / sample epoch+period) without full L1A assembly. Ground headers use `SKIP_PACKET_HEADER_BYTES` (same as L1A parsing), not a `ground_data` flag.
+
 ## 5.10.11
 
 - MAINT: The production Docker image no longer sets `LEAPSECOND_FILE_ENV`. It pointed at a directory containing no `naif*.tls`, so curryer's lookup found nothing there; `KernelManager.load_naif_kernels` sets the variable at runtime to the directory of the LSK it furnishes.

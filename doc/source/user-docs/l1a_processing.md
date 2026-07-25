@@ -55,6 +55,21 @@ monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 The value is read once per call to `parse_packets_to_l1a_dataset()` and forwarded to Space Packet
 Parser as `skip_header_bytes`.
 
+## Data-time extraction (ingest applicable dates)
+
+Camera and radiometer science times are **not** the same as CCSDS packet times. For File Metadata
+applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_data_time_range`:
+
+- **Data-time indexed APIDs** (`DATA_TIME_INDEXED_APIDS`): `icie_wfov_sci`, `icie_rad_sample`,
+  `icie_rad_full`, `icie_cal_sample`, `icie_cal_full`.
+- **Camera:** SOP packet FSW image timestamps (reuses `wfov_image_metadata` helpers).
+- **Radiometer / cal sample APIDs:** sample epoch + period (or per-sample times) from the L1A
+  processing config — without expanding all sample data fields into an L1A product.
+- Raises `DataTimeUndeterminedError` when the span cannot be determined.
+- Ground CCSDS uses the same `SKIP_PACKET_HEADER_BYTES` setting as L1A parsing (no separate flag).
+
+All other APIDs remain **packet-time indexed** (Construction Record first/last packet times).
+
 ## L1A Packet Processing Configurations
 
 Per-APID processing configurations are defined in `l1a_processing_configs.yml` (path resolved from
