@@ -345,8 +345,9 @@ During L1A parsing for APID 1040, libera_utils:
 
 1. Stitches mem-dump packets from qualifying SOP (`ICIE__MEM_DUMP_FLAGS_WFOV == "SOP"` and
    `ICIE__MEM_DUMP_OFFSET_WFOV == 0`) through EOP into a full NAND image blob.
-2. Stores only the compressed JPEG-LS payload on `CAMERA_TIME` as `WFOV_IMAGE_BLOB` (`uint8`/`BLOB_BYTE`
-   with `WFOV_IMAGE_BLOB_LENGTH`; readers must use `blob[:length]`).
+2. Stores the complete compressed JPEG-LS image on `CAMERA_TIME` as `WFOV_COMPRESSED_IMAGE`
+   (`uint8`/`BLOB_BYTE` with `WFOV_COMPRESSED_IMAGE_LENGTH`; readers must use `image[:length]` to
+   drop zero padding).
 3. Decodes FSW (36 bytes), FPGA internal footer (140-byte block), and trailing 8-byte footer metadata
    into separate `WFOV_FSW_*`, `WFOV_FPGA_*`, and `WFOV_TRAILING_FOOTER_*` variables.
 4. Zeros `ICIE__WFOV_DATA` on contributing packets and sets `PACKET_IMAGE_ID` (0..N-1, or `-1` for
@@ -364,7 +365,7 @@ File-level quality attributes (integers ≥ 0):
 Decoded metadata on the `CAMERA_TIME` dimension:
 
 - Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_FSW_PARSE_VALID`, `WFOV_FPGA_PARSE_VALID`,
-  `WFOV_IMAGE_BLOB`, `WFOV_IMAGE_BLOB_LENGTH`, `WFOV_CRC_VALID` (always `-1` until LIBSDC-747)
+  `WFOV_COMPRESSED_IMAGE`, `WFOV_COMPRESSED_IMAGE_LENGTH`, `WFOV_CRC_VALID` (always `-1` until LIBSDC-747)
 - FSW fields: `WFOV_FSW_*` (19 uppercase field names matching the libera_cam FSW header layout)
 - FPGA fields: `WFOV_FPGA_*` (header, internal footer, and status flags)
 - Trailing footer: `WFOV_TRAILING_FOOTER_*` from the last 8 bytes of the stitched blob
@@ -375,21 +376,22 @@ packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filen
 
 #### Dual exposure and VIDEO timing
 
-- **`CAMERA_TIME` is the first integration.** FSW stamps one acquisition time per complete image.
+- **`CAMERA_TIME` is the first integration time.** FSW stamps one acquisition time per complete image.
   In DUAL mode (`WFOV_FSW_IMG_MODE == 0`), the second sequential exposure lags the first by about
   **111–350 ms**. That offset is not stored as a separate L1A time coordinate (also noted on the
   `WFOV_FSW_IMG_MODE` variable attributes).
 - **Which pixels used which exposure** is encoded in the **13th bit** of each decompressed pixel.
-  L1A keeps the JPEG-LS payload compressed in `WFOV_IMAGE_BLOB`, so per-pixel exposure masks and
+  L1A keeps the JPEG-LS payload compressed in `WFOV_COMPRESSED_IMAGE`, so per-pixel exposure masks and
   per-pixel times are an L1B responsibility after decompression.
 - **VIDEO mode** (`WFOV_FSW_IMG_MODE == 1`) can produce two NAND images from one camera trigger with
   identical FSW timestamps. Distinguish members with `CAMERA_PACKET_INDEX` (and packet stream order);
   do not assume `CAMERA_TIME` alone is a unique image key. `WFOV_FPGA_READOUT` is independent of
   `WFOV_FSW_IMG_MODE` and should not be used to infer VIDEO pairing.
 
-**Downstream (libera_cam):** L1B processing can read `WFOV_IMAGE_BLOB[:WFOV_IMAGE_BLOB_LENGTH]` directly
-instead of re-stitching packets and slicing headers from the NAND blob. Metadata variables on
-`CAMERA_TIME` may eliminate re-parsing FSW/FPGA headers when present.
+**Downstream (libera_cam):** Each `CAMERA_TIME` row already has a complete compressed JPEG-LS image in
+`WFOV_COMPRESSED_IMAGE` (trim with `WFOV_COMPRESSED_IMAGE_LENGTH`) plus decoded FSW/FPGA metadata on
+the same dimension. L1B decompresses that payload directly; it does not re-stitch packets or re-parse
+headers.
 
 For example, for `N` packets, the `AXIS_SAMPLE` packet containing Azimuth and Elevation mechanism data
 comes down with 50 Az and El samples per packet (a sample group). It's L1A product has:

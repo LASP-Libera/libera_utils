@@ -19,8 +19,8 @@ from libera_utils.l1a.wfov_image_metadata import (
     SOP_FPGA_MIN_SIZE,
     TIMESTAMP_SECONDS_OFFSET,
     TIMESTAMP_SUBSECONDS_OFFSET,
-    WFOV_IMAGE_BLOB_LENGTH_VAR,
-    WFOV_IMAGE_BLOB_VAR,
+    WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
+    WFOV_COMPRESSED_IMAGE_VAR,
     encode_trailing_footer_bytes,
     enhance_wfov_l1a_dataset,
     extract_compressed_payload,
@@ -373,8 +373,8 @@ class TestEnhanceWfovL1aDataset:
 
         enhanced = enhance_wfov_l1a_dataset(ds)
         assert enhanced.sizes[CAMERA_TIME_COORD] == 1
-        length = int(enhanced[WFOV_IMAGE_BLOB_LENGTH_VAR].values[0])
-        blob_bytes = enhanced[WFOV_IMAGE_BLOB_VAR].values[0, :length].tobytes()
+        length = int(enhanced[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[0])
+        blob_bytes = enhanced[WFOV_COMPRESSED_IMAGE_VAR].values[0, :length].tobytes()
         assert blob_bytes == payload
         assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0]
         assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) != original_bytes
@@ -430,8 +430,8 @@ class TestEnhanceWfovL1aDataset:
         )
         enhanced = enhance_wfov_l1a_dataset(ds)
         assert enhanced.sizes[CAMERA_TIME_COORD] == 1
-        length = int(enhanced[WFOV_IMAGE_BLOB_LENGTH_VAR].values[0])
-        assert enhanced[WFOV_IMAGE_BLOB_VAR].values[0, :length].tobytes() == payload
+        length = int(enhanced[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[0])
+        assert enhanced[WFOV_COMPRESSED_IMAGE_VAR].values[0, :length].tobytes() == payload
         assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0, 0]
         assert BLOB_BYTE_COORD in enhanced.dims
 
@@ -458,5 +458,5 @@ class TestEnhanceWfovL1aDataset:
         rows[0] = ("SOP", rows[0][1], rows[0][2], _pad_packet(blob, packet_len=len(blob)))
         ds = _make_wfov_packet_dataset(rows)
         enhanced = enhance_wfov_l1a_dataset(ds)
-        length = int(enhanced[WFOV_IMAGE_BLOB_LENGTH_VAR].values[0])
-        assert enhanced[WFOV_IMAGE_BLOB_VAR].values[0, :length].tobytes() == payload
+        length = int(enhanced[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[0])
+        assert enhanced[WFOV_COMPRESSED_IMAGE_VAR].values[0, :length].tobytes() == payload
