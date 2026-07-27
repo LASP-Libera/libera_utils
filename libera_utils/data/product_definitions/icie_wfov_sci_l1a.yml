@@ -191,17 +191,17 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Whether FPGA header block was parsed from stitched image blob
-  WFOV_IMAGE_BLOB:
+  WFOV_COMPRESSED_IMAGE:
     dtype: uint8
     dimensions: ["CAMERA_TIME", "BLOB_BYTE"]
     attributes:
       long_name: Compressed JPEG-LS pixel payload (FPGA DATA frame contents after headers/footers)
-      comment: Use WFOV_IMAGE_BLOB_LENGTH to determine valid bytes; padding beyond length is zero
-  WFOV_IMAGE_BLOB_LENGTH:
+      comment: Use WFOV_COMPRESSED_IMAGE_LENGTH to determine valid bytes; padding beyond length is zero
+  WFOV_COMPRESSED_IMAGE_LENGTH:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Valid byte length of WFOV_IMAGE_BLOB for each complete image
+      long_name: Valid byte length of WFOV_COMPRESSED_IMAGE for each complete image
   WFOV_FSW_FSW_LENGTH:
     dtype: uint8
     dimensions: ["CAMERA_TIME"]
