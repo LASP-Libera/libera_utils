@@ -76,7 +76,8 @@ class TestObsidRegistry:
             256: ("NOM-HK-DARKS-OF-DARKS-TRIMMED", "DARKS-OF-DARKS"),
             257: ("NOM-HK-LED-OF-DARK-TRIMMED", "LED-OF-DARK"),
             258: ("NOM-HK-NOMINAL-DARKS-TRIMMED", "NOMINAL-DARKS"),
-            513: ("NOM-HK-VIIRS-LUNAR-CAL-TRIMMED", "VIIRS-LUNAR-CAL"),
+            513: ("NOM-HK-VIIRS-LUNAR-POS-START-TRIMMED", "WFOV-VIIRS-LUNAR-POS-START"),
+            514: ("NOM-HK-VIIRS-LUNAR-NEG-START-TRIMMED", "WFOV-VIIRS-LUNAR-NEG-START"),
         }
         for obsid, (trimmed_val, cal_val) in expected.items():
             spec = get_obsid_spec(NomHkObsidSource.WFOV, obsid)
@@ -86,43 +87,51 @@ class TestObsidRegistry:
             assert spec.cal_product.value == cal_val
 
     def test_rad_cal_count(self):
-        """Twenty-five radiometer cal ObsIDs (22 gain/SWC/LWC/solar + 2 lunar + VIIRS lunar)."""
+        """Twenty-eight radiometer cal ObsIDs (24 gain/SWC/LWC/solar + 2 lunar + 2 VIIRS lunar)."""
         rad_cal = [s for s in OBSID_REGISTRY.values() if s.kind is ObsIdKind.RAD_CAL]
-        assert len(rad_cal) == 25
+        assert len(rad_cal) == 28
 
     def test_lunar_cal_obsids(self):
-        """Radiometer lunar ObsIDs 448/449 map to LUNAR-CAL1/2 products."""
+        """Radiometer lunar ObsIDs 448/449 map to LUNAR-SOUTH/NORTH-POLE products."""
         lunar1 = get_obsid_spec(NomHkObsidSource.RAD, 448)
         lunar2 = get_obsid_spec(NomHkObsidSource.RAD, 449)
-        assert lunar1.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_cal1_trimmed
-        assert lunar1.cal_product is DataProductIdentifier.cal_lunar_cal1
-        assert lunar2.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_cal2_trimmed
-        assert lunar2.cal_product is DataProductIdentifier.cal_lunar_cal2
+        assert lunar1.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_south_pole_trimmed
+        assert lunar1.cal_product is DataProductIdentifier.cal_lunar_south_pole
+        assert lunar2.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_north_pole_trimmed
+        assert lunar2.cal_product is DataProductIdentifier.cal_lunar_north_pole
         assert "Monthly" in lunar1.description
         assert "Quarterly" in lunar2.description
 
-    def test_rad_viirs_lunar_cal_obsid(self):
-        """RAD ObsID 513 shares VIIRS-LUNAR-CAL products with WFOV ObsID 513."""
-        rad = get_obsid_spec(NomHkObsidSource.RAD, 513)
-        wfov = get_obsid_spec(NomHkObsidSource.WFOV, 513)
-        assert rad.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_viirs_lunar_cal_trimmed
-        assert rad.cal_product is DataProductIdentifier.cal_viirs_lunar_cal
-        assert rad.trimmed_product is wfov.trimmed_product
-        assert rad.cal_product is wfov.cal_product
-        assert rad.kind is ObsIdKind.RAD_CAL
-        assert wfov.kind is ObsIdKind.CAM_CAL
+    def test_rad_viirs_lunar_cal_obsids(self):
+        """RAD ObsIDs 513/514 map to pos/neg-start VIIRS lunar products (distinct from WFOV cals)."""
+        rad_pos = get_obsid_spec(NomHkObsidSource.RAD, 513)
+        rad_neg = get_obsid_spec(NomHkObsidSource.RAD, 514)
+        wfov_pos = get_obsid_spec(NomHkObsidSource.WFOV, 513)
+        wfov_neg = get_obsid_spec(NomHkObsidSource.WFOV, 514)
+        assert rad_pos.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_viirs_lunar_pos_start_trimmed
+        assert rad_pos.cal_product is DataProductIdentifier.cal_rad_viirs_lunar_pos_start
+        assert rad_neg.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_viirs_lunar_neg_start_trimmed
+        assert rad_neg.cal_product is DataProductIdentifier.cal_rad_viirs_lunar_neg_start
+        assert wfov_pos.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_viirs_lunar_pos_start_trimmed
+        assert wfov_pos.cal_product is DataProductIdentifier.cal_wfov_viirs_lunar_pos_start
+        assert wfov_neg.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_viirs_lunar_neg_start_trimmed
+        assert wfov_neg.cal_product is DataProductIdentifier.cal_wfov_viirs_lunar_neg_start
+        assert rad_pos.trimmed_product is wfov_pos.trimmed_product
+        assert rad_pos.cal_product is not wfov_pos.cal_product
+        assert rad_pos.kind is ObsIdKind.RAD_CAL
+        assert wfov_pos.kind is ObsIdKind.CAM_CAL
 
     def test_cam_cal_count(self):
-        """Ten camera cal ObsIDs are registered."""
+        """Eleven camera cal ObsIDs are registered."""
         cam_cal = [s for s in OBSID_REGISTRY.values() if s.kind is ObsIdKind.CAM_CAL]
-        assert len(cam_cal) == 10
+        assert len(cam_cal) == 11
 
     def test_iter_trim_eligible_filters_by_source(self):
         """Source filter restricts iter_trim_eligible."""
         rad = list(iter_trim_eligible(NomHkObsidSource.RAD))
         wfov = list(iter_trim_eligible(NomHkObsidSource.WFOV))
-        assert len(rad) == 25
-        assert len(wfov) == 10
+        assert len(rad) == 28
+        assert len(wfov) == 11
         assert all(s.source is NomHkObsidSource.RAD for s in rad)
         assert all(s.source is NomHkObsidSource.WFOV for s in wfov)
 
