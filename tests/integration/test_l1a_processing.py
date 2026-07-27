@@ -22,8 +22,8 @@ from libera_utils.l1a.wfov_image_metadata import (
     COMPLETE_IMAGE_COUNT_ATTR,
     CRC_ERROR_COUNT_ATTR,
     MISSING_SOP_OR_EOP_COUNT_ATTR,
-    WFOV_IMAGE_BLOB_LENGTH_VAR,
-    WFOV_IMAGE_BLOB_VAR,
+    WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
+    WFOV_COMPRESSED_IMAGE_VAR,
 )
 
 # Mark all tests in this module as integration tests
@@ -194,8 +194,8 @@ def test_process_packets_to_l1a_product(
         assert "PACKET_IMAGE_ID" in dataset.data_vars
         assert "WFOV_FSW_PARSE_VALID" in dataset.data_vars
         assert "WFOV_FPGA_PARSE_VALID" in dataset.data_vars
-        assert WFOV_IMAGE_BLOB_VAR in dataset.data_vars
-        assert WFOV_IMAGE_BLOB_LENGTH_VAR in dataset.data_vars
+        assert WFOV_COMPRESSED_IMAGE_VAR in dataset.data_vars
+        assert WFOV_COMPRESSED_IMAGE_LENGTH_VAR in dataset.data_vars
         assert dataset.sizes[CAMERA_TIME_COORD] > 0
         assert dataset.sizes[CAMERA_TIME_COORD] == dataset.attrs[COMPLETE_IMAGE_COUNT_ATTR]
         assert MISSING_SOP_OR_EOP_COUNT_ATTR in dataset.attrs
@@ -286,7 +286,7 @@ def test_wfov_sci_filename_uses_image_time_bounds(
 
 
 @pytest.mark.filterwarnings("error")
-def test_ditl_camera_wfov_image_blob_round_trip_and_decompress(
+def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
     test_ditl_camera_with_duplicate_packet,
     monkeypatch,
     tmp_path,
@@ -313,8 +313,8 @@ def test_ditl_camera_wfov_image_blob_round_trip_and_decompress(
 
     pre_write_payloads = []
     for image_index in range(n_complete):
-        length = int(dataset[WFOV_IMAGE_BLOB_LENGTH_VAR].values[image_index])
-        pre_write_payloads.append(dataset[WFOV_IMAGE_BLOB_VAR].values[image_index, :length].tobytes())
+        length = int(dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
+        pre_write_payloads.append(dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes())
 
     product_definition_path = get_l1a_product_definition_path(apid)
     output_filename = write_libera_data_product(
@@ -332,13 +332,13 @@ def test_ditl_camera_wfov_image_blob_round_trip_and_decompress(
 
         assert read_dataset.sizes[CAMERA_TIME_COORD] == n_complete
         for image_index, expected_payload in enumerate(pre_write_payloads):
-            length = int(read_dataset[WFOV_IMAGE_BLOB_LENGTH_VAR].values[image_index])
-            round_tripped = read_dataset[WFOV_IMAGE_BLOB_VAR].values[image_index, :length].tobytes()
+            length = int(read_dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
+            round_tripped = read_dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes()
             assert round_tripped == expected_payload
 
         for image_index in range(min(3, n_complete)):
-            length = int(read_dataset[WFOV_IMAGE_BLOB_LENGTH_VAR].values[image_index])
-            payload = read_dataset[WFOV_IMAGE_BLOB_VAR].values[image_index, :length].tobytes()
+            length = int(read_dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
+            payload = read_dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes()
             with Image.open(BytesIO(payload)) as img:
                 assert img.size == (2048, 2048)
 
