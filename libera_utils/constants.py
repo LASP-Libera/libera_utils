@@ -233,6 +233,14 @@ class DataProductIdentifier(StrEnum):
         "FMATCH-IMAGER-FLASH",
         DataLevel.AUX,
     )  # Footprint matching (flash) using RBSP + VIIRS imager data for cloud properties
+    aux_scene_id_imager = (
+        "SCENE-ID-IMAGER",
+        DataLevel.AUX,
+    )  # Scene IDs (incl. TRMM) from the post-year-one FMATCH-IMAGER (RBSP + VIIRS imager cloud properties)
+    aux_scene_id_imager_flash = (
+        "SCENE-ID-IMAGER-FLASH",
+        DataLevel.AUX,
+    )  # Scene IDs (incl. partial TRMM) from FMATCH-IMAGER-FLASH
 
     @property
     def product_name(self) -> str:
@@ -370,6 +378,11 @@ class ProcessingStepIdentifier(StrEnum):
         [DataProductIdentifier.aux_fmatch_imager_camtime],
     )
     aux_fmatch_imager_flash = ("aux-fmatch-imager-flash", [DataProductIdentifier.aux_fmatch_imager_flash])
+    aux_scene_id_imager = ("aux-scene-id-imager", [DataProductIdentifier.aux_scene_id_imager])
+    aux_scene_id_imager_flash = (
+        "aux-scene-id-imager-flash",
+        [DataProductIdentifier.aux_scene_id_imager_flash],
+    )
 
     @property
     def processing_step_name(self) -> str:

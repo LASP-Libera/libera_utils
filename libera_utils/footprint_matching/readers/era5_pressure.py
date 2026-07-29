@@ -32,8 +32,11 @@ Variables read (at each retained pressure level)
 - q:  specific humidity (kg kg⁻¹)
 - r:  relative humidity (%)
 
-All of these are year-one FMATCH-IMAGER substitutes for the unavailable RBSP
-inputs, so the whole reader is gated ``REQUIRED_VARIANT = YEAR_ONE``.
+All of these began as year-one FMATCH-IMAGER substitutes for the then-unavailable
+RBSP inputs. They are now retained in the post-year-one product alongside the RBSP
+fields, so the reader is variant-neutral (``REQUIRED_VARIANT`` inherits the base
+default of ``None``); it is active in every FMATCH-IMAGER variant, gated only by
+``REQUIRED_MODE = IMAGER``.
 
 References
 ----------
@@ -50,7 +53,7 @@ import numpy as np
 import xarray as xr
 
 from libera_utils.footprint_matching.readers.era5 import ERA5ReaderBase
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import OperationalMode, VariableSpec
 
 # Pressure levels (hPa) retained for FMATCH, ascending. ERA5 offers 37 levels
 # (1–1000 hPa); carrying all of them would add 5 × 37 × 2 = 370 product
@@ -91,7 +94,6 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
         )
         for base_name, _ in _ERA5_PRESSURE_LEVEL_VARIABLES
         for level in _ERA5_PRESSURE_LEVELS
@@ -113,10 +115,11 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
         25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
     REQUIRED_MODE : OperationalMode
         ``IMAGER`` — these fields exist only for the FMATCH-IMAGER product.
-    REQUIRED_VARIANT : FmatchVariant
-        ``YEAR_ONE`` — the whole reader substitutes for RBSP inputs that become
-        available after year one, at which point the post-year-one product uses
-        CLDPIX instead (see ``fmatch_imager_post_year_one.yml``).
+    REQUIRED_VARIANT : FmatchVariant or None
+        Inherited base default ``None`` (variant-neutral): the reader runs in both
+        the year-one and post-year-one FMATCH-IMAGER variants. It originally
+        substituted for RBSP inputs during year one and is now retained
+        post-year-one alongside CLDPIX/SSF (see ``fmatch_imager_post_year_one.yml``).
     VARIABLES : tuple[VariableSpec, ...]
         One continuous float32 spec per (variable, level) pair.
 
@@ -134,7 +137,11 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     INSTRUMENT: str = "ECMWF"
     RESOLUTION_KM: float = 25.0
     REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER
-    REQUIRED_VARIANT: FmatchVariant = FmatchVariant.YEAR_ONE
+    # REQUIRED_VARIANT is intentionally NOT overridden: it inherits the base class
+    # default of None (variant-neutral). These fields began as year-one substitutes
+    # for the unavailable RBSP inputs but are now retained in the post-year-one
+    # FMATCH-IMAGER product alongside the RBSP fields, so the reader runs in both
+    # variants (subject only to the REQUIRED_MODE=IMAGER rank gate).
     VARIABLES: tuple[VariableSpec, ...] = _build_pressure_level_specs()
 
     def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

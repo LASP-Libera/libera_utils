@@ -6,16 +6,19 @@ Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90)
 - Temporal resolution: Hourly
 - Temporal coverage: 1940-present. ERA5 final data lags real time by ~5 days
-  (the preliminary ERA5T stream lags ~1 day), which is what makes ERA5 usable
-  as the year-one substitute for the RBSP cloud products (see FmatchVariant).
+  (the preliminary ERA5T stream lags ~1 day), which is what originally made ERA5
+  usable as the year-one substitute for the RBSP cloud products (see
+  :class:`~libera_utils.footprint_matching.types.FmatchVariant`).
 
 Variables read
 --------------
 Wind components (every product, from mission start):
 - u10 / v10: 10 m U/V wind components
 
-Year-one FMATCH-IMAGER substitutes for the unavailable RBSP inputs
-(``required_variant=YEAR_ONE``, ``required_mode=IMAGER``):
+Additional FMATCH-IMAGER single-level fields (``required_mode=IMAGER``,
+variant-neutral — present in every FMATCH-IMAGER variant). These began as
+year-one substitutes for the unavailable RBSP inputs and are now retained
+post-year-one alongside the RBSP fields:
 - t2m: 2 m temperature
 - d2m: 2 m dewpoint temperature
 - sp:  surface pressure
@@ -40,7 +43,7 @@ import numpy as np
 import xarray as xr
 
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
 
 # Ordered mapping of FMATCH spec name -> ERA5 variable name as stored in CDS
 # NetCDF4 files. The order here defines axis 0 of the reader's data array and
@@ -232,16 +235,18 @@ class ERA5Reader(ERA5ReaderBase):
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
-        # --- Year-one FMATCH-IMAGER substitutes for the unavailable RBSP inputs.
-        # Gated per-spec (not per-reader) so the wind components above keep
-        # flowing to the CAM products in every variant.
+        # --- Additional FMATCH-IMAGER single-level fields (beyond the winds).
+        # Gated per-spec with required_mode=IMAGER and variant-neutral
+        # (required_variant=None), so they flow to every FMATCH-IMAGER variant
+        # while staying out of the lower-latency CAM products. These originated as
+        # year-one substitutes for the then-unavailable RBSP inputs; they are now
+        # retained in the post-year-one product alongside the RBSP fields.
         VariableSpec(
             name="temperature_2m",
             dtype="float32",
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
         ),
         VariableSpec(
             name="dew_point_temperature_2m",
@@ -249,7 +254,6 @@ class ERA5Reader(ERA5ReaderBase):
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
         ),
         VariableSpec(
             name="surface_pressure",
@@ -257,7 +261,6 @@ class ERA5Reader(ERA5ReaderBase):
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
         ),
         VariableSpec(
             name="surface_geopotential",
@@ -265,7 +268,6 @@ class ERA5Reader(ERA5ReaderBase):
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
         ),
         VariableSpec(
             name="forecast_albedo",
@@ -273,7 +275,6 @@ class ERA5Reader(ERA5ReaderBase):
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
         ),
     )
 

@@ -125,16 +125,17 @@ class TestGetReadersForMode:
         imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
         for key in ("viirs_aod", "ssf", "cldpix"):
             assert key in imager_readers
-        # The year-one-only ERA5 pressure-level reader is replaced by RBSP inputs.
-        assert "era5_pressure" not in imager_readers
+        # The ERA5 pressure-level reader is variant-neutral: it is retained
+        # post-year-one alongside the RBSP inputs, not replaced by them.
+        assert "era5_pressure" in imager_readers
 
     def test_variant_gating_matches_reader_attributes(self):
-        # The RBSP readers must declare POST_YEAR_ONE; the ERA5 pressure reader
-        # YEAR_ONE; everything else must be variant-neutral.
+        # The RBSP readers must declare POST_YEAR_ONE; everything else (including
+        # the ERA5 pressure reader, retained in both variants) must be
+        # variant-neutral.
         assert SSFReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
         assert CLDPIXReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
-        assert ERA5PressureLevelReader.REQUIRED_VARIANT is FmatchVariant.YEAR_ONE
-        for cls in (ERA5Reader, IGBPReader, NISEReader, VIIRSCloudReader):
+        for cls in (ERA5Reader, ERA5PressureLevelReader, IGBPReader, NISEReader, VIIRSCloudReader):
             assert cls.REQUIRED_VARIANT is None
 
     def test_returns_dict_of_reader_classes(self):

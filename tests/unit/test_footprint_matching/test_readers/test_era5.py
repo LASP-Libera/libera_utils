@@ -16,7 +16,6 @@ import numpy as np
 from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
 from libera_utils.footprint_matching.types import (
     BoundingBox,
-    FmatchVariant,
     GridTile,
     OperationalMode,
     TileKey,
@@ -26,8 +25,10 @@ from tests.test_data.footprint_matching.fixtures import (
     make_era5_netcdf_fixture,
 )
 
-# The five year-one substitute fields added alongside the original winds.
-_YEAR_ONE_SPEC_NAMES = (
+# The five additional FMATCH-IMAGER single-level fields alongside the winds.
+# (They began as year-one substitutes for the unavailable RBSP inputs and are now
+# retained in every FMATCH-IMAGER variant; they remain mode-gated to IMAGER.)
+_IMAGER_SINGLE_LEVEL_SPEC_NAMES = (
     "temperature_2m",
     "dew_point_temperature_2m",
     "surface_pressure",
@@ -47,8 +48,9 @@ class TestERA5ReaderClassAttributes:
         assert ERA5Reader.REQUIRED_MODE == OperationalMode.CAM
 
     def test_reader_active_in_every_variant(self):
-        # The reader itself must stay unrestricted (the winds feed every product);
-        # only the year-one substitute *specs* are variant-gated.
+        # The reader is unrestricted on the variant axis: the winds feed every
+        # product, and the additional single-level fields are now retained in
+        # every FMATCH-IMAGER variant too (mode-gated to IMAGER, not variant-gated).
         assert ERA5Reader.REQUIRED_VARIANT is None
 
     def test_variables_has_seven_entries(self):
@@ -56,7 +58,7 @@ class TestERA5ReaderClassAttributes:
 
     def test_variable_names(self):
         names = [v.name for v in ERA5Reader.VARIABLES]
-        assert names == ["wind_u10", "wind_v10", *_YEAR_ONE_SPEC_NAMES]
+        assert names == ["wind_u10", "wind_v10", *_IMAGER_SINGLE_LEVEL_SPEC_NAMES]
 
     def test_variables_order_matches_file_mapping(self):
         # Axis 0 of the data array follows _ERA5_SINGLE_LEVEL_VARIABLES, which
@@ -68,11 +70,12 @@ class TestERA5ReaderClassAttributes:
             assert v.required_mode == OperationalMode.CAM
             assert v.required_variant is None
 
-    def test_year_one_variables_are_gated(self):
-        # The substitute fields only exist in the year-one FMATCH-IMAGER product.
+    def test_imager_single_level_variables_are_mode_gated_only(self):
+        # The additional single-level fields exist for the FMATCH-IMAGER product in
+        # every variant: mode-gated to IMAGER, but variant-neutral (None).
         for v in ERA5Reader.VARIABLES[2:]:
             assert v.required_mode == OperationalMode.IMAGER
-            assert v.required_variant is FmatchVariant.YEAR_ONE
+            assert v.required_variant is None
 
     def test_variables_have_no_categories(self):
         for v in ERA5Reader.VARIABLES:

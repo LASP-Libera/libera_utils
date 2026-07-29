@@ -6,8 +6,9 @@
 # production definition substitutes ERA5 reanalysis fields: single-level fields
 # from the era5 reader and pressure-level fields from the era5_pressure reader
 # (13 levels, see _ERA5_PRESSURE_LEVELS in readers/era5_pressure.py).
-# The RBSP-based definition is kept as fmatch_imager_post_year_one.yml and is
-# selected manually via FmatchVariant.POST_YEAR_ONE once RBSP data flows.
+# The post-year-one definition is kept as fmatch_imager_post_year_one.yml (it adds
+# the RBSP CLDPIX/SSF fields on top of these ERA5 fields, which it also retains)
+# and is selected manually via FmatchVariant.POST_YEAR_ONE once RBSP data flows.
 # =============================================================================
 
 attributes:
@@ -1101,6 +1102,30 @@ variables:
     attributes:
       long_name: Aerosol optical depth at 550 nm (within-footprint standard deviation)
       units: "1"
+  viirs_aod_NOAA20_aerosol_type:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: "VIIRS Deep Blue aerosol type (land+ocean), modal value (0=dust 1=smoke 2=high-altitude smoke 3=pyrocumulonimbus 4=non-smoke fine mode 5=mixed 6=background maritime 7=fine dominated)"
+      valid_range: [0, 7]
+  viirs_aod_NOAA20_aerosol_type_primary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Most common VIIRS Deep Blue aerosol type (land+ocean) in footprint
+      valid_range: [0, 7]
+  viirs_aod_NOAA20_aerosol_type_secondary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Second most common VIIRS Deep Blue aerosol type (land+ocean) in footprint
+      valid_range: [0, 7]
+  viirs_aod_NOAA20_aerosol_type_tertiary:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Third most common VIIRS Deep Blue aerosol type (land+ocean) in footprint
+      valid_range: [0, 7]
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
   viirs_brdf_NOAA20_brdf_shortwave_fiso:
     dtype: float32

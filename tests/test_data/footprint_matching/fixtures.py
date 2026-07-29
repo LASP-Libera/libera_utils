@@ -35,9 +35,9 @@ VIIRS BRDF VJ143C1 (HDF5/HDF-EOS5):
     Example filename: VJ143C1.A2026153.002.2026161161054.h5
     EarthData login required: https://urs.earthdata.nasa.gov/
 
-VIIRS / merged AOD (AERDB_D3_GEOLEO, NetCDF4 with per-sensor groups):
+VIIRS Deep Blue aerosol — AOD + type (AERDB_D3_VIIRS_NOAA20, NetCDF4, root-level):
     NASA Deep Blue: https://deepblue.gsfc.nasa.gov/
-    Example filename: AERDB_D3_GEOLEO_Merged.A2020121.001.2024121023016.nc
+    Example filename: AERDB_D3_VIIRS_NOAA20.A2026001.002.2026005001030.nc
 
 CERES SSF / FLASHFlux (NetCDF4, per-footprint swath):
     NASA CERES: https://ceres.larc.nasa.gov/data/#ssf-level-2
@@ -50,10 +50,17 @@ CERES CLDPIX (NetCDF4, imager-pixel swath):
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
+
+if TYPE_CHECKING:
+    # Imported for type annotations only; the concrete classes are imported lazily inside the factories that use
+    # them (product.py pulls in the heavier footprint-matching stack) to keep fixture import cheap.
+    from libera_utils.footprint_matching.product import FmatchVariant, OperationalMode
 
 # Constant fill values for the five non-wind ERA5 single-level variables written
 # by the ERA5 fixtures. Chosen to be physically plausible AND mutually distinct
@@ -503,18 +510,23 @@ def make_aod_noaa20_fixture(
     lon_min: float = 10.5,
     lon_max: float = 17.5,
     aod_fill: float = 0.2,
+    aerosol_type_value: int = 1,
     include_fill_pixel: bool = True,
-    merged_decoy_value: float | None = None,
+    write_histogram: bool = True,
 ) -> Path:
-    """Write a synthetic AERDB_D3_GEOLEO NOAA-20 VIIRS AOD NetCDF4 file.
+    """Write a synthetic AERDB_D3_VIIRS_NOAA20 Deep Blue aerosol NetCDF4 file.
 
-    Replicates the relevant structure of the real Deep Blue GEO-LEO merged
-    product as consumed by ``VIIRSAODReader`` (which reads the per-sensor
-    NOAA-20 VIIRS group, not the cross-sensor ``Merged`` group):
-    - Root-level ``Latitude`` (ascending) and ``Longitude`` coordinate arrays
-    - A ``NOAA20_VIIRS`` group containing ``Aerosol_Optical_Thickness_550_Land_Ocean``
-      with **(Latitude, Longitude)** dimension order (no transpose needed) and
-      ``_FillValue = -999.0``
+    Replicates the relevant structure of the real single-sensor NOAA-20 VIIRS
+    Deep Blue Level-3 daily product as consumed by ``VIIRSAODReader`` — all
+    variables at the **root** (no groups), stored in (Latitude, Longitude) order
+    with ascending latitude (no transpose needed):
+    - Root ``Latitude_1D`` (ascending) and ``Longitude_1D`` coordinate arrays.
+    - Root ``Aerosol_Optical_Thickness_550_Land_Ocean_Mean`` (AOD @ 550 nm),
+      ``_FillValue = -999.0``.
+    - Root ``Aerosol_Type_Land_Ocean_Mode`` (modal aerosol type, ``int32``,
+      ``_FillValue = -999``, categories 0..7).
+    - Optionally root ``Aerosol_Type_Land_Ocean_Histogram`` (per-type counts)
+      for realism; the reader does not read it.
 
     Parameters
     ----------
@@ -528,14 +540,17 @@ def make_aod_noaa20_fixture(
         Longitude range (−180..180 convention). Default 10.5 → 17.5°.
     aod_fill : float
         Constant AOD value written to every non-fill pixel. Default 0.2.
+    aerosol_type_value : int
+        Constant aerosol-type category (0..7) written to every non-fill pixel.
+        Default 1 (smoke).
     include_fill_pixel : bool
-        If True, set pixel [0, 0] to the −999.0 fill sentinel so tests can
-        verify fill → NaN conversion. Default True.
-    merged_decoy_value : float | None
-        If not None, additionally write a decoy ``Merged`` group filled with this
-        constant value. The reader must ignore it (it reads ``NOAA20_VIIRS``), so
-        tests can assert the reader is reading the correct group. Default None
-        (no ``Merged`` group written).
+        If True, set pixel [0, 0] of both the AOD and the aerosol-type fields to
+        the −999 fill sentinel so tests can verify fill → NaN conversion.
+        Default True.
+    write_histogram : bool
+        If True, additionally write the 8-category ``Aerosol_Type_Land_Ocean_Histogram``
+        variable. The reader ignores it; it is present only for structural
+        fidelity. Default True.
 
     Returns
     -------
@@ -544,47 +559,66 @@ def make_aod_noaa20_fixture(
     """
     import netCDF4  # noqa: PLC0415
 
-    out_path = tmp_path / "aerdb_d3_geoleo_merged_fixture.nc"
+    n_types = 8
+    out_path = tmp_path / "aerdb_d3_viirs_noaa20_fixture.nc"
     lats = np.linspace(lat_min, lat_max, n_lat)  # ascending
     lons = np.linspace(lon_min, lon_max, n_lon)
 
     with netCDF4.Dataset(str(out_path), "w") as ds:
-        ds.createDimension("Latitude", n_lat)
-        ds.createDimension("Longitude", n_lon)
+        # Note the ``_1D`` coordinate names — they differ from the merged product.
+        ds.createDimension("Latitude_1D", n_lat)
+        ds.createDimension("Longitude_1D", n_lon)
 
-        lat_var = ds.createVariable("Latitude", "f4", ("Latitude",))
+        lat_var = ds.createVariable("Latitude_1D", "f4", ("Latitude_1D",))
         lat_var[:] = lats.astype(np.float32)
         lat_var.units = "degrees_north"
 
-        lon_var = ds.createVariable("Longitude", "f4", ("Longitude",))
+        lon_var = ds.createVariable("Longitude_1D", "f4", ("Longitude_1D",))
         lon_var[:] = lons.astype(np.float32)
         lon_var.units = "degrees_east"
 
-        grp = ds.createGroup("NOAA20_VIIRS")
-        # Note: dimension order (Latitude, Longitude) — matches the real product.
-        aod_var = grp.createVariable(
-            "Aerosol_Optical_Thickness_550_Land_Ocean",
+        # AOD daily-mean field at the root, (Latitude, Longitude) order.
+        aod_var = ds.createVariable(
+            "Aerosol_Optical_Thickness_550_Land_Ocean_Mean",
             "f4",
-            ("Latitude", "Longitude"),
+            ("Latitude_1D", "Longitude_1D"),
             fill_value=-999.0,
         )
-        data = np.full((n_lat, n_lon), aod_fill, dtype=np.float32)
+        aod_data = np.full((n_lat, n_lon), aod_fill, dtype=np.float32)
         if include_fill_pixel:
-            data[0, 0] = -999.0
-        aod_var[:] = data
+            aod_data[0, 0] = -999.0
+        aod_var[:] = aod_data
 
-        # Optionally write a decoy "Merged" group with a distinct constant value.
-        # The reader reads NOAA20_VIIRS, so it must never return these values —
-        # this lets a test guard against an accidental revert to the merged group.
-        if merged_decoy_value is not None:
-            decoy_grp = ds.createGroup("Merged")
-            decoy_var = decoy_grp.createVariable(
-                "Aerosol_Optical_Thickness_550_Land_Ocean",
-                "f4",
-                ("Latitude", "Longitude"),
-                fill_value=-999.0,
+        # Modal aerosol-type field at the root (int32 in the real product).
+        type_var = ds.createVariable(
+            "Aerosol_Type_Land_Ocean_Mode",
+            "i4",
+            ("Latitude_1D", "Longitude_1D"),
+            fill_value=-999,
+        )
+        type_data = np.full((n_lat, n_lon), aerosol_type_value, dtype=np.int32)
+        if include_fill_pixel:
+            type_data[0, 0] = -999
+        type_var[:] = type_data
+        type_var.valid_range = np.array([0, n_types - 1], dtype=np.int32)
+
+        # Optional per-type histogram (Aerosol_Types, Latitude, Longitude). Not
+        # read by the reader; written only to mirror the real granule's layout.
+        if write_histogram:
+            ds.createDimension("Aerosol_Types", n_types)
+            hist_var = ds.createVariable(
+                "Aerosol_Type_Land_Ocean_Histogram",
+                "i4",
+                ("Aerosol_Types", "Latitude_1D", "Longitude_1D"),
+                fill_value=-999,
             )
-            decoy_var[:] = np.full((n_lat, n_lon), merged_decoy_value, dtype=np.float32)
+            hist = np.zeros((n_types, n_lat, n_lon), dtype=np.int32)
+            # Put all "counts" in the modal category so the histogram is
+            # self-consistent. Guarded so tests can pass an out-of-range modal
+            # value (to exercise fill/valid-range masking) without indexing error.
+            if 0 <= aerosol_type_value < n_types:
+                hist[aerosol_type_value, :, :] = 10
+            hist_var[:] = hist
 
     return out_path
 
@@ -830,8 +864,10 @@ def make_cldpix_fixture(
 
 def make_fmatch_product_fixture(
     directory: Path,
-    mode: "OperationalMode | None" = None,
+    mode: OperationalMode | None = None,
     n_footprints: int = 8,
+    *,
+    variant: FmatchVariant | None = None,
 ) -> Path:
     """Write a synthetic, conformant FMATCH product NetCDF file (input to the SCENE-ID runners).
 
@@ -853,6 +889,10 @@ def make_fmatch_product_fixture(
         The FMATCH operational mode whose definition drives the file. Defaults to ``OperationalMode.CAM``.
     n_footprints : int, optional
         Number of footprints (length of the time axis). Defaults to 8.
+    variant : FmatchVariant, optional
+        Input-availability variant passed to ``load_fmatch_definition``. Defaults to ``YEAR_ONE``. Pass
+        ``FmatchVariant.POST_YEAR_ONE`` with ``OperationalMode.IMAGER`` to write the RBSP-based FMATCH-IMAGER file
+        that the SCENE-ID-IMAGER reader consumes.
 
     Returns
     -------
@@ -860,6 +900,7 @@ def make_fmatch_product_fixture(
         Path to the written FMATCH product NetCDF file.
     """
     from libera_utils.footprint_matching.product import (  # noqa: PLC0415
+        FmatchVariant,
         OperationalMode,
         fmatch_time_variable,
         load_fmatch_definition,
@@ -868,7 +909,9 @@ def make_fmatch_product_fixture(
 
     if mode is None:
         mode = OperationalMode.CAM
-    definition = load_fmatch_definition(mode)
+    if variant is None:
+        variant = FmatchVariant.YEAR_ONE
+    definition = load_fmatch_definition(mode, variant)
     time_variable = fmatch_time_variable(mode)
 
     base_time = np.datetime64("2026-06-11T00:00:00", "ns")
@@ -879,6 +922,16 @@ def make_fmatch_product_fixture(
     for name, var_def in definition.variables.items():
         if name == "igbp_MODIS_surface_type":
             data[name] = (np.arange(n_footprints) % 17 + 1).astype(var_def.dtype)
+        elif name == "ssf_NOAA20_clear_coverage":
+            # Clear-sky percentage in [0, 100]; the imager scene-ID readers derive cloud_fraction = 100 -
+            # clear_coverage, so a spread across the full range gives the classifier both cloudy and (near-)clear
+            # footprints -- the latter exercise the clear/surface TRMM scenes that FLASH can match despite having no
+            # cloud phase.
+            data[name] = np.linspace(0, 100, n_footprints).astype(var_def.dtype)
+        elif name == "cldpix_NOAA20_cloud_particle_phase":
+            # Valid CLDPIX phase codes cycling liquid(1)/ice(2) so map_cldpix_phase_to_trmm yields usable 1/2
+            # values (rather than all-NaN) for the post-year-one TRMM classification.
+            data[name] = (np.arange(n_footprints) % 2 + 1).astype(var_def.dtype)
         else:
             data[name] = np.zeros(n_footprints, dtype=var_def.dtype)
 
@@ -895,3 +948,169 @@ def make_fmatch_product_fixture(
         dynamic_product_attributes=dynamic_attrs,
     )
     return Path(str(written.path))
+
+
+def make_l1b_radiometer_fixture(
+    directory: Path,
+    n_footprints: int = 8,
+    *,
+    n_invalid: int = 0,
+) -> Path:
+    """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
+
+    Contains exactly the variables that
+    :func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs` reads: the CF-encoded
+    ``radiometer_time`` coordinate plus the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
+    through verbatim. The values are physically plausible but arbitrary; only the variable names, dtypes and time
+    encoding are the contract under test.
+
+    The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
+    with :func:`libera_utils.footprint_matching._runner.select_manifest_files_by_product_id`.
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the L1B file into (e.g. pytest ``tmp_path``).
+    n_footprints : int, optional
+        Total number of footprints written. Defaults to 8.
+    n_invalid : int, optional
+        How many leading footprints to fill with NaN geolocation, mimicking the real files' off-Earth samples. Those
+        rows are expected to be dropped by the reader, so ``n_footprints - n_invalid`` records should survive.
+        Defaults to 0.
+
+    Returns
+    -------
+    Path
+        Path to the written L1B RAD-4CH NetCDF file.
+    """
+    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
+    from libera_utils.footprint_matching.l1b_inputs import L1B_PASSTHROUGH_VARIABLES, L1B_TIME_VARIABLE  # noqa: PLC0415
+    from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
+
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
+    times = base_time + np.arange(n_footprints, dtype="int64") * cadence
+
+    # Spread the footprints over a plausible range for each quantity so tests can tell the columns apart. The angles
+    # stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]).
+    ranges = {
+        "latitude": (-60.0, 60.0),
+        "longitude": (-170.0, 170.0),
+        "solar_zenith_angle": (10.0, 80.0),
+        "viewing_zenith_angle": (0.0, 45.0),
+        "relative_azimuth_angle": (0.0, 350.0),
+    }
+    data_vars = {}
+    for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items():
+        low, high = ranges[fmatch_name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float32)
+        if n_invalid:
+            # NaN is how the real L1B marks samples whose boresight misses the Earth.
+            values[:n_invalid] = np.nan
+        data_vars[l1b_name] = ((L1B_TIME_VARIABLE,), values)
+
+    dataset = xr.Dataset(data_vars, coords={L1B_TIME_VARIABLE: times})
+    # Match the real product's CF time encoding so xarray decodes it back to datetime64[ns] on read.
+    dataset[L1B_TIME_VARIABLE].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l1b_rad,
+        version="V1-0-0",
+        utc_start=_as_utc_datetime(times[0]),
+        utc_end=_as_utc_datetime(times[-1]),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
+def make_l1b_camera_fixture(
+    directory: Path,
+    n_images: int = 2,
+    n_pixels_x: int = 6,
+    n_pixels_y: int = 6,
+) -> Path:
+    """Write a synthetic L1B CAM NetCDF file (input to the camera-timescale FMATCH runners).
+
+    Contains the geolocation and viewing-angle grids that
+    :func:`libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera` segments into pseudo-footprints,
+    on the ``CAMERA_TIME`` x ``CAMERA_PIXEL_COUNT_X`` x ``CAMERA_PIXEL_COUNT_Y`` grid. The pixel spacing is chosen
+    coarse enough (~0.5 degrees, roughly 55 km) that each pixel becomes its own pseudo-footprint, which keeps the
+    expected footprint count simple: ``n_images * n_pixels_x * n_pixels_y``.
+
+    The file is written under a proper Libera ``L1B CAM`` filename so that the manifest-driven runners select it with
+    :func:`libera_utils.footprint_matching._runner.select_manifest_files_by_product_id`.
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the L1B file into (e.g. pytest ``tmp_path``).
+    n_images : int, optional
+        Number of camera images (length of the ``CAMERA_TIME`` axis). Defaults to 2.
+    n_pixels_x, n_pixels_y : int, optional
+        Pixel-grid dimensions of each image. Default to 6 x 6.
+
+    Returns
+    -------
+    Path
+        Path to the written L1B CAM NetCDF file.
+    """
+    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
+    from libera_utils.footprint_matching import camera_segmentation as seg  # noqa: PLC0415
+    from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
+
+    dims = (seg.CAMERA_TIME_NAME, seg.PIXEL_X_DIM, seg.PIXEL_Y_DIM)
+    shape = (n_images, n_pixels_x, n_pixels_y)
+
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    # Camera images are seconds apart (unlike the 100 Hz radiometer), so successive images get distinct times.
+    times = base_time + np.arange(n_images, dtype="int64") * np.timedelta64(1, "s")
+
+    # ~0.5 degree pixel spacing keeps each pixel above the target footprint diameter, so segmentation emits one
+    # pseudo-footprint per pixel. Each image is offset in latitude so the images do not overlap.
+    lat = np.zeros(shape, dtype=float)
+    lon = np.zeros(shape, dtype=float)
+    for image_index in range(n_images):
+        lat_axis = 10.0 + image_index * 5.0 + np.arange(n_pixels_x) * 0.5
+        lon_axis = 20.0 + np.arange(n_pixels_y) * 0.5
+        lat[image_index] = lat_axis[:, None]
+        lon[image_index] = lon_axis[None, :]
+
+    def const_grid(value: float) -> np.ndarray:
+        return np.full(shape, value, dtype=float)
+
+    dataset = xr.Dataset(
+        {
+            seg.LATITUDE_NAME: (dims, lat),
+            seg.LONGITUDE_NAME: (dims, lon),
+            seg.ALTITUDE_NAME: (dims, const_grid(835_000.0)),
+            seg.SOLAR_ZENITH_NAME: (dims, const_grid(30.0)),
+            seg.VIEWING_ZENITH_NAME: (dims, const_grid(10.0)),
+            seg.RELATIVE_AZIMUTH_NAME: (dims, const_grid(120.0)),
+        },
+        coords={seg.CAMERA_TIME_NAME: times},
+    )
+    dataset[seg.CAMERA_TIME_NAME].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l1b_cam,
+        version="V1-0-0",
+        utc_start=_as_utc_datetime(times[0]),
+        utc_end=_as_utc_datetime(times[-1]),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
+def _as_utc_datetime(value: np.datetime64) -> datetime:
+    """Convert a numpy datetime64 to a timezone-aware UTC datetime for Libera filename construction."""
+    return datetime.fromisoformat(str(np.datetime64(value, "us"))).replace(tzinfo=UTC)

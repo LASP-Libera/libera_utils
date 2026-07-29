@@ -138,7 +138,7 @@ class ReaderRegistry:
         >>> 'era5_pressure' in year_one and 'cldpix' not in year_one
         True
         >>> post = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
-        >>> 'cldpix' in post and 'era5_pressure' not in post
+        >>> 'cldpix' in post and 'era5_pressure' in post  # post-year-one keeps ERA5 alongside RBSP
         True
         """
         return {

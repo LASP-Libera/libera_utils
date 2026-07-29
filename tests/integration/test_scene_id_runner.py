@@ -13,7 +13,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching.product import OperationalMode
+from libera_utils.footprint_matching.product import FmatchVariant, OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -26,6 +26,17 @@ from libera_utils.scene_identification.cam.scene_id_cam import (
 )
 from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import (
     create_and_write_data_product_cam_camtime,
+)
+from libera_utils.scene_identification.imager.scene_id_imager import (
+    PRODUCT_DEFINITION_PATH as IMAGER_PRODUCT_DEFINITION_PATH,
+)
+from libera_utils.scene_identification.imager.scene_id_imager import (
+    create_and_write_data_product_imager,
+    run_scene_identification_imager,
+)
+from libera_utils.scene_identification.imager_flash.scene_id_imager_flash import (
+    create_and_write_data_product_imager_flash,
+    run_scene_identification_imager_flash,
 )
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from tests.test_data.footprint_matching.fixtures import make_fmatch_product_fixture
@@ -143,6 +154,35 @@ class TestFmatchReaders:
         with pytest.raises(NotImplementedError):
             FootprintData.from_fmatch_cam_camtime(tmp_path / "fmatch.nc")
 
+    def test_from_fmatch_imager_flash_injects_nan_cloud_phase(self, tmp_path):
+        """from_fmatch_imager_flash supplies the classification inputs and an all-NaN cloud_phase (no phase source)."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        dataset = FootprintData.from_fmatch_imager_flash(input_path)._data
+
+        # clear_area feeds the derived cloud_fraction; surface_wind_u/v feed the derived surface_wind; optical_depth
+        # is injected from the SSF cloud optical depth.
+        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "radiometer_time"):
+            assert required in dataset.variables
+        # FMATCH-IMAGER-FLASH has no phase source, so cloud_phase is present-but-NaN.
+        assert "cloud_phase" in dataset.variables
+        assert bool(np.all(np.isnan(dataset["cloud_phase"].values)))
+
+    def test_from_fmatch_imager_post_year_one_maps_inputs(self, tmp_path):
+        """from_fmatch_imager_post_year_one maps the RBSP inputs, including a real (mapped) cloud_phase."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, variant=FmatchVariant.POST_YEAR_ONE)
+        dataset = FootprintData.from_fmatch_imager_post_year_one(input_path)._data
+
+        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "cloud_phase"):
+            assert required in dataset.variables
+        # The fixture cycles CLDPIX phase codes 1/2, which map to the classifier's 1 (liquid) / 2 (ice).
+        assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
+
+    def test_from_fmatch_imager_post_year_one_rejects_year_one_file(self, tmp_path):
+        """A year-one FMATCH-IMAGER file lacks the RBSP variables, so the post-year-one reader raises clearly."""
+        year_one_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)  # year-one default
+        with pytest.raises(ValueError, match="does not produce scene IDs"):
+            FootprintData.from_fmatch_imager_post_year_one(year_one_path)
+
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
     """Build a small CAM-CAMTIME FootprintData on the ``FOOTPRINT`` record axis.
@@ -231,3 +271,64 @@ class TestSceneIdCamCamtimeWrite:
             "camera_pixel_y_stop",
         ):
             assert retired not in reopened.variables
+
+
+class TestSceneIdImagerWrite:
+    """The IMAGER runner produces a conformant SCENE-ID-IMAGER product that includes the TRMM classification."""
+
+    def test_write_data_product_is_conformant_with_trmm(self, tmp_path):
+        """A full post-year-one run + write succeeds under strict conformance and reports scene_id_trmm as uint16."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, variant=FmatchVariant.POST_YEAR_ONE)
+        footprint_data = run_scene_identification_imager(input_path)
+
+        # create_and_write_data_product_imager writes with strict=True; reaching the assertions is the conformance
+        # guarantee for scene_id_imager.yml (including the uint16 scene_id_trmm).
+        output_file = create_and_write_data_product_imager(footprint_data, input_path.name, tmp_path)
+
+        assert output_file.path.exists()
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        assert reopened["scene_id_trmm"].dtype == np.uint16
+        for scene_id in ("scene_id_erbe", "scene_id_unfiltering", "scene_id_trmm"):
+            assert scene_id in reopened.variables
+
+    def test_written_product_has_no_undeclared_variables(self, tmp_path):
+        """Reader intermediates (clear_area, surface_wind_u/v) must not leak into the written product."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, variant=FmatchVariant.POST_YEAR_ONE)
+        footprint_data = run_scene_identification_imager(input_path)
+        output_file = create_and_write_data_product_imager(footprint_data, input_path.name, tmp_path)
+
+        definition = LiberaDataProductDefinition.from_yaml(IMAGER_PRODUCT_DEFINITION_PATH)
+        declared = set(definition.coordinates) | set(definition.variables)
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        undeclared = [name for name in reopened.variables if name not in declared]
+        assert undeclared == []
+
+
+class TestSceneIdImagerFlashWrite:
+    """The FLASH runner produces a conformant SCENE-ID-IMAGER-FLASH product with phase-limited TRMM."""
+
+    def test_write_data_product_is_conformant(self, tmp_path):
+        """A full flash run + write succeeds under strict conformance."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        footprint_data = run_scene_identification_imager_flash(input_path)
+
+        output_file = create_and_write_data_product_imager_flash(footprint_data, input_path.name, tmp_path)
+
+        assert output_file.path.exists()
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        assert "scene_id_trmm" in reopened.variables
+        # FLASH has no cloud-phase source, so cloud_phase is entirely fill/NaN.
+        cloud_phase = xr.open_dataset(output_file.path)["cloud_phase"].values
+        assert bool(np.all(np.isnan(cloud_phase)))
+
+    def test_flash_trmm_is_phase_limited(self, tmp_path):
+        """FLASH still classifies the clear/surface TRMM scenes (cloud_phase unbounded) but not phase-gated ones."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        footprint_data = run_scene_identification_imager_flash(input_path)
+        output_file = create_and_write_data_product_imager_flash(footprint_data, input_path.name, tmp_path)
+
+        trmm = xr.open_dataset(output_file.path, mask_and_scale=False)["scene_id_trmm"].values
+        # The near-clear footprint(s) match a clear/surface TRMM scene; nothing lands in a phase-gated cloudy scene.
+        assert trmm.max() > 0
+        # Every matched TRMM scene here is one of the low-ID clear/surface scenes (trmm.csv scenes 1-14).
+        assert set(np.unique(trmm).tolist()) <= set(range(0, 15))

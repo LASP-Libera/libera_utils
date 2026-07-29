@@ -7,6 +7,7 @@ attributes:
   algorithm_version: null
   date_created: null
   input_files: null
+
 coordinates:
   RADIOMETER_TIME:
     dtype: datetime64[ns]

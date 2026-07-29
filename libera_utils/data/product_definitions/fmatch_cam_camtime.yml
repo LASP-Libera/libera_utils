@@ -408,7 +408,7 @@ variables:
       valid_range: [0, 3]
 
   # ---------------------------------------------------------------------------
-  # (f) Camera pixel-block provenance (FMATCH-CAM-CAMTIME only).
+  # (f) Camera pixel-block provenance.
   #     Each pseudo-footprint is a contiguous block of L1B camera pixels
   #     (camera_segmentation.PseudoFootprint). These indices trace a footprint back
   #     to its source pixels in the L1B Daily Camera grid (dimensions
@@ -416,13 +416,14 @@ variables:
   #     inclusive and the *_stop indices are exclusive (Python slice convention), so
   #     the block spans pixels [start, stop) on each axis. The centre-pixel indices
   #     point at the boresight stand-in, after any nearest-valid substitution (see
-  #     the center_pixel_substituted q_flags bit).
+  #     the center_pixel_substituted q_flags bit). Both camera-timescale products
+  #     (FMATCH-CAM-CAMTIME and FMATCH-IMAGER-CAMTIME) carry identical provenance.
   # ---------------------------------------------------------------------------
   center_pixel_x:
     dtype: int32
     dimensions: ["CAMERA_TIME"]
     attributes:
-      long_name: Boresight center) pixel index along CAMERA_PIXEL_COUNT_X
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
   center_pixel_y:
     dtype: int32
     dimensions: ["CAMERA_TIME"]

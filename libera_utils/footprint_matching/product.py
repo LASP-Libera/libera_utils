@@ -1,32 +1,45 @@
-"""FMATCH-CAM data product assembly and writing.
+"""FMATCH data product assembly and writing.
 
 This module is the seam between the footprint-matching *engine* (readers, PSF
 aggregation, geometry) and the Libera *data-product* machinery
 (``LiberaDataProductDefinition`` / ``write_libera_data_product``). It owns the
-FMATCH-CAM product definition and the eventual flow that turns a day of matched
-footprints into a conformant NetCDF file.
+FMATCH product definitions and the flow that turns matched footprints into a
+conformant NetCDF file, for all five operational modes.
 
 Milestone scope
 ---------------
-Only :func:`load_fmatch_cam_definition` is implemented. The aggregation,
-geometry, assembly, and write functions are intentionally **stubs** that raise
-``NotImplementedError`` - they document the intended pipeline so the product
-definition has an obvious home and its future producers are visible, but the
-actual computation is deferred to later milestones (see the design doc:
-``instructions/documentation/Footprint Matching and Scene ID PDF``).
+Assembly and writing are wired for **every** operational mode, but the values
+they carry are only partly computed:
+
+* **Real** per-footprint values come from the L1B Daily inputs - the geolocation
+  and viewing angles for the radiometer-timescale modes
+  (:data:`_RADIOMETER_L1B_VARIABLES`), and the camera segmentation results for
+  the camera-timescale modes (:data:`_CAMTIME_SEGMENTATION_VARIABLES`).
+* **Placeholders** fill every other declared variable. Those belong to the PSF
+  aggregation engine (:func:`aggregate_external_variables`) and the derived
+  geometry (:func:`compute_derived_viewing_geometry`), which remain
+  ``NotImplementedError`` stubs pending ``TODO[LIBSDC-785]``.
+
+A placeholder is *structurally* correct (declared dtype, shape and attributes)
+but numerically meaningless. Floating-point placeholders are filled with ``NaN``
+and integer placeholders with ``0``; see :func:`_fill_placeholder_variables`.
 
 Why a thin seam here
 --------------------
-The product definition (``libera_utils/data/product_definitions/fmatch_cam.yml``)
-is the contract every downstream consumer (Scene ID, Camera Cloud Fraction)
-reads against. Keeping the loader next to the (future) writer means there is a
-single place that knows how a FMATCH-CAM file is produced, while the reader
-plugins stay decoupled from product I/O.
+The product definitions (``libera_utils/data/product_definitions/fmatch_*.yml``)
+are the contract every downstream consumer (Scene ID, Camera Cloud Fraction, ADM
+binning) reads against. Keeping the loaders next to the writers means there is a
+single place that knows how a FMATCH file is produced, while the reader plugins
+stay decoupled from product I/O.
 
+See Also
+--------
+libera_utils.footprint_matching._runner : Manifest-driven runners that call into this module.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -34,6 +47,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from libera_utils.config import config
+from libera_utils.footprint_matching.l1b_inputs import L1B_PASSTHROUGH_VARIABLES
 from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -46,6 +60,8 @@ if TYPE_CHECKING:
 
     from libera_utils.footprint_matching.camera_segmentation import PseudoFootprint
     from libera_utils.io.filenaming import LiberaDataProductFilename
+
+logger = logging.getLogger(__name__)
 
 # Product-definition variable names that the camera-segmentation tool fills with
 # *real* per-footprint values (centre-pixel geolocation/geometry, the corner-derived
@@ -78,6 +94,16 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
         "camera_pixel_y_stop",
     }
 )
+
+# The radiometer-timescale counterpart of _CAMTIME_SEGMENTATION_VARIABLES: the
+# product-definition variables filled with *real* values passed straight through
+# from the L1B Daily radiometer product, rather than computed by footprint
+# matching. These are the "(a) Geolocation inputs (from L1B Daily)" block of each
+# radiometer-timed fmatch_*.yml, and they are exactly the keys (other than the
+# RADIOMETER_TIME coordinate) that
+# ``l1b_inputs.load_l1b_radiometer_inputs`` returns. Kept as one set so the
+# assembly and its tests agree on which variables are "real" this milestone.
+_RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
 
 # Product definition YAML filename for each FMATCH operational mode. Every mode
 # has its own SSF-style product definition (the mode *is* the product), and the
@@ -121,7 +147,28 @@ def fmatch_time_variable(mode: OperationalMode) -> str:
     Camera-timescale modes (``CAM_CAMTIME``, ``IMAGER_CAMTIME``) use
     ``CAMERA_TIME``; all radiometer-timescale modes use ``RADIOMETER_TIME``.
     """
-    return "CAMERA_TIME" if mode in _CAMERA_TIMESCALE_MODES else "RADIOMETER_TIME"
+    return "CAMERA_TIME" if is_camera_timescale_mode(mode) else "RADIOMETER_TIME"
+
+
+def is_camera_timescale_mode(mode: OperationalMode) -> bool:
+    """Return whether a mode indexes its footprints by camera image time.
+
+    The timescale determines what a mode is built *from*: camera-timescale modes are
+    assembled from camera pseudo-footprints (segmented from the L1B camera grid),
+    while radiometer-timescale modes are assembled from L1B radiometer pass-through
+    inputs. Runners and assembly both branch on this.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The operational mode to test.
+
+    Returns
+    -------
+    bool
+        True for ``CAM_CAMTIME`` and ``IMAGER_CAMTIME``; False otherwise.
+    """
+    return mode in _CAMERA_TIMESCALE_MODES
 
 
 def load_fmatch_definition(
@@ -196,8 +243,9 @@ def aggregate_external_variables(
     pixels to a single value per footprint. The active reader set - and therefore
     the keys of the returned dict - grows with the mode's latency and depends on
     the input-availability variant (e.g. CAM has era5, igbp, nise, viirs_brdf,
-    viirs_cloud; year-one IMAGER additionally has era5_pressure and viirs_aod;
-    post-year-one IMAGER swaps the year-one ERA5 fields for ssf and cldpix).
+    viirs_cloud; IMAGER additionally has era5_pressure and viirs_aod; post-year-one
+    IMAGER adds ssf and cldpix on top of the ERA5 fields, which are retained in
+    both variants).
     Per-spec gating also applies: only specs whose ``required_mode`` rank is
     <= the mode's rank and whose ``required_variant`` is ``None`` or equal to
     ``variant`` are aggregated.
@@ -283,19 +331,31 @@ def assemble_fmatch_dataset(
     builds a Dataset via ``LiberaDataProductDefinition.create_product_dataset``
     and brings it into conformance with ``enforce_dataset_conformance``.
 
-    Only the camera-timescale CAM product (``CAM_CAMTIME``) is implemented in this
-    milestone; it is assembled from the camera pseudo-footprints produced by
-    :func:`libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`.
-    The other modes remain future work and raise ``NotImplementedError``.
+    Dispatch is by timescale, because that determines what the mode is built
+    *from*:
+
+    * **Camera-timescale** (``CAM_CAMTIME``, ``IMAGER_CAMTIME``) - assembled from
+      the camera pseudo-footprints produced by
+      :func:`libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`.
+      The first positional argument is that sequence of
+      :class:`PseudoFootprint` objects. See :func:`_assemble_camtime_dataset`.
+    * **Radiometer-timescale** (``CAM``, ``IMAGER_FLASH``, ``IMAGER``) - assembled
+      from the L1B pass-through arrays produced by
+      :func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`.
+      The first positional argument is that dict. See
+      :func:`_assemble_radiometer_dataset`.
+
+    In both cases the variables owned by the not-yet-implemented aggregation and
+    derived-geometry engines are written as conformant placeholders (structurally
+    valid but numerically meaningless) pending ``TODO[LIBSDC-785]``.
 
     Parameters
     ----------
     mode : OperationalMode
         The FMATCH operational mode being assembled.
     *args, **kwargs
-        Mode-specific inputs. For ``CAM_CAMTIME`` the first positional argument is
-        the sequence of :class:`PseudoFootprint` objects; see
-        :func:`_assemble_camtime_dataset` for the accepted keyword arguments.
+        Mode-specific inputs, forwarded to the timescale's assembler (see above
+        for the leading positional argument of each).
     variant : FmatchVariant, optional
         Input-availability variant used to resolve the product definition and the
         active reader set. Defaults to ``YEAR_ONE`` (production). Only meaningful
@@ -311,18 +371,17 @@ def assemble_fmatch_dataset(
         Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable; it is
         ``None`` for the IMAGER modes.
 
-    Raises
-    ------
-    NotImplementedError
-        For every mode except ``CAM_CAMTIME`` in this milestone.
+    Returns
+    -------
+    xarray.Dataset
+        A dataset brought into conformance with the mode's product definition.
     """
-    if mode is OperationalMode.CAM_CAMTIME:
-        return _assemble_camtime_dataset(*args, cloud_fraction_camera=cloud_fraction_camera, **kwargs)
-
-    # TODO[LIBSDC-785]: assemble the per-footprint Dataset for the remaining modes.
-    raise NotImplementedError(
-        f"FMATCH dataset assembly is not implemented yet for mode {mode.value}. Only "
-        f"{OperationalMode.CAM_CAMTIME.value} is supported in this milestone."
+    if mode in _CAMERA_TIMESCALE_MODES:
+        return _assemble_camtime_dataset(
+            *args, mode=mode, variant=variant, cloud_fraction_camera=cloud_fraction_camera, **kwargs
+        )
+    return _assemble_radiometer_dataset(
+        *args, mode=mode, variant=variant, cloud_fraction_camera=cloud_fraction_camera, **kwargs
     )
 
 
@@ -335,14 +394,14 @@ def _placeholder_variable_array(variable_definition: Any, n_footprints: int) -> 
     ``_FillValue`` when it has one, and otherwise with ``NaN`` for floating-point
     variables or ``0`` for integer variables. The magnitudes are meaningless; only
     the dtype/shape/attributes form the product contract (the same stance the
-    example-product generator takes in ``scripts/generate_fmatch_example_products.py``).
+    example-product generator takes in ``notebooks/generate_example_products.ipynb``).
 
     Parameters
     ----------
     variable_definition : LiberaVariableDefinition
         The product-definition entry for the variable.
     n_footprints : int
-        Length of the footprint (``CAMERA_TIME``) axis.
+        Length of the footprint (time) axis.
 
     Returns
     -------
@@ -356,6 +415,72 @@ def _placeholder_variable_array(variable_definition: Any, n_footprints: int) -> 
         # integer stand-in (integers cannot represent NaN).
         fill_value = np.nan if np.issubdtype(dtype, np.floating) else 0
     return np.full(n_footprints, fill_value, dtype=dtype)
+
+
+def _fill_placeholder_variables(
+    data: dict[str, np.ndarray],
+    definition: LiberaDataProductDefinition,
+    n_footprints: int,
+) -> None:
+    """Fill every declared variable missing from ``data`` with a conformant placeholder.
+
+    Mutates ``data`` in place, adding one array per not-yet-computed variable. The
+    product definition requires every declared variable to be present, so this is
+    what lets a product conform while the aggregation / derived-geometry engines are
+    still ``TODO[LIBSDC-785]`` stubs. The placeholder values are structurally valid
+    (declared dtype/shape/attributes) but numerically meaningless.
+
+    Parameters
+    ----------
+    data : dict[str, np.ndarray]
+        The variable arrays assembled so far (the real, input-derived columns).
+    definition : LiberaDataProductDefinition
+        The product definition naming every variable the file must contain.
+    n_footprints : int
+        Length of the footprint (time) axis.
+    """
+    for name, variable_definition in definition.variables.items():
+        if name not in data:
+            data[name] = _placeholder_variable_array(variable_definition, n_footprints)
+
+
+def _finalize_product_dataset(
+    definition: LiberaDataProductDefinition,
+    data: dict[str, np.ndarray],
+    *,
+    algorithm_version: str | None,
+    input_files: str | None,
+) -> Dataset:
+    """Build a conformant Dataset from assembled arrays and set the dynamic global attributes.
+
+    Shared tail of both assembly paths. Dynamic (per-run) global attributes are set
+    directly on the Dataset; they are declared (as null) in the definition, so
+    ``enforce_dataset_conformance`` keeps them rather than stripping them as extras.
+
+    Parameters
+    ----------
+    definition : LiberaDataProductDefinition
+        The product definition to build against.
+    data : dict[str, np.ndarray]
+        Every coordinate and variable array the product declares.
+    algorithm_version : str, optional
+        Value for the required dynamic ``algorithm_version`` global attribute.
+    input_files : str, optional
+        Provenance string for the required dynamic ``input_files`` global attribute.
+
+    Returns
+    -------
+    xarray.Dataset
+        The conformance-enforced dataset, ready to write.
+    """
+    dataset = definition.create_product_dataset(data)
+    dataset = definition.enforce_dataset_conformance(dataset)
+    dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
+    if input_files is not None:
+        dataset.attrs["input_files"] = input_files
+    if algorithm_version is not None:
+        dataset.attrs["algorithm_version"] = algorithm_version
+    return dataset
 
 
 def _normalize_longitude(longitude_deg: float) -> float:
@@ -374,16 +499,23 @@ def _normalize_longitude(longitude_deg: float) -> float:
 def _assemble_camtime_dataset(
     footprints: Sequence[PseudoFootprint],
     *,
+    mode: OperationalMode = OperationalMode.CAM_CAMTIME,
+    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     definition: LiberaDataProductDefinition | None = None,
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
 ) -> Dataset:
-    """Assemble the FMATCH-CAM-CAMTIME Dataset from camera pseudo-footprints.
+    """Assemble a camera-timescale FMATCH Dataset from camera pseudo-footprints.
 
-    Builds the per-footprint variable arrays declared by the FMATCH-CAM-CAMTIME
-    product definition. The centre-pixel geolocation/geometry, the corner-derived
-    PSF bounding box, and the QA flags come straight from the pseudo-footprints
+    Serves both camera-timescale modes (``CAM_CAMTIME`` and ``IMAGER_CAMTIME``).
+    They are built the same way - from the same L1B camera segmentation - and
+    differ only in the set of aggregated variables their definitions declare,
+    which the placeholder fill handles generically.
+
+    Builds the per-footprint variable arrays declared by the mode's product
+    definition. The centre-pixel geolocation/geometry, the corner-derived PSF
+    bounding box, and the QA flags come straight from the pseudo-footprints
     (:data:`_CAMTIME_SEGMENTATION_VARIABLES`); every other declared variable is a
     conformant placeholder pending the aggregation / derived-geometry engines
     (``TODO[LIBSDC-785]``).
@@ -393,37 +525,48 @@ def _assemble_camtime_dataset(
     footprints : Sequence[PseudoFootprint]
         Camera pseudo-footprints in write order, as returned by
         :func:`~libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`.
+    mode : OperationalMode, optional
+        Which camera-timescale mode to assemble. Defaults to ``CAM_CAMTIME``.
+    variant : FmatchVariant, optional
+        Input-availability variant used to resolve the product definition when
+        ``definition`` is not supplied.
     definition : LiberaDataProductDefinition, optional
-        The FMATCH-CAM-CAMTIME product definition. Loaded via
-        :func:`load_fmatch_definition` when omitted.
+        The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
     algorithm_version : str, optional
         Value for the required dynamic ``algorithm_version`` global attribute.
     input_files : str, optional
         Provenance string for the required dynamic ``input_files`` global attribute
         (typically the source L1B camera filename).
     cloud_fraction_camera : np.ndarray, optional
-        Optional per-footprint Camera Cloud Fraction values (Libera WFOV). When
-        omitted the ``cloud_fraction_camera`` variable is written as a placeholder.
+        Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
+        CAM modes declare this variable; for ``IMAGER_CAMTIME`` it is ignored. When
+        omitted (or undeclared) the variable is written as a placeholder.
 
     Returns
     -------
     xarray.Dataset
-        A dataset brought into conformance with the FMATCH-CAM-CAMTIME definition.
+        A dataset brought into conformance with the mode's definition.
 
     Raises
     ------
     ValueError
-        If ``footprints`` is empty (there would be no time axis to write).
+        If ``mode`` is not a camera-timescale mode, or ``footprints`` is empty
+        (there would be no time axis to write).
     """
+    if mode not in _CAMERA_TIMESCALE_MODES:
+        raise ValueError(
+            f"{mode.value} is not a camera-timescale mode; camera pseudo-footprints only assemble "
+            f"{', '.join(sorted(m.value for m in _CAMERA_TIMESCALE_MODES))}."
+        )
     if definition is None:
-        definition = load_fmatch_definition(OperationalMode.CAM_CAMTIME)
+        definition = load_fmatch_definition(mode, variant)
 
     footprints = list(footprints)
     if not footprints:
-        raise ValueError("Cannot assemble a FMATCH-CAM-CAMTIME product from zero pseudo-footprints.")
+        raise ValueError(f"Cannot assemble a {mode.value} product from zero pseudo-footprints.")
     n_footprints = len(footprints)
 
-    time_variable = fmatch_time_variable(OperationalMode.CAM_CAMTIME)  # "CAMERA_TIME"
+    time_variable = fmatch_time_variable(mode)  # "CAMERA_TIME"
 
     # The real, segmentation-derived columns. Longitudes of the PSF box are wrapped
     # into [-180, 180) to satisfy the product definition's valid range.
@@ -457,32 +600,159 @@ def _assemble_camtime_dataset(
     }
 
     # Cast each real column to the exact dtype the definition declares.
+    #
+    # Only columns the definition actually declares are written. The two camera-timescale
+    # definitions do not declare identical variable sets: FMATCH-CAM-CAMTIME carries the
+    # camera pixel-block provenance (center_pixel_*, camera_pixel_*_start/stop) so a scene
+    # can be traced back to the exact source pixels, while FMATCH-IMAGER-CAMTIME does not.
+    # Segmentation computes those values either way, so we drop the undeclared ones here
+    # rather than writing variables the product does not define.
     for name, values in real_columns.items():
-        data[name] = np.asarray(values, dtype=np.dtype(definition.variables[name].dtype))
+        variable_definition = definition.variables.get(name)
+        if variable_definition is None:
+            continue
+        data[name] = np.asarray(values, dtype=np.dtype(variable_definition.dtype))
 
-    # Optional internal (non-reader) Camera Cloud Fraction values.
-    if cloud_fraction_camera is not None:
-        data["cloud_fraction_camera"] = np.asarray(
-            cloud_fraction_camera, dtype=np.dtype(definition.variables["cloud_fraction_camera"].dtype)
+    # Optional internal (non-reader) Camera Cloud Fraction values. Guarded on the
+    # definition declaring the variable, because IMAGER-CAMTIME does not.
+    _merge_cloud_fraction_camera(data, definition, cloud_fraction_camera)
+
+    # Every remaining declared variable is filled with a placeholder until its engine exists.
+    _fill_placeholder_variables(data, definition, n_footprints)
+
+    return _finalize_product_dataset(
+        definition,
+        data,
+        algorithm_version=algorithm_version,
+        input_files=input_files,
+    )
+
+
+def _merge_cloud_fraction_camera(
+    data: dict[str, np.ndarray],
+    definition: LiberaDataProductDefinition,
+    cloud_fraction_camera: np.ndarray | None,
+) -> None:
+    """Merge the CF-CAM cloud fraction into ``data`` when it is supplied and declared.
+
+    ``cloud_fraction_camera`` is an internal Libera algorithm output (from the WFOV
+    Camera Cloud Fraction algorithm), already one value per footprint, so it bypasses
+    the reader/aggregation path and is merged straight in. Only the CAM-family
+    definitions declare it; passing values for an IMAGER mode is ignored rather than
+    raising, so a caller can hand the same inputs to any mode.
+    """
+    if cloud_fraction_camera is None:
+        return
+    variable_definition = definition.variables.get("cloud_fraction_camera")
+    if variable_definition is None:
+        logger.warning(
+            "cloud_fraction_camera values were supplied but %s does not declare that variable; ignoring them.",
+            definition.attributes.get("ProductID", "this product"),
+        )
+        return
+    data["cloud_fraction_camera"] = np.asarray(cloud_fraction_camera, dtype=np.dtype(variable_definition.dtype))
+
+
+def _assemble_radiometer_dataset(
+    l1b_inputs: dict[str, np.ndarray],
+    *,
+    mode: OperationalMode,
+    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
+    definition: LiberaDataProductDefinition | None = None,
+    algorithm_version: str | None = None,
+    input_files: str | None = None,
+    cloud_fraction_camera: np.ndarray | None = None,
+) -> Dataset:
+    """Assemble a radiometer-timescale FMATCH Dataset from L1B pass-through inputs.
+
+    Serves the three radiometer-timescale modes (``CAM``, ``IMAGER_FLASH``,
+    ``IMAGER``). Their footprints are the L1B radiometer footprints themselves, so
+    the time coordinate and the geolocation/viewing-angle columns
+    (:data:`_RADIOMETER_L1B_VARIABLES`) are carried through verbatim from L1B; every
+    other declared variable belongs to the aggregation / derived-geometry engines and
+    is written as a conformant placeholder pending ``TODO[LIBSDC-785]``.
+
+    Parameters
+    ----------
+    l1b_inputs : dict[str, np.ndarray]
+        The pass-through arrays from
+        :func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`:
+        the ``RADIOMETER_TIME`` coordinate plus each of
+        :data:`_RADIOMETER_L1B_VARIABLES`, all the same length.
+    mode : OperationalMode
+        Which radiometer-timescale mode to assemble.
+    variant : FmatchVariant, optional
+        Input-availability variant used to resolve the product definition when
+        ``definition`` is not supplied. Only meaningful for ``IMAGER``.
+    definition : LiberaDataProductDefinition, optional
+        The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
+    algorithm_version : str, optional
+        Value for the required dynamic ``algorithm_version`` global attribute.
+    input_files : str, optional
+        Provenance string for the required dynamic ``input_files`` global attribute
+        (typically the source L1B radiometer filename).
+    cloud_fraction_camera : np.ndarray, optional
+        Optional per-footprint Camera Cloud Fraction values (Libera WFOV), in the same
+        footprint order as the time coordinate. Only ``CAM`` declares this variable.
+
+    Returns
+    -------
+    xarray.Dataset
+        A dataset brought into conformance with the mode's definition.
+
+    Raises
+    ------
+    ValueError
+        If ``mode`` is a camera-timescale mode, if a required pass-through input is
+        missing, if the inputs have inconsistent lengths, or if they are empty.
+    """
+    if mode in _CAMERA_TIMESCALE_MODES:
+        raise ValueError(
+            f"{mode.value} is a camera-timescale mode and cannot be assembled from L1B radiometer pass-through "
+            f"inputs; use the camera pseudo-footprint path instead."
+        )
+    if definition is None:
+        definition = load_fmatch_definition(mode, variant)
+
+    time_variable = fmatch_time_variable(mode)  # "RADIOMETER_TIME"
+
+    # Fail with the specific missing names rather than a bare KeyError deep in the
+    # loop below, because a partial pass-through dict is the most likely caller error.
+    required = {time_variable, *_RADIOMETER_L1B_VARIABLES}
+    missing = sorted(required - set(l1b_inputs))
+    if missing:
+        raise ValueError(f"L1B pass-through inputs for {mode.value} are missing required key(s): {', '.join(missing)}")
+
+    n_footprints = len(l1b_inputs[time_variable])
+    if n_footprints == 0:
+        raise ValueError(f"Cannot assemble a {mode.value} product from zero footprints.")
+    inconsistent = sorted(name for name in required if len(l1b_inputs[name]) != n_footprints)
+    if inconsistent:
+        raise ValueError(
+            f"L1B pass-through inputs for {mode.value} have inconsistent lengths; expected {n_footprints} footprints "
+            f"(from {time_variable}) but got a different length for: {', '.join(inconsistent)}"
         )
 
-    # Every remaining declared variable is a placeholder until its engine exists.
-    for name, variable_definition in definition.variables.items():
-        if name not in data:
-            data[name] = _placeholder_variable_array(variable_definition, n_footprints)
+    # Start with the time coordinate, then the real L1B columns cast to the exact
+    # dtype the definition declares.
+    data: dict[str, np.ndarray] = {
+        time_variable: np.asarray(l1b_inputs[time_variable], dtype="datetime64[ns]"),
+    }
+    for name in sorted(_RADIOMETER_L1B_VARIABLES):
+        data[name] = np.asarray(l1b_inputs[name], dtype=np.dtype(definition.variables[name].dtype))
 
-    # Build the Dataset and bring it into conformance. Dynamic (per-run) global
-    # attributes are set directly, mirroring run_scene_id_cam.py; they are declared
-    # (as null) in the definition, so enforce_dataset_conformance keeps them.
-    dataset = definition.create_product_dataset(data)
-    dataset = definition.enforce_dataset_conformance(dataset)
-    dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
-    if input_files is not None:
-        dataset.attrs["input_files"] = input_files
-    if algorithm_version is not None:
-        dataset.attrs["algorithm_version"] = algorithm_version
+    # Optional internal (non-reader) Camera Cloud Fraction values (CAM only).
+    _merge_cloud_fraction_camera(data, definition, cloud_fraction_camera)
 
-    return dataset
+    # Every remaining declared variable is filled with a placeholder until its engine exists.
+    _fill_placeholder_variables(data, definition, n_footprints)
+
+    return _finalize_product_dataset(
+        definition,
+        data,
+        algorithm_version=algorithm_version,
+        input_files=input_files,
+    )
 
 
 def write_fmatch_product(
@@ -496,64 +766,68 @@ def write_fmatch_product(
     ``time_variable=fmatch_time_variable(mode)`` (``RADIOMETER_TIME`` or
     ``CAMERA_TIME``) so the output filename encodes the footprint time span.
 
-    Only ``CAM_CAMTIME`` is implemented in this milestone; the other modes remain
-    future work.
+    Every operational mode is supported. The mode's timescale selects what the
+    leading positional argument must be - camera pseudo-footprints for the
+    camera-timescale modes, L1B pass-through arrays for the radiometer-timescale
+    ones - exactly as in :func:`assemble_fmatch_dataset`.
 
     Parameters
     ----------
     mode : OperationalMode
         The FMATCH operational mode to write.
     *args, **kwargs
-        Mode-specific inputs forwarded to the writer. For ``CAM_CAMTIME`` see
-        :func:`_write_camtime_product`.
+        Mode-specific inputs forwarded to :func:`assemble_fmatch_dataset`, followed
+        by ``output_path``. See :func:`_write_fmatch_product` for the accepted
+        keyword arguments.
     variant : FmatchVariant, optional
-        Input-availability variant. Production defaults to ``YEAR_ONE``; a future
+        Input-availability variant. Production defaults to ``YEAR_ONE``; the
         FMATCH-IMAGER runner exposes this as a manual ``--post-year-one`` option
         once RBSP data flows. Ignored by the CAM modes (variant-insensitive).
 
-    Raises
-    ------
-    NotImplementedError
-        For every mode except ``CAM_CAMTIME`` in this milestone.
+    Returns
+    -------
+    LiberaDataProductFilename
+        The written product filename object.
     """
-    if mode is OperationalMode.CAM_CAMTIME:
-        return _write_camtime_product(*args, **kwargs)
-
-    # TODO[LIBSDC-785]: wire assembly + write for the remaining modes.
-    raise NotImplementedError(
-        f"FMATCH product writing is not implemented yet for mode {mode.value}. Only "
-        f"{OperationalMode.CAM_CAMTIME.value} is supported in this milestone."
-    )
+    return _write_fmatch_product(mode, *args, variant=variant, **kwargs)
 
 
-def _write_camtime_product(
-    footprints: Sequence[PseudoFootprint],
+def _write_fmatch_product(
+    mode: OperationalMode,
+    inputs: Sequence[PseudoFootprint] | dict[str, np.ndarray],
     output_path: str | Path,
     *,
+    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
     strict: bool = True,
 ) -> LiberaDataProductFilename:
-    """Assemble and write the FMATCH-CAM-CAMTIME NetCDF product.
+    """Assemble and write one FMATCH NetCDF product.
 
-    Loads the product definition once, assembles the pseudo-footprints into a
-    conformant Dataset via :func:`_assemble_camtime_dataset`, and writes it with
-    ``write_libera_data_product`` (which generates the standardized Libera filename
-    from the ``CAMERA_TIME`` span).
+    Loads the product definition once (so assembly and writing cannot disagree about
+    it), assembles a conformant Dataset via :func:`assemble_fmatch_dataset`, and
+    writes it with ``write_libera_data_product``, which generates the standardized
+    Libera filename from the product's time span.
 
     Parameters
     ----------
-    footprints : Sequence[PseudoFootprint]
-        Camera pseudo-footprints in write order.
+    mode : OperationalMode
+        The FMATCH operational mode to write.
+    inputs : Sequence[PseudoFootprint] | dict[str, np.ndarray]
+        The mode's assembly inputs: camera pseudo-footprints for the camera-timescale
+        modes, or the L1B pass-through dict for the radiometer-timescale modes.
     output_path : str or pathlib.Path
         Directory (or S3 prefix) to write the product file into.
+    variant : FmatchVariant, optional
+        Input-availability variant used to resolve the product definition.
     algorithm_version : str, optional
         Value for the ``algorithm_version`` global attribute.
     input_files : str, optional
         Provenance string for the ``input_files`` global attribute.
     cloud_fraction_camera : np.ndarray, optional
-        Optional per-footprint Camera Cloud Fraction values (Libera WFOV).
+        Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
+        CAM modes declare this variable.
     strict : bool, optional
         When True (default), fail if the assembled Dataset does not conform.
 
@@ -562,9 +836,11 @@ def _write_camtime_product(
     LiberaDataProductFilename
         The written product filename object.
     """
-    definition = load_fmatch_definition(OperationalMode.CAM_CAMTIME)
-    dataset = _assemble_camtime_dataset(
-        footprints,
+    definition = load_fmatch_definition(mode, variant)
+    dataset = assemble_fmatch_dataset(
+        mode,
+        inputs,
+        variant=variant,
         definition=definition,
         algorithm_version=algorithm_version,
         input_files=input_files,
@@ -574,6 +850,6 @@ def _write_camtime_product(
         data_product_definition=definition,
         data=dataset,
         output_path=output_path,
-        time_variable=fmatch_time_variable(OperationalMode.CAM_CAMTIME),
+        time_variable=fmatch_time_variable(mode),
         strict=strict,
     )

@@ -28,13 +28,24 @@ import pytest
 import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.footprint_matching.product import (
+    _CAMTIME_SEGMENTATION_VARIABLES,
+    _RADIOMETER_L1B_VARIABLES,
     FMATCH_DEFINITION_FILENAMES,
     FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES,
+    _assemble_camtime_dataset,
+    _assemble_radiometer_dataset,
+    assemble_fmatch_dataset,
     fmatch_time_variable,
     load_fmatch_definition,
+    write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import (
+    FmatchVariant,
+    OperationalMode,
+    VariableSpec,
+    with_standard_deviation_companions,
+)
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 # The production reader keys. Intersecting with these makes the cross-check robust
@@ -170,18 +181,20 @@ class TestYearOneImagerContent:
         assert "era5_pressure_ECMWF_temperature_500hPa" in definition.variables
         assert "era5_pressure_ECMWF_relative_humidity_1000hPa_standard_deviation" in definition.variables
 
-    def test_post_year_one_imager_keeps_rbsp_and_drops_era5_substitutes(self, definitions):
+    def test_post_year_one_imager_keeps_rbsp_and_era5(self, definitions):
         definition = definitions[(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)]
+        # Post-year-one carries the RBSP CLDPIX/SSF fields ...
         assert any(name.startswith("cldpix_") for name in definition.variables)
         assert any(name.startswith("ssf_") for name in definition.variables)
-        # The winds remain (they feed every product); the year-one substitutes do not.
+        # ... AND the full ERA5 field set alongside them: the winds (every
+        # product), the former year-one single-level substitutes, and the
+        # pressure-level fields (spot-check one per family; full sync is covered by
+        # test_external_variables_match_readers).
         assert "era5_ECMWF_wind_u10" in definition.variables
-        year_one_only = [
-            name
-            for name in definition.variables
-            if name.startswith("era5_pressure_") or name.startswith("era5_ECMWF_temperature_2m")
-        ]
-        assert year_one_only == []
+        assert "era5_ECMWF_temperature_2m" in definition.variables
+        assert "era5_ECMWF_forecast_albedo" in definition.variables
+        assert "era5_pressure_ECMWF_temperature_500hPa" in definition.variables
+        assert "era5_pressure_ECMWF_relative_humidity_1000hPa_standard_deviation" in definition.variables
 
 
 class TestFmatchDefinitions:
@@ -244,13 +257,25 @@ class TestDerivedProductVariables:
         assert "wind_v10_standard_deviation" in names
 
     def test_standard_deviation_companion_inherits_variant_gate(self):
-        # The year-one substitute fields are variant-gated; their std-dev
-        # companions must carry the same gate or they would leak into the
-        # post-year-one product definition.
-        era5 = ReaderRegistry.get("era5")
-        by_name = {spec.name: spec for spec in era5.product_variable_specs()}
-        assert by_name["temperature_2m_standard_deviation"].required_variant is FmatchVariant.YEAR_ONE
-        assert by_name["wind_u10_standard_deviation"].required_variant is None
+        # A std-dev companion must carry the SAME variant gate as its parent, so a
+        # gated field and its companion always land in exactly the same product
+        # definitions. The production readers now gate variants at the reader level
+        # rather than per spec, so exercise the companion mechanism directly with a
+        # synthetic gated parent; then confirm a real variant-neutral parent (an
+        # ERA5 wind) yields a variant-neutral companion.
+        gated_parent = VariableSpec(
+            name="demo_field",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            n_categories=None,
+            required_variant=FmatchVariant.YEAR_ONE,
+        )
+        companions = {spec.name: spec for spec in with_standard_deviation_companions((gated_parent,))}
+        assert companions["demo_field_standard_deviation"].required_variant is FmatchVariant.YEAR_ONE
+
+        era5 = {spec.name: spec for spec in ReaderRegistry.get("era5").product_variable_specs()}
+        assert era5["wind_u10_standard_deviation"].required_variant is None
 
     def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
         # SSF's encoded scene-type codes have n_categories=None but are
@@ -301,3 +326,181 @@ class TestFmatchConformance:
         dataset = definition.enforce_dataset_conformance(dataset)
         errors = definition.check_dataset_conformance(dataset, strict=True)
         assert errors == []
+
+
+# Timescale split of DEFINITION_CASES, so the assembly tests can drive each mode with the
+# right kind of input without repeating the (mode, variant) table.
+RADIOMETER_CASES = tuple(
+    (mode, variant) for mode, variant in DEFINITION_CASES if fmatch_time_variable(mode) == "RADIOMETER_TIME"
+)
+CAMTIME_CASES = tuple(
+    (mode, variant) for mode, variant in DEFINITION_CASES if fmatch_time_variable(mode) == "CAMERA_TIME"
+)
+
+
+def _l1b_passthrough(n_footprints: int = 6) -> dict[str, np.ndarray]:
+    """Build a minimal, valid L1B pass-through dict of the shape the radiometer assembler expects."""
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    data: dict[str, np.ndarray] = {
+        "RADIOMETER_TIME": base_time + np.arange(n_footprints, dtype="int64") * np.timedelta64(10, "ms"),
+    }
+    for name in _RADIOMETER_L1B_VARIABLES:
+        data[name] = np.linspace(1.0, 40.0, n_footprints, dtype=np.float32)
+    return data
+
+
+def _pseudo_footprints(n_footprints: int = 6) -> list:
+    """Segment a small synthetic L1B camera grid into pseudo-footprints."""
+    import tempfile
+    from pathlib import Path as _Path
+
+    from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
+    from libera_utils.footprint_matching.l1b_inputs import load_l1b_camera_dataset
+    from tests.test_data.footprint_matching.fixtures import make_l1b_camera_fixture
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        l1b_file = make_l1b_camera_fixture(_Path(tmpdir), n_images=1, n_pixels_x=3, n_pixels_y=3)
+        return segment_l1b_camera(load_l1b_camera_dataset(l1b_file))
+
+
+class TestRadiometerAssembly:
+    """Radiometer-timescale modes assemble from L1B pass-through arrays."""
+
+    @pytest.mark.parametrize(("mode", "variant"), RADIOMETER_CASES)
+    def test_assembles_conformant_dataset(self, mode, variant, definitions):
+        definition = definitions[(mode, variant)]
+        dataset = assemble_fmatch_dataset(
+            mode, _l1b_passthrough(), variant=variant, algorithm_version="1.0.0", input_files="l1b.nc"
+        )
+
+        assert definition.check_dataset_conformance(dataset, strict=True) == []
+
+    @pytest.mark.parametrize(("mode", "variant"), RADIOMETER_CASES)
+    def test_l1b_columns_are_carried_through_verbatim(self, mode, variant):
+        """The L1B-derived columns are real values, not placeholders."""
+        l1b_inputs = _l1b_passthrough()
+        dataset = assemble_fmatch_dataset(mode, l1b_inputs, variant=variant)
+
+        for name in _RADIOMETER_L1B_VARIABLES:
+            np.testing.assert_allclose(dataset[name].values, l1b_inputs[name], rtol=1e-6)
+        np.testing.assert_array_equal(dataset["RADIOMETER_TIME"].values, l1b_inputs["RADIOMETER_TIME"])
+
+    def test_cloud_fraction_camera_is_merged_when_declared(self):
+        """FMATCH-CAM declares cloud_fraction_camera, so supplied values become real, not placeholder."""
+        n = 6
+        values = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_passthrough(n), cloud_fraction_camera=values)
+
+        np.testing.assert_allclose(dataset["cloud_fraction_camera"].values, values, rtol=1e-6)
+
+    def test_cloud_fraction_camera_is_ignored_when_undeclared(self):
+        """The IMAGER modes have no such variable; passing values must not raise or invent one."""
+        n = 6
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.IMAGER, _l1b_passthrough(n), cloud_fraction_camera=np.zeros(n, dtype=np.float32)
+        )
+
+        assert "cloud_fraction_camera" not in dataset.variables
+
+    def test_missing_passthrough_key_names_what_is_missing(self):
+        l1b_inputs = _l1b_passthrough()
+        del l1b_inputs["latitude"]
+
+        with pytest.raises(ValueError, match="missing required key"):
+            assemble_fmatch_dataset(OperationalMode.CAM, l1b_inputs)
+
+    def test_inconsistent_lengths_raise(self):
+        l1b_inputs = _l1b_passthrough(6)
+        l1b_inputs["longitude"] = np.zeros(5, dtype=np.float32)
+
+        with pytest.raises(ValueError, match="inconsistent lengths"):
+            assemble_fmatch_dataset(OperationalMode.CAM, l1b_inputs)
+
+    def test_zero_footprints_raise(self):
+        with pytest.raises(ValueError, match="zero footprints"):
+            assemble_fmatch_dataset(OperationalMode.CAM, _l1b_passthrough(0))
+
+    def test_camera_timescale_mode_rejects_passthrough_inputs(self):
+        """Guards against handing the wrong kind of input to the wrong timescale."""
+        with pytest.raises(ValueError, match="camera-timescale mode"):
+            _assemble_radiometer_dataset(_l1b_passthrough(), mode=OperationalMode.CAM_CAMTIME)
+
+
+class TestCamtimeAssembly:
+    """Camera-timescale modes assemble from camera pseudo-footprints."""
+
+    @pytest.mark.parametrize(("mode", "variant"), CAMTIME_CASES)
+    def test_assembles_conformant_dataset(self, mode, variant, definitions):
+        definition = definitions[(mode, variant)]
+        dataset = assemble_fmatch_dataset(
+            mode, _pseudo_footprints(), variant=variant, algorithm_version="1.0.0", input_files="l1b_cam.nc"
+        )
+
+        assert definition.check_dataset_conformance(dataset, strict=True) == []
+
+    def test_imager_camtime_uses_the_same_segmentation_path(self):
+        """CAM-CAMTIME and IMAGER-CAMTIME share the segmentation path; only the reader set differs."""
+        footprints = _pseudo_footprints()
+        cam = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, footprints)
+        imager = assemble_fmatch_dataset(OperationalMode.IMAGER_CAMTIME, footprints)
+
+        assert cam.sizes["CAMERA_TIME"] == imager.sizes["CAMERA_TIME"] == len(footprints)
+        # Every segmentation-derived column is declared by BOTH camtime products, so all come out
+        # identical: same footprints, same code path.
+        for name in _CAMTIME_SEGMENTATION_VARIABLES:
+            np.testing.assert_array_equal(cam[name].values, imager[name].values)
+        # Only the CAM product carries the Libera WFOV cloud fraction.
+        assert "cloud_fraction_camera" in cam.variables
+        assert "cloud_fraction_camera" not in imager.variables
+
+    @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
+    def test_both_camtime_products_carry_pixel_block_provenance(self, mode, definitions):
+        """Both camera-timescale products declare the pixel-block provenance and fill it with real values.
+
+        The provenance traces a footprint back to its source L1B camera pixels; it is computed by
+        segmentation for every camera-timescale mode, so both products carry it as real values rather
+        than placeholders.
+        """
+        variant = FmatchVariant.YEAR_ONE if mode is OperationalMode.CAM_CAMTIME else FmatchVariant.POST_YEAR_ONE
+        footprints = _pseudo_footprints()
+        dataset = assemble_fmatch_dataset(mode, footprints, variant=variant)
+
+        pixel_provenance = (
+            "center_pixel_x",
+            "center_pixel_y",
+            "camera_pixel_x_start",
+            "camera_pixel_x_stop",
+            "camera_pixel_y_start",
+            "camera_pixel_y_stop",
+        )
+        for name in pixel_provenance:
+            assert name in definitions[(mode, variant)].variables, name
+            assert name in dataset.variables, name
+        # The values are the real per-footprint block indices from segmentation.
+        np.testing.assert_array_equal(dataset["camera_pixel_x_start"].values, [f.slice_x.start for f in footprints])
+
+    def test_radiometer_mode_rejects_pseudo_footprints(self):
+        with pytest.raises(ValueError, match="not a camera-timescale mode"):
+            _assemble_camtime_dataset(_pseudo_footprints(), mode=OperationalMode.CAM)
+
+
+class TestWriteFmatchProduct:
+    """Every mode must write a strictly-conformant file under a proper Libera filename."""
+
+    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
+    def test_writes_conformant_product(self, mode, variant, tmp_path, definitions):
+        inputs = _pseudo_footprints() if fmatch_time_variable(mode) == "CAMERA_TIME" else _l1b_passthrough()
+
+        # strict=True: reaching the assertions below is itself the conformance guarantee.
+        written = write_fmatch_product(
+            mode,
+            inputs,
+            tmp_path,
+            variant=variant,
+            algorithm_version="1.0.0",
+            input_files="l1b.nc",
+            strict=True,
+        )
+
+        assert written.path.exists()
+        assert written.data_product_id.value == definitions[(mode, variant)].attributes["ProductID"]

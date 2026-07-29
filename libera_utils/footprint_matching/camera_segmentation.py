@@ -93,7 +93,7 @@ PIXEL_Y_DIM: str = "CAMERA_PIXEL_COUNT_Y"
 # Per-pixel geolocation fields reduced to the footprint's center-pixel scalars.
 # We use the plain (non terrain-corrected) latitude/longitude to match the
 # "Footprint boresight" convention used elsewhere in the FMATCH pipeline
-# (see scripts/generate_fmatch_example_products.py).
+# (see notebooks/generate_example_products.ipynb).
 LATITUDE_NAME: str = "Latitude"
 LONGITUDE_NAME: str = "Longitude"
 ALTITUDE_NAME: str = "Altitude"

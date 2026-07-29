@@ -22,7 +22,6 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
 )
 from libera_utils.footprint_matching.types import (
     BoundingBox,
-    FmatchVariant,
     GridTile,
     OperationalMode,
     TileKey,
@@ -46,10 +45,6 @@ class TestERA5PressureLevelReaderClassAttributes:
     def test_required_mode_is_imager(self):
         assert ERA5PressureLevelReader.REQUIRED_MODE == OperationalMode.IMAGER
 
-    def test_required_variant_is_year_one(self):
-        # The whole reader substitutes for RBSP inputs that arrive post-year-one.
-        assert ERA5PressureLevelReader.REQUIRED_VARIANT is FmatchVariant.YEAR_ONE
-
     def test_variable_count_is_variables_times_levels(self):
         assert len(ERA5PressureLevelReader.VARIABLES) == _N_SPECS
 
@@ -66,7 +61,6 @@ class TestERA5PressureLevelReaderClassAttributes:
             assert v.aggregation == "weighted_mean"
             assert v.n_categories is None
             assert v.required_mode == OperationalMode.IMAGER
-            assert v.required_variant is FmatchVariant.YEAR_ONE
 
     def test_every_spec_gets_standard_deviation_companion(self):
         # All specs are continuous, so the product variable set doubles.
