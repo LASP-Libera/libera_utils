@@ -334,17 +334,37 @@ This varies by packet but there is some consistent behavior:
 
 ### WFOV camera science (APID 1040) image metadata
 
+#### Packet Data Structure - Slicing and Reconstructing
+
+A single WFOV image is too large for one CCSDS packet, so the camera splits it into a sequence
+of packets, each carrying one slice of the image plus fields describing where that slice belongs:
+
+| Field                        | Description                                                                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ICIE__MEM_DUMP_FLAGS_WFOV`  | This packet's position in the image sequence: `SOP` (Start of Photo), `MOP` (Middle of Photo), `EOP` (End of Photo), or `SINGLE` (whole image fit in one packet) |
+| `ICIE__MEM_DUMP_OFFSET_WFOV` | Byte offset of this slice within the reassembled image                                                                                                           |
+| `ICIE__MEM_DUMP_LENGTH_WFOV` | Number of valid image bytes carried in this packet                                                                                                               |
+| `ICIE__WFOV_DATA`            | The raw image-slice payload for this packet                                                                                                                      |
+
+libera_utils reconstructs each full image by walking packets in stream order: an `SOP` packet
+with `ICIE__MEM_DUMP_OFFSET_WFOV == 0` opens a new image, each subsequent packet is appended as
+long as its offset matches the running byte count, and an `EOP` packet closes the image out. Any
+break in that sequence — an offset that doesn't line up, an `EOP` with no preceding `SOP`, or a
+`SOP` left dangling with no matching `EOP` — discards the in-progress image instead of stitching
+it incorrectly; those packets keep their raw per-packet `ICIE__WFOV_DATA` slices and are counted
+in `n_missing_sop_or_eop` / `n_bad_images` below.
+
 WFOV science packets carry two independent time sources:
 
-- **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every mem-dump
-  packet (SOP, MOP, and EOP). This coordinate is used for packet ordering and deduplication.
+- **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every
+  packet. This coordinate is used for packet ordering and deduplication.
 - **`CAMERA_TIME`**: FSW image acquisition time decoded from each **complete** stitched image (SOP→EOP with
   valid offsets). One row is added per successfully stitched image in **packet stream order**.
 
 During L1A parsing for APID 1040, libera_utils:
 
-1. Stitches mem-dump packets from qualifying SOP (`ICIE__MEM_DUMP_FLAGS_WFOV == "SOP"` and
-   `ICIE__MEM_DUMP_OFFSET_WFOV == 0`) through EOP into a full NAND image blob.
+1. Stitches image slice packets from a qualifying `SOP` (`ICIE__MEM_DUMP_FLAGS_WFOV == "SOP"` and
+   `ICIE__MEM_DUMP_OFFSET_WFOV == 0`) through `EOP` into a full NAND image blob.
 2. Stores the complete compressed JPEG-LS image on `CAMERA_TIME` as `WFOV_COMPRESSED_IMAGE`
    (`uint8`/`BLOB_BYTE` with `WFOV_COMPRESSED_IMAGE_LENGTH`; readers must use `image[:length]` to
    drop zero padding).
