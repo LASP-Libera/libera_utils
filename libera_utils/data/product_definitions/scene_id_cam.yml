@@ -34,27 +34,6 @@ variables:
     attributes:
       long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
       valid_range: [1, 20]
-  clear_area:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Clear-sky area of the footprint
-      units: percent
-      valid_range: [0, 100]
-  cloud_fraction_lower:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud fraction for the lower atmospheric layer
-      units: percent
-      valid_range: [0, 100]
-  cloud_fraction_upper:
-    dtype: float32
-    dimensions: ["RADIOMETER_TIME"]
-    attributes:
-      long_name: Cloud fraction for the upper atmospheric layer
-      units: percent
-      valid_range: [0, 100]
   solar_zenith_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -90,7 +69,7 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Total cloud fraction over the footprint, 100 - clear_area
+      long_name: Total cloud fraction over the footprint (Libera WFOV camera cloud fraction, scaled to percent)
       units: percent
       valid_range: [0, 100]
 
