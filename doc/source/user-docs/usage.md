@@ -10,7 +10,7 @@ This is the top level command that contains all the nested sub-commands.
 
 ```shell
 usage: libera-utils [-h] [--version]
-                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,s3-utils} ...
+                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils} ...
 
 Libera SDC utilities CLI
 
@@ -21,12 +21,15 @@ options:
 subcommands:
   sub-commands for libera-utils CLI
 
-  {make-kernel,ecr-upload,step-function-trigger,manual-processing,s3-utils}
+  {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils}
     make-kernel         generate SPICE kernels from a manifest file
     ecr-upload          Upload docker image to ECR repository for a specific algorithm
     step-function-trigger
                         Manually trigger a single processing step for one applicable date
     manual-processing   Manually run a custom processing DAG (or the default DAG) for one or more applicable dates
+    register-algorithm-image
+                        Emit a NewAlgorithmImage event for an already-uploaded ECR image so the SDC Registrar
+                        creates its versioned Batch job definition
     s3-utils            Utilities for working with S3 archives for processing steps
 
 ```
@@ -38,10 +41,32 @@ the `--ecr-tags` option specifies the tags to apply to the image in ECR. If `--e
 `latest` tag is applied by default. If `--ecr-tags` is specified, include `latest` explicitly if it should also be
 applied.
 
+By default the console shows a concise summary of each push (start, a per-tag summary of layers pushed, and the
+resulting image digest). Pass `-v`/`--verbose` for DEBUG-level output including per-layer Docker push detail.
+
+#### Registering the uploaded image
+
+Uploading an image to the ECR does not, by itself, make a specific algorithm version runnable in the SDC: the
+processing step function resolves a requested version by looking for an AWS Batch **job definition** that references
+the matching image. For this reason `ecr-upload` **always** registers the version(s) it uploads: after pushing, it
+emits a `NewAlgorithmImage` event for each non-`latest` ECR tag pushed, so the SDC Registrar creates the
+corresponding versioned Batch job definition automatically.
+
+```{tip}
+Because `ecr-upload` registers for you, you do **not** need to run the standalone
+{ref}`register-algorithm-image <sub-command-register-algorithm-image>` command after an upload. Use the standalone
+command only when the image was already uploaded previously (see that section for details).
+```
+
+Because `latest` is a moving pointer rather than a concrete version, it is never registered; if the only tag pushed
+is `latest`, the command logs a warning and registers nothing. Add `--verify` to block until each registered Batch
+job definition is confirmed created **and** its ECR image is confirmed present, waiting up to `--timeout` seconds
+(default 300). Verification needs only read permissions.
+
 ```shell
-usage: libera-utils ecr-upload [-h] [--image-tag IMAGE_TAG]
-                               [--ecr-tags ECR_TAGS [ECR_TAGS ...]]
-                               [--ignore-docker-config] [--profile PROFILE]
+usage: libera-utils ecr-upload [-h] [--image-tag IMAGE_TAG] [--ecr-tags ECR_TAGS [ECR_TAGS ...]]
+                               [--ignore-docker-config] [-v] [--verify] [--timeout TIMEOUT]
+                               [--profile PROFILE]
                                algorithm_name image_name
 
 positional arguments:
@@ -56,6 +81,11 @@ options:
                         Tags to apply in ECR. Default is latest.
   --ignore-docker-config
                         Ignore the standard docker config.json to bypass the credential store
+  -v, --verbose         Enable DEBUG-level console logging, including per-layer Docker push detail. Without this,
+                        console logging is at INFO (push start, a per-tag summary, and the resulting digest).
+  --verify              After registering, block until each Batch job definition is confirmed created and its ECR
+                        image is confirmed present. Requires only read permissions.
+  --timeout TIMEOUT     Seconds to wait for registration verification when --verify is set. Default is 300 (5 minutes).
   --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
 ```
 
@@ -76,11 +106,62 @@ l2-toa-flux-imager
 Example usage:
 
 ```shell
-libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux \
-  --image-tag latest --ecr-tags latest --ignore-docker-config
+# Upload a concrete version (registration of 1.2.3 happens automatically):
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux --ecr-tags latest 1.2.3 --ignore-docker-config
+
+# Upload, register, and verify the Batch job definition and ECR image in one step:
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux --ecr-tags latest 1.2.3 --verify
 ```
 
 To get a list of specific algorithm names allowed in this command, run `libera-utils ecr-upload -h`
+
+(sub-command-register-algorithm-image)=
+
+### Sub-Command `register-algorithm-image`
+
+Emits a `NewAlgorithmImage` event for an ECR image that has **already been uploaded**, so the SDC Registrar creates
+the corresponding versioned Batch job definition. This is the standalone equivalent of the registration that
+`ecr-upload` performs automatically.
+
+```{important}
+If you are uploading the image now, just use `ecr-upload`, which registers the version(s) for you — there is no need
+to run `register-algorithm-image` separately in that case. Use `register-algorithm-image` only when the image is
+already in the ECR (for example, you need to (re)register a version without re-pushing the image).
+```
+
+Provide the `algorithm_name` and the concrete `algorithm_version` (the ECR image tag to register). Add `--verify`
+to block until the Batch job definition is confirmed registered **and** the referenced ECR image is confirmed
+present (up to `--timeout` seconds, default 300; read-only). The image-presence check runs even if a matching job
+definition already exists, so you never register a job definition for an image that is not actually in the ECR.
+`--image-digest` is optional and carried only for provenance — the job definition references the tag, not the
+digest.
+
+```shell
+usage: libera-utils register-algorithm-image [-h] [--image-digest IMAGE_DIGEST] [--verify] [--timeout TIMEOUT]
+                                             [--profile PROFILE]
+                                             algorithm_name algorithm_version
+
+positional arguments:
+  algorithm_name        Processing step identifier used to determine the ECR repository name
+  algorithm_version     The concrete ECR image tag to register (e.g. 1.2.3). The image must already be in ECR.
+
+options:
+  -h, --help            show this help message and exit
+  --image-digest IMAGE_DIGEST
+                        Optional image digest (sha256:...) carried for provenance; the job definition references
+                        the tag.
+  --verify              After emitting the event, block until the Batch job definition is confirmed registered.
+                        Requires only read permissions.
+  --timeout TIMEOUT     Seconds to wait for registration verification when --verify is set. Default is 300 (5 minutes).
+  --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
+```
+
+Example usage:
+
+```shell
+# Register (and verify) a version whose image is already in the ECR:
+libera-utils register-algorithm-image l2-comp-flux 1.2.3 --verify
+```
 
 ### Sub-Command `make-kernel jpss-spk`
 

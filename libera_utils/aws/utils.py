@@ -2,9 +2,13 @@
 
 import logging
 import re
+from typing import TYPE_CHECKING
 
 import boto3
 from botocore.exceptions import ClientError
+
+if TYPE_CHECKING:
+    from libera_utils.constants import ProcessingStepIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +86,45 @@ def get_l2_team_role_session(
         aws_session_token=credentials["SessionToken"],
         region_name=base_session.region_name,
     )
+
+
+def _resolve_algorithm_specific_session(
+    algorithm: "ProcessingStepIdentifier", profile_name: str | None = None
+) -> boto3.Session:
+    """Resolve the boto3 session to use for operations scoped to a specific algorithm.
+
+    L2 algorithms (those with a ``ProcessingStepIdentifier.l2_team_iam_role``) are owned by an L2 team whose
+    per-team L2 Team Role holds the permissions for that algorithm's resources, so this assumes that role. All
+    other algorithms (SPICE, L1B, scene-id, and other SDC-owned steps) use the ambient/``--profile`` session
+    directly. This lets SDC developers, whose admin credentials cannot assume the LiberaUtils/L2 roles, operate
+    on SDC-owned algorithms with their own ambient credentials instead of failing on a role-assumption chain
+    they are not part of.
+
+    Parameters
+    ----------
+    algorithm : ProcessingStepIdentifier
+        The processing step whose algorithm is being operated on.
+    profile_name : str, optional
+        AWS profile name from the CLI (``--profile``), or None for default resolution.
+
+    Returns
+    -------
+    boto3.Session
+        The session to use: the per-team L2 Team Role for L2 algorithms, or the ambient session otherwise.
+
+    Raises
+    ------
+    ValueError
+        If the algorithm requires an L2 Team Role that the base profile cannot assume.
+    """
+    team_role = algorithm.l2_team_iam_role
+    if team_role is None:
+        logger.info(f"{algorithm} is not an L2 algorithm; using the ambient/--profile session.")
+        return boto3.Session(profile_name=profile_name)
+
+    role_name = f"{L2_DEVELOPER_ROLE_PATH}/{team_role}"
+    logger.info(f"{algorithm} is an L2 algorithm; assuming the {role_name} role.")
+    return get_l2_team_role_session(profile_name=profile_name, role_name=role_name)
 
 
 def _single_match_by_partial_name(partial_name: str, names: list[str], *, resource_description: str) -> str:

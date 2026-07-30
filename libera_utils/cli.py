@@ -3,7 +3,7 @@
 import argparse
 
 from libera_utils import kernel_maker
-from libera_utils.aws import ecr_upload, s3_utilities
+from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.version import version as libera_utils_version
@@ -79,7 +79,8 @@ def parse_cli_args(cli_args: list):
     # ECR UPLOAD
     # ==========
     ecr_upload_parser = subparsers.add_parser(
-        "ecr-upload", help="Upload docker image to ECR repository for a specific algorithm"
+        "ecr-upload",
+        help="Upload a docker image to the ECR repository for a specific algorithm and register its version(s)",
     )
     ecr_upload_parser.set_defaults(func=ecr_upload.ecr_upload_cli_handler)
     ecr_upload_parser.add_argument(
@@ -109,6 +110,26 @@ def parse_cli_args(cli_args: list):
         "--ignore-docker-config",
         action="store_true",
         help="Ignore the standard docker config.json to bypass the credential store",
+    )
+    ecr_upload_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable DEBUG-level console logging, including per-layer Docker push detail. Without this, "
+        "console logging is at INFO (push start, a per-tag summary, and the resulting digest).",
+    )
+    ecr_upload_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="After registering, block until each Batch job definition is confirmed created and its ECR image "
+        "is confirmed present. Requires only read permissions.",
+    )
+    ecr_upload_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+        help="Seconds to wait for registration verification when --verify is set. Default is "
+        f"{algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS:.0f} (5 minutes).",
     )
     ecr_upload_parser.add_argument(
         "--profile",
@@ -209,6 +230,51 @@ def parse_cli_args(cli_args: list):
         "--profile",
         type=str,
         help=f"AWS profile name to use for the session. If not set, the default profile is used.",
+    )
+
+    # ================================
+    # ALGORITHM VERSION REGISTRATION
+    # ================================
+    register_algorithm_parser = subparsers.add_parser(
+        "register-algorithm-image",
+        help="Emit a NewAlgorithmImage event for an already-uploaded ECR image so the SDC Registrar creates "
+        "its versioned Batch job definition",
+    )
+    register_algorithm_parser.set_defaults(func=algorithm_registration.register_algorithm_image_cli_handler)
+    register_algorithm_parser.add_argument(
+        "algorithm_name",
+        type=str,
+        choices=processing_steps,
+        help=f"Algorithm name used to determine the ECR repo name. Options are:\n {steps_with_ecrs}",
+    )
+    register_algorithm_parser.add_argument(
+        "algorithm_version",
+        type=str,
+        help="The concrete ECR image tag to register (e.g. 1.2.3). The image must already be in ECR.",
+    )
+    register_algorithm_parser.add_argument(
+        "--image-digest",
+        type=str,
+        default=None,
+        help="Optional image digest (sha256:...) carried for provenance; the job definition references the tag.",
+    )
+    register_algorithm_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="After emitting the event, block until the Batch job definition is confirmed registered. "
+        "Requires only read permissions.",
+    )
+    register_algorithm_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+        help="Seconds to wait for registration verification when --verify is set. Default is "
+        f"{algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS:.0f} (5 minutes).",
+    )
+    register_algorithm_parser.add_argument(
+        "--profile",
+        type=str,
+        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
     )
 
     # ============================

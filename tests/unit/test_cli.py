@@ -5,7 +5,7 @@ import argparse
 import pytest
 
 from libera_utils import cli, kernel_maker
-from libera_utils.aws import ecr_upload, s3_utilities
+from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 
 
@@ -156,6 +156,9 @@ def test_manual_processing_parse_cli_args(cli_args, parsed):
                 image_tag="latest",
                 ecr_tags=None,
                 ignore_docker_config=False,
+                verbose=False,
+                verify=False,
+                timeout=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
                 profile=None,
             ),
         ),
@@ -168,6 +171,9 @@ def test_manual_processing_parse_cli_args(cli_args, parsed):
                 image_tag="tag1.2",
                 ecr_tags=None,
                 ignore_docker_config=True,
+                verbose=False,
+                verify=False,
+                timeout=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
                 profile=None,
             ),
         ),
@@ -180,6 +186,9 @@ def test_manual_processing_parse_cli_args(cli_args, parsed):
                 image_tag="latest",
                 ecr_tags=None,
                 ignore_docker_config=False,
+                verbose=False,
+                verify=False,
+                timeout=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
                 profile=None,
             ),
         ),
@@ -192,7 +201,25 @@ def test_manual_processing_parse_cli_args(cli_args, parsed):
                 image_tag="latest",
                 ecr_tags=["latest", "tag2"],
                 ignore_docker_config=False,
+                verbose=False,
+                verify=False,
+                timeout=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
                 profile="test-profile",
+            ),
+        ),
+        (
+            ["ecr-upload", "l1b-rad", "test-image", "-v", "--verify"],
+            argparse.Namespace(
+                func=ecr_upload.ecr_upload_cli_handler,
+                algorithm_name="l1b-rad",
+                image_name="test-image",
+                image_tag="latest",
+                ecr_tags=None,
+                ignore_docker_config=False,
+                verbose=True,
+                verify=True,
+                timeout=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+                profile=None,
             ),
         ),
     ],
@@ -203,6 +230,53 @@ def test_ecr_upload_cli_args(cli_args, parsed):
     """
     print(f"CLI ARGS \n{cli_args}\n")
     print(f"Parsed args: {parsed} \n")
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["register-algorithm-image", "l1b-rad", "1.2.3"],
+            argparse.Namespace(
+                func=algorithm_registration.register_algorithm_image_cli_handler,
+                algorithm_name="l1b-rad",
+                algorithm_version="1.2.3",
+                image_digest=None,
+                verify=False,
+                timeout=algorithm_registration.DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
+                profile=None,
+            ),
+        ),
+        (
+            [
+                "register-algorithm-image",
+                "l1b-cam",
+                "2.0.0",
+                "--image-digest",
+                "sha256:abc",
+                "--verify",
+                "--timeout",
+                "60",
+                "--profile",
+                "test-profile",
+            ],
+            argparse.Namespace(
+                func=algorithm_registration.register_algorithm_image_cli_handler,
+                algorithm_name="l1b-cam",
+                algorithm_version="2.0.0",
+                image_digest="sha256:abc",
+                verify=True,
+                timeout=60.0,
+                profile="test-profile",
+            ),
+        ),
+    ],
+)
+def test_register_algorithm_image_cli_args(cli_args, parsed):
+    """
+    Test that cli args are parsed properly
+    """
     assert cli.parse_cli_args(cli_args) == parsed
 
 

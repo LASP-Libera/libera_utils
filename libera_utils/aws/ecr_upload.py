@@ -12,45 +12,12 @@ import boto3
 import docker
 from docker import errors as docker_errors
 
-from libera_utils.aws.utils import L2_DEVELOPER_ROLE_PATH, get_l2_team_role_session
+from libera_utils.aws.algorithm_registration import put_new_algorithm_image_event
+from libera_utils.aws.utils import L2_DEVELOPER_ROLE_PATH, _resolve_algorithm_specific_session
 from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
-
-
-def _resolve_ecr_session(algorithm: ProcessingStepIdentifier, profile_name: str | None) -> boto3.Session:
-    """Build the boto3 session to use for an ECR upload of the given algorithm's image.
-
-    L2 algorithms (those with a ``ProcessingStepIdentifier.l2_team_iam_role``) require their team's L2 Team Role to
-    push to ECR, so this assumes that role. All other steps (SPICE, L1B, scene-id) use the default or ``--profile``
-    session directly.
-
-    Parameters
-    ----------
-    algorithm : ProcessingStepIdentifier
-        The processing step whose image is being uploaded.
-    profile_name : str or None
-        AWS profile name from the CLI (``--profile``), or None for default resolution.
-
-    Returns
-    -------
-    boto3.Session
-        The session to use for the ECR upload.
-
-    Raises
-    ------
-    ValueError
-        If the algorithm requires an L2 Team Role that the base profile cannot assume.
-    """
-    team_role = algorithm.l2_team_iam_role
-    if team_role is None:
-        logger.info(f"{algorithm} is not an L2 algorithm; using the default/--profile session for the ECR upload.")
-        return boto3.Session(profile_name=profile_name)
-
-    role_name = f"{L2_DEVELOPER_ROLE_PATH}/{team_role}"
-    logger.info(f"{algorithm} is an L2 algorithm; assuming the {role_name} role for the ECR upload.")
-    return get_l2_team_role_session(profile_name=profile_name, role_name=role_name)
 
 
 class DockerConfigManager:
@@ -86,6 +53,86 @@ class DockerConfigManager:
             self.tempdir.cleanup()
 
 
+# Docker push-stream ``status`` values that indicate a layer reached a terminal state (as opposed to the
+# high-frequency "Pushing" progress ticks, which we suppress).
+_LAYER_PUSHED_STATUS = "Pushed"
+_LAYER_EXISTS_STATUS = "Layer already exists"
+
+
+def _process_push_logs(push_logs, full_ecr_tag: str) -> str | None:
+    """Consume a decoded Docker push stream, log a concise summary, and return the pushed image digest.
+
+    The raw Docker push stream is extremely chatty: it emits many per-layer ``"Pushing"`` progress events
+    (byte counters and terminal progress bars) that are meaningless in a line-based log. This processor
+    suppresses those, logs one readable line per layer transition at DEBUG, surfaces the terminal digest and
+    a single summary at INFO, and raises on any error the stream reports.
+
+    Parameters
+    ----------
+    push_logs : iterable of dict
+        The decoded events yielded by ``docker_client.api.push(..., stream=True, decode=True)``.
+    full_ecr_tag : str
+        Complete ECR tag (registry/repository:tag) being pushed, used for log context.
+
+    Returns
+    -------
+    str or None
+        The image digest (``sha256:...``) reported in the stream's ``aux`` event, or None if not present.
+
+    Raises
+    ------
+    ValueError
+        If the stream reports one or more errors (via the ``error`` or ``errorDetail`` fields).
+    """
+    pushed_layers = 0
+    existing_layers = 0
+    digest: str | None = None
+    error_messages: list[str] = []
+
+    for event in push_logs:
+        # Errors are reported via "error" (a string) and/or "errorDetail" (a dict with a "message").
+        if "error" in event or "errorDetail" in event:
+            error_message = event.get("error") or event.get("errorDetail", {}).get("message") or str(event)
+            logger.error(f"Push error for {full_ecr_tag}: {error_message}")
+            error_messages.append(error_message)
+            continue
+
+        # The terminal "aux" event carries the digest/size of the pushed manifest.
+        if "aux" in event:
+            digest = event["aux"].get("Digest")
+            continue
+
+        status = event.get("status")
+        if status is None:
+            continue
+
+        if status == _LAYER_PUSHED_STATUS:
+            pushed_layers += 1
+            logger.debug(f"Layer pushed ({event.get('id', '?')}) for {full_ecr_tag}")
+        elif status == _LAYER_EXISTS_STATUS:
+            existing_layers += 1
+            logger.debug(f"Layer already exists ({event.get('id', '?')}) for {full_ecr_tag}")
+        elif "progressDetail" in event:
+            # High-frequency per-layer progress ticks ("Pushing"/"Preparing"/"Waiting"): suppressed entirely
+            # to avoid flooding the log with byte counters and progress bars.
+            continue
+        else:
+            # Stream-level status lines without a progressDetail (e.g. the terminal "<tag>: digest: ...").
+            logger.debug(f"Push status for {full_ecr_tag}: {status}")
+
+    if error_messages:
+        raise ValueError(f"Push errors: {error_messages}")
+
+    logger.info(
+        "Pushed %s: %d layer(s) pushed, %d already existed%s",
+        full_ecr_tag,
+        pushed_layers,
+        existing_layers,
+        f" (digest {digest})" if digest else "",
+    )
+    return digest
+
+
 def _push_single_tag(
     docker_client: docker.DockerClient,
     local_image: docker.models.images.Image,
@@ -93,7 +140,7 @@ def _push_single_tag(
     region_name: str,
     max_retries: int = 3,
     boto_session: boto3.Session = None,
-) -> None:
+) -> str | None:
     """Push a single tagged image to ECR with retry logic and fresh authentication.
 
     Parameters
@@ -110,6 +157,11 @@ def _push_single_tag(
         Maximum retry attempts
     boto_session : boto3.Session
         Boto3 session used to obtain ECR credentials (already role-assumed if needed)
+
+    Returns
+    -------
+    str or None
+        The image digest (``sha256:...``) reported for the pushed image, or None if not available.
     """
     for attempt in range(max_retries + 1):
         try:
@@ -125,21 +177,8 @@ def _push_single_tag(
 
             push_logs = docker_client.api.push(full_ecr_tag, stream=True, decode=True, auth_config=auth_config)
 
-            error_messages = []
-            for log in push_logs:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Push log: {log}")
-
-                if "error" in log:
-                    error_message = log["error"]
-                    logger.error(f"Push error: {error_message}")
-                    error_messages.append(error_message)
-
-            if error_messages:
-                raise ValueError(f"Push errors: {error_messages}")
-
-            # Success - break out of retry loop
-            break
+            # Success - return the digest reported by the stream
+            return _process_push_logs(push_logs, full_ecr_tag)
 
         except (docker_errors.APIError, ValueError) as e:
             if attempt < max_retries:
@@ -148,6 +187,7 @@ def _push_single_tag(
             else:
                 logger.error(f"Push failed after {max_retries + 1} attempts")
                 raise
+    return None
 
 
 def _get_fresh_ecr_auth(region_name: str, *, boto_session: boto3.Session) -> dict:
@@ -224,12 +264,13 @@ def build_docker_image(
         _, logs = client.images.build(
             path=str(context_dir.absolute()), target=target, tag=f"{image_name}:{tag}", platform=platform
         )
-        # We process this output as print statements rather than logging messages because it's the direct
-        # output from `docker build`
+        # Stream the raw `docker build` output through the logger at DEBUG so it goes through the same
+        # handlers as everything else (visible with -v) instead of bypassing them via print().
         for log in logs:
             if "stream" in log:
-                print(log["stream"].strip())  # Print build output to console
-        print(f"Image {image_name}:{tag} built successfully.")
+                build_line = log["stream"].strip()
+                if build_line:
+                    logger.debug(build_line)
     except docker_errors.BuildError as e:
         logger.exception(f"Failed to build docker image. {e}", stack_info=True)
         raise
@@ -252,7 +293,9 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     None
     """
     now = datetime.now(UTC)
-    configure_task_logging(f"ecr_upload_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
+    # The Docker push stream is very chatty; default the console to INFO and let -v opt into DEBUG detail.
+    console_log_level = logging.DEBUG if parsed_args.verbose else logging.INFO
+    configure_task_logging(f"ecr_upload_{now}", limit_debug_loggers="libera_utils", console_log_level=console_log_level)
     logger.debug(f"CLI args: {parsed_args}")
     image_name: str = parsed_args.image_name
     image_tag = parsed_args.image_tag
@@ -260,9 +303,9 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     ecr_tags = parsed_args.ecr_tags
     profile_name = parsed_args.profile
 
-    # L2 algorithms require their team's L2 Team Role to push to ECR; other steps use the default/--profile session.
+    # L2 algorithms require their team's L2 Team Role to push to ECR; other steps use the ambient/--profile session.
     try:
-        boto_session = _resolve_ecr_session(algorithm_name, profile_name)
+        boto_session = _resolve_algorithm_specific_session(algorithm_name, profile_name)
     except ValueError:
         # The raised error already names the base role and target role. Add the algorithm-specific remediation: this
         # is the team-membership cause (you are the right base role but not in the L2 Team Role's user list).
@@ -276,7 +319,7 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
         )
         raise
 
-    push_image_to_ecr(
+    pushed_digests = push_image_to_ecr(
         image_name,
         image_tag,
         algorithm_name,
@@ -284,6 +327,30 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
         ignore_docker_config=parsed_args.ignore_docker_config,
         boto_session=boto_session,
     )
+
+    # Uploading an image is always paired with registering its version(s): an unregistered image cannot be run by
+    # version. "latest" is a moving pointer, not a concrete algorithm version, so it is never registered.
+    versions_to_register = [tag for tag in pushed_digests if tag != "latest"]
+    if not versions_to_register:
+        logger.warning(
+            "No concrete (non-'latest') ECR tag was pushed, so there is no algorithm version to register. "
+            "Re-run with an explicit version tag (e.g. --ecr-tags latest 1.2.3) to register one."
+        )
+        return
+
+    # Reuse the session resolved for the push to also emit the registration event(s): L2 algorithms use their
+    # per-team L2 Team Role, while non-L2 (SDC-owned) algorithms use the ambient/--profile session. This lets SDC
+    # developers -- whose admin credentials cannot assume the LiberaUtils role -- register non-L2 images with their
+    # ambient credentials instead of failing on a role-assumption chain they are not part of.
+    for version in versions_to_register:
+        put_new_algorithm_image_event(
+            algorithm_name,
+            version,
+            boto_session=boto_session,
+            image_digest=pushed_digests[version],
+            verify=parsed_args.verify,
+            timeout=parsed_args.timeout,
+        )
 
 
 def push_image_to_ecr(
@@ -296,7 +363,7 @@ def push_image_to_ecr(
     ignore_docker_config: bool = False,
     max_retries: int = 1,
     boto_session: boto3.Session | None = None,
-) -> None:
+) -> dict[str, str | None]:
     """Push a Docker image to Amazon ECR with robust authentication handling.
 
     This function handles ECR authentication by obtaining fresh credentials for each
@@ -337,7 +404,9 @@ def push_image_to_ecr(
 
     Returns
     -------
-    None
+    dict[str, str | None]
+        Mapping of each pushed ECR tag to the image digest (``sha256:...``) reported for it, or None if the
+        digest was not available in the push stream.
     """
     # Input validation and defaults
     if not ecr_image_tags:
@@ -375,13 +444,13 @@ def push_image_to_ecr(
         except docker.errors.ImageNotFound:
             raise ValueError(f"Local image not found: {image_name}:{image_tag}")
 
-        successful_pushes = []
+        pushed_digests: dict[str, str | None] = {}
 
         for remote_tag in ecr_image_tags:
             full_ecr_tag = f"{ecr_registry}/{ecr_name}:{remote_tag}"
 
             try:
-                _push_single_tag(
+                digest = _push_single_tag(
                     docker_client=docker_client,
                     local_image=local_image,
                     full_ecr_tag=full_ecr_tag,
@@ -389,16 +458,17 @@ def push_image_to_ecr(
                     max_retries=max_retries,
                     boto_session=boto_session,
                 )
-                successful_pushes.append(remote_tag)
+                pushed_digests[remote_tag] = digest
                 logger.info(f"Successfully pushed tag: {remote_tag}")
 
             except Exception as e:
                 logger.exception(f"Failed to push tag {remote_tag}: {e}", stack_info=True)
                 # Clean up any successful pushes on failure (optional)
-                if successful_pushes:
-                    logger.warning(f"Partial success: pushed tags {successful_pushes} before failure")
+                if pushed_digests:
+                    logger.warning(f"Partial success: pushed tags {list(pushed_digests)} before failure")
                 raise
 
         logger.info(
-            f"All {len(ecr_image_tags)} tags pushed successfully to ECR. Remote tags pushed: {successful_pushes}"
+            f"All {len(ecr_image_tags)} tags pushed successfully to ECR. Remote tags pushed: {list(pushed_digests)}"
         )
+        return pushed_digests
