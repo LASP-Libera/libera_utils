@@ -3,10 +3,9 @@ attributes:
   algorithm_version: null
   date_created: null
   input_files: null
-  MissingSOPOrEOPCount: null
-  BadImageCount: null
-  CompleteImageCount: null
-  CRCErrorCount: null
+  PacketCountNotUsedInImages: null
+  ErrorFlaggedImageCount: null
+  FooterMismatchCount: null
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]
@@ -159,16 +158,6 @@ variables:
     dimensions: ["PACKET"]
     attributes:
       long_name: ICIE WFOV memory dump flags
-  ICIE__WFOV_DATA:
-    dtype: "|S972"
-    dimensions: ["PACKET"]
-    attributes:
-      long_name: ICIE WFOV camera image data (aggregated)
-  ICIE__WFOV_SCI_CHECKSUM:
-    dtype: uint32
-    dimensions: ["PACKET"]
-    attributes:
-      long_name: ICIE WFOV camera science data checksum
   PACKET_IMAGE_ID:
     dtype: int32
     dimensions: ["PACKET"]

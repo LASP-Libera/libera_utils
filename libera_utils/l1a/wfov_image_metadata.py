@@ -35,10 +35,6 @@ FPGA_HEADER_SIZE = 140
 FPGA_TRAILING_FOOTER_SIZE = 8
 SOP_FPGA_MIN_SIZE = FSW_HEADER_SIZE + FPGA_HEADER_SIZE
 MIN_STITCHED_BLOB_SIZE = SOP_FPGA_MIN_SIZE + FPGA_TRAILING_FOOTER_SIZE
-FSW_TIMESTAMP_MIN_SIZE = 20
-TIMESTAMP_SECONDS_OFFSET = 12
-TIMESTAMP_SUBSECONDS_OFFSET = 16
-PACKET_DATA_WIDTH = 972
 
 MEM_DUMP_FLAGS_VAR = "ICIE__MEM_DUMP_FLAGS_WFOV"
 MEM_DUMP_OFFSET_VAR = "ICIE__MEM_DUMP_OFFSET_WFOV"
@@ -537,14 +533,6 @@ def _fsw_timestamps_to_datetime64(timestamp_seconds: int, timestamp_subseconds: 
     return np.datetime64(pd.Timestamp(dt).to_datetime64(), "us")
 
 
-def _extract_partial_fsw_timestamps(blob_bytes: bytes) -> tuple[int, int]:
-    timestamp_seconds = struct.unpack(">I", blob_bytes[TIMESTAMP_SECONDS_OFFSET : TIMESTAMP_SECONDS_OFFSET + 4])[0]
-    timestamp_subseconds = struct.unpack(
-        ">I", blob_bytes[TIMESTAMP_SUBSECONDS_OFFSET : TIMESTAMP_SUBSECONDS_OFFSET + 4]
-    )[0]
-    return timestamp_seconds, timestamp_subseconds
-
-
 def _parse_sop_row(
     blob_bytes: bytes,
 ) -> tuple[np.datetime64, dict, dict, bool, bool]:
@@ -565,11 +553,6 @@ def _parse_sop_row(
                 fsw_meta["timestamp_subseconds"],
             )
         except (ValueError, struct.error):
-            pass
-    elif length >= FSW_TIMESTAMP_MIN_SIZE:
-        try:
-            _extract_partial_fsw_timestamps(blob_bytes)
-        except struct.error:
             pass
 
     if length >= SOP_FPGA_MIN_SIZE:
