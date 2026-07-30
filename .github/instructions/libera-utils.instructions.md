@@ -23,6 +23,7 @@ generation, Libera file naming, and AWS pipeline integration.
 | `l1a/`          | CCSDS telemetry packet parsing, XTCE-based packet configs                    |
 | `libera_spice/` | SPICE kernel generation via SpiceyPy + Curryer                               |
 | `constants.py`  | Canonical enums: `DataLevel`, `DataProductIdentifier`, `LiberaApid`          |
+| `obsids.py`     | ICIE ObsID catalog (RAD/WFOV source, CAL/TRIMMED ProductIDs, science modes)  |
 | `logutil.py`    | Structured JSON logging; use `configure_task_logging()` for task-level setup |
 | `config.py`     | JSON config with env-var override and templated string formatting            |
 | `cli.py`        | `libera-utils` CLI entry point                                               |
@@ -59,6 +60,20 @@ generation, Libera file naming, and AWS pipeline integration.
   hardcode packet offsets or field names outside of these config files.
 - **Logging**: Use the `logutil` module for structured JSON output. Pass loggers via
   dependency injection rather than calling `logging.getLogger` ad-hoc in library code.
+- **ObsID registry**: `obsids.py`'s `OBSID_REGISTRY` is the sole source of truth mapping a
+  software ObsID to its TRIMMED and CAL `DataProductIdentifier`s. It is keyed by
+  `(NomHkObsidSource, obsid)`, not `obsid` alone, because RAD and WFOV ObsID numbers collide
+  (e.g. `256` means SWC-365NM on RAD but Darks-of-Darks on WFOV). This is more than a lookup
+  table of "what ObsIDs exist" — it drives real behavior:
+  - `l1a/nom_hk_trim.py` calls `iter_trim_eligible()` to detect contiguous ObsID runs in decoded
+    NOM-HK telemetry and writes one TRIMMED product per run (L1A Step 1 preprocessing).
+  - Downstream repos (e.g. `libera_rad`'s cal-combine dispatch) derive their own
+    ObsID → product/family mappings directly from this registry (via `get_obsid_spec` /
+    `iter_trim_eligible`) instead of hand-maintaining a duplicate mapping per repo — this is
+    what lets multiple calibration steps share one Docker/ECR image, dispatched at runtime by
+    ObsID.
+  - When adding a new calibration ObsID, register it here first (`OBSID_REGISTRY`) rather than
+    adding a parallel ObsID → product mapping in a downstream repo.
 
 ## Restrictions for AI Agents
 
