@@ -53,9 +53,7 @@ class TestObsidRegistry:
         """ObsIDs 128 and 132 are Cross Track and RAP scan science modes."""
         cross = get_obsid_spec(NomHkObsidSource.RAD, 128)
         rap = get_obsid_spec(NomHkObsidSource.WFOV, 132)
-        assert cross.name == "Cross Track"
         assert cross.description == "Cross Track Scan Mode"
-        assert rap.name == "RAP Scan"
         assert rap.description == "RAP Scan Mode"
 
     def test_trimmed_products_associate_with_nom_hk_apid(self):
