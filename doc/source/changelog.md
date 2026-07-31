@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.10.2
+
+- BUGFIX: `enforce_data_array_conformance` no longer emits a `UserWarning` (or log line) for every encoding key present on a DataArray but absent from the product definition. Extra keys (typically xarray/NetCDF runtime metadata such as `source`, `original_shape`, `preferred_chunks`, compression stubs) are dropped silently; conflicting values for keys that _are_ defined still warn. This removes thousands of spurious warnings when packaging products built from opened L1A NetCDF inputs.
+
 ## 5.10.1
 
 - FEAT: `ecr-upload` now registers the algorithm version(s) it uploads. After pushing, it emits a `NewAlgorithmImage` event (one per non-`latest` ECR tag) to the SDC event bus so the Registrar creates the corresponding versioned AWS Batch job definition. Adds `--verify` (blocks until both the ECR image and the Batch job definition are confirmed present, up to `--timeout` seconds).
