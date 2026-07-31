@@ -16,14 +16,15 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
 from libera_utils.l1a.wfov_image_metadata import (
-    BAD_IMAGE_COUNT_ATTR,
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
-    COMPLETE_IMAGE_COUNT_ATTR,
-    CRC_ERROR_COUNT_ATTR,
-    MISSING_SOP_OR_EOP_COUNT_ATTR,
+    ERROR_FLAGGED_IMAGE_COUNT_ATTR,
+    FOOTER_MISMATCH_COUNT_ATTR,
+    HEADER_PARSE_ERROR_COUNT_ATTR,
+    PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR,
     WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
     WFOV_COMPRESSED_IMAGE_VAR,
+    WFOV_HEADER_PARSE_VALID_VAR,
 )
 
 # Mark all tests in this module as integration tests
@@ -192,15 +193,14 @@ def test_process_packets_to_l1a_product(
         assert BLOB_BYTE_COORD in dataset.dims
         assert "CAMERA_PACKET_INDEX" in dataset.data_vars
         assert "PACKET_IMAGE_ID" in dataset.data_vars
-        assert "WFOV_FSW_PARSE_VALID" in dataset.data_vars
-        assert "WFOV_FPGA_PARSE_VALID" in dataset.data_vars
+        assert WFOV_HEADER_PARSE_VALID_VAR in dataset.data_vars
         assert WFOV_COMPRESSED_IMAGE_VAR in dataset.data_vars
         assert WFOV_COMPRESSED_IMAGE_LENGTH_VAR in dataset.data_vars
         assert dataset.sizes[CAMERA_TIME_COORD] > 0
-        assert dataset.sizes[CAMERA_TIME_COORD] == dataset.attrs[COMPLETE_IMAGE_COUNT_ATTR]
-        assert MISSING_SOP_OR_EOP_COUNT_ATTR in dataset.attrs
-        assert BAD_IMAGE_COUNT_ATTR in dataset.attrs
-        assert CRC_ERROR_COUNT_ATTR in dataset.attrs
+        assert PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR in dataset.attrs
+        assert ERROR_FLAGGED_IMAGE_COUNT_ATTR in dataset.attrs
+        assert FOOTER_MISMATCH_COUNT_ATTR in dataset.attrs
+        assert HEADER_PARSE_ERROR_COUNT_ATTR in dataset.attrs
 
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
@@ -307,9 +307,10 @@ def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
         )
 
     n_complete = dataset.sizes[CAMERA_TIME_COORD]
-    assert n_complete == dataset.attrs[COMPLETE_IMAGE_COUNT_ATTR]
     assert n_complete < dataset.sizes["PACKET"]
-    assert dataset.attrs[CRC_ERROR_COUNT_ATTR] == 0
+    assert dataset.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] == 0
+    assert dataset.attrs[FOOTER_MISMATCH_COUNT_ATTR] == 0
+    assert dataset.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 0
 
     pre_write_payloads = []
     for image_index in range(n_complete):

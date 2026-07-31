@@ -352,7 +352,7 @@ long as its offset matches the running byte count, and an `EOP` packet closes th
 break in that sequence — an offset that doesn't line up, an `EOP` with no preceding `SOP`, or a
 `SOP` left dangling with no matching `EOP` — discards the in-progress image instead of stitching
 it incorrectly; those packets keep their raw per-packet `ICIE__WFOV_DATA` slices and are counted
-in `n_missing_sop_or_eop` / `n_bad_images` below.
+in `PacketCountNotUsedInImages` below.
 
 WFOV science packets carry two independent time sources:
 
@@ -368,8 +368,12 @@ During L1A parsing for APID 1040, libera_utils:
 2. Stores the complete compressed JPEG-LS image on `CAMERA_TIME` as `WFOV_COMPRESSED_IMAGE`
    (`uint8`/`BLOB_BYTE` with `WFOV_COMPRESSED_IMAGE_LENGTH`; readers must use `image[:length]` to
    drop zero padding).
-3. Decodes FSW (36 bytes), FPGA internal footer (140-byte block), and trailing 8-byte footer metadata
-   into separate `WFOV_FSW_*`, `WFOV_FPGA_*`, and `WFOV_TRAILING_FOOTER_*` variables.
+3. Decodes the 176-byte WFOV header (36-byte FSW block + 140-byte FPGA block) as a single atomic
+   unit — either there are enough bytes for the whole header or there aren't; there's no
+   independent per-sub-block size check. Fields land on `CAMERA_TIME` across four categories:
+   `WFOV_FSW_HEADER_*`, `WFOV_IMAGE_HEADER_*`, `WFOV_IMAGE_FOOTER_*`, and `WFOV_FPGA_STATUS_*`.
+   Separately, the trailing 8-byte NAND footer is checked against a known-good magic byte pattern
+   (not decoded into fields) to catch corrupted images; mismatches count toward `FooterMismatchCount`.
 4. Zeros `ICIE__WFOV_DATA` on contributing packets and sets `PACKET_IMAGE_ID` (0..N-1, or `-1` for
    incomplete sequences).
 
@@ -378,17 +382,23 @@ Incomplete or failed images retain per-packet `ICIE__WFOV_DATA` slices and do no
 
 File-level quality attributes (integers ≥ 0):
 
-- `n_missing_sop_or_eop`: orphan EOP or SOP without matching EOP
-- `n_bad_images`: SOP+EOP present but stitch rejected (non-zero SOP offset, offset gap, etc.)
-- `n_complete_images`: number of complete images (= `CAMERA_TIME` size)
+- `PacketCountNotUsedInImages`: total packets swept up in a rejected/incomplete SOP→EOP attempt
+  (dangling SOP, offset gap, orphan EOP, bad SOP offset)
+- `ErrorFlaggedImageCount`: complete images whose FPGA status block has any error bit set
+  (see `WFOV_FPGA_STATUS_*`)
+- `FooterMismatchCount`: complete images whose trailing 8-byte NAND footer didn't match the
+  expected magic bytes
+- `HeaderParseErrorCount`: complete images where the 176-byte WFOV header failed to decode
+  (too few bytes for a stitched blob that should have had a full header)
 
 Decoded metadata on the `CAMERA_TIME` dimension:
 
-- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_FSW_PARSE_VALID`, `WFOV_FPGA_PARSE_VALID`,
-  `WFOV_COMPRESSED_IMAGE`, `WFOV_COMPRESSED_IMAGE_LENGTH`, `WFOV_CRC_VALID` (always `-1` until LIBSDC-747)
-- FSW fields: `WFOV_FSW_*` (19 uppercase field names matching the libera_cam FSW header layout)
-- FPGA fields: `WFOV_FPGA_*` (header, internal footer, and status flags)
-- Trailing footer: `WFOV_TRAILING_FOOTER_*` from the last 8 bytes of the stitched blob
+- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_HEADER_PARSE_VALID`, `WFOV_COMPRESSED_IMAGE`,
+  `WFOV_COMPRESSED_IMAGE_LENGTH`
+- FSW header fields: `WFOV_FSW_HEADER_*` (19 uppercase field names matching the libera_cam FSW header layout)
+- Image header fields: `WFOV_IMAGE_HEADER_*` (21 fields from the FPGA block's image header)
+- Image footer fields: `WFOV_IMAGE_FOOTER_*` (5 fields from the FPGA block's internal footer)
+- FPGA status fields: `WFOV_FPGA_STATUS_*` (7 single-bit error flags from the FPGA status word)
 
 When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
 `write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
@@ -397,16 +407,16 @@ packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filen
 #### Dual exposure and VIDEO timing
 
 - **`CAMERA_TIME` is the first integration time.** FSW stamps one acquisition time per complete image.
-  In DUAL mode (`WFOV_FSW_IMG_MODE == 0`), the second sequential exposure lags the first by about
+  In DUAL mode (`WFOV_FSW_HEADER_IMG_MODE == 0`), the second sequential exposure lags the first by about
   **111–350 ms**. That offset is not stored as a separate L1A time coordinate (also noted on the
-  `WFOV_FSW_IMG_MODE` variable attributes).
+  `WFOV_FSW_HEADER_IMG_MODE` variable attributes).
 - **Which pixels used which exposure** is encoded in the **13th bit** of each decompressed pixel.
   L1A keeps the JPEG-LS payload compressed in `WFOV_COMPRESSED_IMAGE`, so per-pixel exposure masks and
   per-pixel times are an L1B responsibility after decompression.
-- **VIDEO mode** (`WFOV_FSW_IMG_MODE == 1`) can produce two NAND images from one camera trigger with
+- **VIDEO mode** (`WFOV_FSW_HEADER_IMG_MODE == 1`) can produce two NAND images from one camera trigger with
   identical FSW timestamps. Distinguish members with `CAMERA_PACKET_INDEX` (and packet stream order);
-  do not assume `CAMERA_TIME` alone is a unique image key. `WFOV_FPGA_READOUT` is independent of
-  `WFOV_FSW_IMG_MODE` and should not be used to infer VIDEO pairing.
+  do not assume `CAMERA_TIME` alone is a unique image key. `WFOV_IMAGE_HEADER_READOUT` is independent of
+  `WFOV_FSW_HEADER_IMG_MODE` and should not be used to infer VIDEO pairing.
 
 **Downstream (libera_cam):** Each `CAMERA_TIME` row already has a complete compressed JPEG-LS image in
 `WFOV_COMPRESSED_IMAGE` (trim with `WFOV_COMPRESSED_IMAGE_LENGTH`) plus decoded FSW/FPGA metadata on
