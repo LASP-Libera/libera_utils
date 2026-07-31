@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import struct
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from io import BytesIO
 
 import numpy as np
@@ -20,114 +19,36 @@ CAMERA_TIME_COORD = "CAMERA_TIME"
 BLOB_BYTE_COORD = "BLOB_BYTE"
 CAMERA_PACKET_INDEX_VAR = "CAMERA_PACKET_INDEX"
 PACKET_IMAGE_ID_VAR = "PACKET_IMAGE_ID"
-WFOV_FSW_PARSE_VALID_VAR = "WFOV_FSW_PARSE_VALID"
-WFOV_FPGA_PARSE_VALID_VAR = "WFOV_FPGA_PARSE_VALID"
+WFOV_HEADER_PARSE_VALID_VAR = "WFOV_HEADER_PARSE_VALID"
 WFOV_COMPRESSED_IMAGE_VAR = "WFOV_COMPRESSED_IMAGE"
 WFOV_COMPRESSED_IMAGE_LENGTH_VAR = "WFOV_COMPRESSED_IMAGE_LENGTH"
 
-MISSING_SOP_OR_EOP_COUNT_ATTR = "MissingSOPOrEOPCount"
-BAD_IMAGE_COUNT_ATTR = "BadImageCount"
-COMPLETE_IMAGE_COUNT_ATTR = "CompleteImageCount"
-CRC_ERROR_COUNT_ATTR = "CRCErrorCount"
+PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR = "PacketCountNotUsedInImages"
+ERROR_FLAGGED_IMAGE_COUNT_ATTR = "ErrorFlaggedImageCount"
+FOOTER_MISMATCH_COUNT_ATTR = "FooterMismatchCount"
+HEADER_PARSE_ERROR_COUNT_ATTR = "HeaderParseErrorCount"
 
 FSW_HEADER_SIZE = 36
 FPGA_HEADER_SIZE = 140
 FPGA_TRAILING_FOOTER_SIZE = 8
-SOP_FPGA_MIN_SIZE = FSW_HEADER_SIZE + FPGA_HEADER_SIZE
-MIN_STITCHED_BLOB_SIZE = SOP_FPGA_MIN_SIZE + FPGA_TRAILING_FOOTER_SIZE
+# The FSW and FPGA blocks are only ever decoded together (see extract_wfov_header_metadata_from_blob),
+# so this is the one size that matters for validating a header: either all of it is present or none of it is.
+WFOV_HEADER_SIZE = FSW_HEADER_SIZE + FPGA_HEADER_SIZE
+MIN_STITCHED_BLOB_SIZE = WFOV_HEADER_SIZE + FPGA_TRAILING_FOOTER_SIZE
 
 MEM_DUMP_FLAGS_VAR = "ICIE__MEM_DUMP_FLAGS_WFOV"
 MEM_DUMP_OFFSET_VAR = "ICIE__MEM_DUMP_OFFSET_WFOV"
 MEM_DUMP_LENGTH_VAR = "ICIE__MEM_DUMP_LENGTH_WFOV"
 WFOV_DATA_VAR = "ICIE__WFOV_DATA"
 
-FSW_FIELDS = (
-    "fsw_length",
-    "jpeg_bypass",
-    "bitmask_disable",
-    "testpattern",
-    "bitmask_id",
-    "img_mode",
-    "pixel_mask_id",
-    "simulator",
-    "cadence",
-    "image_total",
-    "image_count",
-    "flash_write_pointer",
-    "timestamp_seconds",
-    "timestamp_subseconds",
-    "rad_obs_id",
-    "cam_obs_id",
-    "commanded_exp_time_1",
-    "commanded_exp_time_2",
-    "azimuth_angle",
-)
-
-FPGA_HEADER_FIELDS = (
-    "image_length",
-    "flags",
-    "frame_id",
-    "tag",
-    "actual_exp_time_1",
-    "temperature",
-    "gain",
-    "width",
-    "height",
-    "offset_x",
-    "offset_y",
-    "readout",
-    "actual_exp_time_2",
-    "delta",
-    "exposure_step",
-    "nr_slopes",
-    "kp1",
-    "kp2",
-    "vlow_3",
-    "vlow_2",
-    "exp_seq",
-    "footer_size",
-)
-
-FPGA_FOOTER_FIELDS = (
-    "pixel_sum",
-    "dark",
-    "white",
-    "footer_delta",
-    "crc",
-)
-
-FPGA_STATUS_FIELDS = (
-    "sync_error",
-    "pid_error",
-    "size_error",
-    "eop_error",
-    "eep_error",
-    "crc_error",
-    "drop_error",
-)
-
-TRAILING_FOOTER_VALUE_FIELDS = (
-    "pixel_sum",
-    "dark",
-    "white",
-    "delta",
-    "crc",
-)
-
-TRAILING_FOOTER_STATUS_FIELDS = (
-    "spare",
-    "drop_error",
-    "crc_error",
-    "eep_error",
-    "eop_error",
-    "size_error",
-    "pid_error",
-    "sync_error",
-)
+VALID_FOOTER_BYTES = b"\xff\xfd\x00\x00\xff\xfc\x00\x01"
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
-FSW_FIELD_DTYPES: dict[str, np.dtype] = {
+# Each dict below is the single source of truth for both field naming/order and storage dtype
+# for one metadata block; iterate the dict directly (or `tuple(...)`) wherever the field-name
+# list is needed instead of keeping a parallel names-only tuple in sync by hand.
+FSW_HEADER_FIELD_DTYPES: dict[str, np.dtype] = {
     "fsw_length": np.dtype("uint8"),
     "jpeg_bypass": np.dtype("uint8"),
     "bitmask_disable": np.dtype("uint8"),
@@ -149,7 +70,7 @@ FSW_FIELD_DTYPES: dict[str, np.dtype] = {
     "azimuth_angle": np.dtype("float32"),
 }
 
-FPGA_FIELD_DTYPES: dict[str, np.dtype] = {
+IMAGE_HEADER_FIELD_DTYPES: dict[str, np.dtype] = {
     "image_length": np.dtype("uint32"),
     "flags": np.dtype("uint8"),
     "frame_id": np.dtype("uint8"),
@@ -172,11 +93,17 @@ FPGA_FIELD_DTYPES: dict[str, np.dtype] = {
     "vlow_2": np.dtype("uint8"),
     "exp_seq": np.dtype("uint8"),
     "footer_size": np.dtype("uint8"),
+}
+
+IMAGE_FOOTER_FIELD_DTYPES: dict[str, np.dtype] = {
     "pixel_sum": np.dtype("uint32"),
     "dark": np.dtype("uint32"),
     "white": np.dtype("uint32"),
     "footer_delta": np.dtype("uint32"),
     "crc": np.dtype("uint32"),
+}
+
+FPGA_STATUS_FIELD_DTYPES: dict[str, np.dtype] = {
     "sync_error": np.dtype("uint8"),
     "pid_error": np.dtype("uint8"),
     "size_error": np.dtype("uint8"),
@@ -186,20 +113,12 @@ FPGA_FIELD_DTYPES: dict[str, np.dtype] = {
     "drop_error": np.dtype("uint8"),
 }
 
-TRAILING_FOOTER_FIELD_DTYPES: dict[str, np.dtype] = {
-    "pixel_sum": np.dtype("uint32"),
-    "dark": np.dtype("uint32"),
-    "white": np.dtype("uint32"),
-    "delta": np.dtype("uint32"),
-    "crc": np.dtype("uint32"),
-    "spare": np.dtype("uint8"),
-    "drop_error": np.dtype("uint8"),
-    "crc_error": np.dtype("uint8"),
-    "eep_error": np.dtype("uint8"),
-    "eop_error": np.dtype("uint8"),
-    "size_error": np.dtype("uint8"),
-    "pid_error": np.dtype("uint8"),
-    "sync_error": np.dtype("uint8"),
+# Combined view of every field decoded from the 140-byte FPGA block (image header + image footer +
+# status) — the region of the WFOV header that isn't the FSW block.
+FPGA_BLOCK_FIELD_DTYPES: dict[str, np.dtype] = {
+    **IMAGE_HEADER_FIELD_DTYPES,
+    **IMAGE_FOOTER_FIELD_DTYPES,
+    **FPGA_STATUS_FIELD_DTYPES,
 }
 
 
@@ -217,13 +136,10 @@ class StitchedImage:
 class StitchStats:
     """Counters for WFOV image stitching quality metrics."""
 
-    n_missing_sop_or_eop: int = 0
-    n_bad_images: int = 0
-    n_complete_images: int = 0
-    n_crc_errors: int = 0
-    n_unexpected_eop: int = dataclass_field(default=0, repr=False)
-    n_images_discarded_sop: int = dataclass_field(default=0, repr=False)
-    n_images_discarded_gap: int = dataclass_field(default=0, repr=False)
+    n_packets_not_used_in_images: int = 0
+    n_error_flagged_images: int = 0
+    n_footer_mismatches: int = 0
+    n_header_parse_errors: int = 0
 
 
 def swap_32bit_words(data: bytes) -> bytearray:
@@ -234,16 +150,28 @@ def swap_32bit_words(data: bytes) -> bytearray:
     return result
 
 
-def extract_fsw_metadata_from_blob(blob_bytes: bytes) -> dict:
-    """Extract FSW metadata from the start of a WFOV image blob.
+def extract_wfov_header_metadata_from_blob(blob_bytes: bytes) -> dict:
+    """Decode the full WFOV image header (FSW block + FPGA block) as a single atomic unit.
 
-    Byte layout matches ``read_fsw_metadata`` in libera_cam ``metadata_parser.py``.
-    Requires at least ``FSW_HEADER_SIZE`` bytes for a complete header.
+    The FSW and FPGA sub-blocks are only ever meaningful together, so this checks the combined
+    ``WFOV_HEADER_SIZE`` length once rather than validating each sub-block independently: given a
+    stitched image blob, either there are enough bytes for the whole header or there aren't. The
+    fields decoded here span four output categories (``WFOV_FSW_HEADER_*``, ``WFOV_IMAGE_HEADER_*``,
+    ``WFOV_IMAGE_FOOTER_*``, ``WFOV_FPGA_STATUS_*``) purely for data-product naming; on the wire it's
+    one 176-byte object. Byte layout matches ``read_fsw_metadata`` and the FPGA block handling in
+    libera_cam ``metadata_parser.py`` / ``read_l1a_cam_data.py``.
     """
-    if len(blob_bytes) < FSW_HEADER_SIZE:
-        raise ValueError(f"Blob too small for full FSW header: {len(blob_bytes)} bytes (minimum {FSW_HEADER_SIZE})")
+    if len(blob_bytes) < WFOV_HEADER_SIZE:
+        raise ValueError(f"Blob too small for WFOV header: {len(blob_bytes)} bytes (minimum {WFOV_HEADER_SIZE})")
 
-    with BytesIO(blob_bytes[:FSW_HEADER_SIZE]) as file:
+    metadata = _decode_fsw_header_bytes(blob_bytes[:FSW_HEADER_SIZE])
+    metadata.update(_decode_fpga_block_bytes(blob_bytes[FSW_HEADER_SIZE:WFOV_HEADER_SIZE]))
+    return metadata
+
+
+def _decode_fsw_header_bytes(fsw_bytes: bytes) -> dict:
+    """Decode the 36-byte FSW header. Byte layout matches ``read_fsw_metadata`` in libera_cam ``metadata_parser.py``."""
+    with BytesIO(fsw_bytes) as file:
         metadata: dict = {}
         metadata["fsw_length"] = struct.unpack("B", file.read(1))[0]
 
@@ -271,19 +199,11 @@ def extract_fsw_metadata_from_blob(blob_bytes: bytes) -> dict:
     return metadata
 
 
-def extract_fpga_metadata_from_blob(blob_bytes: bytes) -> dict:
-    """Extract FPGA header, internal footer, and status metadata from a WFOV image blob.
+def _decode_fpga_block_bytes(fpga_bytes: bytes) -> dict:
+    """Decode the 140-byte FPGA block (image header + image footer + status flags).
 
-    Expects a full SOP slice from image start with at least ``SOP_FPGA_MIN_SIZE`` bytes
-    (FSW header plus FPGA block).
+    Byte layout matches the FPGA block handling in libera_cam ``read_l1a_cam_data.py``.
     """
-    if len(blob_bytes) < SOP_FPGA_MIN_SIZE:
-        raise ValueError(f"Blob too small for FPGA block: {len(blob_bytes)} bytes (minimum {SOP_FPGA_MIN_SIZE})")
-
-    fpga_bytes = blob_bytes[FSW_HEADER_SIZE:SOP_FPGA_MIN_SIZE]
-    if len(fpga_bytes) != FPGA_HEADER_SIZE:
-        raise ValueError(f"Expected {FPGA_HEADER_SIZE} FPGA bytes, got {len(fpga_bytes)}")
-
     data = swap_32bit_words(fpga_bytes)
     header = data[2:100][::2]
     footer = data[100:136][::2]
@@ -343,97 +263,26 @@ def extract_compressed_payload(raw_blob: bytes) -> bytes:
             f"(minimum {MIN_STITCHED_BLOB_SIZE})"
         )
 
-    fpga_header_end = FSW_HEADER_SIZE + FPGA_HEADER_SIZE
     footer_start = len(raw_blob) - FPGA_TRAILING_FOOTER_SIZE
-    if footer_start < fpga_header_end:
+    if footer_start < WFOV_HEADER_SIZE:
         raise ValueError("File structure invalid: overlapping headers and footers (negative payload size).")
 
-    return raw_blob[fpga_header_end:footer_start]
+    return raw_blob[WFOV_HEADER_SIZE:footer_start]
 
 
-def _decode_trailing_footer_bits(footer_bytes: bytes) -> dict:
-    """Decode the 8-byte trailing NAND footer from a stitched image blob.
-
-    Byte layout: ``pixel_sum`` (uint32 LE), ``dark`` (24-bit LE), status byte (8 flags).
-    ``white``, ``delta``, and ``crc`` are filled from the FPGA internal footer when available.
-    """
-    if len(footer_bytes) != FPGA_TRAILING_FOOTER_SIZE:
-        raise ValueError(f"Expected {FPGA_TRAILING_FOOTER_SIZE} trailing footer bytes, got {len(footer_bytes)}")
-
-    pixel_sum = int.from_bytes(footer_bytes[0:4], byteorder="little")
-    dark = footer_bytes[4] | (footer_bytes[5] << 8) | (footer_bytes[6] << 16)
-    status_byte = footer_bytes[7]
-    decoded: dict[str, int] = {
-        "pixel_sum": pixel_sum,
-        "dark": dark,
-        "white": 0,
-        "delta": 0,
-        "crc": 0,
-    }
-    for bit, field_name in enumerate(TRAILING_FOOTER_STATUS_FIELDS):
-        decoded[field_name] = (status_byte >> bit) & 0x01
-    return decoded
-
-
-def encode_trailing_footer_bytes(
-    *,
-    pixel_sum: int = 0,
-    dark: int = 0,
-    white: int = 0,
-    delta: int = 0,
-    crc: int = 0,
-    spare: int = 0,
-    drop_error: int = 0,
-    crc_error: int = 0,
-    eep_error: int = 0,
-    eop_error: int = 0,
-    size_error: int = 0,
-    pid_error: int = 0,
-    sync_error: int = 0,
-) -> bytes:
-    """Pack trailing footer fields into 8 bytes for unit tests."""
-    _ = (white, delta, crc)
-    status_values = {
-        "spare": spare,
-        "drop_error": drop_error,
-        "crc_error": crc_error,
-        "eep_error": eep_error,
-        "eop_error": eop_error,
-        "size_error": size_error,
-        "pid_error": pid_error,
-        "sync_error": sync_error,
-    }
-    status_byte = 0
-    for bit, field_name in enumerate(TRAILING_FOOTER_STATUS_FIELDS):
-        status_byte |= (status_values[field_name] & 0x01) << bit
-    footer = bytearray(FPGA_TRAILING_FOOTER_SIZE)
-    footer[0:4] = (pixel_sum & 0xFFFFFFFF).to_bytes(4, byteorder="little")
-    footer[4] = dark & 0xFF
-    footer[5] = (dark >> 8) & 0xFF
-    footer[6] = (dark >> 16) & 0xFF
-    footer[7] = status_byte
-    return bytes(footer)
-
-
-def extract_trailing_footer_from_blob(raw_blob: bytes) -> dict:
-    """Decode trailing footer metadata from the last 8 bytes of a stitched image blob."""
+def is_valid_footer_from_blob(raw_blob: bytes) -> dict:
+    """Decode trailing footer metadata from a stitched image blob. Compares against a known hex string and returns False if it doesn't match."""
     if len(raw_blob) < MIN_STITCHED_BLOB_SIZE:
-        raise ValueError(
+        logger.warning(
             f"Blob too small for trailing footer decode: {len(raw_blob)} bytes (minimum {MIN_STITCHED_BLOB_SIZE})"
         )
+        return False
 
-    decoded = _decode_trailing_footer_bits(raw_blob[-FPGA_TRAILING_FOOTER_SIZE:])
-    try:
-        fpga_meta = extract_fpga_metadata_from_blob(raw_blob)
-    except (ValueError, struct.error, IndexError):
-        fpga_meta = {}
+    footer_bytes = raw_blob[-FPGA_TRAILING_FOOTER_SIZE:]
+    if footer_bytes != VALID_FOOTER_BYTES:
+        return False
 
-    if fpga_meta:
-        decoded["white"] = fpga_meta.get("white", 0)
-        decoded["delta"] = fpga_meta.get("footer_delta", fpga_meta.get("delta", 0))
-        decoded["crc"] = fpga_meta.get("crc", 0)
-
-    return decoded
+    return True
 
 
 def _stitch_packet_range(
@@ -475,22 +324,21 @@ def stitch_wfov_images(
 
         if flag == b"SOP":
             if state == "COLLECTING":
-                stats.n_images_discarded_sop += 1
-                stats.n_missing_sop_or_eop += 1
+                # Prior SOP never reached an EOP; every packet it collected goes unused.
+                stats.n_packets_not_used_in_images += i - start_index
 
             state = "COLLECTING"
             start_index = i
             if offset != 0:
-                stats.n_images_discarded_sop += 1
-                stats.n_bad_images += 1
+                stats.n_packets_not_used_in_images += 1
                 state = "SEEKING"
                 continue
             expected_offset = length
 
         elif state == "COLLECTING":
             if offset != expected_offset:
-                stats.n_images_discarded_gap += 1
-                stats.n_bad_images += 1
+                # Offset gap: discard this packet plus everything collected since start_index.
+                stats.n_packets_not_used_in_images += i - start_index + 1
                 state = "SEEKING"
                 continue
 
@@ -507,20 +355,27 @@ def stitch_wfov_images(
                     )
                 )
                 try:
-                    fpga_meta = extract_fpga_metadata_from_blob(raw_blob)
+                    header_meta = extract_wfov_header_metadata_from_blob(raw_blob)
                 except (ValueError, struct.error, IndexError):
-                    fpga_meta = {}
-                if int(fpga_meta.get("crc_error", 0)) != 0:
-                    stats.n_crc_errors += 1
+                    header_meta = None
+
+                if header_meta is None:
+                    stats.n_header_parse_errors += 1
+                elif any(header_meta[field] for field in FPGA_STATUS_FIELD_DTYPES):
+                    stats.n_error_flagged_images += 1
+
+                if not is_valid_footer_from_blob(raw_blob):
+                    stats.n_footer_mismatches += 1
+
                 image_id += 1
-                stats.n_complete_images += 1
                 state = "SEEKING"
         elif flag == b"EOP":
-            stats.n_unexpected_eop += 1
-            stats.n_missing_sop_or_eop += 1
+            # Orphan EOP with no preceding SOP.
+            stats.n_packets_not_used_in_images += 1
 
     if state == "COLLECTING":
-        stats.n_missing_sop_or_eop += 1
+        # Stream ended mid-collection; the dangling SOP never got its EOP.
+        stats.n_packets_not_used_in_images += len(flags) - start_index
 
     return stitched_images, stats
 
@@ -533,51 +388,40 @@ def _fsw_timestamps_to_datetime64(timestamp_seconds: int, timestamp_subseconds: 
     return np.datetime64(pd.Timestamp(dt).to_datetime64(), "us")
 
 
-def _parse_sop_row(
-    blob_bytes: bytes,
-) -> tuple[np.datetime64, dict, dict, bool, bool]:
-    """Parse one SOP slice and return camera time, FSW dict, FPGA dict, and validity flags."""
-    length = len(blob_bytes)
-    fsw_meta: dict = {}
-    fpga_meta: dict = {}
-    fsw_valid = False
-    fpga_valid = False
+def _parse_sop_row(blob_bytes: bytes) -> tuple[np.datetime64, dict, bool]:
+    """Parse one SOP slice and return camera time, the decoded header dict, and its validity."""
+    header_meta: dict = {}
+    header_valid = False
     camera_time = np.datetime64("NaT", "us")
 
-    if length >= FSW_HEADER_SIZE:
-        try:
-            fsw_meta = extract_fsw_metadata_from_blob(blob_bytes)
-            fsw_valid = True
-            camera_time = _fsw_timestamps_to_datetime64(
-                fsw_meta["timestamp_seconds"],
-                fsw_meta["timestamp_subseconds"],
-            )
-        except (ValueError, struct.error):
-            pass
+    try:
+        header_meta = extract_wfov_header_metadata_from_blob(blob_bytes)
+        header_valid = True
+        camera_time = _fsw_timestamps_to_datetime64(
+            header_meta["timestamp_seconds"],
+            header_meta["timestamp_subseconds"],
+        )
+    except (ValueError, struct.error, IndexError):
+        pass
 
-    if length >= SOP_FPGA_MIN_SIZE:
-        try:
-            fpga_meta = extract_fpga_metadata_from_blob(blob_bytes)
-            fpga_valid = True
-        except (ValueError, struct.error, IndexError):
-            pass
-
-    return camera_time, fsw_meta, fpga_meta, fsw_valid, fpga_valid
+    return camera_time, header_meta, header_valid
 
 
-def _fsw_fill_value(field: str):
-    dtype = FSW_FIELD_DTYPES[field]
+def _field_fill_value(dtype: np.dtype):
+    """Default value for a metadata field on rows where header parsing failed."""
     if dtype.kind == "f":
         return dtype.type(np.nan)
     return dtype.type(0)
 
 
-def _fpga_fill_value(field: str):
-    return FPGA_FIELD_DTYPES[field].type(0)
-
-
-def _trailing_fill_value(field: str):
-    return TRAILING_FOOTER_FIELD_DTYPES[field].type(0)
+# (output name prefix, field dtype dict) for each of the four data-product metadata categories
+# decoded from the single WFOV header blob (see extract_wfov_header_metadata_from_blob).
+_HEADER_METADATA_CATEGORIES = (
+    ("WFOV_FSW_HEADER_", FSW_HEADER_FIELD_DTYPES),
+    ("WFOV_IMAGE_HEADER_", IMAGE_HEADER_FIELD_DTYPES),
+    ("WFOV_IMAGE_FOOTER_", IMAGE_FOOTER_FIELD_DTYPES),
+    ("WFOV_FPGA_STATUS_", FPGA_STATUS_FIELD_DTYPES),
+)
 
 
 def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
@@ -595,56 +439,35 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
 
     camera_times = np.full(n_images, np.datetime64("NaT", "us"), dtype=DATETIME_USEC_DTYPE)
     packet_indices = np.zeros(n_images, dtype=np.int32)
-    fsw_parse_valid = np.zeros(n_images, dtype=bool)
-    fpga_parse_valid = np.zeros(n_images, dtype=bool)
+    header_parse_valid = np.zeros(n_images, dtype=bool)
 
-    fsw_arrays = {field: np.zeros(n_images, dtype=FSW_FIELD_DTYPES[field]) for field in FSW_FIELDS}
-    fpga_arrays = {
-        field: np.zeros(n_images, dtype=FPGA_FIELD_DTYPES[field])
-        for field in (*FPGA_HEADER_FIELDS, *FPGA_FOOTER_FIELDS, *FPGA_STATUS_FIELDS)
-    }
-    trailing_arrays = {
-        field: np.zeros(n_images, dtype=TRAILING_FOOTER_FIELD_DTYPES[field])
-        for field in (*TRAILING_FOOTER_VALUE_FIELDS, *TRAILING_FOOTER_STATUS_FIELDS)
-    }
+    category_arrays = [
+        {field: np.zeros(n_images, dtype=dtype) for field, dtype in field_dtypes.items()}
+        for _, field_dtypes in _HEADER_METADATA_CATEGORIES
+    ]
 
     for row, image in enumerate(stitched_images):
         raw_blob = image.raw_blob
-        camera_time, fsw_meta, fpga_meta, fsw_valid, fpga_valid = _parse_sop_row(raw_blob)
-        trailing_meta: dict = {}
-        try:
-            trailing_meta = extract_trailing_footer_from_blob(raw_blob)
-        except ValueError:
-            pass
+        camera_time, header_meta, header_valid = _parse_sop_row(raw_blob)
 
         camera_times[row] = camera_time
         packet_indices[row] = image.sop_index
-        fsw_parse_valid[row] = fsw_valid
-        fpga_parse_valid[row] = fpga_valid
+        header_parse_valid[row] = header_valid
 
-        for field in FSW_FIELDS:
-            fsw_arrays[field][row] = fsw_meta.get(field, _fsw_fill_value(field))
-
-        for field in (*FPGA_HEADER_FIELDS, *FPGA_FOOTER_FIELDS, *FPGA_STATUS_FIELDS):
-            fpga_arrays[field][row] = fpga_meta.get(field, _fpga_fill_value(field))
-
-        for field in (*TRAILING_FOOTER_VALUE_FIELDS, *TRAILING_FOOTER_STATUS_FIELDS):
-            trailing_arrays[field][row] = trailing_meta.get(field, _trailing_fill_value(field))
+        for arrays, (_, field_dtypes) in zip(category_arrays, _HEADER_METADATA_CATEGORIES):
+            for field, dtype in field_dtypes.items():
+                arrays[field][row] = header_meta.get(field, _field_fill_value(dtype))
 
     data_vars: dict[str, tuple[tuple[str, ...], np.ndarray]] = {
         CAMERA_PACKET_INDEX_VAR: ((CAMERA_TIME_COORD,), packet_indices),
-        WFOV_FSW_PARSE_VALID_VAR: ((CAMERA_TIME_COORD,), fsw_parse_valid),
-        WFOV_FPGA_PARSE_VALID_VAR: ((CAMERA_TIME_COORD,), fpga_parse_valid),
+        WFOV_HEADER_PARSE_VALID_VAR: ((CAMERA_TIME_COORD,), header_parse_valid),
         WFOV_COMPRESSED_IMAGE_VAR: ((CAMERA_TIME_COORD, BLOB_BYTE_COORD), blob_array),
         WFOV_COMPRESSED_IMAGE_LENGTH_VAR: ((CAMERA_TIME_COORD,), payload_lengths),
     }
 
-    for field in FSW_FIELDS:
-        data_vars[f"WFOV_FSW_{field.upper()}"] = ((CAMERA_TIME_COORD,), fsw_arrays[field])
-    for field in (*FPGA_HEADER_FIELDS, *FPGA_FOOTER_FIELDS, *FPGA_STATUS_FIELDS):
-        data_vars[f"WFOV_FPGA_{field.upper()}"] = ((CAMERA_TIME_COORD,), fpga_arrays[field])
-    for field in (*TRAILING_FOOTER_VALUE_FIELDS, *TRAILING_FOOTER_STATUS_FIELDS):
-        data_vars[f"WFOV_TRAILING_FOOTER_{field.upper()}"] = ((CAMERA_TIME_COORD,), trailing_arrays[field])
+    for arrays, (prefix, field_dtypes) in zip(category_arrays, _HEADER_METADATA_CATEGORIES):
+        for field in field_dtypes:
+            data_vars[f"{prefix}{field.upper()}"] = ((CAMERA_TIME_COORD,), arrays[field])
 
     coords = {
         CAMERA_TIME_COORD: (CAMERA_TIME_COORD, camera_times),
@@ -653,8 +476,15 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
     return xr.Dataset(data_vars, coords=coords)
 
 
-def _apply_packet_deduplication(packet_ds: xr.Dataset, stitched_images: list[StitchedImage]) -> xr.Dataset:
-    """Zero packet payloads for complete images and assign ``PACKET_IMAGE_ID``."""
+def _zero_stitched_packet_payloads(packet_ds: xr.Dataset, stitched_images: list[StitchedImage]) -> xr.Dataset:
+    """Zero out per-packet payloads once folded into a stitched image, and tag ``PACKET_IMAGE_ID``.
+
+    This is unrelated to packet-row deduplication (handled earlier by ``packets._drop_duplicates``
+    on packet timestamps). Here, no packets are dropped; instead the raw ``ICIE__WFOV_DATA`` slices
+    for packets contributing to a *complete* stitched image are zeroed, since that image content is
+    now stored once on ``CAMERA_TIME`` as ``WFOV_COMPRESSED_IMAGE`` and would otherwise be duplicated
+    in the file. ``PACKET_IMAGE_ID`` traces each packet back to its image (``-1`` if not part of one).
+    """
     n_packets = packet_ds.sizes["PACKET"]
     packet_image_id = np.full(n_packets, -1, dtype=np.int32)
 
@@ -675,7 +505,7 @@ def _apply_packet_deduplication(packet_ds: xr.Dataset, stitched_images: list[Sti
 
 
 def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
-    """Stitch complete WFOV images, deduplicate packet data, and attach CAMERA_TIME metadata."""
+    """Stitch complete WFOV images, zero out redundant packet payloads, and attach CAMERA_TIME metadata."""
     required_vars = [MEM_DUMP_FLAGS_VAR, MEM_DUMP_OFFSET_VAR, MEM_DUMP_LENGTH_VAR, WFOV_DATA_VAR]
     missing = [name for name in required_vars if name not in packet_ds]
     if missing:
@@ -687,18 +517,18 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     packet_data = packet_ds[WFOV_DATA_VAR].values
 
     stitched_images, stats = stitch_wfov_images(flags, offsets, lengths, packet_data)
-    packet_ds = _apply_packet_deduplication(packet_ds, stitched_images)
+    packet_ds = _zero_stitched_packet_payloads(packet_ds, stitched_images)
     camera_ds = _build_camera_dataset(stitched_images)
 
     packet_ds = packet_ds.merge(camera_ds)
-    packet_ds.attrs[MISSING_SOP_OR_EOP_COUNT_ATTR] = stats.n_missing_sop_or_eop
-    packet_ds.attrs[BAD_IMAGE_COUNT_ATTR] = stats.n_bad_images
-    packet_ds.attrs[COMPLETE_IMAGE_COUNT_ATTR] = stats.n_complete_images
-    packet_ds.attrs[CRC_ERROR_COUNT_ATTR] = stats.n_crc_errors
-    if stats.n_crc_errors:
+    packet_ds.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] = stats.n_packets_not_used_in_images
+    packet_ds.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] = stats.n_error_flagged_images
+    packet_ds.attrs[FOOTER_MISMATCH_COUNT_ATTR] = stats.n_footer_mismatches
+    packet_ds.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] = stats.n_header_parse_errors
+    if stats.n_error_flagged_images:
         logger.warning(
-            "WFOV images with FPGA CRC errors: %d of %d",
-            stats.n_crc_errors,
-            stats.n_complete_images,
+            "WFOV images with FPGA status errors flagged: %d of %d",
+            stats.n_error_flagged_images,
+            len(stitched_images),
         )
     return packet_ds

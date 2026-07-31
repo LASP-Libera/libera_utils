@@ -10,27 +10,32 @@ import xarray as xr
 from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
-    COMPLETE_IMAGE_COUNT_ATTR,
-    CRC_ERROR_COUNT_ATTR,
+    ERROR_FLAGGED_IMAGE_COUNT_ATTR,
+    FOOTER_MISMATCH_COUNT_ATTR,
     FPGA_HEADER_SIZE,
     FPGA_TRAILING_FOOTER_SIZE,
     FSW_HEADER_SIZE,
+    HEADER_PARSE_ERROR_COUNT_ATTR,
+    PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR,
     PACKET_IMAGE_ID_VAR,
-    SOP_FPGA_MIN_SIZE,
-    TIMESTAMP_SECONDS_OFFSET,
-    TIMESTAMP_SUBSECONDS_OFFSET,
+    VALID_FOOTER_BYTES,
     WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
     WFOV_COMPRESSED_IMAGE_VAR,
-    encode_trailing_footer_bytes,
+    WFOV_HEADER_PARSE_VALID_VAR,
+    WFOV_HEADER_SIZE,
     enhance_wfov_l1a_dataset,
     extract_compressed_payload,
-    extract_fpga_metadata_from_blob,
-    extract_fsw_metadata_from_blob,
-    extract_trailing_footer_from_blob,
+    extract_wfov_header_metadata_from_blob,
+    is_valid_footer_from_blob,
     stitch_wfov_images,
     swap_32bit_words,
 )
 from libera_utils.time import multipart_to_dt64
+
+# Byte offsets of the timestamp fields within the 36-byte FSW header; not exported by the module
+# since production code reads the header sequentially, but fixed here to keep test blobs aligned.
+_TIMESTAMP_SECONDS_OFFSET = 12
+_TIMESTAMP_SUBSECONDS_OFFSET = 16
 
 
 def _build_fsw_blob(
@@ -47,8 +52,8 @@ def _build_fsw_blob(
     blob[6] = 1
     blob[7] = 2
     struct.pack_into(">I", blob, 8, 0x12345678)
-    struct.pack_into(">I", blob, TIMESTAMP_SECONDS_OFFSET, timestamp_seconds)
-    struct.pack_into(">I", blob, TIMESTAMP_SUBSECONDS_OFFSET, timestamp_subseconds)
+    struct.pack_into(">I", blob, _TIMESTAMP_SECONDS_OFFSET, timestamp_seconds)
+    struct.pack_into(">I", blob, _TIMESTAMP_SUBSECONDS_OFFSET, timestamp_subseconds)
     struct.pack_into(">H", blob, 20, 0xABCD)
     struct.pack_into(">H", blob, 22, 0x00EF)
     struct.pack_into(">I", blob, 24, 1000)
@@ -153,16 +158,12 @@ def _build_complete_image_blob(
     *,
     timestamp_seconds: int = 100,
     timestamp_subseconds: int = 1,
-    trailing_footer: bytes | None = None,
+    footer_bytes: bytes | None = None,
+    status_meta: dict | None = None,
 ) -> bytes:
-    trailing_footer = trailing_footer or encode_trailing_footer_bytes(
-        pixel_sum=111,
-        dark=222,
-        white=333,
-        sync_error=1,
-        crc_error=1,
-    )
-    return _build_fsw_blob(timestamp_seconds, timestamp_subseconds) + _encode_fpga_block() + payload + trailing_footer
+    footer_bytes = VALID_FOOTER_BYTES if footer_bytes is None else footer_bytes
+    fpga_block = _encode_fpga_block(status_meta=status_meta)
+    return _build_fsw_blob(timestamp_seconds, timestamp_subseconds) + fpga_block + payload + footer_bytes
 
 
 def _pad_packet(blob: bytes, packet_len: int | None = None) -> bytes:
@@ -172,7 +173,7 @@ def _pad_packet(blob: bytes, packet_len: int | None = None) -> bytes:
 
 def _split_full_blob_for_packets(full_blob: bytes, payload_split: int) -> tuple[bytes, bytes, bytes]:
     """Split a stitched blob into SOP, MOP, and EOP packet payloads."""
-    payload_start = SOP_FPGA_MIN_SIZE
+    payload_start = WFOV_HEADER_SIZE
     payload_end = len(full_blob) - FPGA_TRAILING_FOOTER_SIZE
     sop_blob = full_blob[: payload_start + payload_split]
     mop_blob = full_blob[payload_start + payload_split : payload_end]
@@ -194,10 +195,19 @@ class TestSwap32BitWords:
         assert bytes(swap_32bit_words(data)) == b"\x04\x03\x02\x01\xdd\xcc\xbb\xaa"
 
 
-class TestExtractFswMetadataFromBlob:
-    def test_decodes_full_header(self):
-        blob = _build_fsw_blob(2212630896, 49631, 1.25)
-        meta = extract_fsw_metadata_from_blob(blob)
+class TestExtractWfovHeaderMetadataFromBlob:
+    def test_decodes_full_header_as_one_unit(self):
+        fpga_block = _encode_fpga_block(
+            header_meta={"image_length": 12345, "width": 2048, "height": 2048},
+            footer_meta={"pixel_sum": 999, "crc": 0xDEADBEEF},
+            status_meta={"sync_error": 1, "crc_error": 1},
+        )
+        blob = _build_fsw_blob(2212630896, 49631, 1.25) + fpga_block
+        assert len(blob) == WFOV_HEADER_SIZE
+
+        meta = extract_wfov_header_metadata_from_blob(blob)
+
+        # FSW fields
         assert meta["fsw_length"] == FSW_HEADER_SIZE
         assert meta["bitmask_id"] == 1
         assert meta["img_mode"] == 1
@@ -210,22 +220,7 @@ class TestExtractFswMetadataFromBlob:
         assert meta["commanded_exp_time_2"] == 2000
         assert meta["azimuth_angle"] == pytest.approx(1.25)
 
-    def test_rejects_short_blob(self):
-        with pytest.raises(ValueError, match="Blob too small for full FSW header"):
-            extract_fsw_metadata_from_blob(b"\x00" * (FSW_HEADER_SIZE - 1))
-
-
-class TestExtractFpgaMetadataFromBlob:
-    def test_decodes_fpga_block_from_full_sop_slice(self):
-        fpga_block = _encode_fpga_block(
-            header_meta={"image_length": 12345, "width": 2048, "height": 2048},
-            footer_meta={"pixel_sum": 999, "crc": 0xDEADBEEF},
-            status_meta={"sync_error": 1, "crc_error": 1},
-        )
-        blob = _build_fsw_blob() + fpga_block
-        assert len(blob) == SOP_FPGA_MIN_SIZE
-
-        meta = extract_fpga_metadata_from_blob(blob)
+        # Image header / footer / FPGA status fields, all decoded together
         assert meta["image_length"] == 12345
         assert meta["width"] == 2048
         assert meta["height"] == 2048
@@ -234,9 +229,14 @@ class TestExtractFpgaMetadataFromBlob:
         assert meta["sync_error"] == 1
         assert meta["crc_error"] == 1
 
-    def test_rejects_short_blob(self):
-        with pytest.raises(ValueError, match="Blob too small for FPGA block"):
-            extract_fpga_metadata_from_blob(_build_fsw_blob())
+    def test_rejects_blob_too_short_for_whole_header(self):
+        # One byte short of the combined FSW+FPGA header; no partial FSW-only decode is attempted.
+        with pytest.raises(ValueError, match="Blob too small for WFOV header"):
+            extract_wfov_header_metadata_from_blob(b"\x00" * (WFOV_HEADER_SIZE - 1))
+
+    def test_rejects_blob_with_only_fsw_bytes(self):
+        with pytest.raises(ValueError, match="Blob too small for WFOV header"):
+            extract_wfov_header_metadata_from_blob(_build_fsw_blob())
 
 
 class TestExtractCompressedPayload:
@@ -251,25 +251,17 @@ class TestExtractCompressedPayload:
         assert extract_compressed_payload(raw_blob) == payload
 
 
-class TestTrailingFooterDecode:
-    def test_round_trip(self):
-        footer = encode_trailing_footer_bytes(
-            pixel_sum=0x12345678,
-            dark=0xABCDEF,
-            white=0x112233,
-            sync_error=1,
-            pid_error=0,
-            spare=1,
-        )
-        raw_blob = _build_complete_image_blob(b"\x01\x02", trailing_footer=footer)
-        decoded = extract_trailing_footer_from_blob(raw_blob)
-        assert decoded["pixel_sum"] == 0x12345678
-        assert decoded["dark"] == 0xABCDEF
-        assert decoded["sync_error"] == 1
-        assert decoded["spare"] == 1
-        assert decoded["delta"] == 333
-        assert decoded["crc"] == 0xDEADBEEF
-        assert decoded["white"] == 222
+class TestIsValidFooterFromBlob:
+    def test_valid_footer_bytes_return_true(self):
+        raw_blob = _build_complete_image_blob(b"\x01\x02", footer_bytes=VALID_FOOTER_BYTES)
+        assert is_valid_footer_from_blob(raw_blob) is True
+
+    def test_mismatched_footer_bytes_return_false(self):
+        raw_blob = _build_complete_image_blob(b"\x01\x02", footer_bytes=b"\x00" * FPGA_TRAILING_FOOTER_SIZE)
+        assert is_valid_footer_from_blob(raw_blob) is False
+
+    def test_too_short_blob_returns_false(self):
+        assert is_valid_footer_from_blob(b"\x00" * 10) is False
 
 
 class TestStitchWfovImages:
@@ -290,45 +282,46 @@ class TestStitchWfovImages:
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
             ds["ICIE__WFOV_DATA"].values,
         )
-        assert stats.n_complete_images == 1
         assert len(stitched) == 1
+        assert stats.n_packets_not_used_in_images == 0
         assert extract_compressed_payload(stitched[0].raw_blob) == payload
 
-    def test_orphan_eop_increments_missing_sop_or_eop(self):
+    def test_orphan_eop_counts_as_unused_packet(self):
         ds = _make_wfov_packet_dataset([("EOP", 0, 10, _pad_packet(b"\x00" * 10))])
-        _, stats = stitch_wfov_images(
+        stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
             ds["ICIE__WFOV_DATA"].values,
         )
-        assert stats.n_missing_sop_or_eop == 1
-        assert stats.n_bad_images == 0
+        assert len(stitched) == 0
+        assert stats.n_packets_not_used_in_images == 1
 
-    def test_sop_without_eop_increments_missing_sop_or_eop(self):
+    def test_dangling_sop_counts_as_unused_packet(self):
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), _pad_packet(blob))])
-        _, stats = stitch_wfov_images(
+        stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
             ds["ICIE__WFOV_DATA"].values,
         )
-        assert stats.n_missing_sop_or_eop == 1
+        assert len(stitched) == 0
+        assert stats.n_packets_not_used_in_images == 1
 
-    def test_non_zero_sop_offset_counts_bad_image(self):
+    def test_non_zero_sop_offset_counts_unused_packet(self):
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset([("SOP", 512, len(blob), _pad_packet(blob))])
-        _, stats = stitch_wfov_images(
+        stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
             ds["ICIE__WFOV_DATA"].values,
         )
-        assert stats.n_bad_images == 1
-        assert stats.n_complete_images == 0
+        assert len(stitched) == 0
+        assert stats.n_packets_not_used_in_images == 1
 
-    def test_offset_gap_counts_bad_image(self):
+    def test_offset_gap_discards_all_collected_packets(self):
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset(
             [
@@ -337,16 +330,17 @@ class TestStitchWfovImages:
                 ("EOP", len(blob) + 100, len(blob), _pad_packet(blob)),
             ]
         )
-        _, stats = stitch_wfov_images(
+        stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
             ds["ICIE__WFOV_DATA"].values,
         )
-        assert stats.n_bad_images == 1
-        assert stats.n_complete_images == 0
+        assert len(stitched) == 0
+        # SOP + MOP + the mismatched EOP itself are all discarded together.
+        assert stats.n_packets_not_used_in_images == 3
 
-    def test_new_sop_aborts_prior_collection(self):
+    def test_new_sop_aborts_prior_collection_and_counts_unused_packets(self):
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset(
             [
@@ -355,13 +349,31 @@ class TestStitchWfovImages:
                 ("SOP", 0, len(blob), _pad_packet(blob)),
             ]
         )
-        _, stats = stitch_wfov_images(
+        stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
             ds["ICIE__WFOV_DATA"].values,
         )
-        assert stats.n_missing_sop_or_eop == 2
+        assert len(stitched) == 0
+        # First SOP+MOP (2 packets) abandoned when the second SOP arrives, then the second SOP
+        # itself is left dangling with no EOP (1 packet) once the stream ends.
+        assert stats.n_packets_not_used_in_images == 3
+
+    def test_error_flagged_and_footer_mismatch_stats(self):
+        payload = b"\xca\xfe"
+        blob = _build_complete_image_blob(payload, status_meta={"crc_error": 1}, footer_bytes=b"\x00" * 8)
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        stitched, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            ds["ICIE__WFOV_DATA"].values,
+        )
+        assert len(stitched) == 1
+        assert stats.n_error_flagged_images == 1
+        assert stats.n_footer_mismatches == 1
+        assert stats.n_header_parse_errors == 0
 
 
 class TestEnhanceWfovL1aDataset:
@@ -379,24 +391,24 @@ class TestEnhanceWfovL1aDataset:
         assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0]
         assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) != original_bytes
         assert np.all(enhanced["ICIE__WFOV_DATA"].values[0].view(np.uint8) == 0)
-        assert enhanced.attrs[COMPLETE_IMAGE_COUNT_ATTR] == 1
-        assert enhanced.attrs[CRC_ERROR_COUNT_ATTR] == 0
+        assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 0
+        assert enhanced.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] == 0
+        assert enhanced.attrs[FOOTER_MISMATCH_COUNT_ATTR] == 0
+        assert enhanced.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 0
 
-    def test_crc_error_count_and_warning(self, caplog):
+    def test_error_flagged_image_count_and_warning(self, caplog):
         import logging
 
         payload = b"\xca\xfe"
-        fpga_block = _encode_fpga_block(status_meta={"crc_error": 1})
-        trailing_footer = encode_trailing_footer_bytes()
-        blob = _build_fsw_blob() + fpga_block + payload + trailing_footer
+        blob = _build_complete_image_blob(payload, status_meta={"crc_error": 1})
         ds = _make_wfov_packet_dataset(_complete_rows(blob))
 
         with caplog.at_level(logging.WARNING):
             enhanced = enhance_wfov_l1a_dataset(ds)
 
-        assert enhanced.attrs[CRC_ERROR_COUNT_ATTR] == 1
-        assert enhanced["WFOV_FPGA_CRC_ERROR"].values[0] == 1
-        assert "FPGA CRC errors" in caplog.text
+        assert enhanced.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] == 1
+        assert enhanced["WFOV_FPGA_STATUS_CRC_ERROR"].values[0] == 1
+        assert "FPGA status errors flagged" in caplog.text
 
     def test_incomplete_sequence_preserves_packet_data(self):
         blob = _build_complete_image_blob(b"\x01")
@@ -414,8 +426,7 @@ class TestEnhanceWfovL1aDataset:
         enhanced = enhance_wfov_l1a_dataset(ds)
 
         np.testing.assert_equal(enhanced[CAMERA_TIME_COORD].values[0], _expected_datetime64(100, 1))
-        assert enhanced["WFOV_FSW_PARSE_VALID"].values[0]
-        assert enhanced["WFOV_FPGA_PARSE_VALID"].values[0]
+        assert enhanced[WFOV_HEADER_PARSE_VALID_VAR].values[0]
 
     def test_multi_packet_complete_image(self):
         payload = b"\x11\x22\x33\x44"
