@@ -3,11 +3,10 @@
 ## 5.10.3
 
 - FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_COMPRESSED_IMAGE` (`uint8`/`BLOB_BYTE` + `WFOV_COMPRESSED_IMAGE_LENGTH`), and traces packets back to their image with `PACKET_IMAGE_ID`.
-- FEAT: Decode trailing 8-byte NAND footer metadata into `WFOV_TRAILING_FOOTER_*` variables; add file-level quality attrs `n_missing_sop_or_eop`, `n_bad_images`, and `n_complete_images`.
-- FEAT: Add `WFOV_CRC_VALID` placeholder (`-1` = not validated) and `validate_wfov_image_crc` stub pending LIBSDC-747.
-- FEAT: Add `FirstImageIncomplete` / `LastImageIncomplete` boolean attrs flagging expected truncation at a packet window's own leading/trailing edge (the first packet in a window is rarely a qualifying SOP, the last rarely an EOP); `PacketCountNotUsedInImages` now excludes that expected edge truncation and reflects only genuine mid-stream anomalies. Also fixes a bug where stray mid-stream packets seen while re-seeking after a discarded collection were silently dropped without being counted at all.
+- FEAT: Decode the 176-byte WFOV header (FSW + FPGA) onto `CAMERA_TIME` as `WFOV_FSW_HEADER_*`, `WFOV_IMAGE_HEADER_*`, `WFOV_IMAGE_FOOTER_*`, and `WFOV_FPGA_STATUS_*`; trailing 8-byte NAND footer is validated against a known magic pattern (`FooterMismatchCount`).
+- FEAT: Add file-level quality attrs `PacketCountNotUsedInImages`, `ErrorFlaggedImageCount`, `FooterMismatchCount`, `HeaderParseErrorCount`, plus `FirstImageIncomplete` / `LastImageIncomplete` flagging expected truncation at a packet window's leading/trailing edge (`PacketCountNotUsedInImages` counts only genuine mid-stream anomalies).
 - BREAKING: `CAMERA_TIME` now contains one row per **complete** stitched image only (not every qualifying SOP). Removed redundant `WFOV_IMAGE_COMPLETE`.
-- BREAKING: `ICIE__WFOV_DATA` is dropped from the WFOV L1A product entirely (not just zeroed for packets folded into a complete image) — every packet's raw payload is by then either duplicated in `WFOV_COMPRESSED_IMAGE` or permanently unusable. `PACKET_IMAGE_ID` is the only remaining per-packet trace-back. This also removes a redundant full-array copy that previously held two full-size copies of the raw packet data in memory at once during stitching.
+- BREAKING: `ICIE__WFOV_DATA` is dropped from the WFOV L1A product entirely — every packet's raw payload is by then either duplicated in `WFOV_COMPRESSED_IMAGE` or permanently unusable. `PACKET_IMAGE_ID` is the only remaining per-packet trace-back.
 
 ## 5.10.2
 

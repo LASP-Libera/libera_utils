@@ -115,6 +115,13 @@ def parse_packets_to_l1a_dataset(
         - Main packet data array with packet timestamp dimension
         - Separate arrays for each sample group with optional multi-field expansion
         - All time coordinates properly set as dimensions
+
+    Notes
+    -----
+    For APID 1040 (ICIE WFOV SCI), the packet dataset is post-processed by
+    ``enhance_wfov_l1a_dataset``: complete SOP→EOP images are stitched onto a ``CAMERA_TIME``
+    dimension, compressed payloads and decoded header metadata are attached, ``ICIE__WFOV_DATA``
+    is dropped, and ``PACKET_IMAGE_ID`` traces packets back to stitched images.
     """
     _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
     packet_config = get_packet_config(LiberaApid(apid))

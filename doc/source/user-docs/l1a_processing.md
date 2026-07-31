@@ -346,7 +346,7 @@ This varies by packet but there is some consistent behavior:
 
 #### Packet Data Structure - Slicing and Reconstructing
 
-A single WFOV image is too large for one CCSDS packet, so the camera splits it into a sequence
+A single wide field of view (WFOV) image is too large for one CCSDS packet, so the camera splits it into a sequence
 of packets, each carrying one slice of the image plus fields describing where that slice belongs:
 
 | Field                        | Description                                                                                                                                                      |
