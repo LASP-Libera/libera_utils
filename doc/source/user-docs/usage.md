@@ -23,7 +23,8 @@ subcommands:
 
   {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils}
     make-kernel         generate SPICE kernels from a manifest file
-    ecr-upload          Upload docker image to ECR repository for a specific algorithm
+    ecr-upload          Upload a docker image to the ECR repository for a specific algorithm and register its
+                        version(s)
     step-function-trigger
                         Manually trigger a single processing step for one applicable date
     manual-processing   Manually run a custom processing DAG (or the default DAG) for one or more applicable dates
@@ -86,7 +87,8 @@ options:
   --verify              After registering, block until each Batch job definition is confirmed created and its ECR
                         image is confirmed present. Requires only read permissions.
   --timeout TIMEOUT     Seconds to wait for registration verification when --verify is set. Default is 300 (5 minutes).
-  --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
+  --profile PROFILE     AWS profile name to use for the AWS session (ECR, EventBridge, Batch). If not set, the
+                        default profile is used. The AWS region is taken from this profile's configuration.
 ```
 
 Current L2 processing step identifiers include:
@@ -153,7 +155,8 @@ options:
   --verify              After emitting the event, block until the Batch job definition is confirmed registered.
                         Requires only read permissions.
   --timeout TIMEOUT     Seconds to wait for registration verification when --verify is set. Default is 300 (5 minutes).
-  --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
+  --profile PROFILE     AWS profile name to use for the AWS session (ECR, EventBridge, Batch). If not set, the
+                        default profile is used. The AWS region is taken from this profile's configuration.
 ```
 
 Example usage:

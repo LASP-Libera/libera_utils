@@ -199,3 +199,18 @@ class TestResolveAlgorithmSpecificSession:
         mock_session.assert_called_once_with(profile_name="test-profile")
         mock_get_session.assert_not_called()
         assert result is mock_session.return_value
+
+
+class TestSessionRegion:
+    """Tests for _session_region deriving the region from the session's AWS configuration."""
+
+    def test_returns_configured_region(self):
+        """The session's configured region is returned."""
+        session = boto3.Session(region_name="eu-central-1")
+        assert utils._session_region(session) == "eu-central-1"
+
+    def test_raises_when_no_region_configured(self):
+        """A session with no region resolved raises a clear ValueError instead of guessing one."""
+        session = boto3.Session(region_name=None)
+        with pytest.raises(ValueError, match="No AWS region is configured"):
+            utils._session_region(session)

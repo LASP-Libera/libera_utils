@@ -5,6 +5,7 @@
 - FEAT: `ecr-upload` now registers the algorithm version(s) it uploads. After pushing, it emits a `NewAlgorithmImage` event (one per non-`latest` ECR tag) to the SDC event bus so the Registrar creates the corresponding versioned AWS Batch job definition. Adds `--verify` (blocks until both the ECR image and the Batch job definition are confirmed present, up to `--timeout` seconds).
 - FEAT: Add the `register-algorithm-image` CLI for emitting a `NewAlgorithmImage` event for an image already in ECR (`--image-digest`/`--verify`/`--timeout`). The new `aws/algorithm_registration.py` module provides `put_new_algorithm_image_event` and `verify_algorithm_registration` (checks the ECR image exists and an ACTIVE Batch job definition references it).
 - FEAT: Quieter `ecr-upload` push logging — per-layer progress ticks are suppressed, a per-tag summary and the resulting image digest are logged at INFO, and `-v`/`--verbose` enables full DEBUG push detail. `push_image_to_ecr` now returns a `{tag: digest}` mapping.
+- MAINT: AWS region for the ECR/EventBridge/Batch operations is now taken from the session's AWS configuration (profile / `AWS_REGION`) instead of a hard-coded `us-west-2`; a clear error is raised if no region is configured, and `--verify` warns when the image URI's region differs from the session region.
 - DOCS: Document `register-algorithm-image` and the new `ecr-upload` flags in the usage docs.
 
 ## 5.10.0

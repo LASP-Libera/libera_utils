@@ -13,7 +13,7 @@ import docker
 from docker import errors as docker_errors
 
 from libera_utils.aws.algorithm_registration import put_new_algorithm_image_event
-from libera_utils.aws.utils import L2_DEVELOPER_ROLE_PATH, _resolve_algorithm_specific_session
+from libera_utils.aws.utils import L2_DEVELOPER_ROLE_PATH, _resolve_algorithm_specific_session, _session_region
 from libera_utils.constants import ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
 
@@ -359,7 +359,7 @@ def push_image_to_ecr(
     processing_step_id: str | ProcessingStepIdentifier,
     *,
     ecr_image_tags: list[str] = None,
-    region_name: str = "us-west-2",
+    region_name: str | None = None,
     ignore_docker_config: bool = False,
     max_retries: int = 1,
     boto_session: boto3.Session | None = None,
@@ -382,8 +382,9 @@ def push_image_to_ecr(
     ecr_image_tags : Optional[List[str]], default None
         Tags to apply to the pushed image in ECR (e.g., ["1.3.4", "latest"]).
         If None, defaults to ["latest"].
-    region_name : str, default "us-west-2"
-        AWS region containing the target ECR registry
+    region_name : str, optional
+        AWS region containing the target ECR registry. If None (the default), the region is taken from the
+        session's AWS configuration (profile / AWS_REGION), so it is not hard-coded.
     ignore_docker_config : bool, default False
         If True, creates a temporary Docker config to prevent using stored credentials
     max_retries : int, default 3
@@ -419,6 +420,10 @@ def push_image_to_ecr(
     # assumption can omit it.
     if boto_session is None:
         boto_session = boto3.Session()
+
+    # Region follows the session's AWS configuration unless explicitly overridden, so it is not hard-coded.
+    if region_name is None:
+        region_name = _session_region(boto_session)
 
     with DockerConfigManager(override_default_config=ignore_docker_config):
         logger.info(f"Starting ECR push for image {image_name}:{image_tag}")

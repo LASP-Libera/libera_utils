@@ -23,6 +23,7 @@ from botocore.exceptions import ClientError
 from libera_utils.aws.utils import (
     SDC_EVENT_BUS_PARTIAL_NAME,
     _resolve_algorithm_specific_session,
+    _session_region,
     find_event_bus_in_account_by_partial_name,
 )
 from libera_utils.constants import ProcessingStepIdentifier
@@ -46,7 +47,7 @@ def put_new_algorithm_image_event(
     *,
     boto_session: boto3.Session,
     image_digest: str | None = None,
-    region_name: str = "us-west-2",
+    region_name: str | None = None,
     verify: bool = False,
     timeout: float = DEFAULT_REGISTRATION_TIMEOUT_SECONDS,
 ) -> None:
@@ -67,7 +68,8 @@ def put_new_algorithm_image_event(
         Optional image digest (``sha256:...``) carried for provenance/logging. Not required; the registered
         job definition references the tag, not the digest.
     region_name : str, optional
-        AWS region containing the target ECR registry. Default ``"us-west-2"``.
+        AWS region containing the target ECR registry. If ``None`` (the default), the region is taken from the
+        session's AWS configuration (see :func:`libera_utils.aws.utils._session_region`).
     verify : bool, optional
         If True, block after emitting the event until the corresponding job definition is confirmed
         registered (see :func:`verify_algorithm_registration`). Default False.
@@ -91,8 +93,10 @@ def put_new_algorithm_image_event(
             f"Note: L0 processing steps do not have associated ECR repositories."
         )
 
-    # The account id is resolved from the passed session so that whatever identity/role the caller assumed
-    # is reflected in the ECR registry URI.
+    # The account id and region are resolved from the passed session so that whatever identity/role and AWS
+    # configuration the caller has are reflected in the ECR registry URI (region is not hard-coded).
+    if region_name is None:
+        region_name = _session_region(boto_session)
     account_id = boto_session.client("sts").get_caller_identity()["Account"]
     ecr_repository_uri = f"{account_id}.dkr.ecr.{region_name}.amazonaws.com/{ecr_repository_name}"
 
@@ -191,6 +195,19 @@ def verify_algorithm_registration(
     TimeoutError
         If no matching ACTIVE job definition is found before the timeout elapses.
     """
+    # The ECR/Batch describe calls below use the session's region. If the image URI encodes a different region,
+    # the lookups would target the wrong place, so warn early (and continue) rather than failing opaquely later.
+    uri_region = _region_from_ecr_uri(ecr_repository_uri)
+    session_region = boto_session.region_name
+    if uri_region and session_region and uri_region != session_region:
+        logger.warning(
+            "ECR image URI region (%s) does not match the session/profile region (%s); verification queries ECR "
+            "and Batch in %s. Check that your AWS profile region matches the ECR the image was pushed to.",
+            uri_region,
+            session_region,
+            session_region,
+        )
+
     # 1. The referenced image must actually exist in ECR. Checked unconditionally (even if a matching job
     #    definition already exists), because a job definition referencing a nonexistent image can never run.
     _verify_ecr_image_exists(boto_session, ecr_repository_name, algorithm_version)
@@ -213,6 +230,30 @@ def verify_algorithm_registration(
 
         logger.debug("No job definition for %s yet; retrying in %.0fs.", expected_image, poll_interval)
         time.sleep(poll_interval)
+
+
+def _region_from_ecr_uri(ecr_repository_uri: str) -> str | None:
+    """Extract the AWS region from an ECR registry URI, or None if it cannot be parsed.
+
+    ECR URIs have the form ``<account>.dkr.ecr.<region>.amazonaws.com/<repository>``.
+
+    Parameters
+    ----------
+    ecr_repository_uri : str
+        The full ECR registry URI (with or without a trailing repository path).
+
+    Returns
+    -------
+    str or None
+        The region segment, or None if the URI does not match the expected ECR host format.
+    """
+    host = ecr_repository_uri.split("/", 1)[0]
+    parts = host.split(".")
+    if "ecr" in parts:
+        ecr_index = parts.index("ecr")
+        if ecr_index + 1 < len(parts):
+            return parts[ecr_index + 1]
+    return None
 
 
 def _verify_ecr_image_exists(boto_session: boto3.Session, repository_name: str, tag: str) -> None:

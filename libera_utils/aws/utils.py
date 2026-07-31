@@ -127,6 +127,38 @@ def _resolve_algorithm_specific_session(
     return get_l2_team_role_session(profile_name=profile_name, role_name=role_name)
 
 
+def _session_region(boto_session: boto3.Session) -> str:
+    """Return the AWS region configured for the session, raising a clear error if none is set.
+
+    Region is intentionally taken from the user's AWS configuration (profile, ``AWS_REGION``/``AWS_DEFAULT_REGION``,
+    or instance metadata) rather than hard-coded, so it follows the caller's environment. A session with no region
+    resolved cannot address regional resources (ECR, EventBridge, Batch), so this raises rather than silently
+    guessing one.
+
+    Parameters
+    ----------
+    boto_session : boto3.Session
+        The session whose region should be used.
+
+    Returns
+    -------
+    str
+        The resolved AWS region name (e.g. ``"us-west-2"``).
+
+    Raises
+    ------
+    ValueError
+        If the session has no region configured.
+    """
+    region = boto_session.region_name
+    if not region:
+        raise ValueError(
+            "No AWS region is configured. Set a region in your AWS profile, or via the AWS_REGION / "
+            "AWS_DEFAULT_REGION environment variable, and re-run."
+        )
+    return region
+
+
 def _single_match_by_partial_name(partial_name: str, names: list[str], *, resource_description: str) -> str:
     """Return the single name matching partial_name, raising if zero or more than one match is found.
 

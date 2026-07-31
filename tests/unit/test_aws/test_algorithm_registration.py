@@ -14,7 +14,11 @@ from libera_utils.constants import ProcessingStepIdentifier
 MOTO_ACCOUNT_ID = "123456789012"
 
 
-def _expected_uri(processing_step_id: str, region_name: str = "us-west-2") -> str:
+def _expected_uri(processing_step_id: str, region_name: str | None = None) -> str:
+    # Region is derived from the session's AWS config (not hard-coded); under the test-profile fixtures that is
+    # us-east-1. Resolve it the same way the code does so the expected URI tracks the profile's region.
+    if region_name is None:
+        region_name = boto3.Session(profile_name="test-profile").region_name
     ecr_name = ProcessingStepIdentifier(processing_step_id).ecr_name
     return f"{MOTO_ACCOUNT_ID}.dkr.ecr.{region_name}.amazonaws.com/{ecr_name}"
 
@@ -149,6 +153,24 @@ class TestVerifyAlgorithmRegistration:
             self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=5.0
         )
 
+    def test_preexisting_job_definition_counts_as_registered(self, mock_s3_context_with_profile):
+        """A pre-existing ACTIVE job definition for the image counts as registered.
+
+        Documents the intended "already registered" semantics (reviewer question on PR #46): when an ACTIVE Batch
+        job definition already references the image, verification succeeds immediately -- it does not wait for or
+        force a new job-definition revision. A zero timeout still passes because the match is found before the
+        deadline is checked.
+        """
+        session = boto3.Session(profile_name="test-profile")
+        uri = _expected_uri("l1b-rad")
+        self._put_ecr_image(session, self.ECR_REPO, "1.2.3")
+        self._register_job_definition(session, "l1b-rad-preexisting", f"{uri}:1.2.3")
+
+        # Returns immediately (no raise) even with a zero timeout, because a matching job definition already exists.
+        algorithm_registration.verify_algorithm_registration(
+            self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=0.0, poll_interval=0.0
+        )
+
     def test_times_out_when_no_matching_job_definition(self, mock_s3_context_with_profile):
         """Verification raises TimeoutError when the image exists but no job definition references it."""
         session = boto3.Session(profile_name="test-profile")
@@ -184,6 +206,22 @@ class TestVerifyAlgorithmRegistration:
             algorithm_registration.verify_algorithm_registration(
                 self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=5.0
             )
+
+    def test_warns_when_uri_region_differs_from_session_region(self, mock_s3_context_with_profile, caplog):
+        """If the image URI encodes a different region than the session, verify warns (and still proceeds)."""
+        session = boto3.Session(profile_name="test-profile")  # test-profile region is us-east-1
+        # Build a URI in a different region than the session so the mismatch check fires.
+        uri = _expected_uri("l1b-rad", region_name="us-west-2")
+        self._put_ecr_image(session, self.ECR_REPO, "1.2.3")
+        self._register_job_definition(session, "l1b-rad-1-2-3", f"{uri}:1.2.3")
+
+        with caplog.at_level("WARNING", logger="libera_utils.aws.algorithm_registration"):
+            algorithm_registration.verify_algorithm_registration(
+                self.ECR_REPO, uri, "1.2.3", boto_session=session, timeout=5.0
+            )
+
+        warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("us-west-2" in m and "us-east-1" in m and "does not match" in m for m in warnings)
 
 
 class TestRegisterAlgorithmImageCliHandler:

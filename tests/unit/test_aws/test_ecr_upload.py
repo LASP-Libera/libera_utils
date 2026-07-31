@@ -381,10 +381,15 @@ def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags)
     mock_docker_client.images.get.return_value = mock_local_image
     mock_docker_from_env.return_value = mock_docker_client
 
-    # The account id is derived from the session (moto returns 123456789012). No boto_session passed exercises the
-    # default-session fallback used by callers like libera_cdk.
+    # The account id is derived from the session (moto returns 123456789012). region_name is passed explicitly
+    # because the test environment has no configured region (the derive-from-session path is covered elsewhere).
     push_image_to_ecr(
-        "test-image", "latest", ProcessingStepIdentifier.l1b_rad, ecr_image_tags=ecr_tags, ignore_docker_config=True
+        "test-image",
+        "latest",
+        ProcessingStepIdentifier.l1b_rad,
+        ecr_image_tags=ecr_tags,
+        ignore_docker_config=True,
+        region_name="us-west-2",
     )
 
     # Verify Docker client setup
@@ -418,7 +423,11 @@ def test_push_image_to_ecr_returns_digest_mapping(mock_push_single_tag, mock_doc
     mock_push_single_tag.side_effect = ["sha256:aaa", "sha256:bbb"]
 
     result = push_image_to_ecr(
-        "test-image", "latest", ProcessingStepIdentifier.l1b_rad, ecr_image_tags=["1.2.3", "latest"]
+        "test-image",
+        "latest",
+        ProcessingStepIdentifier.l1b_rad,
+        ecr_image_tags=["1.2.3", "latest"],
+        region_name="us-west-2",
     )
 
     assert result == {"1.2.3": "sha256:aaa", "latest": "sha256:bbb"}
@@ -433,7 +442,7 @@ def test_push_image_to_ecr_image_not_found(mock_docker_from_env):
     mock_docker_from_env.return_value = mock_docker_client
 
     with pytest.raises(ValueError, match="Local image not found: test-image:latest"):
-        push_image_to_ecr("test-image", "latest", ProcessingStepIdentifier.l1b_rad)
+        push_image_to_ecr("test-image", "latest", ProcessingStepIdentifier.l1b_rad, region_name="us-west-2")
 
 
 @mock_aws
@@ -444,7 +453,7 @@ def test_push_image_to_ecr_invalid_processing_step():
         processing_step = ProcessingStepIdentifier.l1b_rad
 
         with pytest.raises(ValueError, match="Unable to determine ECR repository name"):
-            push_image_to_ecr("test-image", "latest", processing_step)
+            push_image_to_ecr("test-image", "latest", processing_step, region_name="us-west-2")
 
 
 @mock_aws
@@ -461,7 +470,13 @@ def test_push_image_to_ecr_partial_failure(mock_push_single_tag, mock_docker_fro
     mock_push_single_tag.side_effect = [None, Exception("Push failed")]
 
     with pytest.raises(Exception, match="Push failed"):
-        push_image_to_ecr("test-image", "latest", ProcessingStepIdentifier.l1b_rad, ecr_image_tags=["v1.0", "latest"])
+        push_image_to_ecr(
+            "test-image",
+            "latest",
+            ProcessingStepIdentifier.l1b_rad,
+            ecr_image_tags=["v1.0", "latest"],
+            region_name="us-west-2",
+        )
 
     # Should have attempted both pushes
     assert mock_push_single_tag.call_count == 2

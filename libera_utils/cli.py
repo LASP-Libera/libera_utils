@@ -134,7 +134,8 @@ def parse_cli_args(cli_args: list):
     ecr_upload_parser.add_argument(
         "--profile",
         type=str,
-        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+        help="AWS profile name to use for the AWS session (ECR, EventBridge, Batch). If not set, the default "
+        "profile is used. The AWS region is taken from this profile's configuration.",
     )
 
     # ============================
@@ -173,7 +174,7 @@ def parse_cli_args(cli_args: list):
     sfn_trigger_parser.add_argument(
         "--profile",
         type=str,
-        help=f"AWS profile name to use for the session. If not set, the default profile is used.",
+        help="AWS profile name to use for the session. If not set, the default profile is used.",
     )
 
     # ===========================
@@ -229,7 +230,7 @@ def parse_cli_args(cli_args: list):
     manual_processing_parser.add_argument(
         "--profile",
         type=str,
-        help=f"AWS profile name to use for the session. If not set, the default profile is used.",
+        help="AWS profile name to use for the session. If not set, the default profile is used.",
     )
 
     # ================================
@@ -274,7 +275,8 @@ def parse_cli_args(cli_args: list):
     register_algorithm_parser.add_argument(
         "--profile",
         type=str,
-        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+        help="AWS profile name to use for the AWS session (EventBridge, ECR, Batch). If not set, the default "
+        "profile is used. The AWS region is taken from this profile's configuration.",
     )
 
     # ============================
@@ -286,7 +288,7 @@ def parse_cli_args(cli_args: list):
     s3_utilities_parser.add_argument(
         "--profile",
         type=str,
-        help=f"AWS profile name to use when accessing S3. If not set, the default profile is used.",
+        help="AWS profile name to use when accessing S3. If not set, the default profile is used.",
     )
     s3_utilities_subparser = s3_utilities_parser.add_subparsers(description="sub-commands for s3-utils sub-command")
 
