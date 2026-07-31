@@ -539,20 +539,8 @@ variables:
 
 After a daily `NOM-HK-DECODED` product is produced, calibration pipelines need a per-ObsID
 subset of that file. Helpers in `libera_utils.l1a.nom_hk_trim` detect contiguous runs of
-known calibration ObsIDs and write one `NOM-HK-*-TRIMMED` NetCDF per run.
-
-NOM-HK carries two ObsID fields. Which field to scan is declared in
-`libera_utils.obsids.OBSID_REGISTRY` via `NomHkObsidSource`:
-
-| Source | NOM-HK variable       | Typical events                                       |
-| ------ | --------------------- | ---------------------------------------------------- |
-| `RAD`  | `ICIE__SW_OBSID_RAD`  | Radiometer cal (gain, SWC, LWC, solar, lunar, VIIRS) |
-| `WFOV` | `ICIE__SW_OBSID_WFOV` | Camera cal (CT/RAPS video, darks, VIIRS lunar)       |
-
-Numeric ObsIDs are **not** unique across those fields (e.g. RAD `256` is SWC-365NM;
-WFOV `256` is Darks of Darks). Registry keys are `(source, obsid)`. ObsID `513`
-(VIIRS lunar) is registered under both sources and shares the same TRIMMED/CAL
-ProductIDs.
+known calibration ObsIDs (as cataloged in `libera_utils.obsids.OBSID_REGISTRY`) and write
+one `NOM-HK-*-TRIMMED` NetCDF per run:
 
 ```python
 from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
@@ -577,3 +565,7 @@ file and a warning is logged.
 **Preprocessor note (CDK follow-on):** after writing `NOM-HK-DECODED`, call
 `write_trimmed_nom_hk_products` and stage each TRIMMED path the same way as other L1A
 outputs so ingest can trigger ObsID-specific cal steps.
+
+See [the ObsID Registry page](obsid_registry.md) for why the registry is keyed by
+`(source, obsid)`, how downstream repos dispatch cal-combine steps from it, and how to
+register a new calibration ObsID.
