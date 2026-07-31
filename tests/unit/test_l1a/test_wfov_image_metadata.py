@@ -11,11 +11,13 @@ from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
     ERROR_FLAGGED_IMAGE_COUNT_ATTR,
+    FIRST_IMAGE_INCOMPLETE_ATTR,
     FOOTER_MISMATCH_COUNT_ATTR,
     FPGA_HEADER_SIZE,
     FPGA_TRAILING_FOOTER_SIZE,
     FSW_HEADER_SIZE,
     HEADER_PARSE_ERROR_COUNT_ATTR,
+    LAST_IMAGE_INCOMPLETE_ATTR,
     PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR,
     PACKET_IMAGE_ID_VAR,
     VALID_FOOTER_BYTES,
@@ -153,6 +155,20 @@ def _make_wfov_packet_dataset(
     )
 
 
+def _packet_rows(ds: xr.Dataset) -> list:
+    """Build the ``list[bytes]`` argument ``stitch_wfov_images`` expects.
+
+    Mirrors production's conversion in ``enhance_wfov_l1a_dataset``: a uint8 view rather than
+    ``ndarray.tolist()``, since the fixed-width ``|S`` dtype silently strips trailing null bytes on
+    conversion to plain Python ``bytes``, which would corrupt any packet whose valid payload run
+    itself ends in zero bytes.
+    """
+    data_var = ds["ICIE__WFOV_DATA"]
+    width = data_var.dtype.itemsize
+    n_packets = ds.sizes["PACKET"]
+    return [row.tobytes() for row in data_var.values.view(np.uint8).reshape(n_packets, width)]
+
+
 def _build_complete_image_blob(
     payload: bytes,
     *,
@@ -280,34 +296,61 @@ class TestStitchWfovImages:
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 1
         assert stats.n_packets_not_used_in_images == 0
-        assert extract_compressed_payload(stitched[0].raw_blob) == payload
+        assert stitched[0].payload == payload
 
-    def test_orphan_eop_counts_as_unused_packet(self):
+    def test_clean_window_has_no_edge_truncation(self):
+        # A window that opens exactly on a qualifying SOP and closes exactly on its EOP has
+        # neither edge truncated -- a stitched image existing at all doesn't by itself say
+        # anything about truncation; only where the window's boundaries fell relative to SOP/EOP
+        # does.
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        stitched, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            _packet_rows(ds),
+        )
+        assert len(stitched) == 1
+        assert stats.first_image_incomplete is False
+        assert stats.last_image_incomplete is False
+
+    def test_leading_fragment_flags_first_image_incomplete(self):
+        # An EOP with no preceding SOP anywhere in the window: the image it belongs to started
+        # before this window. Expected edge truncation, so it's excluded from
+        # n_packets_not_used_in_images and instead flagged via first_image_incomplete.
         ds = _make_wfov_packet_dataset([("EOP", 0, 10, _pad_packet(b"\x00" * 10))])
         stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 0
-        assert stats.n_packets_not_used_in_images == 1
+        assert stats.n_packets_not_used_in_images == 0
+        assert stats.first_image_incomplete is True
+        assert stats.last_image_incomplete is False
 
-    def test_dangling_sop_counts_as_unused_packet(self):
+    def test_dangling_sop_flags_last_image_incomplete(self):
+        # An SOP that never reaches its EOP because the window ends first. Expected edge
+        # truncation, so it's excluded from n_packets_not_used_in_images and instead flagged via
+        # last_image_incomplete.
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), _pad_packet(blob))])
         stitched, stats = stitch_wfov_images(
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 0
-        assert stats.n_packets_not_used_in_images == 1
+        assert stats.n_packets_not_used_in_images == 0
+        assert stats.first_image_incomplete is False
+        assert stats.last_image_incomplete is True
 
     def test_non_zero_sop_offset_counts_unused_packet(self):
         blob = _build_complete_image_blob(b"\x01")
@@ -316,10 +359,13 @@ class TestStitchWfovImages:
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 0
+        # This packet is flagged SOP (just with a bad offset), not a pre-SOP fragment, so it's a
+        # genuine anomaly rather than edge truncation.
         assert stats.n_packets_not_used_in_images == 1
+        assert stats.first_image_incomplete is False
 
     def test_offset_gap_discards_all_collected_packets(self):
         blob = _build_complete_image_blob(b"\x01")
@@ -334,7 +380,7 @@ class TestStitchWfovImages:
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 0
         # SOP + MOP + the mismatched EOP itself are all discarded together.
@@ -353,12 +399,37 @@ class TestStitchWfovImages:
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 0
-        # First SOP+MOP (2 packets) abandoned when the second SOP arrives, then the second SOP
-        # itself is left dangling with no EOP (1 packet) once the stream ends.
+        # First SOP+MOP (2 packets) abandoned when the second SOP arrives -- a genuine anomaly.
+        # The second SOP is then left dangling with no EOP once the stream ends, but that's
+        # expected trailing truncation (last_image_incomplete), not counted here.
+        assert stats.n_packets_not_used_in_images == 2
+        assert stats.last_image_incomplete is True
+
+    def test_mop_while_seeking_after_discard_counts_as_unused_packet(self):
+        # Once at least one SOP has been seen, a stray MOP encountered while re-seeking (e.g.
+        # after a discarded collection, before the next SOP) is a genuine mid-stream gap -- not
+        # leading-edge truncation -- and must be counted rather than silently dropped.
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(
+            [
+                ("SOP", 0, len(blob), _pad_packet(blob)),
+                ("MOP", len(blob) + 999, len(blob), _pad_packet(blob)),  # offset gap -> discard SOP+MOP
+                ("MOP", 0, 5, _pad_packet(b"\x00" * 5)),  # stray MOP while SEEKING
+            ]
+        )
+        stitched, stats = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            _packet_rows(ds),
+        )
+        assert len(stitched) == 0
         assert stats.n_packets_not_used_in_images == 3
+        assert stats.first_image_incomplete is False
+        assert stats.last_image_incomplete is False
 
     def test_error_flagged_and_footer_mismatch_stats(self):
         payload = b"\xca\xfe"
@@ -368,20 +439,35 @@ class TestStitchWfovImages:
             ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
             ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
             ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            ds["ICIE__WFOV_DATA"].values,
+            _packet_rows(ds),
         )
         assert len(stitched) == 1
         assert stats.n_error_flagged_images == 1
         assert stats.n_footer_mismatches == 1
         assert stats.n_header_parse_errors == 0
 
+    def test_packet_rows_are_freed_once_consumed(self):
+        # Every row -- whether folded into a complete image or dropped -- must be released so its
+        # memory can be freed as soon as its fate is decided, not held until the whole stream is
+        # processed.
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        rows = _packet_rows(ds)
+        stitched, _ = stitch_wfov_images(
+            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
+            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
+            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
+            rows,
+        )
+        assert len(stitched) == 1
+        assert rows == [None, None]
+
 
 class TestEnhanceWfovL1aDataset:
-    def test_complete_sequence_creates_camera_time_and_zeros_packets(self):
+    def test_complete_sequence_creates_camera_time_and_drops_wfov_data(self):
         payload = b"\xca\xfe"
         blob = _build_complete_image_blob(payload)
         ds = _make_wfov_packet_dataset(_complete_rows(blob))
-        original_bytes = bytes(ds["ICIE__WFOV_DATA"].values[0])
 
         enhanced = enhance_wfov_l1a_dataset(ds)
         assert enhanced.sizes[CAMERA_TIME_COORD] == 1
@@ -389,12 +475,13 @@ class TestEnhanceWfovL1aDataset:
         blob_bytes = enhanced[WFOV_COMPRESSED_IMAGE_VAR].values[0, :length].tobytes()
         assert blob_bytes == payload
         assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [0, 0]
-        assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) != original_bytes
-        assert np.all(enhanced["ICIE__WFOV_DATA"].values[0].view(np.uint8) == 0)
+        assert "ICIE__WFOV_DATA" not in enhanced.data_vars
         assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 0
         assert enhanced.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] == 0
         assert enhanced.attrs[FOOTER_MISMATCH_COUNT_ATTR] == 0
         assert enhanced.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 0
+        assert enhanced.attrs[FIRST_IMAGE_INCOMPLETE_ATTR] == 0
+        assert enhanced.attrs[LAST_IMAGE_INCOMPLETE_ATTR] == 0
 
     def test_error_flagged_image_count_and_warning(self, caplog):
         import logging
@@ -410,15 +497,17 @@ class TestEnhanceWfovL1aDataset:
         assert enhanced["WFOV_FPGA_STATUS_CRC_ERROR"].values[0] == 1
         assert "FPGA status errors flagged" in caplog.text
 
-    def test_incomplete_sequence_preserves_packet_data(self):
+    def test_incomplete_sequence_drops_wfov_data_and_flags_last_incomplete(self):
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), _pad_packet(blob))])
-        original_bytes = bytes(ds["ICIE__WFOV_DATA"].values[0])
 
         enhanced = enhance_wfov_l1a_dataset(ds)
         assert enhanced.sizes[CAMERA_TIME_COORD] == 0
         assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [-1]
-        assert bytes(enhanced["ICIE__WFOV_DATA"].values[0]) == original_bytes
+        assert "ICIE__WFOV_DATA" not in enhanced.data_vars
+        assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 0
+        assert enhanced.attrs[FIRST_IMAGE_INCOMPLETE_ATTR] == 0
+        assert enhanced.attrs[LAST_IMAGE_INCOMPLETE_ATTR] == 1
 
     def test_camera_time_from_fsw_timestamps(self):
         blob = _build_complete_image_blob(b"\x01", timestamp_seconds=100, timestamp_subseconds=1)
