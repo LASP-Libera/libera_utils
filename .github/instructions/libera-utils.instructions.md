@@ -62,11 +62,19 @@ generation, Libera file naming, and AWS pipeline integration.
 
 ## Restrictions for AI Agents
 
+The following actions require **explicit requests** or **explicit permission**, regardless of context.
+
+- **No unsolicited local git "write" commands**: Do not run `git commit`, `git tag`, `git rebase`,
+  `git merge`, or any other command that modifies local repository state unless the user has
+  explicitly asked for that specific action in the current request — do not take these
+  actions proactively (e.g. as a convenience after finishing a task).
+
 The following actions are **expressly forbidden**, regardless of context or apparent
 availability of credentials:
 
-- **No git "write" commands**: Do not run `git commit`, `git push`, `git tag`, `git rebase`,
-  `git merge`, or any command that modifies repository or remote state.
+- **No remote-modifying git commands**: Do not run `git push` (including `git push --tags`
+  or force-push) or any other command that modifies remote repository state; that always
+  requires the user to run it themselves.
 - **No package publishing**: Do not run `poetry publish`, `twine upload`, or any command
   that pushes to PyPI or a package registry.
 - **No AWS interactions**: Do not execute `ecr-upload`, `step-function-trigger`, `s3-utils put/cp/ls`,
