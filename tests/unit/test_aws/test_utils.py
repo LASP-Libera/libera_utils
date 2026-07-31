@@ -8,6 +8,7 @@ from botocore.exceptions import ClientError
 from moto import mock_aws
 
 from libera_utils.aws import utils
+from libera_utils.constants import ProcessingStepIdentifier
 
 
 @mock_aws
@@ -150,3 +151,66 @@ def test_find_dynamodb_table_ambiguity():
     # Success: specific enough to match only one
     result = utils.find_dynamodb_table_in_account_by_partial_name(session, "DataAvailabilityTable")
     assert result == "SomeDataAvailabilityTable"
+
+
+class TestResolveAlgorithmSpecificSession:
+    """Tests for _resolve_algorithm_specific_session mapping an algorithm to the session used for its operations."""
+
+    @pytest.mark.parametrize(
+        ("algorithm", "expected_role"),
+        [
+            (ProcessingStepIdentifier.l2_cf_cam, "L2Developer/L2-CloudFraction"),
+            (ProcessingStepIdentifier.l2_cf_cam_camtime, "L2Developer/L2-CloudFraction"),
+            (ProcessingStepIdentifier.l2_unf_rad_cam, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_unf_rad_imager, "L2Developer/L2-Unfiltering"),
+            (ProcessingStepIdentifier.l2_toa_flux_cam, "L2Developer/L2-SSW-TOA-Flux"),
+            (ProcessingStepIdentifier.l2_toa_flux_imager, "L2Developer/L2-SSW-TOA-Flux"),
+            (ProcessingStepIdentifier.l2_comp_flux, "L2Developer/L2-SFC-Flux"),
+            (ProcessingStepIdentifier.aux_adm_stats_cam, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_cam_camtime, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.aux_adm_stats_imager, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.aux_adm_imager, "L2Developer/L2-ADM"),
+            (ProcessingStepIdentifier.l2_nb_bb_imager_camtime, "L2Developer/L2-ADM"),
+        ],
+    )
+    @patch("libera_utils.aws.utils.get_l2_team_role_session")
+    def test_l2_algorithm_assumes_team_role(self, mock_get_session, algorithm, expected_role):
+        """L2 (and ADM) algorithms assume their team's L2 Team Role."""
+        result = utils._resolve_algorithm_specific_session(algorithm, "test-profile")
+
+        mock_get_session.assert_called_once_with(profile_name="test-profile", role_name=expected_role)
+        assert result is mock_get_session.return_value
+
+    @pytest.mark.parametrize(
+        "algorithm",
+        [
+            ProcessingStepIdentifier.l1b_rad,
+            ProcessingStepIdentifier.l1b_cam,
+            ProcessingStepIdentifier.spice_jpss,
+            ProcessingStepIdentifier.aux_fmatch_cam,
+        ],
+    )
+    @patch("libera_utils.aws.utils.get_l2_team_role_session")
+    @patch("libera_utils.aws.utils.boto3.Session")
+    def test_non_l2_algorithm_uses_ambient_session(self, mock_session, mock_get_session, algorithm):
+        """Non-L2 (SDC-owned) algorithms use the ambient/--profile session with no role assumption."""
+        result = utils._resolve_algorithm_specific_session(algorithm, "test-profile")
+
+        mock_session.assert_called_once_with(profile_name="test-profile")
+        mock_get_session.assert_not_called()
+        assert result is mock_session.return_value
+
+
+class TestSessionRegion:
+    """Tests for _session_region deriving the region from the session's AWS configuration."""
+
+    def test_returns_configured_region(self):
+        """The session's configured region is returned."""
+        session = boto3.Session(region_name="eu-central-1")
+        assert utils._session_region(session) == "eu-central-1"
+
+    def test_raises_when_no_region_configured(self):
+        """A session with no region resolved raises a clear ValueError instead of guessing one."""
+        session = boto3.Session(region_name=None)
+        with pytest.raises(ValueError, match="No AWS region is configured"):
+            utils._session_region(session)

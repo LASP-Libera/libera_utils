@@ -15,6 +15,7 @@ import libera_utils.aws.ecr_upload as ecr_upload
 from libera_utils.aws.ecr_upload import (
     DockerConfigManager,
     _get_fresh_ecr_auth,
+    _process_push_logs,
     _push_single_tag,
     build_docker_image,
     push_image_to_ecr,
@@ -78,11 +79,13 @@ def test_build_docker_image(test_data_path):
         ("l2-cf-cam", "test-image", "latest", ["latest"], False, "test-profile"),
     ],
 )
+@mock.patch("libera_utils.aws.ecr_upload.put_new_algorithm_image_event")
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
-@mock.patch("libera_utils.aws.ecr_upload._resolve_ecr_session")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
 def test_ecr_upload_cli_handler(
     mock_resolve_session,
     mock_push_image_to_ecr,
+    mock_put_event,
     image_name,
     algorithm_name,
     image_tag,
@@ -91,6 +94,11 @@ def test_ecr_upload_cli_handler(
     profile,
 ):
     """The handler resolves the (possibly role-assumed) session and forwards it to push_image_to_ecr."""
+    # The handler always registers after uploading, so push_image_to_ecr must return a {tag: digest} mapping.
+    effective_tags = ecr_tags or ["latest"]
+    mock_push_image_to_ecr.return_value = {tag: f"sha256:{tag}" for tag in effective_tags}
+
+    # Make the input namespace object
     args = argparse.Namespace(
         func=ecr_upload.ecr_upload_cli_handler,
         algorithm_name=algorithm_name,
@@ -99,6 +107,9 @@ def test_ecr_upload_cli_handler(
         ecr_tags=ecr_tags,
         ignore_docker_config=ignore_docker_config,
         profile=profile,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
     )
 
     ecr_upload.ecr_upload_cli_handler(args)
@@ -117,7 +128,7 @@ def test_ecr_upload_cli_handler(
 
 @mock.patch("libera_utils.aws.ecr_upload.logger")
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
-@mock.patch("libera_utils.aws.ecr_upload._resolve_ecr_session")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
 def test_ecr_upload_cli_handler_reraises_role_assumption_error(
     mock_resolve_session, mock_push_image_to_ecr, mock_logger
 ):
@@ -131,6 +142,7 @@ def test_ecr_upload_cli_handler_reraises_role_assumption_error(
         ecr_tags=None,
         ignore_docker_config=False,
         profile=None,
+        verbose=False,
     )
 
     with pytest.raises(ValueError, match="Could not assume role"):
@@ -143,52 +155,60 @@ def test_ecr_upload_cli_handler_reraises_role_assumption_error(
     assert "L2-CloudFraction" in log_args
 
 
-class TestResolveEcrSession:
-    """Tests for mapping a processing step to the session used for its ECR upload."""
+@pytest.mark.parametrize(
+    ("ecr_tags", "expected_versions"),
+    [
+        (["latest", "1.2.3"], ["1.2.3"]),  # single concrete version alongside latest
+        (["1.2.3", "1.2.4"], ["1.2.3", "1.2.4"]),  # every non-latest tag gets its own event
+        (None, []),  # defaults to ["latest"] -> nothing concrete to register
+        (["latest"], []),  # only latest -> nothing concrete to register
+    ],
+)
+@mock.patch("libera_utils.aws.ecr_upload.put_new_algorithm_image_event")
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_register(
+    mock_resolve_session, mock_push_image_to_ecr, mock_put_event, ecr_tags, expected_versions
+):
+    """ecr-upload always registers: one NewAlgorithmImage event is emitted per non-'latest' ECR tag pushed."""
+    # push_image_to_ecr returns a {tag: digest} mapping; the handler registers each non-'latest' tag and passes
+    # its digest through to the event, reusing the session resolved for the push.
+    effective_tags = ecr_tags or ["latest"]
+    pushed_digests = {tag: f"sha256:{tag}" for tag in effective_tags}
+    mock_push_image_to_ecr.return_value = pushed_digests
 
-    @pytest.mark.parametrize(
-        ("algorithm", "expected_role"),
-        [
-            (ProcessingStepIdentifier.l2_cf_cam, "L2Developer/L2-CloudFraction"),
-            (ProcessingStepIdentifier.l2_cf_cam_camtime, "L2Developer/L2-CloudFraction"),
-            (ProcessingStepIdentifier.l2_unf_rad_cam, "L2Developer/L2-Unfiltering"),
-            (ProcessingStepIdentifier.l2_unf_rad_imager, "L2Developer/L2-Unfiltering"),
-            (ProcessingStepIdentifier.l2_toa_flux_cam, "L2Developer/L2-SSW-TOA-Flux"),
-            (ProcessingStepIdentifier.l2_toa_flux_imager, "L2Developer/L2-SSW-TOA-Flux"),
-            (ProcessingStepIdentifier.l2_comp_flux, "L2Developer/L2-SFC-Flux"),
-            (ProcessingStepIdentifier.aux_adm_stats_cam, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.l2_nb_bb_cam_camtime, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.aux_adm_stats_imager, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.aux_adm_imager, "L2Developer/L2-ADM"),
-            (ProcessingStepIdentifier.l2_nb_bb_imager_camtime, "L2Developer/L2-ADM"),
-        ],
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name="my-image",
+        image_tag="latest",
+        ecr_tags=ecr_tags,
+        ignore_docker_config=False,
+        profile="test",
+        verbose=False,
+        verify=True,
+        timeout=42.0,
     )
-    @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")
-    def test_l2_step_assumes_team_role(self, mock_get_session, algorithm, expected_role):
-        """L2 (and ADM) steps assume their team's L2 Team Role."""
-        result = ecr_upload._resolve_ecr_session(algorithm, "test-profile")
 
-        mock_get_session.assert_called_once_with(profile_name="test-profile", role_name=expected_role)
-        assert result is mock_get_session.return_value
+    ecr_upload.ecr_upload_cli_handler(args)
 
-    @pytest.mark.parametrize(
-        "algorithm",
-        [
-            ProcessingStepIdentifier.l1b_rad,
-            ProcessingStepIdentifier.l1b_cam,
-            ProcessingStepIdentifier.spice_jpss,
-            ProcessingStepIdentifier.aux_fmatch_cam,
-        ],
-    )
-    @mock.patch("libera_utils.aws.ecr_upload.get_l2_team_role_session")
-    @mock.patch("libera_utils.aws.ecr_upload.boto3.Session")
-    def test_non_l2_step_uses_default_session(self, mock_session, mock_get_session, algorithm):
-        """Non-L2 steps use the default/--profile session with no role assumption."""
-        result = ecr_upload._resolve_ecr_session(algorithm, "test-profile")
+    expected_algorithm = ProcessingStepIdentifier("l1b-rad")
+    if not expected_versions:
+        # No concrete version -> no event emitted.
+        mock_put_event.assert_not_called()
+        return
 
-        mock_session.assert_called_once_with(profile_name="test-profile")
-        mock_get_session.assert_not_called()
-        assert result is mock_session.return_value
+    # The registration event(s) reuse the session that was resolved for the ECR push (per-team role for L2
+    # algorithms, or the ambient/--profile session for non-L2 SDC-owned algorithms).
+    assert mock_put_event.call_count == len(expected_versions)
+    for version, call in zip(expected_versions, mock_put_event.call_args_list, strict=True):
+        assert call.args == (expected_algorithm, version)
+        assert call.kwargs == {
+            "boto_session": mock_resolve_session.return_value,
+            "image_digest": pushed_digests[version],
+            "verify": True,
+            "timeout": 42.0,
+        }
 
 
 class TestGetFreshEcrAuth:
@@ -299,6 +319,56 @@ class TestPushSingleTag:
         assert mock_get_auth.call_count == 2  # Fresh auth for each attempt
 
 
+class TestProcessPushLogs:
+    """Test the _process_push_logs stream processor."""
+
+    def test_returns_digest_and_suppresses_progress(self, caplog):
+        """A realistic push stream returns the aux digest without emitting per-progress-tick log lines."""
+        # A representative stream: an intro status, many high-frequency progress ticks, layer terminal states,
+        # the terminal digest status line, and the aux event carrying the digest.
+        push_logs = [
+            {"status": "The push refers to repository [123.dkr.ecr.us-west-2.amazonaws.com/repo]"},
+            {"status": "Preparing", "progressDetail": {}, "id": "layer1"},
+            {"status": "Pushing", "progressDetail": {"current": 1, "total": 10}, "progress": "[==> ]", "id": "layer1"},
+            {"status": "Pushing", "progressDetail": {"current": 9, "total": 10}, "progress": "[===>]", "id": "layer1"},
+            {"status": "Pushed", "progressDetail": {}, "id": "layer1"},
+            {"status": "Layer already exists", "progressDetail": {}, "id": "layer2"},
+            {"status": "1.2.3: digest: sha256:deadbeef size: 1234"},
+            {"aux": {"Tag": "1.2.3", "Digest": "sha256:deadbeef", "Size": 1234}},
+        ]
+
+        with caplog.at_level("DEBUG", logger="libera_utils.aws.ecr_upload"):
+            digest = _process_push_logs(iter(push_logs), "repo:1.2.3")
+
+        assert digest == "sha256:deadbeef"
+
+        # No raw "Pushing" progress ticks are logged (the byte counters / progress bars are suppressed).
+        assert not any("[==>" in record.message or "progress" in record.message.lower() for record in caplog.records)
+
+        # A single INFO summary reports the layer counts and the digest.
+        info_messages = [r.message for r in caplog.records if r.levelname == "INFO"]
+        assert any(
+            "1 layer(s) pushed" in m and "1 already existed" in m and "sha256:deadbeef" in m for m in info_messages
+        )
+
+    def test_returns_none_when_no_aux_digest(self):
+        """When the stream carries no aux event, the digest is None (but processing still succeeds)."""
+        push_logs = [{"status": "Pushed", "progressDetail": {}, "id": "layer1"}]
+        assert _process_push_logs(iter(push_logs), "repo:latest") is None
+
+    def test_raises_on_error_field(self):
+        """An ``error`` field in the stream raises ValueError."""
+        push_logs = [{"status": "Pushing"}, {"error": "Authentication failed"}]
+        with pytest.raises(ValueError, match="Push errors"):
+            _process_push_logs(iter(push_logs), "repo:latest")
+
+    def test_raises_on_error_detail_field(self):
+        """An ``errorDetail`` field (without a top-level ``error``) also raises ValueError."""
+        push_logs = [{"errorDetail": {"message": "denied: not authorized"}}]
+        with pytest.raises(ValueError, match="denied: not authorized"):
+            _process_push_logs(iter(push_logs), "repo:latest")
+
+
 @pytest.mark.parametrize("ecr_tags", [None, ["latest"], ["latest", "v1.0"]])
 @mock_aws
 @mock.patch("docker.from_env")
@@ -311,10 +381,15 @@ def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags)
     mock_docker_client.images.get.return_value = mock_local_image
     mock_docker_from_env.return_value = mock_docker_client
 
-    # The account id is derived from the session (moto returns 123456789012). No boto_session passed exercises the
-    # default-session fallback used by callers like libera_cdk.
+    # The account id is derived from the session (moto returns 123456789012). region_name is passed explicitly
+    # because the test environment has no configured region (the derive-from-session path is covered elsewhere).
     push_image_to_ecr(
-        "test-image", "latest", ProcessingStepIdentifier.l1b_rad, ecr_image_tags=ecr_tags, ignore_docker_config=True
+        "test-image",
+        "latest",
+        ProcessingStepIdentifier.l1b_rad,
+        ecr_image_tags=ecr_tags,
+        ignore_docker_config=True,
+        region_name="us-west-2",
     )
 
     # Verify Docker client setup
@@ -338,6 +413,28 @@ def test_push_image_to_ecr(mock_push_single_tag, mock_docker_from_env, ecr_tags)
 
 @mock_aws
 @mock.patch("docker.from_env")
+@mock.patch("libera_utils.aws.ecr_upload._push_single_tag")
+def test_push_image_to_ecr_returns_digest_mapping(mock_push_single_tag, mock_docker_from_env):
+    """push_image_to_ecr returns a {tag: digest} mapping built from each single-tag push."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.get.return_value = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    mock_push_single_tag.side_effect = ["sha256:aaa", "sha256:bbb"]
+
+    result = push_image_to_ecr(
+        "test-image",
+        "latest",
+        ProcessingStepIdentifier.l1b_rad,
+        ecr_image_tags=["1.2.3", "latest"],
+        region_name="us-west-2",
+    )
+
+    assert result == {"1.2.3": "sha256:aaa", "latest": "sha256:bbb"}
+
+
+@mock_aws
+@mock.patch("docker.from_env")
 def test_push_image_to_ecr_image_not_found(mock_docker_from_env):
     """Test push_image_to_ecr when local image is not found."""
     mock_docker_client = MagicMock()
@@ -345,7 +442,7 @@ def test_push_image_to_ecr_image_not_found(mock_docker_from_env):
     mock_docker_from_env.return_value = mock_docker_client
 
     with pytest.raises(ValueError, match="Local image not found: test-image:latest"):
-        push_image_to_ecr("test-image", "latest", ProcessingStepIdentifier.l1b_rad)
+        push_image_to_ecr("test-image", "latest", ProcessingStepIdentifier.l1b_rad, region_name="us-west-2")
 
 
 @mock_aws
@@ -356,7 +453,7 @@ def test_push_image_to_ecr_invalid_processing_step():
         processing_step = ProcessingStepIdentifier.l1b_rad
 
         with pytest.raises(ValueError, match="Unable to determine ECR repository name"):
-            push_image_to_ecr("test-image", "latest", processing_step)
+            push_image_to_ecr("test-image", "latest", processing_step, region_name="us-west-2")
 
 
 @mock_aws
@@ -373,7 +470,13 @@ def test_push_image_to_ecr_partial_failure(mock_push_single_tag, mock_docker_fro
     mock_push_single_tag.side_effect = [None, Exception("Push failed")]
 
     with pytest.raises(Exception, match="Push failed"):
-        push_image_to_ecr("test-image", "latest", ProcessingStepIdentifier.l1b_rad, ecr_image_tags=["v1.0", "latest"])
+        push_image_to_ecr(
+            "test-image",
+            "latest",
+            ProcessingStepIdentifier.l1b_rad,
+            ecr_image_tags=["v1.0", "latest"],
+            region_name="us-west-2",
+        )
 
     # Should have attempted both pushes
     assert mock_push_single_tag.call_count == 2
