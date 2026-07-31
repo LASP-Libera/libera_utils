@@ -539,7 +539,7 @@ variables:
 
 After a daily `NOM-HK-DECODED` product is produced, calibration pipelines need a per-ObsID
 subset of that file. Helpers in `libera_utils.l1a.nom_hk_trim` detect contiguous runs of
-known calibration ObsIDs (as cataloged in `libera_utils.obsids.OBSID_REGISTRY`) and write
+known calibration Observation IDs (ObsIDs) (as cataloged in `libera_utils.obsids.OBSID_REGISTRY`) and write
 one `NOM-HK-*-TRIMMED` NetCDF per run:
 
 ```python

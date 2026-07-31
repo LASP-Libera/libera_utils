@@ -1,4 +1,4 @@
-# ObsID Registry
+# Observation ID (ObsID) Registry
 
 Libera's ICIE flight software tags certain telemetry packets with a small integer **ObsID**
 identifying which calibration event or scan mode is running (gain/noise cal, a specific LED or
