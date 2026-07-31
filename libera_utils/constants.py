@@ -6,6 +6,10 @@ from typing import Union
 
 from libera_utils.aws.constants import LiberaAccountSuffix, LiberaDataBucketName
 
+# Shared ECR repository name for radiometer ObsID-specific calibration combine steps.
+# CDK should create one ECR repo with this name and attach it to each cal-* Batch job.
+CAL_RAD_SHARED_ECR_NAME = "cal-rad-docker-repo"
+
 
 class ManifestType(StrEnum):
     """Enumerated legal manifest type values"""
@@ -410,9 +414,10 @@ class ProcessingStepIdentifier(StrEnum):
 
     The string values are the processing step names used in orchestration.
 
-    Each member is defined as a tuple: (step_name, products_list)
+    Each member is defined as a tuple: (step_name, products_list[, shared_ecr_name])
     - step_name: The string value used in orchestration and AWS resources
     - products_list: List of DataProductIdentifier members that this step produces
+    - shared_ecr_name: Optional ECR repository name shared by multiple steps (e.g. cal-rad steps)
 
     Example:
         >>> step = ProcessingStepIdentifier.l1b_rad
@@ -422,20 +427,31 @@ class ProcessingStepIdentifier(StrEnum):
 
     When adding new processing steps:
         1. Add the enum member with its step name and list of produced products
-        2. No need to update any lookup dictionaries - relationships are embedded!
+        2. Optionally pass a shared ECR name when multiple steps use one image repository
+        3. No need to update any lookup dictionaries - relationships are embedded!
     """
 
     _products: list["DataProductIdentifier"]
+    _shared_ecr_name: str | None
 
-    def __new__(cls, value: str, products: list[DataProductIdentifier] = None):  # type: ignore
+    def __new__(
+        cls,
+        value: str,
+        products: list[DataProductIdentifier] | None = None,
+        shared_ecr_name: str | None = None,
+    ):  # type: ignore
         """Create a new ProcessingStepIdentifier with embedded metadata.
 
         Parameters
         ----------
         value : str
             The string value for this processing step (used in orchestration)
-        products : list
+        products : list, optional
             List of DataProductIdentifier members that this step produces
+        shared_ecr_name : str, optional
+            Shared ECR repository name. When set, ``ecr_name`` returns this value
+            instead of ``{step}-docker-repo``. Used so ObsID-specific cal steps
+            can share one radiometer calibration image repository.
         """
         if value != value.lower():
             raise ValueError(
@@ -444,6 +460,7 @@ class ProcessingStepIdentifier(StrEnum):
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj._products = products or []
+        obj._shared_ecr_name = shared_ecr_name
         return obj
 
     # SPICE processing steps
@@ -453,6 +470,33 @@ class ProcessingStepIdentifier(StrEnum):
     # L1B processing steps
     l1b_rad = ("l1b-rad", [DataProductIdentifier.l1b_rad])
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
+
+    # Radiometer calibration event combination steps (shared cal-rad ECR; one step per ObsID product)
+    cal_gain = ("cal-gain", [DataProductIdentifier.cal_gain], CAL_RAD_SHARED_ECR_NAME)
+    cal_noise = ("cal-noise", [DataProductIdentifier.cal_noise], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_365nm = ("cal-swc-365nm", [DataProductIdentifier.cal_swc_365nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_405nm = ("cal-swc-405nm", [DataProductIdentifier.cal_swc_405nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_520nm = ("cal-swc-520nm", [DataProductIdentifier.cal_swc_520nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_635nm = ("cal-swc-635nm", [DataProductIdentifier.cal_swc_635nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_840nm = ("cal-swc-840nm", [DataProductIdentifier.cal_swc_840nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_1550nm = ("cal-swc-1550nm", [DataProductIdentifier.cal_swc_1550nm], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_310k = ("cal-lwc-310k", [DataProductIdentifier.cal_lwc_310k], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_320k = ("cal-lwc-320k", [DataProductIdentifier.cal_lwc_320k], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_330k = ("cal-lwc-330k", [DataProductIdentifier.cal_lwc_330k], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_300k = ("cal-lwc-300k", [DataProductIdentifier.cal_lwc_300k], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_305k = ("cal-lwc-305k", [DataProductIdentifier.cal_lwc_305k], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_ssw_pri = ("cal-solar-ssw-pri", [DataProductIdentifier.cal_solar_ssw_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_tot_pri = ("cal-solar-tot-pri", [DataProductIdentifier.cal_solar_tot_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_lw_pri = ("cal-solar-lw-pri", [DataProductIdentifier.cal_solar_lw_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_sw_pri = ("cal-solar-sw-pri", [DataProductIdentifier.cal_solar_sw_pri], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_ssw_sec = ("cal-solar-ssw-sec", [DataProductIdentifier.cal_solar_ssw_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_tot_sec = ("cal-solar-tot-sec", [DataProductIdentifier.cal_solar_tot_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_lw_sec = ("cal-solar-lw-sec", [DataProductIdentifier.cal_solar_lw_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_sw_sec = ("cal-solar-sw-sec", [DataProductIdentifier.cal_solar_sw_sec], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_ssw_ter = ("cal-solar-ssw-ter", [DataProductIdentifier.cal_solar_ssw_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_tot_ter = ("cal-solar-tot-ter", [DataProductIdentifier.cal_solar_tot_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_lw_ter = ("cal-solar-lw-ter", [DataProductIdentifier.cal_solar_lw_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_sw_ter = ("cal-solar-sw-ter", [DataProductIdentifier.cal_solar_sw_ter], CAL_RAD_SHARED_ECR_NAME)
 
     # L2 processing steps — camera cloud fraction track
     l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])
@@ -546,7 +590,13 @@ class ProcessingStepIdentifier(StrEnum):
 
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
         with on a regular basis.
+
+        When a step was created with ``shared_ecr_name`` (e.g. radiometer cal-combine steps),
+        that shared repository name is returned so CDK can attach one ECR to many Batch jobs.
+        Otherwise returns ``{step}-docker-repo``.
         """
+        if self._shared_ecr_name is not None:
+            return self._shared_ecr_name
         return f"{str(self)}-docker-repo"
 
     @property

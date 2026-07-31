@@ -1,5 +1,16 @@
 # Version Changes
 
+## 5.10.6
+
+- BREAKING: Replace calibration event `DataProductIdentifier` values `*-COMBINED` with ObsID-specific products (`GAIN`, `NOISE`, `SWC-{λ}NM`, `LWC-{310,320,330,300,305}K`, `SOLAR-{ch}-{PRI,SEC,TER}`) and add matching L1A `NOM-HK-*-TRIMMED` products for Step-1 preprocessor outputs.
+- FEAT: Add ObsID-specific `ProcessingStepIdentifier` members (`cal-gain`, `cal-noise`, `cal-swc-*`, `cal-lwc-*`, `cal-solar-*`) that produce the new CAL products.
+- FEAT: `ProcessingStepIdentifier.ecr_name` supports an optional shared ECR name so all radiometer cal steps resolve to `cal-rad-docker-repo` (CDK should create one repo and reuse it across Batch job definitions; set `LIBERA_CAL_OBSID` per job).
+- FEAT: Add `libera_utils.obsids` registry (`NomHkObsidSource`, `ObsIdSpec`, `OBSID_REGISTRY`) as the sole ObsID → CAL/TRIMMED ProductID catalog (radiometer, camera, and shared science modes). RAD and WFOV namespaces are keyed separately because numeric ObsIDs overlap.
+- FEAT: Add camera TRIMMED and CAL `DataProductIdentifier` members (CT/RAPS video, darks, VIIRS lunar); camera `ProcessingStepIdentifier`s deferred.
+- FEAT: Add radiometer lunar ObsIDs 448/449 (`LUNAR-SOUTH-POLE` / `LUNAR-NORTH-POLE`) and RAD/WFOV ObsIDs 513/514 (`{RAD,WFOV}-VIIRS-LUNAR-{POS,NEG}-START`, distinct ProductIDs per source sharing TRIMMED products); cal-combine / PSIs deferred.
+- FEAT: Add `libera_utils.l1a.nom_hk_trim` helpers to detect contiguous ObsID runs in decoded NOM-HK and write one `NOM-HK-*-TRIMMED` product per run (warns if the same ObsID recurs in a day). Intended for the L1A preprocessor (CDK wiring follow-on).
+- DOCS: Add the ObsID Registry user-docs page covering the `(source, obsid)` keying, the `ObsIdSpec`/`ObsIdKind` fields, and how downstream repos dispatch cal-combine steps from the registry.
+
 ## 5.10.5
 
 - FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_COMPRESSED_IMAGE` (`uint8`/`BLOB_BYTE` + `WFOV_COMPRESSED_IMAGE_LENGTH`), and traces packets back to their image with `PACKET_IMAGE_ID`.
