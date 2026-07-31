@@ -27,6 +27,7 @@ PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR = "PacketCountNotUsedInImages"
 ERROR_FLAGGED_IMAGE_COUNT_ATTR = "ErrorFlaggedImageCount"
 FOOTER_MISMATCH_COUNT_ATTR = "FooterMismatchCount"
 HEADER_PARSE_ERROR_COUNT_ATTR = "HeaderParseErrorCount"
+
 # These flag *expected* truncation at the edges of a chunked packet window (the first packet in a
 # window is rarely a qualifying SOP, and the last is rarely an EOP), deliberately kept separate from
 # PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR, which reflects genuine mid-stream anomalies only.
@@ -36,7 +37,8 @@ LAST_IMAGE_INCOMPLETE_ATTR = "LastImageIncomplete"
 FSW_HEADER_SIZE = 36
 FPGA_HEADER_SIZE = 140
 FPGA_TRAILING_FOOTER_SIZE = 8
-# The FSW and FPGA blocks are only ever decoded together (see extract_wfov_header_metadata_from_blob),
+
+# The FSW and FPGA blocks are only ever decoded together (see _extract_wfov_header_metadata_from_blob),
 # so this is the one size that matters for validating a header: either all of it is present or none of it is.
 WFOV_HEADER_SIZE = FSW_HEADER_SIZE + FPGA_HEADER_SIZE
 MIN_STITCHED_BLOB_SIZE = WFOV_HEADER_SIZE + FPGA_TRAILING_FOOTER_SIZE
@@ -128,7 +130,7 @@ FPGA_BLOCK_FIELD_DTYPES: dict[str, np.dtype] = {
 
 
 @dataclass(frozen=True)
-class StitchedImage:
+class _StitchedImage:
     """One complete WFOV image stitched from SOP through EOP, already parsed once.
 
     Only the pieces ``_build_camera_dataset`` actually needs are kept — not the joined raw blob —
@@ -145,7 +147,7 @@ class StitchedImage:
 
 
 @dataclass
-class StitchStats:
+class _StitchStats:
     """Counters for WFOV image stitching quality metrics."""
 
     n_packets_not_used_in_images: int = 0
@@ -156,15 +158,26 @@ class StitchStats:
     last_image_incomplete: bool = False
 
 
-def swap_32bit_words(data: bytes) -> bytearray:
-    """Swap 32-bit words in the data."""
+def _swap_32bit_words(data: bytes) -> bytearray:
+    """Swap each 4-byte word end-for-end (FPGA block endianness prep).
+
+    Parameters
+    ----------
+    data : bytes
+        Input byte string; length should be a multiple of 4.
+
+    Returns
+    -------
+    bytearray
+        Copy of ``data`` with each 32-bit word byte-reversed.
+    """
     result = bytearray(len(data))
     for i in range(0, len(data), 4):
         result[i : i + 4] = data[i : i + 4][::-1]
     return result
 
 
-def extract_wfov_header_metadata_from_blob(blob_bytes: bytes) -> dict:
+def _extract_wfov_header_metadata_from_blob(blob_bytes: bytes) -> dict:
     """Decode the full WFOV image header (FSW block + FPGA block) as a single atomic unit.
 
     The FSW and FPGA sub-blocks are only ever meaningful together, so this checks the combined
@@ -174,6 +187,21 @@ def extract_wfov_header_metadata_from_blob(blob_bytes: bytes) -> dict:
     ``WFOV_IMAGE_FOOTER_*``, ``WFOV_FPGA_STATUS_*``) purely for data-product naming; on the wire it's
     one 176-byte object. Byte layout matches ``read_fsw_metadata`` and the FPGA block handling in
     libera_cam ``metadata_parser.py`` / ``read_l1a_cam_data.py``.
+
+    Parameters
+    ----------
+    blob_bytes : bytes
+        Stitched NAND image blob (or any prefix long enough to contain the 176-byte header).
+
+    Returns
+    -------
+    dict
+        Flat mapping of FSW + FPGA field names to decoded Python scalars.
+
+    Raises
+    ------
+    ValueError
+        If ``blob_bytes`` is shorter than ``WFOV_HEADER_SIZE``.
     """
     if len(blob_bytes) < WFOV_HEADER_SIZE:
         raise ValueError(f"Blob too small for WFOV header: {len(blob_bytes)} bytes (minimum {WFOV_HEADER_SIZE})")
@@ -184,7 +212,20 @@ def extract_wfov_header_metadata_from_blob(blob_bytes: bytes) -> dict:
 
 
 def _decode_fsw_header_bytes(fsw_bytes: bytes) -> dict:
-    """Decode the 36-byte FSW header. Byte layout matches ``read_fsw_metadata`` in libera_cam ``metadata_parser.py``."""
+    """Decode the 36-byte FSW header.
+
+    Byte layout matches ``read_fsw_metadata`` in libera_cam ``metadata_parser.py``.
+
+    Parameters
+    ----------
+    fsw_bytes : bytes
+        Exactly ``FSW_HEADER_SIZE`` bytes of FSW header.
+
+    Returns
+    -------
+    dict
+        Decoded FSW header fields.
+    """
     with BytesIO(fsw_bytes) as file:
         metadata: dict = {}
         metadata["fsw_length"] = struct.unpack("B", file.read(1))[0]
@@ -217,8 +258,18 @@ def _decode_fpga_block_bytes(fpga_bytes: bytes) -> dict:
     """Decode the 140-byte FPGA block (image header + image footer + status flags).
 
     Byte layout matches the FPGA block handling in libera_cam ``read_l1a_cam_data.py``.
+
+    Parameters
+    ----------
+    fpga_bytes : bytes
+        Exactly ``FPGA_HEADER_SIZE`` bytes of FPGA block.
+
+    Returns
+    -------
+    dict
+        Decoded image-header, image-footer, and FPGA status fields.
     """
-    data = swap_32bit_words(fpga_bytes)
+    data = _swap_32bit_words(fpga_bytes)
     header = data[2:100][::2]
     footer = data[100:136][::2]
 
@@ -265,11 +316,26 @@ def _decode_fpga_block_bytes(fpga_bytes: bytes) -> dict:
     return combined
 
 
-def extract_compressed_payload(raw_blob: bytes) -> bytes:
+def _extract_compressed_payload(raw_blob: bytes) -> bytes:
     """Extract compressed JPEG-LS payload from a full stitched NAND image blob.
 
     Layout matches libera_cam ``extract_dict_from_bytearray`` slicing:
     ``[FSW 36][FPGA 140][payload][trailing footer 8]``.
+
+    Parameters
+    ----------
+    raw_blob : bytes
+        Complete stitched image blob including headers and trailing footer.
+
+    Returns
+    -------
+    bytes
+        Compressed payload bytes between the WFOV header and trailing footer.
+
+    Raises
+    ------
+    ValueError
+        If the blob is too small or headers/footers would overlap.
     """
     if len(raw_blob) < MIN_STITCHED_BLOB_SIZE:
         raise ValueError(
@@ -284,8 +350,19 @@ def extract_compressed_payload(raw_blob: bytes) -> bytes:
     return raw_blob[WFOV_HEADER_SIZE:footer_start]
 
 
-def is_valid_footer_from_blob(raw_blob: bytes) -> dict:
-    """Decode trailing footer metadata from a stitched image blob. Compares against a known hex string and returns False if it doesn't match."""
+def _is_valid_footer_from_blob(raw_blob: bytes) -> bool:
+    """Return whether the trailing 8-byte NAND footer matches ``VALID_FOOTER_BYTES``.
+
+    Parameters
+    ----------
+    raw_blob : bytes
+        Complete stitched image blob (or any buffer whose last 8 bytes are the footer).
+
+    Returns
+    -------
+    bool
+        ``True`` if the blob is long enough and the trailing footer matches the expected magic.
+    """
     if len(raw_blob) < MIN_STITCHED_BLOB_SIZE:
         logger.warning(
             f"Blob too small for trailing footer decode: {len(raw_blob)} bytes (minimum {MIN_STITCHED_BLOB_SIZE})"
@@ -299,12 +376,12 @@ def is_valid_footer_from_blob(raw_blob: bytes) -> dict:
     return True
 
 
-def stitch_wfov_images(
+def _stitch_wfov_images(
     flags: np.ndarray,
     offsets: np.ndarray,
     lengths: np.ndarray,
     packet_rows: list,
-) -> tuple[list[StitchedImage], StitchStats]:
+) -> tuple[list[_StitchedImage], _StitchStats]:
     """Stitch complete WFOV images from mem-dump packet streams.
 
     State machine matches ``reassemble_image_blobs`` in libera_cam ``read_l1a_cam_data.py``.
@@ -312,18 +389,34 @@ def stitch_wfov_images(
     Every packet-stream window handed to this function is expected to start mid-image (the first
     packet is usually not a qualifying ``SOP``) and end mid-image (the last is usually not an
     ``EOP``) — chunked processing always has both edges truncated. That truncation is *expected*
-    and is reported via ``StitchStats.first_image_incomplete`` / ``last_image_incomplete``, kept
+    and is reported via ``_StitchStats.first_image_incomplete`` / ``last_image_incomplete``, kept
     deliberately separate from ``n_packets_not_used_in_images``, which is reserved for genuine
     mid-stream anomalies (offset gaps, orphan EOPs, aborted collections) regardless of position.
 
-    ``packet_rows`` (one ``bytes`` object per packet, e.g. from ``ndarray.tolist()``) is consumed
-    destructively: each entry is set to ``None`` the instant that packet's fate — folded into a
-    complete image, or dropped — is decided, so CPython can free it immediately rather than it
-    staying resident until the whole packet stream has been processed. Callers should not reuse
-    ``packet_rows`` after this call returns.
+    ``packet_rows`` (one ``bytes`` object per packet) is consumed destructively: each entry is set
+    to ``None`` the instant that packet's fate — folded into a complete image, or dropped — is
+    decided, so CPython can free it immediately rather than it staying resident until the whole
+    packet stream has been processed. Callers should not reuse ``packet_rows`` after this call
+    returns.
+
+    Parameters
+    ----------
+    flags : numpy.ndarray
+        Per-packet mem-dump flags (``SOP`` / ``MOP`` / ``EOP`` / …), typically ``|S8``.
+    offsets : numpy.ndarray
+        Per-packet byte offsets within the reassembled image.
+    lengths : numpy.ndarray
+        Per-packet valid payload lengths.
+    packet_rows : list
+        Mutable list of per-packet ``bytes`` payloads; entries are cleared as they are consumed.
+
+    Returns
+    -------
+    tuple[list[_StitchedImage], _StitchStats]
+        Complete stitched images (already header/footer/payload parsed) and quality counters.
     """
-    stats = StitchStats()
-    stitched_images: list[StitchedImage] = []
+    stats = _StitchStats()
+    stitched_images: list[_StitchedImage] = []
     image_id = 0
 
     state = "SEEKING"
@@ -379,7 +472,7 @@ def stitch_wfov_images(
                 _release(start_index, i)
 
                 try:
-                    header_meta = extract_wfov_header_metadata_from_blob(raw_blob)
+                    header_meta = _extract_wfov_header_metadata_from_blob(raw_blob)
                 except (ValueError, struct.error, IndexError):
                     header_meta = None
 
@@ -388,17 +481,17 @@ def stitch_wfov_images(
                 elif any(header_meta[field] for field in FPGA_STATUS_FIELD_DTYPES):
                     stats.n_error_flagged_images += 1
 
-                footer_valid = is_valid_footer_from_blob(raw_blob)
+                footer_valid = _is_valid_footer_from_blob(raw_blob)
                 if not footer_valid:
                     stats.n_footer_mismatches += 1
 
                 try:
-                    payload = extract_compressed_payload(raw_blob)
+                    payload = _extract_compressed_payload(raw_blob)
                 except ValueError:
                     payload = b""
 
                 stitched_images.append(
-                    StitchedImage(
+                    _StitchedImage(
                         image_id=image_id,
                         sop_index=start_index,
                         eop_index=i,
@@ -444,7 +537,7 @@ def _field_fill_value(dtype: np.dtype):
 
 
 # (output name prefix, field dtype dict) for each of the four data-product metadata categories
-# decoded from the single WFOV header blob (see extract_wfov_header_metadata_from_blob).
+# decoded from the single WFOV header blob (see _extract_wfov_header_metadata_from_blob).
 _HEADER_METADATA_CATEGORIES = (
     ("WFOV_FSW_HEADER_", FSW_HEADER_FIELD_DTYPES),
     ("WFOV_IMAGE_HEADER_", IMAGE_HEADER_FIELD_DTYPES),
@@ -453,8 +546,20 @@ _HEADER_METADATA_CATEGORIES = (
 )
 
 
-def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
-    """Build CAMERA_TIME coordinate and per-image metadata for complete stitched images."""
+def _build_camera_dataset(stitched_images: list[_StitchedImage]) -> xr.Dataset:
+    """Build CAMERA_TIME coordinate and per-image metadata for complete stitched images.
+
+    Parameters
+    ----------
+    stitched_images : list[_StitchedImage]
+        Complete images from ``_stitch_wfov_images``.
+
+    Returns
+    -------
+    xarray.Dataset
+        Dataset on ``CAMERA_TIME`` with compressed payloads and decoded header fields. Empty if
+        ``stitched_images`` is empty.
+    """
     n_images = len(stitched_images)
     if n_images == 0:
         return xr.Dataset(coords={CAMERA_TIME_COORD: (CAMERA_TIME_COORD, np.array([], dtype=DATETIME_USEC_DTYPE))})
@@ -509,7 +614,7 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
 
 
 def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
-    """Stitch complete WFOV images, drop the now-redundant raw packet payloads, and attach CAMERA_TIME metadata.
+    """Stitch complete WFOV images, drop raw packet payloads, and attach CAMERA_TIME metadata.
 
     ``ICIE__WFOV_DATA`` is dropped from the returned dataset entirely, for every packet regardless
     of completeness: content folded into a complete image is already duplicated (compressed) on
@@ -519,6 +624,23 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     than zeroing it row by row, which requires a second full-size copy of it — also lets the
     ~GB-scale raw array be freed as soon as the single stitching pass over it finishes, instead of
     staying resident for the rest of dataset construction.
+
+    Parameters
+    ----------
+    packet_ds : xarray.Dataset
+        APID 1040 packet-level L1A dataset containing mem-dump flag/offset/length fields and
+        ``ICIE__WFOV_DATA``.
+
+    Returns
+    -------
+    xarray.Dataset
+        Input dataset merged with ``CAMERA_TIME`` metadata, ``PACKET_IMAGE_ID``, and file-level
+        stitch quality attributes; ``ICIE__WFOV_DATA`` is absent.
+
+    Raises
+    ------
+    ValueError
+        If required WFOV packet variables are missing from ``packet_ds``.
     """
     required_vars = [MEM_DUMP_FLAGS_VAR, MEM_DUMP_OFFSET_VAR, MEM_DUMP_LENGTH_VAR, WFOV_DATA_VAR]
     missing = [name for name in required_vars if name not in packet_ds]
@@ -531,7 +653,7 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     n_packets = packet_ds.sizes["PACKET"]
 
     # A list of independent per-packet bytes objects (rather than the dense ndarray) lets
-    # stitch_wfov_images free each packet's memory the instant it's consumed, instead of the whole
+    # _stitch_wfov_images free each packet's memory the instant it's consumed, instead of the whole
     # ~GB-scale array staying resident for the entire stitching pass. Built via a uint8 view rather
     # than ndarray.tolist(): the fixed-width |S dtype silently strips trailing null bytes on
     # conversion to Python bytes, which would corrupt any packet whose valid payload run (per
@@ -542,7 +664,7 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     del packet_rows_u8  # a view over the same buffer as WFOV_DATA_VAR; drop it before dropping the var below
     packet_ds = packet_ds.drop_vars(WFOV_DATA_VAR)
 
-    stitched_images, stats = stitch_wfov_images(flags, offsets, lengths, packet_rows)
+    stitched_images, stats = _stitch_wfov_images(flags, offsets, lengths, packet_rows)
 
     packet_image_id = np.full(n_packets, -1, dtype=np.int32)
     for image in stitched_images:
