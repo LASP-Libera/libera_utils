@@ -19,8 +19,10 @@ from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
     ERROR_FLAGGED_IMAGE_COUNT_ATTR,
+    FIRST_IMAGE_INCOMPLETE_ATTR,
     FOOTER_MISMATCH_COUNT_ATTR,
     HEADER_PARSE_ERROR_COUNT_ATTR,
+    LAST_IMAGE_INCOMPLETE_ATTR,
     PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR,
     WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
     WFOV_COMPRESSED_IMAGE_VAR,
@@ -197,10 +199,13 @@ def test_process_packets_to_l1a_product(
         assert WFOV_COMPRESSED_IMAGE_VAR in dataset.data_vars
         assert WFOV_COMPRESSED_IMAGE_LENGTH_VAR in dataset.data_vars
         assert dataset.sizes[CAMERA_TIME_COORD] > 0
+        assert "ICIE__WFOV_DATA" not in dataset.data_vars
         assert PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR in dataset.attrs
         assert ERROR_FLAGGED_IMAGE_COUNT_ATTR in dataset.attrs
         assert FOOTER_MISMATCH_COUNT_ATTR in dataset.attrs
         assert HEADER_PARSE_ERROR_COUNT_ATTR in dataset.attrs
+        assert FIRST_IMAGE_INCOMPLETE_ATTR in dataset.attrs
+        assert LAST_IMAGE_INCOMPLETE_ATTR in dataset.attrs
 
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
@@ -308,6 +313,12 @@ def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
 
     n_complete = dataset.sizes[CAMERA_TIME_COORD]
     assert n_complete < dataset.sizes["PACKET"]
+    # Fixture has 1509 WFOV SCI packets; only 3 stitch into complete images. The rest are all
+    # leading/trailing edge truncation (this packet window doesn't open on an SOP or close on an
+    # EOP), not genuine anomalies, so they don't count toward PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR.
+    assert dataset.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 0
+    assert dataset.attrs[FIRST_IMAGE_INCOMPLETE_ATTR] == 1
+    assert dataset.attrs[LAST_IMAGE_INCOMPLETE_ATTR] == 1
     assert dataset.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] == 0
     assert dataset.attrs[FOOTER_MISMATCH_COUNT_ATTR] == 0
     assert dataset.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 0

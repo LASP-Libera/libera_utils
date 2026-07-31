@@ -241,9 +241,10 @@ icie_rad_sample:
 
 ### AggregationGroup
 
-Some packets carry large binary payloads that XTCE decodes into many numbered scalar fields (e.g.
-972 individual single-byte fields for WFOV camera data). `AggregationGroup` reassembles these into
-a single bytes-typed variable per packet, reducing variable count and simplifying downstream access.
+Some packets carry large binary payloads that XTCE decodes into many numbered scalar fields
+instead of one binary field (e.g. hundreds of individual single-byte fields for a single payload).
+`AggregationGroup` reassembles these into a single bytes-typed variable per packet, reducing
+variable count and simplifying downstream access.
 
 | Field           | Type            | Description                                                         |
 | --------------- | --------------- | ------------------------------------------------------------------- |
@@ -255,17 +256,26 @@ a single bytes-typed variable per packet, reducing variable count and simplifyin
 The total byte size of all aggregated fields must equal `dtype.itemsize`. A `ValueError` is raised
 at processing time if there is a mismatch.
 
+> **No packet currently uses `aggregation_groups`.** WFOV SCI (`icie_wfov_sci`) used to be the
+> motivating case, reassembling `ICIE__WFOV_DATA` from 972 individual byte fields. Its XTCE
+> definition now decodes `ICIE__WFOV_DATA` directly as a single `BinaryParameterType` field, so
+> Space Packet Parser hands back the whole payload as one field already and `icie_wfov_sci`
+> declares no `aggregation_groups` at all. The mechanism is still fully supported for any future
+> packet whose XTCE definition splits a binary payload into many numbered scalar fields the same
+> way WFOV's used to; the example below is illustrative of that shape, not a real current config.
+
 ```yaml
-# WFOV_SCI: 972 individual byte fields reassembled into one 972-byte blob per packet
-icie_wfov_sci:
-  packet_apid: "icie_wfov_sci"
+# Illustrative: reassembling a hypothetical 972-byte payload split into 972 numbered byte fields
+# by its XTCE definition (no current packet configuration actually needs this)
+some_packet:
+  packet_apid: "some_packet"
   packet_time_fields:
-    day_field: "ICIE__TM_DAY_WFOV_SCI"
-    ms_field: "ICIE__TM_MS_WFOV_SCI"
-    us_field: "ICIE__TM_US_WFOV_SCI"
+    day_field: "SOME_PACKET_TM_DAY"
+    ms_field: "SOME_PACKET_TM_MS"
+    us_field: "SOME_PACKET_TM_US"
   aggregation_groups:
-    - name: "ICIE__WFOV_DATA"
-      field_pattern: "ICIE__WFOV_DATA_%i"
+    - name: "SOME_PACKET_DATA"
+      field_pattern: "SOME_PACKET_DATA_%i"
       field_count: 972
       dtype: "|S972"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
@@ -351,8 +361,17 @@ with `ICIE__MEM_DUMP_OFFSET_WFOV == 0` opens a new image, each subsequent packet
 long as its offset matches the running byte count, and an `EOP` packet closes the image out. Any
 break in that sequence — an offset that doesn't line up, an `EOP` with no preceding `SOP`, or a
 `SOP` left dangling with no matching `EOP` — discards the in-progress image instead of stitching
-it incorrectly; those packets keep their raw per-packet `ICIE__WFOV_DATA` slices and are counted
-in `PacketCountNotUsedInImages` below.
+it incorrectly, and is counted in `PacketCountNotUsedInImages` below.
+
+**Edge-of-window truncation is expected and handled separately.** Each call to this pipeline
+processes one packet-stream window (e.g. one processing run's worth of downlinked packets), and
+it's normal — not an error — for the first packet in that window to not be a qualifying `SOP`
+(the image it belongs to started before the window) and for the last packet to not be an `EOP`
+(its image continues into the next window). Both edges are silently dropped from the output the
+same way a genuine mid-stream break is, but are **not** counted in `PacketCountNotUsedInImages`,
+since that attribute is reserved for real anomalies. Instead, `FirstImageIncomplete` /
+`LastImageIncomplete` (booleans, see below) flag whether _this_ window's leading/trailing edge was
+truncated at all.
 
 WFOV science packets carry two independent time sources:
 
@@ -374,22 +393,34 @@ During L1A parsing for APID 1040, libera_utils:
    `WFOV_FSW_HEADER_*`, `WFOV_IMAGE_HEADER_*`, `WFOV_IMAGE_FOOTER_*`, and `WFOV_FPGA_STATUS_*`.
    Separately, the trailing 8-byte NAND footer is checked against a known-good magic byte pattern
    (not decoded into fields) to catch corrupted images; mismatches count toward `FooterMismatchCount`.
-4. Zeros `ICIE__WFOV_DATA` on contributing packets and sets `PACKET_IMAGE_ID` (0..N-1, or `-1` for
-   incomplete sequences).
+4. Drops `ICIE__WFOV_DATA` from the output entirely and sets `PACKET_IMAGE_ID` (0..N-1, or `-1`
+   for packets not part of a complete image).
 
-Incomplete or failed images retain per-packet `ICIE__WFOV_DATA` slices and do not receive a
-`CAMERA_TIME` row.
+`ICIE__WFOV_DATA` is removed from the dataset unconditionally, regardless of whether a packet's
+data ended up folded into a complete image or not: for packets in a complete image, that content
+is already duplicated (compressed) in `WFOV_COMPRESSED_IMAGE`; for packets that never completed
+an image — truncated at a window edge or dropped for a genuine anomaly — the raw payload is
+permanently unusable. `PACKET_IMAGE_ID` is the only per-packet trace-back to a stitched image.
+Incomplete or failed images do not receive a `CAMERA_TIME` row.
 
-File-level quality attributes (integers ≥ 0):
+File-level quality attributes:
 
-- `PacketCountNotUsedInImages`: total packets swept up in a rejected/incomplete SOP→EOP attempt
-  (dangling SOP, offset gap, orphan EOP, bad SOP offset)
+- `PacketCountNotUsedInImages` (integer ≥ 0): total packets swept up in a rejected/incomplete
+  SOP→EOP attempt due to a genuine anomaly (dangling SOP aborted by a new SOP, offset gap, orphan
+  EOP, bad SOP offset) — **excludes** the expected truncation at this window's own leading/trailing
+  edge, which is reported separately below
 - `ErrorFlaggedImageCount`: complete images whose FPGA status block has any error bit set
   (see `WFOV_FPGA_STATUS_*`)
 - `FooterMismatchCount`: complete images whose trailing 8-byte NAND footer didn't match the
   expected magic bytes
 - `HeaderParseErrorCount`: complete images where the 176-byte WFOV header failed to decode
   (too few bytes for a stitched blob that should have had a full header)
+- `FirstImageIncomplete` (0/1, semantically boolean — NetCDF attributes have no bool type): `1` if
+  this window's first packet wasn't a qualifying `SOP` (i.e. the image it belongs to started
+  before this window)
+- `LastImageIncomplete` (0/1, semantically boolean): `1` if this window ended mid-collection (a
+  dangling `SOP` that never reached its `EOP` because the window ran out, not because of an
+  anomaly)
 
 Decoded metadata on the `CAMERA_TIME` dimension:
 

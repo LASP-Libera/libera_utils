@@ -7,6 +7,8 @@ attributes:
   ErrorFlaggedImageCount: null
   FooterMismatchCount: null
   HeaderParseErrorCount: null
+  FirstImageIncomplete: null
+  LastImageIncomplete: null
 coordinates:
   PACKET_ICIE_TIME:
     dtype: datetime64[ns]

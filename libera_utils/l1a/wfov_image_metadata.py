@@ -27,6 +27,11 @@ PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR = "PacketCountNotUsedInImages"
 ERROR_FLAGGED_IMAGE_COUNT_ATTR = "ErrorFlaggedImageCount"
 FOOTER_MISMATCH_COUNT_ATTR = "FooterMismatchCount"
 HEADER_PARSE_ERROR_COUNT_ATTR = "HeaderParseErrorCount"
+# These flag *expected* truncation at the edges of a chunked packet window (the first packet in a
+# window is rarely a qualifying SOP, and the last is rarely an EOP), deliberately kept separate from
+# PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR, which reflects genuine mid-stream anomalies only.
+FIRST_IMAGE_INCOMPLETE_ATTR = "FirstImageIncomplete"
+LAST_IMAGE_INCOMPLETE_ATTR = "LastImageIncomplete"
 
 FSW_HEADER_SIZE = 36
 FPGA_HEADER_SIZE = 140
@@ -124,12 +129,19 @@ FPGA_BLOCK_FIELD_DTYPES: dict[str, np.dtype] = {
 
 @dataclass(frozen=True)
 class StitchedImage:
-    """One complete WFOV image stitched from SOP through EOP."""
+    """One complete WFOV image stitched from SOP through EOP, already parsed once.
+
+    Only the pieces ``_build_camera_dataset`` actually needs are kept — not the joined raw blob —
+    since header/footer/payload parsing happens exactly once, at stitch time, right before the
+    packets that produced it are freed.
+    """
 
     image_id: int
     sop_index: int
     eop_index: int
-    raw_blob: bytes
+    payload: bytes
+    header_meta: dict | None
+    footer_valid: bool
 
 
 @dataclass
@@ -140,6 +152,8 @@ class StitchStats:
     n_error_flagged_images: int = 0
     n_footer_mismatches: int = 0
     n_header_parse_errors: int = 0
+    first_image_incomplete: bool = False
+    last_image_incomplete: bool = False
 
 
 def swap_32bit_words(data: bytes) -> bytearray:
@@ -285,29 +299,28 @@ def is_valid_footer_from_blob(raw_blob: bytes) -> dict:
     return True
 
 
-def _stitch_packet_range(
-    packet_data: np.ndarray,
-    lengths: np.ndarray,
-    start_index: int,
-    end_index: int,
-) -> bytes:
-    """Stitch packet slices from ``start_index`` through ``end_index`` inclusive."""
-    packet_width = packet_data.dtype.itemsize
-    packet_rows = packet_data[start_index : end_index + 1].view(np.uint8).reshape(-1, packet_width)
-    packet_lengths = lengths[start_index : end_index + 1]
-    parts = [packet_rows[p_idx, : packet_lengths[p_idx]].tobytes() for p_idx in range(packet_rows.shape[0])]
-    return b"".join(parts)
-
-
 def stitch_wfov_images(
     flags: np.ndarray,
     offsets: np.ndarray,
     lengths: np.ndarray,
-    packet_data: np.ndarray,
+    packet_rows: list,
 ) -> tuple[list[StitchedImage], StitchStats]:
     """Stitch complete WFOV images from mem-dump packet streams.
 
     State machine matches ``reassemble_image_blobs`` in libera_cam ``read_l1a_cam_data.py``.
+
+    Every packet-stream window handed to this function is expected to start mid-image (the first
+    packet is usually not a qualifying ``SOP``) and end mid-image (the last is usually not an
+    ``EOP``) — chunked processing always has both edges truncated. That truncation is *expected*
+    and is reported via ``StitchStats.first_image_incomplete`` / ``last_image_incomplete``, kept
+    deliberately separate from ``n_packets_not_used_in_images``, which is reserved for genuine
+    mid-stream anomalies (offset gaps, orphan EOPs, aborted collections) regardless of position.
+
+    ``packet_rows`` (one ``bytes`` object per packet, e.g. from ``ndarray.tolist()``) is consumed
+    destructively: each entry is set to ``None`` the instant that packet's fate — folded into a
+    complete image, or dropped — is decided, so CPython can free it immediately rather than it
+    staying resident until the whole packet stream has been processed. Callers should not reuse
+    ``packet_rows`` after this call returns.
     """
     stats = StitchStats()
     stitched_images: list[StitchedImage] = []
@@ -316,21 +329,37 @@ def stitch_wfov_images(
     state = "SEEKING"
     start_index = -1
     expected_offset = 0
+    seen_first_sop = False
+
+    def _release(lo: int, hi: int) -> None:
+        for k in range(lo, hi + 1):
+            packet_rows[k] = None
 
     for i in range(len(flags)):
         flag = flags[i]
         offset = int(offsets[i])
         length = int(lengths[i])
 
+        if not seen_first_sop:
+            if flag == b"SOP":
+                seen_first_sop = True
+            else:
+                # Leading fragment: belongs to an image whose SOP fell outside this window.
+                stats.first_image_incomplete = True
+                packet_rows[i] = None
+                continue
+
         if flag == b"SOP":
             if state == "COLLECTING":
                 # Prior SOP never reached an EOP; every packet it collected goes unused.
                 stats.n_packets_not_used_in_images += i - start_index
+                _release(start_index, i - 1)
 
             state = "COLLECTING"
             start_index = i
             if offset != 0:
                 stats.n_packets_not_used_in_images += 1
+                packet_rows[i] = None
                 state = "SEEKING"
                 continue
             expected_offset = length
@@ -339,21 +368,16 @@ def stitch_wfov_images(
             if offset != expected_offset:
                 # Offset gap: discard this packet plus everything collected since start_index.
                 stats.n_packets_not_used_in_images += i - start_index + 1
+                _release(start_index, i)
                 state = "SEEKING"
                 continue
 
             expected_offset += length
 
             if flag == b"EOP":
-                raw_blob = _stitch_packet_range(packet_data, lengths, start_index, i)
-                stitched_images.append(
-                    StitchedImage(
-                        image_id=image_id,
-                        sop_index=start_index,
-                        eop_index=i,
-                        raw_blob=raw_blob,
-                    )
-                )
+                raw_blob = b"".join(packet_rows[k][: int(lengths[k])] for k in range(start_index, i + 1))
+                _release(start_index, i)
+
                 try:
                     header_meta = extract_wfov_header_metadata_from_blob(raw_blob)
                 except (ValueError, struct.error, IndexError):
@@ -364,18 +388,42 @@ def stitch_wfov_images(
                 elif any(header_meta[field] for field in FPGA_STATUS_FIELD_DTYPES):
                     stats.n_error_flagged_images += 1
 
-                if not is_valid_footer_from_blob(raw_blob):
+                footer_valid = is_valid_footer_from_blob(raw_blob)
+                if not footer_valid:
                     stats.n_footer_mismatches += 1
 
+                try:
+                    payload = extract_compressed_payload(raw_blob)
+                except ValueError:
+                    payload = b""
+
+                stitched_images.append(
+                    StitchedImage(
+                        image_id=image_id,
+                        sop_index=start_index,
+                        eop_index=i,
+                        payload=payload,
+                        header_meta=header_meta,
+                        footer_valid=footer_valid,
+                    )
+                )
                 image_id += 1
                 state = "SEEKING"
         elif flag == b"EOP":
             # Orphan EOP with no preceding SOP.
             stats.n_packets_not_used_in_images += 1
+            packet_rows[i] = None
+        else:
+            # MOP (or any other non-SOP/EOP flag) seen while SEEKING: a genuine mid-stream gap
+            # once the leading phase is over (e.g. after a discarded collection, before the next SOP).
+            stats.n_packets_not_used_in_images += 1
+            packet_rows[i] = None
 
     if state == "COLLECTING":
-        # Stream ended mid-collection; the dangling SOP never got its EOP.
-        stats.n_packets_not_used_in_images += len(flags) - start_index
+        # Stream ended mid-collection; the dangling SOP never got its EOP. Expected trailing
+        # truncation, not an anomaly.
+        stats.last_image_incomplete = True
+        _release(start_index, len(flags) - 1)
 
     return stitched_images, stats
 
@@ -386,25 +434,6 @@ def _fsw_timestamps_to_datetime64(timestamp_seconds: int, timestamp_subseconds: 
     if isinstance(dt, pd.Series):
         dt = dt.iloc[0]
     return np.datetime64(pd.Timestamp(dt).to_datetime64(), "us")
-
-
-def _parse_sop_row(blob_bytes: bytes) -> tuple[np.datetime64, dict, bool]:
-    """Parse one SOP slice and return camera time, the decoded header dict, and its validity."""
-    header_meta: dict = {}
-    header_valid = False
-    camera_time = np.datetime64("NaT", "us")
-
-    try:
-        header_meta = extract_wfov_header_metadata_from_blob(blob_bytes)
-        header_valid = True
-        camera_time = _fsw_timestamps_to_datetime64(
-            header_meta["timestamp_seconds"],
-            header_meta["timestamp_subseconds"],
-        )
-    except (ValueError, struct.error, IndexError):
-        pass
-
-    return camera_time, header_meta, header_valid
 
 
 def _field_fill_value(dtype: np.dtype):
@@ -430,12 +459,12 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
     if n_images == 0:
         return xr.Dataset(coords={CAMERA_TIME_COORD: (CAMERA_TIME_COORD, np.array([], dtype=DATETIME_USEC_DTYPE))})
 
-    payloads = [extract_compressed_payload(image.raw_blob) for image in stitched_images]
-    payload_lengths = np.array([len(payload) for payload in payloads], dtype=np.uint32)
+    payload_lengths = np.array([len(image.payload) for image in stitched_images], dtype=np.uint32)
     max_payload_length = int(payload_lengths.max())
     blob_array = np.zeros((n_images, max_payload_length), dtype=np.uint8)
-    for row, payload in enumerate(payloads):
-        blob_array[row, : len(payload)] = np.frombuffer(payload, dtype=np.uint8)
+    for row, image in enumerate(stitched_images):
+        if image.payload:
+            blob_array[row, : len(image.payload)] = np.frombuffer(image.payload, dtype=np.uint8)
 
     camera_times = np.full(n_images, np.datetime64("NaT", "us"), dtype=DATETIME_USEC_DTYPE)
     packet_indices = np.zeros(n_images, dtype=np.int32)
@@ -447,16 +476,19 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
     ]
 
     for row, image in enumerate(stitched_images):
-        raw_blob = image.raw_blob
-        camera_time, header_meta, header_valid = _parse_sop_row(raw_blob)
-
-        camera_times[row] = camera_time
+        header_meta = image.header_meta
         packet_indices[row] = image.sop_index
-        header_parse_valid[row] = header_valid
+        header_parse_valid[row] = header_meta is not None
+
+        if header_meta is not None:
+            camera_times[row] = _fsw_timestamps_to_datetime64(
+                header_meta["timestamp_seconds"],
+                header_meta["timestamp_subseconds"],
+            )
 
         for arrays, (_, field_dtypes) in zip(category_arrays, _HEADER_METADATA_CATEGORIES):
             for field, dtype in field_dtypes.items():
-                arrays[field][row] = header_meta.get(field, _field_fill_value(dtype))
+                arrays[field][row] = (header_meta or {}).get(field, _field_fill_value(dtype))
 
     data_vars: dict[str, tuple[tuple[str, ...], np.ndarray]] = {
         CAMERA_PACKET_INDEX_VAR: ((CAMERA_TIME_COORD,), packet_indices),
@@ -476,36 +508,18 @@ def _build_camera_dataset(stitched_images: list[StitchedImage]) -> xr.Dataset:
     return xr.Dataset(data_vars, coords=coords)
 
 
-def _zero_stitched_packet_payloads(packet_ds: xr.Dataset, stitched_images: list[StitchedImage]) -> xr.Dataset:
-    """Zero out per-packet payloads once folded into a stitched image, and tag ``PACKET_IMAGE_ID``.
-
-    This is unrelated to packet-row deduplication (handled earlier by ``packets._drop_duplicates``
-    on packet timestamps). Here, no packets are dropped; instead the raw ``ICIE__WFOV_DATA`` slices
-    for packets contributing to a *complete* stitched image are zeroed, since that image content is
-    now stored once on ``CAMERA_TIME`` as ``WFOV_COMPRESSED_IMAGE`` and would otherwise be duplicated
-    in the file. ``PACKET_IMAGE_ID`` traces each packet back to its image (``-1`` if not part of one).
-    """
-    n_packets = packet_ds.sizes["PACKET"]
-    packet_image_id = np.full(n_packets, -1, dtype=np.int32)
-
-    for image in stitched_images:
-        packet_image_id[image.sop_index : image.eop_index + 1] = image.image_id
-
-    packet_ds = packet_ds.copy(deep=False)
-    if stitched_images:
-        packet_data = packet_ds[WFOV_DATA_VAR].values.copy()
-        packet_width = packet_data.dtype.itemsize
-        packet_data_uint8 = packet_data.view(np.uint8).reshape(n_packets, packet_width)
-        for image in stitched_images:
-            for packet_index in range(image.sop_index, image.eop_index + 1):
-                packet_data_uint8[packet_index, :] = 0
-        packet_ds[WFOV_DATA_VAR] = (("PACKET",), packet_data)
-    packet_ds[PACKET_IMAGE_ID_VAR] = (("PACKET",), packet_image_id)
-    return packet_ds
-
-
 def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
-    """Stitch complete WFOV images, zero out redundant packet payloads, and attach CAMERA_TIME metadata."""
+    """Stitch complete WFOV images, drop the now-redundant raw packet payloads, and attach CAMERA_TIME metadata.
+
+    ``ICIE__WFOV_DATA`` is dropped from the returned dataset entirely, for every packet regardless
+    of completeness: content folded into a complete image is already duplicated (compressed) on
+    ``CAMERA_TIME`` as ``WFOV_COMPRESSED_IMAGE``, and content that never completed an image (edge
+    truncation or a mid-stream anomaly) is permanently unusable. ``PACKET_IMAGE_ID`` remains the only
+    per-packet trace-back to a stitched image (``-1`` if none). Dropping the whole variable — rather
+    than zeroing it row by row, which requires a second full-size copy of it — also lets the
+    ~GB-scale raw array be freed as soon as the single stitching pass over it finishes, instead of
+    staying resident for the rest of dataset construction.
+    """
     required_vars = [MEM_DUMP_FLAGS_VAR, MEM_DUMP_OFFSET_VAR, MEM_DUMP_LENGTH_VAR, WFOV_DATA_VAR]
     missing = [name for name in required_vars if name not in packet_ds]
     if missing:
@@ -514,10 +528,27 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     flags = packet_ds[MEM_DUMP_FLAGS_VAR].values
     offsets = packet_ds[MEM_DUMP_OFFSET_VAR].values
     lengths = packet_ds[MEM_DUMP_LENGTH_VAR].values
-    packet_data = packet_ds[WFOV_DATA_VAR].values
+    n_packets = packet_ds.sizes["PACKET"]
 
-    stitched_images, stats = stitch_wfov_images(flags, offsets, lengths, packet_data)
-    packet_ds = _zero_stitched_packet_payloads(packet_ds, stitched_images)
+    # A list of independent per-packet bytes objects (rather than the dense ndarray) lets
+    # stitch_wfov_images free each packet's memory the instant it's consumed, instead of the whole
+    # ~GB-scale array staying resident for the entire stitching pass. Built via a uint8 view rather
+    # than ndarray.tolist(): the fixed-width |S dtype silently strips trailing null bytes on
+    # conversion to Python bytes, which would corrupt any packet whose valid payload run (per
+    # ICIE__MEM_DUMP_LENGTH_WFOV) itself ends in zero bytes.
+    packet_width = packet_ds[WFOV_DATA_VAR].dtype.itemsize
+    packet_rows_u8 = packet_ds[WFOV_DATA_VAR].values.view(np.uint8).reshape(n_packets, packet_width)
+    packet_rows = [row.tobytes() for row in packet_rows_u8]
+    del packet_rows_u8  # a view over the same buffer as WFOV_DATA_VAR; drop it before dropping the var below
+    packet_ds = packet_ds.drop_vars(WFOV_DATA_VAR)
+
+    stitched_images, stats = stitch_wfov_images(flags, offsets, lengths, packet_rows)
+
+    packet_image_id = np.full(n_packets, -1, dtype=np.int32)
+    for image in stitched_images:
+        packet_image_id[image.sop_index : image.eop_index + 1] = image.image_id
+    packet_ds[PACKET_IMAGE_ID_VAR] = (("PACKET",), packet_image_id)
+
     camera_ds = _build_camera_dataset(stitched_images)
 
     packet_ds = packet_ds.merge(camera_ds)
@@ -525,6 +556,9 @@ def enhance_wfov_l1a_dataset(packet_ds: xr.Dataset) -> xr.Dataset:
     packet_ds.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] = stats.n_error_flagged_images
     packet_ds.attrs[FOOTER_MISMATCH_COUNT_ATTR] = stats.n_footer_mismatches
     packet_ds.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] = stats.n_header_parse_errors
+    # Stored as 0/1 rather than Python bool: NetCDF (via h5netcdf) has no boolean attribute type.
+    packet_ds.attrs[FIRST_IMAGE_INCOMPLETE_ATTR] = int(stats.first_image_incomplete)
+    packet_ds.attrs[LAST_IMAGE_INCOMPLETE_ATTR] = int(stats.last_image_incomplete)
     if stats.n_error_flagged_images:
         logger.warning(
             "WFOV images with FPGA status errors flagged: %d of %d",
