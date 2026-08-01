@@ -70,11 +70,6 @@ LIBERA_GROUND_CCSDS_REGEX = re.compile(
     r"_(?P<hour>[0-9]{2})_(?P<minute>[0-9]{2})_(?P<second>[0-9]{2})$"
 )
 
-# Legacy informal ground names missing the year (e.g. TVAC ccsds_324_17_59_52)
-LIBERA_GROUND_CCSDS_LEGACY_REGEX = re.compile(
-    r"^ccsds_(?P<doy>[0-9]{3})_(?P<hour>[0-9]{2})_(?P<minute>[0-9]{2})_(?P<second>[0-9]{2})$"
-)
-
 # Get all data levels for the regex
 DATA_LEVELS = "|".join([level.value for level in DataLevel])
 

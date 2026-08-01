@@ -12,9 +12,10 @@ inputs for spiceypy functions that aren't already vectorized in C and to wrap th
 """
 
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -151,3 +152,29 @@ def multipart_to_dt64(
         result = result + pd.to_timedelta(data[us_field], "us")
 
     return result
+
+
+def dt64_to_utc_datetime(value: np.datetime64) -> datetime:
+    """Convert a numpy datetime64 to a timezone-aware UTC datetime.
+
+    Parameters
+    ----------
+    value : np.datetime64
+        Value to convert.
+
+    Returns
+    -------
+    datetime
+        Timezone-aware UTC datetime.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is NaT.
+    """
+    if np.isnat(value):
+        raise ValueError("Encountered NaT datetime64 value")
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.to_pydatetime().replace(tzinfo=UTC)
+    return ts.to_pydatetime().astimezone(UTC)
