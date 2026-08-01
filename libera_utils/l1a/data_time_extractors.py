@@ -7,7 +7,7 @@ Used by the Data Ingester to assign applicable dates from science data times
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from os import PathLike
 
 import numpy as np
@@ -18,15 +18,15 @@ from libera_utils.constants import LiberaApid
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.l1a.packets import DATETIME_USEC_DTYPE, drop_unsynced_clock_times, parse_packets_to_dataset
 from libera_utils.l1a.wfov_image_metadata import (
-    FSW_HEADER_SIZE,
     MEM_DUMP_FLAGS_VAR,
     MEM_DUMP_LENGTH_VAR,
     MEM_DUMP_OFFSET_VAR,
     WFOV_DATA_VAR,
+    WFOV_HEADER_SIZE,
+    _extract_wfov_header_metadata_from_blob,
     _fsw_timestamps_to_datetime64,
-    extract_fsw_metadata_from_blob,
 )
-from libera_utils.time import multipart_to_dt64
+from libera_utils.time import dt64_to_utc_datetime, multipart_to_dt64
 
 logger = logging.getLogger(__name__)
 
@@ -127,14 +127,10 @@ def extract_data_time_range(
 
 def _dt64_to_utc_datetime(value: np.datetime64) -> datetime:
     """Convert numpy datetime64[us] to timezone-aware UTC datetime."""
-    if np.isnat(value):
-        raise DataTimeUndeterminedError("Encountered NaT in data time span")
-    import pandas as pd
-
-    ts = pd.Timestamp(value)
-    if ts.tzinfo is None:
-        return ts.to_pydatetime().replace(tzinfo=UTC)
-    return ts.tz_convert("UTC").to_pydatetime()
+    try:
+        return dt64_to_utc_datetime(value)
+    except ValueError as exc:
+        raise DataTimeUndeterminedError("Encountered NaT in data time span") from exc
 
 
 def _normalize_flag(flag) -> bytes:
@@ -178,11 +174,11 @@ def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64]:
             slice_bytes = blob[offset : offset + length]
         else:
             slice_bytes = blob
-        if len(slice_bytes) < FSW_HEADER_SIZE:
-            logger.warning("SOP packet %s has fewer than %s bytes; skipping", i, FSW_HEADER_SIZE)
+        if len(slice_bytes) < WFOV_HEADER_SIZE:
+            logger.warning("SOP packet %s has fewer than %s bytes; skipping", i, WFOV_HEADER_SIZE)
             continue
         try:
-            meta = extract_fsw_metadata_from_blob(slice_bytes[:FSW_HEADER_SIZE])
+            meta = _extract_wfov_header_metadata_from_blob(slice_bytes[:WFOV_HEADER_SIZE])
             camera_times.append(_fsw_timestamps_to_datetime64(meta["timestamp_seconds"], meta["timestamp_subseconds"]))
         except ValueError as exc:
             logger.warning("Failed to parse FSW header on SOP packet %s: %s", i, exc)

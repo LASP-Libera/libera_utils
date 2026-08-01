@@ -7,7 +7,6 @@ import pytest
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.data_time_extractors import DATA_TIME_INDEXED_APIDS, DataTimeUndeterminedError
 from libera_utils.l1a.ground_ccsds import (
-    GroundCcsdsApidAbsentError,
     discover_ground_ccsds_apids,
     scan_ground_ccsds_file,
 )
@@ -85,8 +84,8 @@ def test_scan_skips_known_apid_without_packet_config(tmp_path: Path, monkeypatch
     assert result.time_spans == {}
 
 
-def test_scan_raises_when_known_apid_unparseable(tmp_path: Path, monkeypatch):
-    """XTCE parse failure for a configured known APID raises GroundCcsdsApidAbsentError."""
+def test_scan_isolates_apid_unparsable_failure(tmp_path: Path, monkeypatch):
+    """XTCE parse failure for a configured known APID is isolated to that APID, not raised."""
     from libera_utils.l1a import ground_ccsds as mod
     from libera_utils.l1a.l1a_packet_configs import get_packet_config
 
@@ -101,8 +100,10 @@ def test_scan_raises_when_known_apid_unparseable(tmp_path: Path, monkeypatch):
         raise ValueError("xtce explode")
 
     monkeypatch.setattr(mod, "parse_packets_to_dataset", _boom)
-    with pytest.raises(GroundCcsdsApidAbsentError, match="1040"):
-        scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+    result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+    assert result.time_spans == {}
+    assert LiberaApid.icie_wfov_sci in result.failed_apids
+    assert "1040" in result.failed_apids[LiberaApid.icie_wfov_sci]
 
 
 def test_extract_packet_time_span_drops_unsynced_clock_packet(tmp_path: Path, monkeypatch):
@@ -141,8 +142,8 @@ def test_extract_packet_time_span_drops_unsynced_clock_packet(tmp_path: Path, mo
     assert span.last_packet_time.year == 2026
 
 
-def test_scan_propagates_data_time_undetermined(tmp_path: Path, monkeypatch):
-    """Data-time extract failure for cam/rad propagates DataTimeUndeterminedError."""
+def test_scan_isolates_data_time_undetermined_failure(tmp_path: Path, monkeypatch):
+    """Data-time extract failure for cam/rad is isolated to that APID, not raised."""
     from datetime import UTC, datetime
 
     from libera_utils.l1a import ground_ccsds as mod
@@ -164,5 +165,6 @@ def test_scan_propagates_data_time_undetermined(tmp_path: Path, monkeypatch):
         "extract_data_time_range",
         lambda *a, **k: (_ for _ in ()).throw(DataTimeUndeterminedError("no SOP times")),
     )
-    with pytest.raises(DataTimeUndeterminedError, match="no SOP times"):
-        scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+    result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+    assert result.time_spans == {}
+    assert result.failed_apids == {LiberaApid.icie_wfov_sci: "no SOP times"}
