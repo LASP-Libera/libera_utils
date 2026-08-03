@@ -143,7 +143,7 @@ def test_extract_packet_time_span_drops_unsynced_clock_packet(tmp_path: Path, mo
 
 
 def test_scan_isolates_data_time_undetermined_failure(tmp_path: Path, monkeypatch):
-    """Data-time extract failure for cam/rad is isolated to that APID, not raised."""
+    """Data-time extract failure for cam/rad records packet time only, not raised."""
     from datetime import UTC, datetime
 
     from libera_utils.l1a import ground_ccsds as mod
@@ -166,5 +166,38 @@ def test_scan_isolates_data_time_undetermined_failure(tmp_path: Path, monkeypatc
         lambda *a, **k: (_ for _ in ()).throw(DataTimeUndeterminedError("no SOP times")),
     )
     result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
-    assert result.time_spans == {}
+    span = result.time_spans[LiberaApid.icie_wfov_sci]
+    assert span.first_packet_time == datetime(2025, 1, 1, tzinfo=UTC)
+    assert span.last_packet_time == datetime(2025, 1, 1, 1, tzinfo=UTC)
+    assert span.first_data_time is None
+    assert span.last_data_time is None
     assert result.failed_apids == {LiberaApid.icie_wfov_sci: "no SOP times"}
+
+
+def test_scan_records_packet_time_when_no_sop_in_window(tmp_path: Path, monkeypatch):
+    """extract_data_time_range returning None (no in-window SOP) is not a failure."""
+    from datetime import UTC, datetime
+
+    from libera_utils.l1a import ground_ccsds as mod
+
+    dummy = tmp_path / "ccsds_2025_001_00_00_00"
+    dummy.write_bytes(b"")
+
+    monkeypatch.setattr(mod, "discover_ground_ccsds_apids", lambda *a, **k: (1040,))
+    monkeypatch.setattr(
+        mod,
+        "_extract_packet_time_span",
+        lambda *a, **k: (
+            datetime(2025, 1, 1, tzinfo=UTC),
+            datetime(2025, 1, 1, 1, tzinfo=UTC),
+        ),
+    )
+    monkeypatch.setattr(mod, "extract_data_time_range", lambda *a, **k: None)
+
+    result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+    span = result.time_spans[LiberaApid.icie_wfov_sci]
+    assert span.first_packet_time == datetime(2025, 1, 1, tzinfo=UTC)
+    assert span.last_packet_time == datetime(2025, 1, 1, 1, tzinfo=UTC)
+    assert span.first_data_time is None
+    assert span.last_data_time is None
+    assert result.failed_apids == {}

@@ -58,7 +58,7 @@ def extract_data_time_range(
     apid: int,
     *,
     skip_header_bytes: int | None = None,
-) -> tuple[datetime, datetime]:
+) -> tuple[datetime, datetime] | None:
     """Extract the min/max science data time span from a single packet file.
 
     This is intentionally cheaper than ``parse_packets_to_l1a_dataset``: it uses
@@ -78,8 +78,12 @@ def extract_data_time_range(
 
     Returns
     -------
-    tuple[datetime, datetime]
-        ``(first_data_time, last_data_time)`` as timezone-aware UTC datetimes.
+    tuple[datetime, datetime] | None
+        ``(first_data_time, last_data_time)`` as timezone-aware UTC datetimes, or
+        ``None`` if this WFOV packet file/window contains no ``SOP`` packet to
+        recover an image time from (expected for a mem-dump chunk whose ``SOP``
+        landed in an earlier file/pass). Callers should fall back to packet time
+        in that case rather than treating it as a failure.
 
     Notes
     -----
@@ -89,7 +93,9 @@ def extract_data_time_range(
     Raises
     ------
     DataTimeUndeterminedError
-        If the APID is not data-time indexed, or no usable data times are found.
+        If the APID is not data-time indexed, or usable data times cannot be
+        determined for a reason other than a missing in-window ``SOP`` (e.g. a
+        malformed packet dataset, or sample-group times that fail parsing).
     """
     libera_apid = LiberaApid(apid)
     if libera_apid not in DATA_TIME_INDEXED_APIDS:
@@ -118,7 +124,10 @@ def extract_data_time_range(
         raise DataTimeUndeterminedError(f"No packets found for APID {apid} in {packet_file}")
 
     if libera_apid == LiberaApid.icie_wfov_sci:
-        first_dt64, last_dt64 = _camera_sop_time_span(packet_ds)
+        span = _camera_sop_time_span(packet_ds)
+        if span is None:
+            return None
+        first_dt64, last_dt64 = span
     else:
         first_dt64, last_dt64 = _sample_group_time_span(packet_ds, libera_apid)
 
@@ -151,8 +160,15 @@ def _packet_blob_bytes(raw) -> bytes:
     return bytes(raw)
 
 
-def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64]:
-    """Return min/max FSW image times from SOP packets in a WFOV packet dataset."""
+def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64] | None:
+    """Return min/max FSW image times from SOP packets in a WFOV packet dataset.
+
+    Returns ``None`` (rather than raising) when the dataset has no ``SOP``-flagged
+    packet at all: a mem-dump chunk that starts and ends mid-image (its ``SOP``
+    landed in an earlier file/downlink pass) is an expected condition, not a
+    failure — see ``_stitch_wfov_images`` in ``wfov_image_metadata.py`` for the
+    same first/last-incomplete handling in the full stitching path.
+    """
     required = [MEM_DUMP_FLAGS_VAR, MEM_DUMP_OFFSET_VAR, MEM_DUMP_LENGTH_VAR, WFOV_DATA_VAR]
     missing = [name for name in required if name not in packet_ds]
     if missing:
@@ -161,13 +177,21 @@ def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64]:
     flags = packet_ds[MEM_DUMP_FLAGS_VAR].values
     offsets = packet_ds[MEM_DUMP_OFFSET_VAR].values
     lengths = packet_ds[MEM_DUMP_LENGTH_VAR].values
-    packet_data = packet_ds[WFOV_DATA_VAR].values
+    packet_data_var = packet_ds[WFOV_DATA_VAR]
+    # Row bytes via a uint8 view, not _packet_blob_bytes(scalar): converting a single element of a
+    # fixed-width |S dtype array straight to Python bytes silently strips ALL trailing null bytes
+    # (not just the dtype's padding), which would truncate any SOP payload whose real header/footer
+    # bytes themselves end in zero. Same caveat documented in wfov_image_metadata.enhance_wfov_l1a_dataset.
+    packet_width = packet_data_var.dtype.itemsize
+    packet_data_u8 = packet_data_var.values.view(np.uint8).reshape(-1, packet_width)
 
+    sop_present = False
     camera_times: list[np.datetime64] = []
     for i, flag in enumerate(flags):
         if _normalize_flag(flag) != b"SOP":
             continue
-        blob = _packet_blob_bytes(packet_data[i])
+        sop_present = True
+        blob = packet_data_u8[i].tobytes()
         offset = int(offsets[i])
         length = int(lengths[i])
         if length > 0:
@@ -185,6 +209,9 @@ def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64]:
             continue
 
     if not camera_times:
+        if not sop_present:
+            logger.info("No SOP packet in WFOV packet file; no in-window image time to extract")
+            return None
         raise DataTimeUndeterminedError("No valid SOP FSW image timestamps found in WFOV packet file")
 
     arr = np.asarray(camera_times, dtype=DATETIME_USEC_DTYPE)
