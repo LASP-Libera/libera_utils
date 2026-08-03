@@ -7,6 +7,7 @@
 - FEAT: Add `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default).
 - FEAT: Manual ingest (`s3-utils put` / `manual_ingest_data_products`) accepts canonical `LiberaGroundCcsdsFilename` ground CCSDS captures.
 - BUGFIX: Packet/data-time span extraction (`scan_ground_ccsds_file`, `extract_data_time_range`) now drops timestamps at or before `MIN_VALID_TELEMETRY_TIME` (default `2020-01-01`, config-overridable) before computing min/max. Ground-test captures can include a leading packet with an unset onboard clock, which decodes to just after `CCSDS_EPOCH` (1958-01-01); left unfiltered, a single such packet drove the File Metadata searchable-row day-walk across ~68 years instead of the real capture span.
+- BUGFIX: `extract_data_time_range` no longer raises `DataTimeUndeterminedError` for a WFOV (APID 1040) packet file/window with no `SOP` packet — expected when a large image's mem-dump is chunked across files/downlink passes and this window's `SOP` landed elsewhere. It now returns `None`, and `scan_ground_ccsds_file` records that APID's packet time span with `first_data_time`/`last_data_time` left `None`, instead of dropping the whole time span. Also fixes SOP header bytes being read via `bytes()` on a numpy `|S` scalar, which silently strips trailing null bytes and could truncate a valid header below the length needed to parse it.
 
 ## 5.10.11
 
