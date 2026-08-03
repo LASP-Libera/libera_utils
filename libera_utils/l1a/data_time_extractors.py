@@ -44,6 +44,7 @@ DATA_TIME_INDEXED_APIDS: frozenset[LiberaApid] = frozenset(
         LiberaApid.icie_rad_full,
         LiberaApid.icie_cal_sample,
         LiberaApid.icie_cal_full,
+        LiberaApid.icie_axis_sample,
     }
 )
 
