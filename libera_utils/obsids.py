@@ -94,7 +94,8 @@ def _science(
 OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = dict(
     (
         # Radiometer calibration (ICIE__SW_OBSID_RAD)
-        _rad_cal(512, "Gain and noise calibration", DPI.l1a_icie_nom_hk_gain_trimmed, DPI.cal_gain),
+        _rad_cal(512, "Gain calibration", DPI.l1a_icie_nom_hk_gain_trimmed, DPI.cal_gain),
+        _rad_cal(515, "Noise calibration", DPI.l1a_icie_nom_hk_noise_trimmed, DPI.cal_noise),
         _rad_cal(
             256,
             "Shortwave LED calibration at 365 nm",
@@ -150,13 +151,13 @@ OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = dict(
             DPI.cal_lwc_330k,
         ),
         _rad_cal(
-            592,
+            323,
             "Longwave blackbody calibration temperature 4 - 300 K",
             DPI.l1a_icie_nom_hk_lwc_300k_trimmed,
             DPI.cal_lwc_300k,
         ),
         _rad_cal(
-            593,
+            324,
             "Longwave blackbody calibration temperature 5 - 305 K",
             DPI.l1a_icie_nom_hk_lwc_305k_trimmed,
             DPI.cal_lwc_305k,

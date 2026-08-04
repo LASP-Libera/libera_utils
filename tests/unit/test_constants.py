@@ -142,6 +142,7 @@ class TestDataProductIdentifier:
             "l1a_icie_temp_hk_decoded",
             # L1A ObsID-trimmed NOM-HK products
             "l1a_icie_nom_hk_gain_trimmed",
+            "l1a_icie_nom_hk_noise_trimmed",
             "l1a_icie_nom_hk_swc_365nm_trimmed",
             "l1a_icie_nom_hk_swc_405nm_trimmed",
             "l1a_icie_nom_hk_swc_520nm_trimmed",
@@ -180,6 +181,7 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_lunar_north_pole_trimmed",
             # Calibration Event Products (per ObsID)
             "cal_gain",
+            "cal_noise",
             "cal_swc_365nm",
             "cal_swc_405nm",
             "cal_swc_520nm",

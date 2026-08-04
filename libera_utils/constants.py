@@ -159,6 +159,7 @@ class DataProductIdentifier(StrEnum):
     # =============================================================================
     # Produced by L1A preprocessing (Step 1); consumed by ObsID-specific cal-combine steps.
     l1a_icie_nom_hk_gain_trimmed = ("NOM-HK-GAIN-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_noise_trimmed = ("NOM-HK-NOISE-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_swc_365nm_trimmed = ("NOM-HK-SWC-365NM-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_swc_405nm_trimmed = ("NOM-HK-SWC-405NM-TRIMMED", DataLevel.L1A)
     l1a_icie_nom_hk_swc_520nm_trimmed = ("NOM-HK-SWC-520NM-TRIMMED", DataLevel.L1A)
@@ -201,8 +202,9 @@ class DataProductIdentifier(StrEnum):
 
     # Calibration Event Products (one product per radiometer / camera calibration ObsID)
     # ==================================================================================
-    # Gain and Noise Calibration (ObsID 512)
+    # Gain and Noise Calibration (ObsID 512 + 515)
     cal_gain = ("GAIN", DataLevel.CAL)
+    cal_noise = ("NOISE", DataLevel.CAL)
     # Shortwave LED Calibration (ObsIDs 256-261)
     cal_swc_365nm = ("SWC-365NM", DataLevel.CAL)
     cal_swc_405nm = ("SWC-405NM", DataLevel.CAL)
@@ -210,7 +212,7 @@ class DataProductIdentifier(StrEnum):
     cal_swc_635nm = ("SWC-635NM", DataLevel.CAL)
     cal_swc_840nm = ("SWC-840NM", DataLevel.CAL)
     cal_swc_1550nm = ("SWC-1550NM", DataLevel.CAL)
-    # Longwave Blackbody Calibration (ObsIDs 320-322, 592-593)
+    # Longwave Blackbody Calibration (ObsIDs 320-324)
     cal_lwc_310k = ("LWC-310K", DataLevel.CAL)
     cal_lwc_320k = ("LWC-320K", DataLevel.CAL)
     cal_lwc_330k = ("LWC-330K", DataLevel.CAL)

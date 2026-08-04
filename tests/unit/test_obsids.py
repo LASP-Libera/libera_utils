@@ -85,9 +85,9 @@ class TestObsidRegistry:
             assert spec.cal_product.value == cal_val
 
     def test_rad_cal_count(self):
-        """Twenty-eight radiometer cal ObsIDs (24 gain/SWC/LWC/solar + 2 lunar + 2 VIIRS lunar)."""
+        """Twenty-nine radiometer cal ObsIDs (25 gain/noise/SWC/LWC/solar + 2 lunar + 2 VIIRS lunar)."""
         rad_cal = [s for s in OBSID_REGISTRY.values() if s.kind is ObsIdKind.RAD_CAL]
-        assert len(rad_cal) == 28
+        assert len(rad_cal) == 29
 
     def test_lunar_cal_obsids(self):
         """Radiometer lunar ObsIDs 448/449 map to LUNAR-SOUTH/NORTH-POLE products."""
@@ -128,7 +128,7 @@ class TestObsidRegistry:
         """Source filter restricts iter_trim_eligible."""
         rad = list(iter_trim_eligible(NomHkObsidSource.RAD))
         wfov = list(iter_trim_eligible(NomHkObsidSource.WFOV))
-        assert len(rad) == 28
+        assert len(rad) == 29
         assert len(wfov) == 11
         assert all(s.source is NomHkObsidSource.RAD for s in rad)
         assert all(s.source is NomHkObsidSource.WFOV for s in wfov)
