@@ -65,11 +65,11 @@ def drop_unsynced_clock_times(times_us: np.ndarray, *, context: str) -> np.ndarr
         If no times remain after filtering.
     """
     floor = np.datetime64(config.get("MIN_VALID_TELEMETRY_TIME"), "us")
-    valid_mask = times_us >= floor
+    valid_mask = times_us > floor
     n_excluded = int((~valid_mask).sum())
     if n_excluded:
         logger.warning(
-            "Excluded %d time(s) before sanity floor %s (likely clock not yet time-synced) for %s",
+            "Excluded %d time(s) at or before sanity floor %s (likely clock not yet time-synced) for %s",
             n_excluded,
             floor,
             context,
