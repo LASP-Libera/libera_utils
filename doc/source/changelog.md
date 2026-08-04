@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.10.4
+
+- FEAT: Add `libera_utils.l1a.data_time_extractors` for lightweight per-file science data-time spans without full L1A assembly, covering every `DATA_TIME_INDEXED_APIDS` member (WFOV SOP FSW image times; RAD/CAL/AXIS sample epoch+period or per-sample times). Extracted spans exclude timestamps at or before `MIN_VALID_TELEMETRY_TIME` (default `2020-01-01`, config-overridable), since ground/TVAC captures can carry a leading packet with an unsynced onboard clock that decodes to just after `CCSDS_EPOCH` (1958-01-01), and `extract_data_time_range` returns `None` rather than a bogus/missing span for a WFOV packet file/window with no `SOP` packet in it — expected when a large image's mem-dump is chunked across files or downlink passes. Ground headers use `SKIP_PACKET_HEADER_BYTES` (same as L1A parsing) rather than a `ground_data` flag; `extract_data_time_range` and `parse_packets_to_l1a_dataset` also accept an optional `skip_header_bytes=` override (falling back to `SKIP_PACKET_HEADER_BYTES` when omitted) so a single process handling both flight and ground files — e.g. a reused Lambda execution environment — never has to mutate the shared config to switch between them per call.
+- FEAT: Add ground-test CCSDS capture support: `LiberaGroundCcsdsFilename` and `DataProductIdentifier.l0_ground_ccsds` for the canonical `ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>` naming (L0 archive prefix `GroundCCSDS/<yyyy>/<mm>/<dd>/`), `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default), and manual ingest (`s3-utils put` / `manual_ingest_data_products`) support for these captures.
+
 ## 5.10.3
 
 - FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_COMPRESSED_IMAGE` (`uint8`/`BLOB_BYTE` + `WFOV_COMPRESSED_IMAGE_LENGTH`), and traces packets back to their image with `PACKET_IMAGE_ID`.

@@ -20,6 +20,9 @@ from libera_utils.io import filenaming
         ("/some/fake/path/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
         (Path("/fake-path/P1590011SOMESCIENCEAAA99030231459001.PDS"), filenaming.L0Filename),
         ("s3://fake-bucket/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
+        ("/data/ccsds_2025_318_13_16_34", filenaming.LiberaGroundCcsdsFilename),
+        (Path("/data/ccsds_2025_318_13_53_06"), filenaming.LiberaGroundCcsdsFilename),
+        ("s3://bucket/dropbox/ccsds_2025_346_13_29_47", filenaming.LiberaGroundCcsdsFilename),
         (
             "/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             filenaming.LiberaDataProductFilename,
@@ -50,6 +53,11 @@ def test_from_filename(filename, filename_type):
             "/ignore/this/P1590011SOMESCIENCEAAA99030231459001.PDS",
             "s3://my-bucket",
             S3Path("s3://my-bucket/PDS/0011/P1590011SOMESCIENCEAAA99030231459001.PDS"),
+        ),
+        (
+            "/ignore/this/ccsds_2025_318_13_16_34",
+            "s3://my-l0-bucket",
+            S3Path("s3://my-l0-bucket/GroundCCSDS/2025/11/14/ccsds_2025_318_13_16_34"),
         ),
         (
             "/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
@@ -177,6 +185,43 @@ def test_L0Filename_parts(filename, basepath, parts):
     assert fn_from_parts == fn
     assert fn_from_parts.path == fn.path
     assert fn_from_parts.filename_parts == fn.filename_parts
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "/some/fake/path/ccsds_2025_318_13_16_34",
+        Path("/fake-path/ccsds_2025_318_13_53_06"),
+        "s3://fake-bucket/ccsds_2025_346_13_29_47",
+        S3Path("s3://fake-bucket/ccsds_2025_318_13_16_34"),
+        "ccsds_2025_001_00_00_00",
+    ],
+)
+def test_LiberaGroundCcsdsFilename(filename):
+    """Test LiberaGroundCcsdsFilename accepts canonical capture names."""
+    fn = filenaming.LiberaGroundCcsdsFilename(filename)
+    assert fn.data_product_id == DataProductIdentifier.l0_ground_ccsds
+
+
+def test_LiberaGroundCcsdsFilename_parts_and_archive_prefix():
+    """Test round-trip from parts and GroundCCSDS archive prefix from capture UTC."""
+    filename = "ccsds_2025_318_13_16_34"
+    fn = filenaming.LiberaGroundCcsdsFilename(filename)
+    parts = fn.filename_parts
+    assert parts.year == 2025
+    assert parts.doy == 318
+    assert parts.hour == 13
+    assert parts.minute == 16
+    assert parts.second == 34
+    assert parts.capture_time == dt.datetime(2025, 11, 14, 13, 16, 34, tzinfo=dt.UTC)
+    assert fn.archive_prefix == "GroundCCSDS/2025/11/14"
+    assert fn.capture_time == parts.capture_time
+
+    fn_from_parts = filenaming.LiberaGroundCcsdsFilename.from_filename_parts(
+        year=2025, doy=318, hour=13, minute=16, second=34
+    )
+    assert fn_from_parts.path.name == filename
+    assert fn_from_parts.archive_prefix == fn.archive_prefix
 
 
 @pytest.mark.parametrize(
