@@ -50,8 +50,15 @@ DATA_TIME_INDEXED_APIDS: frozenset[LiberaApid] = frozenset(
 
 
 def is_data_time_indexed_apid(apid: LiberaApid | int) -> bool:
-    """Return True if applicable-date indexing should use data times for this APID."""
-    return LiberaApid(int(apid)) in DATA_TIME_INDEXED_APIDS
+    """Return True if applicable-date indexing should use data times for this APID.
+
+    Returns False for any int that does not correspond to a known ``LiberaApid`` member,
+    rather than raising, so this is safe to use as a predicate over arbitrary APID values.
+    """
+    try:
+        return LiberaApid(int(apid)) in DATA_TIME_INDEXED_APIDS
+    except ValueError:
+        return False
 
 
 def extract_data_time_range(

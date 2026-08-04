@@ -28,6 +28,10 @@ def test_data_time_indexed_apid_set():
     assert LiberaApid.icie_cal_full in DATA_TIME_INDEXED_APIDS
 
 
+def test_data_time_indexed_apid_unknown_int_returns_false():
+    assert not is_data_time_indexed_apid(-1)
+
+
 def test_extract_rejects_packet_time_apid(tmp_path: Path):
     dummy = tmp_path / "empty.bin"
     dummy.write_bytes(b"")
