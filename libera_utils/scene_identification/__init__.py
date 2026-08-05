@@ -19,14 +19,12 @@ needs the internal helpers (e.g. tests) should import them from the specific sub
 from libera_utils.scene_identification.scene_definitions import Scene, SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     RADIOMETER_TIME_DIMENSION,
-    RADIOMETER_TIME_VARIABLE,
     FootprintData,
     FootprintVariables,
 )
 
 __all__ = [
     "RADIOMETER_TIME_DIMENSION",
-    "RADIOMETER_TIME_VARIABLE",
     "FootprintData",
     "FootprintVariables",
     "Scene",

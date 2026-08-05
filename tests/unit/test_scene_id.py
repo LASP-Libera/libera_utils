@@ -10,7 +10,6 @@ from libera_utils.scene_identification.scene_definitions import SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
     RADIOMETER_TIME_DIMENSION,
-    RADIOMETER_TIME_VARIABLE,
     CalculationSpec,
     FootprintData,
     FootprintVariables,
@@ -713,29 +712,29 @@ class TestToRadiometerTimeProduct:
 
     @pytest.fixture
     def footprint_data_with_time(self):
-        """FootprintData already on the RADIOMETER_TIME dimension with a radiometer_time variable."""
+        """FootprintData already on the RADIOMETER_TIME dimension with a RADIOMETER_TIME coordinate variable."""
         times = np.array(["2023-01-01T00:00:00", "2023-01-01T00:00:01", "2023-01-01T00:00:02"], dtype="datetime64[ns]")
         data = xr.Dataset(
             {
                 FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0]),
-                RADIOMETER_TIME_VARIABLE: ([RADIOMETER_TIME_DIMENSION], times),
+                RADIOMETER_TIME_DIMENSION: ([RADIOMETER_TIME_DIMENSION], times),
             }
         )
         return FootprintData(data)
 
     def test_promotes_radiometer_time_to_coordinate(self, footprint_data_with_time):
-        """radiometer_time is promoted to a coordinate on the (unchanged) RADIOMETER_TIME dimension."""
+        """RADIOMETER_TIME is a coordinate on the (unchanged) RADIOMETER_TIME dimension of the product."""
         product = footprint_data_with_time.to_radiometer_time_product()
 
         assert RADIOMETER_TIME_DIMENSION in product.dims
-        assert RADIOMETER_TIME_VARIABLE in product.coords
-        # The internal representation is left untouched (we operate on a copy).
-        assert RADIOMETER_TIME_VARIABLE not in footprint_data_with_time._data.coords
+        assert RADIOMETER_TIME_DIMENSION in product.coords
+        # The method operates on a copy: the placeholder Quality_Flag it adds does not leak back into the source.
+        assert "Quality_Flag" not in footprint_data_with_time._data
 
     def test_missing_radiometer_time_raises(self):
-        """A dataset without radiometer_time cannot be turned into a product."""
+        """A dataset without a RADIOMETER_TIME variable cannot be turned into a product."""
         data = xr.Dataset({FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0])})
-        with pytest.raises(ValueError, match=RADIOMETER_TIME_VARIABLE):
+        with pytest.raises(ValueError, match=RADIOMETER_TIME_DIMENSION):
             FootprintData(data).to_radiometer_time_product()
 
 

@@ -51,7 +51,7 @@ class TestSceneIdCamWrite:
         assert output_file.path.exists()
         reopened = xr.open_dataset(output_file.path)
         # Provenance attributes set by the runner survive the round trip.
-        assert reopened.attrs["input_files"] == input_path.name
+        assert reopened.attrs["InputGranules"] == input_path.name
         assert reopened.attrs["algorithm_version"] == "0.1.0"
 
     def test_written_product_has_no_undeclared_variables(self, test_scene_id, tmp_path):
@@ -111,15 +111,15 @@ class TestToTimeProduct:
 
     def test_promotes_time_and_adds_quality_flag(self, test_scene_id):
         footprint_data = run_scene_identification_cam(test_scene_id / SSF_INPUT_NAME)
-        product = footprint_data.to_time_product("radiometer_time")
+        product = footprint_data.to_time_product("RADIOMETER_TIME")
 
-        assert "radiometer_time" in product.coords
+        assert "RADIOMETER_TIME" in product.coords
         assert "Quality_Flag" in product.data_vars
 
     def test_missing_time_variable_raises(self):
         footprint_data = FootprintData(xr.Dataset({"cloud_fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
-        with pytest.raises(ValueError, match="radiometer_time"):
-            footprint_data.to_time_product("radiometer_time")
+        with pytest.raises(ValueError, match="RADIOMETER_TIME"):
+            footprint_data.to_time_product("RADIOMETER_TIME")
 
 
 class TestFmatchReaders:
