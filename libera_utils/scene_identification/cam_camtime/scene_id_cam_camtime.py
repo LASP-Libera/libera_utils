@@ -39,7 +39,7 @@ RUNNER_CONFIG = SceneIdRunnerConfig(
     output_product_id=DataProductIdentifier.aux_scene_id_cam_camtime,
     reader=FootprintData.from_fmatch_cam_camtime,
     product_definition_path=PRODUCT_DEFINITION_PATH,
-    time_variable="camera_time",
+    time_variable="CAMERA_TIME",
     scene_types=SCENE_ID_CAM_CAMTIME_SCENE_TYPES,
     log_prefix="scene_id_cam_camtime",
 )

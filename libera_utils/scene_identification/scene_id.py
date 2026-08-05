@@ -23,12 +23,12 @@ logger = logging.getLogger(__name__)
 
 # Names used throughout footprint data processing and when emitting a Libera SCENE-ID product. FootprintData
 # carries data on the "RADIOMETER_TIME" dimension from creation onward: the radiometer-timescale scene-ID
-# products (CAM, IMAGER, FLASH) are written on that dimension with a "radiometer_time" coordinate to exactly
-# mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. These constants are shared
-# with the product runner (see libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition
-# YAML.
+# products (CAM, IMAGER, FLASH) are written on that dimension with a "RADIOMETER_TIME" coordinate to exactly
+# mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. "RADIOMETER_TIME" names both
+# the per-footprint dimension and the datetime coordinate written on it (a NetCDF / xarray dimension coordinate),
+# so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
+# libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
-RADIOMETER_TIME_VARIABLE = "radiometer_time"
 
 # Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
 # (scene_id_cam.yml).
@@ -1140,7 +1140,7 @@ class FootprintData:
 
             # Time of observation, one value per footprint. The downstream Libera SCENE-ID product is written on
             # the same "RADIOMETER_TIME" axis as its L1B input (see the L1B_RAD product), so we carry the CERES SSF
-            # observation time through the pipeline as the radiometer_time coordinate. In the CERES SSF format the
+            # observation time through the pipeline as the RADIOMETER_TIME coordinate. In the CERES SSF format the
             # time is stored as floating-point "days since 1970-01-01 00:00:00" UTC.
             # Reference: https://ceres.larc.nasa.gov/data/#ssf-level-2
             observation_time_np = np.array(dataset.groups["Time_and_Position"].variables["time"][:])
@@ -1205,10 +1205,10 @@ class FootprintData:
                 FootprintVariables.SOLAR_ZENITH_ANGLE: ([RADIOMETER_TIME_DIMENSION], solar_zenith_angle_np),
                 FootprintVariables.VIEWING_ZENITH_ANGLE: ([RADIOMETER_TIME_DIMENSION], viewing_zenith_angle_np),
                 FootprintVariables.RELATIVE_AZIMUTH_ANGLE: ([RADIOMETER_TIME_DIMENSION], relative_azimuth_angle_np),
-                # radiometer_time is kept as a plain data variable (not a coordinate) at this stage so that it
-                # simply rides along through scene identification. The runner promotes it to the RADIOMETER_TIME
-                # coordinate via to_radiometer_time_product() right before writing the Libera data product.
-                RADIOMETER_TIME_VARIABLE: ([RADIOMETER_TIME_DIMENSION], radiometer_time),
+                # RADIOMETER_TIME's name equals its dimension, so xarray treats it as a dimension coordinate the
+                # moment this Dataset is built. It rides through scene identification as that coordinate; the
+                # runner's to_time_product() step is then idempotent for it.
+                RADIOMETER_TIME_DIMENSION: ([RADIOMETER_TIME_DIMENSION], radiometer_time),
             }
         )
 
@@ -1216,7 +1216,7 @@ class FootprintData:
 
         return parsed_dataset
 
-    def to_time_product(self, time_variable: str = RADIOMETER_TIME_VARIABLE) -> xr.Dataset:
+    def to_time_product(self, time_variable: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
         """Return the footprint data ready to write on its per-footprint time axis.
 
         The scene-ID CAM/IMAGER/FLASH products contain exactly one footprint per observation time and are written
@@ -1228,8 +1228,8 @@ class FootprintData:
         Parameters
         ----------
         time_variable : str, optional
-            Name of the time variable to promote to a coordinate. Defaults to ``radiometer_time`` (the
-            radiometer-timescale products); the camera-timescale product passes ``camera_time``.
+            Name of the time variable to promote to a coordinate. Defaults to ``RADIOMETER_TIME`` (the
+            radiometer-timescale products); the camera-timescale product passes ``CAMERA_TIME``.
 
         Returns
         -------
@@ -1261,14 +1261,14 @@ class FootprintData:
     def to_radiometer_time_product(self) -> xr.Dataset:
         """Return the footprint data ready to write on the Libera ``RADIOMETER_TIME`` axis.
 
-        Backward-compatible wrapper around :meth:`to_time_product` pinned to the ``radiometer_time`` variable.
+        Backward-compatible wrapper around :meth:`to_time_product` pinned to the ``RADIOMETER_TIME`` variable.
 
         Returns
         -------
         xr.Dataset
-            A copy of the internal dataset with the ``radiometer_time`` variable promoted to a coordinate.
+            A copy of the internal dataset with the ``RADIOMETER_TIME`` variable promoted to a coordinate.
         """
-        return self.to_time_product(RADIOMETER_TIME_VARIABLE)
+        return self.to_time_product(RADIOMETER_TIME_DIMENSION)
 
     def export_to_netcdf(self, netcdf_path: str | pathlib.Path) -> None:
         """Write the internal footprint dataset straight to a NetCDF file.
