@@ -60,7 +60,7 @@ class SceneIdRunnerConfig:
     product_definition_path : Path
         Path to the SCENE-ID product-definition YAML the output is validated/written against.
     time_variable : str
-        Name of the datetime64 coordinate variable in the written product (``radiometer_time`` or ``camera_time``).
+        Name of the datetime64 coordinate variable in the written product (``RADIOMETER_TIME`` or ``CAMERA_TIME``).
     scene_types : list[str]
         Scene classification types to run (CAM runs ``["erbe", "unfiltering"]``).
     log_prefix : str
@@ -252,7 +252,7 @@ def create_and_write_data_product(
     footprint_data : FootprintData
         Processed footprint data containing scene IDs.
     input_file_name : str
-        Name of the FMATCH input file, recorded on the product as provenance (``input_files`` attribute).
+        Name of the FMATCH input file, recorded on the product as provenance (``InputGranules`` attribute).
     output_path : str | pathlib.Path | cloudpathlib.S3Path
         Directory / prefix in the processing dropbox where the product file is written.
     config : SceneIdRunnerConfig
@@ -284,8 +284,19 @@ def create_and_write_data_product(
     keep = [name for name in product_dataset.variables if name in declared]
     product_dataset = product_dataset[keep]
 
+    # Promote any declared coordinate that is still a plain data variable (e.g. the CAM-CAMTIME pixel-block
+    # bounds, which the product definition declares as coordinates on CAMERA_TIME) so the written product places
+    # them in .coords and passes the coordinate conformance check. No-op for CAM.
+    coords_to_promote = [
+        name
+        for name in definition.coordinates
+        if name in product_dataset.variables and name not in product_dataset.coords
+    ]
+    if coords_to_promote:
+        product_dataset = product_dataset.set_coords(coords_to_promote)
+
     product_dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
-    product_dataset.attrs["input_files"] = input_file_name
+    product_dataset.attrs["InputGranules"] = input_file_name
     # TODO[LIBSDC-672]: source the algorithm version from package metadata once SCENE-ID is versioned/released.
     product_dataset.attrs["algorithm_version"] = "0.1.0"
 

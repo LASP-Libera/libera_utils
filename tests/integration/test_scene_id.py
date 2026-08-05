@@ -113,7 +113,12 @@ class TestEndToEndSceneIdentification:
         expected_vars = list(expected.data_vars)
         scene_id_vars = [var for var in expected_vars if var.startswith("scene_id_")]
         non_scene_id_vars = [var for var in expected_vars if not var.startswith("scene_id_")]
-        xr.testing.assert_equal(fp._data[non_scene_id_vars], expected[non_scene_id_vars])
+        # RADIOMETER_TIME is now an auto-promoted dimension coordinate that rides along on any variable selection,
+        # but the oracle predates it (it carries no time coordinate), so drop it from both sides before comparing
+        # data-variable values. The time coordinate itself is exercised by the runner integration/unit tests.
+        left = fp._data[non_scene_id_vars].drop_vars(RADIOMETER_TIME_DIMENSION, errors="ignore")
+        right = expected[non_scene_id_vars].drop_vars(RADIOMETER_TIME_DIMENSION, errors="ignore")
+        xr.testing.assert_equal(left, right)
         definitions_by_type = {definition.type: definition for definition in default_scene_definitions()}
         for scene_id_var in scene_id_vars:
             scene_type = scene_id_var[len("scene_id_") :]
