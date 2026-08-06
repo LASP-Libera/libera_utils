@@ -5,6 +5,7 @@ import tempfile
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from libera_utils.config import config
 from libera_utils.scene_identification.scene_definitions import Scene, SceneDefinition
@@ -363,3 +364,40 @@ class TestPropertyBins:
         # Matched footprints report their bounds; the unmatched footprint gets 0 (disambiguated by scene_id 0).
         np.testing.assert_array_equal(min_bounds, np.array([0, 3, 0], dtype=np.uint8))
         np.testing.assert_array_equal(max_bounds, np.array([3, 6, 0], dtype=np.uint8))
+
+
+class TestIdentifyAndUpdateMultidimPassthrough:
+    """identify_and_update classifies along the footprint axis, ignoring extra dimensions on passthrough variables."""
+
+    def test_multidim_passthrough_variable_does_not_distort_scene_mask(self, tmp_path):
+        """A 2-D passthrough variable must not break per-footprint classification.
+
+        Regression guard for the CAM-CAMTIME ``camera_pixel_x``/``camera_pixel_y`` ``(min, max)`` ranges, which ride
+        on a size-2 ``CAMERA_PIXEL_BOUNDS`` axis in the same dataset as the 1-D per-footprint classification
+        variables. Deriving the working shape from all dataset dimensions (instead of the footprint axis) used to
+        raise a broadcast error here.
+        """
+        csv_content = "scene_id,cloud_fraction_min,cloud_fraction_max\n1,0.0,50.0\n2,50.0,100.0\n"
+        csv_file = tmp_path / "single.csv"
+        csv_file.write_text(csv_content)
+        scene_definition = SceneDefinition(csv_file)
+
+        data = xr.Dataset(
+            {
+                "cloud_fraction": ("CAMERA_TIME", np.array([10.0, 60.0, 90.0], dtype=np.float32)),
+                # 2-D passthrough on an extra size-2 axis; classification must ignore it.
+                "camera_pixel_x": (
+                    ("CAMERA_TIME", "CAMERA_PIXEL_BOUNDS"),
+                    np.array([[0, 5], [6, 9], [10, 12]], dtype=np.int32),
+                ),
+            }
+        )
+
+        updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
+
+        scene_ids = updated["scene_id_single"]
+        # Scene IDs stay 1-D on the footprint axis, one per footprint.
+        assert scene_ids.dims == ("CAMERA_TIME",)
+        np.testing.assert_array_equal(scene_ids.values, np.array([1, 2, 2], dtype=np.uint8))
+        # The passthrough variable is carried through untouched, still 2-D.
+        assert updated["camera_pixel_x"].dims == ("CAMERA_TIME", "CAMERA_PIXEL_BOUNDS")

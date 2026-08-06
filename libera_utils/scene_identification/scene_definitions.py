@@ -321,9 +321,13 @@ class SceneDefinition:
         """
         self._validate_footprint_data_columns_present(data)
 
-        # Get dimensions and shape
-        dims = list(data.sizes.keys())
-        shape = tuple(data.sizes[dim] for dim in dims)
+        # Scene classification is per-footprint and 1-D along the footprint axis. Derive the working dimension(s) and
+        # shape from a classification variable rather than from data.sizes (all dataset dims), so unrelated
+        # multi-dimensional passthrough variables -- e.g. the CAM-CAMTIME camera_pixel (min, max) ranges carried on
+        # the size-2 CAMERA_PIXEL_BOUNDS axis -- do not distort the scene-id mask shape.
+        reference_variable = data[self.classification_variables[0]]
+        dims = list(reference_variable.dims)
+        shape = reference_variable.shape
 
         # Vectorized scene identification with chunking
         scene_ids = self._identify_vectorized(data, shape)

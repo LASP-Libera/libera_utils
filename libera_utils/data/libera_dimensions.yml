@@ -20,6 +20,13 @@ CAMERA_PIXEL_COUNT_X:
 CAMERA_PIXEL_COUNT_Y:
   size: 2048
   long_name: "The Y-axis dimension of the camera images"
+CAMERA_PIXEL_BOUNDS:
+  size: 2
+  long_name: "Lower/upper (min, max) bound pair for a camera pixel-index range"
+FOOTPRINT:
+  long_name: >-
+    Pseudo-footprint (image subsection) record index; one entry per classified subsection. Subsections may overlap
+    in pixel space and do not tile the image.
 RADIOMETER_TIME:
   long_name: "Radiometer time dimension"
 CAMERA_TIME:

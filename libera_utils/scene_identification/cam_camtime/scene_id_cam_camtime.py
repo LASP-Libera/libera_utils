@@ -1,10 +1,12 @@
 """Scene ID CAM-CAMTIME processing code for the Libera radiometer.
 
 This is the *camera*-timescale runner: it reads ``FMATCH-CAM-CAMTIME`` (many pseudo-footprints per ``CAMERA_TIME``) and
-writes ``SCENE-ID-CAM-CAMTIME``. The distinctive behavior of this product is that it additionally carries the FMATCH
-footprint *identifier* variables (camera time, camera pixel-block indices, PSF bounding box, and boresight geolocation)
-straight through from the input, so a classified scene can be traced back to the exact camera pixels and ground
-footprint it came from. That passthrough is performed by
+writes ``SCENE-ID-CAM-CAMTIME``. Each record is one image subsection (pseudo-footprint) and the product's record axis is
+``FOOTPRINT``; ``CAMERA_TIME`` is carried as a *non-unique* coordinate on ``FOOTPRINT`` (one 2048x2048 image is
+segmented into many, possibly overlapping, subsections that all share its time). The distinctive behavior of this
+product is that it additionally carries the FMATCH footprint *identifier* variables (camera time, camera pixel-index
+ranges, PSF bounding box, and boresight geolocation) straight through from the input, so a classified scene can be
+traced back to the exact camera pixels and ground footprint it came from. That passthrough is performed by
 :meth:`FootprintData.from_fmatch_cam_camtime` and declared in ``scene_id_cam_camtime.yml``.
 """
 
