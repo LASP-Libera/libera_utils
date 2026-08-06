@@ -97,7 +97,8 @@ def add_placeholder_quality_flag(product: xr.Dataset, dimension: str = RADIOMETE
         A per-footprint product dataset to add the flag to.
     dimension : str, optional
         Name of the per-footprint dimension to add the flag along. Defaults to ``RADIOMETER_TIME`` (the
-        radiometer-timescale products); the camera-timescale product passes ``CAMERA_TIME``.
+        radiometer-timescale products); the camera-timescale product passes ``FOOTPRINT`` (the axis its non-unique
+        ``CAMERA_TIME`` coordinate lives on).
 
     Returns
     -------
@@ -798,10 +799,12 @@ class FootprintData:
     def from_fmatch_cam_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
         """Read a FMATCH-CAM-CAMTIME product into a FootprintData (camera timescale).
 
-        FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME: one pseudo-footprint per
-        ``CAMERA_TIME`` (a contiguous block of L1B WFOV camera pixels), carrying both the scene properties and the
-        footprint *identifier* variables (camera pixel-block indices, PSF bounding box, boresight geolocation) that
-        the camera-timescale product passes straight through.
+        FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME: many pseudo-footprints per
+        ``CAMERA_TIME`` (each a contiguous, possibly overlapping block of L1B WFOV camera pixels), carrying both the
+        scene properties and the footprint *identifier* variables (camera pixel-index ranges
+        ``camera_pixel_x``/``camera_pixel_y`` as inclusive (min, max) pairs, PSF bounding box, boresight geolocation)
+        that the camera-timescale product passes straight through. Records live on the ``FOOTPRINT`` axis, with
+        ``CAMERA_TIME`` carried as a non-unique coordinate on it.
 
         Parameters
         ----------
@@ -811,7 +814,8 @@ class FootprintData:
         Returns
         -------
         FootprintData
-            Footprint data on the ``CAMERA_TIME`` dimension, ready for :meth:`identify_scenes`.
+            Footprint data on the ``FOOTPRINT`` dimension (one record per image subsection), ready for
+            :meth:`identify_scenes`.
 
         Raises
         ------
@@ -1252,7 +1256,9 @@ class FootprintData:
         # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
         # representation (set_coords otherwise mutates the shared dataset).
         product = self._data.set_coords(time_variable)
-        # The per-footprint dimension is whatever axis the time variable lives on (RADIOMETER_TIME / CAMERA_TIME).
+        # The per-footprint dimension is whatever axis the time variable lives on: RADIOMETER_TIME for the
+        # radiometer-timescale products (where the time variable is a dimension coordinate), or FOOTPRINT for the
+        # camera-timescale product (where CAMERA_TIME is a non-unique coordinate riding on the FOOTPRINT axis).
         (time_dimension,) = product[time_variable].dims
         # TODO[LIBSDC-810]: Add real quality flag to the product
         product = add_placeholder_quality_flag(product, dimension=time_dimension)
