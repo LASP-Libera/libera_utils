@@ -8,6 +8,7 @@ import xarray as xr
 
 from libera_utils.l1a.nom_hk_trim import find_obsid_runs, write_trimmed_nom_hk_products
 from libera_utils.obsids import NomHkObsidSource
+from libera_utils.version import version as libera_utils_version
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -45,7 +46,9 @@ def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_sub
     with xr.open_dataset(test_l1a_nom_hk_obsid_trim_subset) as ds:
         # Load so the Dataset outlives the closed file handle
         ds = ds.load()
-        written = write_trimmed_nom_hk_products(ds, tmp_path, strict=True)
+        written = write_trimmed_nom_hk_products(
+            ds, tmp_path, source_product_filename=test_l1a_nom_hk_obsid_trim_subset, strict=True
+        )
 
     assert len(written) == 3
     by_token = {path.path.name: path for path in written}
@@ -56,6 +59,11 @@ def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_sub
             assert trimmed.attrs["ProductID"] == product_token
             assert trimmed.sizes["PACKET"] == expected_count
             assert np.unique(trimmed["ICIE__SW_OBSID_RAD"].values).tolist() == [obsid]
+            # Provenance points at the parent granule, not the L0 packet files it was decoded from.
+            # NetCDF collapses a single-element string list to a scalar on round-trip.
+            input_files = np.atleast_1d(trimmed.attrs["input_files"]).tolist()
+            assert input_files == [test_l1a_nom_hk_obsid_trim_subset.name]
+            assert trimmed.attrs["algorithm_version"] == libera_utils_version()
 
 
 def test_pad_obsids_do_not_produce_trimmed_products(test_l1a_nom_hk_obsid_trim_subset: Path, tmp_path: Path):
@@ -63,7 +71,9 @@ def test_pad_obsids_do_not_produce_trimmed_products(test_l1a_nom_hk_obsid_trim_s
     with xr.open_dataset(test_l1a_nom_hk_obsid_trim_subset) as ds:
         present = set(np.unique(ds["ICIE__SW_OBSID_RAD"].values).tolist())
         ds = ds.load()
-        written = write_trimmed_nom_hk_products(ds, tmp_path, strict=True)
+        written = write_trimmed_nom_hk_products(
+            ds, tmp_path, source_product_filename=test_l1a_nom_hk_obsid_trim_subset, strict=True
+        )
 
     # Fixture includes non-cal pads (e.g. 128) that must not be trimmed
     assert present - set(_EXPECTED_RAD_RUNS)  # pads exist

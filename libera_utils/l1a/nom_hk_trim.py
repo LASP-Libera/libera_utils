@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -15,11 +16,12 @@ from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
+from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
 from libera_utils.obsids import NomHkObsidSource, ObsIdSpec, iter_trim_eligible
+from libera_utils.version import version as libera_utils_version
 
 logger = logging.getLogger(__name__)
 
-PACKET_DIM = "PACKET"
 DEFAULT_TIME_VARIABLE = "PACKET_ICIE_TIME"
 
 
@@ -56,6 +58,34 @@ def get_trimmed_nom_hk_product_definition(
     return base.model_copy(update={"attributes": updated_attrs})
 
 
+def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
+    """Verify the ``PACKET`` axis is in non-decreasing packet-time order.
+
+    Decoded L1A products are written packet-time sorted, so this is a guard rather than a fixup.
+    Sorting here instead would silently reorder the packet axis, invalidating the positional run
+    indices produced by :func:`find_obsid_runs` and any ``*_packet_index`` variables.
+
+    Parameters
+    ----------
+    nom_hk : xr.Dataset
+        Decoded NOM-HK Dataset.
+
+    Raises
+    ------
+    ValueError
+        If ``PACKET_ICIE_TIME`` is present but not monotonically non-decreasing.
+    """
+    if DEFAULT_TIME_VARIABLE not in nom_hk:
+        return
+    times = nom_hk[DEFAULT_TIME_VARIABLE].values
+    if times.size and np.any(np.diff(times) < np.timedelta64(0, "ns")):
+        raise ValueError(
+            f"NOM-HK Dataset is not sorted by {DEFAULT_TIME_VARIABLE}. Decoded L1A products are "
+            f"written in packet-time order; re-decode the source product rather than sorting here, "
+            f"which would invalidate sample-to-packet indices."
+        )
+
+
 def _contiguous_run_slices(mask: np.ndarray) -> list[slice]:
     """Return ``slice(start, end)`` for each contiguous True run in ``mask``."""
     padded = np.concatenate(([False], mask.astype(bool), [False]))
@@ -87,19 +117,17 @@ def find_obsid_runs(
     if PACKET_DIM not in nom_hk.dims:
         raise ValueError(f"NOM-HK Dataset is missing required dimension {PACKET_DIM!r}")
 
-    # Ensure time order so contiguous runs are chronologically meaningful
-    time_var = DEFAULT_TIME_VARIABLE
-    working = nom_hk
-    if time_var in nom_hk:
-        working = nom_hk.sortby(time_var)
+    # Runs are positional slices into PACKET, so they are only chronologically meaningful if the
+    # packet axis is already time ordered
+    _check_packet_time_sorted(nom_hk)
 
     runs: list[tuple[ObsIdSpec, slice]] = []
     for spec in iter_trim_eligible(source):
         field = spec.source.value
-        if field not in working:
+        if field not in nom_hk:
             logger.debug("Skipping ObsID %s: field %s missing from Dataset", spec.obsid, field)
             continue
-        values = working[field].values
+        values = nom_hk[field].values
         mask = values == spec.obsid
         for pkt_slice in _contiguous_run_slices(mask):
             runs.append((spec, pkt_slice))
@@ -109,38 +137,18 @@ def find_obsid_runs(
     return runs
 
 
-def trim_nom_hk_run(nom_hk: xr.Dataset, packet_indexer: slice | np.ndarray) -> xr.Dataset | None:
-    """Subset a NOM-HK Dataset to one ObsID run along ``PACKET``.
-
-    Parameters
-    ----------
-    nom_hk : xr.Dataset
-        Full or partially sorted NOM-HK Dataset.
-    packet_indexer : slice or array-like
-        Packet indices for the run (typically a ``slice`` from :func:`find_obsid_runs`).
-
-    Returns
-    -------
-    xr.Dataset or None
-        Trimmed Dataset, or ``None`` if no packets were selected.
-    """
-    # Match find_obsid_runs time ordering when slicing by absolute packet indices
-    working = nom_hk
-    if DEFAULT_TIME_VARIABLE in nom_hk:
-        working = nom_hk.sortby(DEFAULT_TIME_VARIABLE)
-
-    trimmed = working.isel({PACKET_DIM: packet_indexer})
-    if trimmed.sizes.get(PACKET_DIM, 0) == 0:
-        return None
-    return trimmed
-
-
 def _prepare_trimmed_attrs(
     trimmed: xr.Dataset,
     trimmed_product: DataProductIdentifier,
     source_attrs: dict[str, Any],
+    source_product_filename: str | PathType,
 ) -> xr.Dataset:
-    """Stamp ProductID and refresh dynamic attributes on a trimmed Dataset."""
+    """Stamp ProductID and refresh dynamic attributes on a trimmed Dataset.
+
+    ``input_files`` is rewritten to the single NOM-HK-DECODED granule this product was trimmed
+    from. Inheriting it from the parent would claim the ~128 raw L0 packet files that fed the
+    original decode, which are this product's grandparents, not its inputs.
+    """
     out = trimmed.copy(deep=False)
     # Drop source-file encodings so conformance enforce does not warn on leftovers
     for name in list(out.variables):
@@ -148,6 +156,10 @@ def _prepare_trimmed_attrs(
     out.attrs = dict(source_attrs)
     out.attrs["ProductID"] = trimmed_product.value
     out.attrs["date_created"] = datetime.now(tz=UTC).isoformat()
+    out.attrs["input_files"] = [Path(str(source_product_filename)).name]
+    # Both the decode and the trim ship in libera_utils, so this is normally unchanged; restamping
+    # keeps the version honest when an older granule is re-trimmed by newer software.
+    out.attrs["algorithm_version"] = libera_utils_version()
     return out
 
 
@@ -155,6 +167,7 @@ def write_trimmed_nom_hk_products(
     nom_hk: xr.Dataset,
     output_path: str | PathType,
     *,
+    source_product_filename: str | PathType,
     time_variable: str = DEFAULT_TIME_VARIABLE,
     add_archive_path_prefix: bool = False,
     strict: bool = True,
@@ -171,6 +184,9 @@ def write_trimmed_nom_hk_products(
         Decoded ``NOM-HK-DECODED`` Dataset.
     output_path : str or PathType
         Directory (or S3 prefix) for output files.
+    source_product_filename : str or PathType
+        Filename of the ``NOM-HK-DECODED`` granule ``nom_hk`` was read from. Recorded as the
+        sole entry of each TRIMMED product's ``input_files`` attribute.
     time_variable : str
         Time coordinate used for filename start/end times.
     add_archive_path_prefix : bool
@@ -206,10 +222,10 @@ def write_trimmed_nom_hk_products(
         if spec.trimmed_product is None:
             continue
         trimmed_product = spec.trimmed_product
-        trimmed = trim_nom_hk_run(nom_hk, pkt_slice)
-        if trimmed is None:
+        trimmed = select_packets(nom_hk, pkt_slice)
+        if trimmed.sizes.get(PACKET_DIM, 0) == 0:
             continue
-        trimmed = _prepare_trimmed_attrs(trimmed, trimmed_product, source_attrs)
+        trimmed = _prepare_trimmed_attrs(trimmed, trimmed_product, source_attrs, source_product_filename)
         definition = get_trimmed_nom_hk_product_definition(trimmed_product)
         filename = write_libera_data_product(
             definition,

@@ -12,10 +12,12 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.l1a.nom_hk_trim import (
     find_obsid_runs,
     get_trimmed_nom_hk_product_definition,
-    trim_nom_hk_run,
     write_trimmed_nom_hk_products,
 )
 from libera_utils.obsids import NomHkObsidSource
+from libera_utils.version import version as libera_utils_version
+
+_PARENT_GRANULE = "/some/dir/LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R28044120000.nc"
 
 
 def _synthetic_nom_hk(
@@ -98,20 +100,10 @@ class TestFindObsidRuns:
         assert len(rad_only) == 1
         assert rad_only[0][0].obsid == 257
 
-
-class TestTrimNomHkRun:
-    """Packet subsetting for one run."""
-
-    def test_trims_packet_count(self):
-        ds = _synthetic_nom_hk(rad_obsids=[128, 257, 257, 257, 128])
-        trimmed = trim_nom_hk_run(ds, slice(1, 4))
-        assert trimmed is not None
-        assert trimmed.sizes["PACKET"] == 3
-        assert set(trimmed["ICIE__SW_OBSID_RAD"].values.tolist()) == {257}
-
-    def test_empty_returns_none(self):
-        ds = _synthetic_nom_hk(rad_obsids=[128, 128])
-        assert trim_nom_hk_run(ds, slice(0, 0)) is None
+    def test_rejects_unsorted_packet_time(self):
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257, 257])
+        with pytest.raises(ValueError, match="not sorted by PACKET_ICIE_TIME"):
+            find_obsid_runs(ds.isel(PACKET=[2, 1, 0]))
 
 
 class TestWriteTrimmedNomHkProducts:
@@ -130,7 +122,7 @@ class TestWriteTrimmedNomHkProducts:
             ) as mock_write,
             caplog.at_level("WARNING"),
         ):
-            written = write_trimmed_nom_hk_products(ds, tmp_path, strict=False)
+            written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
 
         assert len(written) == 2
         assert mock_write.call_count == 2
@@ -147,8 +139,38 @@ class TestWriteTrimmedNomHkProducts:
             "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
             return_value=mock_filename,
         ) as mock_write:
-            write_trimmed_nom_hk_products(ds, tmp_path, strict=False)
+            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
 
         product_ids = {call.args[1].attrs["ProductID"] for call in mock_write.call_args_list}
         assert "NOM-HK-SWC-405NM-TRIMMED" in product_ids
         assert "NOM-HK-DARKS-OF-DARKS-TRIMMED" in product_ids
+
+    def test_input_files_names_the_parent_granule(self, tmp_path):
+        """input_files must list the parent NOM-HK-DECODED granule, not the L0 packet files."""
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257])
+        mock_filename = MagicMock()
+        mock_filename.path.name = "fake.nc"
+        with patch(
+            "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
+            return_value=mock_filename,
+        ) as mock_write:
+            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+
+        written_attrs = mock_write.call_args_list[0].args[1].attrs
+        assert written_attrs["input_files"] == [
+            "LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R28044120000.nc"
+        ]
+        # The parent's L0 provenance must not leak through
+        assert "fake.bin" not in written_attrs["input_files"]
+
+    def test_algorithm_version_is_restamped(self, tmp_path):
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257])
+        mock_filename = MagicMock()
+        mock_filename.path.name = "fake.nc"
+        with patch(
+            "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
+            return_value=mock_filename,
+        ) as mock_write:
+            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+
+        assert mock_write.call_args_list[0].args[1].attrs["algorithm_version"] == libera_utils_version()
