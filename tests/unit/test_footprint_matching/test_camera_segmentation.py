@@ -248,8 +248,9 @@ class TestCamtimeAssembly:
         # Conformance: dtypes/dims/attributes all satisfy the product definition.
         assert definition.check_dataset_conformance(dataset, strict=False) == []
 
-        # Real, segmentation-derived columns match the footprints.
-        assert dataset.sizes[CAMERA_TIME_NAME] == len(footprints)
+        # Real, segmentation-derived columns match the footprints. Records live on the FOOTPRINT axis (CAMERA_TIME is
+        # a non-unique coordinate riding on it).
+        assert dataset.sizes["FOOTPRINT"] == len(footprints)
         np.testing.assert_allclose(dataset["latitude"].values, [f.latitude for f in footprints], rtol=1e-4)
         np.testing.assert_allclose(dataset["viewing_zenith_angle"].values, 8.0, rtol=1e-4)
         np.testing.assert_array_equal(dataset["q_flags"].values, [int(f.q_flags) for f in footprints])

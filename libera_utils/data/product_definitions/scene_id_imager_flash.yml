@@ -13,14 +13,16 @@ attributes:
   # Populated at write time by the runner / write_libera_data_product (present but per-file), matching the other
   # Libera product definitions.
   algorithm_version: null
-  date_created: null
-  input_files: null
+  # Provenance attribute set at write time by the shared SCENE-ID runner (create_and_write_data_product), matching
+  # the SCENE-ID-CAM products. TODO[LIBSDC-822]: Update once umm-g writer is implemented.
+  InputGranules: null
 
 coordinates:
   # Time of observation, one value per footprint. Mirrors the L1B_RAD/CAM coordinate convention so downstream code
   # can treat scene IDs and L1B records on a common time axis. Encoded as int64 "nanoseconds since 1958-01-01" (the
-  # CCSDS epoch used across Libera products).
-  radiometer_time:
+  # CCSDS epoch used across Libera products). The coordinate name equals its dimension, so it is an xarray dimension
+  # coordinate (matching SCENE-ID-CAM), not a lowercase auxiliary coordinate.
+  RADIOMETER_TIME:
     dtype: datetime64[ns]
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -41,28 +43,24 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
-      valid_range: [1, 20]
   solar_zenith_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Solar zenith angle at the footprint surface
       units: degrees
-      valid_range: [0, 180]
   viewing_zenith_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Instrument viewing zenith angle at the footprint surface
       units: degrees
-      valid_range: [0, 90]
   relative_azimuth_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface
       units: degrees
-      valid_range: [0, 360]
 
   ##########################
   # Derived scene properties
@@ -72,14 +70,12 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
-      valid_range: [0, 5]
   cloud_fraction:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Total cloud fraction over the footprint, 100 - clear_area (CERES SSF clear coverage)
       units: percent
-      valid_range: [0, 100]
   surface_wind:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
@@ -108,13 +104,11 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: ERBE-like scene classification ID (0 = unmatched, 1-11 = scene)
-      valid_range: [0, 11]
   scene_id_unfiltering:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
-      valid_range: [0, 11]
   scene_id_trmm:
     dtype: uint16
     dimensions: ["RADIOMETER_TIME"]
@@ -122,7 +116,6 @@ variables:
       # uint16 (not uint8): the TRMM definition assigns scene IDs up to 650, which overflows a single byte. For
       # FLASH this is 0 for every phase-gated cloudy scene (no cloud-phase source).
       long_name: TRMM scene classification ID (0 = unmatched, 1-650 = scene)
-      valid_range: [0, 650]
 
   ##############################
   # ERBE scene property-bin bounds

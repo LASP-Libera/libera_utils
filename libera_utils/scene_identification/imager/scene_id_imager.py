@@ -48,7 +48,7 @@ RUNNER_CONFIG = SceneIdRunnerConfig(
     output_product_id=DataProductIdentifier.aux_scene_id_imager,
     reader=FootprintData.from_fmatch_imager_post_year_one,
     product_definition_path=PRODUCT_DEFINITION_PATH,
-    time_variable="radiometer_time",
+    time_variable="RADIOMETER_TIME",
     scene_types=SCENE_ID_IMAGER_SCENE_TYPES,
     log_prefix="scene_id_imager",
 )

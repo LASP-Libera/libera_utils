@@ -212,7 +212,10 @@ class TestFmatchDefinitions:
         time_var = fmatch_time_variable(mode)
         assert time_var in definition.coordinates
         assert definition.coordinates[time_var].dtype == "datetime64[ns]"
-        assert definition.coordinates[time_var].dimensions == [time_var]
+        # Radiometer time is a dimension coordinate (name == dimension); camera time is a non-unique auxiliary
+        # coordinate on the FOOTPRINT record axis (name != dimension).
+        record_dim = "FOOTPRINT" if time_var == "CAMERA_TIME" else time_var
+        assert definition.coordinates[time_var].dimensions == [record_dim]
 
     @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
     def test_common_variables_present(self, mode, variant, definitions):
@@ -231,10 +234,13 @@ class TestFmatchDefinitions:
             )
 
     @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_all_variables_use_mode_time_dimension(self, mode, variant, definitions):
+    def test_all_variables_use_mode_record_dimension(self, mode, variant, definitions):
+        # Radiometer modes hang variables on RADIOMETER_TIME (name == dimension); camera-timescale modes hang them on
+        # the FOOTPRINT record axis, carrying CAMERA_TIME only as a coordinate (name != dimension).
         time_var = fmatch_time_variable(mode)
+        record_dim = "FOOTPRINT" if time_var == "CAMERA_TIME" else time_var
         for name, var_def in definitions[(mode, variant)].variables.items():
-            assert var_def.dimensions == [time_var], f"{mode.value} ({variant.value})/{name} wrong dimension"
+            assert var_def.dimensions == [record_dim], f"{mode.value} ({variant.value})/{name} wrong dimension"
 
     @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
     def test_no_duplicate_variable_names(self, mode, variant, definitions):
@@ -313,13 +319,24 @@ class TestFmatchConformance:
             ["2026-06-11T00:00:00", "2026-06-11T00:00:01", "2026-06-11T00:00:02", "2026-06-11T00:00:03"],
             dtype="datetime64[ns]",
         )
+        # Sizes for every dimension a coordinate/variable may reference: the record axis (RADIOMETER_TIME or FOOTPRINT)
+        # is dynamic; CAMERA_PIXEL_BOUNDS is the fixed size-2 (min, max) pair carried by the camtime range coordinates.
+        dimension_sizes = {"RADIOMETER_TIME": n_footprints, "FOOTPRINT": n_footprints, "CAMERA_PIXEL_BOUNDS": 2}
+
+        def _zeros(var_def):
+            return np.zeros(tuple(dimension_sizes[d] for d in var_def.dimensions), dtype=var_def.dtype)
+
         data: dict[str, np.ndarray] = {time_var: times}
+        # Every non-time coordinate (e.g. the 2-D camera_pixel_x/y range coords on the camtime products) and every
+        # variable must be present for the conformance check to pass.
+        for name, var_def in definition.coordinates.items():
+            if name != time_var:
+                data[name] = _zeros(var_def)
         for name, var_def in definition.variables.items():
-            data[name] = np.zeros(n_footprints, dtype=var_def.dtype)
+            data[name] = _zeros(var_def)
 
         dynamic_attrs = {
             "algorithm_version": "1.0.0",
-            "date_created": "2026-06-11T00:00:00Z",
             "input_files": "dummy_l1b.nc",
         }
         dataset = definition.create_product_dataset(data, dynamic_product_attributes=dynamic_attrs)
@@ -444,7 +461,7 @@ class TestCamtimeAssembly:
         cam = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, footprints)
         imager = assemble_fmatch_dataset(OperationalMode.IMAGER_CAMTIME, footprints)
 
-        assert cam.sizes["CAMERA_TIME"] == imager.sizes["CAMERA_TIME"] == len(footprints)
+        assert cam.sizes["FOOTPRINT"] == imager.sizes["FOOTPRINT"] == len(footprints)
         # Every segmentation-derived column is declared by BOTH camtime products, so all come out
         # identical: same footprints, same code path.
         for name in _CAMTIME_SEGMENTATION_VARIABLES:
@@ -455,29 +472,41 @@ class TestCamtimeAssembly:
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
     def test_both_camtime_products_carry_pixel_block_provenance(self, mode, definitions):
-        """Both camera-timescale products declare the pixel-block provenance and fill it with real values.
+        """Both camera-timescale products carry the pixel-block provenance, filled with real segmentation values.
 
-        The provenance traces a footprint back to its source L1B camera pixels; it is computed by
-        segmentation for every camera-timescale mode, so both products carry it as real values rather
-        than placeholders.
+        The block's inclusive (min, max) pixel extent is carried as the 2-D camera_pixel_x/y range COORDINATES
+        (FOOTPRINT x CAMERA_PIXEL_BOUNDS); the boresight pixel is carried as the center_pixel_x/y variables. The four
+        retired *_start/_stop variables must be gone. All are computed by segmentation for every camera-timescale
+        mode, so both products carry them as real values rather than placeholders.
         """
         variant = FmatchVariant.YEAR_ONE if mode is OperationalMode.CAM_CAMTIME else FmatchVariant.POST_YEAR_ONE
+        definition = definitions[(mode, variant)]
         footprints = _pseudo_footprints()
         dataset = assemble_fmatch_dataset(mode, footprints, variant=variant)
 
-        pixel_provenance = (
-            "center_pixel_x",
-            "center_pixel_y",
-            "camera_pixel_x_start",
-            "camera_pixel_x_stop",
-            "camera_pixel_y_start",
-            "camera_pixel_y_stop",
+        # camera_pixel_x/y are 2-D range COORDINATES holding inclusive (min, max) = (slice.start, slice.stop - 1).
+        for name in ("camera_pixel_x", "camera_pixel_y"):
+            assert name in definition.coordinates, name
+            assert name in dataset.coords, name
+            assert dataset[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+        np.testing.assert_array_equal(
+            dataset["camera_pixel_x"].values, [(f.slice_x.start, f.slice_x.stop - 1) for f in footprints]
         )
-        for name in pixel_provenance:
-            assert name in definitions[(mode, variant)].variables, name
+        np.testing.assert_array_equal(
+            dataset["camera_pixel_y"].values, [(f.slice_y.start, f.slice_y.stop - 1) for f in footprints]
+        )
+
+        # The boresight (center) pixel stays as FMATCH-only data variables (not carried downstream to SCENE-ID).
+        for name in ("center_pixel_x", "center_pixel_y"):
+            assert name in definition.variables, name
             assert name in dataset.variables, name
-        # The values are the real per-footprint block indices from segmentation.
-        np.testing.assert_array_equal(dataset["camera_pixel_x_start"].values, [f.slice_x.start for f in footprints])
+        np.testing.assert_array_equal(dataset["center_pixel_x"].values, [f.center_ix for f in footprints])
+        np.testing.assert_array_equal(dataset["center_pixel_y"].values, [f.center_iy for f in footprints])
+
+        # The old start/stop layout is retired from both products.
+        retired = {"camera_pixel_x_start", "camera_pixel_x_stop", "camera_pixel_y_start", "camera_pixel_y_stop"}
+        assert retired.isdisjoint(set(definition.variables) | set(definition.coordinates))
+        assert retired.isdisjoint(set(dataset.variables))
 
     def test_radiometer_mode_rejects_pseudo_footprints(self):
         with pytest.raises(ValueError, match="not a camera-timescale mode"):

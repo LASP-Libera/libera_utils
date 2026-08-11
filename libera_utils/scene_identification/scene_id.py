@@ -31,15 +31,19 @@ logger = logging.getLogger(__name__)
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
 # The camera-timescale counterparts of the constants above. The camera-timescale scene-ID product (CAM-CAMTIME) is
-# written on the "CAMERA_TIME" dimension with a "camera_time" coordinate, mirroring its FMATCH-CAM-CAMTIME input (one
-# pseudo-footprint per camera image).
-CAMERA_TIME_DIMENSION = "CAMERA_TIME"
-CAMERA_TIME_VARIABLE = "camera_time"
+# written on the FOOTPRINT record axis (one record per image subsection / pseudo-footprint), with CAMERA_TIME carried
+# as a NON-UNIQUE coordinate on FOOTPRINT (one 2048x2048 image is segmented into many, possibly overlapping,
+# subsections that all share its time), mirroring its FMATCH-CAM-CAMTIME input. FOOTPRINT names the record dimension;
+# CAMERA_TIME names the datetime coordinate riding on it (its name != its dimension, unlike RADIOMETER_TIME).
+FOOTPRINT_DIMENSION = "FOOTPRINT"
+CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
 # Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
-# straight through (camera pixel-block indices, PSF bounding box, and boresight geolocation) so a scene can be traced
-# back to the exact camera pixels and ground footprint. These are copied verbatim by from_fmatch_cam_camtime and are
-# not consumed by the classification; they simply ride along to the written product.
+# straight through -- the camera pixel-index ranges (camera_pixel_x/y, 2-D inclusive (min, max) pairs on the
+# CAMERA_PIXEL_BOUNDS axis), the PSF bounding box, and the boresight geolocation -- so a scene can be traced back to
+# the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own dimensions) by
+# from_fmatch_cam_camtime and are not consumed by the classification; they simply ride along to the written product.
+# The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
 _FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "latitude",
     "longitude",
@@ -48,12 +52,8 @@ _FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "psf_bbox_lat_max",
     "psf_bbox_lon_min",
     "psf_bbox_lon_max",
-    "center_pixel_x",
-    "center_pixel_y",
-    "camera_pixel_x_start",
-    "camera_pixel_x_stop",
-    "camera_pixel_y_start",
-    "camera_pixel_y_stop",
+    "camera_pixel_x",
+    "camera_pixel_y",
 )
 
 # Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
@@ -950,8 +950,8 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            time_dimension=RADIOMETER_TIME_DIMENSION,
-            time_variable=RADIOMETER_TIME_VARIABLE,
+            record_dimension=RADIOMETER_TIME_DIMENSION,
+            time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             context="SCENE-ID-CAM reader (FMATCH-CAM)",
         )
@@ -976,17 +976,13 @@ class FootprintData:
         Returns
         -------
         FootprintData
-            Footprint data on the ``FOOTPRINT`` dimension (one record per image subsection), ready for
+            Footprint data on the ``FOOTPRINT`` dimension (one record per image subsection), with ``CAMERA_TIME`` and
+            the ``camera_pixel_x``/``camera_pixel_y`` range coordinates carried through, ready for
             :meth:`identify_scenes`.
-
-        Raises
-        ------
-        NotImplementedError
-            Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            time_dimension=CAMERA_TIME_DIMENSION,
+            record_dimension=FOOTPRINT_DIMENSION,
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES,
@@ -1018,8 +1014,8 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            time_dimension=RADIOMETER_TIME_DIMENSION,
-            time_variable=RADIOMETER_TIME_VARIABLE,
+            record_dimension=RADIOMETER_TIME_DIMENSION,
+            time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_FLASH_COLUMN_MAP,
             # FMATCH-IMAGER-FLASH has no cloud-phase field; inject an all-NaN cloud_phase so identify_scenes does
             # not try (and fail) to derive it, and so phase-gated TRMM scenes are left unmatched.
@@ -1054,8 +1050,8 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            time_dimension=RADIOMETER_TIME_DIMENSION,
-            time_variable=RADIOMETER_TIME_VARIABLE,
+            record_dimension=RADIOMETER_TIME_DIMENSION,
+            time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_POST_YEAR_ONE_COLUMN_MAP,
             context=(
                 "SCENE-ID-IMAGER reader (post-year-one FMATCH-IMAGER); a year-one FMATCH-IMAGER file lacks the "
@@ -1098,7 +1094,7 @@ class FootprintData:
     def _extract_data_from_fmatch(
         fmatch_path: pathlib.Path,
         *,
-        time_dimension: str,
+        record_dimension: str,
         time_variable: str,
         column_map: dict[FootprintVariables, "_FmatchColumn"],
         nan_columns: tuple[FootprintVariables, ...] = (),
@@ -1123,11 +1119,17 @@ class FootprintData:
         ----------
         fmatch_path : pathlib.Path
             Path to a Libera FMATCH NetCDF product file.
-        time_dimension : str
-            The per-footprint dimension of the product (``RADIOMETER_TIME`` or ``CAMERA_TIME``); also the name of the
-            time coordinate variable in the FMATCH file.
+        record_dimension : str
+            The per-record dimension the classification columns are emitted on: ``RADIOMETER_TIME`` for the
+            radiometer-timescale readers (where it also names the time coordinate), or ``FOOTPRINT`` for the
+            camera-timescale reader (where the time coordinate is the separate, non-unique ``CAMERA_TIME`` riding on
+            this axis).
         time_variable : str
-            The lowercase time variable name to emit (``radiometer_time`` or ``camera_time``).
+            Name of the datetime time coordinate, read from the FMATCH file and emitted under the same name (it is
+            the SCENE-ID product's declared time-coordinate name): ``RADIOMETER_TIME`` for SCENE-ID-CAM and
+            SCENE-ID-IMAGER(-FLASH), or ``CAMERA_TIME`` for SCENE-ID-CAM-CAMTIME. Carried as a plain data variable so
+            it rides through scene identification; the runner promotes it to a coordinate via
+            :meth:`to_time_product` before writing.
         column_map : dict[FootprintVariables, _FmatchColumn]
             Mapping of standardized output column -> FMATCH source column spec (name, dtype, scale, transform).
         nan_columns : tuple of FootprintVariables, optional
@@ -1143,7 +1145,7 @@ class FootprintData:
         Returns
         -------
         xr.Dataset
-            Footprint data on ``time_dimension`` ready for :meth:`identify_scenes`.
+            Footprint data on ``record_dimension`` ready for :meth:`identify_scenes`.
         """
         logger.info("Reading FMATCH product %s", fmatch_path)
         try:
@@ -1170,25 +1172,30 @@ class FootprintData:
                 values = values * column.scale
             # Cast last so the emitted column always matches the dtype the SCENE-ID product definition declares
             # (np.where in a transform can widen to float64, and the scale multiply can promote dtype).
-            data_variables[target] = ([time_dimension], np.asarray(values).astype(column.dtype, copy=False))
+            data_variables[target] = ([record_dimension], np.asarray(values).astype(column.dtype, copy=False))
 
         # Columns with no FMATCH source: emit all-NaN float32 (see nan_columns docstring above).
-        number_of_footprints = fmatch_dataset.sizes[time_dimension]
+        number_of_footprints = fmatch_dataset.sizes[record_dimension]
         for target in nan_columns:
             data_variables[target] = (
-                [time_dimension],
+                [record_dimension],
                 np.full(number_of_footprints, np.nan, dtype=np.float32),
             )
 
-        # The FMATCH time coordinate (named after the dimension) is decoded to datetime64[ns] by xarray; carry it as
-        # a plain data variable so to_time_product can promote it to the product's time coordinate.
-        data_variables[time_variable] = ([time_dimension], fmatch_dataset[time_dimension].to_numpy())
+        # The FMATCH time coordinate (RADIOMETER_TIME, or the non-unique CAMERA_TIME riding on FOOTPRINT) is decoded to
+        # datetime64[ns] by xarray; carry it as a plain data variable on the record axis under the SCENE-ID product's
+        # declared name (``time_variable``), so to_time_product can promote it to the product's time coordinate.
+        data_variables[time_variable] = ([record_dimension], fmatch_dataset[time_variable].to_numpy())
 
+        # Copy each identifier variable verbatim, preserving its own dimensions so a multi-dimensional passthrough
+        # (the 2-D camera_pixel_x/y range coordinates on FOOTPRINT x CAMERA_PIXEL_BOUNDS) rides through unchanged, not
+        # just the 1-D per-record identifiers.
         for variable_name in passthrough_variables:
-            data_variables[variable_name] = ([time_dimension], fmatch_dataset[variable_name].to_numpy())
+            source_variable = fmatch_dataset[variable_name]
+            data_variables[variable_name] = (list(source_variable.dims), source_variable.to_numpy())
 
         parsed_dataset = xr.Dataset(data_variables)
-        logger.info("FMATCH product read successfully with %d footprints", parsed_dataset.sizes[time_dimension])
+        logger.info("FMATCH product read successfully with %d records", parsed_dataset.sizes[record_dimension])
         return parsed_dataset
 
     def identify_scenes(

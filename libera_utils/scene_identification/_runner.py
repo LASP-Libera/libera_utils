@@ -278,7 +278,6 @@ def create_and_write_data_product(
     if coords_to_promote:
         product_dataset = product_dataset.set_coords(coords_to_promote)
 
-    product_dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
     product_dataset.attrs["InputGranules"] = input_file_name
     # TODO[LIBSDC-672]: source the algorithm version from package metadata once SCENE-ID is versioned/released.
     product_dataset.attrs["algorithm_version"] = "0.1.0"

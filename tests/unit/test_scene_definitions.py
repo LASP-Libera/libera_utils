@@ -5,6 +5,7 @@ import tempfile
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from libera_utils.config import config
 from libera_utils.scene_identification.scene_definitions import Scene, SceneDefinition

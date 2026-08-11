@@ -40,7 +40,6 @@ libera_utils.footprint_matching._runner : Manifest-driven runners that call into
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -83,15 +82,13 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
         "psf_bbox_lon_min",
         "psf_bbox_lon_max",
         "q_flags",
-        # Camera pixel-block provenance: which L1B camera pixels this pseudo-footprint
-        # was segmented from (centre/boresight pixel and the block's [start, stop) extent
-        # on each pixel axis). Real per-footprint integers straight off the PseudoFootprint.
+        # Boresight (centre) pixel provenance: which L1B camera pixel this pseudo-footprint's
+        # boresight stand-in falls on. Real per-footprint integers straight off the
+        # PseudoFootprint. The block's inclusive (min, max) pixel extent is emitted separately
+        # as the 2-D camera_pixel_x/y range COORDINATES, which this set (real data *variables*)
+        # deliberately does not list.
         "center_pixel_x",
         "center_pixel_y",
-        "camera_pixel_x_start",
-        "camera_pixel_x_stop",
-        "camera_pixel_y_start",
-        "camera_pixel_y_stop",
     }
 )
 
@@ -475,7 +472,6 @@ def _finalize_product_dataset(
     """
     dataset = definition.create_product_dataset(data)
     dataset = definition.enforce_dataset_conformance(dataset)
-    dataset.attrs["date_created"] = datetime.now(UTC).isoformat()
     if input_files is not None:
         dataset.attrs["input_files"] = input_files
     if algorithm_version is not None:
@@ -568,8 +564,10 @@ def _assemble_camtime_dataset(
 
     time_variable = fmatch_time_variable(mode)  # "CAMERA_TIME"
 
-    # The real, segmentation-derived columns. Longitudes of the PSF box are wrapped
-    # into [-180, 180) to satisfy the product definition's valid range.
+    # The real, segmentation-derived 1-D columns. Longitudes of the PSF box are wrapped
+    # into [-180, 180) to satisfy the product definition's valid range. center_pixel_x/y
+    # are the boresight stand-in pixel; they are FMATCH-only provenance (the block's
+    # inclusive extent is emitted as the camera_pixel_x/y range coordinates below).
     real_columns: dict[str, list[float]] = {
         "latitude": [f.latitude for f in footprints],
         "longitude": [f.longitude for f in footprints],
@@ -582,31 +580,33 @@ def _assemble_camtime_dataset(
         "psf_bbox_lon_min": [_normalize_longitude(f.bbox.lon_min) for f in footprints],
         "psf_bbox_lon_max": [_normalize_longitude(f.bbox.lon_max) for f in footprints],
         "q_flags": [int(f.q_flags) for f in footprints],
-        # Pixel-block provenance. slice_x/slice_y follow Python's half-open [start, stop)
-        # convention, matching the product definition's inclusive-start / exclusive-stop
-        # documentation for the camera_pixel_*_start / *_stop variables.
         "center_pixel_x": [f.center_ix for f in footprints],
         "center_pixel_y": [f.center_iy for f in footprints],
-        "camera_pixel_x_start": [f.slice_x.start for f in footprints],
-        "camera_pixel_x_stop": [f.slice_x.stop for f in footprints],
-        "camera_pixel_y_start": [f.slice_y.start for f in footprints],
-        "camera_pixel_y_stop": [f.slice_y.stop for f in footprints],
     }
 
-    # Start the data dict with the time coordinate (nanosecond datetimes; note the
-    # values repeat within an image -- see segment_l1b_camera's docstring).
+    # Start the data dict with the time coordinate (nanosecond datetimes; note the values
+    # repeat within an image -- see segment_l1b_camera's docstring). CAMERA_TIME is a
+    # coordinate on the FOOTPRINT record axis: create_product_dataset routes it to .coords
+    # because the definition declares it under coordinates:.
     data: dict[str, np.ndarray] = {
         time_variable: np.array([f.time for f in footprints], dtype="datetime64[ns]"),
     }
 
-    # Cast each real column to the exact dtype the definition declares.
-    #
-    # Only columns the definition actually declares are written. The two camera-timescale
-    # definitions do not declare identical variable sets: FMATCH-CAM-CAMTIME carries the
-    # camera pixel-block provenance (center_pixel_*, camera_pixel_*_start/stop) so a scene
-    # can be traced back to the exact source pixels, while FMATCH-IMAGER-CAMTIME does not.
-    # Segmentation computes those values either way, so we drop the undeclared ones here
-    # rather than writing variables the product does not define.
+    # Camera pixel-index ranges as inclusive (min, max) pairs on the CAMERA_PIXEL_BOUNDS
+    # axis. slice_x/slice_y are half-open [start, stop), so the inclusive maximum is
+    # stop - 1. These are 2-D coordinates (FOOTPRINT x CAMERA_PIXEL_BOUNDS) that both
+    # camtime products declare and that pass straight through to SCENE-ID-CAM-CAMTIME.
+    pixel_ranges: dict[str, list[tuple[int, int]]] = {
+        "camera_pixel_x": [(f.slice_x.start, f.slice_x.stop - 1) for f in footprints],
+        "camera_pixel_y": [(f.slice_y.start, f.slice_y.stop - 1) for f in footprints],
+    }
+    for coordinate_name, ranges in pixel_ranges.items():
+        coordinate_definition = definition.coordinates[coordinate_name]
+        data[coordinate_name] = np.asarray(ranges, dtype=np.dtype(coordinate_definition.dtype))
+
+    # Cast each real 1-D column to the exact dtype the definition declares. Only columns
+    # the definition actually declares are written; both camtime products declare the same
+    # segmentation variables, but the guard keeps the assembly robust to definition drift.
     for name, values in real_columns.items():
         variable_definition = definition.variables.get(name)
         if variable_definition is None:

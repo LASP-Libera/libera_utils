@@ -129,8 +129,8 @@ class TestCollectInputFiles:
 class TestToTimeProduct:
     """FootprintData.to_time_product prepares the dataset for writing on its time axis."""
 
-    def test_promotes_time_and_adds_quality_flag(self, test_scene_id):
-        footprint_data = run_scene_identification_cam(test_scene_id / SSF_INPUT_NAME)
+    def test_promotes_time_and_adds_quality_flag(self, tmp_path):
+        footprint_data = run_scene_identification_cam(make_fmatch_product_fixture(tmp_path, OperationalMode.CAM))
         product = footprint_data.to_time_product("RADIOMETER_TIME")
 
         assert "RADIOMETER_TIME" in product.coords
@@ -150,9 +150,25 @@ class TestFmatchReaders:
         footprint_data = FootprintData.from_fmatch_cam(make_fmatch_product_fixture(tmp_path, OperationalMode.CAM))
         dataset = footprint_data._data
 
-    def test_from_fmatch_cam_camtime_not_implemented(self, tmp_path):
-        with pytest.raises(NotImplementedError):
-            FootprintData.from_fmatch_cam_camtime(tmp_path / "fmatch.nc")
+        for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle", "RADIOMETER_TIME"):
+            assert required in dataset.variables
+
+    def test_from_fmatch_cam_camtime_reads_records_on_footprint_axis(self, tmp_path):
+        """from_fmatch_cam_camtime reads FMATCH-CAM-CAMTIME onto the FOOTPRINT axis, carrying CAMERA_TIME and the 2-D
+        camera_pixel range coordinates through (but not the FMATCH-only center pixel)."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM_CAMTIME, n_footprints=6)
+        dataset = FootprintData.from_fmatch_cam_camtime(input_path)._data
+
+        # Records live on FOOTPRINT; CAMERA_TIME rides on that axis (a plain variable pre-write).
+        assert dataset.sizes["FOOTPRINT"] == 6
+        assert dataset["CAMERA_TIME"].dims == ("FOOTPRINT",)
+        # Classification inputs the pipeline consumes/derives from are present on the record axis.
+        for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle"):
+            assert required in dataset.variables
+        # The camera pixel-index ranges pass through as 2-D coordinates; the boresight center pixel does not.
+        for name in ("camera_pixel_x", "camera_pixel_y"):
+            assert dataset[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+        assert "center_pixel_x" not in dataset.variables
 
     def test_from_fmatch_imager_flash_injects_nan_cloud_phase(self, tmp_path):
         """from_fmatch_imager_flash supplies the classification inputs and an all-NaN cloud_phase (no phase source)."""
@@ -161,7 +177,7 @@ class TestFmatchReaders:
 
         # clear_area feeds the derived cloud_fraction; surface_wind_u/v feed the derived surface_wind; optical_depth
         # is injected from the SSF cloud optical depth.
-        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "radiometer_time"):
+        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "RADIOMETER_TIME"):
             assert required in dataset.variables
         # FMATCH-IMAGER-FLASH has no phase source, so cloud_phase is present-but-NaN.
         assert "cloud_phase" in dataset.variables
@@ -187,7 +203,7 @@ class TestFmatchReaders:
 def _synthetic_camtime_footprint_data() -> FootprintData:
     """Build a small CAM-CAMTIME FootprintData on the ``FOOTPRINT`` record axis.
 
-    Mirrors the raw inputs the (unimplemented) FMATCH-CAM-CAMTIME reader will supply: the scene-property inputs the
+    Mirrors the raw inputs the FMATCH-CAM-CAMTIME reader supplies: the scene-property inputs the
     pipeline derives ``surface_type``/``cloud_fraction`` from, the viewing angles, the boresight geolocation + PSF
     bbox passthroughs, and the ``camera_pixel_x``/``camera_pixel_y`` inclusive ``(min, max)`` ranges carried on the
     size-2 ``CAMERA_PIXEL_BOUNDS`` axis.
@@ -271,6 +287,24 @@ class TestSceneIdCamCamtimeWrite:
             "camera_pixel_y_stop",
         ):
             assert retired not in reopened.variables
+
+    def test_end_to_end_from_written_fmatch_file(self, tmp_path):
+        """End-to-end guard (replaces the retired demo generator): a written FMATCH-CAM-CAMTIME file read by the real
+        reader, classified, and written as a conformant SCENE-ID-CAM-CAMTIME product on the FOOTPRINT axis."""
+        fmatch_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM_CAMTIME, n_footprints=6)
+        footprint_data = FootprintData.from_fmatch_cam_camtime(fmatch_path)
+        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
+
+        output_file = create_and_write_data_product_cam_camtime(footprint_data, fmatch_path.name, tmp_path)
+
+        assert output_file.path.exists()
+        reopened = xr.open_dataset(output_file.path)
+        assert reopened.sizes["FOOTPRINT"] == 6
+        assert reopened["CAMERA_TIME"].dims == ("FOOTPRINT",)
+        for name in ("camera_pixel_x", "camera_pixel_y"):
+            assert reopened[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+        assert "scene_id_erbe" in reopened.variables
+        assert "center_pixel_x" not in reopened.variables
 
 
 class TestSceneIdImagerWrite:

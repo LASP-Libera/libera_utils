@@ -919,6 +919,17 @@ def make_fmatch_product_fixture(
     times = base_time + np.arange(n_footprints, dtype="int64") * cadence
 
     data: dict[str, np.ndarray] = {time_variable: times}
+
+    # Fill any non-time coordinate the definition declares. On the camera-timescale products this is the pair of 2-D
+    # camera_pixel_x/y range coordinates (FOOTPRINT x CAMERA_PIXEL_BOUNDS); the radiometer products have none. The
+    # record axis length is n_footprints; CAMERA_PIXEL_BOUNDS is the fixed size-2 (min, max) pair.
+    dimension_sizes = {"RADIOMETER_TIME": n_footprints, "FOOTPRINT": n_footprints, "CAMERA_PIXEL_BOUNDS": 2}
+    for name, coord_def in definition.coordinates.items():
+        if name == time_variable:
+            continue
+        shape = tuple(dimension_sizes[dimension] for dimension in coord_def.dimensions)
+        data[name] = np.zeros(shape, dtype=coord_def.dtype)
+
     for name, var_def in definition.variables.items():
         if name == "igbp_MODIS_surface_type":
             data[name] = (np.arange(n_footprints) % 17 + 1).astype(var_def.dtype)
@@ -937,7 +948,6 @@ def make_fmatch_product_fixture(
 
     dynamic_attrs = {
         "algorithm_version": "0.1.0",
-        "date_created": "2026-06-11T00:00:00Z",
         "input_files": "SYNTHETIC EXAMPLE - no real input files were used",
     }
     written = write_libera_data_product(
