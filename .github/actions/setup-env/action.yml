@@ -31,7 +31,7 @@ runs:
       run: |
         sudo apt-get update -q
         sudo apt-get install -y --no-install-recommends \
-          libudunits2-dev libhdf4-dev libhdf5-dev libnetcdf-dev libgdal-dev \
+          libudunits2-dev libhdf4-dev libhdf5-dev libnetcdf-dev \
           build-essential pkg-config
 
     - name: Get CSPICE remote metadata
