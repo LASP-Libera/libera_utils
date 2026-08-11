@@ -35,12 +35,6 @@ from libera_utils.libera_spice.spice_utils import (
 
 logger = logging.getLogger(__name__)
 
-# Ensure the leap second file in libera_utils is used by curryer for all kernel making operations
-# TODO[CURRYER-97]: This environment variable must be set or a leapsecond kernel must be in a specific relative
-# path location for curryer to make any kernels. This obscures the process and should be re-evaluated and improved
-# in the future.
-# os.environ["LEAPSECOND_FILE_ENV"] = config.get("GENERIC_KERNEL_DIR")
-
 
 # TODO[LIBSDC-687]: This class should likely be in curryer instead of libera_utils.
 class KernelManager:
