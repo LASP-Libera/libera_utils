@@ -159,7 +159,7 @@ def test_geolocate_earth_target(
     with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, generated_kernels]):
         # Geolocate to the ellipsoid.
         ellips_lla_df, sc_xyz_df, ellips_qf_ds = spatial.instrument_intersect_ellipsoid(
-            ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True
+            ugps_times, sp.obj.Body("LIBERA_RAD", frame=True), geodetic=True, degrees=True
         )
 
         qf_counts = ellips_qf_ds.value_counts()
@@ -260,7 +260,7 @@ def test_misalignment_shifts_geolocation(
 
     with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, [*sc_kernels, az_ck_measured, el_ck_measured]]):
         measured_lla, _, _ = spatial.instrument_intersect_ellipsoid(
-            ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True
+            ugps_times, sp.obj.Body("LIBERA_RAD", frame=True), geodetic=True, degrees=True
         )
 
     # Nominal geometry: rebuild the Az/El CKs about the ideal axes and swap in the frozen misalignment-
@@ -285,7 +285,7 @@ def test_misalignment_shifts_geolocation(
         [mkrn.sds_kernels, [nominal_fk, *non_fk_mission], [*sc_kernels, az_ck_nominal, el_ck_nominal]]
     ):
         nominal_lla, _, _ = spatial.instrument_intersect_ellipsoid(
-            ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True
+            ugps_times, sp.obj.Body("LIBERA_RAD", frame=True), geodetic=True, degrees=True
         )
 
     m_lat, m_lon = measured_lla.loc[slc]["lat"].to_numpy(), measured_lla.loc[slc]["lon"].to_numpy()

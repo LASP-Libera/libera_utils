@@ -76,7 +76,7 @@ def test_los_alignment_vs_engineering(curryer_lsk, short_tmp_path, spice_test_da
         el_axis = np.array(sp.gdpool("LIBERA_EL_AOR_IN_STAND", 0, 3))
         el0_z = np.array(sp.gdpool("LIBERA_EL0_Z_IN_STAND", 0, 3))
 
-        spice_los = np.array([sp.pxform("LIBERA_TOT_RAD_COORD", "LIBERA_BASE_COORD", e) @ boresight for e in et])
+        spice_los = np.array([sp.pxform("LIBERA_RAD_COORD", "LIBERA_BASE_COORD", e) @ boresight for e in et])
         # Independent recompute of the engineering rotateVectorAboutAxis process from the same measured vectors.
         rodrigues_los = np.array(
             [_rotation(az_axis, az) @ _rotation(el_axis, el) @ el0_z for az, el in zip(corrected_az, corrected_el)]

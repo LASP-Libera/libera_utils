@@ -114,7 +114,7 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
 
     # Create the static kernels from the JSONs definitions.
     fixed_kernel_configs = config.get("LIBERA_KERNEL_STATIC_CONFIGS")
-    assert len(fixed_kernel_configs) == 8
+    assert len(fixed_kernel_configs) == 5
 
     generated_kernels = []
     for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
@@ -122,7 +122,7 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
         generated_kernels.append(spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
 
     found_kernels = sorted(short_tmp_path.glob("*"))
-    assert len(found_kernels) == 8
+    assert len(found_kernels) == 5
 
     # Load meta kernel details.
     mkrn = meta.MetaKernel.from_json(
@@ -138,10 +138,7 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
         ("LIBERA_AZ", "libera_az.fixed_offset.spk.bsp"),
         ("LIBERA_WFOV_CAM", "libera_wfov_cam.fixed_offset.spk.bsp"),
         ("LIBERA_EL", "libera_el.fixed_offset.spk.bsp"),
-        ("LIBERA_SW_RAD", "libera_sw_rad.fixed_offset.spk.bsp"),
-        ("LIBERA_SSW_RAD", "libera_ssw_rad.fixed_offset.spk.bsp"),
-        ("LIBERA_LW_RAD", "libera_lw_rad.fixed_offset.spk.bsp"),
-        ("LIBERA_TOT_RAD", "libera_tot_rad.fixed_offset.spk.bsp"),
+        ("LIBERA_RAD", "libera_rad.fixed_offset.spk.bsp"),
     ]
     for obj_key, kernel_file in static_pairings:
         span = sp.ext.kernel_coverage(short_tmp_path / kernel_file, mkrn.mappings[obj_key], to_fmt="iso")
@@ -154,10 +151,7 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
             ("NOAA20_SC", "LIBERA_AZ"),
             ("LIBERA_AZ", "LIBERA_WFOV_CAM"),
             ("LIBERA_AZ", "LIBERA_EL"),
-            ("LIBERA_EL", "LIBERA_SW_RAD"),
-            ("LIBERA_EL", "LIBERA_SSW_RAD"),
-            ("LIBERA_EL", "LIBERA_LW_RAD"),
-            ("LIBERA_EL", "LIBERA_TOT_RAD"),
+            ("LIBERA_EL", "LIBERA_RAD"),
         ]
         for from_obj, to_obj in static_elements:
             xyz = sp.ext.query_ephemeris([ugps_time], from_obj, to_obj, ref_frame=f"{from_obj}_COORD")
