@@ -21,8 +21,8 @@ the single time dimension) and ``GridTile.data`` is at most
 (variable, pressure level) pair is flattened into its own ``VariableSpec`` —
 e.g. ``temperature_500hPa`` — keeping the tile/aggregation contract and the
 product schema unchanged. The retained levels are the ``_ERA5_PRESSURE_LEVELS``
-module constant; changing the science-selected subset is a one-line edit there
-(the specs and product-definition cross-check derive from it).
+module constant — the full ERA5 set of 37 levels; changing the level list is a
+one-line edit there (the specs and product-definition cross-check derive from it).
 
 Variables read (at each retained pressure level)
 ------------------------------------------------
@@ -55,12 +55,49 @@ import xarray as xr
 from libera_utils.footprint_matching.readers.era5 import ERA5ReaderBase
 from libera_utils.footprint_matching.types import OperationalMode, VariableSpec
 
-# Pressure levels (hPa) retained for FMATCH, ascending. ERA5 offers 37 levels
-# (1–1000 hPa); carrying all of them would add 5 × 37 × 2 = 370 product
-# variables, so the science team selected this 13-level subset. The CDS
-# download AND this constant must agree: the reader raises if a configured
-# level is missing from the file.
-_ERA5_PRESSURE_LEVELS: tuple[int, ...] = (10, 30, 50, 70, 100, 200, 250, 300, 500, 700, 850, 925, 1000)
+# Pressure levels (hPa) retained for FMATCH, ascending — the full ERA5 set of 37
+# levels (1–1000 hPa). Carrying all of them yields 5 × 37 × 2 = 370 product
+# variables. The CDS download AND this constant must agree: the reader raises if a
+# configured level is missing from the file.
+_ERA5_PRESSURE_LEVELS: tuple[int, ...] = (
+    1,
+    2,
+    3,
+    5,
+    7,
+    10,
+    20,
+    30,
+    50,
+    70,
+    100,
+    125,
+    150,
+    175,
+    200,
+    225,
+    250,
+    300,
+    350,
+    400,
+    450,
+    500,
+    550,
+    600,
+    650,
+    700,
+    750,
+    775,
+    800,
+    825,
+    850,
+    875,
+    900,
+    925,
+    950,
+    975,
+    1000,
+)
 
 # Ordered mapping of FMATCH base spec name -> ERA5 variable name as stored in
 # CDS NetCDF4 files. Combined with _ERA5_PRESSURE_LEVELS (variable-major, then

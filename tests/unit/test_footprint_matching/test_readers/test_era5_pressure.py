@@ -31,7 +31,7 @@ from tests.test_data.footprint_matching.fixtures import (
     make_era5_pressure_netcdf_fixture,
 )
 
-# Expected spec count: 5 base variables × 13 configured levels.
+# Expected spec count: 5 base variables × 37 configured levels.
 _N_SPECS = len(_ERA5_PRESSURE_LEVEL_VARIABLES) * len(_ERA5_PRESSURE_LEVELS)
 
 
@@ -135,7 +135,7 @@ class TestERA5PressureLevelReaderErrors:
     def test_missing_level_raises_value_error(self, tmp_path):
         # Write a file that omits some configured levels: the reader must refuse
         # it with a clear message rather than substituting neighboring levels.
-        partial_levels = tuple(_ERA5_PRESSURE_LEVELS[:-2])  # drop 925 and 1000 hPa
+        partial_levels = tuple(_ERA5_PRESSURE_LEVELS[:-2])  # drop 975 and 1000 hPa
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, levels=partial_levels)
         reader = ERA5PressureLevelReader(fixture_path)
         with pytest.raises(ValueError, match="missing configured pressure"):
