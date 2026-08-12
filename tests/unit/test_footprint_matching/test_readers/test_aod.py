@@ -17,7 +17,7 @@ import numpy as np
 
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 from tests.test_data.footprint_matching.fixtures import make_aod_noaa20_fixture
 
 _N_LAT = 4
@@ -60,9 +60,6 @@ class TestVIIRSAODReaderClassAttributes:
 
     def test_resolution_km(self):
         assert VIIRSAODReader.RESOLUTION_KM == 111.0
-
-    def test_required_mode_is_imager(self):
-        assert VIIRSAODReader.REQUIRED_MODE == OperationalMode.IMAGER
 
     def test_reads_aod_and_aerosol_type(self):
         assert len(VIIRSAODReader.VARIABLES) == 2

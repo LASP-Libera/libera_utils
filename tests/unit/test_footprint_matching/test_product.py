@@ -249,6 +249,18 @@ class TestFmatchDefinitions:
         all_names = list(definition.variables) + list(definition.coordinates)
         assert len(all_names) == len(set(all_names))
 
+    def test_imager_camtime_has_no_era5_pressure_variables(self, definitions):
+        # The ERA5 pressure-level fields are a radiometer-timescale quantity: the
+        # camera-timescale FMATCH-IMAGER-CAMTIME product must not declare them, while
+        # the radiometer FMATCH-IMAGER product still does. Standing guard against the
+        # pressure block drifting back into the camtime YAML (there is no general
+        # no-extra-variables check).
+        camtime = definitions[(OperationalMode.IMAGER_CAMTIME, FmatchVariant.POST_YEAR_ONE)]
+        offenders = [name for name in camtime.variables if name.startswith("era5_pressure_")]
+        assert offenders == [], f"FMATCH-IMAGER-CAMTIME must not declare era5_pressure variables, found {offenders}"
+        imager = definitions[(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)]
+        assert any(name.startswith("era5_pressure_") for name in imager.variables)
+
 
 class TestDerivedProductVariables:
     """Guards the rules that turn read VARIABLES into product output variables."""

@@ -34,9 +34,11 @@ Variables read (at each retained pressure level)
 
 All of these began as year-one FMATCH-IMAGER substitutes for the then-unavailable
 RBSP inputs. They are now retained in the post-year-one product alongside the RBSP
-fields, so the reader is variant-neutral (``REQUIRED_VARIANT`` inherits the base
-default of ``None``); it is active in every FMATCH-IMAGER variant, gated only by
-``REQUIRED_MODE = IMAGER``.
+fields, so the reader contributes to both the year-one and post-year-one
+radiometer-timescale FMATCH-IMAGER products. It is deliberately absent from the
+camera-timescale FMATCH-IMAGER-CAMTIME product: the pressure-level fields are a
+radiometer-timescale quantity. Product membership is declared in the per-product
+reader sets in ``readers/registry.py``, not by the reader itself.
 
 References
 ----------
@@ -150,13 +152,6 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
         Registry key ``"era5_pressure"``.
     RESOLUTION_KM : float
         25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
-    REQUIRED_MODE : OperationalMode
-        ``IMAGER`` — these fields exist only for the FMATCH-IMAGER product.
-    REQUIRED_VARIANT : FmatchVariant or None
-        Inherited base default ``None`` (variant-neutral): the reader runs in both
-        the year-one and post-year-one FMATCH-IMAGER variants. It originally
-        substituted for RBSP inputs during year one and is now retained
-        post-year-one alongside CLDPIX/SSF (see ``fmatch_imager_post_year_one.yml``).
     VARIABLES : tuple[VariableSpec, ...]
         One continuous float32 spec per (variable, level) pair.
 
@@ -173,12 +168,6 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     # names stay uniform: era5_pressure_ECMWF_temperature_500hPa etc.
     INSTRUMENT: str = "ECMWF"
     RESOLUTION_KM: float = 25.0
-    REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER
-    # REQUIRED_VARIANT is intentionally NOT overridden: it inherits the base class
-    # default of None (variant-neutral). These fields began as year-one substitutes
-    # for the unavailable RBSP inputs but are now retained in the post-year-one
-    # FMATCH-IMAGER product alongside the RBSP fields, so the reader runs in both
-    # variants (subject only to the REQUIRED_MODE=IMAGER rank gate).
     VARIABLES: tuple[VariableSpec, ...] = _build_pressure_level_specs()
 
     def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

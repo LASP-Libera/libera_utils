@@ -49,8 +49,11 @@ class OperationalMode(enum.Enum):
     def rank(self) -> int:
         """Integer ordering of modes by data latency (0 = lowest latency).
 
-        Used by ReaderRegistry.get_readers_for_mode() to filter the reader
-        set to those whose REQUIRED_MODE rank is <= the active mode's rank.
+        Used to compare a :class:`VariableSpec`'s ``required_mode`` against the active
+        mode (a spec is carried when ``spec.required_mode.rank <= mode.rank``), which
+        gates variables *within* a reader -- e.g. the ERA5 single-level winds (CAM) vs
+        its IMAGER-only substitute fields. Reader-to-product membership is declared
+        separately by the per-product reader sets in ``readers/registry.py``.
         """
         return list(OperationalMode).index(self)
 

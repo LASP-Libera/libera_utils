@@ -14,9 +14,8 @@ FLASHFlux
 The RBSP-produced FLASHFlux product shares the SSF file format, so this reader
 serves both. The two differ only in latency / processing stream
 (FLASHFlux → FMATCH-IMAGER-FLASH; SSF → FMATCH-IMAGER); the caller supplies the
-appropriate file for the active mode. ``REQUIRED_MODE`` is therefore set to the
-lower-rank ``IMAGER_FLASH`` so this reader is active for the Flash, Imager, and
-Imager-camera-time products.
+appropriate file for the active mode. This reader belongs to the Flash, Imager, and
+Imager-camera-time product sets (post-year-one), declared in ``readers/registry.py``.
 
 Why rasterize?
 --------------
@@ -67,7 +66,7 @@ from libera_utils.footprint_matching.readers._swath import (
     rasterize_points_to_grid,
 )
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
 
 # Float and integer fill sentinels used across SSF groups.
 _FILL_FLOAT: float = 3.4028235e38  # float32 max, the CERES float fill
@@ -218,14 +217,6 @@ class SSFReader(GriddedDataReader):
         ~20 km (CERES footprint scale at nadir).
     OUTPUT_CELL_DEG : float
         Edge length of the rasterized output cells (degrees).
-    REQUIRED_MODE : OperationalMode
-        ``IMAGER_FLASH`` — active for the Flash, Imager, and Imager-camera-time
-        products.
-    REQUIRED_VARIANT : FmatchVariant
-        ``POST_YEAR_ONE`` — CERES SSF/FLASHFlux are RBSP-latency products that
-        do not exist during the first year of operation (the FLASH/IMAGER modes
-        themselves only run post-year-one; the year-one FMATCH-IMAGER product
-        substitutes ERA5 fields instead).
     VARIABLES : tuple[VariableSpec, ...]
         Minimal starter set (see module docstring).
 
@@ -240,9 +231,6 @@ class SSFReader(GriddedDataReader):
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 20.0
     OUTPUT_CELL_DEG: float = 0.2
-    REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER_FLASH
-    # RBSP-latency product: unavailable in year one, so this reader only runs post-year-one.
-    REQUIRED_VARIANT: FmatchVariant = FmatchVariant.POST_YEAR_ONE
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,

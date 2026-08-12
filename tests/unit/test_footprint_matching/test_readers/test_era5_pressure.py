@@ -42,9 +42,6 @@ class TestERA5PressureLevelReaderClassAttributes:
     def test_resolution_km(self):
         assert ERA5PressureLevelReader.RESOLUTION_KM == 25.0
 
-    def test_required_mode_is_imager(self):
-        assert ERA5PressureLevelReader.REQUIRED_MODE == OperationalMode.IMAGER
-
     def test_variable_count_is_variables_times_levels(self):
         assert len(ERA5PressureLevelReader.VARIABLES) == _N_SPECS
 

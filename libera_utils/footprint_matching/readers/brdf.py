@@ -90,8 +90,6 @@ class VIIRSBRDFReader(GriddedDataReader):
         Registry key ``"viirs_brdf"``.
     RESOLUTION_KM : float
         5.6 km (0.05° CMG grid spacing at equator).
-    REQUIRED_MODE : OperationalMode
-        Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
         Nine BRDF kernel parameter variables (3 bands × 3 kernel weights),
         all float32 with ``weighted_mean`` aggregation.
@@ -106,7 +104,6 @@ class VIIRSBRDFReader(GriddedDataReader):
     # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 5.6  # 0.05° ≈ 5.6 km at equator
-    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="brdf_shortwave_fiso",

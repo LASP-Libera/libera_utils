@@ -33,9 +33,7 @@ from pathlib import Path
 
 from libera_utils.footprint_matching.types import (
     BoundingBox,
-    FmatchVariant,
     GridTile,
-    OperationalMode,
     TileKey,
     VariableSpec,
     with_standard_deviation_companions,
@@ -67,16 +65,6 @@ class GriddedDataReader(abc.ABC):
         instrument (ERA5) the producing center is used so the naming stays uniform.
     RESOLUTION_KM : float
         Native spatial resolution of the data source in km.
-    REQUIRED_MODE : OperationalMode
-        Minimum operational mode for which this reader is active. The registry
-        uses ``mode.rank`` ordering to exclude higher-latency readers when the
-        pipeline is running in a lower-latency mode.
-    REQUIRED_VARIANT : FmatchVariant or None
-        When set, the reader is only active for that input-availability variant
-        (see :class:`~libera_utils.footprint_matching.types.FmatchVariant`).
-        ``None`` (the default) means the reader is active in every variant.
-        RBSP-sourced readers (CLDPIX, CERES SSF) set this to ``POST_YEAR_ONE``
-        because those products do not exist during the first year of operation.
     VARIABLES : tuple[VariableSpec, ...]
         Ordered tuple of variable specifications this reader *reads from its
         source file*.  For multi-variable readers the first axis of the returned
@@ -107,14 +95,10 @@ class GriddedDataReader(abc.ABC):
     READER_KEY: str
     INSTRUMENT: str
     RESOLUTION_KM: float
-    REQUIRED_MODE: OperationalMode
     VARIABLES: tuple[VariableSpec, ...]
     # Derived product outputs not read straight from the source file. Defaults to
     # empty; readers like IGBP override it to add ranked-scene outputs.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = ()
-    # Input-availability variant gate. None (default) = active in every variant;
-    # POST_YEAR_ONE = only once RBSP products exist (CLDPIX, SSF). See FmatchVariant.
-    REQUIRED_VARIANT: FmatchVariant | None = None
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Auto-register every concrete subclass in ReaderRegistry.

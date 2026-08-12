@@ -72,8 +72,6 @@ class VIIRSCloudReader(GriddedDataReader):
         Registry key ``"viirs_cloud"``.
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
-    REQUIRED_MODE : OperationalMode
-        Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
         Two variables: cloud_optical_thickness, cloud_top_pressure.
 
@@ -87,7 +85,6 @@ class VIIRSCloudReader(GriddedDataReader):
     # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
-    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="cloud_optical_thickness",

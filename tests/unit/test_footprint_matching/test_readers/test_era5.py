@@ -44,15 +44,6 @@ class TestERA5ReaderClassAttributes:
     def test_resolution_km(self):
         assert ERA5Reader.RESOLUTION_KM == 25.0
 
-    def test_required_mode_is_cam(self):
-        assert ERA5Reader.REQUIRED_MODE == OperationalMode.CAM
-
-    def test_reader_active_in_every_variant(self):
-        # The reader is unrestricted on the variant axis: the winds feed every
-        # product, and the additional single-level fields are now retained in
-        # every FMATCH-IMAGER variant too (mode-gated to IMAGER, not variant-gated).
-        assert ERA5Reader.REQUIRED_VARIANT is None
-
     def test_variables_has_seven_entries(self):
         assert len(ERA5Reader.VARIABLES) == 7
 

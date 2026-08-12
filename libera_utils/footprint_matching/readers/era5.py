@@ -197,14 +197,13 @@ class ERA5Reader(ERA5ReaderBase):
         Registry key ``"era5"``.
     RESOLUTION_KM : float
         25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
-    REQUIRED_MODE : OperationalMode
-        Active in all modes starting from CAM (the winds are needed everywhere;
-        the year-one substitute fields carry their own per-spec gating).
     VARIABLES : tuple[VariableSpec, ...]
         Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
-        are unrestricted; the five year-one substitute fields are gated to
-        ``required_mode=IMAGER`` + ``required_variant=YEAR_ONE`` so they appear
-        only in the year-one FMATCH-IMAGER product.
+        are unrestricted (``required_mode=CAM``); the five single-level substitute
+        fields carry per-spec ``required_mode=IMAGER`` gating, so they appear only in
+        the FMATCH-IMAGER-family products (every variant). This per-spec latency
+        split is why ``era5`` belongs to every product's reader set yet contributes a
+        different variable subset to the CAM vs IMAGER products.
 
     Parameters
     ----------
@@ -218,7 +217,6 @@ class ERA5Reader(ERA5ReaderBase):
     # `<source>_<instrument>_<var>` naming stays uniform across every source.
     INSTRUMENT: str = "ECMWF"
     RESOLUTION_KM: float = 25.0
-    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
         # --- Wind components: every product, every variant, from mission start ---
         VariableSpec(

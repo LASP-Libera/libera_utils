@@ -70,8 +70,6 @@ class IGBPReader(GriddedDataReader):
     OUTPUT_CELL_DEG : float
         Edge length of the rasterized output cells (degrees). 0.05° matches the
         ``cldpix`` 1-km reader and gives 40×40 cells per 2° tile.
-    REQUIRED_MODE : OperationalMode
-        Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
         Single variable: ``"surface_type"`` (categorical, 20 IGBP classes).
 
@@ -86,7 +84,6 @@ class IGBPReader(GriddedDataReader):
     INSTRUMENT: str = "MODIS"
     RESOLUTION_KM: float = 1.0
     OUTPUT_CELL_DEG: float = 0.05
-    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="surface_type",

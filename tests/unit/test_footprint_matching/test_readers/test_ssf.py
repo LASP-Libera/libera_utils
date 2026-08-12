@@ -15,7 +15,7 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.ssf import SSFReader
-from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 from tests.test_data.footprint_matching.fixtures import make_ssf_fixture
 
 # Local tile that contains the default footprint cluster (lon −10° == 350°).
@@ -37,16 +37,6 @@ class TestSSFReaderClassAttributes:
 
     def test_resolution_km(self):
         assert SSFReader.RESOLUTION_KM == 20.0
-
-    def test_required_mode_is_imager_flash(self):
-        # IMAGER_FLASH rank is low enough to be active for Flash, Imager, and
-        # Imager-camera-time modes.
-        assert SSFReader.REQUIRED_MODE == OperationalMode.IMAGER_FLASH
-
-    def test_required_variant_is_post_year_one(self):
-        # CERES SSF is an RBSP-latency product, unavailable in year one, so this
-        # reader must only be active post-year-one.
-        assert SSFReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
 
     def test_expected_variable_names(self):
         names = {v.name for v in SSFReader.VARIABLES}

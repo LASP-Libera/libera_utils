@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 
 # Expected output variables, in the canonical order the reader stacks them
 # (axis 0 of the returned data array). Kept here so the tests assert the
@@ -71,9 +71,6 @@ class TestNISEReaderClassAttributes:
 
     def test_resolution_km(self):
         assert NISEReader.RESOLUTION_KM == 25.0
-
-    def test_required_mode_is_cam(self):
-        assert NISEReader.REQUIRED_MODE == OperationalMode.CAM
 
     def test_output_cell_deg(self):
         assert NISEReader.OUTPUT_CELL_DEG == 0.25

@@ -27,7 +27,6 @@ class _FakeReader(GriddedDataReader):
     READER_KEY = "_fake_test_reader"
     INSTRUMENT = "FAKE"
     RESOLUTION_KM = 10.0
-    REQUIRED_MODE = OperationalMode.CAM
     VARIABLES = (
         VariableSpec(
             name="fake_var",

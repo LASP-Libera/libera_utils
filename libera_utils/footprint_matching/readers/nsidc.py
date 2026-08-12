@@ -149,8 +149,6 @@ class NISEReader(GriddedDataReader):
     OUTPUT_CELL_DEG : float
         Edge length of the rasterized output cells (degrees). 0.25° ≈ 25 km,
         mirroring the ``ssf`` swath reader's cell size.
-    REQUIRED_MODE : OperationalMode
-        Active in all modes starting from CAM.
     VARIABLES : tuple[VariableSpec, ...]
         Five fractional-coverage variables, all continuous float32 with
         ``weighted_mean`` aggregation and range 0.0–1.0:
@@ -179,7 +177,6 @@ class NISEReader(GriddedDataReader):
     INSTRUMENT: str = "SSMIS"
     RESOLUTION_KM: float = 25.0
     OUTPUT_CELL_DEG: float = 0.25
-    REQUIRED_MODE: OperationalMode = OperationalMode.CAM
     # One VariableSpec per Extent code group, in canonical ``_VARIABLE_ORDER``.
     # All five are continuous fractional layers (float32, weighted_mean): the PSF
     # engine averages them to get the fraction of each footprint occupied by the

@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 from tests.test_data.footprint_matching.fixtures import make_viirs_cloud_d3_fixture
 
 # Grid dimensions used in most tests.
@@ -51,9 +51,6 @@ class TestVIIRSCloudReaderClassAttributes:
 
     def test_resolution_km(self):
         assert VIIRSCloudReader.RESOLUTION_KM == 111.0
-
-    def test_required_mode_is_cam(self):
-        assert VIIRSCloudReader.REQUIRED_MODE == OperationalMode.CAM
 
     def test_variables_has_two_entries(self):
         assert len(VIIRSCloudReader.VARIABLES) == 2

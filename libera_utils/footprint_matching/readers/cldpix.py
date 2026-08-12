@@ -78,7 +78,7 @@ from libera_utils.footprint_matching.readers._swath import (
     rasterize_points_to_grid,
 )
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
 
 # Fill sentinels: floats use the float32 max; int8 categoricals use 127.
 _FILL_FLOAT: float = 3.4028235e38
@@ -162,12 +162,6 @@ class CLDPIXReader(GriddedDataReader):
         ~1 km (VIIRS imager pixel scale).
     OUTPUT_CELL_DEG : float
         Edge length of the rasterized output cells (degrees).
-    REQUIRED_MODE : OperationalMode
-        ``IMAGER`` — active for the Imager and Imager-camera-time products.
-    REQUIRED_VARIANT : FmatchVariant
-        ``POST_YEAR_ONE`` — the RBSP CLDPIX products do not exist during the
-        first year of operation; year-one FMATCH-IMAGER substitutes ERA5 fields
-        (see the ``era5`` and ``era5_pressure`` readers).
     VARIABLES : tuple[VariableSpec, ...]
         Minimal starter set (see module docstring).
 
@@ -183,9 +177,6 @@ class CLDPIXReader(GriddedDataReader):
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 1.0
     OUTPUT_CELL_DEG: float = 0.05
-    REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER
-    # RBSP product: unavailable in year one, so this reader only runs post-year-one.
-    REQUIRED_VARIANT: FmatchVariant = FmatchVariant.POST_YEAR_ONE
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,

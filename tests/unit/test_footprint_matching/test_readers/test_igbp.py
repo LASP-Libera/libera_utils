@@ -14,7 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, TileKey
 
 # ---------------------------------------------------------------------------
 # Synthetic HDF4 data used in all IGBPReader tests
@@ -45,9 +45,6 @@ class TestIGBPReaderClassAttributes:
 
     def test_resolution_km(self):
         assert IGBPReader.RESOLUTION_KM == 1.0
-
-    def test_required_mode_is_cam(self):
-        assert IGBPReader.REQUIRED_MODE == OperationalMode.CAM
 
     def test_variables_has_one_entry(self):
         assert len(IGBPReader.VARIABLES) == 1

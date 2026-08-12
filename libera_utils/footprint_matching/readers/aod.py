@@ -112,8 +112,6 @@ class VIIRSAODReader(GriddedDataReader):
         Registry key ``"viirs_aod"``.
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
-    REQUIRED_MODE : OperationalMode
-        ``IMAGER`` — VIIRS aerosol is a climate-quality (post-Year-1) dependency.
     VARIABLES : tuple[VariableSpec, ...]
         Two variables: ``aod_550`` (``weighted_log_mean``) and ``aerosol_type``
         (``weighted_mode``, 8 categories).
@@ -131,7 +129,6 @@ class VIIRSAODReader(GriddedDataReader):
     # Deep Blue single-sensor product for VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
-    REQUIRED_MODE: OperationalMode = OperationalMode.IMAGER
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="aod_550",

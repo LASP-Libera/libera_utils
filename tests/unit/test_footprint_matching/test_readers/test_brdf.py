@@ -19,7 +19,7 @@ import numpy as np
 
 from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 from tests.test_data.footprint_matching.fixtures import make_viirs_brdf_hdf5_fixture
 
 # Default fixture grid covers a tiny region to keep tests fast.
@@ -59,9 +59,6 @@ class TestVIIRSBRDFReaderClassAttributes:
 
     def test_resolution_km(self):
         assert VIIRSBRDFReader.RESOLUTION_KM == 5.6
-
-    def test_required_mode_is_cam(self):
-        assert VIIRSBRDFReader.REQUIRED_MODE == OperationalMode.CAM
 
     def test_variables_count_is_nine(self):
         assert len(VIIRSBRDFReader.VARIABLES) == 9

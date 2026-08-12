@@ -15,7 +15,7 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
-from libera_utils.footprint_matching.types import BoundingBox, FmatchVariant, GridTile, OperationalMode, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 from tests.test_data.footprint_matching.fixtures import make_cldpix_fixture
 
 # Local tile containing the default pixel cluster (lon −15° == 345°).
@@ -37,14 +37,6 @@ class TestCLDPIXReaderClassAttributes:
 
     def test_resolution_km(self):
         assert CLDPIXReader.RESOLUTION_KM == 1.0
-
-    def test_required_mode_is_imager(self):
-        assert CLDPIXReader.REQUIRED_MODE == OperationalMode.IMAGER
-
-    def test_required_variant_is_post_year_one(self):
-        # RBSP CLDPIX products are unavailable in year one, so this reader must
-        # only be active post-year-one (year-one IMAGER substitutes ERA5 fields).
-        assert CLDPIXReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
 
     def test_expected_variable_names(self):
         names = {v.name for v in CLDPIXReader.VARIABLES}

@@ -24,15 +24,56 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# FmatchVariant is imported at runtime (not just for type checking) because it is
-# the default value of get_readers_for_mode's ``variant`` parameter. types.py is
-# dependency-free, so this cannot create an import cycle.
-from libera_utils.footprint_matching.types import FmatchVariant
+# FmatchVariant and OperationalMode are imported at runtime (not just for type
+# checking): FmatchVariant is the default value of get_readers_for_mode's
+# ``variant`` parameter, and OperationalMode keys the per-product reader-set maps
+# below. types.py is dependency-free, so this cannot create an import cycle.
+from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
 
 if TYPE_CHECKING:
     # Avoid a circular import at module load time; only used for type hints
     from libera_utils.footprint_matching.readers.base import GriddedDataReader
-    from libera_utils.footprint_matching.types import OperationalMode
+
+
+# ---------------------------------------------------------------------------
+# Per-product reader membership
+# ---------------------------------------------------------------------------
+# One fully-enumerated reader set per shipped FMATCH product -- the single source of
+# truth for *which readers contribute to which product*. Readers no longer self-gate
+# by mode/variant; membership is declared here.
+#
+# The structure deliberately mirrors ``product.FMATCH_DEFINITION_FILENAMES`` /
+# ``FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES``: a base map keyed by OperationalMode
+# plus a post-year-one override (only FMATCH-IMAGER has a distinct post-year-one
+# product). ``get_readers_for_mode`` resolves ``(mode, variant)`` through the identical
+# logic as ``load_fmatch_definition``, so the active reader set and the loaded product
+# definition can never drift.
+#
+# Dataset names repeat across products by design: each product's membership is spelled
+# out in full so it reads on its own, without composing shared sub-sets. Note that
+# FMATCH-IMAGER-CAMTIME omits ``era5_pressure`` -- the ERA5 pressure-level fields are a
+# radiometer-timescale quantity and are not carried on the camera-timescale product
+# (see ``fmatch_imager_camtime.yml``).
+FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
+    OperationalMode.CAM: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud"}),
+    OperationalMode.CAM_CAMTIME: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud"}),
+    OperationalMode.IMAGER_FLASH: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "ssf"}),
+    OperationalMode.IMAGER: frozenset(
+        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "viirs_aod", "era5_pressure"}
+    ),
+    OperationalMode.IMAGER_CAMTIME: frozenset(
+        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "viirs_aod", "cldpix", "ssf"}
+    ),
+}
+
+# Post-year-one override, exactly paralleling FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES
+# (only FMATCH-IMAGER has a distinct post-year-one product, which carries the RBSP
+# CLDPIX/SSF fields alongside the retained ERA5 fields).
+FMATCH_POST_YEAR_ONE_READERS: dict[OperationalMode, frozenset[str]] = {
+    OperationalMode.IMAGER: frozenset(
+        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "viirs_aod", "era5_pressure", "cldpix", "ssf"}
+    ),
+}
 
 
 class ReaderRegistry:
@@ -99,40 +140,38 @@ class ReaderRegistry:
     def get_readers_for_mode(
         mode: OperationalMode, variant: FmatchVariant = FmatchVariant.YEAR_ONE
     ) -> dict[str, type[GriddedDataReader]]:
-        """Return readers active for the given mode and input-availability variant.
+        """Return the readers that contribute to a product's (mode, variant) definition.
 
-        The TileManager calls this during orchestrator initialization to build
-        the set of readers that are active for the current operational mode.
-        A reader is kept when BOTH:
-
-        1. its ``REQUIRED_MODE`` rank is <= the given mode's rank (readers with a
-           higher-latency REQUIRED_MODE are excluded), and
-        2. its ``REQUIRED_VARIANT`` is ``None`` (active in every variant) or equals
-           the requested ``variant``. This is how RBSP-sourced readers (CLDPIX,
-           CERES SSF) are excluded during year one, when those products do not
-           yet exist (see :class:`~libera_utils.footprint_matching.types.FmatchVariant`).
+        Membership is read directly from the per-product reader sets
+        (:data:`FMATCH_MODE_READERS`, with the :data:`FMATCH_POST_YEAR_ONE_READERS`
+        override), resolved with the *same* mode + post-year-one-override logic as
+        :func:`~libera_utils.footprint_matching.product.load_fmatch_definition`. Because
+        both resolve identically, this returns exactly the readers whose variable blocks
+        appear in the definition that ``load_fmatch_definition(mode, variant)`` loads --
+        the active reader set and the product schema cannot drift.
 
         Parameters
         ----------
         mode : OperationalMode
-            The active operational mode to filter by.
+            The operational mode (product) whose readers to return.
         variant : FmatchVariant, optional
-            The input-availability variant to filter by. Defaults to
-            ``FmatchVariant.YEAR_ONE``, the production default for the first year
-            of operation; pass ``POST_YEAR_ONE`` once RBSP products are flowing.
+            The input-availability variant. Defaults to ``FmatchVariant.YEAR_ONE``, the
+            production default for the first year of operation; pass ``POST_YEAR_ONE`` to
+            select the RBSP-based FMATCH-IMAGER product. Modes without a distinct
+            post-year-one product resolve to their single set regardless of variant.
 
         Returns
         -------
         dict[str, type[GriddedDataReader]]
-            Mapping of registry key to reader class for all readers active in
-            ``mode`` under ``variant``.
+            Mapping of registry key to reader class for every reader in the product's
+            set. Only production readers named in the sets are returned; throwaway
+            readers other code may have registered are not included.
 
         Examples
         --------
         >>> from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
-        >>> import libera_utils.footprint_matching.readers
-        >>> readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
-        >>> sorted(readers.keys())
+        >>> import libera_utils.footprint_matching.readers  # triggers registration
+        >>> sorted(ReaderRegistry.get_readers_for_mode(OperationalMode.CAM))
         ['era5', 'igbp', 'nise', 'viirs_brdf', 'viirs_cloud']
         >>> year_one = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
         >>> 'era5_pressure' in year_one and 'cldpix' not in year_one
@@ -140,9 +179,11 @@ class ReaderRegistry:
         >>> post = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
         >>> 'cldpix' in post and 'era5_pressure' in post  # post-year-one keeps ERA5 alongside RBSP
         True
+        >>> camtime = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER_CAMTIME, FmatchVariant.POST_YEAR_ONE)
+        >>> 'era5_pressure' in camtime  # pressure-level ERA5 is radiometer-timescale only
+        False
         """
-        return {
-            key: cls
-            for key, cls in ReaderRegistry._registry.items()
-            if cls.REQUIRED_MODE.rank <= mode.rank and cls.REQUIRED_VARIANT in (None, variant)
-        }
+        keys = FMATCH_MODE_READERS[mode]
+        if variant is FmatchVariant.POST_YEAR_ONE:
+            keys = FMATCH_POST_YEAR_ONE_READERS.get(mode, keys)
+        return {key: ReaderRegistry._registry[key] for key in keys}

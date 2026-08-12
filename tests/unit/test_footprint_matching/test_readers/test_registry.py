@@ -5,8 +5,8 @@ Tests confirm:
 - get() returns the correct class
 - get() raises KeyError for unknown keys
 - list_readers() returns sorted keys
-- get_readers_for_mode() filters by operational mode rank AND by the
-  input-availability variant (year-one vs post-year-one)
+- get_readers_for_mode() resolves each (mode, variant) to its per-product reader set
+  (FMATCH_MODE_READERS with the FMATCH_POST_YEAR_ONE_READERS override)
 """
 
 from __future__ import annotations
@@ -23,7 +23,11 @@ from libera_utils.footprint_matching.readers.era5 import ERA5Reader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
-from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.registry import (
+    FMATCH_MODE_READERS,
+    FMATCH_POST_YEAR_ONE_READERS,
+    ReaderRegistry,
+)
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
 from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
@@ -129,14 +133,15 @@ class TestGetReadersForMode:
         # post-year-one alongside the RBSP inputs, not replaced by them.
         assert "era5_pressure" in imager_readers
 
-    def test_variant_gating_matches_reader_attributes(self):
-        # The RBSP readers must declare POST_YEAR_ONE; everything else (including
-        # the ERA5 pressure reader, retained in both variants) must be
-        # variant-neutral.
-        assert SSFReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
-        assert CLDPIXReader.REQUIRED_VARIANT is FmatchVariant.POST_YEAR_ONE
-        for cls in (ERA5Reader, ERA5PressureLevelReader, IGBPReader, NISEReader, VIIRSCloudReader):
-            assert cls.REQUIRED_VARIANT is None
+    def test_imager_camtime_excludes_era5_pressure(self):
+        # The ERA5 pressure-level fields are a radiometer-timescale quantity: they are
+        # carried on the radiometer FMATCH-IMAGER product but NOT on the camera-timescale
+        # FMATCH-IMAGER-CAMTIME product, in either variant.
+        for variant in FmatchVariant:
+            camtime = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER_CAMTIME, variant)
+            imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, variant)
+            assert "era5_pressure" not in camtime
+            assert "era5_pressure" in imager
 
     def test_returns_dict_of_reader_classes(self):
         readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
@@ -148,6 +153,54 @@ class TestGetReadersForMode:
         for key, cls in readers.items():
             assert hasattr(cls, "READER_KEY")
             assert hasattr(cls, "RESOLUTION_KM")
-            assert hasattr(cls, "REQUIRED_MODE")
             assert hasattr(cls, "VARIABLES")
             assert cls.READER_KEY == key
+
+
+class TestReaderMembershipSets:
+    """The per-product reader sets are the single source of truth for membership."""
+
+    def test_every_named_reader_is_registered(self):
+        registered = set(ReaderRegistry.list_readers())
+        for mode, keys in FMATCH_MODE_READERS.items():
+            assert keys <= registered, f"{mode.value} names unregistered reader(s): {keys - registered}"
+        for mode, keys in FMATCH_POST_YEAR_ONE_READERS.items():
+            assert keys <= registered, f"{mode.value} (post) names unregistered reader(s): {keys - registered}"
+
+    def test_product_sets_cover_exactly_the_production_readers(self):
+        # The union of every product's set must be exactly the production readers --
+        # no orphan reader left out of all products, and no stray key. Derived from the
+        # reader classes themselves (not ReaderRegistry.list_readers(), which other test
+        # modules pollute with throwaway readers like _FakeReader).
+        production_keys = {
+            cls.READER_KEY
+            for cls in (
+                VIIRSAODReader,
+                VIIRSBRDFReader,
+                VIIRSCloudReader,
+                CLDPIXReader,
+                ERA5Reader,
+                ERA5PressureLevelReader,
+                IGBPReader,
+                NISEReader,
+                SSFReader,
+            )
+        }
+        used = set().union(*FMATCH_MODE_READERS.values(), *FMATCH_POST_YEAR_ONE_READERS.values())
+        assert used == production_keys
+
+    def test_base_map_covers_all_modes(self):
+        assert set(FMATCH_MODE_READERS) == set(OperationalMode)
+
+    def test_only_imager_has_post_year_one_override(self):
+        # Mirrors FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES: only FMATCH-IMAGER has a
+        # distinct post-year-one product.
+        assert set(FMATCH_POST_YEAR_ONE_READERS) == {OperationalMode.IMAGER}
+
+    def test_every_mode_variant_resolves_to_registered_readers(self):
+        registered = set(ReaderRegistry.list_readers())
+        for mode in OperationalMode:
+            for variant in FmatchVariant:
+                readers = ReaderRegistry.get_readers_for_mode(mode, variant)
+                assert readers, f"{mode.value} ({variant.value}) resolved to an empty reader set"
+                assert set(readers) <= registered
