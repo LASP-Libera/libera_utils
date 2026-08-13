@@ -6,19 +6,15 @@ Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90)
 - Temporal resolution: Hourly
 - Temporal coverage: 1940-present. ERA5 final data lags real time by ~5 days
-  (the preliminary ERA5T stream lags ~1 day), which is what originally made ERA5
-  usable as the year-one substitute for the RBSP cloud products (see
-  :class:`~libera_utils.footprint_matching.types.FmatchVariant`).
+  (the preliminary ERA5T stream lags ~1 day).
 
 Variables read
 --------------
 Wind components (every product, from mission start):
 - u10 / v10: 10 m U/V wind components
 
-Additional FMATCH-IMAGER single-level fields (``required_mode=IMAGER``,
-variant-neutral — present in every FMATCH-IMAGER variant). These began as
-year-one substitutes for the unavailable RBSP inputs and are now retained
-post-year-one alongside the RBSP fields:
+Additional FMATCH-IMAGER single-level fields (``required_mode=IMAGER``), which
+sit in the FMATCH-IMAGER product alongside the RBSP CLDPIX/SSF cloud fields:
 - t2m: 2 m temperature
 - d2m: 2 m dewpoint temperature
 - sp:  surface pressure
@@ -199,11 +195,11 @@ class ERA5Reader(ERA5ReaderBase):
         25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
     VARIABLES : tuple[VariableSpec, ...]
         Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
-        are unrestricted (``required_mode=CAM``); the five single-level substitute
+        are unrestricted (``required_mode=CAM``); the five additional single-level
         fields carry per-spec ``required_mode=IMAGER`` gating, so they appear only in
-        the FMATCH-IMAGER-family products (every variant). This per-spec latency
-        split is why ``era5`` belongs to every product's reader set yet contributes a
-        different variable subset to the CAM vs IMAGER products.
+        the FMATCH-IMAGER-family products. This per-spec latency split is why ``era5``
+        belongs to every product's reader set yet contributes a different variable
+        subset to the CAM vs IMAGER products.
 
     Parameters
     ----------
@@ -218,7 +214,7 @@ class ERA5Reader(ERA5ReaderBase):
     INSTRUMENT: str = "ECMWF"
     RESOLUTION_KM: float = 25.0
     VARIABLES: tuple[VariableSpec, ...] = (
-        # --- Wind components: every product, every variant, from mission start ---
+        # --- Wind components: every product, from mission start ---
         VariableSpec(
             name="wind_u10",
             dtype="float32",
@@ -234,11 +230,9 @@ class ERA5Reader(ERA5ReaderBase):
             n_categories=None,
         ),
         # --- Additional FMATCH-IMAGER single-level fields (beyond the winds).
-        # Gated per-spec with required_mode=IMAGER and variant-neutral
-        # (required_variant=None), so they flow to every FMATCH-IMAGER variant
-        # while staying out of the lower-latency CAM products. These originated as
-        # year-one substitutes for the then-unavailable RBSP inputs; they are now
-        # retained in the post-year-one product alongside the RBSP fields.
+        # Gated per-spec with required_mode=IMAGER, so they flow to the FMATCH-IMAGER
+        # product while staying out of the lower-latency CAM products. They sit in the
+        # product alongside the RBSP CLDPIX/SSF cloud fields.
         VariableSpec(
             name="temperature_2m",
             dtype="float32",

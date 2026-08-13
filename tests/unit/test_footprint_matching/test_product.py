@@ -1,20 +1,18 @@
 """Unit tests for the FMATCH product definitions and their loaders.
 
-There is one SSF-style product definition per FMATCH operational mode, plus a
-distinct post-year-one definition for FMATCH-IMAGER (the RBSP CLDPIX/SSF inputs
-it uses do not exist during the first year of operation, so the production
-``fmatch_imager.yml`` substitutes ERA5 fields; the RBSP-based definition is
-kept as ``fmatch_imager_post_year_one.yml``). These tests confirm, for every
-shipped definition, that:
+There is one SSF-style product definition per FMATCH operational mode. The
+radiometer-timescale FMATCH-IMAGER carries the RBSP CLDPIX/SSF cloud fields
+alongside the full ERA5 single-level and pressure-level fields and the VIIRS
+imager fields. These tests confirm, for every shipped definition, that:
 - The product ID is registered as an auxiliary (AUX) DataProductIdentifier and
   matches the OperationalMode value string.
 - The product definition YAML loads and validates via LiberaDataProductDefinition.
 - The schema declares the expected geolocation, derived-geometry, and QA variables
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
-  VariableSpec definitions for the definition's (mode, variant) pair. Every
-  reader-sourced variable is named `<source_key>_<instrument>_<spec_name>`
-  (e.g. era5_ECMWF_wind_u10, igbp_MODIS_surface_type, cldpix_NOAA20_cloud_mask).
+  VariableSpec definitions for the mode. Every reader-sourced variable is named
+  `<source_key>_<instrument>_<spec_name>` (e.g. era5_ECMWF_wind_u10,
+  igbp_MODIS_surface_type, cldpix_NOAA20_cloud_mask).
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
 
@@ -31,7 +29,6 @@ from libera_utils.footprint_matching.product import (
     _CAMTIME_SEGMENTATION_VARIABLES,
     _RADIOMETER_L1B_VARIABLES,
     FMATCH_DEFINITION_FILENAMES,
-    FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES,
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     assemble_fmatch_dataset,
@@ -40,12 +37,7 @@ from libera_utils.footprint_matching.product import (
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.types import (
-    FmatchVariant,
-    OperationalMode,
-    VariableSpec,
-    with_standard_deviation_companions,
-)
+from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 # The production reader keys. Intersecting with these makes the cross-check robust
@@ -69,46 +61,24 @@ COVERAGE_QA_VARIABLES = ("psf_coverage_fraction", "q_flags")
 
 ALL_MODES = tuple(OperationalMode)
 
-# Every shipped product definition, as the (mode, variant) pair whose active
-# reader/spec set the YAML content must match:
-# - The CAM-family products are variant-insensitive (no variant-gated readers or
-#   specs at their latency rank), so YEAR_ONE covers them.
-# - FMATCH-IMAGER ships BOTH variants: the ERA5-based year-one production YAML
-#   and the RBSP-based post-year-one YAML.
-# - FLASH and IMAGER-CAMTIME inherently require RBSP inputs (they only run
-#   post-year-one), so their single YAML is checked against POST_YEAR_ONE.
-DEFINITION_CASES: tuple[tuple[OperationalMode, FmatchVariant], ...] = (
-    (OperationalMode.CAM, FmatchVariant.YEAR_ONE),
-    (OperationalMode.CAM_CAMTIME, FmatchVariant.YEAR_ONE),
-    (OperationalMode.IMAGER_FLASH, FmatchVariant.POST_YEAR_ONE),
-    (OperationalMode.IMAGER, FmatchVariant.YEAR_ONE),
-    (OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE),
-    (OperationalMode.IMAGER_CAMTIME, FmatchVariant.POST_YEAR_ONE),
-)
+
+def _production_readers_for_mode(mode: OperationalMode) -> dict:
+    """Active production readers for a mode (excludes test-injected readers)."""
+    return {key: cls for key, cls in ReaderRegistry.get_readers_for_mode(mode).items() if key in PRODUCTION_READER_KEYS}
 
 
-def _production_readers_for_mode(mode: OperationalMode, variant: FmatchVariant) -> dict:
-    """Active production readers for a (mode, variant) pair (excludes test-injected readers)."""
-    return {
-        key: cls
-        for key, cls in ReaderRegistry.get_readers_for_mode(mode, variant).items()
-        if key in PRODUCTION_READER_KEYS
-    }
-
-
-def _expected_external_variables(mode: OperationalMode, variant: FmatchVariant) -> dict[str, str]:
+def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """{output_variable_name: dtype} for every active production reader variable.
 
     Mirrors the product-definition naming rule: every reader-sourced variable is
     named `<source_key>_<instrument>_<spec_name>`, where the instrument token comes
     from the reader's INSTRUMENT attribute (e.g. era5_ECMWF_wind_u10,
-    igbp_MODIS_surface_type). Specs are filtered by BOTH gates a spec can carry:
-    its ``required_mode`` rank and its ``required_variant`` (e.g. the ERA5
-    year-one substitute fields are declared on the always-active era5 reader but
-    only appear in the year-one FMATCH-IMAGER product).
+    igbp_MODIS_surface_type). Specs are filtered by their ``required_mode`` rank
+    (e.g. the ERA5 single-level fields carry ``required_mode=IMAGER`` and so only
+    appear in the FMATCH-IMAGER-family products).
     """
     expected: dict[str, str] = {}
-    for key, cls in _production_readers_for_mode(mode, variant).items():
+    for key, cls in _production_readers_for_mode(mode).items():
         # product_variable_specs() == the read VARIABLES plus derived outputs
         # (per-continuous-variable standard-deviation companions and reader-specific
         # extras such as IGBP's ranked scenes). It is the full set that appears in
@@ -116,16 +86,14 @@ def _expected_external_variables(mode: OperationalMode, variant: FmatchVariant) 
         for spec in cls.product_variable_specs():
             if spec.required_mode.rank > mode.rank:
                 continue
-            if spec.required_variant is not None and spec.required_variant is not variant:
-                continue
             expected[f"{key}_{cls.INSTRUMENT}_{spec.name}"] = spec.dtype
     return expected
 
 
 @pytest.fixture(scope="module")
-def definitions() -> dict[tuple[OperationalMode, FmatchVariant], LiberaDataProductDefinition]:
-    """All shipped FMATCH product definitions keyed by (mode, variant)."""
-    return {(mode, variant): load_fmatch_definition(mode, variant) for mode, variant in DEFINITION_CASES}
+def definitions() -> dict[OperationalMode, LiberaDataProductDefinition]:
+    """All shipped FMATCH product definitions keyed by mode."""
+    return {mode: load_fmatch_definition(mode) for mode in ALL_MODES}
 
 
 class TestFmatchIdentifiers:
@@ -140,55 +108,20 @@ class TestFmatchIdentifiers:
         # The product module must map every operational mode to a YAML file.
         assert set(FMATCH_DEFINITION_FILENAMES) == set(ALL_MODES)
 
-    def test_only_imager_has_a_post_year_one_definition(self):
-        # The year-one vs post-year-one split only applies to FMATCH-IMAGER.
-        assert set(FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES) == {OperationalMode.IMAGER}
 
+class TestImagerContent:
+    """Guards the FMATCH-IMAGER content: it carries both the RBSP and the ERA5 fields."""
 
-class TestVariantResolution:
-    """load_fmatch_definition must resolve the variant to the right YAML."""
-
-    def test_imager_variants_load_distinct_definitions(self):
-        year_one = load_fmatch_definition(OperationalMode.IMAGER)
-        post = load_fmatch_definition(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
-        # Both encode the SAME ProductID (no separate product identity is wanted
-        # for the post-year-one variant) but declare different variable sets.
-        assert year_one.attributes["ProductID"] == post.attributes["ProductID"] == "FMATCH-IMAGER"
-        assert set(year_one.variables) != set(post.variables)
-
-    def test_post_year_one_falls_back_for_modes_without_distinct_yaml(self):
-        # CAM has no post-year-one YAML; the variant must resolve to its single
-        # definition rather than raising (the CAM product is variant-insensitive).
-        default = load_fmatch_definition(OperationalMode.CAM)
-        post = load_fmatch_definition(OperationalMode.CAM, FmatchVariant.POST_YEAR_ONE)
-        assert set(default.variables) == set(post.variables)
-
-
-class TestYearOneImagerContent:
-    """Guards the year-one substitution itself: what is in and out of each IMAGER YAML."""
-
-    def test_year_one_imager_has_no_rbsp_variables(self, definitions):
-        definition = definitions[(OperationalMode.IMAGER, FmatchVariant.YEAR_ONE)]
-        rbsp = [name for name in definition.variables if name.startswith(("cldpix_", "ssf_"))]
-        assert rbsp == [], f"year-one fmatch_imager.yml must not declare RBSP variables, found {rbsp}"
-
-    def test_year_one_imager_has_era5_substitutes(self, definitions):
-        definition = definitions[(OperationalMode.IMAGER, FmatchVariant.YEAR_ONE)]
-        # Spot-check one variable per substitute family (full sync is covered by
-        # test_external_variables_match_readers).
-        assert "era5_ECMWF_temperature_2m" in definition.variables
-        assert "era5_ECMWF_forecast_albedo" in definition.variables
-        assert "era5_pressure_ECMWF_temperature_500hPa" in definition.variables
-        assert "era5_pressure_ECMWF_relative_humidity_1000hPa_standard_deviation" in definition.variables
-
-    def test_post_year_one_imager_keeps_rbsp_and_era5(self, definitions):
-        definition = definitions[(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)]
-        # Post-year-one carries the RBSP CLDPIX/SSF fields ...
+    def test_imager_has_rbsp_variables(self, definitions):
+        definition = definitions[OperationalMode.IMAGER]
         assert any(name.startswith("cldpix_") for name in definition.variables)
         assert any(name.startswith("ssf_") for name in definition.variables)
-        # ... AND the full ERA5 field set alongside them: the winds (every
-        # product), the former year-one single-level substitutes, and the
-        # pressure-level fields (spot-check one per family; full sync is covered by
+
+    def test_imager_keeps_full_era5_field_set(self, definitions):
+        definition = definitions[OperationalMode.IMAGER]
+        # The winds (every product), the single-level fields, and the pressure-level
+        # fields all sit in the FMATCH-IMAGER product alongside the RBSP fields
+        # (spot-check one per family; full sync is covered by
         # test_external_variables_match_readers).
         assert "era5_ECMWF_wind_u10" in definition.variables
         assert "era5_ECMWF_temperature_2m" in definition.variables
@@ -200,15 +133,15 @@ class TestYearOneImagerContent:
 class TestFmatchDefinitions:
     """Each YAML loads and declares the expected structure."""
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_definition_loads_with_matching_product_id(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_definition_loads_with_matching_product_id(self, mode, definitions):
+        definition = definitions[mode]
         assert isinstance(definition, LiberaDataProductDefinition)
         assert definition.attributes["ProductID"] == mode.value
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_time_coordinate_matches_timescale(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_time_coordinate_matches_timescale(self, mode, definitions):
+        definition = definitions[mode]
         time_var = fmatch_time_variable(mode)
         assert time_var in definition.coordinates
         assert definition.coordinates[time_var].dtype == "datetime64[ns]"
@@ -217,35 +150,35 @@ class TestFmatchDefinitions:
         record_dim = "FOOTPRINT" if time_var == "CAMERA_TIME" else time_var
         assert definition.coordinates[time_var].dimensions == [record_dim]
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_common_variables_present(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_common_variables_present(self, mode, definitions):
+        definition = definitions[mode]
         for name in GEOLOCATION_VARIABLES + DERIVED_GEOMETRY_VARIABLES + COVERAGE_QA_VARIABLES:
-            assert name in definition.variables, f"{mode.value} ({variant.value}) missing {name}"
+            assert name in definition.variables, f"{mode.value} missing {name}"
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_external_variables_match_readers(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
-        for name, dtype in _expected_external_variables(mode, variant).items():
-            assert name in definition.variables, f"{mode.value} ({variant.value}) missing external variable {name}"
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_external_variables_match_readers(self, mode, definitions):
+        definition = definitions[mode]
+        for name, dtype in _expected_external_variables(mode).items():
+            assert name in definition.variables, f"{mode.value} missing external variable {name}"
             assert definition.variables[name].dtype == dtype, (
-                f"{mode.value} ({variant.value}) dtype drift for {name}: definition has "
+                f"{mode.value} dtype drift for {name}: definition has "
                 f"{definition.variables[name].dtype}, reader has {dtype}"
             )
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_all_variables_use_mode_record_dimension(self, mode, variant, definitions):
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_all_variables_use_mode_record_dimension(self, mode, definitions):
         # Radiometer modes hang variables on RADIOMETER_TIME (name == dimension); camera-timescale modes hang them on
         # the FOOTPRINT record axis, carrying CAMERA_TIME only as a coordinate (name != dimension).
         time_var = fmatch_time_variable(mode)
         record_dim = "FOOTPRINT" if time_var == "CAMERA_TIME" else time_var
-        for name, var_def in definitions[(mode, variant)].variables.items():
-            assert var_def.dimensions == [record_dim], f"{mode.value} ({variant.value})/{name} wrong dimension"
+        for name, var_def in definitions[mode].variables.items():
+            assert var_def.dimensions == [record_dim], f"{mode.value}/{name} wrong dimension"
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_no_duplicate_variable_names(self, mode, variant, definitions):
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_no_duplicate_variable_names(self, mode, definitions):
         # Sanity: collision prefixing must leave a unique variable set.
-        definition = definitions[(mode, variant)]
+        definition = definitions[mode]
         all_names = list(definition.variables) + list(definition.coordinates)
         assert len(all_names) == len(set(all_names))
 
@@ -255,10 +188,10 @@ class TestFmatchDefinitions:
         # the radiometer FMATCH-IMAGER product still does. Standing guard against the
         # pressure block drifting back into the camtime YAML (there is no general
         # no-extra-variables check).
-        camtime = definitions[(OperationalMode.IMAGER_CAMTIME, FmatchVariant.POST_YEAR_ONE)]
+        camtime = definitions[OperationalMode.IMAGER_CAMTIME]
         offenders = [name for name in camtime.variables if name.startswith("era5_pressure_")]
         assert offenders == [], f"FMATCH-IMAGER-CAMTIME must not declare era5_pressure variables, found {offenders}"
-        imager = definitions[(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)]
+        imager = definitions[OperationalMode.IMAGER]
         assert any(name.startswith("era5_pressure_") for name in imager.variables)
 
 
@@ -273,27 +206,6 @@ class TestDerivedProductVariables:
         assert "wind_u10" in names
         assert "wind_u10_standard_deviation" in names
         assert "wind_v10_standard_deviation" in names
-
-    def test_standard_deviation_companion_inherits_variant_gate(self):
-        # A std-dev companion must carry the SAME variant gate as its parent, so a
-        # gated field and its companion always land in exactly the same product
-        # definitions. The production readers now gate variants at the reader level
-        # rather than per spec, so exercise the companion mechanism directly with a
-        # synthetic gated parent; then confirm a real variant-neutral parent (an
-        # ERA5 wind) yields a variant-neutral companion.
-        gated_parent = VariableSpec(
-            name="demo_field",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            n_categories=None,
-            required_variant=FmatchVariant.YEAR_ONE,
-        )
-        companions = {spec.name: spec for spec in with_standard_deviation_companions((gated_parent,))}
-        assert companions["demo_field_standard_deviation"].required_variant is FmatchVariant.YEAR_ONE
-
-        era5 = {spec.name: spec for spec in ReaderRegistry.get("era5").product_variable_specs()}
-        assert era5["wind_u10_standard_deviation"].required_variant is None
 
     def test_mode_aggregated_variable_has_no_standard_deviation_companion(self):
         # SSF's encoded scene-type codes have n_categories=None but are
@@ -322,9 +234,9 @@ class TestDerivedProductVariables:
 class TestFmatchConformance:
     """A dummy dataset must round-trip through create/enforce/check for every definition."""
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_roundtrip(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_roundtrip(self, mode, definitions):
+        definition = definitions[mode]
         time_var = fmatch_time_variable(mode)
         n_footprints = 4
         times = np.array(
@@ -357,14 +269,10 @@ class TestFmatchConformance:
         assert errors == []
 
 
-# Timescale split of DEFINITION_CASES, so the assembly tests can drive each mode with the
-# right kind of input without repeating the (mode, variant) table.
-RADIOMETER_CASES = tuple(
-    (mode, variant) for mode, variant in DEFINITION_CASES if fmatch_time_variable(mode) == "RADIOMETER_TIME"
-)
-CAMTIME_CASES = tuple(
-    (mode, variant) for mode, variant in DEFINITION_CASES if fmatch_time_variable(mode) == "CAMERA_TIME"
-)
+# Timescale split of the modes, so the assembly tests can drive each mode with the
+# right kind of input.
+RADIOMETER_MODES = tuple(mode for mode in ALL_MODES if fmatch_time_variable(mode) == "RADIOMETER_TIME")
+CAMTIME_MODES = tuple(mode for mode in ALL_MODES if fmatch_time_variable(mode) == "CAMERA_TIME")
 
 
 def _l1b_passthrough(n_footprints: int = 6) -> dict[str, np.ndarray]:
@@ -395,20 +303,18 @@ def _pseudo_footprints(n_footprints: int = 6) -> list:
 class TestRadiometerAssembly:
     """Radiometer-timescale modes assemble from L1B pass-through arrays."""
 
-    @pytest.mark.parametrize(("mode", "variant"), RADIOMETER_CASES)
-    def test_assembles_conformant_dataset(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
-        dataset = assemble_fmatch_dataset(
-            mode, _l1b_passthrough(), variant=variant, algorithm_version="1.0.0", input_files="l1b.nc"
-        )
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_assembles_conformant_dataset(self, mode, definitions):
+        definition = definitions[mode]
+        dataset = assemble_fmatch_dataset(mode, _l1b_passthrough(), algorithm_version="1.0.0", input_files="l1b.nc")
 
         assert definition.check_dataset_conformance(dataset, strict=True) == []
 
-    @pytest.mark.parametrize(("mode", "variant"), RADIOMETER_CASES)
-    def test_l1b_columns_are_carried_through_verbatim(self, mode, variant):
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_l1b_columns_are_carried_through_verbatim(self, mode):
         """The L1B-derived columns are real values, not placeholders."""
         l1b_inputs = _l1b_passthrough()
-        dataset = assemble_fmatch_dataset(mode, l1b_inputs, variant=variant)
+        dataset = assemble_fmatch_dataset(mode, l1b_inputs)
 
         for name in _RADIOMETER_L1B_VARIABLES:
             np.testing.assert_allclose(dataset[name].values, l1b_inputs[name], rtol=1e-6)
@@ -458,11 +364,11 @@ class TestRadiometerAssembly:
 class TestCamtimeAssembly:
     """Camera-timescale modes assemble from camera pseudo-footprints."""
 
-    @pytest.mark.parametrize(("mode", "variant"), CAMTIME_CASES)
-    def test_assembles_conformant_dataset(self, mode, variant, definitions):
-        definition = definitions[(mode, variant)]
+    @pytest.mark.parametrize("mode", CAMTIME_MODES)
+    def test_assembles_conformant_dataset(self, mode, definitions):
+        definition = definitions[mode]
         dataset = assemble_fmatch_dataset(
-            mode, _pseudo_footprints(), variant=variant, algorithm_version="1.0.0", input_files="l1b_cam.nc"
+            mode, _pseudo_footprints(), algorithm_version="1.0.0", input_files="l1b_cam.nc"
         )
 
         assert definition.check_dataset_conformance(dataset, strict=True) == []
@@ -491,10 +397,9 @@ class TestCamtimeAssembly:
         retired *_start/_stop variables must be gone. All are computed by segmentation for every camera-timescale
         mode, so both products carry them as real values rather than placeholders.
         """
-        variant = FmatchVariant.YEAR_ONE if mode is OperationalMode.CAM_CAMTIME else FmatchVariant.POST_YEAR_ONE
-        definition = definitions[(mode, variant)]
+        definition = definitions[mode]
         footprints = _pseudo_footprints()
-        dataset = assemble_fmatch_dataset(mode, footprints, variant=variant)
+        dataset = assemble_fmatch_dataset(mode, footprints)
 
         # camera_pixel_x/y are 2-D range COORDINATES holding inclusive (min, max) = (slice.start, slice.stop - 1).
         for name in ("camera_pixel_x", "camera_pixel_y"):
@@ -528,8 +433,8 @@ class TestCamtimeAssembly:
 class TestWriteFmatchProduct:
     """Every mode must write a strictly-conformant file under a proper Libera filename."""
 
-    @pytest.mark.parametrize(("mode", "variant"), DEFINITION_CASES)
-    def test_writes_conformant_product(self, mode, variant, tmp_path, definitions):
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_writes_conformant_product(self, mode, tmp_path, definitions):
         inputs = _pseudo_footprints() if fmatch_time_variable(mode) == "CAMERA_TIME" else _l1b_passthrough()
 
         # strict=True: reaching the assertions below is itself the conformance guarantee.
@@ -537,11 +442,10 @@ class TestWriteFmatchProduct:
             mode,
             inputs,
             tmp_path,
-            variant=variant,
             algorithm_version="1.0.0",
             input_files="l1b.nc",
             strict=True,
         )
 
         assert written.path.exists()
-        assert written.data_product_id.value == definitions[(mode, variant)].attributes["ProductID"]
+        assert written.data_product_id.value == definitions[mode].attributes["ProductID"]

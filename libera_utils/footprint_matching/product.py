@@ -47,7 +47,7 @@ import numpy as np
 
 from libera_utils.config import config
 from libera_utils.footprint_matching.l1b_inputs import L1B_PASSTHROUGH_VARIABLES
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
@@ -106,25 +106,12 @@ _RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
 # has its own SSF-style product definition (the mode *is* the product), and the
 # active reader set / variables differ by mode. Kept as one source of truth so
 # callers and tests never hard-code filenames.
-#
-# Note on FMATCH-IMAGER: "fmatch_imager.yml" is the *year-one* (ERA5-based)
-# production definition — the RBSP CLDPIX/SSF products it would otherwise use do
-# not exist during the first year of operation. The RBSP-based definition is
-# kept as fmatch_imager_post_year_one.yml and selected manually via
-# ``load_fmatch_definition(..., variant=FmatchVariant.POST_YEAR_ONE)``.
 FMATCH_DEFINITION_FILENAMES: dict[OperationalMode, str] = {
     OperationalMode.CAM: "fmatch_cam.yml",
     OperationalMode.CAM_CAMTIME: "fmatch_cam_camtime.yml",
     OperationalMode.IMAGER_FLASH: "fmatch_imager_flash.yml",
     OperationalMode.IMAGER: "fmatch_imager.yml",
     OperationalMode.IMAGER_CAMTIME: "fmatch_imager_camtime.yml",
-}
-
-# The only mode with a distinct post-year-one product definition. The other
-# IMAGER-family modes (FLASH, IMAGER-CAMTIME) inherently require RBSP inputs and
-# simply do not run during year one, so they need no year-one counterpart.
-FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES: dict[OperationalMode, str] = {
-    OperationalMode.IMAGER: "fmatch_imager_post_year_one.yml",
 }
 
 # Camera-timescale modes index footprints by camera image time; all other modes
@@ -168,9 +155,7 @@ def is_camera_timescale_mode(mode: OperationalMode) -> bool:
     return mode in _CAMERA_TIMESCALE_MODES
 
 
-def load_fmatch_definition(
-    mode: OperationalMode, variant: FmatchVariant = FmatchVariant.YEAR_ONE
-) -> LiberaDataProductDefinition:
+def load_fmatch_definition(mode: OperationalMode) -> LiberaDataProductDefinition:
     """Load and validate the FMATCH product definition for an operational mode.
 
     Resolves the mode's YAML under the configured product-definitions directory
@@ -180,16 +165,6 @@ def load_fmatch_definition(
     ----------
     mode : OperationalMode
         The FMATCH operational mode whose product definition to load.
-    variant : FmatchVariant, optional
-        Input-availability variant. The default, ``YEAR_ONE``, resolves every
-        mode's production-default definition (for FMATCH-IMAGER that is the
-        ERA5-based year-one YAML). Passing ``POST_YEAR_ONE`` selects the
-        RBSP-based FMATCH-IMAGER definition instead. Modes without a distinct
-        post-year-one YAML resolve to their single definition regardless of
-        variant: the CAM-family products are variant-insensitive (no RBSP
-        readers at their latency rank), and the FLASH / IMAGER-CAMTIME modes
-        inherently require RBSP inputs, so their single YAML *is* the
-        post-year-one definition (they simply do not run during year one).
 
     Returns
     -------
@@ -205,8 +180,6 @@ def load_fmatch_definition(
     definitions are resolved elsewhere in the codebase.
     """
     filename = FMATCH_DEFINITION_FILENAMES[mode]
-    if variant is FmatchVariant.POST_YEAR_ONE:
-        filename = FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES.get(mode, filename)
     definitions_dir = Path(str(config.get("LIBERA_PRODUCT_DEFINITIONS_PATH")))
     return LiberaDataProductDefinition.from_yaml(definitions_dir / filename)
 
@@ -228,24 +201,20 @@ def load_fmatch_cam_definition() -> LiberaDataProductDefinition:
 def aggregate_external_variables(
     mode: OperationalMode,
     *args: Any,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     **kwargs: Any,
 ) -> dict[str, np.ndarray]:
     """Aggregate every active reader's gridded data to one value per footprint.
 
     For the given operational mode this will select the active readers via
-    ``ReaderRegistry.get_readers_for_mode(mode, variant)``, load the tiles
-    overlapping each footprint, and apply each variable's PSF-weighted aggregation
-    strategy (weighted mean / mode / log-mean) to collapse the fine-resolution
-    pixels to a single value per footprint. The active reader set - and therefore
-    the keys of the returned dict - grows with the mode's latency and depends on
-    the input-availability variant (e.g. CAM has era5, igbp, nise, viirs_brdf,
-    viirs_cloud; IMAGER additionally has era5_pressure and viirs_aod; post-year-one
-    IMAGER adds ssf and cldpix on top of the ERA5 fields, which are retained in
-    both variants).
+    ``ReaderRegistry.get_readers_for_mode(mode)``, load the tiles overlapping each
+    footprint, and apply each variable's PSF-weighted aggregation strategy (weighted
+    mean / mode / log-mean) to collapse the fine-resolution pixels to a single value
+    per footprint. The active reader set - and therefore the keys of the returned
+    dict - grows with the mode's latency (e.g. CAM has era5, igbp, nise, viirs_brdf,
+    viirs_cloud; IMAGER additionally has era5_pressure, viirs_aod, and the RBSP ssf
+    and cldpix fields).
     Per-spec gating also applies: only specs whose ``required_mode`` rank is
-    <= the mode's rank and whose ``required_variant`` is ``None`` or equal to
-    ``variant`` are aggregated.
+    <= the mode's rank are aggregated.
 
     Every output variable is named ``<source_key>_<instrument>_<spec_name>`` for
     provenance, where the instrument token comes from the reader's ``INSTRUMENT``
@@ -314,7 +283,6 @@ def compute_derived_viewing_geometry(
 def assemble_fmatch_dataset(
     mode: OperationalMode,
     *args: Any,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     cloud_fraction_camera: np.ndarray | None = None,
     **kwargs: Any,
 ) -> Dataset:
@@ -324,9 +292,9 @@ def assemble_fmatch_dataset(
     :func:`compute_derived_viewing_geometry`, and the aggregated external
     variables from :func:`aggregate_external_variables` into the variable dict
     expected by the mode's product definition (from
-    :func:`load_fmatch_definition`, resolved with the same ``variant``), then
-    builds a Dataset via ``LiberaDataProductDefinition.create_product_dataset``
-    and brings it into conformance with ``enforce_dataset_conformance``.
+    :func:`load_fmatch_definition`), then builds a Dataset via
+    ``LiberaDataProductDefinition.create_product_dataset`` and brings it into
+    conformance with ``enforce_dataset_conformance``.
 
     Dispatch is by timescale, because that determines what the mode is built
     *from*:
@@ -353,11 +321,6 @@ def assemble_fmatch_dataset(
     *args, **kwargs
         Mode-specific inputs, forwarded to the timescale's assembler (see above
         for the leading positional argument of each).
-    variant : FmatchVariant, optional
-        Input-availability variant used to resolve the product definition and the
-        active reader set. Defaults to ``YEAR_ONE`` (production). Only meaningful
-        for FMATCH-IMAGER (see :func:`load_fmatch_definition`); the CAM modes are
-        variant-insensitive.
     cloud_fraction_camera : np.ndarray, optional
         Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
         algorithm (Libera WFOV camera), as a 1-D array indexed by footprint in
@@ -374,12 +337,8 @@ def assemble_fmatch_dataset(
         A dataset brought into conformance with the mode's product definition.
     """
     if mode in _CAMERA_TIMESCALE_MODES:
-        return _assemble_camtime_dataset(
-            *args, mode=mode, variant=variant, cloud_fraction_camera=cloud_fraction_camera, **kwargs
-        )
-    return _assemble_radiometer_dataset(
-        *args, mode=mode, variant=variant, cloud_fraction_camera=cloud_fraction_camera, **kwargs
-    )
+        return _assemble_camtime_dataset(*args, mode=mode, cloud_fraction_camera=cloud_fraction_camera, **kwargs)
+    return _assemble_radiometer_dataset(*args, mode=mode, cloud_fraction_camera=cloud_fraction_camera, **kwargs)
 
 
 def _placeholder_variable_array(variable_definition: Any, n_footprints: int) -> np.ndarray:
@@ -496,7 +455,6 @@ def _assemble_camtime_dataset(
     footprints: Sequence[PseudoFootprint],
     *,
     mode: OperationalMode = OperationalMode.CAM_CAMTIME,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     definition: LiberaDataProductDefinition | None = None,
     algorithm_version: str | None = None,
     input_files: str | None = None,
@@ -523,9 +481,6 @@ def _assemble_camtime_dataset(
         :func:`~libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`.
     mode : OperationalMode, optional
         Which camera-timescale mode to assemble. Defaults to ``CAM_CAMTIME``.
-    variant : FmatchVariant, optional
-        Input-availability variant used to resolve the product definition when
-        ``definition`` is not supplied.
     definition : LiberaDataProductDefinition, optional
         The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
     algorithm_version : str, optional
@@ -555,7 +510,7 @@ def _assemble_camtime_dataset(
             f"{', '.join(sorted(m.value for m in _CAMERA_TIMESCALE_MODES))}."
         )
     if definition is None:
-        definition = load_fmatch_definition(mode, variant)
+        definition = load_fmatch_definition(mode)
 
     footprints = list(footprints)
     if not footprints:
@@ -657,7 +612,6 @@ def _assemble_radiometer_dataset(
     l1b_inputs: dict[str, np.ndarray],
     *,
     mode: OperationalMode,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     definition: LiberaDataProductDefinition | None = None,
     algorithm_version: str | None = None,
     input_files: str | None = None,
@@ -681,9 +635,6 @@ def _assemble_radiometer_dataset(
         :data:`_RADIOMETER_L1B_VARIABLES`, all the same length.
     mode : OperationalMode
         Which radiometer-timescale mode to assemble.
-    variant : FmatchVariant, optional
-        Input-availability variant used to resolve the product definition when
-        ``definition`` is not supplied. Only meaningful for ``IMAGER``.
     definition : LiberaDataProductDefinition, optional
         The product definition. Loaded via :func:`load_fmatch_definition` when omitted.
     algorithm_version : str, optional
@@ -712,7 +663,7 @@ def _assemble_radiometer_dataset(
             f"inputs; use the camera pseudo-footprint path instead."
         )
     if definition is None:
-        definition = load_fmatch_definition(mode, variant)
+        definition = load_fmatch_definition(mode)
 
     time_variable = fmatch_time_variable(mode)  # "RADIOMETER_TIME"
 
@@ -755,16 +706,14 @@ def _assemble_radiometer_dataset(
     )
 
 
-def write_fmatch_product(
-    mode: OperationalMode, *args: Any, variant: FmatchVariant = FmatchVariant.YEAR_ONE, **kwargs: Any
-) -> Any:
+def write_fmatch_product(mode: OperationalMode, *args: Any, **kwargs: Any) -> Any:
     """Write a FMATCH NetCDF data product to disk for an operational mode.
 
     Delegates to ``libera_utils.io.netcdf.write_libera_data_product`` using the
-    definition from :func:`load_fmatch_definition` (resolved with ``variant``),
-    the assembled Dataset from :func:`assemble_fmatch_dataset`, and
-    ``time_variable=fmatch_time_variable(mode)`` (``RADIOMETER_TIME`` or
-    ``CAMERA_TIME``) so the output filename encodes the footprint time span.
+    definition from :func:`load_fmatch_definition`, the assembled Dataset from
+    :func:`assemble_fmatch_dataset`, and ``time_variable=fmatch_time_variable(mode)``
+    (``RADIOMETER_TIME`` or ``CAMERA_TIME``) so the output filename encodes the
+    footprint time span.
 
     Every operational mode is supported. The mode's timescale selects what the
     leading positional argument must be - camera pseudo-footprints for the
@@ -779,17 +728,13 @@ def write_fmatch_product(
         Mode-specific inputs forwarded to :func:`assemble_fmatch_dataset`, followed
         by ``output_path``. See :func:`_write_fmatch_product` for the accepted
         keyword arguments.
-    variant : FmatchVariant, optional
-        Input-availability variant. Production defaults to ``YEAR_ONE``; the
-        FMATCH-IMAGER runner exposes this as a manual ``--post-year-one`` option
-        once RBSP data flows. Ignored by the CAM modes (variant-insensitive).
 
     Returns
     -------
     LiberaDataProductFilename
         The written product filename object.
     """
-    return _write_fmatch_product(mode, *args, variant=variant, **kwargs)
+    return _write_fmatch_product(mode, *args, **kwargs)
 
 
 def _write_fmatch_product(
@@ -797,7 +742,6 @@ def _write_fmatch_product(
     inputs: Sequence[PseudoFootprint] | dict[str, np.ndarray],
     output_path: str | Path,
     *,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
@@ -819,8 +763,6 @@ def _write_fmatch_product(
         modes, or the L1B pass-through dict for the radiometer-timescale modes.
     output_path : str or pathlib.Path
         Directory (or S3 prefix) to write the product file into.
-    variant : FmatchVariant, optional
-        Input-availability variant used to resolve the product definition.
     algorithm_version : str, optional
         Value for the ``algorithm_version`` global attribute.
     input_files : str, optional
@@ -836,11 +778,10 @@ def _write_fmatch_product(
     LiberaDataProductFilename
         The written product filename object.
     """
-    definition = load_fmatch_definition(mode, variant)
+    definition = load_fmatch_definition(mode)
     dataset = assemble_fmatch_dataset(
         mode,
         inputs,
-        variant=variant,
         definition=definition,
         algorithm_version=algorithm_version,
         input_files=input_files,

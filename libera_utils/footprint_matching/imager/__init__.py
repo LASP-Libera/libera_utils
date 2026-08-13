@@ -4,8 +4,6 @@ This subpackage contains the manifest-driven processing runner (``fmatch_imager.
 ``Dockerfile`` for the FMATCH-IMAGER data product: the radiometer-timescale product at RBSP Climate
 Quality latency.
 
-FMATCH-IMAGER is the only mode with two product definitions. During the first year of operation the
-RBSP CLDPIX/SSF products it would otherwise use do not exist, so production substitutes ERA5
-reanalysis fields; the RBSP-based definition is selected manually with ``--post-year-one`` once RBSP
-data flows.
+Its single product definition carries the RBSP CLDPIX/SSF cloud fields alongside the ERA5 (single-
+and pressure-level) and VIIRS imager fields.
 """

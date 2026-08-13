@@ -58,33 +58,6 @@ class OperationalMode(enum.Enum):
         return list(OperationalMode).index(self)
 
 
-class FmatchVariant(enum.Enum):
-    """Input-availability variant of a FMATCH product for the same OperationalMode.
-
-    The RBSP CLDPIX products that feed the FMATCH-IMAGER product are not available
-    during the first year of the mission, so year-one production substitutes ERA5
-    reanalysis fields (single-level and pressure-level) for the missing RBSP cloud
-    inputs. This is an axis *orthogonal* to :class:`OperationalMode`: the same mode
-    (and the same ProductID / output filename) is produced either way, but the set
-    of active readers and product variables differs. It is deliberately NOT a new
-    ``OperationalMode`` member because the mode enum's ``rank`` ordering encodes
-    data latency, and a year-one variant would corrupt that ordering (and imply a
-    separate ProductID, which is not wanted).
-
-    Attributes
-    ----------
-    YEAR_ONE : str
-        First year of operation: RBSP products (CLDPIX, CERES SSF) are unavailable
-        and ERA5 fields substitute for them. This is the **production default**.
-    POST_YEAR_ONE : str
-        RBSP products are available. Selected manually (e.g. via a runner's
-        ``--post-year-one`` flag) once the RBSP data flow begins.
-    """
-
-    YEAR_ONE = "year-one"
-    POST_YEAR_ONE = "post-year-one"
-
-
 class BoundingBox(tuple):
     """Geographic bounding box for a footprint's PSF contour.
 
@@ -275,12 +248,6 @@ class VariableSpec:
     n_categories : int or None
         For categorical variables only: number of distinct category values
         (e.g., 20 for IGBP surface type). ``None`` for continuous variables.
-    required_variant : FmatchVariant or None
-        When set, this variable is only processed (and only appears in product
-        definitions) for that :class:`FmatchVariant`. ``None`` (the default)
-        means the variable is active in every variant. Used by the ERA5 readers
-        to gate the year-one substitute fields: they appear in the year-one
-        FMATCH-IMAGER product but not in the post-year-one (RBSP CLDPIX) one.
     """
 
     name: str
@@ -288,7 +255,6 @@ class VariableSpec:
     aggregation: str
     required_mode: OperationalMode
     n_categories: int | None = None
-    required_variant: FmatchVariant | None = None
 
 
 # Aggregation strategies that collapse a footprint's pixels to a *mean* value.
@@ -342,8 +308,8 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
         if spec.aggregation in _MEAN_AGGREGATIONS:
             # A standard deviation is always a non-negative real number, so it is
             # stored as float32 regardless of the parent's dtype and carries no
-            # category count. The companion inherits the parent's mode AND variant
-            # gating so it appears in exactly the same product definitions.
+            # category count. The companion inherits the parent's mode gating so it
+            # appears in exactly the same product definitions.
             expanded.append(
                 VariableSpec(
                     name=f"{spec.name}{STANDARD_DEVIATION_SUFFIX}",
@@ -351,7 +317,6 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
                     aggregation="weighted_std",
                     required_mode=spec.required_mode,
                     n_categories=None,
-                    required_variant=spec.required_variant,
                 )
             )
     return tuple(expanded)

@@ -26,8 +26,8 @@ from tests.test_data.footprint_matching.fixtures import (
 )
 
 # The five additional FMATCH-IMAGER single-level fields alongside the winds.
-# (They began as year-one substitutes for the unavailable RBSP inputs and are now
-# retained in every FMATCH-IMAGER variant; they remain mode-gated to IMAGER.)
+# (They sit in the FMATCH-IMAGER product alongside the RBSP fields; they are
+# mode-gated to IMAGER.)
 _IMAGER_SINGLE_LEVEL_SPEC_NAMES = (
     "temperature_2m",
     "dew_point_temperature_2m",
@@ -59,14 +59,12 @@ class TestERA5ReaderClassAttributes:
     def test_wind_variables_are_unrestricted(self):
         for v in ERA5Reader.VARIABLES[:2]:
             assert v.required_mode == OperationalMode.CAM
-            assert v.required_variant is None
 
-    def test_imager_single_level_variables_are_mode_gated_only(self):
-        # The additional single-level fields exist for the FMATCH-IMAGER product in
-        # every variant: mode-gated to IMAGER, but variant-neutral (None).
+    def test_imager_single_level_variables_are_mode_gated(self):
+        # The additional single-level fields exist for the FMATCH-IMAGER product:
+        # mode-gated to IMAGER.
         for v in ERA5Reader.VARIABLES[2:]:
             assert v.required_mode == OperationalMode.IMAGER
-            assert v.required_variant is None
 
     def test_variables_have_no_categories(self):
         for v in ERA5Reader.VARIABLES:
@@ -218,7 +216,7 @@ class TestERA5ReaderMissingVariables:
         import xarray as xr
 
         # A legacy wind-only download: valid ERA5 format but missing the five
-        # year-one substitute variables (t2m, d2m, sp, z, fal).
+        # additional single-level variables (t2m, d2m, sp, z, fal).
         lats = np.linspace(2.0, 0.0, 4)
         lons = np.linspace(10.0, 12.0, 4)
         ds = xr.Dataset(

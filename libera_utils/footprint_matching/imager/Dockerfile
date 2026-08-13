@@ -71,7 +71,7 @@ RUN true
 RUN poetry install --only main --extras fmatch
 
 # The container entrypoint is the manifest-driven FMATCH-IMAGER runner. Arguments passed to the container
-# (i.e. the path to the input manifest, plus the optional --post-year-one flag) are forwarded to the script.
+# (i.e. the path to the input manifest) are forwarded to the script.
 #
 # The runner reads two environment variables:
 #   PROCESSING_PATH       - dropbox directory (or S3 prefix) products and the output manifest are written to.

@@ -1,14 +1,12 @@
 # =============================================================================
-# FMATCH-IMAGER Data Product Definition — year-one (ERA5-based) production variant
+# FMATCH-IMAGER Data Product Definition
 # =============================================================================
-# During the first year of operation the RBSP products (CERES CLDPIX / SSF) that
-# feed the post-year-one FMATCH-IMAGER definition are not available, so this
-# production definition substitutes ERA5 reanalysis fields: single-level fields
-# from the era5 reader and pressure-level fields from the era5_pressure reader
-# (all 37 levels, see _ERA5_PRESSURE_LEVELS in readers/era5_pressure.py).
-# The post-year-one definition is kept as fmatch_imager_post_year_one.yml (it adds
-# the RBSP CLDPIX/SSF fields on top of these ERA5 fields, which it also retains)
-# and is selected manually via FmatchVariant.POST_YEAR_ONE once RBSP data flows.
+# The radiometer-timescale FMATCH-IMAGER product at RBSP Climate Quality latency:
+# one footprint per RADIOMETER_TIME. It carries the RBSP CLDPIX/SSF cloud fields
+# alongside the full ERA5 single-level and pressure-level field set (all 37 levels,
+# see _ERA5_PRESSURE_LEVELS in readers/era5_pressure.py) and the VIIRS imager fields.
+# The active reader set is declared in FMATCH_MODE_READERS[IMAGER]
+# (readers/registry.py).
 # =============================================================================
 
 attributes:
@@ -81,6 +79,101 @@ variables:
   # ---------------------------------------------------------------------------
   # (c) PSF-aggregated external variables (one value per footprint).
   # ---------------------------------------------------------------------------
+  # --- source reader: cldpix (resolution 1.0 km) ---
+  cldpix_NOAA20_cloud_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (RBSP CLDPIX)
+      units: "1"
+  cldpix_NOAA20_cloud_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (RBSP CLDPIX) (within-footprint standard deviation)
+      units: "1"
+  cldpix_NOAA20_cloud_water_path:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud water path
+      units: "g/m^2"
+  cldpix_NOAA20_cloud_water_path_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud water path (within-footprint standard deviation)
+      units: "g/m^2"
+  cldpix_NOAA20_cloud_effective_temperature:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective temperature
+      units: "K"
+  cldpix_NOAA20_cloud_effective_temperature_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective temperature (within-footprint standard deviation)
+      units: "K"
+  cldpix_NOAA20_cloud_effective_height:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective height
+      units: "km"
+  cldpix_NOAA20_cloud_effective_height_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective height (within-footprint standard deviation)
+      units: "km"
+  cldpix_NOAA20_cloud_effective_pressure:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective pressure
+      units: "hPa"
+  cldpix_NOAA20_cloud_effective_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud effective pressure (within-footprint standard deviation)
+      units: "hPa"
+  cldpix_NOAA20_cloud_top_height:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud top height
+      units: "km"
+  cldpix_NOAA20_cloud_top_height_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud top height (within-footprint standard deviation)
+      units: "km"
+  cldpix_NOAA20_cloud_particle_radius:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius)
+      units: "um"
+  cldpix_NOAA20_cloud_particle_radius_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud particle radius blended (CLDPIX Cld_Radius) (within-footprint standard deviation)
+      units: "um"
+  cldpix_NOAA20_cloud_particle_phase:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud particle phase
+  cldpix_NOAA20_cloud_mask:
+    dtype: int16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES cloud mask
   # --- source reader: era5 (resolution 25.0 km) ---
   era5_ECMWF_wind_u10:
     dtype: float32
@@ -2469,6 +2562,82 @@ variables:
     attributes:
       long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (within-footprint standard deviation)
       units: "1"
+  # --- source reader: ssf (resolution 20.0 km) ---
+  ssf_NOAA20_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Aerosol optical depth (CERES SSF)
+      units: "1"
+  ssf_NOAA20_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Aerosol optical depth (CERES SSF) (within-footprint standard deviation)
+      units: "1"
+  ssf_NOAA20_clear_coverage:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Clear-sky areal coverage
+      units: "percent"
+  ssf_NOAA20_clear_coverage_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Clear-sky areal coverage (within-footprint standard deviation)
+      units: "percent"
+  ssf_NOAA20_cloud_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (CERES SSF imager layer)
+      units: "1"
+  ssf_NOAA20_cloud_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (CERES SSF imager layer) (within-footprint standard deviation)
+      units: "1"
+  ssf_NOAA20_cloud_water_particle_radius:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer)
+      units: "um"
+  ssf_NOAA20_cloud_water_particle_radius_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation)
+      units: "um"
+  ssf_NOAA20_cloud_ice_particle_radius:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer)
+      units: "um"
+  ssf_NOAA20_cloud_ice_particle_radius_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation)
+      units: "um"
+  ssf_NOAA20_cloud_classification:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES cloud classification code (encoded)
+  ssf_NOAA20_shortwave_adm_type:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES shortwave ADM scene type (encoded)
+  ssf_NOAA20_longwave_adm_type:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: CERES longwave ADM scene type (encoded)
   # --- source reader: viirs_aod (resolution 111.0 km) ---
   viirs_aod_NOAA20_aod_550:
     dtype: float32

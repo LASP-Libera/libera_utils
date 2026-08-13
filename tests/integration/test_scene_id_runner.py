@@ -13,7 +13,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching.product import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.product import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -183,21 +183,21 @@ class TestFmatchReaders:
         assert "cloud_phase" in dataset.variables
         assert bool(np.all(np.isnan(dataset["cloud_phase"].values)))
 
-    def test_from_fmatch_imager_post_year_one_maps_inputs(self, tmp_path):
-        """from_fmatch_imager_post_year_one maps the RBSP inputs, including a real (mapped) cloud_phase."""
-        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, variant=FmatchVariant.POST_YEAR_ONE)
-        dataset = FootprintData.from_fmatch_imager_post_year_one(input_path)._data
+    def test_from_fmatch_imager_maps_inputs(self, tmp_path):
+        """from_fmatch_imager maps the RBSP inputs, including a real (mapped) cloud_phase."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
+        dataset = FootprintData.from_fmatch_imager(input_path)._data
 
         for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "cloud_phase"):
             assert required in dataset.variables
         # The fixture cycles CLDPIX phase codes 1/2, which map to the classifier's 1 (liquid) / 2 (ice).
         assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
 
-    def test_from_fmatch_imager_post_year_one_rejects_year_one_file(self, tmp_path):
-        """A year-one FMATCH-IMAGER file lacks the RBSP variables, so the post-year-one reader raises clearly."""
-        year_one_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)  # year-one default
-        with pytest.raises(ValueError, match="does not produce scene IDs"):
-            FootprintData.from_fmatch_imager_post_year_one(year_one_path)
+    def test_from_fmatch_imager_rejects_file_without_rbsp_columns(self, tmp_path):
+        """A FMATCH-IMAGER-FLASH file lacks the RBSP CLDPIX variables, so the IMAGER reader raises clearly."""
+        flash_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        with pytest.raises(ValueError, match="missing required variable"):
+            FootprintData.from_fmatch_imager(flash_path)
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
@@ -311,8 +311,8 @@ class TestSceneIdImagerWrite:
     """The IMAGER runner produces a conformant SCENE-ID-IMAGER product that includes the TRMM classification."""
 
     def test_write_data_product_is_conformant_with_trmm(self, tmp_path):
-        """A full post-year-one run + write succeeds under strict conformance and reports scene_id_trmm as uint16."""
-        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, variant=FmatchVariant.POST_YEAR_ONE)
+        """A full IMAGER run + write succeeds under strict conformance and reports scene_id_trmm as uint16."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
         footprint_data = run_scene_identification_imager(input_path)
 
         # create_and_write_data_product_imager writes with strict=True; reaching the assertions is the conformance
@@ -327,7 +327,7 @@ class TestSceneIdImagerWrite:
 
     def test_written_product_has_no_undeclared_variables(self, tmp_path):
         """Reader intermediates (clear_area, surface_wind_u/v) must not leak into the written product."""
-        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, variant=FmatchVariant.POST_YEAR_ONE)
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
         footprint_data = run_scene_identification_imager(input_path)
         output_file = create_and_write_data_product_imager(footprint_data, input_path.name, tmp_path)
 

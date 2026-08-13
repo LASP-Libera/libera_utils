@@ -29,14 +29,12 @@ DESCRIPTION = "Run the Libera FMATCH-CAM algorithm from an input manifest."
 
 # All the parameters that make this the radiometer-timescale CAM runner (see FmatchRunnerConfig).
 # The input is the L1B RAD-4CH product; the optional cloud fraction comes from CF-CAM (also on the
-# radiometer timescale). CAM is variant-insensitive: no RBSP-sourced readers are active at its
-# latency rank, so there is no --post-year-one option.
+# radiometer timescale). No RBSP-sourced readers are active at its latency rank.
 RUNNER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM,
     output_product_id=DataProductIdentifier.aux_fmatch_cam,
     l1b_input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=DataProductIdentifier.l2_cf_rad_time,
-    supports_variant_override=False,
     log_prefix="fmatch_cam",
 )
 

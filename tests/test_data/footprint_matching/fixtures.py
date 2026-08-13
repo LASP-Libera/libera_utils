@@ -60,7 +60,7 @@ import xarray as xr
 if TYPE_CHECKING:
     # Imported for type annotations only; the concrete classes are imported lazily inside the factories that use
     # them (product.py pulls in the heavier footprint-matching stack) to keep fixture import cheap.
-    from libera_utils.footprint_matching.product import FmatchVariant, OperationalMode
+    from libera_utils.footprint_matching.product import OperationalMode
 
 # Constant fill values for the five non-wind ERA5 single-level variables written
 # by the ERA5 fixtures. Chosen to be physically plausible AND mutually distinct
@@ -866,8 +866,6 @@ def make_fmatch_product_fixture(
     directory: Path,
     mode: OperationalMode | None = None,
     n_footprints: int = 8,
-    *,
-    variant: FmatchVariant | None = None,
 ) -> Path:
     """Write a synthetic, conformant FMATCH product NetCDF file (input to the SCENE-ID runners).
 
@@ -889,10 +887,6 @@ def make_fmatch_product_fixture(
         The FMATCH operational mode whose definition drives the file. Defaults to ``OperationalMode.CAM``.
     n_footprints : int, optional
         Number of footprints (length of the time axis). Defaults to 8.
-    variant : FmatchVariant, optional
-        Input-availability variant passed to ``load_fmatch_definition``. Defaults to ``YEAR_ONE``. Pass
-        ``FmatchVariant.POST_YEAR_ONE`` with ``OperationalMode.IMAGER`` to write the RBSP-based FMATCH-IMAGER file
-        that the SCENE-ID-IMAGER reader consumes.
 
     Returns
     -------
@@ -900,7 +894,6 @@ def make_fmatch_product_fixture(
         Path to the written FMATCH product NetCDF file.
     """
     from libera_utils.footprint_matching.product import (  # noqa: PLC0415
-        FmatchVariant,
         OperationalMode,
         fmatch_time_variable,
         load_fmatch_definition,
@@ -909,9 +902,7 @@ def make_fmatch_product_fixture(
 
     if mode is None:
         mode = OperationalMode.CAM
-    if variant is None:
-        variant = FmatchVariant.YEAR_ONE
-    definition = load_fmatch_definition(mode, variant)
+    definition = load_fmatch_definition(mode)
     time_variable = fmatch_time_variable(mode)
 
     base_time = np.datetime64("2026-06-11T00:00:00", "ns")
@@ -941,7 +932,7 @@ def make_fmatch_product_fixture(
             data[name] = np.linspace(0, 100, n_footprints).astype(var_def.dtype)
         elif name == "cldpix_NOAA20_cloud_particle_phase":
             # Valid CLDPIX phase codes cycling liquid(1)/ice(2) so map_cldpix_phase_to_trmm yields usable 1/2
-            # values (rather than all-NaN) for the post-year-one TRMM classification.
+            # values (rather than all-NaN) for the TRMM classification.
             data[name] = (np.arange(n_footprints) % 2 + 1).astype(var_def.dtype)
         else:
             data[name] = np.zeros(n_footprints, dtype=var_def.dtype)

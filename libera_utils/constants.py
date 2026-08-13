@@ -236,7 +236,7 @@ class DataProductIdentifier(StrEnum):
     aux_scene_id_imager = (
         "SCENE-ID-IMAGER",
         DataLevel.AUX,
-    )  # Scene IDs (incl. TRMM) from the post-year-one FMATCH-IMAGER (RBSP + VIIRS imager cloud properties)
+    )  # Scene IDs (incl. TRMM) from the FMATCH-IMAGER (RBSP + VIIRS imager cloud properties)
     aux_scene_id_imager_flash = (
         "SCENE-ID-IMAGER-FLASH",
         DataLevel.AUX,

@@ -32,11 +32,9 @@ Variables read (at each retained pressure level)
 - q:  specific humidity (kg kg⁻¹)
 - r:  relative humidity (%)
 
-All of these began as year-one FMATCH-IMAGER substitutes for the then-unavailable
-RBSP inputs. They are now retained in the post-year-one product alongside the RBSP
-fields, so the reader contributes to both the year-one and post-year-one
-radiometer-timescale FMATCH-IMAGER products. It is deliberately absent from the
-camera-timescale FMATCH-IMAGER-CAMTIME product: the pressure-level fields are a
+These pressure-level fields sit in the radiometer-timescale FMATCH-IMAGER product
+alongside the RBSP CLDPIX/SSF cloud fields. The reader is deliberately absent from
+the camera-timescale FMATCH-IMAGER-CAMTIME product: the pressure-level fields are a
 radiometer-timescale quantity. Product membership is declared in the per-product
 reader sets in ``readers/registry.py``, not by the reader itself.
 

@@ -13,9 +13,8 @@ rank and correspondingly larger active reader set.
 
 Unlike the CAM products, FMATCH-IMAGER-CAMTIME does not declare ``cloud_fraction_camera`` - its cloud
 information comes from the imager readers rather than the Libera WFOV camera - so this runner takes
-no cloud-fraction input. It also exposes no ``--post-year-one`` option: because the mode already
-requires RBSP inputs, its single product definition *is* the post-year-one one (see
-:class:`libera_utils.footprint_matching.types.FmatchVariant`).
+no cloud-fraction input. The mode requires RBSP inputs (CERES CLDPIX/SSF), which its single product
+definition carries alongside the ERA5 and VIIRS fields.
 """
 
 from pathlib import Path
@@ -36,7 +35,6 @@ RUNNER_CONFIG = FmatchRunnerConfig(
     output_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
     l1b_input_product_id=DataProductIdentifier.l1b_cam,
     cloud_fraction_product_id=None,
-    supports_variant_override=False,
     log_prefix="fmatch_imager_camtime",
 )
 

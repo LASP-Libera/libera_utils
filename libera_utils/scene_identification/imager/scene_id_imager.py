@@ -3,14 +3,14 @@
 This is the radiometer-timescale imager scene-identification runner. Unlike SCENE-ID-CAM, it runs the full TRMM
 classification in addition to ERBE and unfiltering.
 
-The operational input is the *post-year-one* (RBSP-based) FMATCH-IMAGER product (see
-:meth:`FootprintData.from_fmatch_imager_post_year_one`): one footprint per ``RADIOMETER_TIME`` carrying the CERES
+The operational input is the FMATCH-IMAGER product (see
+:meth:`FootprintData.from_fmatch_imager`): one footprint per ``RADIOMETER_TIME`` carrying the CERES
 SSF clear coverage (for cloud fraction), the RBSP CLDPIX cloud optical depth and particle phase (for TRMM), the
 ERA5 winds (for surface wind), and the IGBP surface type. The runner config sets
 ``input_product_id=DataProductIdentifier.aux_fmatch_imager`` so
 :func:`libera_utils.scene_identification._runner.collect_input_files` keeps the FMATCH-IMAGER files from the input
-manifest. The year-one ERA5-based FMATCH-IMAGER variant shares the same product id but does not produce scene IDs;
-:meth:`FootprintData.from_fmatch_imager_post_year_one` raises a clear error if handed one.
+manifest. :meth:`FootprintData.from_fmatch_imager` raises a clear error if handed a file that lacks the RBSP
+ssf/cldpix variables (e.g. a FMATCH-IMAGER-FLASH product).
 """
 
 import argparse
@@ -30,9 +30,8 @@ from libera_utils.scene_identification._runner import (
     run_scene_identification,
 )
 
-# Scene classifications produced by the SCENE-ID-IMAGER product. The post-year-one FMATCH-IMAGER carries the extra
-# TRMM inputs (surface wind, cloud phase, optical depth), so this product runs TRMM in addition to ERBE and
-# unfiltering.
+# Scene classifications produced by the SCENE-ID-IMAGER product. The FMATCH-IMAGER carries the extra TRMM inputs
+# (surface wind, cloud phase, optical depth), so this product runs TRMM in addition to ERBE and unfiltering.
 SCENE_ID_IMAGER_SCENE_TYPES = ["erbe", "unfiltering", "trmm"]
 
 # Path to the SCENE-ID-IMAGER product definition.
@@ -41,12 +40,11 @@ PRODUCT_DEFINITION_PATH = (
 )
 
 # All the parameters that make this the radiometer-timescale IMAGER runner (see SceneIdRunnerConfig). The input is
-# the post-year-one FMATCH-IMAGER Libera product, read by from_fmatch_imager_post_year_one onto the RADIOMETER_TIME
-# axis.
+# the FMATCH-IMAGER Libera product, read by from_fmatch_imager onto the RADIOMETER_TIME axis.
 RUNNER_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_imager,
     output_product_id=DataProductIdentifier.aux_scene_id_imager,
-    reader=FootprintData.from_fmatch_imager_post_year_one,
+    reader=FootprintData.from_fmatch_imager,
     product_definition_path=PRODUCT_DEFINITION_PATH,
     time_variable="RADIOMETER_TIME",
     scene_types=SCENE_ID_IMAGER_SCENE_TYPES,

@@ -788,7 +788,7 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
 }
 
-# Classification inputs common to both imager scene-ID products (FLASH and post-year-one IMAGER). Note two of these
+# Classification inputs common to both imager scene-ID products (FLASH and IMAGER). Note two of these
 # are *raw inputs* to existing derived-variable calculators rather than final classification columns, chosen so the
 # imager path reuses the validated calculators instead of duplicating them:
 #   * clear_area (from the CERES SSF clear coverage, already in percent) -> cloud_fraction is derived by
@@ -815,10 +815,10 @@ _FMATCH_IMAGER_FLASH_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("ssf_NOAA20_cloud_optical_depth", np.float32),
 }
 
-# Post-year-one FMATCH-IMAGER (RBSP): prefer the native RBSP CLDPIX fields where both CLDPIX and SSF exist. The
+# FMATCH-IMAGER (RBSP): prefer the native RBSP CLDPIX fields where both CLDPIX and SSF exist. The
 # CLDPIX cloud particle phase code is remapped to the classifier's 1 = liquid / 2 = ice convention via
 # map_cldpix_phase_to_trmm (see its TODO[LIBSDC-817] -- the code meanings are a placeholder pending the CLDPIX data dictionary).
-_FMATCH_IMAGER_POST_YEAR_ONE_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
+_FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     **_FMATCH_IMAGER_COMMON_COLUMNS,
     FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("cldpix_NOAA20_cloud_optical_depth", np.float32),
     FootprintVariables.CLOUD_PHASE: _FmatchColumn(
@@ -1025,23 +1025,21 @@ class FootprintData:
         return cls(extracted_data)
 
     @classmethod
-    def from_fmatch_imager_post_year_one(cls, fmatch_path: pathlib.Path) -> "FootprintData":
-        """Read a post-year-one FMATCH-IMAGER product into a FootprintData (radiometer timescale).
+    def from_fmatch_imager(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+        """Read a FMATCH-IMAGER product into a FootprintData (radiometer timescale).
 
-        The post-year-one (RBSP-based) FMATCH-IMAGER variant is the operational input to SCENE-ID-IMAGER: one
-        footprint per ``RADIOMETER_TIME``, carrying the CERES SSF clear coverage (for cloud fraction), the RBSP
-        CLDPIX cloud optical depth and particle phase (for the TRMM classification), the ERA5 winds (for surface
-        wind), and the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
+        The FMATCH-IMAGER product is the operational input to SCENE-ID-IMAGER: one footprint per
+        ``RADIOMETER_TIME``, carrying the CERES SSF clear coverage (for cloud fraction), the RBSP CLDPIX cloud
+        optical depth and particle phase (for the TRMM classification), the ERA5 winds (for surface wind), and
+        the IGBP surface type. Unlike SCENE-ID-CAM this supports the full TRMM classification.
 
-        The **year-one** ERA5-based FMATCH-IMAGER variant deliberately does not produce scene IDs (it has no
-        cloud-fraction or cloud-phase source). Because both variants share ``ProductID: FMATCH-IMAGER`` and are
-        indistinguishable by filename, this reader validates the RBSP variables up front and raises a clear error
-        if handed a year-one file (see :meth:`_require_variables`).
+        The reader validates the RBSP CLDPIX/SSF variables up front and raises a clear error if handed a file that
+        lacks them (e.g. a FMATCH-IMAGER-FLASH product); see :meth:`_require_variables`.
 
         Parameters
         ----------
         fmatch_path : pathlib.Path
-            Path to a Libera post-year-one FMATCH-IMAGER NetCDF product file.
+            Path to a Libera FMATCH-IMAGER NetCDF product file.
 
         Returns
         -------
@@ -1052,10 +1050,10 @@ class FootprintData:
             fmatch_path,
             record_dimension=RADIOMETER_TIME_DIMENSION,
             time_variable=RADIOMETER_TIME_DIMENSION,
-            column_map=_FMATCH_IMAGER_POST_YEAR_ONE_COLUMN_MAP,
+            column_map=_FMATCH_IMAGER_COLUMN_MAP,
             context=(
-                "SCENE-ID-IMAGER reader (post-year-one FMATCH-IMAGER); a year-one FMATCH-IMAGER file lacks the "
-                "RBSP ssf/cldpix variables and does not produce scene IDs"
+                "SCENE-ID-IMAGER reader (FMATCH-IMAGER); the FMATCH file lacks the RBSP ssf/cldpix variables "
+                "required for scene identification"
             ),
         )
         return cls(extracted_data)
@@ -1065,9 +1063,9 @@ class FootprintData:
         """Raise a single, actionable error if any expected FMATCH source variable is absent.
 
         This turns what would otherwise be an opaque ``KeyError`` deep in extraction into one message naming every
-        missing variable and the reader that expected it. Its most important use is catching a year-one
-        FMATCH-IMAGER file routed to the post-year-one reader: the year-one file lacks the RBSP ``ssf``/``cldpix``
-        variables, so this reports that clearly instead of failing on the first missing lookup.
+        missing variable and the reader that expected it. Its most important use is catching a FMATCH file routed
+        to the wrong reader -- e.g. a FMATCH-IMAGER-FLASH file handed to the IMAGER reader, which lacks the RBSP
+        ``ssf``/``cldpix`` variables -- so this reports that clearly instead of failing on the first missing lookup.
 
         Parameters
         ----------
@@ -1103,7 +1101,7 @@ class FootprintData:
     ) -> xr.Dataset:
         """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
 
-        The radiometer- and camera-timescale FMATCH products (CAM, CAM-CAMTIME, IMAGER-FLASH, post-year-one IMAGER)
+        The radiometer- and camera-timescale FMATCH products (CAM, CAM-CAMTIME, IMAGER-FLASH, IMAGER)
         share a flat, one-value-per-footprint layout but draw their classification inputs from different source
         variables. This helper is therefore driven by a declarative ``column_map`` supplied by each concrete reader:
         it reads each mapped source variable, applies its dtype/scale/transform, and emits it under the standardized
@@ -1155,7 +1153,8 @@ class FootprintData:
             raise FileNotFoundError(f"Unable to parse input file: {fmatch_path}")
 
         # Fail fast (with one clear, actionable message) if any expected source variable is absent -- most
-        # importantly a year-one FMATCH-IMAGER file routed to the post-year-one reader, which lacks the RBSP columns.
+        # importantly a FMATCH file routed to the wrong reader (e.g. an IMAGER-FLASH file to the IMAGER reader,
+        # which lacks the RBSP columns).
         required_source_names = tuple(column.source_name for column in column_map.values()) + tuple(
             passthrough_variables
         )

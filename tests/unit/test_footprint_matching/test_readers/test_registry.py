@@ -5,8 +5,7 @@ Tests confirm:
 - get() returns the correct class
 - get() raises KeyError for unknown keys
 - list_readers() returns sorted keys
-- get_readers_for_mode() resolves each (mode, variant) to its per-product reader set
-  (FMATCH_MODE_READERS with the FMATCH_POST_YEAR_ONE_READERS override)
+- get_readers_for_mode() resolves each mode to its per-product reader set (FMATCH_MODE_READERS)
 """
 
 from __future__ import annotations
@@ -25,12 +24,11 @@ from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import (
     FMATCH_MODE_READERS,
-    FMATCH_POST_YEAR_ONE_READERS,
     ReaderRegistry,
 )
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 
 
 class TestListReaders:
@@ -109,39 +107,27 @@ class TestGetReadersForMode:
             assert key in imager_readers
 
     def test_climate_quality_readers_excluded_from_cam_mode(self):
-        # AOD/SSF/CLDPIX are climate-quality (post-Year-1) dependencies and must
-        # not be active in the CAM/NRT mode, in either variant.
-        for variant in FmatchVariant:
-            cam_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM, variant)
-            for key in ("viirs_aod", "ssf", "cldpix", "era5_pressure"):
-                assert key not in cam_readers
+        # AOD/SSF/CLDPIX are climate-quality dependencies and must not be active in
+        # the CAM/NRT mode.
+        cam_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
+        for key in ("viirs_aod", "ssf", "cldpix", "era5_pressure"):
+            assert key not in cam_readers
 
-    def test_imager_mode_default_variant_is_year_one(self):
-        # Production default: RBSP readers (ssf, cldpix) are excluded because
-        # those products do not exist in year one; the ERA5 substitutes are in.
+    def test_imager_mode_includes_rbsp_and_era5_readers(self):
+        # The radiometer FMATCH-IMAGER product carries the RBSP CLDPIX/SSF readers
+        # alongside the ERA5 (single- and pressure-level) and VIIRS AOD readers.
         imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
-        assert "era5_pressure" in imager_readers
-        assert "viirs_aod" in imager_readers
-        for key in ("ssf", "cldpix"):
-            assert key not in imager_readers
-
-    def test_imager_mode_post_year_one_includes_rbsp_readers(self):
-        imager_readers = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
-        for key in ("viirs_aod", "ssf", "cldpix"):
+        for key in ("viirs_aod", "ssf", "cldpix", "era5_pressure"):
             assert key in imager_readers
-        # The ERA5 pressure-level reader is variant-neutral: it is retained
-        # post-year-one alongside the RBSP inputs, not replaced by them.
-        assert "era5_pressure" in imager_readers
 
     def test_imager_camtime_excludes_era5_pressure(self):
         # The ERA5 pressure-level fields are a radiometer-timescale quantity: they are
         # carried on the radiometer FMATCH-IMAGER product but NOT on the camera-timescale
-        # FMATCH-IMAGER-CAMTIME product, in either variant.
-        for variant in FmatchVariant:
-            camtime = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER_CAMTIME, variant)
-            imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER, variant)
-            assert "era5_pressure" not in camtime
-            assert "era5_pressure" in imager
+        # FMATCH-IMAGER-CAMTIME product.
+        camtime = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER_CAMTIME)
+        imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
+        assert "era5_pressure" not in camtime
+        assert "era5_pressure" in imager
 
     def test_returns_dict_of_reader_classes(self):
         readers = ReaderRegistry.get_readers_for_mode(OperationalMode.CAM)
@@ -164,8 +150,6 @@ class TestReaderMembershipSets:
         registered = set(ReaderRegistry.list_readers())
         for mode, keys in FMATCH_MODE_READERS.items():
             assert keys <= registered, f"{mode.value} names unregistered reader(s): {keys - registered}"
-        for mode, keys in FMATCH_POST_YEAR_ONE_READERS.items():
-            assert keys <= registered, f"{mode.value} (post) names unregistered reader(s): {keys - registered}"
 
     def test_product_sets_cover_exactly_the_production_readers(self):
         # The union of every product's set must be exactly the production readers --
@@ -186,21 +170,15 @@ class TestReaderMembershipSets:
                 SSFReader,
             )
         }
-        used = set().union(*FMATCH_MODE_READERS.values(), *FMATCH_POST_YEAR_ONE_READERS.values())
+        used = set().union(*FMATCH_MODE_READERS.values())
         assert used == production_keys
 
     def test_base_map_covers_all_modes(self):
         assert set(FMATCH_MODE_READERS) == set(OperationalMode)
 
-    def test_only_imager_has_post_year_one_override(self):
-        # Mirrors FMATCH_POST_YEAR_ONE_DEFINITION_FILENAMES: only FMATCH-IMAGER has a
-        # distinct post-year-one product.
-        assert set(FMATCH_POST_YEAR_ONE_READERS) == {OperationalMode.IMAGER}
-
-    def test_every_mode_variant_resolves_to_registered_readers(self):
+    def test_every_mode_resolves_to_registered_readers(self):
         registered = set(ReaderRegistry.list_readers())
         for mode in OperationalMode:
-            for variant in FmatchVariant:
-                readers = ReaderRegistry.get_readers_for_mode(mode, variant)
-                assert readers, f"{mode.value} ({variant.value}) resolved to an empty reader set"
-                assert set(readers) <= registered
+            readers = ReaderRegistry.get_readers_for_mode(mode)
+            assert readers, f"{mode.value} resolved to an empty reader set"
+            assert set(readers) <= registered

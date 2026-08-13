@@ -15,7 +15,7 @@ The RBSP-produced FLASHFlux product shares the SSF file format, so this reader
 serves both. The two differ only in latency / processing stream
 (FLASHFlux → FMATCH-IMAGER-FLASH; SSF → FMATCH-IMAGER); the caller supplies the
 appropriate file for the active mode. This reader belongs to the Flash, Imager, and
-Imager-camera-time product sets (post-year-one), declared in ``readers/registry.py``.
+Imager-camera-time product sets, declared in ``readers/registry.py``.
 
 Why rasterize?
 --------------

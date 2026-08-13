@@ -35,14 +35,12 @@ DESCRIPTION = "Run the Libera FMATCH-CAM-CAMTIME algorithm from an input manifes
 
 # All the parameters that make this the camera-timescale CAM runner (see FmatchRunnerConfig). The
 # input is the L1B CAM product; the optional cloud fraction comes from CF-CAM-CAMTIME (also on the
-# camera timescale). CAM-CAMTIME is variant-insensitive: no RBSP-sourced readers are active at its
-# latency rank, so there is no --post-year-one option.
+# camera timescale). No RBSP-sourced readers are active at its latency rank.
 RUNNER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM_CAMTIME,
     output_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
     l1b_input_product_id=DataProductIdentifier.l1b_cam,
     cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam_time,
-    supports_variant_override=False,
     log_prefix="fmatch_cam_camtime",
 )
 

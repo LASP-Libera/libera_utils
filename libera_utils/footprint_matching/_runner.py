@@ -9,9 +9,8 @@ manifest. They differ only by a handful of parameters:
 * which :class:`~libera_utils.footprint_matching.types.OperationalMode` they produce
   (which in turn drives the product definition, the time coordinate, and the active
   reader set),
-* which L1B product counts as their input (``RAD-4CH`` vs ``CAM``),
-* whether they consume the optional Camera Cloud Fraction product, and
-* whether they expose the input-availability variant as a CLI option.
+* which L1B product counts as their input (``RAD-4CH`` vs ``CAM``), and
+* whether they consume the optional Camera Cloud Fraction product.
 
 Rather than duplicate the manifest/dropbox plumbing five times, that shared body lives
 here and is parameterized by a small :class:`FmatchRunnerConfig`. Each concrete runner
@@ -65,7 +64,7 @@ from libera_utils.footprint_matching.product import (
     is_camera_timescale_mode,
     write_fmatch_product,
 )
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import is_s3, smart_copy_file
@@ -168,10 +167,6 @@ class FmatchRunnerConfig:
         The optional Camera Cloud Fraction product supplying the
         ``cloud_fraction_camera`` variable. Only the CAM-family modes declare that
         variable, so this is ``None`` for the IMAGER modes.
-    supports_variant_override : bool
-        Whether this runner's CLI exposes ``--post-year-one``. True only for
-        FMATCH-IMAGER, the sole mode with a distinct post-year-one definition; see
-        :class:`~libera_utils.footprint_matching.types.FmatchVariant`.
     log_prefix : str
         Short label used in task-log filenames (e.g. ``fmatch_cam``).
     """
@@ -180,7 +175,6 @@ class FmatchRunnerConfig:
     output_product_id: DataProductIdentifier
     l1b_input_product_id: DataProductIdentifier
     cloud_fraction_product_id: DataProductIdentifier | None
-    supports_variant_override: bool
     log_prefix: str
 
     @property
@@ -197,7 +191,6 @@ class FmatchRunnerConfig:
 def run_algorithm(
     manifest_path: Path | S3Path | argparse.Namespace,
     config: FmatchRunnerConfig,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
 ) -> Path | S3Path:
     """Run a FMATCH processing workflow from an input manifest.
 
@@ -206,14 +199,9 @@ def run_algorithm(
     manifest_path : Path | S3Path | argparse.Namespace
         Path to the input manifest file listing the L1B input file(s). An
         ``argparse.Namespace`` (as produced by a runner's ``main``) is also accepted
-        for convenience when invoked as a CLI; its ``manifest`` attribute is used, and
-        its ``post_year_one`` flag, when present, selects the variant.
+        for convenience when invoked as a CLI; its ``manifest`` attribute is used.
     config : FmatchRunnerConfig
-        The per-runner parameters (mode, input products, variant support, log label).
-    variant : FmatchVariant, optional
-        Input-availability variant. Defaults to ``YEAR_ONE`` (production). Overridden
-        by ``manifest_path.post_year_one`` when a Namespace carrying that flag is
-        passed.
+        The per-runner parameters (mode, input products, log label).
 
     Returns
     -------
@@ -231,23 +219,23 @@ def run_algorithm(
 
     # Step 1: Read the input manifest.
     logger.info("Step 1: Reading the input manifest file")
-    manifest, variant = _resolve_manifest_and_variant(manifest_path, config, variant)
+    manifest = _resolve_manifest(manifest_path)
     input_manifest = Manifest.from_file(manifest)
     logger.info(f"Loaded manifest with {len(input_manifest.files)} files")
-    logger.info("Running %s (%s variant)", config.mode.value, variant.value)
+    logger.info("Running %s", config.mode.value)
 
     dropbox_path = os.getenv("PROCESSING_PATH")
     if not dropbox_path:
         raise ValueError("PROCESSING_PATH environment variable is not set")
 
-    # Step 2: Locate the staged ancillary granules for this mode/variant.
+    # Step 2: Locate the staged ancillary granules for this mode.
     #
     # These are resolved (and inventoried in the log) even though nothing consumes
     # them yet: the PSF aggregation engine is still a TODO[LIBSDC-785] stub. Doing it
     # now means an operator can confirm staging is correct from the task log before
     # the engine exists, and the runner will not need to change when it lands.
     logger.info("Step 2: Locating staged ancillary inputs")
-    ancillary_inputs = resolve_ancillary_inputs(config.mode, variant)
+    ancillary_inputs = resolve_ancillary_inputs(config.mode)
     log_ancillary_inventory(ancillary_inputs)
 
     # Step 3: Collect the L1B input file(s) from the manifest.
@@ -267,7 +255,6 @@ def run_algorithm(
             l1b_file_path=input_file_path,
             output_path=dropbox_path,
             config=config,
-            variant=variant,
             cloud_fraction_file_paths=cloud_fraction_file_paths,
         )
         output_data_file_paths.append(output_file)
@@ -288,29 +275,15 @@ def run_algorithm(
     return output_manifest_filepath
 
 
-def _resolve_manifest_and_variant(
-    manifest_path: Path | S3Path | argparse.Namespace,
-    config: FmatchRunnerConfig,
-    variant: FmatchVariant,
-) -> tuple[Path | S3Path, FmatchVariant]:
-    """Normalize the manifest argument and pick the effective variant.
+def _resolve_manifest(manifest_path: Path | S3Path | argparse.Namespace) -> Path | S3Path:
+    """Normalize the manifest argument to a path.
 
     Accepting an ``argparse.Namespace`` lets a runner's ``main`` forward its parsed
-    args straight through, which is how the SCENE-ID runners are written too. When the
-    Namespace carries the ``--post-year-one`` flag it takes precedence over the
-    ``variant`` argument, since it is the operator's explicit choice.
+    args straight through, which is how the SCENE-ID runners are written too.
     """
-    if not isinstance(manifest_path, argparse.Namespace):
-        return AnyPath(manifest_path), variant
-
-    manifest = AnyPath(manifest_path.manifest)
-    if getattr(manifest_path, "post_year_one", False):
-        if not config.supports_variant_override:
-            # Defensive: only the IMAGER runner defines the flag, so this indicates the
-            # flag was wired onto a runner whose product has no post-year-one definition.
-            raise ValueError(f"{config.mode.value} does not support the post-year-one variant.")
-        return manifest, FmatchVariant.POST_YEAR_ONE
-    return manifest, variant
+    if isinstance(manifest_path, argparse.Namespace):
+        return AnyPath(manifest_path.manifest)
+    return AnyPath(manifest_path)
 
 
 def _collect_cloud_fraction_files(input_manifest: Manifest, config: FmatchRunnerConfig) -> list[str]:
@@ -385,7 +358,6 @@ def create_and_write_data_product(
     l1b_file_path: str | Path | S3Path,
     output_path: str | Path | S3Path,
     config: FmatchRunnerConfig,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     cloud_fraction_file_paths: list[str] | None = None,
 ) -> LiberaDataProductFilename:
     """Run footprint matching on one L1B input and write the FMATCH data product.
@@ -398,8 +370,6 @@ def create_and_write_data_product(
         Directory / prefix in the processing dropbox where the product file is written.
     config : FmatchRunnerConfig
         Runner parameters supplying the mode and input products.
-    variant : FmatchVariant, optional
-        Input-availability variant used to resolve the product definition.
     cloud_fraction_file_paths : list[str], optional
         Camera Cloud Fraction files selected from the manifest, if any. Reading them
         is not implemented yet (``TODO[LIBSDC-785]``); they are logged as provenance
@@ -429,7 +399,6 @@ def create_and_write_data_product(
         config.mode,
         inputs,
         output_path,
-        variant=variant,
         algorithm_version=algorithm_version(),
         input_files=",".join(provenance),
         strict=True,
@@ -461,16 +430,12 @@ def algorithm_version() -> str:
 def build_argument_parser(config: FmatchRunnerConfig, description: str) -> argparse.ArgumentParser:
     """Build the CLI argument parser for a FMATCH runner.
 
-    Every runner takes the input manifest positionally. The FMATCH-IMAGER runner
-    additionally gets ``--post-year-one``, because it is the only mode with a distinct
-    post-year-one product definition; adding the flag elsewhere would offer a choice
-    that does not exist.
+    Every runner takes the input manifest positionally.
 
     Parameters
     ----------
     config : FmatchRunnerConfig
-        Runner parameters; ``supports_variant_override`` decides whether the variant
-        flag is added.
+        Runner parameters supplying the L1B input product label for the help text.
     description : str
         Help text describing this runner.
 
@@ -485,15 +450,6 @@ def build_argument_parser(config: FmatchRunnerConfig, description: str) -> argpa
         type=str,
         help=f"Path to the input manifest file listing {config.l1b_input_product_id.value} input(s).",
     )
-    if config.supports_variant_override:
-        parser.add_argument(
-            "--post-year-one",
-            action="store_true",
-            help=(
-                "Use the post-year-one (RBSP CLDPIX/SSF) product definition and reader set instead of the "
-                "year-one (ERA5-substitute) production default. Only valid once RBSP products are flowing."
-            ),
-        )
     return parser
 
 

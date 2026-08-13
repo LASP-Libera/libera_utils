@@ -13,7 +13,7 @@ from libera_utils.footprint_matching.ancillary import (
     resolve_ancillary_inputs,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 
 
 def _stage(root, reader_keys, *, filenames=("granule_b.nc", "granule_a.nc")):
@@ -27,38 +27,26 @@ def _stage(root, reader_keys, *, filenames=("granule_b.nc", "granule_a.nc")):
 
 
 class TestActiveReaderSet:
-    """The resolved keys must track the registry's mode/variant gating, not a hard-coded list."""
+    """The resolved keys must track the registry's mode gating, not a hard-coded list."""
 
     @pytest.mark.parametrize("mode", list(OperationalMode))
-    @pytest.mark.parametrize("variant", list(FmatchVariant))
-    def test_keys_match_registry_for_mode_and_variant(self, tmp_path, monkeypatch, mode, variant):
-        expected = set(ReaderRegistry.get_readers_for_mode(mode, variant))
+    def test_keys_match_registry_for_mode(self, tmp_path, monkeypatch, mode):
+        expected = set(ReaderRegistry.get_readers_for_mode(mode))
         _stage(tmp_path, expected)
         monkeypatch.setenv(ANCILLARY_PATH_ENV, str(tmp_path))
 
-        resolved = resolve_ancillary_inputs(mode, variant)
+        resolved = resolve_ancillary_inputs(mode)
 
         assert set(resolved) == expected
 
-    def test_year_one_imager_uses_era5_pressure_not_rbsp(self, tmp_path, monkeypatch):
-        """Year one substitutes ERA5 pressure levels for the unavailable RBSP products."""
+    def test_imager_resolves_rbsp_alongside_era5_pressure(self, tmp_path, monkeypatch):
+        """FMATCH-IMAGER looks for the RBSP CLDPIX/SSF readers alongside ERA5 pressure levels."""
         monkeypatch.setenv(ANCILLARY_PATH_ENV, str(tmp_path))
 
-        resolved = resolve_ancillary_inputs(OperationalMode.IMAGER, FmatchVariant.YEAR_ONE)
-
-        assert "era5_pressure" in resolved
-        assert "cldpix" not in resolved
-        assert "ssf" not in resolved
-
-    def test_post_year_one_imager_adds_rbsp_alongside_era5_pressure(self, tmp_path, monkeypatch):
-        """Once RBSP data flows the CLDPIX/SSF readers are added; ERA5 is retained too."""
-        monkeypatch.setenv(ANCILLARY_PATH_ENV, str(tmp_path))
-
-        resolved = resolve_ancillary_inputs(OperationalMode.IMAGER, FmatchVariant.POST_YEAR_ONE)
+        resolved = resolve_ancillary_inputs(OperationalMode.IMAGER)
 
         assert "cldpix" in resolved
         assert "ssf" in resolved
-        # The ERA5 pressure-level reader is retained post-year-one alongside RBSP.
         assert "era5_pressure" in resolved
 
 

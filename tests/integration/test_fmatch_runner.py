@@ -26,7 +26,7 @@ from libera_utils.footprint_matching.imager_camtime.fmatch_imager_camtime import
 )
 from libera_utils.footprint_matching.imager_flash.fmatch_imager_flash import RUNNER_CONFIG as IMAGER_FLASH_CONFIG
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from tests.test_data.footprint_matching.fixtures import (
@@ -169,42 +169,31 @@ class TestCameraRunnerWorkflow:
         assert len(output_manifest.files) == 2
 
 
-class TestImagerVariantSelection:
-    """Only FMATCH-IMAGER exposes --post-year-one, and it must change the written variable set."""
+class TestImagerProduct:
+    """FMATCH-IMAGER writes the RBSP CLDPIX/SSF fields alongside the ERA5 pressure-level fields."""
 
-    def _run(self, tmp_path, cli_args):
+    def _run(self, tmp_path):
         inputs = tmp_path / "inputs"
         inputs.mkdir(parents=True)
         l1b_file = make_l1b_radiometer_fixture(inputs, n_footprints=6)
         manifest_path = _write_input_manifest(inputs, l1b_file)
-        return Manifest.from_file(imager_main([manifest_path, *cli_args]))
+        return Manifest.from_file(imager_main([manifest_path]))
 
-    def test_default_run_uses_the_year_one_era5_definition(self, tmp_path, dropbox, staged_ancillary):
-        output_manifest = self._run(tmp_path, [])
-
-        with xr.open_dataset(output_manifest.files[0].filename) as product:
-            names = set(product.variables)
-            assert any(name.startswith("era5_pressure_") for name in names)
-            assert not any(name.startswith("cldpix_") for name in names)
-
-    def test_post_year_one_flag_selects_the_rbsp_definition(self, tmp_path, dropbox, staged_ancillary):
-        output_manifest = self._run(tmp_path, ["--post-year-one"])
+    def test_run_writes_the_rbsp_and_era5_variable_set(self, tmp_path, dropbox, staged_ancillary):
+        output_manifest = self._run(tmp_path)
 
         with xr.open_dataset(output_manifest.files[0].filename) as product:
             names = set(product.variables)
-            # Post-year-one adds the RBSP CLDPIX fields ...
+            # The RBSP CLDPIX fields ...
             assert any(name.startswith("cldpix_") for name in names)
-            # ... while retaining the ERA5 pressure-level fields alongside them.
+            # ... alongside the ERA5 pressure-level fields.
             assert any(name.startswith("era5_pressure_") for name in names)
 
-    def test_both_variants_write_the_same_product_id(self, tmp_path, dropbox, staged_ancillary):
-        """The variant changes the variable set, not the product identity."""
-        year_one = self._run(tmp_path / "a", [])
-        post = self._run(tmp_path / "b", ["--post-year-one"])
+    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, dropbox, staged_ancillary):
+        output_manifest = self._run(tmp_path)
 
-        for manifest in (year_one, post):
-            written = LiberaDataProductFilename.from_file_path(manifest.files[0].filename)
-            assert written.data_product_id is DataProductIdentifier.aux_fmatch_imager
+        written = LiberaDataProductFilename.from_file_path(output_manifest.files[0].filename)
+        assert written.data_product_id is DataProductIdentifier.aux_fmatch_imager
 
 
 class TestManifestInputSelection:
@@ -316,7 +305,7 @@ class TestRunnerErrorHandling:
 
 
 class TestRunnerConfiguration:
-    """Each runner must be wired to the right mode, input product, and variant support."""
+    """Each runner must be wired to the right mode and input product."""
 
     @pytest.mark.parametrize(
         ("config", "mode", "l1b_product", "cloud_fraction_product"),
@@ -336,24 +325,3 @@ class TestRunnerConfiguration:
         assert config.mode is mode
         assert config.l1b_input_product_id is l1b_product
         assert config.cloud_fraction_product_id is cloud_fraction_product
-
-    def test_only_imager_supports_the_variant_override(self):
-        from libera_utils.footprint_matching.imager.fmatch_imager import RUNNER_CONFIG as IMAGER_CONFIG
-
-        assert IMAGER_CONFIG.supports_variant_override is True
-        for config in (CAM_CONFIG, CAM_CAMTIME_CONFIG, IMAGER_FLASH_CONFIG, IMAGER_CAMTIME_CONFIG):
-            assert config.supports_variant_override is False
-
-    def test_post_year_one_on_an_unsupported_runner_raises(self, tmp_path, dropbox, staged_ancillary):
-        """Defensive guard: the flag must never silently no-op if it is wired onto the wrong runner."""
-        import argparse
-
-        from libera_utils.footprint_matching._runner import run_algorithm
-
-        inputs = tmp_path / "inputs"
-        inputs.mkdir()
-        manifest_path = _write_input_manifest(inputs, make_l1b_radiometer_fixture(inputs))
-        args = argparse.Namespace(manifest=manifest_path, post_year_one=True)
-
-        with pytest.raises(ValueError, match="does not support the post-year-one variant"):
-            run_algorithm(args, CAM_CONFIG, FmatchVariant.YEAR_ONE)

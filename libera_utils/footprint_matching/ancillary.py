@@ -24,14 +24,13 @@ key**::
         viirs_brdf/     VIIRS BRDF granules
         viirs_cloud/    VIIRS cloud granules
         viirs_aod/      VIIRS Deep Blue aerosol granules (AOD + aerosol type)
-        cldpix/         CERES CLDPIX granules   (POST_YEAR_ONE only)
-        ssf/            CERES SSF granules      (POST_YEAR_ONE only)
+        cldpix/         CERES CLDPIX granules   (IMAGER-family modes)
+        ssf/            CERES SSF granules      (IMAGER-family modes)
 
 Using the registry keys as directory names means the set of directories required for
-a run is *derived* from ``ReaderRegistry.get_readers_for_mode(mode, variant)`` rather
-than hard-coded here. A new reader, or a change to a reader's mode/variant gating,
-automatically changes what this module looks for - there is no second list to keep in
-sync.
+a run is *derived* from ``ReaderRegistry.get_readers_for_mode(mode)`` rather than
+hard-coded here. A new reader, or a change to a reader's mode gating, automatically
+changes what this module looks for - there is no second list to keep in sync.
 
 See Also
 --------
@@ -52,7 +51,7 @@ from cloudpathlib import AnyPath, S3Path
 # registry would be empty and every mode would resolve to zero readers.
 import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.types import FmatchVariant, OperationalMode
+from libera_utils.footprint_matching.types import OperationalMode
 
 logger = logging.getLogger(__name__)
 
@@ -63,28 +62,22 @@ ANCILLARY_PATH_ENV: str = "FMATCH_ANCILLARY_PATH"
 
 def resolve_ancillary_inputs(
     mode: OperationalMode,
-    variant: FmatchVariant = FmatchVariant.YEAR_ONE,
     root: str | Path | S3Path | None = None,
     *,
     strict: bool = False,
 ) -> dict[str, list[Path | S3Path]]:
-    """Map each reader active for ``(mode, variant)`` to its staged granule files.
+    """Map each reader active for ``mode`` to its staged granule files.
 
     The active reader set comes from
     :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
-    so this automatically tracks the mode's latency rank and the input-availability
-    variant: FMATCH-CAM looks for five readers, year-one FMATCH-IMAGER additionally
-    looks for ``era5_pressure`` and ``viirs_aod`` but not ``cldpix``/``ssf``, and the
-    post-year-one variant additionally looks for ``cldpix``/``ssf`` while retaining
-    ``era5_pressure`` (the ERA5 fields are carried in both variants).
+    so this automatically tracks the mode's latency rank: FMATCH-CAM looks for five
+    readers, while FMATCH-IMAGER additionally looks for ``era5_pressure``,
+    ``viirs_aod``, and the RBSP ``cldpix``/``ssf`` inputs.
 
     Parameters
     ----------
     mode : OperationalMode
         The FMATCH operational mode being run.
-    variant : FmatchVariant, optional
-        Input-availability variant. Defaults to ``YEAR_ONE``, the production default
-        for the first year of operation.
     root : str | pathlib.Path | cloudpathlib.S3Path, optional
         Root of the staged ancillary tree. Defaults to the ``FMATCH_ANCILLARY_PATH``
         environment variable.
@@ -115,9 +108,9 @@ def resolve_ancillary_inputs(
         If the root or a required reader subdirectory does not exist, or a required
         subdirectory is empty, and ``strict``.
     """
-    active_readers = ReaderRegistry.get_readers_for_mode(mode, variant)
+    active_readers = ReaderRegistry.get_readers_for_mode(mode)
 
-    ancillary_root = _resolve_root(root, mode=mode, variant=variant, strict=strict)
+    ancillary_root = _resolve_root(root, mode=mode, strict=strict)
     if ancillary_root is None:
         return {key: [] for key in sorted(active_readers)}
 
@@ -131,7 +124,6 @@ def _resolve_root(
     root: str | Path | S3Path | None,
     *,
     mode: OperationalMode,
-    variant: FmatchVariant,
     strict: bool,
 ) -> Path | S3Path | None:
     """Resolve and validate the ancillary tree root, or return None when absent and not strict."""
@@ -140,7 +132,7 @@ def _resolve_root(
     if not root:
         message = (
             f"{ANCILLARY_PATH_ENV} environment variable is not set, so no ancillary inputs can be located for "
-            f"{mode.value} ({variant.value})."
+            f"{mode.value}."
         )
         if strict:
             raise ValueError(message)
