@@ -89,7 +89,7 @@ variables:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Total cloud fraction over the footprint (L2-CF-CAM data product values scaled to percent)
+      long_name: Total cloud fraction over the footprint (from the L2-CF-CAM data product, in percent)
       units: percent
 
   ############

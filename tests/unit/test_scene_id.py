@@ -802,8 +802,8 @@ class TestSceneIdCamProductDtypes:
         assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"
 
 
-class TestFmatchCamCloudFractionScaling:
-    """from_fmatch_cam rescales the [0, 1] WFOV camera cloud fraction to the 0-100 percent classifier scale."""
+class TestFmatchCamCloudFractionPassthrough:
+    """from_fmatch_cam carries the percent [0, 100] WFOV camera cloud fraction through unchanged."""
 
     @staticmethod
     def _write_minimal_fmatch_cam(path, cloud_fraction_camera):
@@ -821,10 +821,10 @@ class TestFmatchCamCloudFractionScaling:
         )
         dataset.to_netcdf(path)
 
-    def test_cloud_fraction_camera_scaled_to_percent(self, tmp_path):
-        """A [0, 1] camera cloud fraction becomes a 0-100 percent cloud_fraction (float32)."""
+    def test_cloud_fraction_camera_carried_through_in_percent(self, tmp_path):
+        """A percent [0, 100] camera cloud fraction passes through unchanged as cloud_fraction (float32)."""
         path = tmp_path / "fmatch_cam.nc"
-        self._write_minimal_fmatch_cam(path, [0.0, 0.5, 1.0])
+        self._write_minimal_fmatch_cam(path, [0.0, 50.0, 100.0])
 
         cloud_fraction = FootprintData.from_fmatch_cam(path)._data["cloud_fraction"]
 
@@ -832,9 +832,9 @@ class TestFmatchCamCloudFractionScaling:
         np.testing.assert_array_almost_equal(cloud_fraction.values, [0.0, 50.0, 100.0])
 
     def test_nan_camera_cloud_fraction_propagates(self, tmp_path):
-        """A NaN camera cloud fraction stays NaN after scaling (leaving the footprint unmatched downstream)."""
+        """A NaN camera cloud fraction stays NaN (leaving the footprint unmatched downstream)."""
         path = tmp_path / "fmatch_cam_nan.nc"
-        self._write_minimal_fmatch_cam(path, [np.nan, 0.25])
+        self._write_minimal_fmatch_cam(path, [np.nan, 25.0])
 
         cloud_fraction = FootprintData.from_fmatch_cam(path)._data["cloud_fraction"].values
 

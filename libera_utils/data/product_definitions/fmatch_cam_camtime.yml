@@ -358,8 +358,9 @@ variables:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
+      # Carried in percent [0, 100] matching the CF-CAM-CAMTIME input; SCENE-ID ingests it as-is.
       long_name: Cloud fraction (Libera WFOV)
-      units: "1"
+      units: percent
 
   # ---------------------------------------------------------------------------
   # (d) Coverage / QA bookkeeping

@@ -763,8 +763,8 @@ class _FmatchColumn:
     dtype : type
         NumPy dtype the emitted column is cast to (also what the SCENE-ID product definition declares).
     scale : float, optional
-        Multiplicative rescale applied to the source values. Defaults to 1.0 (no rescale). Used to convert the CAM
-        camera cloud fraction from a [0, 1] fraction to the 0-100 percent scale the classifier and product use.
+        Multiplicative rescale applied to the source values. Defaults to 1.0 (no rescale). Available for source
+        variables whose stored units differ from the classifier/product scale.
     transform : Callable or None, optional
         Elementwise transform applied to the source array (e.g. a code remap). Applied instead of ``scale`` when
         set. Defaults to None.
@@ -776,13 +776,13 @@ class _FmatchColumn:
     transform: Callable | None = None
 
 
-# CAM / CAM-CAMTIME classification inputs. The Libera WFOV camera cloud fraction is stored as a [0, 1] fraction in
-# the FMATCH product (fmatch_cam.yml: units "1", valid_range [0, 1]) but the scene-definition bins and the SCENE-ID
-# "cloud_fraction" variable are in percent [0, 100]; scale=100.0 reconciles them at ingest. cloud_fraction is
-# injected directly (there is no CERES "clear_area" on the CAM products to derive it from).
+# CAM / CAM-CAMTIME classification inputs. The Libera WFOV camera cloud fraction is stored in percent [0, 100] in
+# the FMATCH product (fmatch_cam.yml: units "percent", matching the CF-CAM input), which is the same scale as the
+# scene-definition bins and the SCENE-ID "cloud_fraction" variable, so it is ingested as-is (no rescale).
+# cloud_fraction is injected directly (there is no CERES "clear_area" on the CAM products to derive it from).
 _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
-    FootprintVariables.CLOUD_FRACTION: _FmatchColumn("cloud_fraction_camera", np.float32, scale=100.0),
+    FootprintVariables.CLOUD_FRACTION: _FmatchColumn("cloud_fraction_camera", np.float32),
     FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("solar_zenith_angle", np.float32),
     FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("viewing_zenith_angle", np.float32),
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
@@ -1164,7 +1164,7 @@ class FootprintData:
         for target, column in column_map.items():
             values = fmatch_dataset[column.source_name].to_numpy()
             # A transform (a code remap such as CLDPIX phase -> {liquid, ice}) is applied on the raw source values;
-            # otherwise an optional multiplicative scale is applied (e.g. cloud_fraction_camera [0,1] -> [0,100]).
+            # otherwise an optional multiplicative scale is applied when the source units differ from the target.
             if column.transform is not None:
                 values = column.transform(values)
             elif column.scale != 1.0:

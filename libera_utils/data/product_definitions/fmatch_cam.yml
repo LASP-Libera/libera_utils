@@ -337,9 +337,10 @@ variables:
       # Per-footprint cloud fraction from the Camera Cloud Fraction (CF-CAM)
       # algorithm using Libera's Wide Field-of-View (WFOV) camera. Already
       # aggregated to one value per footprint upstream, so it is attached
-      # directly to the FMATCH record (no reader / PSF step here).
+      # directly to the FMATCH record (no reader / PSF step here). Carried in
+      # percent [0, 100] matching the CF-CAM input; SCENE-ID ingests it as-is.
       long_name: Cloud fraction (Libera WFOV)
-      units: "1"
+      units: percent
   # ---------------------------------------------------------------------------
   # (d) Coverage / QA
   # ---------------------------------------------------------------------------
