@@ -213,13 +213,16 @@ def aggregate_external_variables(
     dict - grows with the mode's latency (e.g. CAM has era5, igbp, nise, viirs_brdf,
     viirs_cloud; IMAGER additionally has era5_pressure, viirs_aod, and the RBSP ssf
     and cldpix fields).
-    Per-spec gating also applies: only specs whose ``required_mode`` rank is
-    <= the mode's rank are aggregated.
+    Per-spec gating also applies (see below).
 
     Every output variable is named ``<source_key>_<spec_name>`` (e.g.
     ``era5_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
     product definition variable names. The reader's ``INSTRUMENT`` is recorded in
     each variable's ``long_name`` (``"... (ECMWF)"``) rather than in the name.
+    Per-spec gating uses
+    :func:`~libera_utils.footprint_matching.types.spec_active_in_mode`: a spec's
+    ``required_mode`` rank rule, or an exact ``only_modes`` pin (e.g. the extended
+    SSF cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
     Returns
     -------

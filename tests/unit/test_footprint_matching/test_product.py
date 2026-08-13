@@ -38,7 +38,12 @@ from libera_utils.footprint_matching.product import (
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.footprint_matching.types import (
+    OperationalMode,
+    VariableSpec,
+    spec_active_in_mode,
+    with_standard_deviation_companions,
+)
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 # The production reader keys. Intersecting with these makes the cross-check robust
@@ -75,9 +80,11 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     named `<source_key>_<spec_name>` (e.g. era5_wind_u10, igbp_surface_type). The
     reader's instrument is no longer part of the name -- it is recorded in the
     variable's ``long_name`` instead (see
-    ``test_reader_instrument_is_recorded_in_long_name``). Specs are filtered by
-    their ``required_mode`` rank (e.g. the ERA5 single-level fields carry
-    ``required_mode=IMAGER`` and so only appear in the FMATCH-IMAGER-family products).
+    ``test_reader_instrument_is_recorded_in_long_name``). Specs are gated by
+    ``spec_active_in_mode`` -- the ``required_mode`` rank rule (e.g. the ERA5
+    single-level fields carry ``required_mode=IMAGER`` and so appear in the
+    FMATCH-IMAGER-family products), or an exact ``only_modes`` pin (e.g. the extended
+    SSF cloud/aerosol/albedo fields appear in FMATCH-IMAGER only).
     """
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
@@ -86,7 +93,7 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
         # extras such as IGBP's ranked scenes). It is the full set that appears in
         # the product definition, so this is what the YAMLs must match.
         for spec in cls.product_variable_specs():
-            if spec.required_mode.rank > mode.rank:
+            if not spec_active_in_mode(spec, mode):
                 continue
             expected[f"{key}_{spec.name}"] = spec.dtype
     return expected
@@ -130,6 +137,28 @@ class TestImagerContent:
         assert "era5_forecast_albedo" in definition.variables
         assert "era5_pressure_temperature_500hPa" in definition.variables
         assert "era5_pressure_relative_humidity_1000hPa_standard_deviation" in definition.variables
+
+    def test_extended_ssf_fields_are_imager_only(self, definitions):
+        # The extended SSF cloud-layer / aerosol / albedo fields are pinned to
+        # FMATCH-IMAGER via only_modes and must NOT leak into the other products that
+        # also activate the ssf reader (FLASH, IMAGER-CAMTIME). Spot-check one field
+        # per secondary axis (layer, aerosol type, albedo band) plus a std companion.
+        extended = (
+            "ssf_layer_coverage_upper",
+            "ssf_cloud_optical_depth_upper",
+            "ssf_cloud_top_pressure_lower_standard_deviation",
+            "ssf_match_aot",
+            "ssf_aerosol_type_percentage_type6",
+            "ssf_broadband_surface_albedo_band9",
+        )
+        imager = definitions[OperationalMode.IMAGER]
+        for name in extended:
+            assert name in imager.variables, f"FMATCH-IMAGER missing extended field {name}"
+        for mode in (OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER_CAMTIME):
+            leaked = [name for name in extended if name in definitions[mode].variables]
+            assert leaked == [], f"{mode.value} must not declare IMAGER-only ssf fields, found {leaked}"
+        # The base SSF fields, by contrast, still appear in FLASH and IMAGER-CAMTIME.
+        assert "ssf_cloud_optical_depth" in definitions[OperationalMode.IMAGER_FLASH].variables
 
 
 class TestFmatchDefinitions:
@@ -177,7 +206,7 @@ class TestFmatchDefinitions:
         definition = definitions[mode]
         for key, cls in _production_readers_for_mode(mode).items():
             for spec in cls.product_variable_specs():
-                if spec.required_mode.rank > mode.rank:
+                if not spec_active_in_mode(spec, mode):
                     continue
                 name = f"{key}_{spec.name}"
                 long_name = definition.variables[name].attributes.get("long_name", "")
@@ -248,6 +277,47 @@ class TestDerivedProductVariables:
             "surface_type_tertiary",
         } <= names
         assert "surface_type_standard_deviation" not in names
+
+
+class TestSpecActiveInMode:
+    """The per-spec product gate: required_mode rank rule vs. exact only_modes pin."""
+
+    def test_rank_rule_when_only_modes_unset(self):
+        # required_mode=IMAGER (rank 3) -> carried by IMAGER and the higher-ranked
+        # IMAGER-CAMTIME, but not the lower-ranked FLASH.
+        spec = VariableSpec(
+            name="x", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.IMAGER
+        )
+        assert spec_active_in_mode(spec, OperationalMode.IMAGER)
+        assert spec_active_in_mode(spec, OperationalMode.IMAGER_CAMTIME)
+        assert not spec_active_in_mode(spec, OperationalMode.IMAGER_FLASH)
+
+    def test_only_modes_pins_to_exact_products(self):
+        # only_modes bypasses the rank rule: IMAGER only, even though IMAGER-CAMTIME
+        # outranks it.
+        spec = VariableSpec(
+            name="x",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            only_modes=(OperationalMode.IMAGER,),
+        )
+        assert spec_active_in_mode(spec, OperationalMode.IMAGER)
+        assert not spec_active_in_mode(spec, OperationalMode.IMAGER_CAMTIME)
+        assert not spec_active_in_mode(spec, OperationalMode.IMAGER_FLASH)
+
+    def test_standard_deviation_companion_inherits_only_modes(self):
+        # A continuous spec's std companion must stay scoped to the same product(s).
+        parent = VariableSpec(
+            name="cloud_top_pressure_lower",
+            dtype="float32",
+            aggregation="weighted_mean",
+            required_mode=OperationalMode.IMAGER,
+            only_modes=(OperationalMode.IMAGER,),
+        )
+        expanded = with_standard_deviation_companions((parent,))
+        companion = next(s for s in expanded if s.name.endswith("_standard_deviation"))
+        assert companion.only_modes == (OperationalMode.IMAGER,)
 
 
 class TestFmatchConformance:

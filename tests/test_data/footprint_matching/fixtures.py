@@ -639,11 +639,16 @@ def make_ssf_fixture(
     """Write a synthetic CERES SSF (footprint/swath) NetCDF4 file.
 
     Replicates the grouped, per-footprint structure of the real SSF product:
-    - 1-D ``Footprints`` dimension and a ``LowerUpper`` dimension of length 2
+    - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
+      ``AeroTypePct`` (7) / ``AlbedoDim`` (10) secondary axes the reader flattens
     - ``Time_and_Position/instrument_fov_latitude`` and ``…_longitude``
       (**longitude stored in the 0..360 convention**, matching the real file)
     - One variable per supported reader field across the corresponding groups,
-      with float fill ``3.4028235e38`` and int16 fill ``32767``
+      with float fill ``3.4028235e38`` and int16 fill ``32767``. This includes the
+      FMATCH-IMAGER-only extended fields: the layered cloud fields (both layers,
+      upper offset from lower), ``Assimilated_Aerosol_Properties`` (``match_aot``,
+      ``aerosol_type_percentage``), the land/ocean 0.55 µm imager AODs, and
+      ``Surface_Map/broadband_surface_albedo``.
 
     All arrays default to a small deterministic set of footprints clustered near
     lat ≈ 10–11°, lon ≈ −10° (written as 350° in the 0..360 file convention) so
@@ -717,19 +722,41 @@ def make_ssf_fixture(
         if valid_range is not None:
             var.valid_range = np.array(valid_range, dtype=data.dtype)
 
-    def _add_lower_upper(grp, name, lower_values, fill, valid_range=None):
-        """Write a 2-D (Footprints, LowerUpper) variable with lower-layer values."""
+    def _add_lower_upper(grp, name, lower_values, fill, valid_range=None, upper_values=None):
+        """Write a 2-D (Footprints, LowerUpper) variable with per-layer values.
+
+        Index 0 is the lower cloud layer (selected by ``_CLOUD_LAYER_LOWER_INDEX``),
+        index 1 the upper layer (``_CLOUD_LAYER_UPPER_INDEX``). ``upper_values``
+        defaults to fill, so callers that only care about the lower layer are
+        unaffected; the extended cloud fields pass distinct upper values so tests
+        can tell the two layers apart.
+        """
         var = grp.createVariable(name, "f4", ("Footprints", "LowerUpper"), fill_value=fill)
         data = np.full((n, 2), fill, dtype=np.float32)
-        # Index 0 is the lower cloud layer — the layer selected by _CLOUD_LAYER_INDEX.
         data[:, 0] = lower_values.astype(np.float32)
+        if upper_values is not None:
+            data[:, 1] = upper_values.astype(np.float32)
         var[:] = data
         if valid_range is not None:
             var.valid_range = np.array(valid_range, dtype=np.float32)
 
+    def _add_2d(grp, name, values_2d, dim_name, fill, valid_range=None):
+        """Write a 2-D (Footprints, <dim_name>) variable (e.g. AeroTypePct, AlbedoDim)."""
+        var = grp.createVariable(name, "f4", ("Footprints", dim_name), fill_value=fill)
+        var[:] = values_2d.astype(np.float32)
+        if valid_range is not None:
+            var.valid_range = np.array(valid_range, dtype=np.float32)
+
+    # Deterministic per-footprint ramp used to fill the extended cloud/aerosol/albedo
+    # source fields with distinct, assertable values (upper layer offset from lower).
+    ramp = np.arange(n, dtype=np.float32)
+
     with netCDF4.Dataset(str(out_path), "w") as ds:
         ds.createDimension("Footprints", n)
         ds.createDimension("LowerUpper", 2)
+        # Secondary axes flattened by the reader into _typeN / _bandN 1-D variables.
+        ds.createDimension("AeroTypePct", 7)
+        ds.createDimension("AlbedoDim", 10)
 
         tp = ds.createGroup("Time_and_Position")
         _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
@@ -742,20 +769,91 @@ def make_ssf_fixture(
         _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
 
         cif = ds.createGroup("Cloudy_Imager_Footprint_Layer")
-        _add_lower_upper(cif, "cloud_optical_depth_mean", cloud_optical_depth_lower, fill_f, (0.0, 512.0))
+        # The three fields whose lower layer feeds the base reader specs. Upper-layer
+        # values (offset from lower) feed the FMATCH-IMAGER-only *_upper specs.
+        _add_lower_upper(
+            cif,
+            "cloud_optical_depth_mean",
+            cloud_optical_depth_lower,
+            fill_f,
+            (0.0, 512.0),
+            upper_values=cloud_optical_depth_lower + 1.0,
+        )
         # Phase-separated effective particle radii. SSF does not provide a single
         # blended radius — water and ice clouds are retrieved independently at 3.7 μm.
         _add_lower_upper(
-            cif, "cloud_water_particle_radius_37um_mean", cloud_water_particle_radius_lower, fill_f, (2.0, 60.0)
+            cif,
+            "cloud_water_particle_radius_37um_mean",
+            cloud_water_particle_radius_lower,
+            fill_f,
+            (2.0, 60.0),
+            upper_values=cloud_water_particle_radius_lower + 1.0,
         )
         _add_lower_upper(
-            cif, "cloud_ice_particle_radius_37um_mean", cloud_ice_particle_radius_lower, fill_f, (5.0, 90.0)
+            cif,
+            "cloud_ice_particle_radius_37um_mean",
+            cloud_ice_particle_radius_lower,
+            fill_f,
+            (5.0, 90.0),
+            upper_values=cloud_ice_particle_radius_lower + 2.0,
+        )
+        # Five genuinely-new layered fields carried by FMATCH-IMAGER (both layers).
+        _add_lower_upper(
+            cif, "layers_coverages", 10.0 + ramp * 5.0, fill_f, (0.0, 100.0), upper_values=15.0 + ramp * 5.0
+        )
+        _add_lower_upper(
+            cif, "cloud_coverage_multilayer", 5.0 + ramp * 3.0, fill_f, (0.0, 100.0), upper_values=8.0 + ramp * 3.0
+        )
+        _add_lower_upper(
+            cif, "cloud_top_pressure_mean", 300.0 + ramp * 10.0, fill_f, (0.0, 1100.0), upper_values=250.0 + ramp * 10.0
+        )
+        _add_lower_upper(
+            cif,
+            "cloud_base_pressure_mean",
+            800.0 + ramp * 10.0,
+            fill_f,
+            (0.0, 1100.0),
+            upper_values=700.0 + ramp * 10.0,
+        )
+        _add_lower_upper(
+            cif, "cloud_particle_phase_37um_mean", 1.0 + ramp * 0.05, fill_f, (1.0, 2.0), upper_values=1.5 + ramp * 0.05
         )
 
         scn = ds.createGroup("Scene_Type")
         _add(scn, "cloud_classification", cloud_classification.astype(np.int16), fill_i, (0, 32766))
         _add(scn, "shortwave_adm_type", shortwave_adm_type.astype(np.int16), fill_i, (0, 5000))
         _add(scn, "longwave_adm_type", longwave_adm_type.astype(np.int16), fill_i, (0, 5000))
+
+        # FMATCH-IMAGER-only aerosol fields.
+        aap = ds.createGroup("Assimilated_Aerosol_Properties")
+        _add(aap, "match_aot", (0.15 + ramp * 0.1).astype(np.float32), fill_f, (0.0, 8.0))
+        # (Footprints, AeroTypePct=7): type t gets (t+1)*5 + footprint index.
+        aerosol_pct = (np.arange(1, 8, dtype=np.float32)[None, :] * 5.0) + ramp[:, None]
+        _add_2d(aap, "aerosol_type_percentage", aerosol_pct, "AeroTypePct", fill_f, (0.0, 100.0))
+
+        ila = ds.createGroup("Imager_Land_Aerosols")
+        _add(
+            ila,
+            "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
+            (0.2 + ramp * 0.1).astype(np.float32),
+            fill_f,
+            (0.0, 5.0),
+        )
+
+        ioa = ds.createGroup("Imager_Ocean_Aerosols")
+        _add(
+            ioa,
+            "imager_deep_blue_ocean_055um_aerosol_optical_depth",
+            (0.25 + ramp * 0.1).astype(np.float32),
+            fill_f,
+            (0.0, 5.0),
+        )
+
+        # FMATCH-IMAGER-only surface albedo, (Footprints, AlbedoDim=10): band b gets
+        # (b+1)*3 + footprint index.
+        smp = ds.createGroup("Surface_Map")
+        albedo = (np.arange(1, 11, dtype=np.float32)[None, :] * 3.0) + ramp[:, None]
+        _add_2d(smp, "broadband_surface_albedo", albedo, "AlbedoDim", fill_f, (0.0, 100.0))
 
     return out_path
 

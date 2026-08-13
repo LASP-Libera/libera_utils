@@ -2638,6 +2638,405 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: CERES longwave ADM scene type (encoded) (NOAA20)
+  # --- FMATCH-IMAGER-only extended SSF fields (cloud layers, aerosol, albedo) ---
+  # Multi-axis SSF sources flattened to 1-D per footprint (see readers/ssf.py):
+  # LowerUpper -> _lower/_upper, AeroTypePct -> _typeN, AlbedoDim -> _bandN.
+  ssf_layer_coverage_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud layer areal coverage, lower layer (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_layer_coverage_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud layer areal coverage, lower layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_layer_coverage_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud layer areal coverage, upper layer (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_layer_coverage_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud layer areal coverage, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_cloud_coverage_multilayer_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Multilayer cloud areal coverage, lower layer (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_cloud_coverage_multilayer_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Multilayer cloud areal coverage, lower layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_cloud_coverage_multilayer_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Multilayer cloud areal coverage, upper layer (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_cloud_coverage_multilayer_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Multilayer cloud areal coverage, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_cloud_top_pressure_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud top pressure, lower layer (CERES SSF) (NOAA20)
+      units: "hPa"
+  ssf_cloud_top_pressure_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud top pressure, lower layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "hPa"
+  ssf_cloud_top_pressure_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud top pressure, upper layer (CERES SSF) (NOAA20)
+      units: "hPa"
+  ssf_cloud_top_pressure_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud top pressure, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "hPa"
+  ssf_cloud_base_pressure_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud base pressure, lower layer (CERES SSF) (NOAA20)
+      units: "hPa"
+  ssf_cloud_base_pressure_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud base pressure, lower layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "hPa"
+  ssf_cloud_base_pressure_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud base pressure, upper layer (CERES SSF) (NOAA20)
+      units: "hPa"
+  ssf_cloud_base_pressure_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud base pressure, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "hPa"
+  ssf_cloud_particle_phase_37um_lower:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud particle phase at 3.7 um, lower layer (CERES SSF) (NOAA20)
+      units: "1"
+  ssf_cloud_particle_phase_37um_lower_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud particle phase at 3.7 um, lower layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  ssf_cloud_particle_phase_37um_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud particle phase at 3.7 um, upper layer (CERES SSF) (NOAA20)
+      units: "1"
+  ssf_cloud_particle_phase_37um_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Mean cloud particle phase at 3.7 um, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  ssf_cloud_optical_depth_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth, upper layer (CERES SSF) (NOAA20)
+      units: "1"
+  ssf_cloud_optical_depth_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  ssf_cloud_water_particle_radius_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um, upper layer (CERES SSF) (NOAA20)
+      units: "um"
+  ssf_cloud_water_particle_radius_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud water particle radius at 3.7 um, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "um"
+  ssf_cloud_ice_particle_radius_upper:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um, upper layer (CERES SSF) (NOAA20)
+      units: "um"
+  ssf_cloud_ice_particle_radius_upper_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Effective cloud ice particle radius at 3.7 um, upper layer (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "um"
+  ssf_match_aot:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: MATCH assimilated aerosol optical thickness (CERES SSF) (NOAA20)
+      units: "1"
+  ssf_match_aot_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: MATCH assimilated aerosol optical thickness (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  ssf_aerosol_type_percentage_type0:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 0 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type0_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 0 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type1:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 1 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type1_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 1 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type2:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 2 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type2_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 2 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type3:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 3 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type3_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 3 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type4:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 4 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type4_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 4 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type5:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 5 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type5_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 5 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type6:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 6 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_aerosol_type_percentage_type6_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Assimilated aerosol type areal percentage, type 6 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_imager_dark_target_land_055um_corrected_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager Dark Target corrected aerosol optical depth over land at 0.55 um (CERES SSF) (NOAA20)
+      units: "1"
+  ssf_imager_dark_target_land_055um_corrected_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager Dark Target corrected aerosol optical depth over land at 0.55 um (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  ssf_imager_deep_blue_ocean_055um_aerosol_optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager Deep Blue aerosol optical depth over ocean at 0.55 um (CERES SSF) (NOAA20)
+      units: "1"
+  ssf_imager_deep_blue_ocean_055um_aerosol_optical_depth_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager Deep Blue aerosol optical depth over ocean at 0.55 um (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  ssf_broadband_surface_albedo_band0:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 0 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band0_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 0 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band1:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 1 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band1_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 1 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band2:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 2 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band2_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 2 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band3:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 3 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band3_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 3 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band4:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 4 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band4_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 4 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band5:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 5 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band5_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 5 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band6:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 6 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band6_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 6 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band7:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 7 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band7_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 7 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band8:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 8 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band8_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 8 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band9:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 9 (CERES SSF) (NOAA20)
+      units: "percent"
+  ssf_broadband_surface_albedo_band9_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Imager spectral surface albedo, band 9 (CERES SSF) (within-footprint standard deviation) (NOAA20)
+      units: "percent"
   # --- source reader: viirs_aod (resolution 111.0 km) ---
   viirs_aod_aod_550:
     dtype: float32

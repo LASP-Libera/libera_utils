@@ -78,9 +78,11 @@ _FOV_LAT_VAR: str = "instrument_fov_latitude"
 _FOV_LON_VAR: str = "instrument_fov_longitude"
 
 # Cloudy layer to read for the layered (Footprints, LowerUpper) variables.
-# 0 = lower layer. TODO[LIBSDC-785]: confirm the correct layer-selection rule
-# (lower vs upper vs combined) with the science team.
+# 0 = lower layer, 1 = upper layer. TODO[LIBSDC-785]: confirm the correct
+# layer-selection rule (lower vs upper vs combined) with the science team.
 _CLOUD_LAYER_INDEX: int = 0
+_CLOUD_LAYER_LOWER_INDEX: int = 0
+_CLOUD_LAYER_UPPER_INDEX: int = 1
 
 
 class _SSFField(NamedTuple):
@@ -101,10 +103,22 @@ class _SSFField(NamedTuple):
     valid_range : tuple of (float, float) or None
         Inclusive valid range; values outside become NaN.
     layer_index : int or None
-        For 2-D ``(Footprints, LowerUpper)`` variables, the layer to select.
+        For 2-D ``(Footprints, <second axis>)`` variables, the index to select
+        along the second axis. Despite the name it is not limited to the
+        ``LowerUpper`` layer axis -- it also selects an ``AeroTypePct`` type or an
+        ``AlbedoDim`` band, since all are read as ``raw[:, layer_index]``.
         ``None`` for 1-D ``(Footprints,)`` variables.
     n_categories : int or None
         Category count for categorical variables; ``None`` for continuous.
+    required_mode : OperationalMode
+        Minimum operational mode for the emitted spec (see
+        :class:`~libera_utils.footprint_matching.types.VariableSpec`). Defaults to
+        ``IMAGER_FLASH`` -- the latency at which the SSF/FLASHFlux reader first
+        contributes.
+    only_modes : tuple[OperationalMode, ...] or None
+        When set, pins the emitted spec to exactly these products (bypassing the
+        ``required_mode`` rank rule). Used to keep the extended cloud/aerosol/albedo
+        fields in FMATCH-IMAGER only. ``None`` (default) uses the rank rule.
     """
 
     out_name: str
@@ -115,6 +129,8 @@ class _SSFField(NamedTuple):
     valid_range: tuple[float, float] | None
     layer_index: int | None
     n_categories: int | None
+    required_mode: OperationalMode = OperationalMode.IMAGER_FLASH
+    only_modes: tuple[OperationalMode, ...] | None = None
 
 
 # Minimal starter field set (refine later — see module docstring).
@@ -202,6 +218,193 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Extended SSF field set carried by FMATCH-IMAGER only.
+# ---------------------------------------------------------------------------
+# These CERES SSF cloud-layer, aerosol, and surface-albedo fields are added to the
+# FMATCH-IMAGER product (the RBSP Climate-Quality radiometer product) *only* -- not
+# FMATCH-IMAGER-FLASH or FMATCH-IMAGER-CAMTIME, even though those also activate this
+# reader. That single-product scope cannot be expressed by the required_mode rank rule
+# (IMAGER-CAMTIME outranks IMAGER), so every generated field is pinned with
+# only_modes=(IMAGER,); see VariableSpec.only_modes / spec_active_in_mode.
+#
+# The source fields carry a second axis of varying size -- LowerUpper (2) for the cloud
+# layers, AeroTypePct (7) for aerosol_type_percentage, AlbedoDim (10) for
+# broadband_surface_albedo. FMATCH products are strictly 1-D per footprint, so (like
+# era5_pressure's per-level flattening) each second-axis index becomes its own 1-D spec
+# via a name suffix (_lower/_upper, _typeN, _bandN). Every field is continuous float32
+# and therefore also gains a _standard_deviation companion in product_variable_specs().
+_IMAGER_ONLY: tuple[OperationalMode, ...] = (OperationalMode.IMAGER,)
+
+# Zero-axis members for a 1-D (Footprints,) source field: one output, no index.
+_SCALAR_MEMBER: tuple[tuple[str, int | None], ...] = (("", None),)
+# Both cloud layers, and the upper layer alone (for fields whose lower layer is already
+# carried by a base spec above).
+_BOTH_LAYERS: tuple[tuple[str, int | None], ...] = (
+    ("lower", _CLOUD_LAYER_LOWER_INDEX),
+    ("upper", _CLOUD_LAYER_UPPER_INDEX),
+)
+_UPPER_LAYER_ONLY: tuple[tuple[str, int | None], ...] = (("upper", _CLOUD_LAYER_UPPER_INDEX),)
+
+# (out_base, group, var, aggregation, valid_range, members). ``members`` is a tuple of
+# (name_suffix, second_axis_index) pairs; the flattener emits one _SSFField per member.
+_IMAGER_SSF_SOURCES: tuple[
+    tuple[str, str, str, str, tuple[float, float] | None, tuple[tuple[str, int | None], ...]], ...
+] = (
+    # --- Cloud layer fields (Cloudy_Imager_Footprint_Layer), (Footprints, LowerUpper) ---
+    # Five genuinely-new layered fields: both lower and upper layers.
+    (
+        "layer_coverage",
+        "Cloudy_Imager_Footprint_Layer",
+        "layers_coverages",
+        "weighted_mean",
+        (0.0, 100.0),
+        _BOTH_LAYERS,
+    ),
+    (
+        "cloud_coverage_multilayer",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_coverage_multilayer",
+        "weighted_mean",
+        (0.0, 100.0),
+        _BOTH_LAYERS,
+    ),
+    (
+        "cloud_top_pressure",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_top_pressure_mean",
+        "weighted_mean",
+        (0.0, 1100.0),
+        _BOTH_LAYERS,
+    ),
+    (
+        "cloud_base_pressure",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_base_pressure_mean",
+        "weighted_mean",
+        (0.0, 1100.0),
+        _BOTH_LAYERS,
+    ),
+    (
+        "cloud_particle_phase_37um",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_particle_phase_37um_mean",
+        "weighted_mean",
+        (1.0, 2.0),
+        _BOTH_LAYERS,
+    ),
+    # Three fields whose LOWER layer is already carried by the base specs above
+    # (cloud_optical_depth / cloud_water_particle_radius / cloud_ice_particle_radius);
+    # add only the UPPER layer here to avoid a redundant lower duplicate. Valid ranges
+    # match the base specs so lower/upper stay consistent.
+    (
+        "cloud_optical_depth",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_optical_depth_mean",
+        "weighted_log_mean",
+        (0.0, 512.0),
+        _UPPER_LAYER_ONLY,
+    ),
+    (
+        "cloud_water_particle_radius",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_water_particle_radius_37um_mean",
+        "weighted_mean",
+        (2.0, 60.0),
+        _UPPER_LAYER_ONLY,
+    ),
+    (
+        "cloud_ice_particle_radius",
+        "Cloudy_Imager_Footprint_Layer",
+        "cloud_ice_particle_radius_37um_mean",
+        "weighted_mean",
+        (5.0, 90.0),
+        _UPPER_LAYER_ONLY,
+    ),
+    # --- Aerosol fields ---
+    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", (0.0, 8.0), _SCALAR_MEMBER),
+    # aerosol_type_percentage is (Footprints, AeroTypePct=7). The seven type labels are
+    # not recorded in the file; flattened to placeholder _type0.._type6 suffixes.
+    # TODO[LIBSDC-794]: replace with the real CERES aerosol-type names once confirmed.
+    (
+        "aerosol_type_percentage",
+        "Assimilated_Aerosol_Properties",
+        "aerosol_type_percentage",
+        "weighted_mean",
+        (0.0, 100.0),
+        tuple((f"type{i}", i) for i in range(7)),
+    ),
+    (
+        "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
+        "Imager_Land_Aerosols",
+        "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
+        "weighted_log_mean",
+        (0.0, 5.0),
+        _SCALAR_MEMBER,
+    ),
+    (
+        "imager_deep_blue_ocean_055um_aerosol_optical_depth",
+        "Imager_Ocean_Aerosols",
+        "imager_deep_blue_ocean_055um_aerosol_optical_depth",
+        "weighted_log_mean",
+        (0.0, 5.0),
+        _SCALAR_MEMBER,
+    ),
+    # --- Surface field ---
+    # broadband_surface_albedo is (Footprints, AlbedoDim=10) (file long_name "Imager
+    # Spectral Albedo"; valid_range 0..100). The band wavelengths are not recorded in
+    # the file; flattened to placeholder _band0.._band9 suffixes.
+    # TODO[LIBSDC-794]: replace with the real albedo-band names once confirmed, and
+    # confirm whether one broadband value (not 10 spectral bands) is actually wanted.
+    (
+        "broadband_surface_albedo",
+        "Surface_Map",
+        "broadband_surface_albedo",
+        "weighted_mean",
+        (0.0, 100.0),
+        tuple((f"band{i}", i) for i in range(10)),
+    ),
+)
+
+
+def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
+    """Flatten the FMATCH-IMAGER-only SSF sources into one _SSFField per output variable.
+
+    Each source field is flattened along its second axis (or emitted as a single 1-D
+    value), named with a suffix, and pinned to FMATCH-IMAGER via ``only_modes``. All
+    fields are continuous float32.
+
+    Returns
+    -------
+    tuple[_SSFField, ...]
+        One field per emitted output variable, in source-then-member order.
+    """
+    fields: list[_SSFField] = []
+    for out_base, group, var, aggregation, valid_range, members in _IMAGER_SSF_SOURCES:
+        for suffix, index in members:
+            out_name = f"{out_base}_{suffix}" if suffix else out_base
+            fields.append(
+                _SSFField(
+                    out_name,
+                    group,
+                    var,
+                    aggregation,
+                    _FILL_FLOAT,
+                    valid_range,
+                    index,
+                    None,
+                    OperationalMode.IMAGER,
+                    _IMAGER_ONLY,
+                )
+            )
+    return tuple(fields)
+
+
+# The full SSF field set: the base FLASH+ fields followed by the FMATCH-IMAGER-only
+# extension. _load_points stacks value rows in this order, matching VARIABLES.
+_SSF_FIELDS = _SSF_FIELDS + _build_imager_only_ssf_fields()
+
+
 class SSFReader(GriddedDataReader):
     """Read CERES SSF / FLASHFlux footprints and rasterize them onto the tile grid.
 
@@ -236,8 +439,9 @@ class SSFReader(GriddedDataReader):
             name=f.out_name,
             dtype="float32" if f.n_categories is None else "int16",
             aggregation=f.aggregation,
-            required_mode=OperationalMode.IMAGER_FLASH,
+            required_mode=f.required_mode,
             n_categories=f.n_categories,
+            only_modes=f.only_modes,
         )
         for f in _SSF_FIELDS
     )

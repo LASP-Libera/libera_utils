@@ -245,9 +245,19 @@ class VariableSpec:
     required_mode : OperationalMode
         Minimum operational mode in which this variable is processed. Readers
         and variables with a rank higher than the active mode are excluded.
+        Ignored when ``only_modes`` is set (see below).
     n_categories : int or None
         For categorical variables only: number of distinct category values
         (e.g., 20 for IGBP surface type). ``None`` for continuous variables.
+    only_modes : tuple[OperationalMode, ...] or None
+        Exact set of operational modes (products) this variable belongs to. When
+        ``None`` (the default), the variable uses the ``required_mode`` *minimum
+        latency* rule: it is carried by every product whose rank is at least
+        ``required_mode.rank``. When set, the variable is carried by **exactly**
+        the listed modes and the rank rule is bypassed -- this is how a spec is
+        pinned to a single product (e.g. a field that must appear only in
+        FMATCH-IMAGER, not in the higher-ranked FMATCH-IMAGER-CAMTIME). Membership
+        is resolved by :func:`spec_active_in_mode`.
     """
 
     name: str
@@ -255,6 +265,42 @@ class VariableSpec:
     aggregation: str
     required_mode: OperationalMode
     n_categories: int | None = None
+    only_modes: tuple[OperationalMode, ...] | None = None
+
+
+def spec_active_in_mode(spec: VariableSpec, mode: OperationalMode) -> bool:
+    """Return whether a variable spec is carried by a given operational mode.
+
+    The single source of truth for the spec-level product gate. It resolves the
+    two mutually exclusive gating rules a :class:`VariableSpec` can carry:
+
+    * ``only_modes`` set -> exact membership: the spec belongs to a product iff
+      ``mode`` is one of the listed modes. This can pin a spec to a single product
+      even when a higher-ranked product also activates the reader (rank alone
+      could not express that, since a higher-latency mode always has a larger
+      rank).
+    * ``only_modes`` unset -> the minimum-latency rule: the spec is carried once
+      the active mode's rank reaches the spec's ``required_mode`` rank.
+
+    Reader-to-product *membership* (which readers feed which product) is a
+    separate, coarser gate declared in ``readers/registry.py``; both gates must
+    pass for a variable to appear in a product.
+
+    Parameters
+    ----------
+    spec : VariableSpec
+        The variable specification to test.
+    mode : OperationalMode
+        The operational mode (product) to test against.
+
+    Returns
+    -------
+    bool
+        True when ``spec`` is part of ``mode``'s product definition.
+    """
+    if spec.only_modes is not None:
+        return mode in spec.only_modes
+    return spec.required_mode.rank <= mode.rank
 
 
 # Aggregation strategies that collapse a footprint's pixels to a *mean* value.
@@ -308,8 +354,9 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
         if spec.aggregation in _MEAN_AGGREGATIONS:
             # A standard deviation is always a non-negative real number, so it is
             # stored as float32 regardless of the parent's dtype and carries no
-            # category count. The companion inherits the parent's mode gating so it
-            # appears in exactly the same product definitions.
+            # category count. The companion inherits the parent's mode gating --
+            # both ``required_mode`` and ``only_modes`` -- so it appears in exactly
+            # the same product definitions as its parent.
             expanded.append(
                 VariableSpec(
                     name=f"{spec.name}{STANDARD_DEVIATION_SUFFIX}",
@@ -317,6 +364,7 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
                     aggregation="weighted_std",
                     required_mode=spec.required_mode,
                     n_categories=None,
+                    only_modes=spec.only_modes,
                 )
             )
     return tuple(expanded)
