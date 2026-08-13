@@ -42,7 +42,7 @@ variables:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   solar_zenith_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]

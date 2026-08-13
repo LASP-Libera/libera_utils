@@ -216,10 +216,10 @@ def aggregate_external_variables(
     Per-spec gating also applies: only specs whose ``required_mode`` rank is
     <= the mode's rank are aggregated.
 
-    Every output variable is named ``<source_key>_<instrument>_<spec_name>`` for
-    provenance, where the instrument token comes from the reader's ``INSTRUMENT``
-    attribute (e.g. ``era5_ECMWF_wind_u10``, ``igbp_MODIS_surface_type``,
-    ``cldpix_NOAA20_cloud_mask``), matching the product definition variable names.
+    Every output variable is named ``<source_key>_<spec_name>`` (e.g.
+    ``era5_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
+    product definition variable names. The reader's ``INSTRUMENT`` is recorded in
+    each variable's ``long_name`` (``"... (ECMWF)"``) rather than in the name.
 
     Returns
     -------

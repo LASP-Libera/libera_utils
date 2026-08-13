@@ -269,7 +269,7 @@ _MEAN_AGGREGATIONS: frozenset[str] = frozenset({"weighted_mean", "weighted_log_m
 
 # Suffix appended to a continuous variable's name to form its std-dev companion.
 # Kept as a module constant so the readers, product definitions, and tests all
-# agree on the exact spelling (e.g. ``era5_ECMWF_wind_u10_standard_deviation``).
+# agree on the exact spelling (e.g. ``era5_wind_u10_standard_deviation``).
 STANDARD_DEVIATION_SUFFIX: str = "_standard_deviation"
 
 

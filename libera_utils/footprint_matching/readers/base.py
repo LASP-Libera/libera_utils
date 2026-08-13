@@ -57,12 +57,13 @@ class GriddedDataReader(abc.ABC):
         Unique string key used to register the reader in ``ReaderRegistry``.
         Examples: ``"igbp"``, ``"nsidc"``, ``"era5"``, ``"viirs_l2l3"``.
     INSTRUMENT : str
-        Instrument / platform token embedded in every output variable name, e.g.
-        ``"NOAA20"``, ``"MODIS"``, ``"SSMIS"``, ``"ECMWF"``. Combined with
-        ``READER_KEY`` and each ``VariableSpec`` name to form the product variable
-        name ``f"{READER_KEY}_{INSTRUMENT}_{spec.name}"`` (e.g.
-        ``igbp_MODIS_surface_type``). For model/reanalysis sources that have no
-        instrument (ERA5) the producing center is used so the naming stays uniform.
+        Instrument / platform token recorded in each output variable's ``long_name``
+        for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"SSMIS"``, ``"ECMWF"``. The
+        variable *name* is ``f"{READER_KEY}_{spec.name}"`` (e.g. ``igbp_surface_type``);
+        the instrument is appended to the product-definition ``long_name`` as
+        ``"... ({INSTRUMENT})"`` rather than embedded in the name. For model/reanalysis
+        sources that have no instrument (ERA5) the producing center is used so the
+        provenance tag stays uniform.
     RESOLUTION_KM : float
         Native spatial resolution of the data source in km.
     VARIABLES : tuple[VariableSpec, ...]
@@ -125,14 +126,14 @@ class GriddedDataReader(abc.ABC):
         if not hasattr(cls, "READER_KEY") or cls.READER_KEY is None:
             return
 
-        # INSTRUMENT is part of every output variable name, so a concrete reader
-        # that forgot to declare it would silently produce malformed names. Fail
-        # fast at import/registration time rather than at product-write time.
+        # INSTRUMENT is the provenance tag recorded in every output variable's
+        # long_name, so a concrete reader that forgot to declare it would silently
+        # drop provenance. Fail fast at import/registration time rather than later.
         if not hasattr(cls, "INSTRUMENT") or cls.INSTRUMENT is None:
             raise TypeError(
                 f"Reader {cls.__name__!r} (READER_KEY={cls.READER_KEY!r}) must define an "
-                f"INSTRUMENT class attribute; it is embedded in output variable names "
-                f"as f'{{READER_KEY}}_{{INSTRUMENT}}_{{spec.name}}'."
+                f"INSTRUMENT class attribute; it is recorded in each output variable's "
+                f"long_name as '... ({{INSTRUMENT}})'."
             )
 
         # Local import to break the circular dependency: base → registry → base.

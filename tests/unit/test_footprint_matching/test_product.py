@@ -11,8 +11,9 @@ imager fields. These tests confirm, for every shipped definition, that:
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
   VariableSpec definitions for the mode. Every reader-sourced variable is named
-  `<source_key>_<instrument>_<spec_name>` (e.g. era5_ECMWF_wind_u10,
-  igbp_MODIS_surface_type, cldpix_NOAA20_cloud_mask).
+  `<source_key>_<spec_name>` (e.g. era5_wind_u10, igbp_surface_type,
+  cldpix_cloud_mask); the reader's instrument is recorded in each variable's
+  ``long_name`` instead (e.g. "... (ECMWF)").
 - A small dummy dataset round-trips through create/enforce/check conformance.
 """
 
@@ -71,11 +72,12 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """{output_variable_name: dtype} for every active production reader variable.
 
     Mirrors the product-definition naming rule: every reader-sourced variable is
-    named `<source_key>_<instrument>_<spec_name>`, where the instrument token comes
-    from the reader's INSTRUMENT attribute (e.g. era5_ECMWF_wind_u10,
-    igbp_MODIS_surface_type). Specs are filtered by their ``required_mode`` rank
-    (e.g. the ERA5 single-level fields carry ``required_mode=IMAGER`` and so only
-    appear in the FMATCH-IMAGER-family products).
+    named `<source_key>_<spec_name>` (e.g. era5_wind_u10, igbp_surface_type). The
+    reader's instrument is no longer part of the name -- it is recorded in the
+    variable's ``long_name`` instead (see
+    ``test_reader_instrument_is_recorded_in_long_name``). Specs are filtered by
+    their ``required_mode`` rank (e.g. the ERA5 single-level fields carry
+    ``required_mode=IMAGER`` and so only appear in the FMATCH-IMAGER-family products).
     """
     expected: dict[str, str] = {}
     for key, cls in _production_readers_for_mode(mode).items():
@@ -86,7 +88,7 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
         for spec in cls.product_variable_specs():
             if spec.required_mode.rank > mode.rank:
                 continue
-            expected[f"{key}_{cls.INSTRUMENT}_{spec.name}"] = spec.dtype
+            expected[f"{key}_{spec.name}"] = spec.dtype
     return expected
 
 
@@ -123,11 +125,11 @@ class TestImagerContent:
         # fields all sit in the FMATCH-IMAGER product alongside the RBSP fields
         # (spot-check one per family; full sync is covered by
         # test_external_variables_match_readers).
-        assert "era5_ECMWF_wind_u10" in definition.variables
-        assert "era5_ECMWF_temperature_2m" in definition.variables
-        assert "era5_ECMWF_forecast_albedo" in definition.variables
-        assert "era5_pressure_ECMWF_temperature_500hPa" in definition.variables
-        assert "era5_pressure_ECMWF_relative_humidity_1000hPa_standard_deviation" in definition.variables
+        assert "era5_wind_u10" in definition.variables
+        assert "era5_temperature_2m" in definition.variables
+        assert "era5_forecast_albedo" in definition.variables
+        assert "era5_pressure_temperature_500hPa" in definition.variables
+        assert "era5_pressure_relative_humidity_1000hPa_standard_deviation" in definition.variables
 
 
 class TestFmatchDefinitions:
@@ -165,6 +167,23 @@ class TestFmatchDefinitions:
                 f"{mode.value} dtype drift for {name}: definition has "
                 f"{definition.variables[name].dtype}, reader has {dtype}"
             )
+
+    @pytest.mark.parametrize("mode", ALL_MODES)
+    def test_reader_instrument_is_recorded_in_long_name(self, mode, definitions):
+        # The instrument token was dropped from the variable name and moved into the
+        # variable's long_name (e.g. era5_wind_u10 -> "... (ECMWF)"). Guard that every
+        # reader-sourced variable's long_name still carries its reader's INSTRUMENT, so
+        # provenance is not silently lost from the ~hundreds of hand-written long_names.
+        definition = definitions[mode]
+        for key, cls in _production_readers_for_mode(mode).items():
+            for spec in cls.product_variable_specs():
+                if spec.required_mode.rank > mode.rank:
+                    continue
+                name = f"{key}_{spec.name}"
+                long_name = definition.variables[name].attributes.get("long_name", "")
+                assert cls.INSTRUMENT in long_name, (
+                    f"{mode.value}/{name}: long_name {long_name!r} is missing the reader instrument {cls.INSTRUMENT!r}"
+                )
 
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_all_variables_use_mode_record_dimension(self, mode, definitions):

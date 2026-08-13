@@ -108,245 +108,245 @@ variables:
   # (c) PSF-aggregated external variables (one value per footprint).
   # ---------------------------------------------------------------------------
   # --- source reader: era5 (resolution 25.0 km) ---
-  era5_ECMWF_wind_u10:
+  era5_wind_u10:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Eastward wind component at 10 m
+      long_name: Eastward wind component at 10 m (ECMWF)
       units: "m/s"
-  era5_ECMWF_wind_u10_standard_deviation:
+  era5_wind_u10_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Eastward wind component at 10 m (within-footprint standard deviation)
+      long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
-  era5_ECMWF_wind_v10:
+  era5_wind_v10:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Northward wind component at 10 m
+      long_name: Northward wind component at 10 m (ECMWF)
       units: "m/s"
-  era5_ECMWF_wind_v10_standard_deviation:
+  era5_wind_v10_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Northward wind component at 10 m (within-footprint standard deviation)
+      long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: "m/s"
   # --- source reader: igbp (resolution 1.0 km) ---
-  igbp_MODIS_surface_type:
+  igbp_surface_type:
     dtype: int16
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: IGBP surface type classification
-  igbp_MODIS_surface_type_primary:
+      long_name: IGBP surface type classification (MODIS)
+  igbp_surface_type_primary:
     dtype: int16
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Most common IGBP surface type in footprint
-  igbp_MODIS_surface_type_secondary:
+      long_name: Most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_secondary:
     dtype: int16
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Second most common IGBP surface type in footprint
-  igbp_MODIS_surface_type_tertiary:
+      long_name: Second most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_tertiary:
     dtype: int16
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Third most common IGBP surface type in footprint
+      long_name: Third most common IGBP surface type in footprint (MODIS)
   # --- source reader: nise (resolution 25.0 km) ---
-  nise_SSMIS_sea_ice_concentration:
+  nise_sea_ice_concentration:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Sea ice concentration (fraction)
+      long_name: Sea ice concentration (fraction) (SSMIS)
       units: "1"
-  nise_SSMIS_sea_ice_concentration_standard_deviation:
+  nise_sea_ice_concentration_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Sea ice concentration (fraction) (within-footprint standard deviation)
+      long_name: Sea ice concentration (fraction) (within-footprint standard deviation) (SSMIS)
       units: "1"
-  nise_SSMIS_no_ice_or_snow:
+  nise_no_ice_or_snow:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint with no ice or snow (NISE code 0)
+      long_name: Fraction of footprint with no ice or snow (NISE code 0) (SSMIS)
       units: "1"
-  nise_SSMIS_no_ice_or_snow_standard_deviation:
+  nise_no_ice_or_snow_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint with no ice or snow (NISE code 0) (within-footprint standard deviation)
+      long_name: Fraction of footprint with no ice or snow (NISE code 0) (within-footprint standard deviation) (SSMIS)
       units: "1"
-  nise_SSMIS_permanent_ice:
+  nise_permanent_ice:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by permanent ice (NISE code 101)
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (SSMIS)
       units: "1"
-  nise_SSMIS_permanent_ice_standard_deviation:
+  nise_permanent_ice_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (within-footprint standard deviation)
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (within-footprint standard deviation) (SSMIS)
       units: "1"
-  nise_SSMIS_dry_snow_on_land:
+  nise_dry_snow_on_land:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110)
+      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110) (SSMIS)
       units: "1"
-  nise_SSMIS_dry_snow_on_land_standard_deviation:
+  nise_dry_snow_on_land_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110) (within-footprint standard deviation)
+      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110) (within-footprint standard deviation) (SSMIS)
       units: "1"
-  nise_SSMIS_snow_ice_missing:
+  nise_snow_ice_missing:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255)
+      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (SSMIS)
       units: "1"
-  nise_SSMIS_snow_ice_missing_standard_deviation:
+  nise_snow_ice_missing_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (within-footprint standard deviation)
+      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (within-footprint standard deviation) (SSMIS)
       units: "1"
   # --- source reader: viirs_brdf (resolution 5.6 km) ---
-  viirs_brdf_NOAA20_brdf_shortwave_fiso:
+  viirs_brdf_brdf_shortwave_fiso:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF isotropic kernel weight
+      long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_shortwave_fiso_standard_deviation:
+  viirs_brdf_brdf_shortwave_fiso_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation)
+      long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_shortwave_fvol:
+  viirs_brdf_brdf_shortwave_fvol:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF volumetric kernel weight
+      long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_shortwave_fvol_standard_deviation:
+  viirs_brdf_brdf_shortwave_fvol_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation)
+      long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_shortwave_fgeo:
+  viirs_brdf_brdf_shortwave_fgeo:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF geometric kernel weight
+      long_name: Shortwave BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_shortwave_fgeo_standard_deviation:
+  viirs_brdf_brdf_shortwave_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation)
+      long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_vis_fiso:
+  viirs_brdf_brdf_vis_fiso:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Visible BRDF isotropic kernel weight
+      long_name: Visible BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_vis_fiso_standard_deviation:
+  viirs_brdf_brdf_vis_fiso_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation)
+      long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_vis_fvol:
+  viirs_brdf_brdf_vis_fvol:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Visible BRDF volumetric kernel weight
+      long_name: Visible BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_vis_fvol_standard_deviation:
+  viirs_brdf_brdf_vis_fvol_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation)
+      long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_vis_fgeo:
+  viirs_brdf_brdf_vis_fgeo:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Visible BRDF geometric kernel weight
+      long_name: Visible BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_vis_fgeo_standard_deviation:
+  viirs_brdf_brdf_vis_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation)
+      long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_nir_fiso:
+  viirs_brdf_brdf_nir_fiso:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF isotropic kernel weight
+      long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_nir_fiso_standard_deviation:
+  viirs_brdf_brdf_nir_fiso_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation)
+      long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_nir_fvol:
+  viirs_brdf_brdf_nir_fvol:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF volumetric kernel weight
+      long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_nir_fvol_standard_deviation:
+  viirs_brdf_brdf_nir_fvol_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation)
+      long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_nir_fgeo:
+  viirs_brdf_brdf_nir_fgeo:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF geometric kernel weight
+      long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
       units: "1"
-  viirs_brdf_NOAA20_brdf_nir_fgeo_standard_deviation:
+  viirs_brdf_brdf_nir_fgeo_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Near-infrared BRDF geometric kernel weight (within-footprint standard deviation)
+      long_name: Near-infrared BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
   # --- source reader: viirs_cloud (resolution 111.0 km) ---
-  viirs_cloud_NOAA20_cloud_optical_thickness:
+  viirs_cloud_cloud_optical_thickness:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Cloud optical thickness
+      long_name: Cloud optical thickness (NOAA20)
       units: "1"
-  viirs_cloud_NOAA20_cloud_optical_thickness_standard_deviation:
+  viirs_cloud_cloud_optical_thickness_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Cloud optical thickness (within-footprint standard deviation)
+      long_name: Cloud optical thickness (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_cloud_NOAA20_cloud_top_pressure:
+  viirs_cloud_cloud_top_pressure:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Cloud top pressure
+      long_name: Cloud top pressure (NOAA20)
       units: "hPa"
-  viirs_cloud_NOAA20_cloud_top_pressure_standard_deviation:
+  viirs_cloud_cloud_top_pressure_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Cloud top pressure (within-footprint standard deviation)
+      long_name: Cloud top pressure (within-footprint standard deviation) (NOAA20)
       units: "hPa"
 
   # ---------------------------------------------------------------------------

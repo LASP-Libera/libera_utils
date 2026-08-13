@@ -874,7 +874,7 @@ def make_fmatch_product_fixture(
     Libera filename. This is the FMATCH-CAM / FMATCH-CAM-CAMTIME input that the SCENE-ID-CAM(-CAMTIME) readers consume,
     replacing the old CERES-SSF placeholder input.
 
-    Every variable is filled with zeros except ``igbp_MODIS_surface_type``, which is set to valid IGBP land-cover codes
+    Every variable is filled with zeros except ``igbp_surface_type``, which is set to valid IGBP land-cover codes
     (1..17) so that ``calculate_trmm_surface_type`` accepts them when the reader-fed data is classified. The time
     coordinate is a monotonically increasing 100 Hz series (``write_libera_data_product`` stamps the filename's
     start/end from its first/last values).
@@ -922,15 +922,15 @@ def make_fmatch_product_fixture(
         data[name] = np.zeros(shape, dtype=coord_def.dtype)
 
     for name, var_def in definition.variables.items():
-        if name == "igbp_MODIS_surface_type":
+        if name == "igbp_surface_type":
             data[name] = (np.arange(n_footprints) % 17 + 1).astype(var_def.dtype)
-        elif name == "ssf_NOAA20_clear_coverage":
+        elif name == "ssf_clear_coverage":
             # Clear-sky percentage in [0, 100]; the imager scene-ID readers derive cloud_fraction = 100 -
             # clear_coverage, so a spread across the full range gives the classifier both cloudy and (near-)clear
             # footprints -- the latter exercise the clear/surface TRMM scenes that FLASH can match despite having no
             # cloud phase.
             data[name] = np.linspace(0, 100, n_footprints).astype(var_def.dtype)
-        elif name == "cldpix_NOAA20_cloud_particle_phase":
+        elif name == "cldpix_cloud_particle_phase":
             # Valid CLDPIX phase codes cycling liquid(1)/ice(2) so map_cldpix_phase_to_trmm yields usable 1/2
             # values (rather than all-NaN) for the TRMM classification.
             data[name] = (np.arange(n_footprints) % 2 + 1).astype(var_def.dtype)

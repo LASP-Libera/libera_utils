@@ -162,8 +162,9 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     """
 
     READER_KEY: str = "era5_pressure"
-    # Same producing-center token as the single-level reader so product variable
-    # names stay uniform: era5_pressure_ECMWF_temperature_500hPa etc.
+    # Same producing-center token as the single-level reader so the long_name
+    # provenance tag stays uniform: "Air temperature at 500 hPa (ECMWF)" etc.
+    # Variable names are era5_pressure_temperature_500hPa (no instrument token).
     INSTRUMENT: str = "ECMWF"
     RESOLUTION_KM: float = 25.0
     VARIABLES: tuple[VariableSpec, ...] = _build_pressure_level_specs()

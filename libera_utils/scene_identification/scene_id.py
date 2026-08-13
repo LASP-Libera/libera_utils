@@ -264,7 +264,7 @@ class CLDPIXCloudPhase(enum.IntEnum):
     """CLDPIX cloud particle phase codes.
 
     TODO[LIBSDC-001]: PLACEHOLDER MAPPING -- confirm against the CLDPIX data dictionary.
-    The FMATCH ``cldpix_NOAA20_cloud_particle_phase`` variable is declared with ``valid_range [1, 5]``, but the
+    The FMATCH ``cldpix_cloud_particle_phase`` variable is declared with ``valid_range [1, 5]``, but the
     meaning of each of the five codes is not yet confirmed. Only the two codes the scene classifier can use are
     named here (liquid, ice); until the encoding is confirmed, every other code is treated as "no usable phase"
     (mapped to NaN) so those footprints are simply left unmatched for phase-gated scenes rather than being
@@ -288,7 +288,7 @@ def map_cldpix_phase_to_trmm(cldpix_phase: NDArray) -> NDArray[np.floating]:
 
     The TRMM scene classifier bins ``cloud_phase`` as 1 (liquid) or 2 (ice) -- see the ``cloud_phase_min/max``
     columns of ``trmm.csv`` and :func:`calculate_cloud_phase`, which likewise emits 1 or 2. The CLDPIX source
-    variable (``cldpix_NOAA20_cloud_particle_phase``) instead uses its own integer code scheme (valid_range
+    variable (``cldpix_cloud_particle_phase``) instead uses its own integer code scheme (valid_range
     ``[1, 5]``). This is a *code remap*, deliberately unlike the continuous cloud-fraction-weighted
     :func:`calculate_cloud_phase`: each CLDPIX code is looked up and collapsed onto {1, 2}.
 
@@ -781,7 +781,7 @@ class _FmatchColumn:
 # "cloud_fraction" variable are in percent [0, 100]; scale=100.0 reconciles them at ingest. cloud_fraction is
 # injected directly (there is no CERES "clear_area" on the CAM products to derive it from).
 _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
-    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_MODIS_surface_type", np.uint8),
+    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
     FootprintVariables.CLOUD_FRACTION: _FmatchColumn("cloud_fraction_camera", np.float32, scale=100.0),
     FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("solar_zenith_angle", np.float32),
     FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("viewing_zenith_angle", np.float32),
@@ -797,10 +797,10 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 #     sqrt(u^2 + v^2) (calculate_surface_wind).
 # surface_type is likewise derived from igbp_surface_type. The three viewing angles are read straight through.
 _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
-    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_MODIS_surface_type", np.uint8),
-    FootprintVariables.CLEAR_AREA: _FmatchColumn("ssf_NOAA20_clear_coverage", np.float32),
-    FootprintVariables.SURFACE_WIND_U: _FmatchColumn("era5_ECMWF_wind_u10", np.float32),
-    FootprintVariables.SURFACE_WIND_V: _FmatchColumn("era5_ECMWF_wind_v10", np.float32),
+    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
+    FootprintVariables.CLEAR_AREA: _FmatchColumn("ssf_clear_coverage", np.float32),
+    FootprintVariables.SURFACE_WIND_U: _FmatchColumn("era5_wind_u10", np.float32),
+    FootprintVariables.SURFACE_WIND_V: _FmatchColumn("era5_wind_v10", np.float32),
     FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("solar_zenith_angle", np.float32),
     FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("viewing_zenith_angle", np.float32),
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
@@ -812,7 +812,7 @@ _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
 # as all-NaN (see nan_columns in from_fmatch_imager_flash) so the phase-gated TRMM scenes fall through to unmatched.
 _FMATCH_IMAGER_FLASH_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     **_FMATCH_IMAGER_COMMON_COLUMNS,
-    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("ssf_NOAA20_cloud_optical_depth", np.float32),
+    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("ssf_cloud_optical_depth", np.float32),
 }
 
 # FMATCH-IMAGER (RBSP): prefer the native RBSP CLDPIX fields where both CLDPIX and SSF exist. The
@@ -820,9 +820,9 @@ _FMATCH_IMAGER_FLASH_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 # map_cldpix_phase_to_trmm (see its TODO[LIBSDC-817] -- the code meanings are a placeholder pending the CLDPIX data dictionary).
 _FMATCH_IMAGER_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     **_FMATCH_IMAGER_COMMON_COLUMNS,
-    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("cldpix_NOAA20_cloud_optical_depth", np.float32),
+    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("cldpix_cloud_optical_depth", np.float32),
     FootprintVariables.CLOUD_PHASE: _FmatchColumn(
-        "cldpix_NOAA20_cloud_particle_phase", np.float32, transform=map_cldpix_phase_to_trmm
+        "cldpix_cloud_particle_phase", np.float32, transform=map_cldpix_phase_to_trmm
     ),
 }
 

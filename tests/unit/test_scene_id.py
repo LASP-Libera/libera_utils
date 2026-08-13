@@ -811,7 +811,7 @@ class TestFmatchCamCloudFractionScaling:
         n = len(cloud_fraction_camera)
         dataset = xr.Dataset(
             {
-                "igbp_MODIS_surface_type": (RADIOMETER_TIME_DIMENSION, np.arange(1, n + 1, dtype=np.int16)),
+                "igbp_surface_type": (RADIOMETER_TIME_DIMENSION, np.arange(1, n + 1, dtype=np.int16)),
                 "cloud_fraction_camera": (RADIOMETER_TIME_DIMENSION, np.asarray(cloud_fraction_camera, np.float32)),
                 "solar_zenith_angle": (RADIOMETER_TIME_DIMENSION, np.zeros(n, np.float32)),
                 "viewing_zenith_angle": (RADIOMETER_TIME_DIMENSION, np.zeros(n, np.float32)),

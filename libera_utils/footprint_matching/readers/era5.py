@@ -210,7 +210,7 @@ class ERA5Reader(ERA5ReaderBase):
 
     READER_KEY: str = "era5"
     # ERA5 is a reanalysis (no single instrument); use the producing center so the
-    # `<source>_<instrument>_<var>` naming stays uniform across every source.
+    # long_name provenance tag "... (ECMWF)" stays uniform across every source.
     INSTRUMENT: str = "ECMWF"
     RESOLUTION_KM: float = 25.0
     VARIABLES: tuple[VariableSpec, ...] = (
