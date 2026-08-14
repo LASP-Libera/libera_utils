@@ -23,7 +23,9 @@ from libera_utils.footprint_matching.geometry import (
     WGS84_SEMI_MINOR_AXIS_KM,
     OffLimbError,
     PartialFootprintError,
+    bounding_box_from_boresight,
     compute_footprint_bounding_box,
+    psf_ground_radius_km,
 )
 
 # A representative satellite altitude for synthetic cases (JPSS orbit).
@@ -266,3 +268,81 @@ class TestBoundingBoxFromPoints:
     def test_truncated_flag_passes_through(self):
         box = geo.bounding_box_from_points(0.0, 0.0, [-1.0, 1.0], [-1.0, 1.0], truncated=True)
         assert box.truncated
+
+
+class TestProjectToAngular:
+    """project_to_angular must be the exact inverse of the forward offset ray-trace."""
+
+    def _frame(self, blat, blon, slat, slon, vza, alt):
+        sat, boresight_dir, subsat_normal = geo._viewing_geometry(blat, blon, slat, slon, vza, alt)
+        cross_axis = geo._scan_frame_axes(boresight_dir, subsat_normal)
+        return sat, boresight_dir, cross_axis
+
+    @pytest.mark.parametrize("delta", [-1.2, -0.4, 0.0, 0.7, 1.5])
+    @pytest.mark.parametrize("beta", [-0.6, 0.0, 0.5])
+    def test_round_trip_recovers_delta_beta(self, delta, beta):
+        blat, blon, slat, slon, vza = 10.0, 20.0, 12.0, 20.0, 30.0
+        sat, boresight_dir, cross_axis = self._frame(blat, blon, slat, slon, vza, ALT)
+
+        # Forward: rotate the boresight by (delta, beta) and ray-trace to the ground.
+        direction = geo._offset_ray_direction(boresight_dir, cross_axis, delta, beta)
+        hit = geo._ray_ellipsoid_intersection(sat, direction)
+        assert hit is not None
+        lat, lon, _ = geo._ecef_to_geodetic(hit)
+
+        # Inverse: project that ground point back to angles (duplicate the point so
+        # pyproj gets a length-2 array and does not emit its length-1 scalar warning).
+        rec_delta, rec_beta = geo.project_to_angular(
+            np.array([lat, lat]), np.array([lon, lon]), blat, blon, slat, slon, vza, altitude_km=ALT
+        )
+        assert float(rec_delta[0]) == pytest.approx(delta, abs=1e-3)
+        assert float(rec_beta[0]) == pytest.approx(beta, abs=1e-3)
+
+    def test_boresight_projects_to_origin(self):
+        blat, blon, slat, slon, vza = -5.0, 100.0, -4.0, 101.0, 20.0
+        rec_delta, rec_beta = geo.project_to_angular(
+            np.array([blat, blat]), np.array([blon, blon]), blat, blon, slat, slon, vza, altitude_km=ALT
+        )
+        assert float(rec_delta[0]) == pytest.approx(0.0, abs=1e-3)
+        assert float(rec_beta[0]) == pytest.approx(0.0, abs=1e-3)
+
+    def test_preserves_input_shape(self):
+        lats = np.array([[10.0, 10.1], [10.2, 10.3]])
+        lons = np.array([[20.0, 20.1], [20.2, 20.3]])
+        d, b = geo.project_to_angular(lats, lons, 10.15, 20.15, 11.0, 20.15, 25.0, altitude_km=ALT)
+        assert d.shape == (2, 2)
+        assert b.shape == (2, 2)
+
+
+class TestPsfGroundRadius:
+    """psf_ground_radius_km projects the PSF angular extent to a ground radius."""
+
+    def test_grows_with_altitude(self):
+        low = psf_ground_radius_km(400.0, 0.0)
+        high = psf_ground_radius_km(800.0, 0.0)
+        assert high > low > 0.0
+
+    def test_grows_with_viewing_zenith(self):
+        # The 1/cos(vza) elongation makes an oblique view reach farther on the ground.
+        assert psf_ground_radius_km(ALT, 60.0) > psf_ground_radius_km(ALT, 0.0)
+
+
+class TestBoundingBoxFromBoresight:
+    """The boresight-centred box is a symmetric superset needing no subsatellite point."""
+
+    def test_box_encloses_and_is_centred_on_the_boresight(self):
+        box = bounding_box_from_boresight(12.0, -45.0, 10.0)
+        assert box.lat_min < 12.0 < box.lat_max
+        assert box.lon_min < -45.0 < box.lon_max
+        # Symmetric about the boresight in latitude.
+        assert (12.0 - box.lat_min) == pytest.approx(box.lat_max - 12.0, rel=1e-3)
+        assert box.truncated is False
+
+    def test_oblique_view_yields_a_larger_box(self):
+        nadir = bounding_box_from_boresight(0.0, 0.0, 0.0)
+        oblique = bounding_box_from_boresight(0.0, 0.0, 60.0)
+        assert (oblique.lat_max - oblique.lat_min) > (nadir.lat_max - nadir.lat_min)
+
+    def test_high_latitude_box_is_flagged_polar(self):
+        box = bounding_box_from_boresight(88.0, 0.0, 0.0)
+        assert box.is_polar

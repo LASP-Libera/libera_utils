@@ -33,18 +33,23 @@ from libera_utils.footprint_matching.product import (
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     assemble_fmatch_dataset,
+    build_radiometer_footprints,
+    compute_derived_viewing_geometry,
     fmatch_time_variable,
     load_fmatch_definition,
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.tiling import TileManager
 from libera_utils.footprint_matching.types import (
+    FmatchCoverageFlag,
     OperationalMode,
     VariableSpec,
     spec_active_in_mode,
     with_standard_deviation_companions,
 )
 from libera_utils.io.product_definition import LiberaDataProductDefinition
+from tests.test_data.footprint_matching.fixtures import make_era5_netcdf_fixture
 
 # The production reader keys. Intersecting with these makes the cross-check robust
 # against throwaway readers other tests register into the shared ReaderRegistry
@@ -581,3 +586,178 @@ class TestWriteFmatchProduct:
 
         assert written.path.exists()
         assert written.data_product_id.value == definitions[mode].attributes["ProductID"]
+
+
+class TestDerivedViewingGeometry:
+    """compute_derived_viewing_geometry produces the real sun-glint angle."""
+
+    def test_specular_geometry_is_zero_glint(self):
+        # View zenith == solar zenith and RAA == 180 is the specular direction.
+        result = compute_derived_viewing_geometry(np.array([30.0]), np.array([30.0]), np.array([180.0]))
+        np.testing.assert_allclose(result["sunglint_angle"], [0.0], atol=1e-6)
+
+    def test_backscatter_reduces_to_zenith_difference(self):
+        # RAA == 0 -> cos(glint) = cos(SZA)cos(VZA) - sin(SZA)sin(VZA) = cos(SZA + VZA).
+        result = compute_derived_viewing_geometry(np.array([40.0]), np.array([10.0]), np.array([0.0]))
+        np.testing.assert_allclose(result["sunglint_angle"], [50.0], atol=1e-4)
+
+    def test_result_is_bounded_and_nan_propagates(self):
+        result = compute_derived_viewing_geometry(
+            np.array([10.0, np.nan]), np.array([20.0, 20.0]), np.array([30.0, 30.0])
+        )
+        glint = result["sunglint_angle"]
+        assert 0.0 <= glint[0] <= 180.0
+        assert np.isnan(glint[1])
+
+
+class TestBuildRadiometerFootprints:
+    """Radiometer footprints get a bounding box + scan reference from the L1B geometry."""
+
+    def test_each_footprint_gets_a_box_enclosing_its_boresight(self):
+        """Without a scan reference the box degrades to the boresight-centred approximation."""
+        l1b = {
+            "latitude": np.array([1.0, -30.0], dtype=np.float32),
+            "longitude": np.array([11.0, 100.0], dtype=np.float32),
+            "viewing_zenith_angle": np.array([0.0, 40.0], dtype=np.float32),
+        }
+        footprints = build_radiometer_footprints(l1b)
+
+        assert len(footprints) == 2
+        for footprint, lat, lon in zip(footprints, l1b["latitude"], l1b["longitude"], strict=True):
+            assert footprint.bbox.lat_min <= lat <= footprint.bbox.lat_max
+            assert footprint.bbox.lon_min <= lon <= footprint.bbox.lon_max
+            # No scan reference supplied -> the angular weigher would fall back to nadir.
+            assert footprint.subsatellite_latitude is None
+            assert footprint.cone_angle_rate is None
+
+    def test_oblique_view_gives_a_larger_box(self):
+        nadir = build_radiometer_footprints(
+            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+        )[0]
+        oblique = build_radiometer_footprints(
+            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([60.0])}
+        )[0]
+        assert (oblique.bbox.lat_max - oblique.bbox.lat_min) > (nadir.bbox.lat_max - nadir.bbox.lat_min)
+
+    def test_scan_reference_uses_the_true_ray_traced_box_and_is_carried_onto_the_footprint(self):
+        """With the L1B subsatellite point present, the footprint carries the scan reference."""
+        l1b = {
+            "latitude": np.array([1.0], dtype=np.float32),
+            "longitude": np.array([11.0], dtype=np.float32),
+            "viewing_zenith_angle": np.array([40.0], dtype=np.float32),
+            "subsatellite_latitude": np.array([1.5], dtype=np.float64),
+            "subsatellite_longitude": np.array([11.0], dtype=np.float64),
+            "cone_angle_rate": np.array([12.0], dtype=np.float64),
+        }
+        (footprint,) = build_radiometer_footprints(l1b)
+
+        # The box still encloses the boresight, and the scan reference rode through.
+        assert footprint.bbox.lat_min <= 1.0 <= footprint.bbox.lat_max
+        assert footprint.subsatellite_latitude == 1.5
+        assert footprint.subsatellite_longitude == 11.0
+        assert footprint.cone_angle_rate == 12.0
+
+    def test_oblique_ray_traced_box_is_asymmetric_unlike_the_radial_box(self):
+        """A ray-traced oblique footprint is skewed along the scan plane, not centred on the boresight."""
+        # Boresight at the equator, satellite offset to the north along the same meridian.
+        scan_inputs = {
+            "latitude": np.array([0.0], dtype=np.float32),
+            "longitude": np.array([0.0], dtype=np.float32),
+            "viewing_zenith_angle": np.array([55.0], dtype=np.float32),
+            "subsatellite_latitude": np.array([10.0], dtype=np.float64),
+            "subsatellite_longitude": np.array([0.0], dtype=np.float64),
+            "cone_angle_rate": np.array([np.nan], dtype=np.float64),
+        }
+        (ray_traced,) = build_radiometer_footprints(scan_inputs)
+        # The boresight-only fallback box (no scan reference) is symmetric about the boresight.
+        (radial,) = build_radiometer_footprints(
+            {k: scan_inputs[k] for k in ("latitude", "longitude", "viewing_zenith_angle")}
+        )
+
+        assert ray_traced.bbox.lat_min <= 0.0 <= ray_traced.bbox.lat_max
+        # The radial box is centred on the boresight (lat 0); the ray-traced box is not.
+        radial_offset = abs(radial.bbox.lat_max + radial.bbox.lat_min)
+        ray_traced_offset = abs(ray_traced.bbox.lat_max + ray_traced.bbox.lat_min)
+        assert radial_offset < 1e-6
+        assert ray_traced_offset > 1e-2
+        # A fill cone-angle rate is normalized to None.
+        assert ray_traced.cone_angle_rate is None
+
+    def test_footprint_count_is_preserved_even_for_a_limb_grazing_record(self):
+        """A record that fails the ray-trace limb check falls back to a box, never dropped."""
+        l1b = {
+            "latitude": np.array([0.0, 10.0], dtype=np.float32),
+            "longitude": np.array([0.0, 0.0], dtype=np.float32),
+            # Second record is past the limb (VZA >= 90) -> OffLimbError -> boresight fallback.
+            "viewing_zenith_angle": np.array([20.0, 90.5], dtype=np.float32),
+            "subsatellite_latitude": np.array([1.0, 11.0], dtype=np.float64),
+            "subsatellite_longitude": np.array([0.0, 0.0], dtype=np.float64),
+            "cone_angle_rate": np.array([5.0, 5.0], dtype=np.float64),
+        }
+        footprints = build_radiometer_footprints(l1b)
+
+        assert len(footprints) == 2
+        for footprint in footprints:
+            assert footprint.bbox.lat_min <= footprint.bbox.lat_max
+
+
+def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:
+    """A one-footprint L1B pass-through dict at a chosen boresight location."""
+    return {
+        "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")]),
+        "latitude": np.array([lat], dtype=np.float32),
+        "longitude": np.array([lon], dtype=np.float32),
+        "solar_zenith_angle": np.array([sza], dtype=np.float32),
+        "viewing_zenith_angle": np.array([vza], dtype=np.float32),
+        "relative_azimuth_angle": np.array([raa], dtype=np.float32),
+    }
+
+
+class TestAssemblyWithAggregation:
+    """Supplying a TileManager makes the external columns carry real aggregated values."""
+
+    def _era5_manager(self, tmp_path) -> TileManager:
+        """A CAM-mode TileManager holding only the real ERA5 reader over a constant-wind grid.
+
+        The grid is fine (0.1 deg) so a cell falls inside the PSF ground radius (~20 km)
+        of the test boresight; u10 == 2.5 and v10 == -1.5 everywhere, so the PSF-weighted
+        mean is exactly those constants regardless of the weight kernel.
+        """
+        era5_cls = ReaderRegistry.get("era5")
+        era5_file = make_era5_netcdf_fixture(
+            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=21, n_lon=21
+        )
+        return TileManager({"era5": era5_cls(era5_file)}, OperationalMode.CAM)
+
+    def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
+        # Footprint sits inside the ERA5 grid so every PSF cell has data.
+        l1b = _l1b_at(lat=1.0, lon=11.0)
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.CAM,
+            l1b,
+            tile_manager=self._era5_manager(tmp_path),
+            algorithm_version="1.0.0",
+            input_files="l1b.nc,era5.nc",
+        )
+
+        # Weighted mean of a constant field is that constant.
+        np.testing.assert_allclose(dataset["era5_wind_u10"].values, [2.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset["era5_wind_v10"].values, [-1.5], rtol=1e-4)
+        # A constant field has zero within-footprint spread.
+        np.testing.assert_allclose(dataset["era5_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
+        # Fully covered -> coverage ~1 and no coverage QA bits set.
+        assert dataset["psf_coverage_fraction"].values[0] > 0.99
+        assert int(dataset["q_flags"].values[0]) == 0
+        # A source NOT in the subset manager (igbp) stays a placeholder.
+        assert int(dataset["igbp_surface_type"].values[0]) == 0
+        # The product still conforms strictly with the computed columns in place.
+        assert load_fmatch_definition(OperationalMode.CAM).check_dataset_conformance(dataset, strict=True) == []
+
+    def test_footprint_off_the_grid_is_flagged_insufficient_coverage(self, tmp_path):
+        # Boresight far from the ERA5 grid -> empty tile -> zero coverage.
+        l1b = _l1b_at(lat=1.0, lon=100.0)
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM, l1b, tile_manager=self._era5_manager(tmp_path))
+
+        assert np.isnan(dataset["era5_wind_u10"].values[0])
+        np.testing.assert_allclose(dataset["psf_coverage_fraction"].values, [0.0])
+        assert int(dataset["q_flags"].values[0]) & int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)

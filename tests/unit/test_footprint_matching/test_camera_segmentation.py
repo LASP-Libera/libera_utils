@@ -29,6 +29,7 @@ from libera_utils.footprint_matching.camera_segmentation import (
 from libera_utils.footprint_matching.geometry import L1B_FILL_VALUE
 from libera_utils.footprint_matching.product import (
     _assemble_camtime_dataset,
+    compute_derived_viewing_geometry,
     load_fmatch_definition,
 )
 from libera_utils.footprint_matching.types import OperationalMode
@@ -254,10 +255,21 @@ class TestCamtimeAssembly:
         assert dataset.sizes["FOOTPRINT"] == len(footprints)
         np.testing.assert_allclose(dataset["latitude"].values.ravel(), [f.latitude for f in footprints], rtol=1e-4)
         np.testing.assert_allclose(dataset["viewing_zenith_angle"].values, 8.0, rtol=1e-4)
+        # No ancillary data was staged, so q_flags carries only the segmentation flags
+        # (the coverage bits are OR-ed in only when the aggregation path runs).
         np.testing.assert_array_equal(dataset["q_flags"].values.ravel(), [int(f.q_flags) for f in footprints])
 
-        # A placeholder (aggregation-owned) variable is filled with NaN, not real data.
-        assert np.all(np.isnan(dataset["sunglint_angle"].values))
+        # The derived sun-glint angle is computed from the (constant) geolocation angles,
+        # not a placeholder: cos(glint) = cos(SZA)cos(VZA) - sin(SZA)sin(VZA)cos(RAA).
+        expected_glint = compute_derived_viewing_geometry(np.array([42.0]), np.array([8.0]), np.array([95.0]))[
+            "sunglint_angle"
+        ][0]
+        assert np.all(np.isfinite(dataset["sunglint_angle"].values))
+        np.testing.assert_allclose(dataset["sunglint_angle"].values, expected_glint, rtol=1e-4)
+
+        # An external, aggregation-owned variable stays a NaN placeholder here: no
+        # ancillary source files were passed to the assembler.
+        assert np.all(np.isnan(dataset["era5_wind_u10"].values))
 
     def test_assemble_empty_footprints_raises(self):
         with pytest.raises(ValueError, match="zero pseudo-footprints"):

@@ -28,29 +28,22 @@ Two environment variables are required at run time:
     to. This is the standard Libera runner convention.
 ``FMATCH_ANCILLARY_PATH``
     Root of the staged ancillary granule tree; see
-    :func:`resolve_ancillary_inputs` for its layout. Currently resolved
-    non-strictly, because the engine that consumes the granules is not
-    implemented yet.
+    :func:`resolve_ancillary_inputs` for its layout. Resolved
+    non-strictly: an absent or incomplete tree degrades the external columns to
+    conformant placeholders rather than failing the product (see "Ancillary inputs"
+    below). ``TODO[LIBSDC-785]``: enforce strict availability once production
+    staging is guaranteed.
 
-Milestone note
---------------
-Footprint matching's PSF aggregation and derived-geometry engines are still
-``TODO[LIBSDC-785]`` stubs, so the written products carry real values only for the
-L1B-derived columns; every other variable is a conformant placeholder (structurally
-valid but numerically meaningless; see
-:mod:`libera_utils.footprint_matching.product`). The runners themselves do not change
-when those engines land.
-
-Because of this, these runners are **not operational end-to-end yet**: the placeholder
-classification inputs are not consumable by SCENE-ID. In particular ``igbp_surface_type``
-is written as ``0``, and SCENE-ID's
-:func:`~libera_utils.scene_identification.scene_id.calculate_trmm_surface_type` accepts
-only valid IGBP codes (1..20) and raises ``ValueError`` on ``0``. Feeding a *runner-written*
-FMATCH product into a SCENE-ID runner therefore fails until the aggregation engine
-(``TODO[LIBSDC-785]``) fills those columns with real reader-derived values. The synthetic
-``make_fmatch_product_fixture`` test fixture fills valid classification inputs, so the
-FMATCH -> SCENE-ID integration tests exercise the wiring with conformant data; the gap is
-the runner output, not the SCENE-ID readers.
+Ancillary inputs
+----------------
+When a full ancillary tree is staged under ``FMATCH_ANCILLARY_PATH`` (one local
+granule per active reader; see :func:`resolve_ancillary_inputs`), the
+runner hands those files to the product assembly so the external variables and the
+coverage/QA columns are computed by the PSF aggregation engine. When the tree is
+absent or incomplete, those columns fall back to conformant placeholders and the
+derived-geometry (``sunglint_angle``) column is still computed from the L1B angles.
+``TODO[LIBSDC-785]``: materialize S3-staged ancillary granules locally (readers need
+real files) and enforce strict availability once production staging is guaranteed.
 """
 
 from __future__ import annotations
@@ -76,7 +69,10 @@ from cloudpathlib import AnyPath, S3Path
 import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
 from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
 from libera_utils.footprint_matching.product import (
+    FMATCH_CONE_ANGLE_RATE_KEY,
+    L1B_CONE_ANGLE_RATE_VARIABLE,
     L1B_PASSTHROUGH_VARIABLES,
+    L1B_SCAN_REFERENCE_VARIABLES,
     fmatch_time_variable,
     is_camera_timescale_mode,
     write_fmatch_product,
@@ -259,10 +255,13 @@ def run_algorithm(
 
     # Step 2: Locate the staged ancillary granules for this mode.
     #
-    # These are resolved (and inventoried in the log) even though nothing consumes
-    # them yet: the PSF aggregation engine is still a TODO[LIBSDC-785] stub. Doing it
-    # now means an operator can confirm staging is correct from the task log before
-    # the engine exists, and the runner will not need to change when it lands.
+    # These are resolved, inventoried in the log, and (when the tree collapses to one
+    # local granule per active reader; see _ancillary_source_file_paths) threaded into
+    # product assembly, where the PSF aggregation engine computes the external variables
+    # and coverage/QA columns from them. Logging the inventory first lets an operator
+    # confirm staging is correct from the task log. Resolution is non-strict: an absent
+    # or incomplete tree degrades those columns to placeholders rather than failing the
+    # product (TODO[LIBSDC-785]: enforce strict availability once staging is guaranteed).
     logger.info("Step 2: Locating staged ancillary inputs")
     ancillary_inputs = resolve_ancillary_inputs(config.mode)
     log_ancillary_inventory(ancillary_inputs)
@@ -285,6 +284,7 @@ def run_algorithm(
             output_path=dropbox_path,
             config=config,
             cloud_fraction_file_paths=cloud_fraction_file_paths,
+            ancillary_inputs=ancillary_inputs,
         )
         output_data_file_paths.append(output_file)
 
@@ -362,33 +362,47 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
     dict[str, np.ndarray]
         Mapping keyed by FMATCH variable name: ``"RADIOMETER_TIME"`` (datetime64[ns])
         plus each key of :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
-        (float32). All arrays are 1-D and the same length.
+        (float32). It additionally carries the scan-reference geometry used to build
+        footprints (not product columns): each key of
+        :data:`~libera_utils.footprint_matching.product.L1B_SCAN_REFERENCE_VARIABLES` and
+        :data:`~libera_utils.footprint_matching.product.FMATCH_CONE_ANGLE_RATE_KEY`
+        (float64). All arrays are 1-D and the same length.
 
     Raises
     ------
     ValueError
-        If no footprint has finite values for every pass-through variable, which would
-        leave nothing to build a product from.
+        If no footprint has finite values for every pass-through / subsatellite
+        variable, which would leave nothing to build a product from.
     """
     # Open with default decoding so the CF-encoded time coordinate ("nanoseconds since
-    # 1958-01-01") is decoded into datetime64[ns] for us.
+    # 1958-01-01") is decoded into datetime64[ns] for us, and _FillValue-tagged fields
+    # (the L1B fills are -999 / -9999) are masked to NaN so the finite check below works.
     with xr.open_dataset(l1b_file) as l1b:
         radiometer_time = l1b[L1B_TIME_VARIABLE].values
         # Read every pass-through variable, keyed by its FMATCH (output) name.
         passthrough = {fmatch_name: l1b[l1b_name].values for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items()}
+        # Scan-reference geometry (subsatellite point + cone-angle rate), read at
+        # float64 for the ray-trace. Not written to the product; feeds footprint build.
+        scan_reference = {
+            fmatch_name: np.asarray(l1b[l1b_name].values, dtype=np.float64)
+            for fmatch_name, l1b_name in L1B_SCAN_REFERENCE_VARIABLES.items()
+        }
+        cone_angle_rate = np.asarray(l1b[L1B_CONE_ANGLE_RATE_VARIABLE].values, dtype=np.float64)
 
-    # Keep only footprints where every pass-through variable is finite. Start from an
-    # all-True mask and AND in each variable's finite mask, so a NaN in ANY variable
-    # drops that footprint.
+    # Keep only footprints where every pass-through variable AND the subsatellite point
+    # are finite. Start from an all-True mask and AND in each variable's finite mask, so
+    # a NaN in ANY of them drops that footprint. The cone-angle rate is intentionally
+    # excluded: an unknown scan rate must not discard an otherwise-good footprint.
     finite = np.ones(radiometer_time.shape, dtype=bool)
-    for values in passthrough.values():
+    for values in (*passthrough.values(), *scan_reference.values()):
         finite &= np.isfinite(values)
 
     n_finite = int(finite.sum())
     if n_finite == 0:
         raise ValueError(
             f"No usable footprints in L1B file {l1b_file}: every record has a non-finite value in at least one of "
-            f"the pass-through variables ({', '.join(sorted(L1B_PASSTHROUGH_VARIABLES))})."
+            f"the pass-through or subsatellite variables "
+            f"({', '.join(sorted({*L1B_PASSTHROUGH_VARIABLES, *L1B_SCAN_REFERENCE_VARIABLES}))})."
         )
     if n_finite < finite.size:
         logger.info(
@@ -399,15 +413,19 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
 
     radiometer_time = radiometer_time[finite]
     passthrough = {name: values[finite] for name, values in passthrough.items()}
+    scan_reference = {name: values[finite] for name, values in scan_reference.items()}
+    cone_angle_rate = cone_angle_rate[finite]
 
     # Cast to the exact dtypes the FMATCH definition declares so conformance checking
     # passes without an auto-cast. Every pass-through variable is float32 in the
     # definition and the decoded time is datetime64[ns]; the casts are belt-and-braces
-    # over already-correct dtypes.
+    # over already-correct dtypes. The scan-reference geometry stays float64.
     result: dict[str, np.ndarray] = {
         FMATCH_RADIOMETER_TIME_COORDINATE: radiometer_time.astype("datetime64[ns]"),
     }
     result.update({name: values.astype(np.float32) for name, values in passthrough.items()})
+    result.update(scan_reference)
+    result[FMATCH_CONE_ANGLE_RATE_KEY] = cone_angle_rate
     return result
 
 
@@ -648,11 +666,65 @@ def run_footprint_matching(
         return l1b_inputs
 
 
+def _ancillary_source_file_paths(
+    ancillary_inputs: dict[str, list[Path | S3Path]] | None,
+) -> dict[str, Path] | None:
+    """Reduce the resolved ancillary inventory to the one-file-per-reader map assembly needs.
+
+    :func:`~libera_utils.footprint_matching._runner.resolve_ancillary_inputs` returns
+    a *list* of staged granules per reader, but the readers (and
+    :func:`~libera_utils.footprint_matching.tiling.build_tile_manager`) each take a
+    single ``file_path``. This collapses the inventory to one local file per reader,
+    returning ``None`` (so assembly falls back to placeholders) whenever the tree is
+    not usable as-is:
+
+    * no inventory at all (``FMATCH_ANCILLARY_PATH`` unset / nothing staged),
+    * any active reader with zero or more than one staged granule (multi-granule
+      readers are a follow-up; see the module ``TODO[LIBSDC-785]``), or
+    * any granule in S3 (readers need a real local file; S3 materialization for
+      ancillary inputs is not implemented yet -- ``TODO[LIBSDC-785]``).
+
+    Parameters
+    ----------
+    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]] or None
+        The per-reader inventory from ``resolve_ancillary_inputs``.
+
+    Returns
+    -------
+    dict[str, pathlib.Path] or None
+        Reader-key -> single local file, or ``None`` when the tree is unusable.
+    """
+    if not ancillary_inputs:
+        return None
+    source_file_paths: dict[str, Path] = {}
+    for reader_key, files in ancillary_inputs.items():
+        if len(files) != 1:
+            logger.warning(
+                "Ancillary source %r has %d staged granule(s); expected exactly 1. Writing external variables as "
+                "placeholders for this product.",
+                reader_key,
+                len(files),
+            )
+            return None
+        only_file = files[0]
+        if is_s3(only_file):
+            logger.warning(
+                "Ancillary source %r is staged in S3 (%s); local materialization of ancillary granules is not "
+                "implemented yet. Writing external variables as placeholders.",
+                reader_key,
+                only_file,
+            )
+            return None
+        source_file_paths[reader_key] = Path(str(only_file))
+    return source_file_paths
+
+
 def create_and_write_data_product(
     l1b_file_path: str | Path | S3Path,
     output_path: str | Path | S3Path,
     config: FmatchRunnerConfig,
     cloud_fraction_file_paths: list[str] | None = None,
+    ancillary_inputs: dict[str, list[Path | S3Path]] | None = None,
 ) -> LiberaDataProductFilename:
     """Run footprint matching on one L1B input and write the FMATCH data product.
 
@@ -668,6 +740,12 @@ def create_and_write_data_product(
         Camera Cloud Fraction files selected from the manifest, if any. Reading them
         is not implemented yet (``TODO[LIBSDC-785]``); they are logged as provenance
         and the ``cloud_fraction_camera`` variable is written as a placeholder.
+    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]], optional
+        The staged ancillary inventory from
+        :func:`~libera_utils.footprint_matching._runner.resolve_ancillary_inputs`.
+        When it resolves to one local granule per active reader, the external variables
+        and coverage/QA columns are computed; otherwise those columns are placeholders
+        (see :func:`_ancillary_source_file_paths`).
 
     Returns
     -------
@@ -701,6 +779,13 @@ def create_and_write_data_product(
             "will be written as a placeholder."
         )
 
+    # Collapse the staged ancillary inventory to the one-file-per-reader map the
+    # aggregation path needs; None means "aggregate nothing, placeholder those columns".
+    source_file_paths = _ancillary_source_file_paths(ancillary_inputs)
+    if source_file_paths is not None:
+        provenance.extend(path.name for path in source_file_paths.values())
+        logger.info("Aggregating external variables from %d staged ancillary source(s)", len(source_file_paths))
+
     logger.info("Writing %s data product for input %s", config.output_product_id.value, input_file_name)
     output_file_path = write_fmatch_product(
         config.mode,
@@ -708,6 +793,7 @@ def create_and_write_data_product(
         output_path,
         algorithm_version=algorithm_version(),
         input_files=",".join(provenance),
+        source_file_paths=source_file_paths,
         strict=True,
     )
     logger.info(f"Wrote data product to {output_file_path.path}")
