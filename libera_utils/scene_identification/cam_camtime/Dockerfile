@@ -18,7 +18,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 # - libpq-dev so we can install psycopg2 (transitive dependency)
 # - curl so we can install poetry
 # - gcc/pkg-config because they are often required for python package builds
-# - libhdf5-dev because netCDF4/h5netcdf (used to read CERES SSF files and write NetCDF products) links against HDF5
+# - libhdf5-dev because netCDF4/h5netcdf (used to read FMATCH inputs and write NetCDF products) links against HDF5
 RUN apt-get update && apt-get install -y libpq-dev curl gcc pkg-config libhdf5-dev
 
 # Create a virtual environment and permanently activate it for this image.
