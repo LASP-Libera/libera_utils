@@ -13,17 +13,27 @@ as the key. This means a reader module just needs to be *imported* — no manual
 registration call is needed. The readers package ``__init__.py`` imports all
 built-in reader modules to make this happen at startup.
 
-Tile geometry
--------------
-The global tile grid uses ``TILE_SIZE_DEG = 2.0`` degrees per tile edge. A
-``TileKey(source, lat_idx, lon_idx)`` maps to::
+Tile geometry (per-reader tile size)
+------------------------------------
+Each reader declares its own square tile edge length via the class attribute
+``TILE_SIZE_DEG`` (default :data:`DEFAULT_TILE_SIZE_DEG` = 2.0°, the CERES-heritage
+~200 km-at-nadir tile). Making the size per-reader lets a fine-resolution source
+(e.g. 750 m VIIRS) choose a *smaller* tile so a single cached tile stays memory
+bounded, while a coarse source (e.g. 25 km NSIDC) can keep the 2° default —
+resolving the "per-reader tile dimensions" decision flagged in the design doc.
 
-    lat_min = -90.0 + lat_idx * TILE_SIZE_DEG
-    lat_max = lat_min + TILE_SIZE_DEG
-    lon_min = -180.0 + lon_idx * TILE_SIZE_DEG
-    lon_max = lon_min + TILE_SIZE_DEG
+For a reader with edge length ``s`` degrees, a ``TileKey(source, lat_idx, lon_idx)``
+maps to::
 
-This gives a 90 × 180 grid of 2° × 2° tiles covering the entire globe.
+    lat_min = -90.0 + lat_idx * s
+    lat_max = lat_min + s
+    lon_min = -180.0 + lon_idx * s
+    lon_max = lon_min + s
+
+The index origin stays anchored at (−90°, −180°) *regardless of tile size*, so a
+tile key is globally interpretable **within a given source**. Keys from different
+sources are never mixed because :class:`~libera_utils.footprint_matching.types.TileKey`
+carries the ``source`` string, so two sources may safely use different tile sizes.
 """
 
 from __future__ import annotations
@@ -39,9 +49,16 @@ from libera_utils.footprint_matching.types import (
     with_standard_deviation_companions,
 )
 
-# Global tile size constant.  2° matches CERES heritage design (~200 km tiles
-# at the equator). All readers assume this tile size when slicing their data.
-TILE_SIZE_DEG: float = 2.0
+# Default tile edge length in degrees. 2° matches the CERES heritage design
+# (~200 km tiles at the equator, four times the largest nadir footprint). A reader
+# uses this size unless it overrides the ``TILE_SIZE_DEG`` *class attribute*.
+DEFAULT_TILE_SIZE_DEG: float = 2.0
+
+# Backward-compatible module-level alias. Historically the tile size was a single
+# global constant; callers and tests still import ``TILE_SIZE_DEG`` from this
+# module. It equals the default and is the size used by every reader that does not
+# override the class attribute below.
+TILE_SIZE_DEG: float = DEFAULT_TILE_SIZE_DEG
 
 
 class GriddedDataReader(abc.ABC):
@@ -97,6 +114,12 @@ class GriddedDataReader(abc.ABC):
     INSTRUMENT: str
     RESOLUTION_KM: float
     VARIABLES: tuple[VariableSpec, ...]
+    # Square tile edge length in degrees for *this reader's* tile grid. Defaults to
+    # the CERES-heritage 2° tile; a reader overrides it to trade cache-tile memory
+    # against merge overhead for its native resolution (see the module docstring's
+    # "Tile geometry" section). The TileManager reads this attribute to resolve a
+    # bounding box into this reader's tile keys.
+    TILE_SIZE_DEG: float = DEFAULT_TILE_SIZE_DEG
     # Derived product outputs not read straight from the source file. Defaults to
     # empty; readers like IGBP override it to add ranked-scene outputs.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = ()
@@ -198,7 +221,8 @@ class GriddedDataReader(abc.ABC):
         GridTile
             Rectangular region of data with coordinate arrays and metadata.
         """
-        bbox = self._tile_key_to_bbox(key)
+        # Use this reader's own tile size so per-reader grids resolve correctly.
+        bbox = self._tile_key_to_bbox(key, self.TILE_SIZE_DEG)
         data, lats, lons = self._load_spatial_region(bbox)
         return GridTile(
             data=data,
@@ -210,23 +234,33 @@ class GriddedDataReader(abc.ABC):
         )
 
     @staticmethod
-    def _tile_key_to_bbox(key: TileKey) -> BoundingBox:
+    def _tile_key_to_bbox(key: TileKey, tile_size_deg: float = DEFAULT_TILE_SIZE_DEG) -> BoundingBox:
         """Convert a TileKey's integer indices to a geographic BoundingBox.
+
+        Kept a ``staticmethod`` (rather than an instance method) so it can be called
+        without a reader instance — e.g. by the TileManager and by tests — while the
+        tile size is supplied explicitly. ``load_tile`` passes ``self.TILE_SIZE_DEG``
+        so a reader's own grid is used; callers that omit ``tile_size_deg`` get the
+        2° default grid.
 
         Parameters
         ----------
         key : TileKey
             Tile key with ``lat_idx`` and ``lon_idx`` integers.
+        tile_size_deg : float, optional
+            Square tile edge length in degrees. Defaults to
+            :data:`DEFAULT_TILE_SIZE_DEG` (2.0°).
 
         Returns
         -------
         BoundingBox
-            Bounding box in degrees covering the 2° × 2° tile.
+            Bounding box in degrees covering the ``tile_size_deg`` × ``tile_size_deg``
+            tile identified by ``key``.
         """
-        lat_min = -90.0 + key.lat_idx * TILE_SIZE_DEG
-        lat_max = lat_min + TILE_SIZE_DEG
-        lon_min = -180.0 + key.lon_idx * TILE_SIZE_DEG
-        lon_max = lon_min + TILE_SIZE_DEG
+        lat_min = -90.0 + key.lat_idx * tile_size_deg
+        lat_max = lat_min + tile_size_deg
+        lon_min = -180.0 + key.lon_idx * tile_size_deg
+        lon_max = lon_min + tile_size_deg
 
         # Detect dateline wrapping: only possible at the extreme eastern tile
         # (lon_idx = 179 → lon_max = 180°, the exact boundary, so no wrapping).

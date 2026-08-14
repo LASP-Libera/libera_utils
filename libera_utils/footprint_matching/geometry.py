@@ -108,6 +108,12 @@ _L1B_FILL_VALUE: float = L1B_FILL_VALUE
 # Number of samples around the PSF angular-extent ellipse perimeter. 72 == every 5 deg.
 _N_PERIMETER_SAMPLES: int = 72
 
+# Viewing-zenith angle (deg) past which the ground-footprint elongation factor is
+# clamped. At grazing angles ``1/cos(vza)`` diverges; clamping keeps the projected
+# ground radius finite and bounded. Real limb handling is the ray-trace's job
+# (:class:`OffLimbError`); this only bounds the analytic radius estimate.
+_MAX_VZA_FOR_ELONGATION_DEG: float = 80.0
+
 
 class GeometryError(Exception):
     """Base class for geometry errors raised by this module."""
@@ -514,6 +520,119 @@ def bounding_box_from_points(
     )
 
 
+def psf_ground_radius_km(
+    altitude_km: float,
+    viewing_zenith_deg: float,
+    fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
+) -> float:
+    """Project the PSF angular half-extent to an isotropic ground radius, in km.
+
+    A fixed angular offset at the satellite projects to a ground distance that grows
+    with altitude and, at oblique views, with ``1/cos(vza)`` because the line of sight
+    strikes the surface at a shallow angle (the footprint "elongates on the ground" at
+    high viewing zenith angles). We take the larger of the PSF's along-scan and
+    cross-scan 95%-energy half-extents -- an isotropic over-estimate -- and floor it at
+    the optical FOV half-angle so the radius is never smaller than the field of view.
+
+    This is the single home for the angular-extent -> ground-radius projection, shared
+    by the boresight-centred bounding box (:func:`bounding_box_from_boresight`) and the
+    per-cell PSF weighers
+    (:mod:`libera_utils.footprint_matching.weighting`), so the two never drift.
+
+    Parameters
+    ----------
+    altitude_km : float
+        Satellite altitude above the surface, km.
+    viewing_zenith_deg : float
+        Viewing zenith angle, degrees (clamped at
+        :data:`_MAX_VZA_FOR_ELONGATION_DEG` for the elongation factor).
+    fov_halfangle_deg : float, optional
+        Instrument FOV half-angle, degrees -- the floor on the angular extent.
+        Defaults to :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
+
+    Returns
+    -------
+    float
+        Ground radius in km.
+    """
+    extent = psf_95_energy_extent()
+    # Largest angular half-extent -> isotropic radius. conservative_along_scan_extent
+    # picks the larger of the asymmetric front/back along-scan reaches.
+    angular_deg = max(conservative_along_scan_extent(extent), extent.beta_max_deg, fov_halfangle_deg)
+    nadir_radius_km = altitude_km * math.tan(math.radians(angular_deg))
+    vza = min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG)
+    return nadir_radius_km / math.cos(math.radians(vza))
+
+
+def bounding_box_from_boresight(
+    boresight_lat_deg: float,
+    boresight_lon_deg: float,
+    viewing_zenith_deg: float,
+    *,
+    altitude_km: float | None = None,
+    fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
+    n_samples: int = _N_PERIMETER_SAMPLES,
+) -> BoundingBox:
+    """Boresight-centred bounding box from the PSF ground radius (no subsatellite point).
+
+    A lighter-weight companion to :func:`compute_footprint_bounding_box` for footprints
+    that carry only a boresight and a viewing zenith angle. Rather than ray-tracing the
+    asymmetric PSF perimeter (which needs the subsatellite point to orient the scan
+    plane), it draws a circle of the PSF's isotropic ground radius
+    (:func:`psf_ground_radius_km`) around the boresight and boxes those points with the
+    same pole/dateline handling as :func:`bounding_box_from_points`.
+
+    Because the box is centred on the boresight and symmetric, it is always a safe
+    superset of the true (elongated, asymmetric) footprint for the purpose of deciding
+    which ancillary tiles to load -- exactly what the bounding box is for. It is never
+    limb-truncated (the circle is drawn on the surface, not ray-traced), so
+    ``BoundingBox.truncated`` is always ``False`` here.
+
+    The production radiometer path now reads the L1B subsatellite geolocation and
+    cone-angle rate, so it builds the true asymmetric box via
+    :func:`compute_footprint_bounding_box` and weights with the :class:`AngularPSFWeigher`
+    (see :func:`libera_utils.footprint_matching.product.build_radiometer_footprints`).
+    This boresight-circle box remains the fallback for footprints with no scan reference
+    (a minimal caller-built dict, or a record whose ray-trace runs off the limb).
+
+    Parameters
+    ----------
+    boresight_lat_deg, boresight_lon_deg : float
+        Footprint boresight centroid (L1B ``Latitude``/``Longitude``), degrees.
+    viewing_zenith_deg : float
+        Viewing zenith angle (L1B ``Viewing_Zenith_Surface``), degrees. Elongates the
+        ground radius at oblique views.
+    altitude_km : float or None, optional
+        Satellite altitude above the surface, km. Defaults to
+        :data:`NOMINAL_ALTITUDE_KM` when not supplied or non-positive.
+    fov_halfangle_deg : float, optional
+        Instrument FOV half-angle, degrees -- floor on the PSF extent.
+    n_samples : int, optional
+        Number of points sampled around the ground circle. Defaults to
+        :data:`_N_PERIMETER_SAMPLES`.
+
+    Returns
+    -------
+    BoundingBox
+        Geographic box enclosing the boresight-centred PSF ground circle.
+    """
+    altitude = altitude_km if (altitude_km is not None and altitude_km > 0.0) else NOMINAL_ALTITUDE_KM
+    # Apply the same outward safety margin the ray-traced box uses, so this box is an
+    # equally-safe (slightly conservative) superset.
+    radius_km = psf_ground_radius_km(altitude, viewing_zenith_deg, fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
+
+    geod = _wgs84_geod()
+    bearings = np.linspace(0.0, 360.0, n_samples, endpoint=False)
+    lon0 = np.full(n_samples, boresight_lon_deg, dtype=float)
+    lat0 = np.full(n_samples, boresight_lat_deg, dtype=float)
+    distances_m = np.full(n_samples, radius_km * 1000.0, dtype=float)
+    # Geod.fwd walks the WGS84 geodesic from the boresight along each bearing, giving
+    # the ground circle's perimeter points.
+    perimeter_lons, perimeter_lats, _ = geod.fwd(lon0, lat0, bearings, distances_m)
+
+    return bounding_box_from_points(boresight_lat_deg, boresight_lon_deg, list(perimeter_lats), list(perimeter_lons))
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -656,3 +775,112 @@ def compute_footprint_bounding_box(
     # 4. Assemble the lat/lon box (handles poles and dateline), carrying the
     #    partial-coverage truncation flag onto the returned box.
     return bounding_box_from_points(boresight_lat_deg, boresight_lon_deg, lats, lons, truncated=truncated)
+
+
+# ---------------------------------------------------------------------------
+# Inverse projection: ground lat/lon -> radiometer angular frame (delta, beta)
+# ---------------------------------------------------------------------------
+
+
+def project_to_angular(
+    cell_lats_deg: np.ndarray,
+    cell_lons_deg: np.ndarray,
+    boresight_lat_deg: float,
+    boresight_lon_deg: float,
+    subsatellite_lat_deg: float,
+    subsatellite_lon_deg: float,
+    viewing_zenith_deg: float,
+    *,
+    altitude_km: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Project ground grid cells into the radiometer's angular frame ``(delta, beta)``.
+
+    This is the **inverse** of the forward rotation :func:`_offset_ray_direction`
+    used to build the footprint bounding box, and the piece the PSF aggregation
+    weighting needs: given where each ancillary grid cell sits on the ground, how far
+    off the boresight is it in the along-scan (``delta``) and cross-scan (``beta``)
+    angular directions as *seen from the satellite*. Those angles are exactly the
+    coordinates the CERES PSF :func:`libera_utils.footprint_matching.psf.psf_weight`
+    is a function of (CERES ATBD v2.2 §4.4.2.3, Eq. 4.4-8).
+
+    Method
+    ------
+    We reconstruct the same satellite viewing frame the bounding-box code builds
+    (:func:`_viewing_geometry` + :func:`_scan_frame_axes`), giving three orthonormal
+    axes:
+
+    * ``b_hat`` -- the boresight look direction (``delta = beta = 0``),
+    * ``c_hat`` -- the cross-scan axis (perpendicular to the scan plane),
+    * ``n_hat = c_hat x b_hat`` -- the in-scan-plane axis (``b_hat``'s ``+delta`` side).
+
+    For each cell we form the unit look vector from the satellite to the cell and read
+    off the angles by projecting onto that basis. Because
+    :func:`_offset_ray_direction` produces a direction
+    ``d = (b_hat cos(delta) + n_hat sin(delta)) cos(beta) + c_hat sin(beta)``, the
+    inverse is exact::
+
+        beta  = asin(look . c_hat)
+        delta = atan2(look . n_hat, look . b_hat)
+
+    Since the elongation of the footprint at oblique viewing is captured by projecting
+    the *actual* ground cells to satellite angles, no separate viewing-zenith stretch
+    factor is needed (unlike the radial stand-in).
+
+    Parameters
+    ----------
+    cell_lats_deg, cell_lons_deg : np.ndarray
+        Grid-cell latitudes and longitudes in degrees (any common shape). Assumed on
+        the surface (ellipsoidal height 0).
+    boresight_lat_deg, boresight_lon_deg : float
+        Footprint boresight centroid, degrees (``delta = beta = 0`` anchor).
+    subsatellite_lat_deg, subsatellite_lon_deg : float
+        Subsatellite point, degrees -- sets the scan azimuth / plane orientation.
+    viewing_zenith_deg : float
+        Viewing zenith angle at the boresight, degrees.
+    altitude_km : float, optional
+        Satellite altitude above the surface, km. Recovered from the geometry when
+        not supplied (see :func:`_viewing_geometry`).
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        ``(delta_deg, beta_deg)`` arrays, each the shape of ``cell_lats_deg``.
+    """
+    lats = np.asarray(cell_lats_deg, dtype=float)
+    lons = np.asarray(cell_lons_deg, dtype=float)
+    shape = lats.shape
+
+    # Rebuild the satellite viewing frame for this footprint (same construction the
+    # bounding-box path uses, so the projection is consistent with it).
+    satellite, boresight_direction, subsatellite_normal = _viewing_geometry(
+        boresight_lat_deg,
+        boresight_lon_deg,
+        subsatellite_lat_deg,
+        subsatellite_lon_deg,
+        viewing_zenith_deg,
+        altitude_km,
+    )
+    b_hat = _unit(boresight_direction)
+    c_hat = _unit(_scan_frame_axes(boresight_direction, subsatellite_normal))
+    # In-plane axis: unit because c_hat is perpendicular to b_hat (cross-scan axis is
+    # built as a cross product with the boresight), and both are unit vectors.
+    n_hat = np.cross(c_hat, b_hat)
+
+    # Vectorized geodetic -> ECEF (km) for every cell centre in one transformer call.
+    x, y, z = _geodetic_to_ecef_transformer().transform(lons.ravel(), lats.ravel(), np.zeros(lats.size, dtype=float))
+    cells_km = np.stack([np.asarray(x), np.asarray(y), np.asarray(z)], axis=1) / 1000.0  # (M, 3)
+
+    # Unit look vector from the satellite toward each cell.
+    look = cells_km - satellite
+    look /= np.linalg.norm(look, axis=1, keepdims=True)
+
+    # Read the angles off the orthonormal basis (the exact inverse of the forward map).
+    # The forward beta-rotation in _offset_ray_direction is about (c_hat x along), which
+    # makes the offset direction d = along*cos(beta) - c_hat*sin(beta); hence the beta
+    # recovery carries a minus sign on the c_hat component.
+    along_scan = look @ b_hat
+    in_plane = look @ n_hat
+    cross_scan = look @ c_hat
+    beta = np.degrees(np.arcsin(np.clip(-cross_scan, -1.0, 1.0)))
+    delta = np.degrees(np.arctan2(in_plane, along_scan))
+    return delta.reshape(shape), beta.reshape(shape)

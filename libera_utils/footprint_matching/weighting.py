@@ -1,0 +1,358 @@
+"""Per-pixel PSF weighting for footprint aggregation.
+
+What this module provides
+-------------------------
+The aggregation engine needs, for every grid cell of a footprint's merged tile, a
+*weight* proportional to how strongly that ground location contributes to what the
+radiometer measured -- i.e. the instrument Point Spread Function (PSF) sampled at
+that cell. This module defines the interface for producing those weights
+(:class:`PixelWeigher`) and two implementations:
+
+* :class:`AngularPSFWeigher` -- the CERES-faithful weigher. It projects each grid
+  cell into the radiometer's along-scan/cross-scan angular frame ``(delta, beta)``
+  (via :func:`~libera_utils.footprint_matching.geometry.project_to_angular`) and
+  evaluates the analytic CERES PSF
+  :func:`~libera_utils.footprint_matching.psf.psf_weight` there, honouring the
+  asymmetric along-scan response, the scan direction (L1B ``Cone_Angle_Rate``), and
+  the stationary-scanner static FOV (design doc sections 2.4.2.5-2.4.2.7, 2.8.1.1).
+* :class:`RadialWeigher` -- a simple, boresight-centred Gaussian stand-in kept as a
+  dependency-light fallback (it needs only the boresight, not the full viewing
+  geometry).
+
+Why the interface matters
+-------------------------
+Everything the aggregation engine sees is the :class:`WeightField` returned here, so
+the two weighers are interchangeable with **no change to**
+:mod:`~libera_utils.footprint_matching.aggregation`. Both make the *coverage* metric
+meaningful -- uncovered cells (NaN data inside the contour) drop out of the numerator
+while still counting toward the denominator, exactly as the CERES 75%/95% rule
+expects.
+
+References
+----------
+* Design doc ``instructions/documentation/Footprint Matching and Scene ID PDF``,
+  sections 2.4.2.5-2.4.2.7 and 2.8.1.1.
+* CERES ATBD v2.2 section 4.4:
+  https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
+"""
+
+from __future__ import annotations
+
+import abc
+from dataclasses import dataclass
+
+import numpy as np
+from pyproj import Geod
+
+from libera_utils.footprint_matching.geometry import NOMINAL_ALTITUDE_KM, project_to_angular, psf_ground_radius_km
+from libera_utils.footprint_matching.psf import (
+    LIBERA_FOV_HALFANGLE_DEG,
+    psf_95_energy_extent,
+    psf_weight,
+)
+from libera_utils.footprint_matching.types import GridTile
+
+# Sigma of the radial Gaussian kernel as a fraction of the truncation radius. With
+# sigma = r_max / 2 the kernel falls to ~13.5% of its peak at the truncation radius,
+# i.e. the bulk of the weight sits well inside the PSF's 95%-energy ground radius --
+# a reasonable stand-in shape for a centrally-peaked response.
+_SIGMA_FRACTION_OF_RMAX: float = 0.5
+
+# Alignment offset (degrees) between the reported L1B footprint centroid -- which we
+# take as the boresight direction, i.e. delta = 0 -- and the PSF's own centroid.
+# ASSUMED ZERO for now: the projected delta is fed straight to psf_weight (which
+# still applies the CERES-intrinsic centroid shift internally). Set here in one place
+# so it is easy to find.
+# TODO[LIBSDC-794]: replace 0.0 with the measured Libera centroid offset once the
+# ground-characterized PSF/geometry is delivered.
+_CENTROID_OFFSET_DEG: float = 0.0
+
+# |cone-angle rate| (deg/s) at or below which the scanner is treated as *stationary*
+# (a scan turnaround): the uniform static FOV response is used instead of the dynamic
+# PSF, per design doc section 2.4.2.2. Above it, the sign of the rate sets scan
+# direction. The exact turnaround value is instrument-specific; this small threshold
+# absorbs numerical noise around zero.
+# TODO[LIBSDC-794]: confirm the turnaround threshold against real L1B Cone_Angle_Rate.
+_STATIC_CONE_RATE_EPS_DEG_PER_S: float = 1.0e-3
+
+
+@dataclass(frozen=True)
+class WeightField:
+    """Per-cell PSF weights for one footprint's merged tile.
+
+    Attributes
+    ----------
+    weights : np.ndarray
+        2-D array aligned to the tile's ``(lats, lons)`` grid. Each entry is the PSF
+        weight of that cell; cells outside the PSF ground contour are ``0``.
+    total_energy : float
+        Sum of ``weights`` over every cell in the covered region -- the denominator
+        of the coverage metric. Because uncovered cells (NaN data) still carry PSF
+        weight here but contribute no *data*, coverage = sampled/total naturally
+        drops for partially-covered footprints.
+    max_radius_km : float
+        Ground radius (km) at which the kernel was truncated, for diagnostics.
+    """
+
+    weights: np.ndarray
+    total_energy: float
+    max_radius_km: float
+
+
+class PixelWeigher(abc.ABC):
+    """Interface: turn a footprint's tile + viewing geometry into per-cell PSF weights.
+
+    Implementations return a :class:`WeightField` whose ``weights`` array is aligned
+    to ``tile.lats`` x ``tile.lons``. Keeping this a narrow ABC is the whole point:
+    the aggregation engine depends only on this contract, so the radial stand-in and
+    the future angular-frame weigher are interchangeable.
+    """
+
+    @abc.abstractmethod
+    def weight_field(
+        self,
+        tile: GridTile,
+        boresight_lat_deg: float,
+        boresight_lon_deg: float,
+        *,
+        altitude_km: float | None = None,
+        viewing_zenith_deg: float = 0.0,
+        subsatellite_lat_deg: float | None = None,
+        subsatellite_lon_deg: float | None = None,
+        cone_angle_rate: float | None = None,
+    ) -> WeightField:
+        """Return the per-cell PSF :class:`WeightField` for ``tile``.
+
+        Parameters
+        ----------
+        tile : GridTile
+            The merged tile covering the footprint's PSF bounding box.
+        boresight_lat_deg, boresight_lon_deg : float
+            Footprint boresight centroid, degrees (the PSF centre).
+        altitude_km : float, optional
+            Satellite altitude above the surface, km. Used to convert the PSF's
+            angular extent into a ground radius. Defaults to the nominal orbit
+            altitude when not supplied.
+        viewing_zenith_deg : float, optional
+            Viewing zenith angle, degrees. Elongates the ground footprint at oblique
+            views.
+        subsatellite_lat_deg, subsatellite_lon_deg : float, optional
+            Subsatellite point, degrees. Needed by weighers that project cells into
+            the angular frame (:class:`AngularPSFWeigher`) to orient the scan plane;
+            ignored by weighers that only need the boresight (:class:`RadialWeigher`).
+        cone_angle_rate : float, optional
+            L1B ``Cone_Angle_Rate`` (deg/s). Its sign sets the scan direction and a
+            (near-)zero value marks a stationary scanner. Ignored by weighers that do
+            not model the asymmetric along-scan PSF.
+        """
+
+
+class RadialWeigher(PixelWeigher):
+    """Boresight-centred radial Gaussian PSF weight -- the swappable stand-in.
+
+    The weight of a cell is a Gaussian in its great-circle distance from the
+    boresight, truncated to zero beyond the PSF's ground radius. This is *not* the
+    true asymmetric CERES PSF; it is a smooth, centrally-peaked placeholder that lets
+    the aggregation path run end to end while the angular-frame PSF projection is
+    built (see the module docstring and :class:`AngularPSFWeigher`).
+
+    Distances are computed on the WGS84 ellipsoid via :class:`pyproj.Geod`, matching
+    the geometry module's Earth model.
+
+    Parameters
+    ----------
+    fov_halfangle_deg : float, optional
+        Instrument FOV half-angle used as the floor on the ground radius. Defaults to
+        :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
+    """
+
+    def __init__(self, fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG) -> None:
+        self._fov_halfangle_deg = fov_halfangle_deg
+        # One WGS84 Geod reused for every footprint (thread-safe, cheap to keep).
+        self._geod = Geod(ellps="WGS84")
+
+    def weight_field(
+        self,
+        tile: GridTile,
+        boresight_lat_deg: float,
+        boresight_lon_deg: float,
+        *,
+        altitude_km: float | None = None,
+        viewing_zenith_deg: float = 0.0,
+        subsatellite_lat_deg: float | None = None,
+        subsatellite_lon_deg: float | None = None,
+        cone_angle_rate: float | None = None,
+    ) -> WeightField:
+        """Compute the radial Gaussian :class:`WeightField` for ``tile``.
+
+        See :meth:`PixelWeigher.weight_field`. ``subsatellite_*`` and
+        ``cone_angle_rate`` are accepted for interface compatibility but unused -- the
+        radial stand-in only needs the boresight. An empty tile (no coordinate cells)
+        yields an empty weight array and zero total energy, which the aggregation
+        strategies read as "no coverage".
+        """
+        lats = np.asarray(tile.lats, dtype=float)
+        lons = np.asarray(tile.lons, dtype=float)
+
+        altitude = altitude_km if (altitude_km is not None and altitude_km > 0.0) else NOMINAL_ALTITUDE_KM
+        max_radius_km = psf_ground_radius_km(altitude, viewing_zenith_deg, self._fov_halfangle_deg)
+
+        # Empty tile (failed / missing region): return an empty, zero-energy field.
+        if lats.size == 0 or lons.size == 0:
+            shape = (lats.size, lons.size)
+            return WeightField(weights=np.zeros(shape, dtype=float), total_energy=0.0, max_radius_km=max_radius_km)
+
+        # Full 2-D mesh of cell centres, then great-circle distance from the boresight
+        # to every cell. Geod.inv needs equal-length arrays, so broadcast the scalar
+        # boresight to the flattened grid.
+        lon_grid, lat_grid = np.meshgrid(lons, lats)  # both shape (n_lat, n_lon)
+        flat_lat = lat_grid.ravel()
+        flat_lon = lon_grid.ravel()
+        boresight_lats = np.full(flat_lat.shape, boresight_lat_deg, dtype=float)
+        boresight_lons = np.full(flat_lon.shape, boresight_lon_deg, dtype=float)
+        _, _, distance_m = self._geod.inv(boresight_lons, boresight_lats, flat_lon, flat_lat)
+        distance_km = np.asarray(distance_m, dtype=float) / 1000.0
+
+        # Gaussian kernel, truncated at the PSF ground radius.
+        sigma_km = max(max_radius_km * _SIGMA_FRACTION_OF_RMAX, 1.0e-6)
+        weights_flat = np.exp(-0.5 * (distance_km / sigma_km) ** 2)
+        weights_flat[distance_km > max_radius_km] = 0.0
+
+        weights = weights_flat.reshape(lat_grid.shape)
+        return WeightField(
+            weights=weights,
+            total_energy=float(np.sum(weights)),
+            max_radius_km=max_radius_km,
+        )
+
+
+class AngularPSFWeigher(PixelWeigher):
+    """Science-accurate PSF weighting via the radiometer angular frame.
+
+    This is the CERES-faithful replacement for :class:`RadialWeigher`. For each
+    footprint it projects every merged-tile cell's ``(lat, lon)`` into the
+    along-scan/cross-scan angular frame ``(delta, beta)`` (via
+    :func:`libera_utils.footprint_matching.geometry.project_to_angular`, the inverse
+    of the bounding-box ray-trace) and evaluates the analytic CERES PSF
+    :func:`libera_utils.footprint_matching.psf.psf_weight` at each cell -- so the
+    weight a cell receives is the real, asymmetric instrument response, not a
+    boresight-distance kernel. Because it returns the same :class:`WeightField`, the
+    aggregation engine is unchanged.
+
+    Scan direction and stationary scanner
+    -------------------------------------
+    The CERES PSF is asymmetric along-scan (a trailing detector-response tail), so the
+    orientation of ``+delta`` depends on the scan direction. That is read from the L1B
+    ``Cone_Angle_Rate`` (``cone_angle_rate``): positive means scanning *away* from
+    nadir (outward), which reverses the sign of ``delta`` (design doc section
+    2.8.1.2 step 5); a (near-)zero rate means the scanner is stationary at a scan
+    turnaround, so the uniform static FOV is used instead of the dynamic PSF.
+
+    Centroid offset
+    ---------------
+    The projected ``delta`` is anchored at the reported footprint centroid (the
+    boresight). Any residual alignment offset to the PSF centroid is
+    :data:`_CENTROID_OFFSET_DEG`, currently assumed 0 (see its TODO).
+
+    Direct evaluation vs pre-integrated bins
+    ----------------------------------------
+    This uses *direct per-cell* PSF evaluation, which yields one weight per cell that
+    plugs straight into :class:`WeightField`. The CERES pre-integrated angular-bin
+    scheme (ATBD Eq. 4.4-18) is a possible later optimization but needs a bin-aware
+    aggregation path, so it is intentionally out of scope here.
+
+    Parameters
+    ----------
+    fov_halfangle_deg : float, optional
+        Instrument FOV half-angle used for the stationary-scanner static response and
+        as a diagnostic radius floor. Defaults to
+        :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
+    energy_fraction : float, optional
+        PSF energy fraction defining the truncation contour. Default 0.95 (CERES
+        heritage).
+    """
+
+    def __init__(self, fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG, energy_fraction: float = 0.95) -> None:
+        self._fov_halfangle_deg = fov_halfangle_deg
+        # 95%-energy angular half-extents (delta_back, delta_front, beta_max), a
+        # static instrument property computed once and cached inside psf.
+        self._extent = psf_95_energy_extent(energy_fraction)
+
+    def weight_field(
+        self,
+        tile: GridTile,
+        boresight_lat_deg: float,
+        boresight_lon_deg: float,
+        *,
+        altitude_km: float | None = None,
+        viewing_zenith_deg: float = 0.0,
+        subsatellite_lat_deg: float | None = None,
+        subsatellite_lon_deg: float | None = None,
+        cone_angle_rate: float | None = None,
+    ) -> WeightField:
+        """Compute the CERES-PSF :class:`WeightField` for ``tile``. See class docstring."""
+        lats = np.asarray(tile.lats, dtype=float)
+        lons = np.asarray(tile.lons, dtype=float)
+
+        altitude = altitude_km if (altitude_km is not None and altitude_km > 0.0) else NOMINAL_ALTITUDE_KM
+        # max_radius_km is diagnostic only (the true contour lives in angle space); we
+        # reuse the radial ground-radius estimate so the WeightField field stays populated.
+        max_radius_km = psf_ground_radius_km(altitude, viewing_zenith_deg, self._fov_halfangle_deg)
+
+        # Empty tile (failed / missing region): empty, zero-energy field.
+        if lats.size == 0 or lons.size == 0:
+            return WeightField(
+                weights=np.zeros((lats.size, lons.size), dtype=float),
+                total_energy=0.0,
+                max_radius_km=max_radius_km,
+            )
+
+        # Without a subsatellite point we cannot orient the scan plane; fall back to
+        # the boresight (a nadir-ish frame). This is a degraded mode -- the orchestrator
+        # should supply the L1B subsatellite geolocation whenever available.
+        sub_lat = subsatellite_lat_deg if subsatellite_lat_deg is not None else boresight_lat_deg
+        sub_lon = subsatellite_lon_deg if subsatellite_lon_deg is not None else boresight_lon_deg
+
+        lon_grid, lat_grid = np.meshgrid(lons, lats)  # both (n_lat, n_lon)
+        delta, beta = project_to_angular(
+            lat_grid,
+            lon_grid,
+            boresight_lat_deg,
+            boresight_lon_deg,
+            sub_lat,
+            sub_lon,
+            viewing_zenith_deg,
+            altitude_km=altitude,
+        )
+        # Alignment offset between the reported centroid (delta = 0) and the PSF
+        # centroid. Currently 0 -- see _CENTROID_OFFSET_DEG.
+        delta = delta + _CENTROID_OFFSET_DEG
+
+        stationary = cone_angle_rate is not None and abs(cone_angle_rate) <= _STATIC_CONE_RATE_EPS_DEG_PER_S
+        if stationary:
+            # Scan turnaround: uniform response inside the circular optical FOV, zero
+            # outside (design doc section 2.4.2.2). Scan direction is irrelevant.
+            angular_radius = np.hypot(delta, beta)
+            weights = (angular_radius <= self._fov_halfangle_deg).astype(float)
+        else:
+            # Outward scan (positive cone-angle rate) reverses the along-scan axis so
+            # the PSF's trailing tail points the correct way (design doc 2.8.1.2 step 5).
+            delta_psf = -delta if (cone_angle_rate is not None and cone_angle_rate > 0.0) else delta
+            weights = psf_weight(delta_psf, beta)
+            # Truncate at the 95%-energy contour: zero any cell outside the PSF's
+            # angular half-extents (evaluated in psf_weight's own input-delta frame,
+            # which is the frame delta_psf lives in).
+            inside = (
+                (delta_psf >= -self._extent.delta_back_deg)
+                & (delta_psf <= self._extent.delta_front_deg)
+                & (np.abs(beta) <= self._extent.beta_max_deg)
+            )
+            weights = np.where(inside, weights, 0.0)
+
+        # PSF response is non-negative; clip guards against tiny negative round-off.
+        weights = np.clip(weights, 0.0, None)
+        return WeightField(
+            weights=weights,
+            total_energy=float(np.sum(weights)),
+            max_radius_km=max_radius_km,
+        )
