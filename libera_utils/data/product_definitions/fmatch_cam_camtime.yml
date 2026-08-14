@@ -1,0 +1,434 @@
+# =============================================================================
+# FMATCH-CAM-CAMTIME Data Product Definition
+# =============================================================================
+
+attributes:
+  ProductID: FMATCH-CAM-CAMTIME
+  algorithm_version: null
+  input_files: null #
+
+coordinates:
+  # FOOTPRINT is the record axis: one entry per pseudo-footprint (image subsection). A record is identified by the
+  # composite (CAMERA_TIME, camera_pixel_x, camera_pixel_y); the FOOTPRINT index is the positional unique handle.
+  #
+  # CAMERA_TIME is a NON-UNIQUE auxiliary coordinate on FOOTPRINT: one 2048x2048 image = one camera time, and the image
+  # is segmented into many (possibly overlapping) subsections that all share that time, so CAMERA_TIME repeats across
+  # the records of a given image. It is a SHARED coordinate across the Libera camera-timescale products: for a given
+  # date, FMATCH-CAM-CAMTIME and SCENE-ID-CAM-CAMTIME carry the *identical* CAMERA_TIME values so records align 1:1.
+  # Records are always emitted in CAMERA_TIME order.
+  CAMERA_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: >-
+        Camera image acquisition time (UTC) against a base reference of the CCSDS Epoch (January 1, 1958) of the full
+        image this subsection was segmented from. NOT unique across records: all subsections of one image share it.
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+  # Camera pixel-index ranges identifying each subsection's source pixels in the L1B Daily Camera grid. Together with
+  # CAMERA_TIME these coordinates identify the data by camera time and pixel location. Each range is an inclusive
+  # (min, max) pair over the CAMERA_PIXEL_BOUNDS axis: index 0 is the minimum pixel index and index 1 is the maximum,
+  # both inclusive. Subsections may overlap in pixel space. Passed through verbatim to SCENE-ID-CAM-CAMTIME.
+  camera_pixel_x:
+    dtype: int32
+    dimensions: ["FOOTPRINT", "CAMERA_PIXEL_BOUNDS"]
+    attributes:
+      long_name: >-
+        Inclusive (min, max) camera pixel-column index range of the pseudo-footprint block along
+        CAMERA_PIXEL_COUNT_X
+  camera_pixel_y:
+    dtype: int32
+    dimensions: ["FOOTPRINT", "CAMERA_PIXEL_BOUNDS"]
+    attributes:
+      long_name: >-
+        Inclusive (min, max) camera pixel-row index range of the pseudo-footprint block along
+        CAMERA_PIXEL_COUNT_Y
+
+variables:
+  # ---------------------------------------------------------------------------
+  # (a) Geolocation inputs (from L1B Daily): lat, lon, alt, sza, vza, raa.
+  # ---------------------------------------------------------------------------
+  latitude:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+  longitude:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+  altitude:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      # This value is the center-pixel geolocated SURFACE height taken straight from
+      # the L1B Daily Camera `Altitude` field (camera_segmentation._build_footprint),
+      # i.e. terrain elevation above the WGS84 ellipsoid at the footprint boresight --
+      # NOT the ~835 km spacecraft altitude.
+      long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
+      units: meters
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Solar zenith angle
+      units: degrees
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Viewing zenith angle
+      units: degrees
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Relative azimuth angle between Sun and sensor
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # (b) Derived viewing geometry (computed from the angles above; CERES/SSF
+  #     heritage). Math lives in
+  #     libera_utils/footprint_matching/product.compute_derived_viewing_geometry().
+  # ---------------------------------------------------------------------------
+  sunglint_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Sun glint angle
+      units: degrees
+
+  # ---------------------------------------------------------------------------
+  # (c) PSF-aggregated external variables (one value per footprint).
+  # ---------------------------------------------------------------------------
+  # --- source reader: era5 (resolution 25.0 km) ---
+  era5_wind_u10:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Eastward wind component at 10 m (ECMWF)
+      units: "m/s"
+  era5_wind_u10_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
+      units: "m/s"
+  era5_wind_v10:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Northward wind component at 10 m (ECMWF)
+      units: "m/s"
+  era5_wind_v10_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Northward wind component at 10 m (within-footprint standard deviation) (ECMWF)
+      units: "m/s"
+  # --- source reader: igbp (resolution 1.0 km) ---
+  igbp_surface_type:
+    dtype: int16
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: IGBP surface type classification (MODIS)
+  igbp_surface_type_primary:
+    dtype: int16
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_secondary:
+    dtype: int16
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Second most common IGBP surface type in footprint (MODIS)
+  igbp_surface_type_tertiary:
+    dtype: int16
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Third most common IGBP surface type in footprint (MODIS)
+  # --- source reader: nise (resolution 25.0 km) ---
+  nise_sea_ice_concentration:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Sea ice concentration (fraction) (SSMIS)
+      units: "1"
+  nise_sea_ice_concentration_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Sea ice concentration (fraction) (within-footprint standard deviation) (SSMIS)
+      units: "1"
+  nise_no_ice_or_snow:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint with no ice or snow (NISE code 0) (SSMIS)
+      units: "1"
+  nise_no_ice_or_snow_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint with no ice or snow (NISE code 0) (within-footprint standard deviation) (SSMIS)
+      units: "1"
+  nise_permanent_ice:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (SSMIS)
+      units: "1"
+  nise_permanent_ice_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by permanent ice (NISE code 101) (within-footprint standard deviation) (SSMIS)
+      units: "1"
+  nise_dry_snow_on_land:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110) (SSMIS)
+      units: "1"
+  nise_dry_snow_on_land_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint covered by dry snow on land (NISE codes 103-110) (within-footprint standard deviation) (SSMIS)
+      units: "1"
+  nise_snow_ice_missing:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (SSMIS)
+      units: "1"
+  nise_snow_ice_missing_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of footprint with missing NISE retrieval (NISE code 255) (within-footprint standard deviation) (SSMIS)
+      units: "1"
+  # --- source reader: viirs_brdf (resolution 5.6 km) ---
+  viirs_brdf_brdf_shortwave_fiso:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Shortwave BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_shortwave_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Shortwave BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_shortwave_fvol:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Shortwave BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_shortwave_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Shortwave BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_shortwave_fgeo:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Shortwave BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_shortwave_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Shortwave BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_vis_fiso:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Visible BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_vis_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Visible BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_vis_fvol:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Visible BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_vis_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Visible BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_vis_fgeo:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Visible BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_vis_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Visible BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_nir_fiso:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Near-infrared BRDF isotropic kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_nir_fiso_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Near-infrared BRDF isotropic kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_nir_fvol:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Near-infrared BRDF volumetric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_nir_fvol_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Near-infrared BRDF volumetric kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_nir_fgeo:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Near-infrared BRDF geometric kernel weight (NOAA20)
+      units: "1"
+  viirs_brdf_brdf_nir_fgeo_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Near-infrared BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  # --- source reader: viirs_cloud (resolution 111.0 km) ---
+  viirs_cloud_cloud_optical_thickness:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Cloud optical thickness (NOAA20)
+      units: "1"
+  viirs_cloud_cloud_optical_thickness_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Cloud optical thickness (within-footprint standard deviation) (NOAA20)
+      units: "1"
+  viirs_cloud_cloud_top_pressure:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Cloud top pressure (NOAA20)
+      units: "hPa"
+  viirs_cloud_cloud_top_pressure_standard_deviation:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Cloud top pressure (within-footprint standard deviation) (NOAA20)
+      units: "hPa"
+
+  # ---------------------------------------------------------------------------
+  # (e) Libera WFOV CAM algorithm outputs (NOT from external readers).
+  #     Per-footprint values produced by Libera's CF-CAM algorithm and merged into
+  #     the record.
+  # ---------------------------------------------------------------------------
+  cloud_fraction_camera:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      # Carried in percent [0, 100] matching the CF-CAM-CAMTIME input; SCENE-ID ingests it as-is.
+      long_name: Cloud fraction (Libera WFOV)
+      units: percent
+
+  # ---------------------------------------------------------------------------
+  # (d) Coverage / QA bookkeeping
+  # ---------------------------------------------------------------------------
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+  psf_coverage_fraction:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Fraction of PSF energy covered by valid ancillary data
+      units: "1"
+  q_flags:
+    # int32 (not int64): only a handful of bits are defined, so a 64-bit width is unnecessary.
+    dtype: int32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Quality flags (bitwise)
+      # CF flag metadata for the bits set by camera_segmentation.CameraFootprintQualityFlag.
+      # flag_masks/flag_meanings let a consumer decode each bit without reading source:
+      #   1 = partial_coverage           (some -- not all -- block corners were off-Earth,
+      #                                    so the bounding box covers only part of the block)
+      #   2 = center_pixel_substituted   (the geometric center pixel was off-Earth, so the
+      #                                    nearest valid pixel was used as the boresight)
+      flag_masks: [1, 2]
+      flag_meanings: "partial_coverage center_pixel_substituted"
+
+  # ---------------------------------------------------------------------------
+  # (f) Camera pixel-block provenance.
+  #     Each pseudo-footprint is a contiguous block of L1B camera pixels
+  #     (camera_segmentation.PseudoFootprint). The block's inclusive (min, max) extent
+  #     on each pixel axis is carried by the camera_pixel_x / camera_pixel_y range
+  #     COORDINATES declared above (dims FOOTPRINT x CAMERA_PIXEL_BOUNDS). The
+  #     center-pixel indices below point at the boresight stand-in, after any
+  #     nearest-valid substitution (see the center_pixel_substituted q_flags bit).
+  #     center_pixel_x/y are FMATCH-only provenance: the boresight pixel is not needed
+  #     downstream, so SCENE-ID-CAM-CAMTIME does not carry it (unlike camera_pixel_x/y,
+  #     which pass straight through).
+  # ---------------------------------------------------------------------------
+  center_pixel_x:
+    dtype: int32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
+  center_pixel_y:
+    dtype: int32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
