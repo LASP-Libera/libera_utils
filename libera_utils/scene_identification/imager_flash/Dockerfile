@@ -1,10 +1,10 @@
-## Dockerfile that installs libera_utils and runs the Libera SCENE-ID-CAM algorithm.
+## Dockerfile that installs libera_utils and runs the Libera SCENE-ID-IMAGER-FLASH algorithm.
 
 ARG BUILDPLATFORM=linux/amd64
 
-# scene-id-cam
-# ------------
-FROM --platform=${BUILDPLATFORM} python:3.11-slim AS scene-id-cam
+# scene-id-imager-flash
+# ---------------------
+FROM --platform=${BUILDPLATFORM} python:3.11-slim AS scene-id-imager-flash
 USER root
 
 # Core package installation location. Later images that inherit from this one can reuse this.
@@ -33,8 +33,8 @@ RUN pip install --upgrade pip
 RUN curl -sSL https://install.python-poetry.org | python -
 ENV PATH="$PATH:/root/.local/bin"
 
-# Copy the files needed to install libera_utils (respecting .dockerignore). The SCENE-ID-CAM runner lives inside
-# the libera_utils package (scene_identification/cam/scene_id_cam.py) and is included by this copy.
+# Copy the files needed to install libera_utils (respecting .dockerignore). The SCENE-ID-IMAGER-FLASH runner lives
+# inside the libera_utils package (scene_identification/imager_flash/scene_id_imager_flash.py) and is included here.
 COPY libera_utils $LIBERA_UTILS_DIRECTORY/libera_utils
 COPY pyproject.toml $LIBERA_UTILS_DIRECTORY
 COPY README.md $LIBERA_UTILS_DIRECTORY
@@ -47,17 +47,17 @@ RUN true
 # Install libera_utils and all its (non-dev) dependencies according to pyproject.toml.
 RUN poetry install --only main
 
-# The container entrypoint is the manifest-driven SCENE-ID-CAM runner. Arguments passed to the container (i.e. the
-# path to the input manifest) are forwarded to the script. The runner also reads the PROCESSING_PATH environment
-# variable to determine where to write outputs.
-ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/cam/scene_id_cam.py"]
+# The container entrypoint is the manifest-driven SCENE-ID-IMAGER-FLASH runner. Arguments passed to the container
+# (i.e. the path to the input manifest) are forwarded to the script. The runner also reads the PROCESSING_PATH
+# environment variable to determine where to write outputs.
+ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/imager_flash/scene_id_imager_flash.py"]
 
 
-# scene-id-cam-test
-# -----------------
-FROM scene-id-cam AS scene-id-cam-test
+# scene-id-imager-flash-test
+# --------------------------
+FROM scene-id-imager-flash AS scene-id-imager-flash-test
 
-# Install dev dependencies (not installed in the scene-id-cam image).
+# Install dev dependencies (not installed in the scene-id-imager-flash image).
 RUN poetry install
 
 # Copy tests over.
