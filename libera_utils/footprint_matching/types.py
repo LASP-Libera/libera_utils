@@ -58,6 +58,37 @@ class OperationalMode(enum.Enum):
         return list(OperationalMode).index(self)
 
 
+class FmatchCoverageFlag(enum.IntFlag):
+    """Bitwise coverage/QA flags folded into a footprint's ``q_flags`` variable.
+
+    Set by the product orchestrator from the CERES 75%/95% PSF-energy coverage rule
+    (design doc section 2.4.2.7) once the external-variable aggregation has run. The
+    values are OR-combined and tested bitwise, and an empty (zero) value means "no
+    coverage issue". The ``PARTIAL_COVERAGE`` bit deliberately shares bit 0 with
+    :class:`~libera_utils.footprint_matching.camera_segmentation.CameraFootprintQualityFlag.PARTIAL_COVERAGE`
+    so the camera segmentation's own partial-coverage flag and the PSF-energy
+    partial-coverage flag OR together into one consistent "partial" bit; the other
+    bits use positions the camera flag does not (it uses bit 1 for
+    ``CENTER_PIXEL_SUBSTITUTED``).
+
+    Attributes
+    ----------
+    PARTIAL_COVERAGE
+        75% <= coverage < 95% of the PSF's 95%-energy weight was backed by usable
+        ancillary data (accepted, but flagged partial). Bit 0.
+    INSUFFICIENT_COVERAGE
+        coverage < 75% -- below the CERES acceptance threshold. The footprint is
+        retained but flagged (a flag-not-discard policy; see the product module). Bit 2.
+    LIMB_TRUNCATED
+        The footprint's bounding box was clipped at the Earth's limb
+        (``BoundingBox.truncated``), so it only ever had partial ground coverage. Bit 3.
+    """
+
+    PARTIAL_COVERAGE = 0b0001
+    INSUFFICIENT_COVERAGE = 0b0100
+    LIMB_TRUNCATED = 0b1000
+
+
 class BoundingBox(tuple):
     """Geographic bounding box for a footprint's PSF contour.
 
@@ -222,6 +253,58 @@ class GridTile:
     def nbytes(self) -> int:
         """Estimated memory footprint in bytes, used for LRU cache eviction decisions."""
         return int(self.data.nbytes + self.lats.nbytes + self.lons.nbytes)
+
+
+@dataclass(frozen=True)
+class RadiometerFootprint:
+    """One radiometer-timescale footprint, ready for external-variable aggregation.
+
+    The radiometer-timescale FMATCH modes take their footprints straight from the L1B
+    Daily radiometer product. This is the minimal object the aggregation path needs:
+    a geographic bounding box (which ancillary tiles to load) plus the boresight
+    geolocation and viewing zenith the PSF weigher reads. It is the radiometer-path
+    analogue of the camera path's
+    :class:`~libera_utils.footprint_matching.camera_segmentation.PseudoFootprint`,
+    kept deliberately small so it stays dependency-free here.
+
+    The scan-frame fields the CERES-faithful ``AngularPSFWeigher`` needs
+    (subsatellite point and cone-angle rate) are optional. When they are populated -
+    which the production reader now does from the L1B ``Subsatellite_Latitude`` /
+    ``Subsatellite_Longitude`` / ``Cone_Angle_Rate`` fields - the footprint carries a
+    true ray-traced bounding box (:func:`compute_footprint_bounding_box`) and the
+    angular weigher orients the PSF along the real scan plane. When they are ``None``
+    (e.g. a minimal caller-built dict), the box degrades to the boresight-centred
+    approximation and the angular weigher falls back to a nadir frame.
+
+    Attributes
+    ----------
+    bbox : BoundingBox
+        Geographic box enclosing the footprint's PSF ground contour.
+    latitude, longitude : float
+        Boresight centroid (L1B ``Latitude``/``Longitude``), degrees.
+    altitude : float
+        Satellite altitude above the surface, km (nominal orbit altitude when the L1B
+        field is unavailable).
+    viewing_zenith_angle : float
+        Viewing zenith angle (L1B ``Viewing_Zenith_Surface``), degrees.
+    subsatellite_latitude, subsatellite_longitude : float or None
+        Subsatellite ground point (L1B ``Subsatellite_Latitude`` /
+        ``Subsatellite_Longitude``), degrees. ``None`` when unavailable. Read by the
+        angular weigher (and the ray-traced box) to orient the scan plane.
+    cone_angle_rate : float or None
+        Instrument cone-angle rate (L1B ``Cone_Angle_Rate``), degrees per second.
+        ``None`` when unavailable. Its sign sets the along-scan PSF orientation and a
+        near-zero magnitude flags the stationary-scanner (uniform-FOV) case.
+    """
+
+    bbox: BoundingBox
+    latitude: float
+    longitude: float
+    altitude: float
+    viewing_zenith_angle: float
+    subsatellite_latitude: float | None = None
+    subsatellite_longitude: float | None = None
+    cone_angle_rate: float | None = None
 
 
 @dataclass(frozen=True)
