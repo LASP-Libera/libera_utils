@@ -119,6 +119,10 @@ class _SSFField(NamedTuple):
         When set, pins the emitted spec to exactly these products (bypassing the
         ``required_mode`` rank rule). Used to keep the extended cloud/aerosol/albedo
         fields in FMATCH-IMAGER only. ``None`` (default) uses the rank rule.
+    log_floor : float or None
+        Detection-limit floor for ``weighted_log_mean`` fields, passed to the
+        rasterizer so valid zeros are retained rather than dropped. ``None``
+        (default) uses the rasterizer's default floor; ignored for other aggregations.
     """
 
     out_name: str
@@ -131,6 +135,7 @@ class _SSFField(NamedTuple):
     n_categories: int | None
     required_mode: OperationalMode = OperationalMode.IMAGER_FLASH
     only_modes: tuple[OperationalMode, ...] | None = None
+    log_floor: float | None = None
 
 
 # Minimal starter field set (refine later — see module docstring).
@@ -514,6 +519,7 @@ class SSFReader(GriddedDataReader):
         """
         lats, lons, values = self._load_points()
         aggregations = [f.aggregation for f in _SSF_FIELDS]
+        log_floors = [f.log_floor for f in _SSF_FIELDS]
         return rasterize_points_to_grid(
             point_lats=lats,
             point_lons=lons,
@@ -521,4 +527,5 @@ class SSFReader(GriddedDataReader):
             bbox=(bbox.lat_min, bbox.lat_max, bbox.lon_min, bbox.lon_max),
             cell_size_deg=self.OUTPUT_CELL_DEG,
             aggregations=aggregations,
+            log_floors=log_floors,
         )
