@@ -40,6 +40,17 @@ L1B-derived columns; every other variable is a conformant placeholder (structura
 valid but numerically meaningless; see
 :mod:`libera_utils.footprint_matching.product`). The runners themselves do not change
 when those engines land.
+
+Because of this, these runners are **not operational end-to-end yet**: the placeholder
+classification inputs are not consumable by SCENE-ID. In particular ``igbp_surface_type``
+is written as ``0``, and SCENE-ID's
+:func:`~libera_utils.scene_identification.scene_id.calculate_trmm_surface_type` accepts
+only valid IGBP codes (1..20) and raises ``ValueError`` on ``0``. Feeding a *runner-written*
+FMATCH product into a SCENE-ID runner therefore fails until the aggregation engine
+(``TODO[LIBSDC-785]``) fills those columns with real reader-derived values. The synthetic
+``make_fmatch_product_fixture`` test fixture fills valid classification inputs, so the
+FMATCH -> SCENE-ID integration tests exercise the wiring with conformant data; the gap is
+the runner output, not the SCENE-ID readers.
 """
 
 from __future__ import annotations
@@ -379,6 +390,19 @@ def create_and_write_data_product(
     -------
     LiberaDataProductFilename
         The written data product file, with a proper Libera filename.
+
+    Notes
+    -----
+    Only the L1B-derived columns are written with real values. The external-reader
+    aggregates (``igbp_surface_type``, ``era5_*``, ``ssf_*``, ``cldpix_*``, ...) and the
+    camera cloud-fraction values are **not** supplied here - the aggregation engine that
+    computes them is still ``TODO[LIBSDC-785]`` - so ``write_fmatch_product`` writes them as
+    conformant placeholders (integers as ``0``, floats as ``NaN``). A product written by this
+    function is therefore **not yet consumable by SCENE-ID**: its placeholder
+    ``igbp_surface_type=0`` makes
+    :func:`~libera_utils.scene_identification.scene_id.calculate_trmm_surface_type` raise.
+    These runners are intentionally non-operational end-to-end until that engine lands; see
+    the module ``Milestone note``.
     """
     inputs = run_footprint_matching(l1b_file_path, config)
 
