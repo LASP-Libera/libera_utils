@@ -24,21 +24,21 @@ Examples
 ['cldpix', 'era5', 'era5_pressure', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cloud']
 """
 
-# Importing each reader module causes its class to be defined, which triggers
+# Importing each reader class defines it, which triggers
 # GriddedDataReader.__init_subclass__, which calls ReaderRegistry._registry[key] = cls.
-from libera_utils.footprint_matching.readers import (  # noqa: F401
-    aod,
-    brdf,
-    cldpix,
-    era5,
-    era5_pressure,
-    igbp,
-    nsidc,
-    ssf,
-    viirs,
-)
+# Binding the classes here (not just the modules) keeps ``__all__`` importable so
+# ``from ...readers import IGBPReader`` and ``import *`` work as advertised.
+from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG, GriddedDataReader
+from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
+from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
+from libera_utils.footprint_matching.readers.era5 import ERA5Reader
+from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
+from libera_utils.footprint_matching.readers.igbp import IGBPReader
+from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.ssf import SSFReader
+from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
 
 __all__ = [
     "CLDPIXReader",

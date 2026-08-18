@@ -117,6 +117,53 @@ class TestRasterizePointsToGrid:
         )
         assert data[0, 0, 0] == pytest.approx(10.0)
 
+    def test_log_mean_retains_valid_zero(self):
+        # A valid zero (e.g. AOD == 0, "perfectly clear") must NOT be dropped: it is
+        # floored to the default 1e-4, so the geometric mean of {0, 100} is
+        # exp((log(1e-4) + log(100)) / 2) == 0.1 — far below the drop-the-zero value
+        # of 100. This is the core of the #7 fix (no upward bias, cell not NaN).
+        lats = np.array([0.25, 0.75])
+        lons = np.array([0.25, 0.75])
+        vals = np.array([[0.0, 100.0]])
+        data, _, _ = rasterize_points_to_grid(
+            lats, lons, vals, self._bbox(), cell_size_deg=1.0, aggregations=[AGG_LOG_MEAN]
+        )
+        assert data[0, 0, 0] == pytest.approx(0.1)
+
+    def test_log_mean_all_zero_cell_is_floor_not_nan(self):
+        # An all-zero cell reports ~0 (the floor), not "no coverage" (NaN).
+        lats = np.array([0.25, 0.75])
+        lons = np.array([0.25, 0.75])
+        vals = np.array([[0.0, 0.0]])
+        data, _, _ = rasterize_points_to_grid(
+            lats, lons, vals, self._bbox(), cell_size_deg=1.0, aggregations=[AGG_LOG_MEAN]
+        )
+        assert not np.isnan(data[0, 0, 0])
+        assert data[0, 0, 0] == pytest.approx(1e-4)
+
+    def test_log_mean_rejects_negatives(self):
+        # Negatives are physically invalid and still excluded; the positive survives,
+        # and a cell whose only value is negative becomes NaN.
+        lats = np.array([0.25, 0.75, 1.5])
+        lons = np.array([0.25, 0.75, 1.5])
+        vals = np.array([[-5.0, 100.0, -1.0]])
+        data, _, _ = rasterize_points_to_grid(
+            lats, lons, vals, self._bbox(), cell_size_deg=1.0, aggregations=[AGG_LOG_MEAN]
+        )
+        assert data[0, 0, 0] == pytest.approx(100.0)  # -5 dropped, 100 kept
+        assert np.isnan(data[0, 1, 1])  # only a negative point → no valid coverage
+
+    def test_log_mean_per_variable_floor_override(self):
+        # A per-variable log_floor (e.g. a detection limit) changes how a zero is
+        # floored: with floor=1.0, geometric mean of {0, 100} is exp(log(100)/2) == 10.
+        lats = np.array([0.25, 0.75])
+        lons = np.array([0.25, 0.75])
+        vals = np.array([[0.0, 100.0]])
+        data, _, _ = rasterize_points_to_grid(
+            lats, lons, vals, self._bbox(), cell_size_deg=1.0, aggregations=[AGG_LOG_MEAN], log_floors=[1.0]
+        )
+        assert data[0, 0, 0] == pytest.approx(10.0)
+
     def test_mode_aggregation_picks_most_common(self):
         # Three points in the lower-left cell: codes [5, 5, 7] → mode 5.
         lats = np.array([0.1, 0.2, 0.3])

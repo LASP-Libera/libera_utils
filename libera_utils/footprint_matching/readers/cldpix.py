@@ -116,6 +116,10 @@ class _CLDPIXField(NamedTuple):
         ``-1`` "no data" sentinel in the snow/ice maps.
     n_categories : int or None
         Category count for categorical variables; ``None`` for continuous.
+    log_floor : float or None
+        Detection-limit floor for ``weighted_log_mean`` fields, passed to the
+        rasterizer so valid zeros are retained rather than dropped. ``None``
+        (default) uses the rasterizer's default floor; ignored for other aggregations.
     """
 
     out_name: str
@@ -124,6 +128,7 @@ class _CLDPIXField(NamedTuple):
     fill: float | int
     valid_range: tuple[float, float] | None
     n_categories: int | None
+    log_floor: float | None = None
 
 
 # Minimal starter field set (refine later — see module docstring).
@@ -268,6 +273,7 @@ class CLDPIXReader(GriddedDataReader):
         """
         lats, lons, values = self._load_points()
         aggregations = [f.aggregation for f in _CLDPIX_FIELDS]
+        log_floors = [f.log_floor for f in _CLDPIX_FIELDS]
         return rasterize_points_to_grid(
             point_lats=lats,
             point_lons=lons,
@@ -275,4 +281,5 @@ class CLDPIXReader(GriddedDataReader):
             bbox=(bbox.lat_min, bbox.lat_max, bbox.lon_min, bbox.lon_max),
             cell_size_deg=self.OUTPUT_CELL_DEG,
             aggregations=aggregations,
+            log_floors=log_floors,
         )

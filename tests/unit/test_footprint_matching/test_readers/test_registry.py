@@ -182,3 +182,22 @@ class TestReaderMembershipSets:
             readers = ReaderRegistry.get_readers_for_mode(mode)
             assert readers, f"{mode.value} resolved to an empty reader set"
             assert set(readers) <= registered
+
+
+class TestReadersPublicApi:
+    """The readers package must bind every name it advertises in ``__all__``."""
+
+    def test_all_names_are_bound_at_package_root(self):
+        import libera_utils.footprint_matching.readers as pkg
+
+        missing = [name for name in pkg.__all__ if not hasattr(pkg, name)]
+        assert not missing, f"names in __all__ not bound in package namespace: {missing}"
+
+    def test_reader_classes_importable_from_package_root(self):
+        # The exact usage Copilot flagged: importing a reader class straight from the
+        # package root must work, not just from its submodule.
+        from libera_utils.footprint_matching.readers import IGBPReader as PkgIGBP
+        from libera_utils.footprint_matching.readers import SSFReader as PkgSSF
+
+        assert PkgIGBP is IGBPReader
+        assert PkgSSF is SSFReader

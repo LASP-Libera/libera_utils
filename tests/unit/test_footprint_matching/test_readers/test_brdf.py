@@ -89,11 +89,13 @@ class TestVIIRSBRDFReaderScaleAndFill:
         assert np.allclose(non_fill, 0.200, atol=1e-4)
 
     def test_fill_sentinel_becomes_nan(self, tmp_path):
-        # make_viirs_brdf_hdf5_fixture writes fill_sentinel to [-1, -1] of each dataset.
+        # The fixture writes fill_sentinel to file position [-1, -1] — the lat_min row of
+        # the DESCENDING file. The reader flips lats to ascending, moving that row to
+        # output row 0, so the fill lands at [:, 0, -1] (one fill pixel per band).
         reader = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
-        # The fixture has fill at position [-1, -1] for every band.
-        assert np.isnan(data[:, -1, -1]).all()
+        assert np.isnan(data[:, 0, -1]).all()
+        assert np.isnan(data).sum() == data.shape[0]
 
     def test_non_fill_pixels_are_not_nan(self, tmp_path):
         reader = _make_reader(tmp_path)
@@ -115,11 +117,13 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         assert data.dtype == np.float32
 
     def test_lat_is_ascending(self, tmp_path):
-        # The fixture stores lats in DESCENDING order; read_viirs_brdf_hdf5 must flip them.
+        # The fixture stores lats in DESCENDING order; read_viirs_brdf_hdf5 must flip them
+        # to ascending, so output row 0 corresponds to lat_min.
         reader = _make_reader(tmp_path)
         _, lats, _ = reader._load_spatial_region(_full_bbox())
-        if lats.size > 1:
-            assert np.all(np.diff(lats) >= 0), f"lats not ascending: {lats}"
+        assert lats.size > 1
+        assert np.all(np.diff(lats) >= 0), f"lats not ascending: {lats}"
+        assert np.isclose(lats[0], _LAT_MIN), f"row 0 should be lat_min after flip: {lats}"
 
     def test_spatial_shape_matches_fixture(self, tmp_path):
         reader = _make_reader(tmp_path)

@@ -48,6 +48,14 @@ AGG_MEAN: str = "weighted_mean"
 AGG_LOG_MEAN: str = "weighted_log_mean"
 AGG_MODE: str = "weighted_mode"
 
+# Default floor applied to zero / near-zero values before the geometric-mean log.
+# Zero is physically valid for positive-definite quantities like AOD and optical
+# depth (0 == "perfectly clear"), so it must not be dropped from a log mean.
+# Flooring it to a small positive value keeps it in the average — an all-zero cell
+# reports ~0 instead of NaN — without letting log(0) = -inf blow up. Readers can
+# override this per variable with a physical detection limit via ``log_floors``.
+_DEFAULT_LOG_FLOOR: float = 1e-4
+
 
 def normalize_longitude(lon: np.ndarray) -> np.ndarray:
     """Convert longitudes from the 0..360 convention to −180..180.
@@ -146,6 +154,7 @@ def rasterize_points_to_grid(
     bbox: tuple[float, float, float, float],
     cell_size_deg: float,
     aggregations: list[str],
+    log_floors: list[float | None] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Bin scattered points into a regular sub-grid covering ``bbox``.
 
@@ -173,6 +182,11 @@ def rasterize_points_to_grid(
     aggregations : list of str
         One entry per variable (same order as ``values`` axis 0). One of
         :data:`AGG_MEAN`, :data:`AGG_LOG_MEAN`, or :data:`AGG_MODE`.
+    log_floors : list of (float or None), optional
+        Optional per-variable floor (same order/length as ``aggregations``) applied
+        before the log in :data:`AGG_LOG_MEAN` cells — set each to the variable's
+        physical detection limit. ``None`` for an entry (or the whole argument)
+        uses :data:`_DEFAULT_LOG_FLOOR`. Ignored for non-log aggregations.
 
     Returns
     -------
@@ -250,7 +264,8 @@ def rasterize_points_to_grid(
         vals_v = vals[finite]
 
         if agg in (AGG_MEAN, AGG_LOG_MEAN):
-            grid_flat = _aggregate_mean(cells_v, vals_v, n_cells, log=(agg == AGG_LOG_MEAN))
+            floor = log_floors[v] if log_floors is not None and log_floors[v] is not None else _DEFAULT_LOG_FLOOR
+            grid_flat = _aggregate_mean(cells_v, vals_v, n_cells, log=(agg == AGG_LOG_MEAN), log_floor=floor)
         elif agg == AGG_MODE:
             grid_flat = _aggregate_mode(cells_v, vals_v, n_cells)
         else:
@@ -261,7 +276,14 @@ def rasterize_points_to_grid(
     return data, lats_out.astype(np.float64), lons_out.astype(np.float64)
 
 
-def _aggregate_mean(cells: np.ndarray, vals: np.ndarray, n_cells: int, *, log: bool) -> np.ndarray:
+def _aggregate_mean(
+    cells: np.ndarray,
+    vals: np.ndarray,
+    n_cells: int,
+    *,
+    log: bool,
+    log_floor: float = _DEFAULT_LOG_FLOOR,
+) -> np.ndarray:
     """Per-cell arithmetic (or geometric) mean, empty cells as ``NaN``.
 
     Parameters
@@ -275,19 +297,29 @@ def _aggregate_mean(cells: np.ndarray, vals: np.ndarray, n_cells: int, *, log: b
     log : bool
         If True compute the geometric mean (``exp(mean(log(v)))``) for
         positive-definite, log-normally distributed quantities such as optical
-        depth and AOD. Non-positive values are dropped from the log average.
+        depth and AOD. Negative values are rejected as invalid; zero and
+        near-zero values are floored to ``log_floor`` (not dropped), so a valid
+        zero lowers the cell mean instead of disappearing.
+    log_floor : float, optional
+        Lower bound applied to values before the log when ``log`` is True: values
+        ``>= 0`` but below the floor are raised to it so ``log`` stays finite.
+        Set it to the variable's physical detection limit. Ignored when ``log``
+        is False. Defaults to :data:`_DEFAULT_LOG_FLOOR`.
 
     Returns
     -------
     np.ndarray
         Flat array of length ``n_cells`` with the per-cell mean (``NaN`` where
-        no points contributed).
+        no valid points contributed).
     """
     if log:
-        # Geometric mean is only defined for strictly positive values.
-        positive = vals > 0
-        cells = cells[positive]
-        vals = np.log(vals[positive])
+        # Reject negatives (physically invalid for these positive-definite
+        # quantities); keep zeros/near-zeros by flooring to ``log_floor`` so a
+        # valid zero pulls the geometric mean down instead of being silently
+        # dropped — dropping biased mixed cells up and turned all-zero cells NaN.
+        nonneg = vals >= 0
+        cells = cells[nonneg]
+        vals = np.log(np.maximum(vals[nonneg], log_floor))
 
     counts = np.bincount(cells, minlength=n_cells)
     sums = np.bincount(cells, weights=vals, minlength=n_cells)

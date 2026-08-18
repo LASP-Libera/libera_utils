@@ -114,10 +114,11 @@ class GriddedDataReader(abc.ABC):
         """
         super().__init_subclass__(**kwargs)
 
-        # Skip abstract classes — they have abstract methods still declared and
-        # cannot be instantiated, so registering them would cause confusing errors.
-        if abc.ABC in cls.__bases__:
-            return
+        # Skip abstract intermediates — they still have unimplemented abstract
+        # methods and cannot be instantiated, so registering them would cause
+        # confusing errors. ``__abstractmethods__`` is the reliable signal here;
+        # a concrete reader that has implemented every hook registers normally
+        # even if it happens to list ``abc.ABC`` among its bases.
         if getattr(cls, "__abstractmethods__", None):
             return
         # Check that the subclass has defined all required class attributes.
