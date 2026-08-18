@@ -401,3 +401,55 @@ class TestIdentifyAndUpdateMultidimPassthrough:
         np.testing.assert_array_equal(scene_ids.values, np.array([1, 2, 2], dtype=np.uint8))
         # The passthrough variable is carried through untouched, still 2-D.
         assert updated["camera_pixel_x"].dims == ("CAMERA_TIME", "CAMERA_PIXEL_BOUNDS")
+
+
+class TestWideSceneDefinitionDtype:
+    """The scene-ID label array must be sized to the widest scene ID actually present.
+
+    Regression guard for the TRMM definition, which enumerates 644 scenes with IDs up to 650. ``_identify_vectorized``
+    used to hardcode a ``uint8`` label array; under NumPy 2.0 NEP 50 promotion, assigning a scene ID > 255 into it
+    raises ``OverflowError: Python integer 256 out of bounds for uint8`` (older NumPy silently upcast, which is why this
+    only surfaced in CI). The array must widen to ``uint16`` -- matching the ``scene_id_trmm`` product-definition
+    dtype -- when the definition needs it, while narrower definitions keep the compact ``uint8``.
+    """
+
+    @staticmethod
+    def _contiguous_definition(tmp_path, num_scenes):
+        """Build a valid single-variable definition of ``num_scenes`` contiguous unit bins.
+
+        Scene ``k`` covers ``cloud_fraction`` in ``[k - 1, k)``, so the definition tiles ``[0, num_scenes)`` with no
+        gaps or overlaps and the maximum scene ID equals ``num_scenes``. The filename stem becomes the definition type,
+        so scene IDs are written to ``scene_id_wide_{num_scenes}``.
+        """
+        lines = ["scene_id,cloud_fraction_min,cloud_fraction_max"]
+        lines += [f"{k},{k - 1}.0,{k}.0" for k in range(1, num_scenes + 1)]
+        csv_file = tmp_path / f"wide_{num_scenes}.csv"
+        csv_file.write_text("\n".join(lines) + "\n")
+        return SceneDefinition(csv_file)
+
+    def test_scene_ids_above_uint8_max_do_not_overflow(self, tmp_path):
+        """A definition with more than 255 scenes classifies without overflowing and widens to uint16."""
+        scene_definition = self._contiguous_definition(tmp_path, num_scenes=260)
+
+        # Footprints landing in the first bin, the bin whose ID is exactly 256 (one past uint8's max), and the last bin.
+        data = xr.Dataset({"cloud_fraction": ("footprint", np.array([0.5, 255.5, 259.5], dtype=np.float32))})
+
+        updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
+
+        scene_ids = updated["scene_id_wide_260"]
+        # The label array widened past uint8 so IDs > 255 fit (and match the uint16 scene_id_trmm product dtype).
+        assert scene_ids.dtype == np.uint16
+        # Scene k covers [k - 1, k), so value v maps to scene floor(v) + 1 -- including the IDs above 255.
+        np.testing.assert_array_equal(scene_ids.values, np.array([1, 256, 260], dtype=np.uint16))
+
+    def test_small_definition_stays_uint8(self, tmp_path):
+        """A definition that fits in a byte keeps the compact uint8 label dtype (efficient storage is preserved)."""
+        scene_definition = self._contiguous_definition(tmp_path, num_scenes=3)
+
+        data = xr.Dataset({"cloud_fraction": ("footprint", np.array([0.5, 1.5, 2.5], dtype=np.float32))})
+
+        updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
+
+        scene_ids = updated["scene_id_wide_3"]
+        assert scene_ids.dtype == np.uint8
+        np.testing.assert_array_equal(scene_ids.values, np.array([1, 2, 3], dtype=np.uint8))
