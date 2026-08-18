@@ -29,6 +29,7 @@ from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
+from libera_utils.scene_identification.cam.scene_id_cam import run_scene_identification_cam
 from tests.test_data.footprint_matching.fixtures import (
     make_fmatch_product_fixture,
     make_l1b_camera_fixture,
@@ -325,3 +326,40 @@ class TestRunnerConfiguration:
         assert config.mode is mode
         assert config.l1b_input_product_id is l1b_product
         assert config.cloud_fraction_product_id is cloud_fraction_product
+
+
+class TestRunnerOutputNotYetConsumableBySceneId:
+    """Runner output is intentionally non-operational end-to-end until the aggregation engine lands.
+
+    The runners write only the L1B-derived columns with real values; the external-reader classification
+    inputs (``igbp_surface_type``, ...) are placeholders (``TODO[LIBSDC-785]``). This tripwire pins that
+    boundary: a *runner-written* FMATCH product is not yet consumable by SCENE-ID. It is the counterpart
+    to the SCENE-ID integration tests, which use the synthetic ``make_fmatch_product_fixture`` with valid
+    classification inputs.
+    """
+
+    @pytest.mark.xfail(
+        raises=ValueError,
+        strict=True,
+        reason="TODO[LIBSDC-785]: the runner writes placeholder igbp_surface_type=0, which "
+        "calculate_trmm_surface_type rejects. Real reader-derived classification inputs are not aggregated "
+        "yet, so runner output is not consumable by SCENE-ID. Remove this marker when the engine lands.",
+    )
+    def test_runner_written_product_is_consumable_by_scene_id(self, tmp_path, dropbox, staged_ancillary):
+        """A runner-written FMATCH-CAM product should classify through SCENE-ID once aggregation exists.
+
+        Today ``run_scene_identification_cam`` raises ``ValueError`` in ``calculate_trmm_surface_type`` on the
+        placeholder ``igbp_surface_type=0``; when ``TODO[LIBSDC-785]`` fills real classification inputs this
+        test xpasses and (strict xfail) fails, forcing the marker's removal.
+        """
+        inputs = tmp_path / "inputs"
+        inputs.mkdir()
+        manifest_path = _write_input_manifest(inputs, make_l1b_radiometer_fixture(inputs, n_footprints=8))
+
+        output_manifest = Manifest.from_file(cam_algorithm(manifest_path))
+        fmatch_product_path = output_manifest.files[0].filename
+
+        footprint_data = run_scene_identification_cam(fmatch_product_path)
+
+        scene_product = footprint_data.to_time_product("RADIOMETER_TIME")
+        assert "Quality_Flag" in scene_product.data_vars
