@@ -37,6 +37,7 @@ https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cache
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -553,8 +554,14 @@ def aggregate(
 # ---------------------------------------------------------------------------
 
 
+@cache
 def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
     """Associate every product variable spec with the read-plane it derives from.
+
+    Cached per reader class (:func:`functools.lru_cache`): the spec-to-plane mapping is a
+    static property of the reader, so it is computed once rather than rebuilt for every
+    footprint by :func:`aggregate_tile_variables`. Callers only iterate the returned list
+    (never mutate it), so sharing one instance across calls is safe.
 
     A reader's *product* variables (``product_variable_specs()``) are a superset of
     the *read* variables (``VARIABLES``): each read variable, plus a

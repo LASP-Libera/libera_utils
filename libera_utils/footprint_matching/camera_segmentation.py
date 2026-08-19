@@ -195,6 +195,16 @@ def _is_valid(value: float) -> bool:
     return math.isfinite(value) and value != L1B_FILL_VALUE
 
 
+def _valid_mask(array: np.ndarray) -> np.ndarray:
+    """Vectorized :func:`_is_valid` over a whole array (finite and not fill).
+
+    The elementwise equivalent of :func:`_is_valid`, used to build the per-image
+    validity grid in one pass instead of a Python-level ``np.vectorize`` loop.
+    """
+    array = np.asarray(array, dtype=float)
+    return np.isfinite(array) & (array != L1B_FILL_VALUE)
+
+
 def _estimate_ground_sampling_distance_km(lat2d: np.ndarray, lon2d: np.ndarray) -> float:
     """Estimate the ground distance between adjacent pixels, in km.
 
@@ -297,22 +307,20 @@ def _select_center_pixel(slice_x: slice, slice_y: slice, valid: np.ndarray) -> t
     if valid[cx, cy]:
         return cx, cy, False
 
-    # center pixel is fill: search the block for the valid pixel closest to the
-    # geometric center. The block is small (a few pixels on a side), so a direct
-    # scan is cheap and clearer than anything fancier.
-    best: tuple[int, int] | None = None
-    best_distance = math.inf
-    for ix in range(x0, x1 + 1):
-        for iy in range(y0, y1 + 1):
-            if not valid[ix, iy]:
-                continue
-            distance = max(abs(ix - cx), abs(iy - cy))
-            if distance < best_distance:
-                best, best_distance = (ix, iy), distance
-
-    if best is None:
+    # center pixel is fill: find the valid pixel in the block closest to the geometric
+    # center by Chebyshev (grid) distance. Vectorized over the block's valid pixels;
+    # np.nonzero yields them in row-major (ix asc, iy asc) order and np.argmin returns
+    # the first minimum, which reproduces the original nested-loop tie-break exactly
+    # (smallest ix, then smallest iy, among equidistant pixels).
+    sub_valid = valid[x0 : x1 + 1, y0 : y1 + 1]
+    local_ix, local_iy = np.nonzero(sub_valid)
+    if local_ix.size == 0:
         return None
-    return best[0], best[1], True
+    abs_ix = local_ix + x0
+    abs_iy = local_iy + y0
+    distance = np.maximum(np.abs(abs_ix - cx), np.abs(abs_iy - cy))
+    nearest = int(np.argmin(distance))
+    return int(abs_ix[nearest]), int(abs_iy[nearest]), True
 
 
 def _segment_image(
@@ -341,8 +349,9 @@ def _segment_image(
     nx, ny = lat2d.shape
 
     # A pixel is usable only if BOTH its lat and lon are valid; either being fill
-    # means the pixel did not intersect the Earth.
-    valid = np.vectorize(_is_valid)(lat2d) & np.vectorize(_is_valid)(lon2d)
+    # means the pixel did not intersect the Earth. Vectorized over the whole image
+    # grid (see _valid_mask) rather than a per-pixel np.vectorize loop.
+    valid = _valid_mask(lat2d) & _valid_mask(lon2d)
 
     gsd_km = _estimate_ground_sampling_distance_km(lat2d, lon2d)
     block = _block_size_pixels(gsd_km)

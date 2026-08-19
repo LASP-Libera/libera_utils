@@ -25,6 +25,7 @@ from libera_utils.footprint_matching.geometry import (
     PartialFootprintError,
     bounding_box_from_boresight,
     compute_footprint_bounding_box,
+    compute_footprint_bounding_boxes,
     psf_ground_radius_km,
 )
 
@@ -346,3 +347,103 @@ class TestBoundingBoxFromBoresight:
     def test_high_latitude_box_is_flagged_polar(self):
         box = bounding_box_from_boresight(88.0, 0.0, 0.0)
         assert box.is_polar
+
+
+class TestBatchBoundingBoxParity:
+    """The vectorized compute_footprint_bounding_boxes matches the scalar oracle.
+
+    The scalar compute_footprint_bounding_box is the reference implementation; the batch
+    path must reproduce it per footprint. Box bounds agree to well below tile granularity
+    (the box is a deliberate safe superset with a 5% margin, so sub-metre-to-metre
+    floating-point differences near the poles are immaterial); the structural flags and
+    the off-limb (None) decision must match exactly.
+    """
+
+    # Box bounds tolerance in degrees. The observed batch-vs-scalar difference is a few
+    # 1e-5 deg (~metres) on polar footprints, from the batch slant-range solve vs the
+    # scalar SVD lstsq; 1e-3 deg (~110 m) is comfortably above the noise and far below
+    # both the tile size and the 5% BBOX margin.
+    BOUND_ATOL_DEG = 1e-3
+
+    def _scalar_or_none(self, lat, lon, sub_lat, sub_lon, vza):
+        try:
+            return compute_footprint_bounding_box(lat, lon, sub_lat, sub_lon, vza, on_limb="flag")
+        except OffLimbError:
+            return None
+
+    def _assert_box_close(self, scalar, batch):
+        if scalar is None:
+            assert batch is None
+            return
+        assert batch is not None
+        assert batch.lat_min == pytest.approx(scalar.lat_min, abs=self.BOUND_ATOL_DEG)
+        assert batch.lat_max == pytest.approx(scalar.lat_max, abs=self.BOUND_ATOL_DEG)
+        assert batch.lon_min == pytest.approx(scalar.lon_min, abs=self.BOUND_ATOL_DEG)
+        assert batch.lon_max == pytest.approx(scalar.lon_max, abs=self.BOUND_ATOL_DEG)
+        # Structural flags must match exactly.
+        assert batch.wraps_dateline == scalar.wraps_dateline
+        assert batch.is_polar == scalar.is_polar
+        assert batch.truncated == scalar.truncated
+
+    def test_matches_scalar_over_random_and_edge_cases(self):
+        rng = np.random.default_rng(0)
+        n = 400
+        lat = rng.uniform(-89.0, 89.0, n)
+        lon = rng.uniform(-180.0, 180.0, n)
+        sub_lat = np.clip(lat + rng.uniform(-8.0, 8.0, n), -89.9, 89.9)
+        sub_lon = ((lon + rng.uniform(-8.0, 8.0, n) + 180.0) % 360.0) - 180.0
+        vza = rng.uniform(0.0, 89.5, n)
+
+        # Hand-picked edge cases mixed into the batch: poles, dateline, severe angle,
+        # fill values, beyond-limb, and near-nadir.
+        lat[0], lon[0], sub_lat[0], sub_lon[0], vza[0] = 89.9, 10.0, 89.5, 12.0, 5.0
+        lat[1], lon[1], sub_lat[1], sub_lon[1], vza[1] = -89.9, -30.0, -89.4, -28.0, 3.0
+        lat[2], lon[2], sub_lon[2] = 12.0, 179.8, -179.5
+        vza[3] = 89.45  # severe angle -> limb-truncated corners
+        lat[4] = geo.L1B_FILL_VALUE  # fill -> off-limb (None)
+        vza[5] = 95.0  # beyond the limb -> off-limb (None)
+        vza[6] = 1e-9  # near nadir
+        lon[7] = geo.L1B_FILL_VALUE  # fill longitude -> off-limb (None)
+
+        batch = compute_footprint_bounding_boxes(lat, lon, sub_lat, sub_lon, vza)
+        assert len(batch) == n
+        # Sanity: the injected off-limb footprints are None; at least one truncated/polar
+        # case is exercised so the parity assertions actually cover those branches.
+        assert batch[4] is None
+        assert batch[5] is None
+        assert batch[7] is None
+        assert any(b is not None and b.truncated for b in batch)
+        assert any(b is not None and b.is_polar for b in batch)
+
+        for i in range(n):
+            scalar = self._scalar_or_none(lat[i], lon[i], sub_lat[i], sub_lon[i], vza[i])
+            self._assert_box_close(scalar, batch[i])
+
+    def test_empty_input_returns_empty_list(self):
+        empty = np.array([], dtype=float)
+        assert compute_footprint_bounding_boxes(empty, empty, empty, empty, empty) == []
+
+    def test_all_off_limb_returns_all_none(self):
+        boxes = compute_footprint_bounding_boxes(
+            np.array([geo.L1B_FILL_VALUE, 5.0]),
+            np.array([1.0, geo.L1B_FILL_VALUE]),
+            np.array([1.0, 1.0]),
+            np.array([1.0, 1.0]),
+            np.array([95.0, 5.0]),  # second is beyond-limb
+        )
+        assert boxes == [None, None]
+
+    def test_supplied_altitude_matches_scalar(self):
+        rng = np.random.default_rng(3)
+        n = 50
+        lat = rng.uniform(-70.0, 70.0, n)
+        lon = rng.uniform(-180.0, 180.0, n)
+        sub_lat = np.clip(lat + rng.uniform(-5.0, 5.0, n), -85.0, 85.0)
+        sub_lon = ((lon + rng.uniform(-5.0, 5.0, n) + 180.0) % 360.0) - 180.0
+        vza = rng.uniform(0.0, 70.0, n)
+        batch = compute_footprint_bounding_boxes(lat, lon, sub_lat, sub_lon, vza, altitude_km=NOMINAL_ALTITUDE_KM)
+        for i in range(n):
+            scalar = compute_footprint_bounding_box(
+                lat[i], lon[i], sub_lat[i], sub_lon[i], vza[i], altitude_km=NOMINAL_ALTITUDE_KM, on_limb="flag"
+            )
+            self._assert_box_close(scalar, batch[i])

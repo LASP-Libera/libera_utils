@@ -58,9 +58,9 @@ from libera_utils.footprint_matching.aggregation import (
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
     NOMINAL_ALTITUDE_KM,
-    OffLimbError,
     bounding_box_from_boresight,
-    compute_footprint_bounding_box,
+    compute_footprint_bounding_boxes,
+    compute_viewing_frames,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.tiling import (
@@ -90,6 +90,7 @@ if TYPE_CHECKING:
     from xarray import Dataset
 
     from libera_utils.footprint_matching.camera_segmentation import PseudoFootprint
+    from libera_utils.footprint_matching.geometry import ViewingFrame
     from libera_utils.footprint_matching.types import GridTile
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
@@ -352,6 +353,44 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
     )
 
 
+def _batch_viewing_frames(geoms: Sequence[_FootprintGeometry]) -> ViewingFrame:
+    """Build every footprint's angular-PSF viewing frame in one batched call.
+
+    Mirrors the per-footprint frame construction inside
+    :meth:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher.weight_field`
+    exactly: the effective subsatellite point falls back to the boresight when the L1B
+    subsatellite geolocation is unavailable, and the altitude is the footprint's
+    (already nominal-guarded) satellite altitude. Because the inputs are identical, the
+    batched frame yields the same ``(delta, beta)`` projection as the inline path -- it
+    just amortizes the satellite-location bisection across the whole segment.
+
+    Parameters
+    ----------
+    geoms : Sequence[_FootprintGeometry]
+        Per-footprint viewing geometry, in footprint order.
+
+    Returns
+    -------
+    ViewingFrame
+        The batched frames, indexable per footprint via ``ViewingFrame.for_index``.
+    """
+    boresight_lat = np.array([g.boresight_lat_deg for g in geoms], dtype=float)
+    boresight_lon = np.array([g.boresight_lon_deg for g in geoms], dtype=float)
+    # The angular weigher falls back to the boresight when a subsatellite point is
+    # missing (a nadir-ish frame); replicate that fallback so the frames match.
+    sub_lat = np.array(
+        [g.subsatellite_lat_deg if g.subsatellite_lat_deg is not None else g.boresight_lat_deg for g in geoms],
+        dtype=float,
+    )
+    sub_lon = np.array(
+        [g.subsatellite_lon_deg if g.subsatellite_lon_deg is not None else g.boresight_lon_deg for g in geoms],
+        dtype=float,
+    )
+    vza = np.array([g.viewing_zenith_deg for g in geoms], dtype=float)
+    altitude = np.array([g.altitude_km for g in geoms], dtype=float)
+    return compute_viewing_frames(boresight_lat, boresight_lon, sub_lat, sub_lon, vza, altitude)
+
+
 def aggregate_external_variables(
     mode: OperationalMode,
     footprints: Sequence[Any],
@@ -458,6 +497,14 @@ def aggregate_external_variables(
     footprints = list(footprints)
     n_footprints = len(footprints)
 
+    # Extract each footprint's viewing geometry once (attribute reads, cheap) rather than
+    # inside the per-source loop. When the weigher consumes a viewing frame (the angular
+    # PSF path), build every footprint's frame in one batched call up front -- this is the
+    # dominant weighting cost (each frame otherwise repeats the satellite bisection per
+    # footprint; see doc/fmatch_vectorization_plan.md Phase 2).
+    geoms = [_footprint_geometry(footprint) for footprint in footprints]
+    frames = _batch_viewing_frames(geoms) if (weigher.uses_viewing_frame and n_footprints > 0) else None
+
     # Drive the loop off the TileManager's *active sources* rather than re-deriving
     # the registry set for the mode: a manager is constructed with only the readers
     # active for its mode, and this also lets a caller pass a manager holding a
@@ -502,7 +549,8 @@ def aggregate_external_variables(
             # the boresight placeholder box -- that would hand a space record valid-
             # looking external values and nonzero coverage.
             continue
-        geom = _footprint_geometry(footprint)
+        geom = geoms[i]
+        frame = frames.for_index(i) if frames is not None else None
         for key, reader_cls in reader_classes.items():
             # Merged, cached tile covering this footprint's PSF bounding box.
             tile = tile_manager.get_data(key, footprint.bbox)
@@ -515,6 +563,7 @@ def aggregate_external_variables(
                 subsatellite_lat_deg=geom.subsatellite_lat_deg,
                 subsatellite_lon_deg=geom.subsatellite_lon_deg,
                 cone_angle_rate=geom.cone_angle_rate,
+                frame=frame,
             )
             if return_coverage:
                 coverage_min[i] = min(coverage_min[i], _tile_coverage(tile, weight_field))
@@ -679,8 +728,8 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
         cone_rates = np.asarray(l1b_inputs.get("cone_angle_rate", np.full(latitudes.shape, np.nan)), dtype=float)
 
     footprints: list[RadiometerFootprint] = []
-    for i, (lat, lon, vza) in enumerate(zip(latitudes, longitudes, viewing_zeniths, strict=True)):
-        if not have_scan_ref:
+    if not have_scan_ref:
+        for lat, lon, vza in zip(latitudes, longitudes, viewing_zeniths, strict=True):
             footprints.append(
                 RadiometerFootprint(
                     bbox=bounding_box_from_boresight(float(lat), float(lon), float(vza)),
@@ -690,38 +739,42 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
                     viewing_zenith_angle=float(vza),
                 )
             )
-            continue
+        return footprints
 
-        subsatellite_lat = float(subsatellite_lats[i])
-        subsatellite_lon = float(subsatellite_lons[i])
+    # Scan reference present: build every footprint's true ray-traced box in one batched
+    # call (see geometry.compute_footprint_bounding_boxes). A None result marks an off-limb
+    # centroid -- the scalar OffLimbError case -- which falls back to the boresight box so a
+    # space/calibration view that slipped past the reader's finite filter keeps its index
+    # rather than being dropped.
+    boxes = compute_footprint_bounding_boxes(
+        latitudes,
+        longitudes,
+        subsatellite_lats,
+        subsatellite_lons,
+        viewing_zeniths,
+    )
+    for i in range(latitudes.size):
+        lat = float(latitudes[i])
+        lon = float(longitudes[i])
+        vza = float(viewing_zeniths[i])
+        bbox = boxes[i]
+        # A None box marks an off-limb centroid (the batched OffLimbError case): keep the
+        # index aligned with a boresight placeholder box, but flag the record so the
+        # aggregation path leaves its external variables at fill and scores it zero
+        # coverage -- rather than tiling and weighting a fabricated geographic box.
+        off_limb = bbox is None
+        if off_limb:
+            bbox = bounding_box_from_boresight(lat, lon, vza)
         cone_rate = float(cone_rates[i])
-        off_limb = False
-        try:
-            bbox = compute_footprint_bounding_box(
-                float(lat),
-                float(lon),
-                subsatellite_lat,
-                subsatellite_lon,
-                float(vza),
-                on_limb="flag",
-            )
-        except OffLimbError:
-            # A space/calibration view that slipped past the reader's finite filter has
-            # no Earth footprint. Keep index alignment with a boresight placeholder box,
-            # but mark the record off-limb so the aggregation path leaves its external
-            # variables at fill and scores it zero coverage -- rather than tiling and
-            # weighting a fabricated geographic box as if it were a real observation.
-            bbox = bounding_box_from_boresight(float(lat), float(lon), float(vza))
-            off_limb = True
         footprints.append(
             RadiometerFootprint(
                 bbox=bbox,
-                latitude=float(lat),
-                longitude=float(lon),
+                latitude=lat,
+                longitude=lon,
                 spacecraft_altitude_km=NOMINAL_ALTITUDE_KM,
-                viewing_zenith_angle=float(vza),
-                subsatellite_latitude=subsatellite_lat,
-                subsatellite_longitude=subsatellite_lon,
+                viewing_zenith_angle=vza,
+                subsatellite_latitude=float(subsatellite_lats[i]),
+                subsatellite_longitude=float(subsatellite_lons[i]),
                 # A fill/NaN cone-angle rate means "unknown scan rate" -> None.
                 cone_angle_rate=None if not np.isfinite(cone_rate) else cone_rate,
                 off_limb=off_limb,
