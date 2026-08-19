@@ -108,6 +108,12 @@ class PixelWeigher(abc.ABC):
     the future angular-frame weigher are interchangeable.
     """
 
+    #: Whether this weigher consumes a precomputed per-footprint viewing frame (the
+    #: ``frame`` argument of :meth:`weight_field`). The orchestrator batches the frames
+    #: up front only when this is ``True``, so a weigher that ignores ``frame`` (the
+    #: radial stand-in) pays nothing for the machinery.
+    uses_viewing_frame: bool = False
+
     @abc.abstractmethod
     def weight_field(
         self,
@@ -120,6 +126,7 @@ class PixelWeigher(abc.ABC):
         subsatellite_lat_deg: float | None = None,
         subsatellite_lon_deg: float | None = None,
         cone_angle_rate: float | None = None,
+        frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
     ) -> WeightField:
         """Return the per-cell PSF :class:`WeightField` for ``tile``.
 
@@ -144,6 +151,13 @@ class PixelWeigher(abc.ABC):
             L1B ``Cone_Angle_Rate`` (deg/s). Its sign sets the scan direction and a
             (near-)zero value marks a stationary scanner. Ignored by weighers that do
             not model the asymmetric along-scan PSF.
+        frame : tuple of np.ndarray, optional
+            A precomputed per-footprint ``(satellite, b_hat, c_hat, n_hat)`` viewing
+            frame (see
+            :func:`~libera_utils.footprint_matching.geometry.compute_viewing_frames`).
+            Weighers that project into the angular frame use it to skip the
+            per-footprint viewing-geometry reconstruction; weighers that do not need it
+            (the radial stand-in) ignore it.
         """
 
 
@@ -182,14 +196,15 @@ class RadialWeigher(PixelWeigher):
         subsatellite_lat_deg: float | None = None,
         subsatellite_lon_deg: float | None = None,
         cone_angle_rate: float | None = None,
+        frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
     ) -> WeightField:
         """Compute the radial Gaussian :class:`WeightField` for ``tile``.
 
-        See :meth:`PixelWeigher.weight_field`. ``subsatellite_*`` and
-        ``cone_angle_rate`` are accepted for interface compatibility but unused -- the
-        radial stand-in only needs the boresight. An empty tile (no coordinate cells)
-        yields an empty weight array and zero total energy, which the aggregation
-        strategies read as "no coverage".
+        See :meth:`PixelWeigher.weight_field`. ``subsatellite_*``, ``cone_angle_rate``
+        and ``frame`` are accepted for interface compatibility but unused -- the radial
+        stand-in only needs the boresight. An empty tile (no coordinate cells) yields an
+        empty weight array and zero total energy, which the aggregation strategies read
+        as "no coverage".
         """
         lats = np.asarray(tile.lats, dtype=float)
         lons = np.asarray(tile.lons, dtype=float)
@@ -272,6 +287,9 @@ class AngularPSFWeigher(PixelWeigher):
         heritage).
     """
 
+    # Consumes the precomputed per-footprint viewing frame (see project_to_angular).
+    uses_viewing_frame: bool = True
+
     def __init__(self, fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG, energy_fraction: float = 0.95) -> None:
         self._fov_halfangle_deg = fov_halfangle_deg
         # 95%-energy angular half-extents (delta_back, delta_front, beta_max), a
@@ -289,8 +307,14 @@ class AngularPSFWeigher(PixelWeigher):
         subsatellite_lat_deg: float | None = None,
         subsatellite_lon_deg: float | None = None,
         cone_angle_rate: float | None = None,
+        frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
     ) -> WeightField:
-        """Compute the CERES-PSF :class:`WeightField` for ``tile``. See class docstring."""
+        """Compute the CERES-PSF :class:`WeightField` for ``tile``. See class docstring.
+
+        When ``frame`` is supplied (the orchestrator batched the viewing frames up
+        front), it is passed straight to :func:`project_to_angular`, skipping the
+        per-footprint viewing-geometry reconstruction; the result is identical.
+        """
         lats = np.asarray(tile.lats, dtype=float)
         lons = np.asarray(tile.lons, dtype=float)
 
@@ -323,6 +347,7 @@ class AngularPSFWeigher(PixelWeigher):
             sub_lon,
             viewing_zenith_deg,
             altitude_km=altitude,
+            frame=frame,
         )
         # Alignment offset between the reported centroid (delta = 0) and the PSF
         # centroid. Currently 0 -- see _CENTROID_OFFSET_DEG.
