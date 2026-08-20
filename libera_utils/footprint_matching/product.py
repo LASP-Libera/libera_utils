@@ -400,6 +400,7 @@ def aggregate_external_variables(
     max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
     weigher: PixelWeigher | None = None,
     return_coverage: bool = False,
+    prefetch_lookahead: int = 0,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
     """Aggregate every active reader's gridded data to one value per footprint.
 
@@ -470,6 +471,14 @@ def aggregate_external_variables(
     return_coverage : bool, optional
         When ``True``, also return a per-footprint coverage array. Defaults to
         ``False`` (return only the values dict).
+    prefetch_lookahead : int, optional
+        When a ``tile_manager`` is built here (i.e. from ``source_file_paths``), enable
+        background look-ahead tile prefetch with this many footprints of look-ahead, so
+        reader I/O overlaps the weighting/aggregation compute (see
+        :class:`~libera_utils.footprint_matching.tiling.TileManager`). ``0`` (default)
+        keeps the single-threaded behaviour. Ignored when a ``tile_manager`` is supplied
+        -- that manager's own ``prefetch_lookahead`` setting governs instead. The
+        prefetch is a pure cache warm-up and never changes the result.
 
     Returns
     -------
@@ -486,16 +495,46 @@ def aggregate_external_variables(
     ValueError
         If neither ``tile_manager`` nor ``source_file_paths`` is supplied.
     """
+    # Track whether we own the manager: a manager we build here (and its prefetch thread
+    # pool) must be shut down before returning; a caller-supplied manager is theirs.
+    created_here = tile_manager is None
     if tile_manager is None:
         if source_file_paths is None:
             raise ValueError("aggregate_external_variables requires either a tile_manager or source_file_paths.")
-        tile_manager = build_tile_manager(mode, source_file_paths, max_cache_bytes=max_cache_bytes)
+        tile_manager = build_tile_manager(
+            mode, source_file_paths, max_cache_bytes=max_cache_bytes, prefetch_lookahead=prefetch_lookahead
+        )
 
+    try:
+        return _run_aggregation(mode, footprints, tile_manager, weigher, return_coverage)
+    finally:
+        if created_here:
+            # Stop the background prefetch pool (no-op when prefetch is disabled).
+            tile_manager.shutdown()
+
+
+def _run_aggregation(
+    mode: OperationalMode,
+    footprints: Sequence[Any],
+    tile_manager: TileManager,
+    weigher: PixelWeigher | None,
+    return_coverage: bool,
+) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
+    """Body of :func:`aggregate_external_variables` (see it for semantics).
+
+    Split out so the caller can own the ``tile_manager`` lifecycle (shutting down the
+    prefetch pool of a manager it constructed) in a single ``try/finally`` regardless of
+    which return branch runs.
+    """
     if weigher is None:
         weigher = RadialWeigher()
 
     footprints = list(footprints)
     n_footprints = len(footprints)
+
+    # Prefetch the next `lookahead` footprints' tiles in the background so reader I/O
+    # overlaps this segment's compute (no-op / 0 when the manager has prefetch disabled).
+    lookahead = tile_manager.prefetch_lookahead
 
     # Extract each footprint's viewing geometry once (attribute reads, cheap) rather than
     # inside the per-source loop. When the weigher consumes a viewing frame (the angular
@@ -549,6 +588,14 @@ def aggregate_external_variables(
             # the boresight placeholder box -- that would hand a space record valid-
             # looking external values and nonzero coverage.
             continue
+        # Kick off background loads for the upcoming footprints' tiles so their reader
+        # I/O overlaps this footprint's weighting/aggregation compute. Advisory only:
+        # any tile not prefetched in time is loaded synchronously by get_data below.
+        if lookahead:
+            window = footprints[i + 1 : i + 1 + lookahead]
+            if window:
+                tile_manager.prefetch(fp.bbox for fp in window)
+
         geom = geoms[i]
         frame = frames.for_index(i) if frames is not None else None
         for key, reader_cls in reader_classes.items():
