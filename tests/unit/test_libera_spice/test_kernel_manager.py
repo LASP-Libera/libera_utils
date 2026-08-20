@@ -16,6 +16,8 @@ from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import pytest
 from cloudpathlib import S3Path
+from curryer import spicierpy as sp
+from curryer.kernels import coverage
 
 from libera_utils.io.caching import get_local_short_temp_dir
 from libera_utils.libera_spice import spice_utils
@@ -732,3 +734,65 @@ class TestDestructor:
 
         # Should not raise
         km.__del__()
+
+
+# ============================================================================
+# Kernel Coverage Check Tests (LIBSDC-788)
+# ============================================================================
+
+TEXT_PCK_CONTENT = b"KPL/PCK\n\n\\begindata\nBODY399_TEST_VALUE = ( 1.0 )\n\\begintext\n"
+COVERAGE_TEST_BODY = -999601
+
+
+class TestEnsureKernelCoverage:
+    """Coverage checking must fail loudly, before SPICE fails obscurely downstream."""
+
+    @staticmethod
+    def _write_spk(path: Path, body: int = COVERAGE_TEST_BODY, first: float = 0.0, last: float = 86400.0) -> Path:
+        """Write a minimal type-8 SPK covering ET [first, last] for `body`."""
+        handle = sp.spkopn(str(path), "test-spk", 0)
+        states = [[0.0] * 6 for _ in range(2)]
+        sp.spkw08(handle, body, 399, "J2000", first, last, "testseg", 1, 2, states, first, last - first)
+        sp.spkcls(handle)
+        return path
+
+    @pytest.fixture
+    def furnished_manager(self, tmp_path):
+        """A manager holding one furnished SPK plus a text kernel, torn down after."""
+        spk = self._write_spk(tmp_path / "coverage_test.bsp")
+        text_pck = tmp_path / "coverage_test.tpc"
+        text_pck.write_bytes(TEXT_PCK_CONTENT)
+
+        km = KernelManager()
+        km._loaded_kernels = sp.ext.load_kernel([str(spk), str(text_pck)])
+        yield km, spk
+        km._loaded_kernels.unload(clear=True)
+
+    def test_raises_when_nothing_is_furnished(self):
+        km = KernelManager()
+        with pytest.raises(RuntimeError, match="No kernels are furnished"):
+            km.ensure_kernel_coverage([COVERAGE_TEST_BODY], 0, 1)
+
+    def test_covered_window_passes_without_warning(self, furnished_manager):
+        km, spk = furnished_manager
+        (window,) = coverage.object_coverage(COVERAGE_TEST_BODY, kernels=[str(spk)]).windows
+
+        # The furnished text kernel must stay out of the coverage scope; leaking it in
+        # would warn once per call.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            km.ensure_kernel_coverage([COVERAGE_TEST_BODY], *window)
+
+    def test_uncovered_window_raises(self, furnished_manager):
+        km, spk = furnished_manager
+        start, stop = coverage.object_coverage(COVERAGE_TEST_BODY, kernels=[str(spk)]).windows[0]
+
+        with pytest.raises(ValueError, match="not fully covered"):
+            km.ensure_kernel_coverage([COVERAGE_TEST_BODY], start, stop + 10_000_000)
+
+    def test_target_with_no_coverage_raises(self, furnished_manager):
+        km, spk = furnished_manager
+        start, stop = coverage.object_coverage(COVERAGE_TEST_BODY, kernels=[str(spk)]).windows[0]
+
+        with pytest.raises(ValueError, match="without coverage in any considered kernel"):
+            km.ensure_kernel_coverage([-999699], start, stop)

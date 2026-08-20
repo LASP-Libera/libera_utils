@@ -18,6 +18,7 @@ from pathlib import Path
 from cloudpathlib import AnyPath, S3Path
 from curryer import meta
 from curryer import spicierpy as sp
+from curryer.kernels import coverage
 
 from libera_utils.config import config
 from libera_utils.io.caching import get_local_cache_dir, get_local_short_temp_dir, validate_path_length
@@ -592,6 +593,57 @@ class KernelManager:
             )
             # All expected kernels are furnished, so we consider this a success
             return
+
+    def ensure_kernel_coverage(
+        self,
+        targets: Sequence[int | str],
+        start_ugps: int,
+        stop_ugps: int,
+        error: bool = True,
+    ) -> None:
+        """
+        Verify the furnished kernels cover every target across a time window.
+
+        Wraps :func:`curryer.kernels.coverage.coverage_gaps`, scoped to the kernels this
+        manager furnished. Raises rather than warns: an uncovered window otherwise surfaces
+        as a SPICE failure deep inside a later computation, or as silently wrong numbers
+        with no traceback at all.
+
+        Parameters
+        ----------
+        targets : sequence of int or str
+            Objects that must be covered across the whole window: body IDs or names for
+            SPK coverage, frame IDs or names for CK. Names require the kernels that define
+            them to be furnished.
+        start_ugps : int
+            Window start, in microseconds since the GPS epoch.
+        stop_ugps : int
+            Window stop, in microseconds since the GPS epoch.
+        error : bool
+            Raise on a coverage gap (default). Set False to warn instead, for callers that
+            already degrade gracefully per sample and want the gap surfaced rather than
+            fatal.
+
+        Raises
+        ------
+        RuntimeError
+            If this manager has furnished no kernels.
+        ValueError
+            If ``error`` is True and a target has no coverage in any furnished kernel, or
+            the requested window is not fully covered for every target.
+        """
+        if self._loaded_kernels is None:
+            raise RuntimeError(
+                "No kernels are furnished; call load_naif_kernels, load_static_kernels, or "
+                "load_libera_dynamic_kernels before checking coverage."
+            )
+
+        # Only SPK/CK/binary-PCK carry time coverage. Passing the text kernels (LSK, FK,
+        # SCLK) would make coverage_gaps warn about each one on every call.
+        furnished = set(self._loaded_kernels.loaded)
+        scope = [rec.file for rec in sp.ext.loaded_kernels(coverage.COVERAGE_KERNEL_TYPES) if rec.file in furnished]
+
+        coverage.coverage_gaps(targets, start_ugps, stop_ugps, kernels=scope, error=error)
 
     def __enter__(self):
         """Enter context manager, loading static kernels automatically."""
