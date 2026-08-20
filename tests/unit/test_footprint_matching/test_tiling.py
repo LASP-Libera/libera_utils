@@ -16,6 +16,7 @@ grids, matching the pattern used in ``test_readers/test_base.py``.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 import numpy as np
@@ -361,3 +362,141 @@ class TestGatherFootprintTiles:
         assert len(tiles_by_source["_fake_tiling"]) == 2
         # Both footprints hit the same tile, so only one physical read occurred.
         assert reader.load_calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Look-ahead prefetch
+# ---------------------------------------------------------------------------
+
+
+class _CountingPrefetchReader(GriddedDataReader):
+    """Reader that counts loads (thread-safely) and records the loading thread name.
+
+    Used by the prefetch tests to assert *which* thread performed each load and that a
+    tile is loaded exactly once. Loads are trivially fast; determinism comes from the
+    tests always calling ``shutdown(wait=True)`` before inspecting state.
+    """
+
+    READER_KEY = "_prefetch_reader"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 10.0
+    REQUIRED_MODE = OperationalMode.CAM
+    TILE_SIZE_DEG = 2.0
+    VARIABLES = (
+        VariableSpec(name="pf_var", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+    )
+
+    def __init__(self, file_path) -> None:
+        super().__init__(file_path)
+        self._lock = threading.Lock()
+        self.loaded_keys: list[tuple[float, float]] = []
+        self.load_threads: set[str] = set()
+        self.raise_on_load = False
+
+    def _load_spatial_region(self, bbox: BoundingBox):
+        with self._lock:
+            self.loaded_keys.append((round(bbox.lat_min, 3), round(bbox.lon_min, 3)))
+            self.load_threads.add(threading.current_thread().name)
+        if self.raise_on_load:
+            raise RuntimeError("simulated reader failure")
+        lats = np.array([bbox.lat_min + 0.5, bbox.lat_min + 1.5], dtype=np.float64)
+        lons = np.array([bbox.lon_min + 0.5, bbox.lon_min + 1.5], dtype=np.float64)
+        return np.ones((2, 2), dtype=np.float32), lats, lons
+
+    @property
+    def load_calls(self) -> int:
+        with self._lock:
+            return len(self.loaded_keys)
+
+
+def _prefetch_manager(tmp_path, lookahead: int, workers: int = 1) -> tuple[TileManager, _CountingPrefetchReader]:
+    reader = _CountingPrefetchReader(tmp_path / "pf.nc")
+    tm = TileManager(
+        {reader.READER_KEY: reader},
+        OperationalMode.CAM,
+        prefetch_lookahead=lookahead,
+        prefetch_workers=workers,
+    )
+    return tm, reader
+
+
+class TestPrefetch:
+    def test_disabled_by_default(self, tmp_path):
+        reader = _reader(tmp_path)
+        tm = _manager(reader)
+        assert tm.prefetch_enabled is False
+        assert tm.prefetch_lookahead == 0
+        # prefetch is a no-op when disabled: nothing is loaded.
+        tm.prefetch([BoundingBox(0.2, 0.8, 0.2, 0.8)])
+        assert reader.load_calls == 0
+
+    def test_prefetch_populates_cache_from_background_thread(self, tmp_path):
+        tm, reader = _prefetch_manager(tmp_path, lookahead=2)
+        assert tm.prefetch_enabled is True
+        box = BoundingBox(0.2, 0.8, 0.2, 0.8)  # one tile
+        tm.prefetch([box])
+        tm.shutdown(wait=True)  # deterministic: all background loads have finished
+
+        # The tile was loaded once, on a background prefetch thread (not the main thread).
+        assert reader.load_calls == 1
+        assert reader.load_threads
+        assert all("prefetch" in name for name in reader.load_threads)
+        assert tm.get_cache_stats()["prefetched"] == 1
+
+        # A synchronous request for the same box is now a pure cache hit: no extra load.
+        tile = tm.get_data(reader.READER_KEY, box)
+        assert reader.load_calls == 1
+        assert tile.data.shape == (2, 2)
+        assert tm.get_cache_stats()["hits"] == 1
+
+    def test_prefetch_dedupes_repeated_and_cached_keys(self, tmp_path):
+        tm, reader = _prefetch_manager(tmp_path, lookahead=2)
+        box = BoundingBox(0.2, 0.8, 0.2, 0.8)
+        # Submit the same box twice before the worker drains: the second submit must be
+        # deduped (in-flight or cached), so the tile is loaded exactly once.
+        tm.prefetch([box])
+        tm.prefetch([box])
+        tm.shutdown(wait=True)
+        assert reader.load_calls == 1
+        assert tm.get_cache_stats()["prefetched"] == 1
+
+    def test_prefetch_result_matches_synchronous_load(self, tmp_path):
+        # A tile served from the prefetch cache is identical to one loaded synchronously.
+        box = BoundingBox(0.2, 0.8, 0.5, 2.5)  # spans two lon tiles
+        tm_pf, reader_pf = _prefetch_manager(tmp_path, lookahead=3)
+        tm_pf.prefetch([box])
+        tm_pf.shutdown(wait=True)
+        prefetched = tm_pf.get_data(reader_pf.READER_KEY, box)
+
+        sync_reader = _CountingPrefetchReader(tmp_path / "sync.nc")
+        tm_sync = TileManager({sync_reader.READER_KEY: sync_reader}, OperationalMode.CAM)
+        synchronous = tm_sync.get_data(sync_reader.READER_KEY, box)
+
+        np.testing.assert_array_equal(prefetched.data, synchronous.data)
+        np.testing.assert_array_equal(prefetched.lats, synchronous.lats)
+        np.testing.assert_array_equal(prefetched.lons, synchronous.lons)
+
+    def test_prefetch_reader_failure_is_swallowed(self, tmp_path):
+        tm, reader = _prefetch_manager(tmp_path, lookahead=2)
+        reader.raise_on_load = True
+        box = BoundingBox(0.2, 0.8, 0.2, 0.8)
+        # A failing prefetch must not crash the worker/pool; the tile is simply not
+        # cached, so a later synchronous get re-attempts and gets an empty (NaN) tile.
+        tm.prefetch([box])
+        tm.shutdown(wait=True)
+        reader.raise_on_load = False
+        tile = tm.get_data(reader.READER_KEY, box)  # sync path recovers
+        assert tile.data.shape == (2, 2)
+        assert not np.isnan(tile.data).all()  # reader now succeeds
+
+    def test_shutdown_is_idempotent(self, tmp_path):
+        tm, _ = _prefetch_manager(tmp_path, lookahead=1)
+        tm.shutdown()
+        tm.shutdown()  # second call is a harmless no-op
+        assert tm.prefetch_enabled is False
+
+    def test_context_manager_shuts_down(self, tmp_path):
+        reader = _CountingPrefetchReader(tmp_path / "ctx.nc")
+        with TileManager({reader.READER_KEY: reader}, OperationalMode.CAM, prefetch_lookahead=2) as tm:
+            assert tm.prefetch_enabled is True
+        assert tm.prefetch_enabled is False

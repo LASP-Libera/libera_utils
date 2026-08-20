@@ -47,7 +47,9 @@ cached, so a transient failure can recover on the next segment.
 from __future__ import annotations
 
 import logging
+import threading
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -215,6 +217,28 @@ class _LRUTileCache:
             self._current_bytes -= lru_tile.nbytes
             self._evictions += 1
 
+    def contains(self, key: TileKey) -> bool:
+        """Return whether ``key`` is cached, without affecting recency or counters.
+
+        Used by the prefetcher to decide whether a tile still needs loading; unlike
+        :meth:`get`, it must not reorder the LRU or record a hit/miss (a speculative
+        look-ahead is not a real access).
+        """
+        return key in self._tiles
+
+    def peek(self, key: TileKey) -> GridTile | None:
+        """Return the cached tile for ``key`` (marking it MRU) without counting hit/miss.
+
+        Used by the thread-safe load path to re-check the cache after taking the reader
+        lock: another thread may have loaded the tile in the meantime, and finding it
+        must not record a *second* hit/miss for one logical access (:meth:`get` already
+        counted the initial lookup).
+        """
+        tile = self._tiles.get(key)
+        if tile is not None:
+            self._tiles.move_to_end(key)
+        return tile
+
     def clear(self) -> None:
         """Drop all cached tiles and reset the byte total (counters are preserved)."""
         self._tiles.clear()
@@ -245,6 +269,22 @@ class TileManager:
     instantiated), so requesting a source that is not active for the mode is a hard
     error rather than a silent no-op.
 
+    Look-ahead prefetch (optional)
+    ------------------------------
+    Because footprints are processed in along-track order, the tiles an upcoming
+    footprint will need are predictable from its bounding box. When
+    ``prefetch_lookahead > 0`` the manager runs a small background thread pool that
+    loads those tiles into the cache ahead of time (:meth:`prefetch`), overlapping
+    reader I/O with the main thread's PSF weighting / aggregation compute (design doc
+    ``doc/fmatch_vectorization_plan.md`` §4). Prefetch is a pure cache warm-up: it
+    never changes results, and the synchronous path still loads any tile that is not
+    yet cached, so a slow or failed prefetch only forfeits the overlap. Reader access
+    is serialized *per reader* (a background load and a main-thread load of the same
+    source never overlap), so it does not assume the readers are re-entrant -- only
+    that they tolerate being called from a worker thread one call at a time. Default
+    ``0`` disables it entirely (no threads created), preserving the original
+    single-threaded behaviour.
+
     Parameters
     ----------
     readers : dict[str, GriddedDataReader]
@@ -258,6 +298,17 @@ class TileManager:
     logger : logging.Logger, optional
         Injected logger; defaults to this module's logger. Reader-load failures are
         reported here at ``WARNING`` level.
+    prefetch_lookahead : int, optional
+        Number of upcoming footprints whose tiles are prefetched in the background.
+        ``0`` (default) disables prefetch and creates no threads. When set, the
+        orchestrator (:func:`~libera_utils.footprint_matching.product.aggregate_external_variables`)
+        calls :meth:`prefetch` for the next ``prefetch_lookahead`` footprints each
+        iteration; the value is exposed via :attr:`prefetch_lookahead`.
+    prefetch_workers : int, optional
+        Size of the background thread pool. Defaults to ``1`` (a single worker, so
+        prefetch loads are naturally serialized). Higher values let *different*
+        sources prefetch concurrently while each individual reader stays serialized.
+        Ignored when ``prefetch_lookahead == 0``.
     """
 
     def __init__(
@@ -266,11 +317,33 @@ class TileManager:
         active_mode: OperationalMode,
         max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
         logger: logging.Logger | None = None,
+        prefetch_lookahead: int = 1,
+        prefetch_workers: int = 1,
     ) -> None:
         self._readers = dict(readers)
         self._active_mode = active_mode
         self._cache = _LRUTileCache(max_cache_bytes)
         self._logger = logger if logger is not None else globals()["logger"]
+
+        # Concurrency guards. The cache lock serializes every access to the (non
+        # thread-safe) OrderedDict-backed cache; the per-reader locks serialize loads
+        # of each reader so the background prefetcher and the main thread never call
+        # the same reader at once. Both are cheap and uncontended when prefetch is off.
+        self._cache_lock = threading.Lock()
+        self._reader_locks = {key: threading.Lock() for key in self._readers}
+
+        # Prefetch machinery (only when enabled). ``_inflight`` dedupes keys already
+        # queued so we never submit the same load twice or re-load a cached tile.
+        self._prefetch_lookahead = max(0, int(prefetch_lookahead))
+        self._inflight: set[TileKey] = set()
+        self._inflight_lock = threading.Lock()
+        self._prefetch_submitted = 0
+        self._executor: ThreadPoolExecutor | None = None
+        if self._prefetch_lookahead > 0:
+            self._executor = ThreadPoolExecutor(
+                max_workers=max(1, int(prefetch_workers)),
+                thread_name_prefix="fmatch-tile-prefetch",
+            )
 
     @property
     def active_mode(self) -> OperationalMode:
@@ -281,6 +354,16 @@ class TileManager:
     def sources(self) -> list[str]:
         """Sorted registry keys of the readers active in this manager."""
         return sorted(self._readers.keys())
+
+    @property
+    def prefetch_lookahead(self) -> int:
+        """Number of upcoming footprints prefetched in the background (0 = disabled)."""
+        return self._prefetch_lookahead
+
+    @property
+    def prefetch_enabled(self) -> bool:
+        """Whether background tile prefetch is active for this manager."""
+        return self._executor is not None
 
     def get_data(self, source: str, bbox: BoundingBox) -> GridTile:
         """Return a single merged tile of ``source`` data covering ``bbox``.
@@ -317,47 +400,79 @@ class TileManager:
 
         # Antimeridian crossing: split into two boxes on either side of ±180° and
         # merge the two results (see BoundingBox.wraps_dateline).
-        if bbox.wraps_dateline:
-            # A wrapped box is in the [0, 360) representation with lon_min < 180 < lon_max
-            # (see bounding_box_from_points). The west half [lon_min, 180] is already in
-            # range, but the east max must be normalized back into [-180, 180] by
-            # subtracting 360 -- otherwise the non-wrapping east sub-request would select
-            # every longitude tile from -180 through lon_max (a near-global read) instead
-            # of just the -180..(lon_max-360) sliver east of the antimeridian.
-            east_max = bbox.lon_max - 360.0
-            west = BoundingBox(bbox.lat_min, bbox.lat_max, bbox.lon_min, 180.0, False, bbox.is_polar, bbox.truncated)
-            east = BoundingBox(bbox.lat_min, bbox.lat_max, -180.0, east_max, False, bbox.is_polar, bbox.truncated)
-            return self.merge_tiles([self.get_data(source, west), self.get_data(source, east)])
+        parts = self._split_dateline(bbox)
+        if len(parts) == 2:
+            return self.merge_tiles([self.get_data(source, parts[0]), self.get_data(source, parts[1])])
 
         keys = self.resolve_tile_keys(source, bbox)
         tiles = [self._get_tile(key) for key in keys]
         return self.merge_tiles(tiles)
 
+    @staticmethod
+    def _split_dateline(bbox: BoundingBox) -> list[BoundingBox]:
+        """Split an antimeridian-crossing box into its west/east halves.
+
+        Returns ``[bbox]`` for a normal box, or ``[west, east]`` for one that wraps the
+        dateline (``lon_max`` > 180). Shared by :meth:`get_data` (which merges the two
+        results) and the prefetcher (which warms the tiles of both halves).
+        """
+        if not bbox.wraps_dateline:
+            return [bbox]
+        # A wrapped box is in the [0, 360) representation with lon_min < 180 < lon_max
+        # (see bounding_box_from_points). The west half [lon_min, 180] is already in range,
+        # but the east max must be normalized back into [-180, 180] by subtracting 360 --
+        # otherwise the non-wrapping east sub-request would select every longitude tile from
+        # -180 through lon_max (a near-global read) instead of just the -180..(lon_max-360)
+        # sliver east of the antimeridian.
+        east_max = bbox.lon_max - 360.0
+        west = BoundingBox(bbox.lat_min, bbox.lat_max, bbox.lon_min, 180.0, False, bbox.is_polar, bbox.truncated)
+        east = BoundingBox(bbox.lat_min, bbox.lat_max, -180.0, east_max, False, bbox.is_polar, bbox.truncated)
+        return [west, east]
+
     def _get_tile(self, key: TileKey) -> GridTile:
         """Serve one tile from cache, loading it via the reader on a miss.
+
+        Thread-safe: cache reads/writes are serialized by the cache lock, and each
+        reader load holds that source's reader lock so the background prefetcher and
+        the main thread never call one reader concurrently. After acquiring the reader
+        lock the cache is re-checked, so two threads racing for the same missing tile
+        load it exactly once (the loser finds it freshly cached).
 
         Reader exceptions are caught here and converted to an empty tile so a single
         bad tile never aborts the whole segment. Empty/error tiles are not cached, so
         a transient failure can recover next time the tile is requested.
         """
-        cached = self._cache.get(key)
+        with self._cache_lock:
+            cached = self._cache.get(key)
         if cached is not None:
             return cached
 
         reader = self._readers[key.source]
-        try:
-            tile = reader.load_tile(key)
-        except Exception:  # noqa: BLE001 - deliberately broad: any reader failure → partial coverage.
-            # Log with the key so the failing region is identifiable, but keep going.
-            self._logger.warning("Reader %r failed to load tile %r; treating as partial coverage.", key.source, key)
-            self._cache.record_error()
-            n_var = len(reader.VARIABLES)
-            timestamp_source = reader.get_timestamp_source() if hasattr(reader, "get_timestamp_source") else None
-            bounds = reader._tile_key_to_bbox(key, reader.TILE_SIZE_DEG)  # noqa: SLF001 - same module family
-            return _empty_tile(key.source, bounds, n_var, timestamp_source)
+        with self._reader_locks[key.source]:
+            # Re-check under the reader lock: another thread (e.g. the prefetcher) may
+            # have loaded this tile while we waited, so we must not load it twice. Use
+            # peek (not get) so this re-check does not double-count the hit/miss already
+            # recorded by the lookup above.
+            with self._cache_lock:
+                cached = self._cache.peek(key)
+            if cached is not None:
+                return cached
 
-        self._cache.put(key, tile)
-        return tile
+            try:
+                tile = reader.load_tile(key)
+            except Exception:  # noqa: BLE001 - deliberately broad: any reader failure → partial coverage.
+                # Log with the key so the failing region is identifiable, but keep going.
+                self._logger.warning("Reader %r failed to load tile %r; treating as partial coverage.", key.source, key)
+                with self._cache_lock:
+                    self._cache.record_error()
+                n_var = len(reader.VARIABLES)
+                timestamp_source = reader.get_timestamp_source() if hasattr(reader, "get_timestamp_source") else None
+                bounds = reader._tile_key_to_bbox(key, reader.TILE_SIZE_DEG)  # noqa: SLF001 - same module family
+                return _empty_tile(key.source, bounds, n_var, timestamp_source)
+
+            with self._cache_lock:
+                self._cache.put(key, tile)
+            return tile
 
     def resolve_tile_keys(self, source: str, bbox: BoundingBox) -> list[TileKey]:
         """Convert a bounding box into the tile keys covering it for ``source``.
@@ -501,18 +616,104 @@ class TileManager:
         Normal operation evicts automatically inside the cache on insertion; this is
         exposed for tests and explicit memory management.
         """
-        if self._cache._tiles:  # noqa: SLF001 - same-module cooperative access
-            _, tile = self._cache._tiles.popitem(last=False)  # noqa: SLF001
-            self._cache._current_bytes -= tile.nbytes  # noqa: SLF001
-            self._cache._evictions += 1  # noqa: SLF001
+        with self._cache_lock:
+            if self._cache._tiles:  # noqa: SLF001 - same-module cooperative access
+                _, tile = self._cache._tiles.popitem(last=False)  # noqa: SLF001
+                self._cache._current_bytes -= tile.nbytes  # noqa: SLF001
+                self._cache._evictions += 1  # noqa: SLF001
 
     def clear_cache(self) -> None:
         """Remove all tiles from the cache (counters are preserved)."""
-        self._cache.clear()
+        with self._cache_lock:
+            self._cache.clear()
 
     def get_cache_stats(self) -> dict[str, Any]:
-        """Return cache diagnostics: hits, misses, current_bytes, n_tiles, evictions, errors."""
-        return self._cache.stats()
+        """Return cache diagnostics: hits, misses, current_bytes, n_tiles, evictions, errors, prefetched."""
+        with self._cache_lock:
+            stats = self._cache.stats()
+        with self._inflight_lock:
+            stats["prefetched"] = self._prefetch_submitted
+        return stats
+
+    # ------------------------------------------------------------------
+    # Look-ahead prefetch
+    # ------------------------------------------------------------------
+
+    def prefetch(self, bboxes: Iterable[BoundingBox]) -> None:
+        """Warm the cache in the background for a set of upcoming footprint boxes.
+
+        For every active source, resolves each box (splitting antimeridian-crossers)
+        into its covering tile keys and submits any not-yet-cached, not-already-queued
+        key to the background thread pool. A no-op when prefetch is disabled
+        (``prefetch_lookahead == 0``). Purely advisory: results never depend on it, so
+        a key that a prefetch missed or failed is simply loaded synchronously later.
+
+        Parameters
+        ----------
+        bboxes : Iterable[BoundingBox]
+            Bounding boxes of the upcoming footprints to warm (typically the next
+            ``prefetch_lookahead`` footprints).
+        """
+        if self._executor is None:
+            return
+        for bbox in bboxes:
+            for source in self._readers:
+                for key in self._all_tile_keys(source, bbox):
+                    self._maybe_submit_prefetch(key)
+
+    def _all_tile_keys(self, source: str, bbox: BoundingBox) -> list[TileKey]:
+        """All tile keys ``source`` needs for ``bbox`` (antimeridian split included)."""
+        keys: list[TileKey] = []
+        for part in self._split_dateline(bbox):
+            keys.extend(self.resolve_tile_keys(source, part))
+        return keys
+
+    def _maybe_submit_prefetch(self, key: TileKey) -> None:
+        """Queue a background load of ``key`` unless it is already cached or in flight."""
+        with self._cache_lock:
+            if self._cache.contains(key):
+                return
+        with self._inflight_lock:
+            if key in self._inflight:
+                return
+            self._inflight.add(key)
+            self._prefetch_submitted += 1
+        # ThreadPoolExecutor.submit is thread-safe; the executor is not shut down while
+        # the (single-threaded) orchestrator is still submitting work.
+        self._executor.submit(self._prefetch_worker, key)  # type: ignore[union-attr]
+
+    def _prefetch_worker(self, key: TileKey) -> None:
+        """Background task body: load ``key`` into the cache, best-effort.
+
+        Any failure is swallowed (``_get_tile`` already turns reader errors into an
+        uncached empty tile, and a truly unexpected error must not crash the pool) --
+        the synchronous path will load the tile if the prefetch did not.
+        """
+        try:
+            self._get_tile(key)
+        except Exception:  # noqa: BLE001 - a prefetch must never crash the worker/pool.
+            self._logger.debug("Prefetch of tile %r failed; will load on demand.", key, exc_info=True)
+        finally:
+            with self._inflight_lock:
+                self._inflight.discard(key)
+
+    def shutdown(self, *, wait: bool = True) -> None:
+        """Stop the background prefetch pool, waiting for in-flight loads by default.
+
+        Idempotent and a no-op when prefetch was never enabled. Callers that build a
+        prefetching manager should call this when done (or use the manager as a context
+        manager); :func:`~libera_utils.footprint_matching.product.aggregate_external_variables`
+        shuts down any manager it constructs itself.
+        """
+        if self._executor is not None:
+            self._executor.shutdown(wait=wait)
+            self._executor = None
+
+    def __enter__(self) -> TileManager:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.shutdown()
 
 
 def build_tile_manager(
@@ -520,6 +721,8 @@ def build_tile_manager(
     source_file_paths: dict[str, Path],
     max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
     logger: logging.Logger | None = None,
+    prefetch_lookahead: int = 0,
+    prefetch_workers: int = 1,
 ) -> TileManager:
     """Construct a :class:`TileManager` with the readers active for ``mode``.
 
@@ -541,6 +744,12 @@ def build_tile_manager(
         Byte budget for the LRU cache. Defaults to :data:`DEFAULT_MAX_CACHE_BYTES`.
     logger : logging.Logger, optional
         Injected logger passed through to the TileManager.
+    prefetch_lookahead : int, optional
+        Number of upcoming footprints whose tiles are prefetched in the background.
+        ``0`` (default) disables prefetch. See :class:`TileManager`.
+    prefetch_workers : int, optional
+        Background prefetch thread-pool size (default ``1``). Ignored when
+        ``prefetch_lookahead == 0``.
 
     Returns
     -------
@@ -561,7 +770,14 @@ def build_tile_manager(
                 f"Required sources: {sorted(reader_classes)}"
             )
         readers[key] = reader_cls(source_file_paths[key])
-    return TileManager(readers, mode, max_cache_bytes=max_cache_bytes, logger=logger)
+    return TileManager(
+        readers,
+        mode,
+        max_cache_bytes=max_cache_bytes,
+        logger=logger,
+        prefetch_lookahead=prefetch_lookahead,
+        prefetch_workers=prefetch_workers,
+    )
 
 
 def gather_footprint_tiles(
