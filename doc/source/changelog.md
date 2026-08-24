@@ -1,5 +1,11 @@
 # Version Changes
 
+## 5.10.3
+
+- FEAT: Replace the eight alpha calibration `DataProductIdentifier` members (`cal_solar_face{1,2,3}_combined`, `cal_lw_temp{1,2,3}_combined`, `cal_gain_combined`, `cal_sw_combined` / `SOLAR-FACE1-COMBINED`, `LW-TEMP1-COMBINED`, `GAIN-COMBINED`, `SW-COMBINED`, ...) with one CAL product per calibration ObsID (`cal_gain`/`GAIN`, `cal_swc_365nm`/`SWC-365NM`, `cal_lwc_310k`/`LWC-310K`, `cal_solar_ssw_pri`/`SOLAR-SSW-PRI`, the lunar/VIIRS-lunar and camera cal products, etc.). Downstream consumers must move to the new members; no aliases are kept.
+- FEAT: Add ObsID-trimmed NOM-HK `DataProductIdentifier`s (`NOM-HK-<EVENT>-TRIMMED`), one per calibration ObsID, produced by L1A Step 1 preprocessing and consumed by the per-ObsID cal-combine steps.
+- FEAT: Add `libera_utils.obsids` and the `libera_utils/data/obsid_registry.csv` catalog: the ICIE software ObsID registry mapping `(NomHkObsidSource, obsid)` to its TRIMMED and CAL ProductIDs, with `get_obsid_spec` and `iter_trim_eligible` for downstream dispatch. The CSV is validated at import (unknown member names, wrong data level, malformed rows, `kind`/`source` mismatches, duplicate ObsIDs, and TRIMMED products claimed by more than one ObsID all raise `ValueError`).
+
 ## 5.10.2
 
 - BUGFIX: `enforce_data_array_conformance` no longer emits a `UserWarning` (or log line) for every encoding key present on a DataArray but absent from the product definition. Extra keys (typically xarray/NetCDF runtime metadata such as `source`, `original_shape`, `preferred_chunks`, compression stubs) are dropped silently; conflicting values for keys that _are_ defined still warn. This removes thousands of spurious warnings when packaging products built from opened L1A NetCDF inputs.
