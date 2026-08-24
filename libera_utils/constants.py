@@ -159,52 +159,25 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_ana_hk_decoded = ("ANA-HK-DECODED", DataLevel.L1A)
     l1a_icie_temp_hk_decoded = ("TEMP-HK-DECODED", DataLevel.L1A)
 
-    # L1A ObsID-trimmed NOM-HK products (daily NOM-HK subset to one calibration ObsID)
+    # L1A Calibration Dependency Family trimmed NOM-HK products
+    # Daily NOM-HK subset to one ObsID time range for a given dependency family
+    # Produced by L1A preprocessing; consumed by libera_rad and libera_cam for cal-combine steps.
+    # Separated by dependency family to allow for accurate retrieval of dependency files in libera_cdk.
     # =============================================================================
-    # Produced by L1A preprocessing (Step 1); consumed by ObsID-specific cal-combine steps.
-    l1a_icie_nom_hk_gain_trimmed = ("NOM-HK-GAIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_noise_trimmed = ("NOM-HK-NOISE-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_365nm_trimmed = ("NOM-HK-SWC-365NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_405nm_trimmed = ("NOM-HK-SWC-405NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_520nm_trimmed = ("NOM-HK-SWC-520NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_635nm_trimmed = ("NOM-HK-SWC-635NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_840nm_trimmed = ("NOM-HK-SWC-840NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_1550nm_trimmed = ("NOM-HK-SWC-1550NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_310k_trimmed = ("NOM-HK-LWC-310K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_320k_trimmed = ("NOM-HK-LWC-320K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_335k_trimmed = ("NOM-HK-LWC-335K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_300k_trimmed = ("NOM-HK-LWC-300K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_305k_trimmed = ("NOM-HK-LWC-305K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_ssw_pri_trimmed = ("NOM-HK-SOLAR-SSW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_pri_trimmed = ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_pri_trimmed = ("NOM-HK-SOLAR-LW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_pri_trimmed = ("NOM-HK-SOLAR-SW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_ssw_sec_trimmed = ("NOM-HK-SOLAR-SSW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_sec_trimmed = ("NOM-HK-SOLAR-TOT-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_sec_trimmed = ("NOM-HK-SOLAR-LW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_sec_trimmed = ("NOM-HK-SOLAR-SW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_ssw_ter_trimmed = ("NOM-HK-SOLAR-SSW-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_ter_trimmed = ("NOM-HK-SOLAR-TOT-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_ter_trimmed = ("NOM-HK-SOLAR-LW-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_ter_trimmed = ("NOM-HK-SOLAR-SW-TER-TRIMMED", DataLevel.L1A)
-    # Camera ObsID-trimmed NOM-HK (WFOV source field)
-    l1a_icie_nom_hk_ct_video_6min_trimmed = ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_ct_video_12min_trimmed = ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_ct_video_18min_trimmed = ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_6min_trimmed = ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_12min_trimmed = ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_18min_trimmed = ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A)
-    # VIIRS lunar calibration operations (ObsIDs 513-514 appear on both RAD and WFOV, one TRIMMED product each)
-    l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-POS-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-NEG-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-POS-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-NEG-START-TRIMMED", DataLevel.L1A)
-    # Radiometer lunar calibration ObsID-trimmed NOM-HK (RAD source field)
-    l1a_icie_nom_hk_lunar_south_pole_trimmed = ("NOM-HK-LUNAR-SOUTH-POLE-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lunar_north_pole_trimmed = ("NOM-HK-LUNAR-NORTH-POLE-TRIMMED", DataLevel.L1A)
+    # Radiometer calibration families
+    l1a_icie_nom_hk_gain_family_trimmed = ("NOM-HK-GAIN-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_family_trimmed = ("NOM-HK-SWC-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lwc_family_trimmed = ("NOM-HK-LWC-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_family_trimmed = ("NOM-HK-SOLAR-FAMILY-TRIMMED", DataLevel.L1A)
+    # Camera calibration families
+    l1a_icie_nom_hk_ct_video_family_trimmed = ("NOM-HK-CT-VIDEO-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_family_trimmed = ("NOM-HK-RAPS-VIDEO-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_darks_family_trimmed = ("NOM-HK-DARKS-FAMILY-TRIMMED", DataLevel.L1A)
+    # VIIRS lunar calibration operations
+    l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-FAMILY-TRIMMED", DataLevel.L1A)
+    # Radiometer lunar calibration families
+    l1a_icie_nom_hk_lunar_family_trimmed = ("NOM-HK-LUNAR-FAMILY-TRIMMED", DataLevel.L1A)
 
     # Calibration Event Products (one product per radiometer / camera calibration ObsID)
     # ==================================================================================
@@ -472,31 +445,19 @@ class ProcessingStepIdentifier(StrEnum):
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
 
     # Radiometer calibration event combination steps (shared cal-rad ECR; one step per ObsID product)
-    cal_gain = ("cal-gain", [DataProductIdentifier.cal_gain], CAL_RAD_SHARED_ECR_NAME)
-    cal_noise = ("cal-noise", [DataProductIdentifier.cal_noise], CAL_RAD_SHARED_ECR_NAME)
-    cal_swc_365nm = ("cal-swc-365nm", [DataProductIdentifier.cal_swc_365nm], CAL_RAD_SHARED_ECR_NAME)
-    cal_swc_405nm = ("cal-swc-405nm", [DataProductIdentifier.cal_swc_405nm], CAL_RAD_SHARED_ECR_NAME)
-    cal_swc_520nm = ("cal-swc-520nm", [DataProductIdentifier.cal_swc_520nm], CAL_RAD_SHARED_ECR_NAME)
-    cal_swc_635nm = ("cal-swc-635nm", [DataProductIdentifier.cal_swc_635nm], CAL_RAD_SHARED_ECR_NAME)
-    cal_swc_840nm = ("cal-swc-840nm", [DataProductIdentifier.cal_swc_840nm], CAL_RAD_SHARED_ECR_NAME)
-    cal_swc_1550nm = ("cal-swc-1550nm", [DataProductIdentifier.cal_swc_1550nm], CAL_RAD_SHARED_ECR_NAME)
-    cal_lwc_310k = ("cal-lwc-310k", [DataProductIdentifier.cal_lwc_310k], CAL_RAD_SHARED_ECR_NAME)
-    cal_lwc_320k = ("cal-lwc-320k", [DataProductIdentifier.cal_lwc_320k], CAL_RAD_SHARED_ECR_NAME)
-    cal_lwc_330k = ("cal-lwc-330k", [DataProductIdentifier.cal_lwc_330k], CAL_RAD_SHARED_ECR_NAME)
-    cal_lwc_300k = ("cal-lwc-300k", [DataProductIdentifier.cal_lwc_300k], CAL_RAD_SHARED_ECR_NAME)
-    cal_lwc_305k = ("cal-lwc-305k", [DataProductIdentifier.cal_lwc_305k], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_ssw_pri = ("cal-solar-ssw-pri", [DataProductIdentifier.cal_solar_ssw_pri], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_tot_pri = ("cal-solar-tot-pri", [DataProductIdentifier.cal_solar_tot_pri], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_lw_pri = ("cal-solar-lw-pri", [DataProductIdentifier.cal_solar_lw_pri], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_sw_pri = ("cal-solar-sw-pri", [DataProductIdentifier.cal_solar_sw_pri], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_ssw_sec = ("cal-solar-ssw-sec", [DataProductIdentifier.cal_solar_ssw_sec], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_tot_sec = ("cal-solar-tot-sec", [DataProductIdentifier.cal_solar_tot_sec], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_lw_sec = ("cal-solar-lw-sec", [DataProductIdentifier.cal_solar_lw_sec], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_sw_sec = ("cal-solar-sw-sec", [DataProductIdentifier.cal_solar_sw_sec], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_ssw_ter = ("cal-solar-ssw-ter", [DataProductIdentifier.cal_solar_ssw_ter], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_tot_ter = ("cal-solar-tot-ter", [DataProductIdentifier.cal_solar_tot_ter], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_lw_ter = ("cal-solar-lw-ter", [DataProductIdentifier.cal_solar_lw_ter], CAL_RAD_SHARED_ECR_NAME)
-    cal_solar_sw_ter = ("cal-solar-sw-ter", [DataProductIdentifier.cal_solar_sw_ter], CAL_RAD_SHARED_ECR_NAME)
+    cal_gain_family = (
+        "cal-gain-family",
+        [DataProductIdentifier.l1a_nom_hk_gain_family_trimmed],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    cal_swc_family = ("cal-swc-family", [DataProductIdentifier.l1a_nom_hk_swc_family_trimmed], CAL_RAD_SHARED_ECR_NAME)
+    cal_lwc_family = ("cal-lwc-family", [DataProductIdentifier.l1a_nom_hk_lwc_family_trimmed], CAL_RAD_SHARED_ECR_NAME)
+    cal_solar_family = (
+        "cal-solar-family",
+        [DataProductIdentifier.l1a_nom_hk_solar_family_trimmed],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    # TODO[LIBSDC-811]: Add lunar calibration steps
 
     # L2 processing steps — camera cloud fraction track
     l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])
