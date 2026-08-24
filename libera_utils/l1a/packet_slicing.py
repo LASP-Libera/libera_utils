@@ -17,6 +17,13 @@ driver:
 - ``{sample_group}_packet_index`` is renumbered from 0 against the surviving packet axis, which
   keeps it usable as the sample-to-packet validation link in derived products.
 
+The sample axis is stored in sample-time order, which is *almost* but not exactly packet order:
+where two adjacent packets' sample clocks skew by less than a sample interval their sample blocks
+interleave, and ``{sample_group}_packet_index`` steps backwards at those few positions. Nothing
+here assumes packet-major blocks — the index is applied element-wise — so an interleaved run is
+sliced correctly and only logged. In particular, a skew anomaly anywhere in a granule must not
+fail a slice of a window that does not contain it.
+
 Selecting a time window (:func:`slice_l1a_dataset_to_time_window`) is driven by *sample* time
 where sample axes exist, because the samples are the science data being windowed. Whole packets
 are still the unit that survives, so a selected packet contributes samples on both sides of the
@@ -179,6 +186,13 @@ def sample_to_packet_index(dataset: xr.Dataset, sample_dim: str) -> np.ndarray:
     duplicate samples have been dropped. Falls back to positional arithmetic
     (``sample i -> packet i // samples_per_packet``) only when no index variable is present.
 
+    The returned mapping is *not* required to be monotonically non-decreasing. Sample axes are
+    sorted by sample time in :func:`~libera_utils.l1a.packets.create_l1a_dataset`, so a few
+    microseconds of skew between two adjacent packets' sample clocks is enough to interleave
+    their sample blocks. That is a real property of the telemetry, not corruption, and every
+    operation in this module indexes through the mapping element-wise rather than assuming
+    packet-major blocks, so interleaving is carried through faithfully. It is logged, not raised.
+
     Parameters
     ----------
     dataset : xr.Dataset
@@ -194,9 +208,8 @@ def sample_to_packet_index(dataset: xr.Dataset, sample_dim: str) -> np.ndarray:
     Raises
     ------
     ValueError
-        If a stored packet index is out of range or is not monotonically non-decreasing, which
-        means the sample axis is no longer packet-major or the two axes have been subset
-        independently.
+        If a stored packet index is out of range of the ``PACKET`` axis, which means the packet
+        and sample axes describe different sets of packets.
     """
     n_packets = dataset.sizes[PACKET_DIM]
     index_var = _packet_index_var_name(dataset, sample_dim)
@@ -212,11 +225,16 @@ def sample_to_packet_index(dataset: xr.Dataset, sample_dim: str) -> np.ndarray:
             f"[{packet_index.min()}, {packet_index.max()}] against {n_packets} packets. The packet "
             f"and sample axes describe different sets of packets."
         )
-    if np.any(np.diff(packet_index) < 0):
-        raise ValueError(
-            f"{index_var} is not monotonically non-decreasing, so {sample_dim} is not laid out "
-            f"packet-major. Sample blocks from different packets are interleaved, which means the "
-            f"axes have been reordered or subset independently."
+    n_inversions = int(np.count_nonzero(np.diff(packet_index) < 0))
+    if n_inversions:
+        logger.info(
+            "%s steps backwards at %d of %d sample positions, so %s is not strictly packet-major. "
+            "This is expected where adjacent packets' sample clocks skew enough to interleave their "
+            "sample blocks; the mapping is used element-wise and stays correct.",
+            index_var,
+            n_inversions,
+            packet_index.size,
+            sample_dim,
         )
     return packet_index
 

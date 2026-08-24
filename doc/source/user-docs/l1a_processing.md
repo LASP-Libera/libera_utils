@@ -341,6 +341,11 @@ This varies by packet but there is some consistent behavior:
 - Every sample group has a `{name}_packet_index` variable (integer, same dimension as the sample
   data) that maps each sample back to its originating packet index in the `PACKET` dimension.
   This enables efficient joins between per-packet metadata and per-sample science data.
+  The sample axis is sorted by sample time, not by packet, so `{name}_packet_index` is _usually_
+  but not necessarily non-decreasing: where two adjacent packets' sample clocks skew by less than
+  a sample interval their sample blocks interleave and the index steps backwards at those
+  positions. Consumers must use it as an element-wise mapping and must not assume that each
+  packet's samples form one contiguous block.
 
 ### WFOV camera science (APID 1040) image metadata
 

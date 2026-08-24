@@ -53,6 +53,26 @@ def _sample_product(
     )
 
 
+def _interleave_packet_pair(dataset: xr.Dataset, packet: int, samples_per_packet: int) -> xr.Dataset:
+    """Interleave the sample blocks of ``packet`` and ``packet + 1``.
+
+    Stands in for the ground-data case where two adjacent packets' sample clocks skew by less than
+    a sample interval: the axis is stored in sample-time order, so their samples alternate and
+    ``RAD_SAMPLE_packet_index`` steps backwards once per pair. Only the sample-indexed variables
+    are permuted; the sample time coordinate stays sorted, as it is on disk.
+    """
+    block = slice(packet * samples_per_packet, (packet + 2) * samples_per_packet)
+    interleaved = np.empty(2 * samples_per_packet, dtype=np.int64)
+    interleaved[0::2] = np.arange(samples_per_packet)
+    interleaved[1::2] = np.arange(samples_per_packet) + samples_per_packet
+
+    dataset = dataset.copy(deep=True)
+    for name, variable in dataset.variables.items():
+        if variable.dims == ("RAD_SAMPLE_FPE_TIME",) and str(name) != "RAD_SAMPLE_FPE_TIME":
+            dataset[name].values[block] = variable.values[block][interleaved]
+    return dataset
+
+
 def _packet_only_product(n_packets: int = 5, *, start: str = "2028-02-13T02:00:00") -> xr.Dataset:
     """Build a PEC/PEV-SW-STAT-shaped Dataset: PACKET plus an array dimension, no sample group."""
     packet_times = np.datetime64(start) + np.arange(n_packets) * np.timedelta64(1, "s")
@@ -104,12 +124,11 @@ class TestSampleToPacketIndex:
         with pytest.raises(ValueError, match="outside the range of the PACKET axis"):
             sample_to_packet_index(ds, "RAD_SAMPLE_FPE_TIME")
 
-    def test_non_monotonic_index_raises(self):
-        """Interleaved sample blocks mean the axes were reordered or subset independently."""
+    def test_interleaved_index_is_returned_as_stored(self):
+        """Clock skew between adjacent packets interleaves their sample blocks; that is not an error."""
         ds = _sample_product(n_packets=3, samples_per_packet=2)
-        ds["RAD_SAMPLE_packet_index"].values[:] = [0, 2, 1, 1, 2, 0]
-        with pytest.raises(ValueError, match="not monotonically non-decreasing"):
-            sample_to_packet_index(ds, "RAD_SAMPLE_FPE_TIME")
+        ds["RAD_SAMPLE_packet_index"].values[:] = [0, 0, 1, 2, 1, 2]
+        np.testing.assert_array_equal(sample_to_packet_index(ds, "RAD_SAMPLE_FPE_TIME"), [0, 0, 1, 2, 1, 2])
 
     def test_inexact_ratio_without_index_variable_raises(self):
         ds = _sample_product(n_packets=3, samples_per_packet=2, with_packet_index=False)
@@ -177,6 +196,23 @@ class TestSelectPackets:
         with pytest.raises(ValueError, match="missing required dimension 'PACKET'"):
             select_packets(xr.Dataset(), slice(0, 1))
 
+    def test_interleaved_packets_keep_their_own_samples(self):
+        """A packet whose samples interleave with its neighbour's still takes exactly its own."""
+        ds = _interleave_packet_pair(_sample_product(n_packets=6, samples_per_packet=4), 2, 4)
+        out = select_packets(ds, np.array([2]))
+
+        assert out.sizes["PACKET"] == 1
+        assert out.sizes["RAD_SAMPLE_FPE_TIME"] == 4
+        np.testing.assert_array_equal(out["RAD_SAMPLE_packet_index"].values, np.zeros(4))
+        np.testing.assert_array_equal(out["ICIE__RAD_SAMPLE_0"].values, np.arange(8, 12, dtype=np.float32))
+
+    def test_interleaved_packets_renumber_together(self):
+        ds = _interleave_packet_pair(_sample_product(n_packets=6, samples_per_packet=4), 2, 4)
+        out = select_packets(ds, np.array([2, 3]))
+
+        assert out.sizes["RAD_SAMPLE_FPE_TIME"] == 8
+        np.testing.assert_array_equal(out["RAD_SAMPLE_packet_index"].values, [0, 1, 0, 1, 0, 1, 0, 1])
+
     def test_preserves_packet_index_attributes(self):
         ds = _sample_product(n_packets=4, samples_per_packet=2)
         ds["RAD_SAMPLE_packet_index"].attrs["long_name"] = "Packet index for radiometer sample data"
@@ -217,6 +253,14 @@ class TestSliceL1aDatasetToTimeWindow:
 
         out = slice_l1a_dataset_to_time_window(ds, t0, t1)
         np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2])
+
+    def test_interleaving_outside_the_window_does_not_fail_the_slice(self):
+        """Regression: a clock-skew anomaly elsewhere in the granule must not fail this window."""
+        ds = _interleave_packet_pair(_sample_product(n_packets=8, samples_per_packet=4), 0, 4)
+        out = slice_l1a_dataset_to_time_window(
+            ds, np.datetime64("2028-02-13T02:00:05"), np.datetime64("2028-02-13T02:00:06.500")
+        )
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [5, 6])
 
     def test_packet_only_product_selects_on_packet_time(self):
         ds = _packet_only_product(n_packets=5)
