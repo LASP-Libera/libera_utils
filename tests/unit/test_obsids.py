@@ -4,13 +4,17 @@ import csv
 
 import pytest
 
+from libera_utils import obsids
 from libera_utils.constants import DataLevel, DataProductIdentifier, LiberaApid
 from libera_utils.obsids import (
+    _COLUMNS,
     OBSID_REGISTRY,
     OBSID_REGISTRY_CSV,
+    TRIM_FAMILIES,
     NomHkObsidSource,
     ObsIdKind,
     _parse_row,
+    get_family_specs,
     get_obsid_spec,
     iter_trim_eligible,
 )
@@ -93,19 +97,19 @@ class TestObsidRegistry:
             assert spec.trimmed_product.associated_apid is LiberaApid.icie_nom_hk
 
     def test_camera_dpi_string_values(self):
-        """Camera TRIMMED/CAL ProductID strings match the catalog table."""
+        """Camera TRIMMED family / CAL ProductID strings match the catalog table."""
         expected = {
-            129: ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", "CT-VIDEO-6MIN"),
-            130: ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", "CT-VIDEO-12MIN"),
-            131: ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", "CT-VIDEO-18MIN"),
-            133: ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", "RAPS-VIDEO-6MIN"),
-            134: ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", "RAPS-VIDEO-12MIN"),
-            135: ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", "RAPS-VIDEO-18MIN"),
-            256: ("NOM-HK-DARKS-OF-DARKS-TRIMMED", "DARKS-OF-DARKS"),
-            257: ("NOM-HK-LED-OF-DARK-TRIMMED", "LED-OF-DARK"),
-            258: ("NOM-HK-NOMINAL-DARKS-TRIMMED", "NOMINAL-DARKS"),
-            513: ("NOM-HK-WFOV-VIIRS-LUNAR-POS-START-TRIMMED", "WFOV-VIIRS-LUNAR-POS-START"),
-            514: ("NOM-HK-WFOV-VIIRS-LUNAR-NEG-START-TRIMMED", "WFOV-VIIRS-LUNAR-NEG-START"),
+            129: ("NOM-HK-CT-VIDEO-FAMILY-TRIMMED", "CT-VIDEO-6MIN"),
+            130: ("NOM-HK-CT-VIDEO-FAMILY-TRIMMED", "CT-VIDEO-12MIN"),
+            131: ("NOM-HK-CT-VIDEO-FAMILY-TRIMMED", "CT-VIDEO-18MIN"),
+            133: ("NOM-HK-RAPS-VIDEO-FAMILY-TRIMMED", "RAPS-VIDEO-6MIN"),
+            134: ("NOM-HK-RAPS-VIDEO-FAMILY-TRIMMED", "RAPS-VIDEO-12MIN"),
+            135: ("NOM-HK-RAPS-VIDEO-FAMILY-TRIMMED", "RAPS-VIDEO-18MIN"),
+            256: ("NOM-HK-DARKS-FAMILY-TRIMMED", "DARKS-OF-DARKS"),
+            257: ("NOM-HK-DARKS-FAMILY-TRIMMED", "LED-OF-DARK"),
+            258: ("NOM-HK-DARKS-FAMILY-TRIMMED", "NOMINAL-DARKS"),
+            513: ("NOM-HK-WFOV-VIIRS-LUNAR-FAMILY-TRIMMED", "WFOV-VIIRS-LUNAR-POS-START"),
+            514: ("NOM-HK-WFOV-VIIRS-LUNAR-FAMILY-TRIMMED", "WFOV-VIIRS-LUNAR-NEG-START"),
         }
         for obsid, (trimmed_val, cal_val) in expected.items():
             spec = get_obsid_spec(NomHkObsidSource.WFOV, obsid)
@@ -123,9 +127,9 @@ class TestObsidRegistry:
         """Radiometer lunar ObsIDs 448/449 map to LUNAR-SOUTH/NORTH-POLE products."""
         lunar1 = get_obsid_spec(NomHkObsidSource.RAD, 448)
         lunar2 = get_obsid_spec(NomHkObsidSource.RAD, 449)
-        assert lunar1.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_south_pole_trimmed
+        assert lunar1.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_family_trimmed
         assert lunar1.cal_product is DataProductIdentifier.cal_lunar_south_pole
-        assert lunar2.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_north_pole_trimmed
+        assert lunar2.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_lunar_family_trimmed
         assert lunar2.cal_product is DataProductIdentifier.cal_lunar_north_pole
         assert "Monthly" in lunar1.description
         assert "Quarterly" in lunar2.description
@@ -136,13 +140,15 @@ class TestObsidRegistry:
         rad_neg = get_obsid_spec(NomHkObsidSource.RAD, 514)
         wfov_pos = get_obsid_spec(NomHkObsidSource.WFOV, 513)
         wfov_neg = get_obsid_spec(NomHkObsidSource.WFOV, 514)
-        assert rad_pos.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed
+        rad_family = DataProductIdentifier.l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed
+        wfov_family = DataProductIdentifier.l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed
+        assert rad_pos.trimmed_product is rad_family
         assert rad_pos.cal_product is DataProductIdentifier.cal_rad_viirs_lunar_pos_start
-        assert rad_neg.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed
+        assert rad_neg.trimmed_product is rad_family
         assert rad_neg.cal_product is DataProductIdentifier.cal_rad_viirs_lunar_neg_start
-        assert wfov_pos.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed
+        assert wfov_pos.trimmed_product is wfov_family
         assert wfov_pos.cal_product is DataProductIdentifier.cal_wfov_viirs_lunar_pos_start
-        assert wfov_neg.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed
+        assert wfov_neg.trimmed_product is wfov_family
         assert wfov_neg.cal_product is DataProductIdentifier.cal_wfov_viirs_lunar_neg_start
         assert rad_pos.trimmed_product is not wfov_pos.trimmed_product
         assert rad_pos.cal_product is not wfov_pos.cal_product
@@ -163,10 +169,29 @@ class TestObsidRegistry:
         assert all(s.source is NomHkObsidSource.RAD for s in rad)
         assert all(s.source is NomHkObsidSource.WFOV for s in wfov)
 
-    def test_trimmed_products_are_unique_per_obsid(self):
-        """No two ObsIDs share a TRIMMED product, so a trimmed file maps back to one (source, obsid)."""
-        trimmed = [s.trimmed_product for s in iter_trim_eligible()]
-        assert len(trimmed) == len(set(trimmed))
+    def test_trimmed_products_group_obsids_into_families(self):
+        """ObsIDs share a TRIMMED product; TRIM_FAMILIES is the exact inverse of that column."""
+        expected: dict[DataProductIdentifier, list[int]] = {}
+        for spec in iter_trim_eligible():
+            assert spec.trimmed_product is not None
+            expected.setdefault(spec.trimmed_product, []).append(spec.obsid)
+        assert {product: [s.obsid for s in members] for product, members in TRIM_FAMILIES.items()} == expected
+        # Sharing is the point of families, so at least one product must cover several ObsIDs
+        assert any(len(members) > 1 for members in TRIM_FAMILIES.values())
+
+    def test_each_family_is_confined_to_one_source(self):
+        """A family is trimmed by scanning one NOM-HK ObsID field, so it must not span both."""
+        for product, members in TRIM_FAMILIES.items():
+            sources = {spec.source for spec in members}
+            assert len(sources) == 1, f"{product.name} spans {sources}"
+
+    def test_get_family_specs_returns_members_and_rejects_non_families(self):
+        """get_family_specs resolves a family ProductID and raises for anything else."""
+        swc = get_family_specs(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
+        assert [spec.obsid for spec in swc] == [256, 257, 258, 259, 260, 261]
+        assert all(spec.source is NomHkObsidSource.RAD for spec in swc)
+        with pytest.raises(KeyError, match="l1a_icie_nom_hk_decoded"):
+            get_family_specs(DataProductIdentifier.l1a_icie_nom_hk_decoded)
 
     def test_cal_products_are_unique_per_obsid(self):
         """No two ObsIDs share a CAL product."""
@@ -245,7 +270,7 @@ class TestObsidRegistryLoader:
             "source": "RAD",
             "obsid": "512",
             "kind": "rad_cal",
-            "trimmed_product": "l1a_icie_nom_hk_gain_trimmed",
+            "trimmed_product": "l1a_icie_nom_hk_gain_family_trimmed",
             "cal_product": "cal_gain",
             "description": "Gain calibration",
         }
@@ -258,7 +283,7 @@ class TestObsidRegistryLoader:
         assert spec.obsid == 512
         assert spec.source is NomHkObsidSource.RAD
         assert spec.kind is ObsIdKind.RAD_CAL
-        assert spec.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_gain_trimmed
+        assert spec.trimmed_product is DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed
         assert spec.cal_product is DataProductIdentifier.cal_gain
 
     def test_unknown_product_name_raises(self):
@@ -296,7 +321,7 @@ class TestObsidRegistryLoader:
         row = self._row(
             kind="cam_cal",
             obsid="129",
-            trimmed_product="l1a_icie_nom_hk_ct_video_6min_trimmed",
+            trimmed_product="l1a_icie_nom_hk_ct_video_family_trimmed",
             cal_product="cal_ct_video_6min",
         )
         with pytest.raises(ValueError, match="must be registered on WFOV, got RAD"):
@@ -307,7 +332,7 @@ class TestObsidRegistryLoader:
         with pytest.raises(ValueError, match="is a CAL product, expected L1A"):
             _parse_row(self._row(trimmed_product="cal_gain"), 7)
         with pytest.raises(ValueError, match="is a L1A product, expected CAL"):
-            _parse_row(self._row(cal_product="l1a_icie_nom_hk_gain_trimmed"), 7)
+            _parse_row(self._row(cal_product="l1a_icie_nom_hk_gain_family_trimmed"), 7)
 
     def test_row_with_missing_column_raises(self):
         """A row with too few columns names the file, line, and missing column."""
@@ -331,3 +356,67 @@ class TestObsidRegistryLoader:
         """Calibration entries must name both TRIMMED and CAL products."""
         with pytest.raises(ValueError, match="must name both TRIMMED and CAL products"):
             _parse_row(self._row(cal_product=""), 7)
+
+
+class TestObsidRegistryLoaderCrossRowChecks:
+    """Validation that only shows up once the whole catalog has been read."""
+
+    @staticmethod
+    def _load(tmp_path, monkeypatch, rows: list[str]):
+        """Run _load_registry against a synthetic catalog instead of the shipped one."""
+        catalog = tmp_path / "obsid_registry.csv"
+        catalog.write_text("\n".join([",".join(_COLUMNS), *rows]) + "\n", encoding="utf-8")
+        monkeypatch.setattr(obsids, "OBSID_REGISTRY_CSV", catalog)
+        return obsids._load_registry()
+
+    def test_obsids_may_share_a_trimmed_family(self, tmp_path, monkeypatch):
+        """Sharing a TRIMMED product is the point of families, so it must load cleanly."""
+        registry, families = self._load(
+            tmp_path,
+            monkeypatch,
+            [
+                "RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_gain,Gain calibration",
+                "RAD,515,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_noise,Noise calibration",
+            ],
+        )
+        assert len(registry) == 2
+        family = families[DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed]
+        assert [spec.obsid for spec in family] == [512, 515]
+
+    def test_duplicate_cal_product_raises(self, tmp_path, monkeypatch):
+        """Two ObsIDs claiming one CAL product would collide on the family step's output."""
+        with pytest.raises(ValueError, match="is already claimed by ObsID 512"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                [
+                    "RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_gain,Gain calibration",
+                    "RAD,515,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_gain,Noise calibration",
+                ],
+            )
+
+    def test_family_spanning_both_sources_raises(self, tmp_path, monkeypatch):
+        """A family is trimmed off one NOM-HK ObsID field, so it must not span RAD and WFOV."""
+        with pytest.raises(ValueError, match="must not span both"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                [
+                    "RAD,513,rad_cal,l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed,"
+                    "cal_rad_viirs_lunar_pos_start,VIIRS lunar positive start",
+                    "WFOV,513,cam_cal,l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed,"
+                    "cal_wfov_viirs_lunar_pos_start,VIIRS lunar positive start",
+                ],
+            )
+
+    def test_duplicate_source_obsid_raises(self, tmp_path, monkeypatch):
+        """Two rows for one (source, obsid) key are still rejected."""
+        with pytest.raises(ValueError, match="duplicate entry for ObsID 512 on RAD"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                [
+                    "RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_gain,Gain calibration",
+                    "RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_noise,Gain calibration again",
+                ],
+            )

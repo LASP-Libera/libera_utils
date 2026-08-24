@@ -51,8 +51,8 @@ class TestGetTrimmedNomHkProductDefinition:
     """Product-definition ProductID override."""
 
     def test_overrides_product_id(self):
-        definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_405nm_trimmed)
-        assert definition.attributes["ProductID"] == "NOM-HK-SWC-405NM-TRIMMED"
+        definition = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
+        assert definition.attributes["ProductID"] == "NOM-HK-SWC-FAMILY-TRIMMED"
 
     def test_rejects_non_trimmed_product(self):
         with pytest.raises(ValueError, match="not a known TRIMMED"):
@@ -88,8 +88,8 @@ class TestFindObsidRuns:
         )
         runs = find_obsid_runs(ds)
         products = {spec.trimmed_product for spec, _ in runs}
-        assert DataProductIdentifier.l1a_icie_nom_hk_swc_365nm_trimmed in products
-        assert DataProductIdentifier.l1a_icie_nom_hk_darks_of_darks_trimmed in products
+        assert DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed in products
+        assert DataProductIdentifier.l1a_icie_nom_hk_darks_family_trimmed in products
 
     def test_source_filter(self):
         ds = _synthetic_nom_hk(
@@ -113,7 +113,7 @@ class TestWriteTrimmedNomHkProducts:
         # Two disjoint 257 runs
         ds = _synthetic_nom_hk(rad_obsids=[257, 257, 128, 257, 257])
         mock_filename = MagicMock()
-        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-405NM-TRIMMED_fake.nc"
+        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-FAMILY-TRIMMED_fake.nc"
 
         with (
             patch(
@@ -142,8 +142,44 @@ class TestWriteTrimmedNomHkProducts:
             write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
 
         product_ids = {call.args[1].attrs["ProductID"] for call in mock_write.call_args_list}
-        assert "NOM-HK-SWC-405NM-TRIMMED" in product_ids
-        assert "NOM-HK-DARKS-OF-DARKS-TRIMMED" in product_ids
+        assert "NOM-HK-SWC-FAMILY-TRIMMED" in product_ids
+        assert "NOM-HK-DARKS-FAMILY-TRIMMED" in product_ids
+
+    def test_family_siblings_each_get_their_own_file(self, tmp_path):
+        """Two ObsIDs in one family write two files that share the family ProductID."""
+        ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 257, 257])
+        mock_filename = MagicMock()
+        mock_filename.path.name = "fake.nc"
+        with patch(
+            "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
+            return_value=mock_filename,
+        ) as mock_write:
+            written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+
+        assert len(written) == 2
+        product_ids = [call.args[1].attrs["ProductID"] for call in mock_write.call_args_list]
+        assert product_ids == ["NOM-HK-SWC-FAMILY-TRIMMED", "NOM-HK-SWC-FAMILY-TRIMMED"]
+        # Each file still covers exactly one ObsID, recoverable from the retained ObsID field
+        obsids_per_file = [
+            np.unique(call.args[1]["ICIE__SW_OBSID_RAD"].values).tolist() for call in mock_write.call_args_list
+        ]
+        assert obsids_per_file == [[256], [257]]
+
+    def test_family_siblings_do_not_warn_about_disjoint_runs(self, tmp_path, caplog):
+        """Different ObsIDs of one family are not the same ObsID appearing twice."""
+        ds = _synthetic_nom_hk(rad_obsids=[256, 256, 128, 257, 257])
+        mock_filename = MagicMock()
+        mock_filename.path.name = "fake.nc"
+        with (
+            patch(
+                "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
+                return_value=mock_filename,
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+
+        assert not any("disjoint runs" in r.message for r in caplog.records)
 
     def test_input_files_names_the_parent_granule(self, tmp_path):
         """input_files must list the parent NOM-HK-DECODED granule, not the L0 packet files."""

@@ -6,8 +6,9 @@ from typing import Union
 
 from libera_utils.aws.constants import LiberaAccountSuffix, LiberaDataBucketName
 
-# Shared ECR repository name for radiometer ObsID-specific calibration combine steps.
-# CDK should create one ECR repo with this name and attach it to each cal-* Batch job.
+# Shared ECR repository name for the radiometer calibration-family combine steps.
+# CDK should create one ECR repo with this name and attach it to each cal-* Batch job; the job
+# dispatches to the per-ObsID algorithm at runtime from the ObsID carried in its trimmed input.
 CAL_RAD_SHARED_ECR_NAME = "cal-rad-docker-repo"
 
 
@@ -423,7 +424,7 @@ class ProcessingStepIdentifier(StrEnum):
             List of DataProductIdentifier members that this step produces
         shared_ecr_name : str, optional
             Shared ECR repository name. When set, ``ecr_name`` returns this value
-            instead of ``{step}-docker-repo``. Used so ObsID-specific cal steps
+            instead of ``{step}-docker-repo``. Used so the calibration family cal steps
             can share one radiometer calibration image repository.
         """
         if value != value.lower():
@@ -444,20 +445,57 @@ class ProcessingStepIdentifier(StrEnum):
     l1b_rad = ("l1b-rad", [DataProductIdentifier.l1b_rad])
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
 
-    # Radiometer calibration event combination steps (shared cal-rad ECR; one step per ObsID product)
+    # Radiometer calibration event combination steps (shared cal-rad ECR; one step per calibration
+    # dependency family). Each step consumes the family's NOM-HK-*-FAMILY-TRIMMED products and
+    # dispatches to the per-ObsID algorithm at runtime, so the products listed here are every CAL
+    # product the family can yield. Family membership lives in data/obsid_registry.csv.
     cal_gain_family = (
         "cal-gain-family",
-        [DataProductIdentifier.l1a_nom_hk_gain_family_trimmed],
+        [DataProductIdentifier.cal_gain, DataProductIdentifier.cal_noise],
         CAL_RAD_SHARED_ECR_NAME,
     )
-    cal_swc_family = ("cal-swc-family", [DataProductIdentifier.l1a_nom_hk_swc_family_trimmed], CAL_RAD_SHARED_ECR_NAME)
-    cal_lwc_family = ("cal-lwc-family", [DataProductIdentifier.l1a_nom_hk_lwc_family_trimmed], CAL_RAD_SHARED_ECR_NAME)
+    cal_swc_family = (
+        "cal-swc-family",
+        [
+            DataProductIdentifier.cal_swc_365nm,
+            DataProductIdentifier.cal_swc_405nm,
+            DataProductIdentifier.cal_swc_520nm,
+            DataProductIdentifier.cal_swc_635nm,
+            DataProductIdentifier.cal_swc_840nm,
+            DataProductIdentifier.cal_swc_1550nm,
+        ],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    cal_lwc_family = (
+        "cal-lwc-family",
+        [
+            DataProductIdentifier.cal_lwc_310k,
+            DataProductIdentifier.cal_lwc_320k,
+            DataProductIdentifier.cal_lwc_335k,
+            DataProductIdentifier.cal_lwc_300k,
+            DataProductIdentifier.cal_lwc_305k,
+        ],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
     cal_solar_family = (
         "cal-solar-family",
-        [DataProductIdentifier.l1a_nom_hk_solar_family_trimmed],
+        [
+            DataProductIdentifier.cal_solar_ssw_pri,
+            DataProductIdentifier.cal_solar_tot_pri,
+            DataProductIdentifier.cal_solar_lw_pri,
+            DataProductIdentifier.cal_solar_sw_pri,
+            DataProductIdentifier.cal_solar_ssw_sec,
+            DataProductIdentifier.cal_solar_tot_sec,
+            DataProductIdentifier.cal_solar_lw_sec,
+            DataProductIdentifier.cal_solar_sw_sec,
+            DataProductIdentifier.cal_solar_ssw_ter,
+            DataProductIdentifier.cal_solar_tot_ter,
+            DataProductIdentifier.cal_solar_lw_ter,
+            DataProductIdentifier.cal_solar_sw_ter,
+        ],
         CAL_RAD_SHARED_ECR_NAME,
     )
-    # TODO[LIBSDC-811]: Add lunar calibration steps
+    # TODO[LIBSDC-811]: Add lunar (RAD/VIIRS) and camera calibration family steps
 
     # L2 processing steps — camera cloud fraction track
     l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])

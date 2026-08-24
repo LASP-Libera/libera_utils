@@ -5,14 +5,22 @@ integer can mean different events depending on whether it appears in
 ``ICIE__SW_OBSID_RAD`` or ``ICIE__SW_OBSID_WFOV``. Registry keys are therefore
 ``(NomHkObsidSource, obsid)``.
 
+Several ObsIDs share one TRIMMED product. A TRIMMED product names a *calibration
+dependency family* (e.g. ``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED
+ObsIDs) because downstream algorithms process every member of a family the same way
+and one processing step is deployed per family, not per ObsID. The trimmed file
+itself still carries the source NOM-HK ObsID field, so a consumer recovers the exact
+ObsID from the data rather than from the ProductID. Each ObsID keeps its own CAL
+product, which is what a family step dispatches on.
+
 The catalog itself lives in :data:`OBSID_REGISTRY_CSV` (``libera_utils/data``)
 rather than in this module. Product columns hold
 :class:`~libera_utils.constants.DataProductIdentifier` *member names* (e.g.
 ``cal_gain``), which are resolved and validated when this module is imported.
 An unknown member name, a product named at the wrong data level, a ``kind`` that
-disagrees with ``source``, a duplicate ``(source, obsid)`` key, or a TRIMMED
-product claimed by more than one ObsID all raise :class:`ValueError` at import
-time.
+disagrees with ``source``, a duplicate ``(source, obsid)`` key, a CAL product claimed
+by more than one ObsID, or a TRIMMED family spanning more than one NOM-HK ObsID field
+all raise :class:`ValueError` at import time.
 
 The list of ObsIDs in this repo is meant for practical purposes of science data
 processing and is a subset of the instrument level source of truth of all ObsIDs
@@ -185,22 +193,30 @@ def _parse_row(row: dict[str, str], line: int) -> ObsIdSpec:
     return spec
 
 
-def _load_registry() -> dict[tuple[NomHkObsidSource, int], ObsIdSpec]:
+def _load_registry() -> tuple[
+    dict[tuple[NomHkObsidSource, int], ObsIdSpec],
+    dict[DataProductIdentifier, tuple[ObsIdSpec, ...]],
+]:
     """Read and validate the ObsID catalog CSV.
 
     Returns
     -------
-    dict
+    registry : dict
         Mapping of ``(source, obsid)`` to :class:`ObsIdSpec`, in catalog order.
+    families : dict
+        Mapping of each TRIMMED family ProductID to the ObsIDs that belong to it, in
+        catalog order.
 
     Raises
     ------
     ValueError
-        If the catalog is malformed, if two rows share a ``(source, obsid)`` key, or
-        if two rows claim the same TRIMMED product.
+        If the catalog is malformed, if two rows share a ``(source, obsid)`` key, if two
+        rows claim the same CAL product, or if one TRIMMED family spans both NOM-HK ObsID
+        fields.
     """
     registry: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = {}
-    trimmed_owner: dict[DataProductIdentifier, ObsIdSpec] = {}
+    families: dict[DataProductIdentifier, list[ObsIdSpec]] = {}
+    cal_owner: dict[DataProductIdentifier, ObsIdSpec] = {}
     with OBSID_REGISTRY_CSV.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh, restkey=_EXTRA_COLUMNS_KEY)
         missing = set(_COLUMNS).difference(reader.fieldnames or ())
@@ -214,24 +230,42 @@ def _load_registry() -> dict[tuple[NomHkObsidSource, int], ObsIdSpec]:
                     f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: "
                     f"duplicate entry for ObsID {spec.obsid} on {spec.source.name}"
                 )
-            if spec.trimmed_product is not None:
-                owner = trimmed_owner.get(spec.trimmed_product)
+            if spec.cal_product is not None:
+                owner = cal_owner.get(spec.cal_product)
                 if owner is not None:
                     raise ValueError(
-                        f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: TRIMMED product "
-                        f"{spec.trimmed_product.name!r} is already claimed by ObsID {owner.obsid} on "
-                        f"{owner.source.name}. Each ObsID needs its own TRIMMED product so the trimmed "
-                        "file maps back to exactly one (source, obsid)."
+                        f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: CAL product "
+                        f"{spec.cal_product.name!r} is already claimed by ObsID {owner.obsid} on "
+                        f"{owner.source.name}. ObsIDs share a TRIMMED family, but each one needs its "
+                        "own CAL product so a family cal step still maps every ObsID to a distinct output."
                     )
-                trimmed_owner[spec.trimmed_product] = spec
+                cal_owner[spec.cal_product] = spec
+            if spec.trimmed_product is not None:
+                members = families.setdefault(spec.trimmed_product, [])
+                if members and members[0].source is not spec.source:
+                    raise ValueError(
+                        f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: TRIMMED family "
+                        f"{spec.trimmed_product.name!r} is registered on {members[0].source.name} by ObsID "
+                        f"{members[0].obsid} but on {spec.source.name} by ObsID {spec.obsid}. A family is "
+                        "trimmed by scanning a single NOM-HK ObsID field, so it must not span both "
+                        "(register a separate family per source, as RAD/WFOV VIIRS lunar do)."
+                    )
+                members.append(spec)
             registry[key] = spec
-    return registry
+    return registry, {product: tuple(members) for product, members in families.items()}
 
 
 #: Sole source of truth for ObsID → CAL / TRIMMED ProductIDs and catalog metadata.
 #: Keyed by (source, obsid) because RAD and WFOV namespaces overlap.
 #: Loaded from :data:`OBSID_REGISTRY_CSV`; edit that file to register a new ObsID.
-OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec] = _load_registry()
+OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec]
+
+#: Inverse view of the TRIMMED column: each calibration dependency family ProductID mapped to the
+#: ObsIDs it covers. One processing step is deployed per family, so this is the membership a
+#: downstream cal step dispatches over.
+TRIM_FAMILIES: dict[DataProductIdentifier, tuple[ObsIdSpec, ...]]
+
+OBSID_REGISTRY, TRIM_FAMILIES = _load_registry()
 
 
 def get_obsid_spec(source: NomHkObsidSource, obsid: int) -> ObsIdSpec:
@@ -258,6 +292,37 @@ def get_obsid_spec(source: NomHkObsidSource, obsid: int) -> ObsIdSpec:
         return OBSID_REGISTRY[(source, obsid)]
     except KeyError as exc:
         raise KeyError(f"Unknown ObsID {obsid} for source {source.name} ({source.value})") from exc
+
+
+def get_family_specs(trimmed_product: DataProductIdentifier) -> tuple[ObsIdSpec, ...]:
+    """Return every ObsID belonging to a TRIMMED calibration dependency family.
+
+    A TRIMMED ProductID covers a family of ObsIDs that downstream algorithms process the
+    same way (e.g. ``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED ObsIDs), so
+    this is how a cal step enumerates the ObsIDs — and the CAL products — it is responsible
+    for without hand-maintaining the mapping.
+
+    Parameters
+    ----------
+    trimmed_product : DataProductIdentifier
+        A TRIMMED family ProductID from the registry.
+
+    Returns
+    -------
+    tuple of ObsIdSpec
+        Family members in catalog order. Always at least one entry.
+
+    Raises
+    ------
+    KeyError
+        If ``trimmed_product`` is not a registered TRIMMED family ProductID.
+    """
+    try:
+        return TRIM_FAMILIES[trimmed_product]
+    except KeyError as exc:
+        raise KeyError(
+            f"{trimmed_product.name!r} is not a TRIMMED calibration family ProductID in {OBSID_REGISTRY_CSV.name}"
+        ) from exc
 
 
 def iter_trim_eligible(source: NomHkObsidSource | None = None) -> Iterator[ObsIdSpec]:

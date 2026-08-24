@@ -1,4 +1,14 @@
-"""Trim decoded NOM-HK L1A Datasets to contiguous calibration ObsID runs."""
+"""Trim decoded NOM-HK L1A Datasets to contiguous calibration ObsID runs.
+
+One file is written per contiguous ObsID run, but the ProductID it carries names the run's
+*calibration dependency family* rather than its ObsID: ObsIDs that downstream algorithms process
+identically share one TRIMMED ProductID so that libera_cdk deploys one processing step per family
+instead of one per ObsID (see :mod:`libera_utils.obsids`). A day therefore normally yields several
+files sharing one family ProductID — six ``NOM-HK-SWC-FAMILY-TRIMMED`` granules for the six
+shortwave LED ObsIDs, for example — distinguished by their filename time ranges. Each file still
+covers exactly one ObsID run, and the ObsID itself stays readable from the ``ICIE__SW_OBSID_*``
+variable the file carries, which is where a consumer should recover it from.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +27,7 @@ from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
-from libera_utils.obsids import NomHkObsidSource, ObsIdSpec, iter_trim_eligible
+from libera_utils.obsids import TRIM_FAMILIES, NomHkObsidSource, ObsIdSpec, iter_trim_eligible
 from libera_utils.version import version as libera_utils_version
 
 logger = logging.getLogger(__name__)
@@ -33,7 +43,7 @@ def get_trimmed_nom_hk_product_definition(
     Parameters
     ----------
     trimmed_product : DataProductIdentifier
-        A known TRIMMED NOM-HK ProductID from the ObsID registry.
+        A known TRIMMED NOM-HK calibration family ProductID from the ObsID registry.
 
     Returns
     -------
@@ -43,13 +53,12 @@ def get_trimmed_nom_hk_product_definition(
     Raises
     ------
     ValueError
-        If ``trimmed_product`` is not a trim-eligible registry ProductID.
+        If ``trimmed_product`` is not a registered TRIMMED family ProductID.
     """
-    known = {spec.trimmed_product for spec in iter_trim_eligible()}
-    if trimmed_product not in known:
+    if trimmed_product not in TRIM_FAMILIES:
         raise ValueError(
-            f"ProductID {trimmed_product.value!r} is not a known TRIMMED NOM-HK product. "
-            f"Expected one of: {sorted(p.value for p in known if p is not None)}"
+            f"ProductID {trimmed_product.value!r} is not a known TRIMMED NOM-HK calibration family "
+            f"product. Expected one of: {sorted(product.value for product in TRIM_FAMILIES)}"
         )
 
     base_path = get_l1a_product_definition_path(LiberaApid.icie_nom_hk.value)
@@ -173,7 +182,11 @@ def write_trimmed_nom_hk_products(
     strict: bool = True,
     source: NomHkObsidSource | None = None,
 ) -> list[LiberaDataProductFilename]:
-    """Detect ObsID runs in ``nom_hk`` and write one TRIMMED product per run.
+    """Detect ObsID runs in ``nom_hk`` and write one TRIMMED file per run.
+
+    Each file is stamped with its run's calibration dependency family ProductID, so several
+    files written from one Dataset normally share a ProductID — one per ObsID in that family —
+    and are told apart by their filename time ranges. That is expected, not a collision.
 
     When the same ``(source, obsid)`` appears in multiple disjoint runs, each run
     is written separately and a warning is logged (unexpected in normal ops).
@@ -236,11 +249,12 @@ def write_trimmed_nom_hk_products(
             add_archive_path_prefix=add_archive_path_prefix,
         )
         logger.info(
-            "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s",
+            "Wrote TRIMMED NOM-HK product %s (%d packets) for ObsID %s / %s into family %s",
             filename.path.name,
             trimmed.sizes[PACKET_DIM],
             spec.obsid,
             spec.source.name,
+            trimmed_product.value,
         )
         written.append(filename)
     return written

@@ -16,11 +16,13 @@ pytestmark = pytest.mark.integration
 # TODO[LIBSDC-567]: Add integration coverage for WFOV/camera ObsID trimming once
 # NOM-HK fixtures containing ICIE__SW_OBSID_WFOV cal events are available.
 
-# Expected RAD cal runs in test_l1a_nom_hk_obsid_trim_subset
+# Expected RAD cal runs in test_l1a_nom_hk_obsid_trim_subset, as ObsID -> (family ProductID, packets).
+# ObsIDs 385 and 386 are both solar-diffuser cals, so they share one TRIMMED family ProductID and are
+# told apart by the ObsID field inside each file rather than by the filename.
 _EXPECTED_RAD_RUNS = {
-    257: ("NOM-HK-SWC-405NM-TRIMMED", 236),
-    385: ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", 81),
-    386: ("NOM-HK-SOLAR-LW-PRI-TRIMMED", 81),
+    257: ("NOM-HK-SWC-FAMILY-TRIMMED", 236),
+    385: ("NOM-HK-SOLAR-FAMILY-TRIMMED", 81),
+    386: ("NOM-HK-SOLAR-FAMILY-TRIMMED", 81),
 }
 
 
@@ -42,7 +44,7 @@ def test_find_obsid_runs_on_fixture(test_l1a_nom_hk_obsid_trim_subset: Path):
 
 
 def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_subset: Path, tmp_path: Path):
-    """End-to-end write produces one TRIMMED file per RAD cal ObsID with matching packet counts."""
+    """End-to-end write produces one TRIMMED file per RAD cal ObsID run, stamped with its family."""
     with xr.open_dataset(test_l1a_nom_hk_obsid_trim_subset) as ds:
         # Load so the Dataset outlives the closed file handle
         ds = ds.load()
@@ -51,19 +53,31 @@ def test_write_trimmed_nom_hk_products_on_fixture(test_l1a_nom_hk_obsid_trim_sub
         )
 
     assert len(written) == 3
-    by_token = {path.path.name: path for path in written}
+    # Files are keyed by the ObsID they actually contain; two of them share a family ProductID
+    by_obsid = {}
+    for path in written:
+        with xr.open_dataset(path.path) as trimmed:
+            obsids = np.unique(trimmed["ICIE__SW_OBSID_RAD"].values).tolist()
+            assert len(obsids) == 1, f"{path.path.name} covers more than one ObsID: {obsids}"
+            assert obsids[0] not in by_obsid, f"ObsID {obsids[0]} was written more than once"
+            by_obsid[obsids[0]] = {
+                "ProductID": trimmed.attrs["ProductID"],
+                "packets": trimmed.sizes["PACKET"],
+                # NetCDF collapses a single-element string list to a scalar on round-trip.
+                "input_files": np.atleast_1d(trimmed.attrs["input_files"]).tolist(),
+                "algorithm_version": trimmed.attrs["algorithm_version"],
+            }
+
+    assert set(by_obsid) == set(_EXPECTED_RAD_RUNS)
     for obsid, (product_token, expected_count) in _EXPECTED_RAD_RUNS.items():
-        matches = [p for name, p in by_token.items() if product_token in name]
-        assert len(matches) == 1, f"Expected one file for {product_token}, got {list(by_token)}"
-        with xr.open_dataset(matches[0].path) as trimmed:
-            assert trimmed.attrs["ProductID"] == product_token
-            assert trimmed.sizes["PACKET"] == expected_count
-            assert np.unique(trimmed["ICIE__SW_OBSID_RAD"].values).tolist() == [obsid]
-            # Provenance points at the parent granule, not the L0 packet files it was decoded from.
-            # NetCDF collapses a single-element string list to a scalar on round-trip.
-            input_files = np.atleast_1d(trimmed.attrs["input_files"]).tolist()
-            assert input_files == [test_l1a_nom_hk_obsid_trim_subset.name]
-            assert trimmed.attrs["algorithm_version"] == libera_utils_version()
+        assert by_obsid[obsid]["ProductID"] == product_token
+        assert by_obsid[obsid]["packets"] == expected_count
+        # Provenance points at the parent granule, not the L0 packet files it was decoded from
+        assert by_obsid[obsid]["input_files"] == [test_l1a_nom_hk_obsid_trim_subset.name]
+        assert by_obsid[obsid]["algorithm_version"] == libera_utils_version()
+    # Both solar ObsIDs landed in the one solar family product, under distinct filenames
+    solar_names = {path.path.name for path in written if "SOLAR-FAMILY" in path.path.name}
+    assert len(solar_names) == 2
 
 
 def test_pad_obsids_do_not_produce_trimmed_products(test_l1a_nom_hk_obsid_trim_subset: Path, tmp_path: Path):
@@ -77,7 +91,7 @@ def test_pad_obsids_do_not_produce_trimmed_products(test_l1a_nom_hk_obsid_trim_s
 
     # Fixture includes non-cal pads (e.g. 128) that must not be trimmed
     assert present - set(_EXPECTED_RAD_RUNS)  # pads exist
-    tokens = {p.path.name for p in written}
-    assert len(tokens) == 3
-    for name in tokens:
+    names = {p.path.name for p in written}
+    assert len(names) == 3
+    for name in names:
         assert any(tok in name for tok, _ in _EXPECTED_RAD_RUNS.values())

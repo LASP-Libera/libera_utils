@@ -67,23 +67,36 @@ generation, Libera file naming, and AWS pipeline integration.
   `ValueError` is raised when `libera_utils.obsids` is imported for: an unknown member name, a
   product named at the wrong data level (TRIMMED cells must be L1A, CAL cells must be CAL), a row
   with the wrong number of columns, a `kind`/product mismatch, a `rad_cal` row registered on WFOV
-  (or `cam_cal` on RAD), a duplicate `(source, obsid)` row, or a TRIMMED product claimed by more
-  than one ObsID. The in-memory `OBSID_REGISTRY` is keyed by
+  (or `cam_cal` on RAD), a duplicate `(source, obsid)` row, a CAL product claimed by more than one
+  ObsID, or a TRIMMED family registered on both the RAD and WFOV ObsID fields. The in-memory
+  `OBSID_REGISTRY` is keyed by
   `(NomHkObsidSource, obsid)`, not `obsid` alone, because RAD and WFOV ObsID numbers collide
   (e.g. `256` means SWC-365NM on RAD but Darks-of-Darks on WFOV). This is more than a lookup
   table of "what ObsIDs exist" — it drives real behavior:
   - Downstream repos (e.g. `libera_rad`'s cal-combine dispatch) derive their own
     ObsID → product/family mappings directly from this registry (via `get_obsid_spec` /
-    `iter_trim_eligible`) instead of hand-maintaining a duplicate mapping per repo — this is
+    `get_family_specs` / `iter_trim_eligible`) instead of hand-maintaining a duplicate mapping per repo — this is
     what lets multiple calibration steps share one Docker/ECR image, dispatched at runtime by
     ObsID.
   - When adding a new calibration ObsID, add a row to `data/obsid_registry.csv` first rather
     than adding a parallel ObsID → product mapping in a downstream repo. Edit the CSV with a
     text editor or the `csv` module, never a spreadsheet app that may rewrite quoting —
-    descriptions contain commas. No Python change is needed for a new ObsID.
-  - Every calibration ObsID gets its own TRIMMED product, even when the same event appears on both
-    ObsID fields (VIIRS lunar 513/514 is registered as `NOM-HK-RAD-...` and `NOM-HK-WFOV-...`), so a
-    trimmed file always maps back to exactly one `(source, obsid)` and one CAL product.
+    descriptions contain commas. An ObsID joining an existing family needs no new TRIMMED product
+    or processing step — just its own CAL product, added to that family step's `products` list. A
+    new TRIMMED family member is warranted only when the ObsID introduces a genuinely new input
+    dependency, which is also when a new `ProcessingStepIdentifier` is warranted.
+  - The TRIMMED column names a **calibration dependency family**, not a single ObsID: ObsIDs a
+    downstream algorithm processes identically share one `NOM-HK-<FAMILY>-FAMILY-TRIMMED` product
+    (all six SWC LEDs share `NOM-HK-SWC-FAMILY-TRIMMED`), because what libera_cdk deploys against
+    is the set of input products a step depends on — one processing step per family, not per ObsID.
+    Each ObsID still gets its own CAL product, and a family never spans both ObsID fields (VIIRS
+    lunar 513/514 is registered as two families, `NOM-HK-RAD-VIIRS-LUNAR-...` and
+    `NOM-HK-WFOV-VIIRS-LUNAR-...`) so a trimmed file always attributes to one source. Use
+    `TRIM_FAMILIES` / `get_family_specs()` to go from a family product to its ObsIDs and CAL
+    products.
+  - `nom_hk_trim` still writes one file per contiguous ObsID run, so several files per day normally
+    share a family `ProductID` and are told apart by their filename time ranges; the exact ObsID is
+    recovered from the `ICIE__SW_OBSID_*` variable the trimmed file carries, not from its name.
   - **Note**: the list of ObsIDs in this repo is meant for practical purposes of science data
     processing and is a subset of the instrument level source of truth of all ObsIDs which is owned
     by the engineering team and is available in internal team documentation
