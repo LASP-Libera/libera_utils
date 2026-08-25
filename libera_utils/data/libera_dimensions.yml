@@ -70,3 +70,67 @@ CAL_SAMPLE_PACKET:
   long_name: "Packet index for CAL-SAMPLE packets in calibration event"
 WFOV_SCI_PACKET:
   long_name: "Packet index for WFOV-SCI packets in calibration event"
+
+# ADM Specific dimensions
+# Viewing geometry. Used for both Libera-Camera (ERBE-like using only the Libera WFOV camera) and Libera-Imager (CERES-TRMM-like including VIIRS data) products so no size is specified.
+SZA_BIN:
+  long_name: "Solar zenith angle bin index. Bin boundaries are given by the SZA_BIN_EDGES dimension."
+SZA_BIN_EDGES:
+  long_name: "Solar zenith angle bin edges in degrees, monotonically increasing and spanning the full 0 to 90 degree range. Has one more element than SZA_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(sza, edges) - 1."
+VZA_BIN:
+  long_name: "Viewing zenith angle bin index. Bin boundaries are given by the VZA_BIN_EDGES dimension."
+VZA_BIN_EDGES:
+  long_name: "Viewing zenith angle bin edges in degrees, monotonically increasing and spanning the full 0 to 90 degree range. Has one more element than VZA_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(vza, edges) - 1."
+RAA_BIN:
+  long_name: "Relative azimuth angle bin index. Bin boundaries are given by the RAA_BIN_EDGES dimension."
+RAA_BIN_EDGES:
+  long_name: "Relative azimuth angle bin edges in degrees, monotonically increasing and spanning the full 0 to 180 degree range. Has one more element than RAA_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(raa, edges) - 1."
+
+# Surface types
+SURFACE_TYPE_BIN:
+  long_name: "Surface type bin index. 1:Ocean, 2:Land, 3:Snow, 4:Desert. Used for Libera-camera surface types"
+  size: 4
+LAND_SURFACE_TYPE_BIN:
+  long_name: "Land surface type bin index. 1: Mod-hi_tree/shrub_coverage, 2:Low-mod tree/shrub coverage, 3:Dark desert, 4:Bright desert, 5:Snow/ice. Used for Libera-Imager scene types land surface types"
+  size: 5
+
+# Atmospheric Properties
+CLOUD_FRACTION_BIN:
+  long_name: "Cloud fraction bin index. Used for Libera-camera cloud fraction bins"
+  size: 4
+CLOUD_FRACTION_BIN_EDGES:
+  long_name: "Cloud fraction bin edges, monotonically increasing. Has one more element than CLOUD_FRACTION_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(cloud_fraction, edges) - 1. Used for Libera-camera cloud fraction bins"
+  size: 5
+CLOUD_FRACTION_LAND_BIN:
+  long_name: "Land scene cloud fraction bin index. Used for Libera-Imager scene types cloud fraction bins"
+  size: 5
+CLOUD_FRACTION_LAND_BIN_EDGES:
+  long_name: "Land scene cloud fraction bin edges, monotonically increasing. Has one more element than CLOUD_FRACTION_LAND_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(cloud_fraction, edges) - 1. Used for Libera-Imager scene types cloud fraction bins"
+  size: 6
+CLOUD_FRACTION_OCEAN_BIN:
+  long_name: "Ocean scene cloud fraction bin index. Used for Libera-Imager scene types cloud fraction bins"
+  size: 12
+CLOUD_FRACTION_OCEAN_BIN_EDGES:
+  long_name: "Ocean scene cloud fraction bin edges, monotonically increasing. Has one more element than CLOUD_FRACTION_OCEAN_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(cloud_fraction, edges) - 1. Used for Libera-Imager scene types cloud fraction bins"
+  size: 13
+CLOUD_OPTICAL_DEPTH_LAND_BIN:
+  long_name: "Land scene cloud optical depth bin index. Used for Libera-Imager scene types cloud optical depth bins"
+  size: 6
+CLOUD_OPTICAL_DEPTH_LAND_BIN_EDGES:
+  long_name: "Land scene cloud optical depth bin edges, monotonically increasing. Has one more element than CLOUD_OPTICAL_DEPTH_LAND_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(cod, edges) - 1. Used for Libera-Imager scene types cloud optical depth bins"
+  size: 7
+CLOUD_OPTICAL_DEPTH_OCEAN_BIN:
+  long_name: "Ocean scene cloud optical depth bin index. Used for Libera-Imager scene types cloud optical depth bins"
+  size: 14
+CLOUD_OPTICAL_DEPTH_OCEAN_BIN_EDGES:
+  long_name: "Ocean scene cloud optical depth bin edges, monotonically increasing. Has one more element than CLOUD_OPTICAL_DEPTH_OCEAN_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(cod, edges) - 1. Used for Libera-Imager scene types cloud optical depth bins"
+  size: 15
+CLOUD_PHASE_BIN:
+  long_name: "Cloud phase bin index. 1:Liquid, 2:Ice. Used for Libera-Imager scene types cloud phase"
+  size: 2
+WIND_SPEED_BIN:
+  long_name: "10m wind speed bin index. Used for Libera-Imager scene types wind speed bins"
+  size: 4
+WIND_SPEED_BIN_EDGES:
+  long_name: "10m wind speed bin edges, monotonically increasing. Has one more element than WIND_SPEED_BIN: bin k covers [edge[k], edge[k+1]), lower edge inclusive and upper edge exclusive, except the final bin which also includes its upper edge. Suitable for direct use as np.digitize(wind_speed, edges) - 1. Used for Libera-Imager scene types wind speed bins"
+  size: 5
