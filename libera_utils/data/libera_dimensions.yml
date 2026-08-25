@@ -91,7 +91,7 @@ SURFACE_TYPE_BIN:
   long_name: "Surface type bin index. 1:Ocean, 2:Land, 3:Snow, 4:Desert. Used for Libera-camera surface types"
   size: 4
 LAND_SURFACE_TYPE_BIN:
-  long_name: "Land surface type bin index. 1: Mod-hi_tree/shrub_coverage, 2:Low-mod tree/shrub coverage, 3:Dark desert, 4:Bright desert, 5:Snow/ice. Used for Libera+VIIRS scene types land surface types"
+  long_name: "Land surface type bin index. 1: Mod-hi_tree/shrub_coverage, 2:Low-mod tree/shrub coverage, 3:Dark desert, 4:Bright desert, 5:Snow/ice. Used for Libera-Imager scene types land surface types"
   size: 5
 
 # Atmospheric Properties
