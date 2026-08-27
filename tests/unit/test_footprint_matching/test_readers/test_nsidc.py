@@ -4,7 +4,11 @@ The NISE product is distributed as an HDF-EOS4 file requiring pyhdf, which
 in turn requires the HDF4 C library. To keep tests environment-independent,
 ``_read_extent_sds`` is mocked to return a synthetic numpy array directly.
 The lat/lon grid computation (``_compute_latlon_grid``) exercises the real
-pyproj EPSG:3408 → EPSG:4326 transform, which is always available.
+pyproj EPSG:3408/3409 → EPSG:4326 transforms, which are always available.
+
+An optional integration test (``TestNISEReaderRealGranule``) runs against a real
+NISE granule staged under ``external_data/`` when both the file and pyhdf are
+available; it is skipped otherwise (e.g. in CI without the HDF4 C library).
 
 Real NISE files can be downloaded from:
     NSIDC HTTPS: https://n5eil01u.ecs.nsidc.org/NISE/
@@ -16,8 +20,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from libera_utils.footprint_matching.readers.nsidc import NISEReader
+from libera_utils.footprint_matching.readers.nsidc import (
+    _HEMISPHERE_LABEL_NORTH,
+    _HEMISPHERE_LABEL_SOUTH,
+    NISEReader,
+    _HemisphereGrid,
+)
 from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 
 # Expected output variables, in the canonical order the reader stacks them
@@ -99,7 +109,7 @@ class TestNISEReaderLayerMapping:
     def _run(self, tmp_path: Path, monkeypatch, data: np.ndarray, bbox: BoundingBox | None = None):
         """Return the full ``(5, n_lat, n_lon)`` stack for an all-``data`` grid."""
         reader = _make_reader(tmp_path)
-        monkeypatch.setattr(reader, "_read_extent_sds", lambda: data)
+        monkeypatch.setattr(reader, "_read_extent_sds", lambda token=None: data)
         lats_2d, lons_2d = reader._compute_latlon_grid()
         if bbox is None:
             bbox = BoundingBox(
@@ -202,7 +212,9 @@ class TestNISEReaderLatLonGrid:
 class TestNISEReaderLoadSpatialRegion:
     def test_returns_3d_data_and_1d_coords(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
-        monkeypatch.setattr(reader, "_read_extent_sds", lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
+        monkeypatch.setattr(
+            reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
+        )
         lats_2d, lons_2d = reader._compute_latlon_grid()
         bbox = BoundingBox(
             float(lats_2d.min()) - 0.1,
@@ -220,7 +232,9 @@ class TestNISEReaderLoadSpatialRegion:
 
     def test_empty_result_outside_bbox(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
-        monkeypatch.setattr(reader, "_read_extent_sds", lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
+        monkeypatch.setattr(
+            reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
+        )
         # Bbox in the Southern Hemisphere far from test grid (near pole).
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
         data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
@@ -231,7 +245,9 @@ class TestNISEReaderLoadSpatialRegion:
 
     def test_data_dtype_is_float32(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
-        monkeypatch.setattr(reader, "_read_extent_sds", lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
+        monkeypatch.setattr(
+            reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
+        )
         lats_2d, lons_2d = reader._compute_latlon_grid()
         bbox = BoundingBox(
             float(lats_2d.min()) - 0.1,
@@ -246,7 +262,7 @@ class TestNISEReaderLoadSpatialRegion:
         reader = _make_reader(tmp_path)
         # Mix of all meaningful codes to verify all map to [0, 1].
         mixed = np.array([[0, 50, 100, 101], [0, 25, 75, 103], [0, 1, 99, 101], [0, 0, 0, 0]], dtype=np.uint8)
-        monkeypatch.setattr(reader, "_read_extent_sds", lambda: mixed)
+        monkeypatch.setattr(reader, "_read_extent_sds", lambda token=None: mixed)
         lats_2d, lons_2d = reader._compute_latlon_grid()
         bbox = BoundingBox(
             float(lats_2d.min()) - 0.1,
@@ -262,7 +278,9 @@ class TestNISEReaderLoadSpatialRegion:
 
     def test_load_tile_returns_grid_tile(self, tmp_path, monkeypatch):
         reader = _make_reader(tmp_path)
-        monkeypatch.setattr(reader, "_read_extent_sds", lambda: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8))
+        monkeypatch.setattr(
+            reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
+        )
         lats_2d, lons_2d = reader._compute_latlon_grid()
         # Build a TileKey that overlaps the test grid's geographic extent.
         lat_center = float(lats_2d.mean())
@@ -326,3 +344,141 @@ class TestNISEExtentToCategoryMasks:
         ]
         indicator_sum = np.sum(indicator_layers, axis=0)
         assert np.all(indicator_sum <= 1.0)
+
+
+def _small_hemi(epsg: int, token: str) -> _HemisphereGrid:
+    """A ``_HemisphereGrid`` on the coarse 4×4 test grid, for hemisphere tests."""
+    return _HemisphereGrid(
+        epsg=epsg,
+        hemisphere_label=token,
+        grid_rows=_TEST_ROWS,
+        grid_cols=_TEST_COLS,
+        resolution_m=_TEST_RESOLUTION_M,
+        x_origin=_TEST_X_ORIGIN,
+        y_origin=_TEST_Y_ORIGIN,
+    )
+
+
+class TestNISEReaderBothHemispheres:
+    """The reader reads and merges both the Northern and Southern EASE-Grids."""
+
+    def test_southern_hemisphere_reprojection(self, tmp_path):
+        # A Southern (EPSG:3409) small grid must reproject to negative latitudes,
+        # mirroring TestNISEReaderLatLonGrid.test_northern_hemisphere_coverage.
+        reader = NISEReader(
+            tmp_path / "NISE.HDFEOS",
+            hemispheres=(_small_hemi(3409, _HEMISPHERE_LABEL_SOUTH),),
+        )
+        lats_2d, _ = reader._compute_latlon_grid(reader._hemispheres[0])
+        assert np.all(lats_2d < 0)
+
+    def test_both_hemispheres_are_concatenated(self, tmp_path, monkeypatch):
+        reader = NISEReader(
+            tmp_path / "NISE.HDFEOS",
+            hemispheres=(
+                _small_hemi(3408, _HEMISPHERE_LABEL_NORTH),
+                _small_hemi(3409, _HEMISPHERE_LABEL_SOUTH),
+            ),
+        )
+        per_token = {
+            _HEMISPHERE_LABEL_NORTH: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8),
+            _HEMISPHERE_LABEL_SOUTH: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8),
+        }
+        monkeypatch.setattr(reader, "_read_extent_sds", lambda token: per_token[token])
+        lats, lons, values = reader._load_points
+        # Point cloud spans both hemispheres and keeps every pixel (no code 254 to drop).
+        assert np.any(lats > 0)
+        assert np.any(lats < 0)
+        expected = 2 * _TEST_ROWS * _TEST_COLS
+        assert lats.size == expected
+        assert lons.size == expected
+        assert values.shape == (len(NISEReader.VARIABLES), expected)
+
+    def test_southern_tile_is_populated(self, tmp_path, monkeypatch):
+        # Regression for the reported gap: a Southern-hemisphere tile now carries finite
+        # coverage where a North-only reader returned an all-NaN grid.
+        reader = NISEReader(
+            tmp_path / "NISE.HDFEOS",
+            hemispheres=(_small_hemi(3409, _HEMISPHERE_LABEL_SOUTH),),
+        )
+        monkeypatch.setattr(
+            reader,
+            "_read_extent_sds",
+            lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8),
+        )
+        lats_2d, lons_2d = reader._compute_latlon_grid(reader._hemispheres[0])
+        assert np.all(lats_2d < 0)  # sanity: really the Southern grid
+        bbox = BoundingBox(
+            float(lats_2d.min()) - 0.1,
+            float(lats_2d.max()) + 0.1,
+            float(lons_2d.min()) - 0.1,
+            float(lons_2d.max()) + 0.1,
+        )
+        data_sub, _, _ = reader._load_spatial_region(bbox)
+        finite = data_sub[np.isfinite(data_sub)]
+        assert finite.size > 0
+        # Code 50 → 0.5 sea ice concentration across covered cells of that layer.
+        sea_ice = data_sub[_layer_index("sea_ice_concentration")]
+        assert np.allclose(sea_ice[np.isfinite(sea_ice)], 0.5, atol=1e-5)
+
+    def test_off_earth_code_254_is_dropped_not_zeroed(self, tmp_path, monkeypatch):
+        # Off-Earth corner pixels (254) must be removed from the point cloud entirely,
+        # not carried as all-zero layers (which would dilute the opposite hemisphere).
+        reader = _make_reader(tmp_path)  # single Northern hemisphere, 4×4
+        raw = np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
+        raw[0, 0] = 254
+        raw[-1, -1] = 254
+        monkeypatch.setattr(reader, "_read_extent_sds", lambda token=None: raw)
+        lats, lons, values = reader._load_points
+        expected = _TEST_ROWS * _TEST_COLS - 2  # two 254 pixels dropped
+        assert lats.size == expected
+        assert lons.size == expected
+        assert values.shape == (len(NISEReader.VARIABLES), expected)
+
+
+# Real granule staged under the repo's external_data/ tree (untracked; present locally).
+_REAL_NISE = (
+    Path(__file__).resolve().parents[4] / "external_data" / "external_data" / "NSDIC" / "NISE_SSMISF18_20260111.HDFEOS"
+)
+
+
+def _pyhdf_available() -> bool:
+    try:
+        import pyhdf.SD  # noqa: F401,PLC0415
+
+        return True
+    except ImportError:
+        return False
+
+
+@pytest.mark.skipif(not _REAL_NISE.exists(), reason="real NISE granule not staged under external_data/")
+@pytest.mark.skipif(not _pyhdf_available(), reason="pyhdf/HDF4 C library not available")
+class TestNISEReaderRealGranule:
+    """End-to-end checks against a real staged NISE granule (both hemispheres flow through).
+
+    Skipped automatically when the granule is not staged or pyhdf/HDF4 is unavailable
+    (e.g. in CI), which is why the rest of the suite mocks ``_read_extent_sds``.
+    """
+
+    def test_reads_both_extent_sds_by_hemisphere(self):
+        reader = NISEReader(_REAL_NISE)
+        north = reader._read_extent_sds(_HEMISPHERE_LABEL_NORTH)
+        south = reader._read_extent_sds(_HEMISPHERE_LABEL_SOUTH)
+        assert north.shape == (721, 721)
+        assert south.shape == (721, 721)
+        # Two genuinely different grids, not the same SDS resolved twice.
+        assert not np.array_equal(north, south)
+
+    def test_northern_and_southern_tiles_both_covered(self):
+        reader = NISEReader(_REAL_NISE)
+        north_tile, _, _ = reader._load_spatial_region(BoundingBox(70.0, 80.0, -10.0, 10.0))
+        south_tile, _, _ = reader._load_spatial_region(BoundingBox(-80.0, -70.0, -10.0, 10.0))
+        assert np.isfinite(north_tile).any()
+        assert np.isfinite(south_tile).any()
+
+    def test_point_cloud_spans_both_hemispheres(self):
+        reader = NISEReader(_REAL_NISE)
+        lats, _, _ = reader._load_points
+        finite = lats[np.isfinite(lats)]
+        assert finite.max() > 60.0  # Arctic coverage
+        assert finite.min() < -60.0  # Antarctic coverage
