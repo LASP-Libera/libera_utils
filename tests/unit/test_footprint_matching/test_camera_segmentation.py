@@ -26,7 +26,7 @@ from libera_utils.footprint_matching.camera_segmentation import (
     CameraFootprintQualityFlag,
     segment_l1b_camera,
 )
-from libera_utils.footprint_matching.geometry import L1B_FILL_VALUE
+from libera_utils.footprint_matching.geometry import L1B_FILL_VALUE, bounding_box_from_points
 from libera_utils.footprint_matching.product import (
     _assemble_camtime_dataset,
     compute_derived_viewing_geometry,
@@ -78,6 +78,107 @@ def _grid_image(
     lat = np.repeat(xs[:, None], ny, axis=1)
     lon = np.repeat(ys[None, :], nx, axis=0)
     return lat, lon
+
+
+def _reference_footprints(ds: xr.Dataset) -> list:
+    """Per-block scalar reference: the segmentation as it worked before box-batching.
+
+    Reproduces the old ``_build_footprint`` using the (unchanged) segmentation helpers
+    and the *scalar* :func:`bounding_box_from_points`, so the batched ``segment_l1b_camera``
+    can be checked against it 1:1. Returns a list of ``(fields..., bbox)`` tuples in
+    (image, block) order.
+    """
+    times = np.asarray(ds[CAMERA_TIME_NAME].values)
+    lat = np.asarray(ds[seg.LATITUDE_NAME].values, dtype=float)
+    lon = np.asarray(ds[seg.LONGITUDE_NAME].values, dtype=float)
+    alt = np.asarray(ds[seg.ALTITUDE_NAME].values, dtype=float)
+    sza = np.asarray(ds[seg.SOLAR_ZENITH_NAME].values, dtype=float)
+    vza = np.asarray(ds[seg.VIEWING_ZENITH_NAME].values, dtype=float)
+    raa = np.asarray(ds[seg.RELATIVE_AZIMUTH_NAME].values, dtype=float)
+
+    out = []
+    for t in range(times.shape[0]):
+        lat2d, lon2d = lat[t], lon[t]
+        valid = seg._valid_mask(lat2d) & seg._valid_mask(lon2d)
+        block = seg._block_size_pixels(seg._estimate_ground_sampling_distance_km(lat2d, lon2d))
+        nx, ny = lat2d.shape
+        for sx, sy in seg._iter_blocks(nx, ny, block):
+            corner_lats: list[float] = []
+            corner_lons: list[float] = []
+            n_corners = 0
+            for ix, iy in seg._corner_indices(sx, sy):
+                n_corners += 1
+                if valid[ix, iy]:
+                    corner_lats.append(float(lat2d[ix, iy]))
+                    corner_lons.append(float(lon2d[ix, iy]))
+            if not corner_lats:
+                continue
+            q = CameraFootprintQualityFlag(0)
+            if len(corner_lats) < n_corners:
+                q |= CameraFootprintQualityFlag.PARTIAL_COVERAGE
+            center = seg._select_center_pixel(sx, sy, valid)
+            if center is None:
+                continue
+            cix, ciy, subst = center
+            if subst:
+                q |= CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
+            clat, clon = float(lat2d[cix, ciy]), float(lon2d[cix, ciy])
+            bbox = bounding_box_from_points(clat, clon, corner_lats, corner_lons, truncated=False)
+            out.append(
+                (
+                    times[t],
+                    sx,
+                    sy,
+                    cix,
+                    ciy,
+                    clat,
+                    clon,
+                    float(alt[t, cix, ciy]),
+                    float(sza[t, cix, ciy]),
+                    float(vza[t, cix, ciy]),
+                    float(raa[t, cix, ciy]),
+                    q,
+                    bbox,
+                )
+            )
+    return out
+
+
+class TestBatchedBoxParity:
+    """Batched box assembly must reproduce the per-block scalar reference exactly."""
+
+    def test_matches_scalar_reference(self):
+        # Two images: a fine grid (multi-pixel blocks) with an injected fill patch that
+        # triggers partial-coverage + centre substitution, and a coarse grid (single-
+        # pixel blocks). Together they exercise 1..4 valid corners per block.
+        lat_fine, lon_fine = _grid_image(20, 18, lat0=12.0, lon0=45.0, dlat=0.02, dlon=0.02)
+        lat_fine[8:12, 8:12] = L1B_FILL_VALUE  # off-Earth patch inside the grid
+        lon_fine[8:12, 8:12] = L1B_FILL_VALUE
+        lat_coarse, lon_coarse = _grid_image(6, 5, lat0=-30.0, lon0=100.0, dlat=0.4, dlon=0.4)
+
+        # The two images have different pixel shapes, so run each as its own dataset.
+        ds_fine = _make_l1b_camera(lat_fine[None], lon_fine[None])
+        ds_coarse = _make_l1b_camera(lat_coarse[None], lon_coarse[None])
+
+        for ds in (ds_fine, ds_coarse):
+            footprints = segment_l1b_camera(ds)
+            reference = _reference_footprints(ds)
+            assert len(footprints) == len(reference)
+            for fp, ref in zip(footprints, reference, strict=True):
+                (rt, rsx, rsy, rcix, rciy, rclat, rclon, ralt, rsza, rvza, rraa, rq, rbbox) = ref
+                assert fp.time == rt
+                assert (fp.slice_x, fp.slice_y) == (rsx, rsy)
+                assert (fp.center_ix, fp.center_iy) == (rcix, rciy)
+                assert fp.latitude == pytest.approx(rclat)
+                assert fp.longitude == pytest.approx(rclon)
+                assert fp.altitude == pytest.approx(ralt)
+                assert fp.solar_zenith_angle == pytest.approx(rsza)
+                assert fp.viewing_zenith_angle == pytest.approx(rvza)
+                assert fp.relative_azimuth_angle == pytest.approx(rraa)
+                assert fp.q_flags == rq
+                # Box coordinates bit-close; flags exact.
+                assert fp.bbox[:4] == pytest.approx(rbbox[:4], abs=1e-9)
+                assert fp.bbox[4:] == rbbox[4:]
 
 
 class TestHelpers:

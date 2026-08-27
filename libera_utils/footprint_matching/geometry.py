@@ -825,6 +825,33 @@ def _geodetic_to_ecef_surface(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.nd
     return np.stack([x, y, z], axis=1)
 
 
+def surface_cell_ecef_km(cell_lats_deg: np.ndarray, cell_lons_deg: np.ndarray) -> np.ndarray:
+    """ECEF (km) of surface grid cells, raveled to ``(N, 3)`` in the input's row-major order.
+
+    Thin public wrapper over :func:`_geodetic_to_ecef_surface` that flattens the (possibly
+    2-D) cell coordinate grids the same way :func:`project_to_angular` does. It is the single
+    source of truth for a tile's per-cell surface ECEF so the value
+    :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher` caches per tile is
+    byte-identical to the one :func:`project_to_angular` would compute inline. Because a tile's
+    cell geometry is independent of the viewing frame, the result can be reused across every
+    footprint that shares the tile.
+
+    Parameters
+    ----------
+    cell_lats_deg, cell_lons_deg : np.ndarray
+        Grid-cell latitudes/longitudes in degrees (any common shape). Assumed on the surface
+        (ellipsoidal height 0).
+
+    Returns
+    -------
+    np.ndarray
+        ``(N, 3)`` ECEF positions in km, where ``N = cell_lats_deg.size`` in row-major order.
+    """
+    lats = np.asarray(cell_lats_deg, dtype=float).ravel()
+    lons = np.asarray(cell_lons_deg, dtype=float).ravel()
+    return _geodetic_to_ecef_surface(lats, lons)
+
+
 def _geodetic_to_ecef_batch(lat_deg: np.ndarray, lon_deg: np.ndarray, height_km: np.ndarray) -> np.ndarray:
     """Vectorized :func:`_geodetic_to_ecef`: ``(N,)`` geodetic -> ``(N, 3)`` ECEF km."""
     x, y, z = _geodetic_to_ecef_transformer().transform(
@@ -1378,6 +1405,7 @@ def project_to_angular(
     *,
     altitude_km: float | None = None,
     frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
+    cell_ecef_km: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Project ground grid cells into the radiometer's angular frame ``(delta, beta)``.
 
@@ -1434,6 +1462,14 @@ def project_to_angular(
         bisection) is skipped and the frame is used directly -- the boresight /
         subsatellite / viewing-zenith / altitude arguments are then unused. Passing the
         frame the orchestrator already batched avoids recomputing it once per footprint.
+    cell_ecef_km : np.ndarray, optional
+        Precomputed surface ECEF (km) of the cells, ``(N, 3)`` in ``cell_lats_deg.ravel()``
+        order (i.e. exactly :func:`surface_cell_ecef_km`). A tile's cell geometry is
+        independent of the viewing frame, so when several footprints share a tile the caller
+        (:class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`) computes this
+        once and passes it in, skipping the per-footprint closed-form geodetic->ECEF transform
+        (the dominant weighting cost). When omitted it is computed from the cell coordinates;
+        the result is identical either way.
 
     Returns
     -------
@@ -1465,9 +1501,11 @@ def project_to_angular(
         n_hat = np.cross(c_hat, b_hat)
 
     # Geodetic -> ECEF (km) for every cell centre. Uses the closed-form surface transform
-    # (cells sit on the ellipsoid) rather than pyproj: this runs once per footprint, so the
-    # pyproj per-call overhead would otherwise dominate the weighting path.
-    cells_km = _geodetic_to_ecef_surface(lats.ravel(), lons.ravel())  # (M, 3)
+    # (cells sit on the ellipsoid) rather than pyproj: the pyproj per-call overhead would
+    # otherwise dominate the weighting path. This depends only on the cell coordinates, not
+    # the frame, so an already-computed value (shared across footprints on the same tile) is
+    # used when supplied and recomputed otherwise -- identical either way.
+    cells_km = cell_ecef_km if cell_ecef_km is not None else surface_cell_ecef_km(lats, lons)  # (M, 3)
 
     # Unit look vector from the satellite toward each cell.
     look = cells_km - satellite

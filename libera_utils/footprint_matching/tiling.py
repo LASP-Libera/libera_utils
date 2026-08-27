@@ -82,6 +82,16 @@ DEFAULT_MAX_CACHE_BYTES: int = 2 * 1024 * 1024 * 1024
 # than any real cell size, so it never drops a tile that actually holds data.
 _EDGE_EPSILON_DEG: float = 1e-9
 
+# Number of *merged* (multi-tile) results kept in a small identity-preserving LRU so
+# that consecutive along-track footprints whose boxes resolve to the same set of tile
+# keys receive the **same** merged GridTile object. A single-tile box already returns the
+# component tile straight from the LRU (a stable object); only a merge of two-or-more
+# tiles allocates a fresh object, and without this cache every such footprint would
+# re-merge and, downstream, recompute the merged tile's per-cell geometry. Because at any
+# moment only a handful of multi-tile key-sets are active across all sources, a small
+# bound covers the working set. Set to 0 to disable merged-result caching.
+DEFAULT_MERGE_CACHE_SIZE: int = 16
+
 
 def _empty_tile(source: str, bounds: BoundingBox, n_var: int, timestamp_source: str | None) -> GridTile:
     """Build a zero-pixel :class:`GridTile` used as the partial-coverage signal.
@@ -278,12 +288,14 @@ class TileManager:
     reader I/O with the main thread's PSF weighting / aggregation compute (design doc
     ``doc/fmatch_vectorization_plan.md`` §4). Prefetch is a pure cache warm-up: it
     never changes results, and the synchronous path still loads any tile that is not
-    yet cached, so a slow or failed prefetch only forfeits the overlap. Reader access
-    is serialized *per reader* (a background load and a main-thread load of the same
-    source never overlap), so it does not assume the readers are re-entrant -- only
-    that they tolerate being called from a worker thread one call at a time. Default
-    ``0`` disables it entirely (no threads created), preserving the original
-    single-threaded behaviour.
+    yet cached, so a slow or failed prefetch only forfeits the overlap. *All* reader
+    access is serialized by one global lock (no two loads ever overlap, even across
+    different sources) because the reader backends (netCDF4 / h5py over libhdf5) are
+    not thread-safe and segfault under concurrent access; the overlap the prefetcher
+    buys is therefore between a background *read* and the main thread's *compute*, not
+    between two reads. Prefetch is **on by default** (``prefetch_lookahead=1``); pass
+    ``prefetch_lookahead=0`` to disable it entirely (no threads created), restoring the
+    original single-threaded behaviour.
 
     Parameters
     ----------
@@ -300,15 +312,18 @@ class TileManager:
         reported here at ``WARNING`` level.
     prefetch_lookahead : int, optional
         Number of upcoming footprints whose tiles are prefetched in the background.
-        ``0`` (default) disables prefetch and creates no threads. When set, the
+        Defaults to ``1`` (prefetch on); pass ``0`` to disable prefetch and create no
+        threads. When enabled, the
         orchestrator (:func:`~libera_utils.footprint_matching.product.aggregate_external_variables`)
         calls :meth:`prefetch` for the next ``prefetch_lookahead`` footprints each
         iteration; the value is exposed via :attr:`prefetch_lookahead`.
     prefetch_workers : int, optional
-        Size of the background thread pool. Defaults to ``1`` (a single worker, so
-        prefetch loads are naturally serialized). Higher values let *different*
-        sources prefetch concurrently while each individual reader stays serialized.
-        Ignored when ``prefetch_lookahead == 0``.
+        Size of the background thread pool. Defaults to ``None`` -> a single worker.
+        Every reader load is serialized by the global reader lock (the native HDF5
+        stack is not thread-safe), so additional workers cannot load tiles in parallel;
+        one worker already overlaps the next footprint's read with the main-thread
+        compute, which is the entire benefit. An explicit int is honoured but does not
+        parallelize the loads. Ignored when ``prefetch_lookahead == 0``.
     """
 
     def __init__(
@@ -318,19 +333,34 @@ class TileManager:
         max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
         logger: logging.Logger | None = None,
         prefetch_lookahead: int = 1,
-        prefetch_workers: int = 1,
+        prefetch_workers: int | None = None,
+        merge_cache_size: int = DEFAULT_MERGE_CACHE_SIZE,
     ) -> None:
         self._readers = dict(readers)
         self._active_mode = active_mode
         self._cache = _LRUTileCache(max_cache_bytes)
         self._logger = logger if logger is not None else globals()["logger"]
 
+        # Small LRU of merged multi-tile results, keyed by (source, tuple-of-tile-keys), so
+        # consecutive footprints resolving to the same key-set get the same merged object
+        # (see DEFAULT_MERGE_CACHE_SIZE). Main-thread only (get_data is the orchestrator's
+        # call; the prefetcher only touches _get_tile), so it needs no lock. Only fully-real
+        # merges are cached -- a merge that incorporated an empty/error component is never
+        # cached, so a transient reader failure still recovers on a later request.
+        self._merge_cache_size = max(0, int(merge_cache_size))
+        self._merge_cache: OrderedDict[tuple[str, tuple[TileKey, ...]], GridTile] = OrderedDict()
+        self._merge_hits = 0
+
         # Concurrency guards. The cache lock serializes every access to the (non
-        # thread-safe) OrderedDict-backed cache; the per-reader locks serialize loads
-        # of each reader so the background prefetcher and the main thread never call
-        # the same reader at once. Both are cheap and uncontended when prefetch is off.
+        # thread-safe) OrderedDict-backed cache; the reader lock serializes *all* reader
+        # loads -- across every source, not just per source -- so at most one tile load
+        # is ever in flight. This is required because the readers sit on non-thread-safe
+        # native libraries (netCDF4 / h5py, both backed by libhdf5), which segfault under
+        # concurrent access; a single global lock guarantees no two loads overlap even
+        # when different sources are prefetched from different worker threads. Both locks
+        # are cheap and uncontended when prefetch is off.
         self._cache_lock = threading.Lock()
-        self._reader_locks = {key: threading.Lock() for key in self._readers}
+        self._reader_lock = threading.Lock()
 
         # Prefetch machinery (only when enabled). ``_inflight`` dedupes keys already
         # queued so we never submit the same load twice or re-load a cached tile.
@@ -340,8 +370,16 @@ class TileManager:
         self._prefetch_submitted = 0
         self._executor: ThreadPoolExecutor | None = None
         if self._prefetch_lookahead > 0:
+            # A single background worker by default. Every reader load is serialized by
+            # the global ``_reader_lock`` (the native HDF5 stack is not thread-safe), so
+            # extra workers could not run loads in parallel anyway -- they would only
+            # queue on that lock. One worker is enough to overlap the *next* footprint's
+            # I/O with the main thread's weighting/aggregation compute (which touches no
+            # reader), which is the whole win. ``prefetch_workers`` is still honoured for
+            # callers that opt into more threads, but the global lock keeps loads serial.
+            workers = 1 if prefetch_workers is None else int(prefetch_workers)
             self._executor = ThreadPoolExecutor(
-                max_workers=max(1, int(prefetch_workers)),
+                max_workers=max(1, workers),
                 thread_name_prefix="fmatch-tile-prefetch",
             )
 
@@ -399,12 +437,36 @@ class TileManager:
             )
 
         # Antimeridian crossing: split into two boxes on either side of ±180° and
-        # merge the two results (see BoundingBox.wraps_dateline).
+        # merge the two results (see BoundingBox.wraps_dateline). The rare dateline path is
+        # not merge-cached (each half is itself cached at the tile level).
         parts = self._split_dateline(bbox)
         if len(parts) == 2:
             return self.merge_tiles([self.get_data(source, parts[0]), self.get_data(source, parts[1])])
 
         keys = self.resolve_tile_keys(source, bbox)
+
+        # Single tile: _get_tile returns the stable cached object, so there is nothing to
+        # merge or cache. Multiple tiles: reuse the merged result for this exact key-set
+        # when we have it, so consecutive footprints share one merged object (and its
+        # downstream per-cell geometry) instead of re-merging.
+        if len(keys) > 1 and self._merge_cache_size > 0:
+            cache_key = (source, tuple(keys))
+            cached = self._merge_cache.get(cache_key)
+            if cached is not None:
+                self._merge_cache.move_to_end(cache_key)
+                self._merge_hits += 1
+                return cached
+            tiles = [self._get_tile(key) for key in keys]
+            merged = self.merge_tiles(tiles)
+            # Only cache a fully-real merge; a merge that folded in an empty (failed /
+            # missing) component must stay uncached so the region can recover next time.
+            if all(t.lats.size > 0 and t.lons.size > 0 and t.data.size > 0 for t in tiles):
+                self._merge_cache[cache_key] = merged
+                self._merge_cache.move_to_end(cache_key)
+                while len(self._merge_cache) > self._merge_cache_size:
+                    self._merge_cache.popitem(last=False)
+            return merged
+
         tiles = [self._get_tile(key) for key in keys]
         return self.merge_tiles(tiles)
 
@@ -432,11 +494,14 @@ class TileManager:
     def _get_tile(self, key: TileKey) -> GridTile:
         """Serve one tile from cache, loading it via the reader on a miss.
 
-        Thread-safe: cache reads/writes are serialized by the cache lock, and each
-        reader load holds that source's reader lock so the background prefetcher and
-        the main thread never call one reader concurrently. After acquiring the reader
-        lock the cache is re-checked, so two threads racing for the same missing tile
-        load it exactly once (the loser finds it freshly cached).
+        Thread-safe: cache reads/writes are serialized by the cache lock, and every
+        reader load holds the single global reader lock so no two loads -- from the
+        background prefetcher and the main thread, or across two different sources --
+        ever run concurrently. This is mandatory because the reader backends (netCDF4 /
+        h5py over libhdf5) are not thread-safe and segfault under concurrent access.
+        After acquiring the reader lock the cache is re-checked, so two threads racing
+        for the same missing tile load it exactly once (the loser finds it freshly
+        cached).
 
         Reader exceptions are caught here and converted to an empty tile so a single
         bad tile never aborts the whole segment. Empty/error tiles are not cached, so
@@ -448,7 +513,7 @@ class TileManager:
             return cached
 
         reader = self._readers[key.source]
-        with self._reader_locks[key.source]:
+        with self._reader_lock:
             # Re-check under the reader lock: another thread (e.g. the prefetcher) may
             # have loaded this tile while we waited, so we must not load it twice. Use
             # peek (not get) so this re-check does not double-count the hit/miss already
@@ -623,16 +688,18 @@ class TileManager:
                 self._cache._evictions += 1  # noqa: SLF001
 
     def clear_cache(self) -> None:
-        """Remove all tiles from the cache (counters are preserved)."""
+        """Remove all tiles from the cache, including merged results (counters preserved)."""
         with self._cache_lock:
             self._cache.clear()
+        self._merge_cache.clear()
 
     def get_cache_stats(self) -> dict[str, Any]:
-        """Return cache diagnostics: hits, misses, current_bytes, n_tiles, evictions, errors, prefetched."""
+        """Return cache diagnostics: hits, misses, current_bytes, n_tiles, evictions, errors, prefetched, merge_hits."""
         with self._cache_lock:
             stats = self._cache.stats()
         with self._inflight_lock:
             stats["prefetched"] = self._prefetch_submitted
+        stats["merge_hits"] = self._merge_hits
         return stats
 
     # ------------------------------------------------------------------
@@ -721,8 +788,9 @@ def build_tile_manager(
     source_file_paths: dict[str, Path],
     max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
     logger: logging.Logger | None = None,
-    prefetch_lookahead: int = 0,
-    prefetch_workers: int = 1,
+    prefetch_lookahead: int = 1,
+    prefetch_workers: int | None = None,
+    merge_cache_size: int = DEFAULT_MERGE_CACHE_SIZE,
 ) -> TileManager:
     """Construct a :class:`TileManager` with the readers active for ``mode``.
 
@@ -746,9 +814,12 @@ def build_tile_manager(
         Injected logger passed through to the TileManager.
     prefetch_lookahead : int, optional
         Number of upcoming footprints whose tiles are prefetched in the background.
-        ``0`` (default) disables prefetch. See :class:`TileManager`.
+        Defaults to ``1`` (prefetch on); pass ``0`` to disable prefetch. See
+        :class:`TileManager`.
     prefetch_workers : int, optional
-        Background prefetch thread-pool size (default ``1``). Ignored when
+        Background prefetch thread-pool size. Defaults to ``None`` (a single worker;
+        the global reader lock serializes all loads, so extra workers cannot
+        parallelize them -- see :class:`TileManager`). Ignored when
         ``prefetch_lookahead == 0``.
 
     Returns
@@ -777,6 +848,7 @@ def build_tile_manager(
         logger=logger,
         prefetch_lookahead=prefetch_lookahead,
         prefetch_workers=prefetch_workers,
+        merge_cache_size=merge_cache_size,
     )
 
 

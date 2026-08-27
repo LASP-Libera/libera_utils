@@ -39,12 +39,19 @@ References
 from __future__ import annotations
 
 import abc
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
 from pyproj import Geod
 
-from libera_utils.footprint_matching.geometry import NOMINAL_ALTITUDE_KM, project_to_angular, psf_ground_radius_km
+from libera_utils.footprint_matching.geometry import (
+    NOMINAL_ALTITUDE_KM,
+    POLAR_LATITUDE_THRESHOLD_DEG,
+    project_to_angular,
+    psf_ground_radius_km,
+    surface_cell_ecef_km,
+)
 from libera_utils.footprint_matching.psf import (
     LIBERA_FOV_HALFANGLE_DEG,
     psf_95_energy_extent,
@@ -57,6 +64,46 @@ from libera_utils.footprint_matching.types import GridTile
 # i.e. the bulk of the weight sits well inside the PSF's 95%-energy ground radius --
 # a reasonable stand-in shape for a centrally-peaked response.
 _SIGMA_FRACTION_OF_RMAX: float = 0.5
+
+# WGS84 ellipsoid parameters (km) for the local-tangent-plane distance fast path.
+_WGS84_SEMI_MAJOR_KM: float = 6378.137
+_WGS84_ECCENTRICITY_SQ: float = 6.694379990141316e-3  # first eccentricity squared, e^2
+
+# Coordinate span (deg) above which a tile is treated as "large" and the RadialWeigher
+# falls back to the exact ellipsoidal Geod.inv distance instead of the local-tangent-plane
+# fast path. A normal footprint box spans well under a degree; this threshold also catches
+# the wide lon axis a dateline-merged tile produces, so those and polar tiles keep the
+# exact distance where the flat-Earth approximation would drift.
+_FAST_DISTANCE_MAX_SPAN_DEG: float = 10.0
+
+
+def _local_tangent_plane_km(
+    origin_lat_deg: float, origin_lon_deg: float, lat_deg: np.ndarray, lon_deg: np.ndarray
+) -> np.ndarray:
+    """Distance (km) from one point to an array of points on the WGS84 local tangent plane.
+
+    A closed-form, pyproj-free distance used by :class:`RadialWeigher`'s fast path. It
+    projects each cell's ``(dlat, dlon)`` offset from the boresight onto the local
+    north/east plane using the ellipsoid's meridional (M) and prime-vertical (N) radii of
+    curvature evaluated at the boresight latitude, then takes the planar hypotenuse. Over a
+    footprint's ~tens-of-km span at non-polar latitudes this agrees with the WGS84 geodesic
+    to sub-metre -- far below the Gaussian stand-in's own approximation -- while avoiding
+    pyproj's iterative :meth:`pyproj.Geod.inv` once per footprint. Polar / large boxes fall
+    back to Geod.inv (see :data:`_FAST_DISTANCE_MAX_SPAN_DEG`), where the flat-plane model
+    and the constant-``cos(lat)`` east scaling break down.
+    """
+    lat0 = np.radians(origin_lat_deg)
+    sin_lat0_sq = np.sin(lat0) ** 2
+    denom = 1.0 - _WGS84_ECCENTRICITY_SQ * sin_lat0_sq
+    # Meridional (north-south) and prime-vertical (east-west) radii of curvature at the
+    # boresight latitude, km.
+    meridional_km = _WGS84_SEMI_MAJOR_KM * (1.0 - _WGS84_ECCENTRICITY_SQ) / denom**1.5
+    prime_vertical_km = _WGS84_SEMI_MAJOR_KM / np.sqrt(denom)
+
+    north_km = meridional_km * np.radians(np.asarray(lat_deg, dtype=float) - origin_lat_deg)
+    east_km = prime_vertical_km * np.cos(lat0) * np.radians(np.asarray(lon_deg, dtype=float) - origin_lon_deg)
+    return np.hypot(north_km, east_km)
+
 
 # Alignment offset (degrees) between the reported L1B footprint centroid -- which we
 # take as the boresight direction, i.e. delta = 0 -- and the PSF's own centroid.
@@ -170,8 +217,11 @@ class RadialWeigher(PixelWeigher):
     the aggregation path run end to end while the angular-frame PSF projection is
     built (see the module docstring and :class:`AngularPSFWeigher`).
 
-    Distances are computed on the WGS84 ellipsoid via :class:`pyproj.Geod`, matching
-    the geometry module's Earth model.
+    Distances from the boresight use a fast local-tangent-plane formula
+    (:func:`_local_tangent_plane_km`) for normal footprint boxes -- within sub-metre of
+    the WGS84 geodesic over a footprint's span -- and fall back to the exact ellipsoidal
+    :class:`pyproj.Geod` distance for polar or large / dateline-merged tiles, where the
+    flat-plane approximation would drift.
 
     Parameters
     ----------
@@ -217,16 +267,26 @@ class RadialWeigher(PixelWeigher):
             shape = (lats.size, lons.size)
             return WeightField(weights=np.zeros(shape, dtype=float), total_energy=0.0, max_radius_km=max_radius_km)
 
-        # Full 2-D mesh of cell centres, then great-circle distance from the boresight
-        # to every cell. Geod.inv needs equal-length arrays, so broadcast the scalar
-        # boresight to the flattened grid.
+        # Full 2-D mesh of cell centres, then distance from the boresight to every cell.
         lon_grid, lat_grid = np.meshgrid(lons, lats)  # both shape (n_lat, n_lon)
         flat_lat = lat_grid.ravel()
         flat_lon = lon_grid.ravel()
-        boresight_lats = np.full(flat_lat.shape, boresight_lat_deg, dtype=float)
-        boresight_lons = np.full(flat_lon.shape, boresight_lon_deg, dtype=float)
-        _, _, distance_m = self._geod.inv(boresight_lons, boresight_lats, flat_lon, flat_lat)
-        distance_km = np.asarray(distance_m, dtype=float) / 1000.0
+
+        # Fast path: a local-tangent-plane distance (pure numpy) is within sub-metre of
+        # the WGS84 geodesic over a normal footprint's span and avoids pyproj's iterative
+        # Geod.inv per footprint. Polar or unusually large / dateline-merged tiles keep
+        # the exact ellipsoidal distance, where the flat-plane approximation would drift.
+        lat_span = float(lats.max() - lats.min())
+        lon_span = float(lons.max() - lons.min())
+        near_pole = float(np.max(np.abs(lats))) >= POLAR_LATITUDE_THRESHOLD_DEG
+        if near_pole or lat_span > _FAST_DISTANCE_MAX_SPAN_DEG or lon_span > _FAST_DISTANCE_MAX_SPAN_DEG:
+            # Geod.inv needs equal-length arrays, so broadcast the scalar boresight.
+            boresight_lats = np.full(flat_lat.shape, boresight_lat_deg, dtype=float)
+            boresight_lons = np.full(flat_lon.shape, boresight_lon_deg, dtype=float)
+            _, _, distance_m = self._geod.inv(boresight_lons, boresight_lats, flat_lon, flat_lat)
+            distance_km = np.asarray(distance_m, dtype=float) / 1000.0
+        else:
+            distance_km = _local_tangent_plane_km(boresight_lat_deg, boresight_lon_deg, flat_lat, flat_lon)
 
         # Gaussian kernel, truncated at the PSF ground radius.
         sigma_km = max(max_radius_km * _SIGMA_FRACTION_OF_RMAX, 1.0e-6)
@@ -285,16 +345,57 @@ class AngularPSFWeigher(PixelWeigher):
     energy_fraction : float, optional
         PSF energy fraction defining the truncation contour. Default 0.95 (CERES
         heritage).
+    cell_geometry_cache_size : int, optional
+        Number of tiles whose per-cell surface ECEF is memoized (default 32). A tile's
+        cell geometry is independent of the viewing frame, and because footprints are
+        processed in along-track order the same merged tile is reused by many consecutive
+        footprints (~18x in a realistic segment); caching the closed-form geodetic->ECEF
+        transform per tile turns the dominant weighting cost into one computation per
+        distinct tile instead of one per footprint. The cache is a small identity-keyed LRU
+        (holding a reference to each cached tile), so a handful of entries covers the active
+        working set across all sources. Pass ``0`` to disable it (always recompute).
     """
 
     # Consumes the precomputed per-footprint viewing frame (see project_to_angular).
     uses_viewing_frame: bool = True
 
-    def __init__(self, fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG, energy_fraction: float = 0.95) -> None:
+    def __init__(
+        self,
+        fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
+        energy_fraction: float = 0.95,
+        cell_geometry_cache_size: int = 32,
+    ) -> None:
         self._fov_halfangle_deg = fov_halfangle_deg
         # 95%-energy angular half-extents (delta_back, delta_front, beta_max), a
         # static instrument property computed once and cached inside psf.
         self._extent = psf_95_energy_extent(energy_fraction)
+        # Identity-keyed LRU of per-tile cell ECEF (see _cell_ecef_km). Keyed by id(tile)
+        # with the tile kept alive by the stored reference, so ids never collide among
+        # cached entries. Bounded by cell_geometry_cache_size (0 disables caching).
+        self._cell_geometry_cache_size = max(0, int(cell_geometry_cache_size))
+        self._cell_ecef_cache: OrderedDict[int, tuple[GridTile, np.ndarray]] = OrderedDict()
+
+    def _cell_ecef_km(self, tile: GridTile, lat_grid: np.ndarray, lon_grid: np.ndarray) -> np.ndarray:
+        """Return the tile cells' surface ECEF (km), memoized per tile.
+
+        The value is byte-identical to what :func:`project_to_angular` computes inline (both
+        go through :func:`surface_cell_ecef_km`); caching only skips recomputing it for the
+        many consecutive footprints that reuse the same merged tile. The ``is tile`` check
+        guards against the (harmless) possibility of an ``id`` reused after eviction.
+        """
+        if self._cell_geometry_cache_size == 0:
+            return surface_cell_ecef_km(lat_grid, lon_grid)
+        key = id(tile)
+        cached = self._cell_ecef_cache.get(key)
+        if cached is not None and cached[0] is tile:
+            self._cell_ecef_cache.move_to_end(key)
+            return cached[1]
+        ecef = surface_cell_ecef_km(lat_grid, lon_grid)
+        self._cell_ecef_cache[key] = (tile, ecef)
+        self._cell_ecef_cache.move_to_end(key)
+        while len(self._cell_ecef_cache) > self._cell_geometry_cache_size:
+            self._cell_ecef_cache.popitem(last=False)
+        return ecef
 
     def weight_field(
         self,
@@ -338,6 +439,9 @@ class AngularPSFWeigher(PixelWeigher):
         sub_lon = subsatellite_lon_deg if subsatellite_lon_deg is not None else boresight_lon_deg
 
         lon_grid, lat_grid = np.meshgrid(lons, lats)  # both (n_lat, n_lon)
+        # The cells' surface ECEF is frame-independent, so it is memoized per tile and reused
+        # across the many consecutive footprints that share this merged tile (see _cell_ecef_km).
+        cell_ecef = self._cell_ecef_km(tile, lat_grid, lon_grid)
         delta, beta = project_to_angular(
             lat_grid,
             lon_grid,
@@ -348,6 +452,7 @@ class AngularPSFWeigher(PixelWeigher):
             viewing_zenith_deg,
             altitude_km=altitude,
             frame=frame,
+            cell_ecef_km=cell_ecef,
         )
         # Alignment offset between the reported centroid (delta = 0) and the PSF
         # centroid. Currently 0 -- see _CENTROID_OFFSET_DEG.
