@@ -379,7 +379,7 @@ class TestStaticKernelLoading:
 
         def _fake_load_naif():
             km._naif_kernels_loaded = True
-            os.environ["LEAPSECOND_FILE_ENV"] = str(tmp_path / "naif")
+            monkeypatch.setenv("LEAPSECOND_FILE_ENV", str(tmp_path / "naif"))
 
         mock_cache_entry = MagicMock()
         mock_cache_entry.is_cached.return_value = True
@@ -757,8 +757,12 @@ class TestEnsureKernelCoverage:
         return path
 
     @pytest.fixture
-    def furnished_manager(self, tmp_path):
-        """A manager holding one furnished SPK plus a text kernel, torn down after."""
+    def furnished_manager(self, tmp_path, curryer_lsk):
+        """A manager holding one furnished SPK plus a text kernel, torn down after.
+
+        Takes ``curryer_lsk`` so curryer's default-LSK lookup resolves deterministically:
+        coverage windows convert through ugps, which needs a leapsecond kernel.
+        """
         spk = self._write_spk(tmp_path / "coverage_test.bsp")
         text_pck = tmp_path / "coverage_test.tpc"
         text_pck.write_bytes(TEXT_PCK_CONTENT)
@@ -770,6 +774,16 @@ class TestEnsureKernelCoverage:
 
     def test_raises_when_nothing_is_furnished(self):
         km = KernelManager()
+        with pytest.raises(RuntimeError, match="No kernels are furnished"):
+            km.ensure_kernel_coverage([COVERAGE_TEST_BODY], 0, 1)
+
+    def test_raises_when_handle_holds_no_kernels(self, tmp_path):
+        """An emptied handle is still "nothing furnished", not a total coverage gap."""
+        spk = self._write_spk(tmp_path / "emptied.bsp")
+        km = KernelManager()
+        km._loaded_kernels = sp.ext.load_kernel([str(spk)])
+        km._loaded_kernels.unload(clear=True)
+
         with pytest.raises(RuntimeError, match="No kernels are furnished"):
             km.ensure_kernel_coverage([COVERAGE_TEST_BODY], 0, 1)
 
