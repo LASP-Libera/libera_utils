@@ -1,10 +1,24 @@
-## Dockerfile that installs libera_utils and runs the Libera FMATCH-CAM-CAMTIME algorithm.
+## Combined Dockerfile for all five Libera FMATCH algorithm images.
+##
+## One shared base stage (system deps + venv + poetry install), then one runtime target
+## and one test target per algorithm. Build a specific image by selecting its target:
+##   docker build -f libera_utils/footprint_matching/Dockerfile --target fmatch-cam .
+##
+## The build context MUST be the repository root - the COPY instructions below use paths
+## relative to it (COPY libera_utils ..., COPY pyproject.toml ...).
+##
+## Runtime targets:  fmatch-imager  fmatch-imager-camtime  fmatch-imager-flash
+##                   fmatch-cam     fmatch-cam-camtime
+## Test target:      fmatch-test (one shared suite covering the whole package).
 
 ARG BUILDPLATFORM=linux/amd64
 
-# fmatch-cam-camtime
-# ------------------
-FROM --platform=${BUILDPLATFORM} python:3.11-slim AS fmatch-cam-camtime
+# fmatch-base
+# -----------
+# Shared build stage for every FMATCH image. This is NOT a shippable image - it has no
+# ENTRYPOINT. Because the expensive layers (apt, venv, poetry install) live here, they are
+# built once and reused by every per-algorithm target in a single build.
+FROM --platform=${BUILDPLATFORM} python:3.11-slim AS fmatch-base
 USER root
 
 # Core package installation location. Later images that inherit from this one can reuse this.
@@ -51,8 +65,9 @@ RUN pip install --upgrade pip
 RUN curl -sSL https://install.python-poetry.org | python -
 ENV PATH="$PATH:/root/.local/bin"
 
-# Copy the files needed to install libera_utils (respecting .dockerignore). The FMATCH-CAM-CAMTIME runner lives
-# inside the libera_utils package (libera_utils/footprint_matching/cam_camtime/fmatch_cam_camtime.py) and is included by this copy.
+# Copy the files needed to install libera_utils (respecting .dockerignore). The per-algorithm FMATCH
+# runners live inside the libera_utils package (libera_utils/footprint_matching/<alg>/fmatch_<alg>.py)
+# and are included by this copy.
 COPY libera_utils $LIBERA_UTILS_DIRECTORY/libera_utils
 COPY pyproject.toml $LIBERA_UTILS_DIRECTORY
 COPY README.md $LIBERA_UTILS_DIRECTORY
@@ -66,26 +81,19 @@ RUN true
 #
 # The 'fmatch' extra is REQUIRED here, unlike in the SCENE-ID images. It carries pyproj, pyhdf and
 # h5py, and pyproj in particular is imported at module load time by footprint_matching.geometry and
-# footprint_matching.camera_segmentation - which the runner imports. Without the extra the container
+# footprint_matching.camera_segmentation - which the runners import. Without the extra the container
 # would fail on startup with ModuleNotFoundError rather than at first ancillary read.
 RUN poetry install --only main --extras fmatch
 
-# The container entrypoint is the manifest-driven FMATCH-CAM-CAMTIME runner. Arguments passed to the container
-# (i.e. the path to the input manifest) are forwarded to the script.
-#
-# The runner reads two environment variables:
-#   PROCESSING_PATH       - dropbox directory (or S3 prefix) products and the output manifest are written to.
-#   FMATCH_ANCILLARY_PATH - root of the staged ancillary granule tree, one subdirectory per reader
-#                           registry key (era5/, igbp/, nise/, ...). See
-#                           libera_utils/footprint_matching/ancillary.py for the full layout.
-ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/cam_camtime/fmatch_cam_camtime.py"]
 
+# fmatch-test
+# -----------
+# Test image. Adds dev dependencies and the test suite on top of fmatch-base, and runs the
+# (non-integration) unit tests with coverage. The suite exercises the whole libera_utils package and
+# is identical regardless of algorithm, so a single test target covers all of FMATCH.
+FROM fmatch-base AS fmatch-test
 
-# fmatch-cam-camtime-test
-# -----------------------
-FROM fmatch-cam-camtime AS fmatch-cam-camtime-test
-
-# Install dev dependencies (not installed in the fmatch-cam-camtime image).
+# Install dev dependencies (not installed in the runtime images).
 RUN poetry install --extras fmatch
 
 # Copy tests over.
@@ -93,3 +101,29 @@ COPY tests $LIBERA_UTILS_DIRECTORY/tests
 
 # Run the (non-integration) unit tests with coverage.
 ENTRYPOINT ["pytest", "-m", "not integration", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]
+
+
+# Per-algorithm runtime targets
+# -----------------------------
+# Each target differs from fmatch-base only in its ENTRYPOINT: the manifest-driven runner for that
+# algorithm. Arguments passed to the container (i.e. the path to the input manifest) are forwarded to
+# the script. Each runner reads two environment variables:
+#   PROCESSING_PATH       - dropbox directory (or S3 prefix) products and the output manifest are written to.
+#   FMATCH_ANCILLARY_PATH - root of the staged ancillary granule tree, one subdirectory per reader
+#                           registry key (era5/, igbp/, nise/, ...). See
+#                           libera_utils/footprint_matching/ancillary.py for the full layout.
+
+FROM fmatch-base AS fmatch-imager
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/imager/fmatch_imager.py"]
+
+FROM fmatch-base AS fmatch-imager-camtime
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/imager_camtime/fmatch_imager_camtime.py"]
+
+FROM fmatch-base AS fmatch-imager-flash
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/imager_flash/fmatch_imager_flash.py"]
+
+FROM fmatch-base AS fmatch-cam
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/cam/fmatch_cam.py"]
+
+FROM fmatch-base AS fmatch-cam-camtime
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/cam_camtime/fmatch_cam_camtime.py"]
