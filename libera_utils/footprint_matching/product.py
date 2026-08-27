@@ -400,7 +400,7 @@ def aggregate_external_variables(
     max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
     weigher: PixelWeigher | None = None,
     return_coverage: bool = False,
-    prefetch_lookahead: int = 0,
+    prefetch_lookahead: int = 1,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
     """Aggregate every active reader's gridded data to one value per footprint.
 
@@ -475,10 +475,10 @@ def aggregate_external_variables(
         When a ``tile_manager`` is built here (i.e. from ``source_file_paths``), enable
         background look-ahead tile prefetch with this many footprints of look-ahead, so
         reader I/O overlaps the weighting/aggregation compute (see
-        :class:`~libera_utils.footprint_matching.tiling.TileManager`). ``0`` (default)
-        keeps the single-threaded behaviour. Ignored when a ``tile_manager`` is supplied
-        -- that manager's own ``prefetch_lookahead`` setting governs instead. The
-        prefetch is a pure cache warm-up and never changes the result.
+        :class:`~libera_utils.footprint_matching.tiling.TileManager`). Defaults to ``1``
+        (prefetch on); pass ``0`` to keep the single-threaded behaviour. Ignored when a
+        ``tile_manager`` is supplied -- that manager's own ``prefetch_lookahead`` setting
+        governs instead. The prefetch is a pure cache warm-up and never changes the result.
 
     Returns
     -------
@@ -599,7 +599,10 @@ def _run_aggregation(
         geom = geoms[i]
         frame = frames.for_index(i) if frames is not None else None
         for key, reader_cls in reader_classes.items():
-            # Merged, cached tile covering this footprint's PSF bounding box.
+            # Merged, cached tile covering this footprint's PSF bounding box. The
+            # TileManager returns a stable cached object -- for single tiles and, via its
+            # merge cache, for multi-tile merges -- so consecutive along-track footprints
+            # reuse both the merged data and its per-cell geometry (the weigher's ECEF cache).
             tile = tile_manager.get_data(key, footprint.bbox)
             weight_field = weigher.weight_field(
                 tile,

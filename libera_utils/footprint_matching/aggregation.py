@@ -146,9 +146,90 @@ def _usable(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
     return np.isfinite(values) & np.isfinite(weights) & (weights > 0.0)
 
 
+@dataclass(frozen=True)
+class _WeightedPartials:
+    """The usable ``(values, weights)`` of one data plane, masked once.
+
+    The continuous surface strategies (:func:`weighted_mean`, :func:`weighted_std`,
+    :func:`weighted_log_mean`, :func:`weighted_median`) each independently apply the
+    :func:`_usable` mask before doing their arithmetic. When several product variables
+    derive from the *same* data plane -- e.g. a variable and its
+    ``<name>_standard_deviation`` companion -- that mask (and the array copy it drives)
+    is identical across them. :func:`_prepare` computes it once and the ``*_from_partials``
+    cores consume the result, so :func:`aggregate_tile_variables` pays the masking cost
+    once per plane rather than once per variable. The public strategy functions are thin
+    wrappers over the same cores, so the shared and the standalone paths are numerically
+    identical by construction.
+
+    Attributes
+    ----------
+    values, weights : np.ndarray
+        1-D arrays of the plane's usable cell values and PSF weights (already masked
+        by :func:`_usable`), in grid order.
+    """
+
+    values: np.ndarray
+    weights: np.ndarray
+
+
+def _prepare(values: np.ndarray, weights: np.ndarray) -> _WeightedPartials:
+    """Mask ``(values, weights)`` to the usable cells once (see :class:`_WeightedPartials`)."""
+    mask = _usable(values, weights)
+    return _WeightedPartials(
+        values=np.asarray(values, dtype=float)[mask],
+        weights=np.asarray(weights, dtype=float)[mask],
+    )
+
+
 # ---------------------------------------------------------------------------
 # Surface-path strategies (continuous)
 # ---------------------------------------------------------------------------
+#
+# Each public strategy is a thin wrapper that masks the plane via _prepare and then
+# calls its ``*_from_partials`` core. The core is what aggregate_tile_variables calls
+# directly with a plane's shared partials, so the two paths cannot numerically diverge.
+
+
+def _mean_from_partials(p: _WeightedPartials) -> dict[str, float]:
+    """Weighted mean from pre-masked partials (see :func:`weighted_mean`)."""
+    if p.weights.size == 0:
+        return {"mean": float("nan")}
+    return {"mean": float(np.sum(p.weights * p.values) / np.sum(p.weights))}
+
+
+def _std_from_partials(p: _WeightedPartials) -> dict[str, float]:
+    """Weighted standard deviation from pre-masked partials (see :func:`weighted_std`)."""
+    if p.weights.size == 0:
+        return {"standard_deviation": float("nan")}
+    w_sum = np.sum(p.weights)
+    mean = np.sum(p.weights * p.values) / w_sum
+    variance = np.sum(p.weights * p.values * p.values) / w_sum - mean * mean
+    return {"standard_deviation": float(np.sqrt(max(variance, 0.0)))}
+
+
+def _log_mean_from_partials(p: _WeightedPartials) -> dict[str, float]:
+    """Weighted geometric mean from pre-masked partials (see :func:`weighted_log_mean`)."""
+    positive = p.values > 0.0
+    if not np.any(positive):
+        return {"log_mean": float("nan")}
+    v = p.values[positive]
+    w = p.weights[positive]
+    return {"log_mean": float(np.exp(np.sum(w * np.log(v)) / np.sum(w)))}
+
+
+def _median_from_partials(p: _WeightedPartials) -> dict[str, float]:
+    """Weighted median from pre-masked partials (see :func:`weighted_median`)."""
+    if p.weights.size == 0:
+        return {"median": float("nan")}
+    order = np.argsort(p.values)
+    v_sorted = p.values[order]
+    cumulative = np.cumsum(p.weights[order])
+    half = 0.5 * cumulative[-1]
+    # searchsorted finds the first cell whose cumulative weight reaches the halfway
+    # point -- that value is the weighted median.
+    idx = int(np.searchsorted(cumulative, half))
+    idx = min(idx, v_sorted.size - 1)
+    return {"median": float(v_sorted[idx])}
 
 
 def weighted_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
@@ -157,12 +238,7 @@ def weighted_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str
     Used for continuous surface variables (winds, BRDF kernels, cloud-top height...).
     Returns ``{"mean": NaN}`` when no cell is usable.
     """
-    mask = _usable(values, weights)
-    if not np.any(mask):
-        return {"mean": float("nan")}
-    v = np.asarray(values, dtype=float)[mask]
-    w = np.asarray(weights, dtype=float)[mask]
-    return {"mean": float(np.sum(w * v) / np.sum(w))}
+    return _mean_from_partials(_prepare(values, weights))
 
 
 def weighted_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
@@ -174,15 +250,7 @@ def weighted_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str,
     variance is clipped at zero before the square root to absorb floating-point
     round-off that could otherwise make a near-zero variance slightly negative.
     """
-    mask = _usable(values, weights)
-    if not np.any(mask):
-        return {"standard_deviation": float("nan")}
-    v = np.asarray(values, dtype=float)[mask]
-    w = np.asarray(weights, dtype=float)[mask]
-    w_sum = np.sum(w)
-    mean = np.sum(w * v) / w_sum
-    variance = np.sum(w * v * v) / w_sum - mean * mean
-    return {"standard_deviation": float(np.sqrt(max(variance, 0.0)))}
+    return _std_from_partials(_prepare(values, weights))
 
 
 def weighted_log_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
@@ -194,13 +262,7 @@ def weighted_log_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict
     optical depth is not physical -- so those cells are dropped in addition to the
     usual NaN exclusion.
     """
-    mask = _usable(values, weights)
-    v = np.asarray(values, dtype=float)
-    mask = mask & (v > 0.0)
-    if not np.any(mask):
-        return {"log_mean": float("nan")}
-    w = np.asarray(weights, dtype=float)[mask]
-    return {"log_mean": float(np.exp(np.sum(w * np.log(v[mask])) / np.sum(w)))}
+    return _log_mean_from_partials(_prepare(values, weights))
 
 
 def weighted_median(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
@@ -210,20 +272,7 @@ def weighted_median(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[s
     which the cumulative weight first reaches half of the total. Robust to outliers,
     hence useful for skewed surface distributions.
     """
-    mask = _usable(values, weights)
-    if not np.any(mask):
-        return {"median": float("nan")}
-    v = np.asarray(values, dtype=float)[mask]
-    w = np.asarray(weights, dtype=float)[mask]
-    order = np.argsort(v)
-    v_sorted = v[order]
-    cumulative = np.cumsum(w[order])
-    half = 0.5 * cumulative[-1]
-    # searchsorted finds the first cell whose cumulative weight reaches the halfway
-    # point -- that value is the weighted median.
-    idx = int(np.searchsorted(cumulative, half))
-    idx = min(idx, v_sorted.size - 1)
-    return {"median": float(v_sorted[idx])}
+    return _median_from_partials(_prepare(values, weights))
 
 
 # ---------------------------------------------------------------------------
@@ -266,14 +315,16 @@ def _weighted_category_weights(
     return categories, category_weight
 
 
-def _ranked_categories(values: np.ndarray, weights: np.ndarray, n_categories: int | None) -> np.ndarray:
+def _order_categories(categories: np.ndarray, category_weight: np.ndarray) -> np.ndarray:
     """Categories ordered by descending PSF weight (most-common class first).
 
-    Ties are broken by the ``np.argsort`` stable order (ascending category index),
-    giving a deterministic result -- the same policy the doc's "CERES majority-rule"
-    tie handling implies.
+    Consumes a precomputed ``(categories, category_weight)`` histogram (see
+    :func:`_weighted_category_weights`) so the ranked-mode variants and
+    :func:`aggregate_tile_variables` can share one histogram per plane. Ties are
+    broken by the ``np.argsort`` stable order (ascending category index), giving a
+    deterministic result -- the same policy the doc's "CERES majority-rule" tie
+    handling implies.
     """
-    categories, category_weight = _weighted_category_weights(values, weights, n_categories)
     if categories.size == 0:
         return np.empty(0, dtype=int)
     # Negate so a stable ascending argsort yields descending weight; ties keep the
@@ -282,6 +333,29 @@ def _ranked_categories(values: np.ndarray, weights: np.ndarray, n_categories: in
     # Drop categories that received zero weight -- they are not present at all.
     order = [i for i in order if category_weight[i] > 0.0]
     return categories[order]
+
+
+def _ranked_categories(values: np.ndarray, weights: np.ndarray, n_categories: int | None) -> np.ndarray:
+    """Categories ordered by descending PSF weight -- builds the histogram then orders it."""
+    return _order_categories(*_weighted_category_weights(values, weights, n_categories))
+
+
+def _mode_from_histogram(categories: np.ndarray, category_weight: np.ndarray) -> dict[str, Any]:
+    """PSF-weighted mode from a precomputed category histogram (see :func:`weighted_mode`)."""
+    if categories.size == 0 or np.sum(category_weight) <= 0.0:
+        return {"mode": float("nan"), "coverage_fractions": {}}
+    total = float(np.sum(category_weight))
+    winner = int(categories[int(np.argmax(category_weight))])
+    fractions = {int(c): float(cw / total) for c, cw in zip(categories, category_weight, strict=True) if cw > 0.0}
+    return {"mode": float(winner), "coverage_fractions": fractions}
+
+
+def _ranked_mode_from_histogram(categories: np.ndarray, category_weight: np.ndarray, rank: int) -> dict[str, float]:
+    """The ``rank``-th most common category from a precomputed histogram (see :func:`_ranked_mode`)."""
+    ranked = _order_categories(categories, category_weight)
+    if rank >= ranked.size:
+        return {"mode": float("nan")}
+    return {"mode": float(int(ranked[rank]))}
 
 
 def weighted_mode(
@@ -293,13 +367,7 @@ def weighted_mode(
     the scene mix within the footprint (design doc section 2.8.1.4.3). The mode is
     NaN when the footprint had no usable categorical data.
     """
-    categories, category_weight = _weighted_category_weights(values, weights, n_categories)
-    if categories.size == 0 or np.sum(category_weight) <= 0.0:
-        return {"mode": float("nan"), "coverage_fractions": {}}
-    total = float(np.sum(category_weight))
-    winner = int(categories[int(np.argmax(category_weight))])
-    fractions = {int(c): float(cw / total) for c, cw in zip(categories, category_weight, strict=True) if cw > 0.0}
-    return {"mode": float(winner), "coverage_fractions": fractions}
+    return _mode_from_histogram(*_weighted_category_weights(values, weights, n_categories))
 
 
 def _ranked_mode(values: np.ndarray, weights: np.ndarray, rank: int, n_categories: int | None) -> dict[str, float]:
@@ -310,10 +378,7 @@ def _ranked_mode(values: np.ndarray, weights: np.ndarray, rank: int, n_categorie
     is entirely one land-cover type reports NaN for its (non-existent) secondary and
     tertiary scenes rather than a spurious class.
     """
-    ranked = _ranked_categories(values, weights, n_categories)
-    if rank >= ranked.size:
-        return {"mode": float("nan")}
-    return {"mode": float(int(ranked[rank]))}
+    return _ranked_mode_from_histogram(*_weighted_category_weights(values, weights, n_categories), rank)
 
 
 def weighted_mode_primary(
@@ -483,6 +548,29 @@ _SCALAR_KEY: dict[str, str] = {
     "aggregate_broadband_radiance": "total_radiance",
 }
 
+# Cores that consume a single plane's shared partials, keyed by strategy name.
+# :func:`aggregate_tile_variables` dispatches through these so several product
+# variables derived from one data plane (e.g. a mean-aggregated variable and its
+# ``_standard_deviation`` companion) reuse a single :func:`_usable` mask instead of
+# recomputing it per variable. Each core returns the same result dict as its public
+# strategy (which are thin wrappers over the same cores), so the shared and the
+# per-variable paths are numerically identical.
+_CONTINUOUS_CORES: dict[str, Callable[[_WeightedPartials], dict[str, Any]]] = {
+    "weighted_mean": _mean_from_partials,
+    "weighted_std": _std_from_partials,
+    "weighted_log_mean": _log_mean_from_partials,
+    "weighted_median": _median_from_partials,
+}
+
+# Rank each ranked-mode strategy selects from the shared category histogram (0 =
+# primary/most common). ``weighted_mode`` (the full mode + coverage fractions) is
+# handled separately because it returns extra keys.
+_CATEGORICAL_RANK: dict[str, int] = {
+    "weighted_mode_primary": 0,
+    "weighted_mode_secondary": 1,
+    "weighted_mode_tertiary": 2,
+}
+
 
 def aggregate(
     strategy: str,
@@ -642,31 +730,72 @@ def aggregate_tile_variables(reader_cls: Any, tile: GridTile, weight_field: Weig
     dict[str, float]
         ``{spec.name: scalar}`` for every variable in
         ``reader_cls.product_variable_specs()``.
+
+    Notes
+    -----
+    Only the scalar each strategy yields is returned; the coverage bookkeeping that
+    :func:`aggregate` computes is not needed here (the orchestrator derives coverage
+    separately via :func:`~libera_utils.footprint_matching.product._tile_coverage`), so
+    this dispatches to the strategy cores directly rather than through :func:`aggregate`.
+    Because many product variables derive from the same data plane -- a variable and its
+    ``_standard_deviation`` companion, or IGBP's four ranked-mode scenes off one
+    ``surface_type`` plane -- the per-plane :func:`_usable` mask (continuous) and category
+    histogram (categorical) are computed once and reused across those variables.
     """
     # Normalize to a 3-D (n_var, n_lat, n_lon) view so single- and multi-variable
     # readers share one code path. Axis 0 order matches VARIABLES (the reader
     # contract), which is what _map_product_specs indexes into.
     data = np.asarray(tile.data)
     data_3d = data[np.newaxis, ...] if data.ndim == 2 else data
-    planes = [data_3d[i].ravel() for i in range(data_3d.shape[0])]
+    n_planes = data_3d.shape[0]
 
     weights = np.asarray(weight_field.weights, dtype=float).ravel()
-    total_energy = weight_field.total_energy
+
+    # Lazily computed, per-plane shared work: the usable-masked partials (reused by every
+    # continuous variable on the plane) and the category histogram per (plane,
+    # n_categories) (reused by a plane's mode + ranked-mode variants). Cached within this
+    # call only -- weights differ per footprint, so nothing survives across footprints.
+    def plane(read_index: int) -> np.ndarray:
+        return data_3d[read_index].ravel() if read_index < n_planes else np.empty(0, dtype=float)
+
+    partials_cache: dict[int, _WeightedPartials] = {}
+
+    def partials(read_index: int) -> _WeightedPartials:
+        cached = partials_cache.get(read_index)
+        if cached is None:
+            cached = _prepare(plane(read_index), weights)
+            partials_cache[read_index] = cached
+        return cached
+
+    histogram_cache: dict[tuple[int, int | None], tuple[np.ndarray, np.ndarray]] = {}
+
+    def histogram(read_index: int, n_categories: int | None) -> tuple[np.ndarray, np.ndarray]:
+        key = (read_index, n_categories)
+        cached = histogram_cache.get(key)
+        if cached is None:
+            cached = _weighted_category_weights(plane(read_index), weights, n_categories)
+            histogram_cache[key] = cached
+        return cached
 
     out: dict[str, float] = {}
     for spec, read_index in _map_product_specs(reader_cls):
-        plane = planes[read_index] if read_index < len(planes) else np.empty(0, dtype=float)
-        # Prefer the product spec's own category count; fall back to the parent read
-        # spec's (a std companion carries n_categories=None but its parent may not).
-        n_categories = spec.n_categories
-        if n_categories is None:
-            n_categories = reader_cls.VARIABLES[read_index].n_categories
-        result = aggregate(
-            spec.aggregation,
-            plane,
-            weights,
-            total_energy=total_energy,
-            n_categories=n_categories,
-        )
-        out[spec.name] = float(result.values[_SCALAR_KEY[spec.aggregation]])
+        strategy = spec.aggregation
+        if strategy in _CONTINUOUS_CORES:
+            result = _CONTINUOUS_CORES[strategy](partials(read_index))
+        else:
+            # Prefer the product spec's own category count; fall back to the parent read
+            # spec's (a std companion carries n_categories=None but its parent may not).
+            n_categories = spec.n_categories
+            if n_categories is None:
+                n_categories = reader_cls.VARIABLES[read_index].n_categories
+            if strategy == "weighted_mode":
+                result = _mode_from_histogram(*histogram(read_index, n_categories))
+            elif strategy in _CATEGORICAL_RANK:
+                result = _ranked_mode_from_histogram(*histogram(read_index, n_categories), _CATEGORICAL_RANK[strategy])
+            else:
+                # Uncommon strategies (cloud / radiance path) that no current reader
+                # labels on the product path: fall back to a direct strategy call. Still
+                # bypasses aggregate() (no coverage needed here).
+                result = _STRATEGIES[strategy](plane(read_index), weights, n_categories=n_categories)
+        out[spec.name] = float(result[_SCALAR_KEY[strategy]])
     return out

@@ -314,6 +314,27 @@ class TestProjectToAngular:
         assert d.shape == (2, 2)
         assert b.shape == (2, 2)
 
+    def test_precomputed_cell_ecef_is_identical(self):
+        # Passing the tile's cell ECEF (what the weigher caches) must give bit-identical
+        # angles to computing it inline -- the value is frame-independent.
+        lats = np.array([[10.0, 10.1], [10.2, 10.3]])
+        lons = np.array([[20.0, 20.1], [20.2, 20.3]])
+        cell_ecef = geo.surface_cell_ecef_km(lats, lons)
+        d0, b0 = geo.project_to_angular(lats, lons, 10.15, 20.15, 11.0, 20.15, 25.0, altitude_km=ALT)
+        d1, b1 = geo.project_to_angular(
+            lats, lons, 10.15, 20.15, 11.0, 20.15, 25.0, altitude_km=ALT, cell_ecef_km=cell_ecef
+        )
+        np.testing.assert_array_equal(d0, d1)
+        np.testing.assert_array_equal(b0, b1)
+
+    def test_surface_cell_ecef_matches_inline_transform(self):
+        # surface_cell_ecef_km is the single source of truth for the cached value: it must
+        # equal the private closed-form transform over the raveled grid.
+        lats = np.array([[1.0, 2.0], [3.0, 4.0]])
+        lons = np.array([[5.0, 6.0], [7.0, 8.0]])
+        expected = geo._geodetic_to_ecef_surface(lats.ravel(), lons.ravel())
+        np.testing.assert_array_equal(geo.surface_cell_ecef_km(lats, lons), expected)
+
 
 class TestPsfGroundRadius:
     """psf_ground_radius_km projects the PSF angular extent to a ground radius."""

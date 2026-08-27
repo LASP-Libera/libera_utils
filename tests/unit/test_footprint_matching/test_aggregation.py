@@ -14,6 +14,14 @@ import numpy as np
 import pytest
 
 from libera_utils.footprint_matching import aggregation as agg
+from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    GridTile,
+    OperationalMode,
+    VariableSpec,
+    with_standard_deviation_companions,
+)
+from libera_utils.footprint_matching.weighting import WeightField
 
 
 class TestWeightedMean:
@@ -206,3 +214,130 @@ class TestDispatcher:
     def test_unknown_strategy_raises_value_error(self):
         with pytest.raises(ValueError, match="Unknown aggregation strategy"):
             agg.aggregate("not_a_strategy", np.array([1.0]), np.array([1.0]))
+
+
+class _ParityReader:
+    """Reader stand-in exercising every shared-plane case aggregate_tile_variables optimizes.
+
+    ``field_a``/``field_b`` are continuous (each gains a ``_standard_deviation`` companion
+    sharing its plane), and ``surface`` is categorical with three ranked-mode extras that
+    all derive from the one ``surface`` plane. Only the attributes
+    ``aggregate_tile_variables`` / ``_map_product_specs`` touch are defined.
+    """
+
+    __name__ = "_ParityReader"
+    VARIABLES = (
+        VariableSpec(name="field_a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+        VariableSpec(
+            name="field_b", dtype="float32", aggregation="weighted_log_mean", required_mode=OperationalMode.CAM
+        ),
+        VariableSpec(
+            name="surface",
+            dtype="int16",
+            aggregation="weighted_mode",
+            required_mode=OperationalMode.CAM,
+            n_categories=5,
+        ),
+    )
+    ADDITIONAL_PRODUCT_VARIABLES = (
+        VariableSpec(
+            name="surface_primary",
+            dtype="int16",
+            aggregation="weighted_mode_primary",
+            required_mode=OperationalMode.CAM,
+            n_categories=5,
+        ),
+        VariableSpec(
+            name="surface_secondary",
+            dtype="int16",
+            aggregation="weighted_mode_secondary",
+            required_mode=OperationalMode.CAM,
+            n_categories=5,
+        ),
+        VariableSpec(
+            name="surface_tertiary",
+            dtype="int16",
+            aggregation="weighted_mode_tertiary",
+            required_mode=OperationalMode.CAM,
+            n_categories=5,
+        ),
+    )
+
+    @classmethod
+    def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
+        return with_standard_deviation_companions(cls.VARIABLES) + cls.ADDITIONAL_PRODUCT_VARIABLES
+
+
+def _reference_tile_variables(reader_cls, tile: GridTile, weight_field: WeightField) -> dict[str, float]:
+    """Per-variable reference: what aggregate_tile_variables did before the shared-plane refactor.
+
+    Calls the public dispatcher once per product spec (no per-plane sharing), so any
+    divergence in the optimized path shows up as a value mismatch here.
+    """
+    data = np.asarray(tile.data)
+    data_3d = data[np.newaxis, ...] if data.ndim == 2 else data
+    planes = [data_3d[i].ravel() for i in range(data_3d.shape[0])]
+    weights = np.asarray(weight_field.weights, dtype=float).ravel()
+    out: dict[str, float] = {}
+    for spec, read_index in agg._map_product_specs(reader_cls):
+        plane = planes[read_index] if read_index < len(planes) else np.empty(0, dtype=float)
+        n_categories = spec.n_categories
+        if n_categories is None:
+            n_categories = reader_cls.VARIABLES[read_index].n_categories
+        result = agg.aggregate(
+            spec.aggregation, plane, weights, total_energy=weight_field.total_energy, n_categories=n_categories
+        )
+        out[spec.name] = float(result.values[agg._SCALAR_KEY[spec.aggregation]])
+    return out
+
+
+class TestAggregateTileVariablesParity:
+    """The shared-plane aggregate_tile_variables must match the per-variable reference exactly."""
+
+    def _tile_and_weights(self, rng: np.random.Generator) -> tuple[GridTile, WeightField]:
+        n_lat, n_lon = 5, 6
+        field_a = rng.normal(10.0, 3.0, size=(n_lat, n_lon))
+        field_b = np.abs(rng.normal(4.0, 2.0, size=(n_lat, n_lon))) + 0.01  # positive-ish for log_mean
+        surface = rng.integers(0, 5, size=(n_lat, n_lon)).astype(float)
+        # Sprinkle NaNs / a non-positive log value so the usable + positive masks bite.
+        field_a[0, 0] = np.nan
+        field_b[1, 2] = -1.0
+        field_b[2, 3] = np.nan
+        data = np.stack([field_a, field_b, surface])
+
+        lats = np.linspace(0.2, 0.8, n_lat)
+        lons = np.linspace(0.2, 0.9, n_lon)
+        weights = rng.random(size=(n_lat, n_lon))
+        weights[weights < 0.15] = 0.0  # zero-weight cells (outside the contour)
+        weights[4, 5] = np.nan
+        tile = GridTile(data=data, lats=lats, lons=lons, bounds=BoundingBox(0.0, 1.0, 0.0, 1.0), source="_parity")
+        return tile, WeightField(weights=weights, total_energy=float(np.nansum(weights)), max_radius_km=100.0)
+
+    def test_matches_per_variable_reference(self):
+        rng = np.random.default_rng(20260826)
+        for _ in range(20):
+            tile, weight_field = self._tile_and_weights(rng)
+            got = agg.aggregate_tile_variables(_ParityReader, tile, weight_field)
+            expected = _reference_tile_variables(_ParityReader, tile, weight_field)
+            assert got.keys() == expected.keys()
+            for name in expected:
+                g, e = got[name], expected[name]
+                if math.isnan(e):
+                    assert math.isnan(g), name
+                else:
+                    # Same operations in the same order -> bit-for-bit identical.
+                    assert g == e, name
+
+    def test_empty_tile_yields_nan_everywhere(self):
+        # A failed/missing region arrives as a zero-cell tile -> NaN for every variable.
+        data = np.empty((3, 0, 0), dtype=np.float64)
+        tile = GridTile(
+            data=data,
+            lats=np.empty(0),
+            lons=np.empty(0),
+            bounds=BoundingBox(0.0, 1.0, 0.0, 1.0),
+            source="_parity",
+        )
+        weight_field = WeightField(weights=np.empty((0, 0)), total_energy=0.0, max_radius_km=100.0)
+        got = agg.aggregate_tile_variables(_ParityReader, tile, weight_field)
+        assert all(math.isnan(v) for v in got.values())
