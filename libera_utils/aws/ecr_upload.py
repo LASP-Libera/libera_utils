@@ -222,6 +222,72 @@ def _get_fresh_ecr_auth(region_name: str, *, boto_session: boto3.Session) -> dic
         raise
 
 
+DEFAULT_LOCAL_IMAGE_TAG = "latest"
+
+
+def _split_local_image_reference(image_reference: str, image_tag: str | None = None) -> tuple[str, str]:
+    """Resolve a local Docker image reference, and an optionally separate tag, into a (name, tag) pair.
+
+    Two syntaxes are supported. The preferred one carries the tag in the reference itself
+    (``my-image:1.2.3``); the deprecated one passes a bare image name and supplies the tag separately
+    (the ``--image-tag`` CLI option). If neither carries a tag, ``latest`` is used.
+
+    A colon is only read as a tag separator when it appears in the last path component, so a registry
+    reference carrying a port (``localhost:5000/my-image``) is not mistaken for a tagged image.
+
+    Parameters
+    ----------
+    image_reference : str
+        Local image reference, either ``image-name`` or ``image-name:tag``.
+    image_tag : str, optional
+        Tag supplied separately from the reference (the deprecated ``--image-tag`` form). If None
+        (the default), the tag is taken from ``image_reference``.
+
+    Returns
+    -------
+    tuple[str, str]
+        The image name (with any tag removed) and the resolved tag.
+
+    Raises
+    ------
+    ValueError
+        If ``image_reference`` is malformed (empty name or empty tag), if it is a digest reference
+        (``my-image@sha256:...``, which is not supported), or if a tag in ``image_reference``
+        conflicts with a separately supplied ``image_tag``.
+    """
+    if image_tag is not None and not image_tag:
+        raise ValueError("An empty image tag was supplied. Omit the tag entirely to default to 'latest'.")
+
+    if "@" in image_reference:
+        raise ValueError(
+            f"Digest references are not supported for the local image: {image_reference!r}. "
+            f"Specify the image by tag instead (e.g. my-image:1.2.3)."
+        )
+
+    image_name, separator, tag_from_reference = image_reference.rpartition(":")
+    if not separator or "/" in tag_from_reference:
+        # Either there is no tag at all, or the colon belongs to a registry host:port such as
+        # localhost:5000/my-image, in which case the whole reference is the image name.
+        image_name, tag_from_reference = image_reference, None
+    elif not tag_from_reference:
+        raise ValueError(f"Image reference {image_reference!r} ends in ':' with no tag after it.")
+
+    if not image_name:
+        raise ValueError(f"Image reference {image_reference!r} has no image name before the ':'.")
+
+    if image_tag is None:
+        return image_name, tag_from_reference or DEFAULT_LOCAL_IMAGE_TAG
+
+    if tag_from_reference is not None and tag_from_reference != image_tag:
+        raise ValueError(
+            f"Conflicting local image tags: the image reference {image_reference!r} specifies tag "
+            f"{tag_from_reference!r} but --image-tag specifies {image_tag!r}. Specify the tag only once, "
+            f"preferably as part of the image reference (e.g. {image_name}:{tag_from_reference})."
+        )
+
+    return image_name, image_tag
+
+
 def build_docker_image(
     context_dir: str | Path,
     image_name: str,
@@ -297,8 +363,17 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     console_log_level = logging.DEBUG if parsed_args.verbose else logging.INFO
     configure_task_logging(f"ecr_upload_{now}", limit_debug_loggers="libera_utils", console_log_level=console_log_level)
     logger.debug(f"CLI args: {parsed_args}")
-    image_name: str = parsed_args.image_name
-    image_tag = parsed_args.image_tag
+    if parsed_args.image_tag is not None:
+        logger.warning(
+            "--image-tag is deprecated. Specify the tag as part of the image reference instead, e.g. "
+            "`libera-utils ecr-upload %s %s:%s`.",
+            parsed_args.algorithm_name,
+            parsed_args.image_name.rpartition(":")[0] or parsed_args.image_name,
+            parsed_args.image_tag,
+        )
+    # Resolve the local image reference up front so a malformed or conflicting tag fails immediately, before
+    # the (slower, and separately fallible) role assumption below.
+    image_name, image_tag = _split_local_image_reference(parsed_args.image_name, parsed_args.image_tag)
     algorithm_name = ProcessingStepIdentifier(parsed_args.algorithm_name)
     ecr_tags = parsed_args.ecr_tags
     profile_name = parsed_args.profile
@@ -355,7 +430,7 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
 
 def push_image_to_ecr(
     image_name: str,
-    image_tag: str,
+    image_tag: str | None,
     processing_step_id: str | ProcessingStepIdentifier,
     *,
     ecr_image_tags: list[str] = None,
@@ -373,9 +448,11 @@ def push_image_to_ecr(
     Parameters
     ----------
     image_name : str
-        Local name of the Docker image
-    image_tag : str
-        Local tag of the Docker image (often 'latest')
+        Local reference of the Docker image, either a bare name ('my-image') or a name with its tag
+        ('my-image:1.2.3'). A tag given here must not conflict with `image_tag`.
+    image_tag : str or None
+        Local tag of the Docker image, for callers that keep the tag separate from the name. Pass None to
+        take the tag from `image_name` instead, falling back to 'latest' if it carries none.
     processing_step_id : Union[str, ProcessingStepIdentifier]
         Processing step ID string or object used to determine ECR repository name.
         L0 processing step IDs are not supported as they have no associated ECR.
@@ -410,6 +487,8 @@ def push_image_to_ecr(
         digest was not available in the push stream.
     """
     # Input validation and defaults
+    image_name, image_tag = _split_local_image_reference(image_name, image_tag)
+
     if not ecr_image_tags:
         ecr_image_tags = ["latest"]
 
