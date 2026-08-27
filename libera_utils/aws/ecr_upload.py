@@ -139,7 +139,7 @@ def _push_single_tag(
     full_ecr_tag: str,
     region_name: str,
     max_retries: int = 3,
-    boto_session: boto3.Session = None,
+    boto_session: boto3.Session | None = None,
 ) -> str | None:
     """Push a single tagged image to ECR with retry logic and fresh authentication.
 
@@ -363,17 +363,20 @@ def ecr_upload_cli_handler(parsed_args: argparse.Namespace) -> None:
     console_log_level = logging.DEBUG if parsed_args.verbose else logging.INFO
     configure_task_logging(f"ecr_upload_{now}", limit_debug_loggers="libera_utils", console_log_level=console_log_level)
     logger.debug(f"CLI args: {parsed_args}")
+    # Resolve the local image reference up front so a malformed or conflicting tag fails immediately, before
+    # the (slower, and separately fallible) role assumption below.
+    image_name, image_tag = _split_local_image_reference(parsed_args.image_name, parsed_args.image_tag)
+    # Warn using the *resolved* name and tag so the suggested command is correct even for references whose
+    # colon is not a tag separator (e.g. localhost:5000/my-image). Guard on the raw argument, since the
+    # resolved tag is never None.
     if parsed_args.image_tag is not None:
         logger.warning(
             "--image-tag is deprecated. Specify the tag as part of the image reference instead, e.g. "
             "`libera-utils ecr-upload %s %s:%s`.",
             parsed_args.algorithm_name,
-            parsed_args.image_name.rpartition(":")[0] or parsed_args.image_name,
-            parsed_args.image_tag,
+            image_name,
+            image_tag,
         )
-    # Resolve the local image reference up front so a malformed or conflicting tag fails immediately, before
-    # the (slower, and separately fallible) role assumption below.
-    image_name, image_tag = _split_local_image_reference(parsed_args.image_name, parsed_args.image_tag)
     algorithm_name = ProcessingStepIdentifier(parsed_args.algorithm_name)
     ecr_tags = parsed_args.ecr_tags
     profile_name = parsed_args.profile
@@ -433,7 +436,7 @@ def push_image_to_ecr(
     image_tag: str | None,
     processing_step_id: str | ProcessingStepIdentifier,
     *,
-    ecr_image_tags: list[str] = None,
+    ecr_image_tags: list[str] | None = None,
     region_name: str | None = None,
     ignore_docker_config: bool = False,
     max_retries: int = 1,

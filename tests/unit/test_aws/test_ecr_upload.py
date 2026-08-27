@@ -161,15 +161,27 @@ def test_ecr_upload_cli_handler_image_reference_forms(
 
 
 @pytest.mark.parametrize(
-    ("image_tag", "expect_warning"),
-    [(None, False), ("1.2.3", True)],
+    ("image_name", "image_tag", "expect_warning", "suggested_name"),
+    [
+        ("test-image", None, False, None),
+        ("test-image", "1.2.3", True, "test-image"),
+        # The suggested command must use the resolved name: the colon here is a registry port, not a tag.
+        ("localhost:5000/my-image", "1.2.3", True, "localhost:5000/my-image"),
+    ],
 )
 @mock.patch("libera_utils.aws.ecr_upload.logger")
 @mock.patch("libera_utils.aws.ecr_upload.put_new_algorithm_image_event")
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
 @mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
 def test_ecr_upload_cli_handler_warns_on_deprecated_image_tag(
-    mock_resolve_session, mock_push_image_to_ecr, mock_put_event, mock_logger, image_tag, expect_warning
+    mock_resolve_session,
+    mock_push_image_to_ecr,
+    mock_put_event,
+    mock_logger,
+    image_name,
+    image_tag,
+    expect_warning,
+    suggested_name,
 ):
     """Using --image-tag logs a deprecation warning pointing at the `image-name:tag` syntax."""
     mock_push_image_to_ecr.return_value = {"latest": "sha256:aaa"}
@@ -177,7 +189,7 @@ def test_ecr_upload_cli_handler_warns_on_deprecated_image_tag(
     args = argparse.Namespace(
         func=ecr_upload.ecr_upload_cli_handler,
         algorithm_name="l1b-rad",
-        image_name="test-image",
+        image_name=image_name,
         image_tag=image_tag,
         ecr_tags=None,
         ignore_docker_config=False,
@@ -194,8 +206,8 @@ def test_ecr_upload_cli_handler_warns_on_deprecated_image_tag(
     ]
     assert bool(deprecation_warnings) is expect_warning
     if expect_warning:
-        # The warning shows the equivalent preferred invocation, including the tag the user supplied.
-        assert deprecation_warnings[0].args[1:] == ("l1b-rad", "test-image", image_tag)
+        # The warning shows the equivalent preferred invocation, built from the resolved name and tag.
+        assert deprecation_warnings[0].args[1:] == ("l1b-rad", suggested_name, image_tag)
 
 
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
