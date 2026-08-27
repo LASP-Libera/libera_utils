@@ -41,7 +41,7 @@ classifiers = [
 # These are the dependencies used in the package metadata when building the project
 dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
-    "lasp-curryer @ git+https://github.com/lasp/curryer.git@main",
+    "lasp-curryer @ git+https://github.com/lasp/curryer.git@f019d4784caef4a591b1be35c5af91d78ab5b8cf",
     "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
     "netCDF4>=1.7.0,<2.0.0,!=1.7.3",  # netcdf4 engine support for xarray
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
