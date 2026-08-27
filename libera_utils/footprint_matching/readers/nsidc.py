@@ -3,11 +3,14 @@
 Data source: NSIDC Near-real-time Ice and Snow Extent (NISE) Product
 - Products: NISE (SSM/I-SSMIS, v5) and NISE_A2 (AMSR-2, v1)
 - Format: HDF-EOS4 (.HDFEOS), opened via pyhdf
-- Spatial resolution: 25 km nominal (NSIDC EASE-Grid North)
-- Grid: 721 × 721 polar azimuthal equal-area (NSIDC EASE-Grid North, EPSG:3408)
+- Spatial resolution: 25 km nominal (NSIDC EASE-Grid North & South)
+- Grid: two 721 × 721 polar azimuthal equal-area grids — Northern Hemisphere
+  (NSIDC EASE-Grid North, EPSG:3408) and Southern Hemisphere (EASE-Grid South,
+  EPSG:3409), both carried in the single granule
 - Temporal coverage: 1978-present (NISE SSM/I-SSMIS), 2012-present (NISE_A2 AMSR-2)
-- Spatial coverage: Northern Hemisphere
-- Data variable: Extent SDS (uint8 category codes 0–255)
+- Spatial coverage: Northern and Southern Hemispheres (both grids are read and
+  merged into one geolocated point cloud)
+- Data variable: Extent SDS, one per hemisphere (uint8 category codes 0–255)
 
 NISE Extent encoding
 --------------------
@@ -16,6 +19,8 @@ NISE Extent encoding
   101      Permanent ice (Greenland Ice Sheet, Antarctic ice shelves)
   102      Not used (belongs to no class — maps to 0.0 in every layer)
   103–110  Dry snow on land
+  254      Off-Earth corner fill — the square grid's corners fall outside the
+           projection disk; these pixels are dropped (see "Two hemispheres" below)
   255      Missing/fill (no retrieval)
 
 Per-code output layers
@@ -50,18 +55,33 @@ Design notes
 The first axis of the returned data array follows ``VARIABLES`` order exactly
 (the multi-variable reader contract; see ``GridTile`` and ``ERA5Reader``).
 
+Two hemispheres in one granule
+------------------------------
+A NISE granule holds two grids — Northern (EPSG:3408) and Southern (EPSG:3409) —
+each with its own ``Extent`` SDS. Both fields are named ``Extent``, so they are
+addressed by their HDF-EOS dimension-name hemisphere label, not by SDS name (see
+``_read_extent_sds``). This reader reads both, reprojects each with its own CRS,
+and concatenates the results into a single point cloud; a tile request downstream
+keeps only the points inside its bbox, so each hemisphere's tiles draw from the
+correct grid automatically.
+
+Each square 721 × 721 grid's corners fall outside the projection's Earth disk and
+reproject into the *opposite* hemisphere; every such corner pixel carries Extent
+code 254. These are dropped before merging (``_load_points``) so they cannot
+contaminate the other hemisphere's tiles.
+
 Geolocation: rasterization, not mean-collapse
 ----------------------------------------------
-The EASE-Grid North (EPSG:3408) projection is azimuthal — both latitude and
-longitude vary in two dimensions across the pixel grid, so a 1-D row/column mean
-of the pixel coordinates places no real pixel and mis-geolocates the data. To
-carry each pixel's true file-derived position through to footprint matching,
-this reader flattens the per-pixel ``(lat, lon, value)`` layers to points and
-bins them onto a regular sub-grid over the requested tile via
-``rasterize_points_to_grid`` — exactly like the ``ssf`` and ``cldpix`` swath
-readers. Every output cell therefore has an exact center lat/lon. Pixels whose
-EPSG:3408 → WGS84 transform falls outside the geographic domain carry NaN
-coordinates and are dropped by the rasterizer's finite-coordinate filter.
+The EASE-Grid projections are azimuthal — both latitude and longitude vary in two
+dimensions across the pixel grid, so a 1-D row/column mean of the pixel coordinates
+places no real pixel and mis-geolocates the data. To carry each pixel's true
+file-derived position through to footprint matching, this reader flattens the
+per-pixel ``(lat, lon, value)`` layers to points and bins them onto a regular
+sub-grid over the requested tile via ``rasterize_points_to_grid`` — exactly like the
+``ssf`` and ``cldpix`` swath readers. Every output cell therefore has an exact
+center lat/lon. Pixels whose EASE-Grid → WGS84 transform falls outside the
+projection domain reproject to non-finite coordinates (pyproj yields ``inf``) and
+are dropped by the rasterizer's finite-coordinate filter.
 
 References
 ----------
@@ -70,12 +90,13 @@ User guide:      https://nsidc.org/sites/default/files/nise5-v001-userguide.pdf
 Data access:     https://n5eil01u.ecs.nsidc.org/NISE/  (Earthdata login required)
 File naming:     NISE_SSMISF{ss}_{YYYYMMDD}.HDFEOS  (NISE v5; ss = DMSP flight, e.g. F18)
                  NISE_AMSR2_{YYYYMMDD}.HDFEOS        (NISE_A2 v1)
-EPSG:3408 desc:  https://epsg.io/3408
+EPSG:3408 desc:  https://epsg.io/3408  (North)  /  https://epsg.io/3409  (South)
 EASE-Grid ref:   https://nsidc.org/ease
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 
@@ -93,9 +114,22 @@ from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, 
 _DEFAULT_GRID_ROWS: int = 721
 _DEFAULT_GRID_COLS: int = 721
 _DEFAULT_RESOLUTION_M: float = 25_067.525  # EASE-Grid North 25-km cell size in meters
-# Upper-left corner of the grid in EPSG:3408 meters (x = easting, y = northing).
+# Upper-left corner of the grid in EPSG:3408/3409 meters (x = easting, y = northing).
+# StructMetadata.0 in a real granule gives both grids the identical extent
+# (UpperLeftPointMtrs=(-9036842.7625, 9036842.7625)); only the CRS differs.
 _DEFAULT_X_ORIGIN: float = -9_036_842.7625  # meters (upper-left x)
 _DEFAULT_Y_ORIGIN: float = 9_036_842.7625  # meters (upper-left y)
+
+# The two NSIDC EASE-Grid projections carried in one NISE granule.
+_DEFAULT_EPSG_NORTH: int = 3408  # NSIDC EASE-Grid North (azimuthal equal-area, +90 deg center)
+_DEFAULT_EPSG_SOUTH: int = 3409  # NSIDC EASE-Grid South (azimuthal equal-area, -90 deg center)
+
+# Substrings of the HDF-EOS grid dimension names ("YDim:Northern Hemisphere", ...)
+# used to pick the correct ``Extent`` SDS per hemisphere. Both grids name their data
+# field ``Extent``, so name-based selection (``hdf.select("Extent")``) always returns
+# the first (Northern) SDS -- selection must go by the dimension-name hemisphere label.
+_HEMISPHERE_LABEL_NORTH: str = "Northern Hemisphere"
+_HEMISPHERE_LABEL_SOUTH: str = "Southern Hemisphere"
 
 # --- NISE Extent code groups (see module docstring for the full encoding) ------
 # These name the raw uint8 category codes so the mask construction in
@@ -106,6 +140,7 @@ _SEA_ICE_CODE_MAX: int = 100  # 100 % sea ice concentration
 _CODE_PERMANENT_ICE: int = 101  # Greenland / Antarctic ice sheets
 _SNOW_CODE_MIN: int = 103  # dry snow on land (lower bound)
 _SNOW_CODE_MAX: int = 110  # dry snow on land (upper bound)
+_CODE_OFF_EARTH: int = 254  # off-Earth corner fill (square-grid corners outside the projection disk)
 _CODE_MISSING: int = 255  # fill / no retrieval
 
 # Percent → fraction divisor for the 1–100 sea ice concentration codes.
@@ -124,28 +159,70 @@ _VARIABLE_ORDER: tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class _HemisphereGrid:
+    """One EASE-Grid hemisphere carried in a NISE granule.
+
+    A NISE HDF-EOS4 file holds two grids -- Northern (EPSG:3408) and Southern
+    (EPSG:3409) -- sharing the identical 721 x 721 25-km geometry and differing only
+    in projection center. This bundles the per-hemisphere parameters so the reader can
+    loop over both uniformly.
+
+    Attributes
+    ----------
+    epsg : int
+        Source CRS for the pixel-center reprojection (3408 North, 3409 South).
+    hemisphere_label : str
+        Substring matched against the HDF-EOS grid dimension name to select this
+        hemisphere's ``Extent`` SDS (see :data:`_HEMISPHERE_LABEL_NORTH`).
+    grid_rows, grid_cols : int
+        Grid dimensions (default 721 x 721).
+    resolution_m : float
+        Cell size in meters (default 25 067.525).
+    x_origin, y_origin : float
+        Upper-left corner in projection meters (default -/+ 9 036 842.7625).
+    """
+
+    epsg: int
+    hemisphere_label: str
+    grid_rows: int = _DEFAULT_GRID_ROWS
+    grid_cols: int = _DEFAULT_GRID_COLS
+    resolution_m: float = _DEFAULT_RESOLUTION_M
+    x_origin: float = _DEFAULT_X_ORIGIN
+    y_origin: float = _DEFAULT_Y_ORIGIN
+
+
+# The default: read both hemispheres from the single granule. Northern first so a
+# single-hemisphere default (e.g. the test shim) matches the historical behaviour.
+_DEFAULT_HEMISPHERES: tuple[_HemisphereGrid, ...] = (
+    _HemisphereGrid(epsg=_DEFAULT_EPSG_NORTH, hemisphere_label=_HEMISPHERE_LABEL_NORTH),
+    _HemisphereGrid(epsg=_DEFAULT_EPSG_SOUTH, hemisphere_label=_HEMISPHERE_LABEL_SOUTH),
+)
+
+
 class NISEReader(GriddedDataReader):
     """Read NISE surface-class coverage layers from an HDF-EOS4 file.
 
-    The NISE product (Near-real-time Ice and Snow Extent) distributes a single
-    uint8 ``Extent`` SDS whose category codes encode sea ice concentration, snow
-    on land, permanent ice, and ice/snow-free pixels. This reader splits those
+    The NISE product (Near-real-time Ice and Snow Extent) distributes a uint8
+    ``Extent`` SDS per hemisphere whose category codes encode sea ice concentration,
+    snow on land, permanent ice, and ice/snow-free pixels. This reader splits those
     codes into five independent float32 coverage layers (see module docstring),
-    reprojects the EASE-Grid North (EPSG:3408) pixel centers to WGS84 lat/lon,
-    and rasterizes them onto a regular sub-grid covering the requested bounding
+    reprojects each hemisphere's EASE-Grid pixel centers to WGS84 lat/lon with its own
+    CRS (North EPSG:3408, South EPSG:3409), merges both hemispheres into one point
+    cloud, and rasterizes them onto a regular sub-grid covering the requested bounding
     box (see the module docstring's geolocation note), returning a 3-D array of
     shape ``(5, n_lat, n_lon)`` in ``VARIABLES`` order.
 
-    The grid parameters (rows, cols, resolution, origin) are exposed as
-    constructor keyword arguments with real defaults so that tests can inject
-    a small synthetic grid without building a full 721 × 721 fixture.
+    The hemispheres to read are exposed via the ``hemispheres`` constructor keyword
+    (defaulting to both), and a legacy single-grid injection path lets a test exercise
+    one small synthetic grid without building a full 721 × 721 fixture.
 
     Class Attributes
     ----------------
     READER_KEY : str
         Registry key ``"nise"``.
     RESOLUTION_KM : float
-        25 km (NISE EASE-Grid North 25-km product).
+        25 km (NISE EASE-Grid 25-km product).
     OUTPUT_CELL_DEG : float
         Edge length of the rasterized output cells (degrees). 0.25° ≈ 25 km,
         mirroring the ``ssf`` swath reader's cell size.
@@ -159,16 +236,15 @@ class NISEReader(GriddedDataReader):
     ----------
     file_path : Path
         Path to a NISE HDF-EOS4 file (``*.HDFEOS``).
-    grid_rows : int, optional
-        Number of grid rows. Default 721 (real NISE 25-km product).
-    grid_cols : int, optional
-        Number of grid columns. Default 721.
-    resolution_m : float, optional
-        Grid cell size in meters. Default 25067.525 (EASE-Grid North 25 km).
-    x_origin : float, optional
-        Upper-left x coordinate (meters, EPSG:3408). Default -9,036,842.7625.
-    y_origin : float, optional
-        Upper-left y coordinate (meters, EPSG:3408). Default 9,036,842.7625.
+    hemispheres : tuple[_HemisphereGrid, ...], optional
+        The EASE-Grid hemispheres to read. Defaults to both the Northern
+        (EPSG:3408) and Southern (EPSG:3409) grids (:data:`_DEFAULT_HEMISPHERES`).
+    grid_rows, grid_cols, resolution_m, x_origin, y_origin : optional
+        Legacy single-grid injection. When any is supplied and ``hemispheres`` is
+        not, the reader builds a single Northern-hemisphere grid from these values
+        (defaulting the rest). Retained so a test can exercise one small synthetic
+        grid without constructing a :class:`_HemisphereGrid`; prefer ``hemispheres``
+        for anything reading both hemispheres.
     """
 
     READER_KEY: str = "nise"
@@ -224,66 +300,114 @@ class NISEReader(GriddedDataReader):
         self,
         file_path: Path,
         *,
-        grid_rows: int = _DEFAULT_GRID_ROWS,
-        grid_cols: int = _DEFAULT_GRID_COLS,
-        resolution_m: float = _DEFAULT_RESOLUTION_M,
-        x_origin: float = _DEFAULT_X_ORIGIN,
-        y_origin: float = _DEFAULT_Y_ORIGIN,
+        hemispheres: tuple[_HemisphereGrid, ...] | None = None,
+        grid_rows: int | None = None,
+        grid_cols: int | None = None,
+        resolution_m: float | None = None,
+        x_origin: float | None = None,
+        y_origin: float | None = None,
     ) -> None:
         super().__init__(file_path)
-        self._grid_rows = grid_rows
-        self._grid_cols = grid_cols
-        self._resolution_m = resolution_m
-        self._x_origin = x_origin
-        self._y_origin = y_origin
+        if hemispheres is None:
+            legacy_params = (grid_rows, grid_cols, resolution_m, x_origin, y_origin)
+            if any(param is not None for param in legacy_params):
+                # Legacy single-grid injection: build one Northern-hemisphere grid,
+                # defaulting any param not supplied.
+                hemispheres = (
+                    _HemisphereGrid(
+                        epsg=_DEFAULT_EPSG_NORTH,
+                        hemisphere_label=_HEMISPHERE_LABEL_NORTH,
+                        grid_rows=grid_rows if grid_rows is not None else _DEFAULT_GRID_ROWS,
+                        grid_cols=grid_cols if grid_cols is not None else _DEFAULT_GRID_COLS,
+                        resolution_m=resolution_m if resolution_m is not None else _DEFAULT_RESOLUTION_M,
+                        x_origin=x_origin if x_origin is not None else _DEFAULT_X_ORIGIN,
+                        y_origin=y_origin if y_origin is not None else _DEFAULT_Y_ORIGIN,
+                    ),
+                )
+            else:
+                hemispheres = _DEFAULT_HEMISPHERES
+        self._hemispheres = hemispheres
 
-    @cached_property
-    def _transformer(self) -> object:
-        """Lazily build the EPSG:3408 → WGS84 transformer, cached per instance.
+    def _build_transformer(self, epsg: int) -> object:
+        """Build an ``epsg`` → WGS84 transformer for one hemisphere's pixel centers.
 
         pyproj is an optional ('fmatch' extra) dependency imported lazily via
         :func:`_require_pyproj`, so construction stays import-free for a core-only
-        install; the transformer is built on first reprojection and reused for every
-        tile. Always use CRS objects (not bare EPSG strings) to suppress the pyproj
-        FutureWarning about authority-based CRS construction.
+        install. Called once per hemisphere from within the cached
+        :meth:`_load_points`, so no additional caching is needed. Always use CRS
+        objects (not bare EPSG strings) to suppress the pyproj FutureWarning about
+        authority-based CRS construction.
+
+        Parameters
+        ----------
+        epsg : int
+            Source CRS EPSG code (3408 for EASE-Grid North, 3409 for South).
         """
         pyproj = _require_pyproj()
         return pyproj.Transformer.from_crs(
-            pyproj.CRS.from_epsg(3408),  # NSIDC EASE-Grid North (azimuthal equal-area)
+            pyproj.CRS.from_epsg(epsg),  # NSIDC EASE-Grid (azimuthal equal-area)
             pyproj.CRS.from_epsg(4326),
             always_xy=True,  # Input: (x=easting, y=northing); Output: (lon, lat)
         )
 
     @cached_property
     def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read the Extent SDS and flatten it to geolocated coverage points.
+        """Read every hemisphere's Extent SDS and flatten to one geolocated point cloud.
 
-        Cached per reader instance: the file read and the full EPSG:3408 → WGS84
-        reprojection of every pixel run once, then every tile reuses the result
-        (the file content is static). Without the cache this whole-file work would
-        repeat on every ``_load_spatial_region`` / tile request.
+        Reads each configured hemisphere (Northern EPSG:3408, Southern EPSG:3409),
+        reprojects its pixel centers to WGS84 with that hemisphere's CRS, drops the
+        off-Earth corner pixels (see below), and concatenates the per-hemisphere
+        points into a single cloud. A tile request downstream keeps only the points
+        inside its bbox, so northern and southern tiles each draw from the correct
+        hemisphere automatically.
+
+        Cached per reader instance: the file read and the full reprojection of every
+        pixel run once, then every tile reuses the result (the file content is
+        static). Without the cache this whole-file work would repeat on every
+        ``_load_spatial_region`` / tile request.
 
         Returns
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_pixels,)`` float64 pixel-centre coordinates (WGS84, reprojected
-            from EPSG:3408), and ``values`` is float64 shape ``(5, n_pixels)``
-            holding the five coverage layers in ``_VARIABLE_ORDER``. Pixels
-            outside the EPSG:3408 domain carry NaN coordinates and are dropped by
-            the rasterizer's finite-coordinate filter.
+            ``(n_pixels,)`` float64 pixel-centre coordinates (WGS84), and ``values``
+            is float64 shape ``(5, n_pixels)`` holding the five coverage layers in
+            ``_VARIABLE_ORDER``. Pixels outside the EASE-Grid domain reproject to
+            non-finite coordinates (pyproj yields ``inf``) and are dropped by the
+            rasterizer's finite-coordinate filter.
         """
-        raw = self._read_extent_sds()
-        lats_2d, lons_2d = self._compute_latlon_grid()
+        hemi_lats: list[np.ndarray] = []
+        hemi_lons: list[np.ndarray] = []
+        hemi_values: list[np.ndarray] = []
+        for hemi in self._hemispheres:
+            raw = self._read_extent_sds(hemi.hemisphere_label)
+            lats_2d, lons_2d = self._compute_latlon_grid(hemi)
 
-        # Split the single Extent SDS into the five per-code coverage layers.
-        # Shape: (5, n_rows, n_cols), axis 0 in canonical _VARIABLE_ORDER.
-        masks = self._extent_to_category_masks(raw)
+            # Split the Extent SDS into the five per-code coverage layers.
+            # Shape: (5, n_rows, n_cols), axis 0 in canonical _VARIABLE_ORDER.
+            masks = self._extent_to_category_masks(raw)
 
-        lats = np.asarray(lats_2d, dtype=np.float64).ravel()
-        lons = np.asarray(lons_2d, dtype=np.float64).ravel()
-        # Flatten the lat/lon axes while keeping the variable axis: (5, n_pixels).
-        values = masks.reshape(masks.shape[0], -1).astype(np.float64)
+            lats = np.asarray(lats_2d, dtype=np.float64).ravel()
+            lons = np.asarray(lons_2d, dtype=np.float64).ravel()
+            # Flatten the lat/lon axes while keeping the variable axis: (5, n_pixels).
+            values = masks.reshape(masks.shape[0], -1).astype(np.float64)
+
+            # Drop off-Earth corner pixels (Extent code 254). Each square 721x721 grid
+            # has ~114k corner pixels that fall outside the projection's Earth disk and
+            # reproject into the OPPOSITE hemisphere; every one of them carries code 254.
+            # If kept, they would land in the other hemisphere's tiles and drag those
+            # cells' weighted_mean toward zero (254 maps to 0.0 in all five layers) --
+            # a silent corruption. Distinct from code 255 (missing), which is retained
+            # as the ``snow_ice_missing`` layer.
+            keep = raw.ravel() != _CODE_OFF_EARTH
+            hemi_lats.append(lats[keep])
+            hemi_lons.append(lons[keep])
+            hemi_values.append(values[:, keep])
+
+        lats = np.concatenate(hemi_lats) if hemi_lats else np.empty(0, dtype=np.float64)
+        lons = np.concatenate(hemi_lons) if hemi_lons else np.empty(0, dtype=np.float64)
+        n_vars = len(self.VARIABLES)
+        values = np.concatenate(hemi_values, axis=1) if hemi_values else np.empty((n_vars, 0), dtype=np.float64)
         return lats, lons, values
 
     def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -363,8 +487,22 @@ class NISEReader(GriddedDataReader):
             axis=0,
         ).astype(np.float32)
 
-    def _read_extent_sds(self) -> np.ndarray:
-        """Open the NISE HDF-EOS4 file and return the Extent SDS as a uint8 array.
+    def _read_extent_sds(self, hemisphere_label: str) -> np.ndarray:
+        """Open the NISE HDF-EOS4 file and return one hemisphere's Extent SDS.
+
+        A NISE granule holds four SDS -- an ``Extent`` and an ``Age`` per hemisphere
+        -- and both hemispheres name their fields identically. ``hdf.select("Extent")``
+        resolves the name to the *first* index (always the Northern grid), and
+        ``hdf.datasets()`` is name-keyed and hides the duplicates, so neither can
+        address the Southern grid. This iterates the real dataset indices and matches
+        the requested hemisphere by the SDS's dimension name
+        (e.g. ``"YDim:Northern Hemisphere"``).
+
+        Parameters
+        ----------
+        hemisphere_label : str
+            Substring of the grid dimension name identifying the hemisphere
+            (see :data:`_HEMISPHERE_LABEL_NORTH` / :data:`_HEMISPHERE_LABEL_SOUTH`).
 
         Returns
         -------
@@ -377,24 +515,40 @@ class NISEReader(GriddedDataReader):
         ImportError
             If pyhdf is not installed (see :func:`_require_pyhdf`).
         KeyError
-            If the file does not contain an ``Extent`` SDS.
+            If the file has no ``Extent`` SDS for the requested hemisphere.
         OSError
             If the file cannot be opened (not found, corrupt header, etc.).
         """
         sd = _require_pyhdf()
         hdf = sd.SD(str(self._file_path), sd.SDC.READ)
         try:
-            sds = hdf.select("Extent")
-            raw = np.array(sds.get(), dtype=np.uint8)
+            # hdf.info()[0] is the true dataset count; iterate indices (not
+            # hdf.datasets(), whose name keys collapse the duplicate Extent/Age SDS).
+            n_datasets = hdf.info()[0]
+            for index in range(n_datasets):
+                sds = hdf.select(index)
+                name, rank = sds.info()[0], sds.info()[1]
+                if name != "Extent" or rank < 1:
+                    continue
+                dim_name = sds.dim(0).info()[0]
+                if hemisphere_label in dim_name:
+                    return np.array(sds.get(), dtype=np.uint8)
+            raise KeyError(f"No 'Extent' SDS for hemisphere {hemisphere_label!r} in {self._file_path}")
         finally:
             hdf.end()
-        return raw
 
-    def _compute_latlon_grid(self) -> tuple[np.ndarray, np.ndarray]:
-        """Compute geographic lat/lon coordinates for every pixel in the NISE grid.
+    def _compute_latlon_grid(self, hemi: _HemisphereGrid | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Compute geographic lat/lon coordinates for every pixel in one hemisphere grid.
 
-        Uses pyproj to transform the EASE-Grid North pixel centers (EPSG:3408)
-        to WGS84 geographic coordinates (EPSG:4326).
+        Uses pyproj to transform the EASE-Grid pixel centers (``hemi.epsg``: 3408 for
+        the North grid, 3409 for the South) to WGS84 geographic coordinates (EPSG:4326).
+
+        Parameters
+        ----------
+        hemi : _HemisphereGrid, optional
+            The hemisphere grid to reproject. Defaults to the reader's first
+            configured hemisphere -- convenient for the single-hemisphere case
+            (and the test shim), where there is only one.
 
         Returns
         -------
@@ -408,21 +562,24 @@ class NISEReader(GriddedDataReader):
             x_center[col] = x_origin + (col + 0.5) * resolution_m
             y_center[row] = y_origin - (row + 0.5) * resolution_m  (y decreases southward)
 
-        Pixels whose projected coordinates fall outside the geographic domain of
-        EPSG:3408 (i.e., at very high southern latitudes) will have NaN in the
-        output arrays; these are excluded by the bbox mask in
-        :meth:`_load_spatial_region`.
+        Pixels whose projected coordinates fall outside the EASE-Grid domain reproject
+        to non-finite coordinates (pyproj yields ``inf``); these are excluded by the
+        finite-coordinate filter in :func:`rasterize_points_to_grid`.
         """
-        col_indices = np.arange(self._grid_cols, dtype=np.float64)
-        row_indices = np.arange(self._grid_rows, dtype=np.float64)
+        if hemi is None:
+            hemi = self._hemispheres[0]
 
-        x_centers = self._x_origin + (col_indices + 0.5) * self._resolution_m
-        y_centers = self._y_origin - (row_indices + 0.5) * self._resolution_m
+        col_indices = np.arange(hemi.grid_cols, dtype=np.float64)
+        row_indices = np.arange(hemi.grid_rows, dtype=np.float64)
+
+        x_centers = hemi.x_origin + (col_indices + 0.5) * hemi.resolution_m
+        y_centers = hemi.y_origin - (row_indices + 0.5) * hemi.resolution_m
 
         # Build 2-D coordinate grids for the transformer.
         x_2d, y_2d = np.meshgrid(x_centers, y_centers)
 
         # always_xy=True means input is (x, y) and output is (lon, lat).
-        lons_2d, lats_2d = self._transformer.transform(x_2d, y_2d)
+        transformer = self._build_transformer(hemi.epsg)
+        lons_2d, lats_2d = transformer.transform(x_2d, y_2d)
 
         return lats_2d, lons_2d
