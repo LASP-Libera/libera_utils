@@ -613,8 +613,10 @@ class KernelManager:
         ----------
         targets : sequence of int or str
             Objects that must be covered across the whole window: body IDs or names for
-            SPK coverage, frame IDs or names for CK. Names require the kernels that define
-            them to be furnished.
+            SPK coverage, frame IDs or names for CK. Binary PCKs are also in scope, and
+            their coverage is keyed on the frame *class* ID rather than the body or frame
+            ID -- pass the frame name and curryer resolves it. Names require the kernels
+            that define them to be furnished.
         start_ugps : int
             Window start, in microseconds since the GPS epoch.
         stop_ugps : int
@@ -632,7 +634,7 @@ class KernelManager:
             If ``error`` is True and a target has no coverage in any furnished kernel, or
             the requested window is not fully covered for every target.
         """
-        if self._loaded_kernels is None:
+        if self._loaded_kernels is None or not self._loaded_kernels.loaded:
             raise RuntimeError(
                 "No kernels are furnished; call load_naif_kernels, load_static_kernels, or "
                 "load_libera_dynamic_kernels before checking coverage."
