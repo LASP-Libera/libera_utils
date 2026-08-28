@@ -40,7 +40,7 @@ RUNNER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM_CAMTIME,
     output_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
     l1b_input_product_id=DataProductIdentifier.l1b_cam,
-    cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam_time,
+    cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam_camtime,
     log_prefix="fmatch_cam_camtime",
 )
 

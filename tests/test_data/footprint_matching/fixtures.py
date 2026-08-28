@@ -1061,7 +1061,7 @@ def make_l1b_radiometer_fixture(
     """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
 
     Contains exactly the variables that
-    :func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs` reads: the CF-encoded
+    :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs` reads: the CF-encoded
     ``radiometer_time`` coordinate plus the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
     through verbatim. The values are physically plausible but arbitrary; only the variable names, dtypes and time
     encoding are the contract under test.
@@ -1086,7 +1086,8 @@ def make_l1b_radiometer_fixture(
         Path to the written L1B RAD-4CH NetCDF file.
     """
     from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
-    from libera_utils.footprint_matching.l1b_inputs import L1B_PASSTHROUGH_VARIABLES, L1B_TIME_VARIABLE  # noqa: PLC0415
+    from libera_utils.footprint_matching._runner import L1B_TIME_VARIABLE  # noqa: PLC0415
+    from libera_utils.footprint_matching.product import L1B_PASSTHROUGH_VARIABLES  # noqa: PLC0415
     from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
 
     base_time = np.datetime64("2026-06-11T00:00:00", "ns")

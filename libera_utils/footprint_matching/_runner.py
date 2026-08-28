@@ -28,8 +28,8 @@ Two environment variables are required at run time:
     to. This is the standard Libera runner convention.
 ``FMATCH_ANCILLARY_PATH``
     Root of the staged ancillary granule tree; see
-    :mod:`libera_utils.footprint_matching.ancillary` for its layout. Currently
-    resolved non-strictly, because the engine that consumes the granules is not
+    :func:`resolve_ancillary_inputs` for its layout. Currently resolved
+    non-strictly, because the engine that consumes the granules is not
     implemented yet.
 
 Milestone note
@@ -65,16 +65,23 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import xarray as xr
 from cloudpathlib import AnyPath, S3Path
 
-from libera_utils.footprint_matching.ancillary import log_ancillary_inventory, resolve_ancillary_inputs
+# Importing the readers subpackage is what populates ReaderRegistry: every concrete
+# reader self-registers at class-definition time via GriddedDataReader.__init_subclass__,
+# which only happens once its module has been imported. Without this import the
+# registry would be empty and every mode would resolve to zero readers.
+import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
 from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
-from libera_utils.footprint_matching.l1b_inputs import load_l1b_camera_dataset, load_l1b_radiometer_inputs
 from libera_utils.footprint_matching.product import (
+    L1B_PASSTHROUGH_VARIABLES,
     fmatch_time_variable,
     is_camera_timescale_mode,
     write_fmatch_product,
 )
+from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest
@@ -82,12 +89,23 @@ from libera_utils.io.smart_open import is_s3, smart_copy_file
 from libera_utils.logutil import configure_task_logging
 
 if TYPE_CHECKING:
-    import numpy as np
-
     from libera_utils.constants import DataProductIdentifier
     from libera_utils.footprint_matching.camera_segmentation import PseudoFootprint
 
 logger = logging.getLogger(__name__)
+
+# Name of the time coordinate variable inside the L1B radiometer file. xarray decodes
+# its CF "nanoseconds since 1958-01-01" units into datetime64[ns], which is exactly
+# the dtype the FMATCH RADIOMETER_TIME coordinate declares.
+L1B_TIME_VARIABLE: str = "radiometer_time"
+
+# Name of the FMATCH product's radiometer time coordinate (the key the L1B reader
+# returns the decoded L1B times under).
+FMATCH_RADIOMETER_TIME_COORDINATE: str = "RADIOMETER_TIME"
+
+# Environment variable naming the root of the staged ancillary tree. Mirrors the
+# PROCESSING_PATH convention used for the output dropbox.
+ANCILLARY_PATH_ENV: str = "FMATCH_ANCILLARY_PATH"
 
 
 def select_manifest_files_by_product_id(manifest: Manifest, *product_ids: DataProductIdentifier) -> list[str]:
@@ -314,6 +332,271 @@ def _collect_cloud_fraction_files(input_manifest: Manifest, config: FmatchRunner
             config.cloud_fraction_product_id.value,
         )
     return paths
+
+
+def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
+    """Read the per-footprint L1B inputs that FMATCH passes through verbatim.
+
+    Pulls every quantity the FMATCH product contract takes straight from L1B Daily:
+    the ``RADIOMETER_TIME`` coordinate plus all variables in
+    :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
+    (footprint ``latitude``/``longitude`` and the solar/viewing zenith and
+    relative-azimuth angles).
+
+    Footprints with non-finite values are dropped. The L1B geolocation and angles are
+    NaN wherever the boresight has no valid Earth intersection (e.g. the first samples
+    of a file, and any gaps), and such rows carry no usable values. We keep only
+    footprints where *every* pass-through variable is finite - a logical AND of the
+    per-variable finite masks. In practice the geolocation and the "_Surface" angles
+    share the same gaps, but AND-ing all of them is robust if they ever diverge.
+
+    Parameters
+    ----------
+    l1b_file : pathlib.Path
+        Path to a local L1B RAD-4CH NetCDF file. Remote inputs must be materialized
+        locally first (see :class:`_as_local_path`), because
+        :func:`xarray.open_dataset` seeks within the file.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Mapping keyed by FMATCH variable name: ``"RADIOMETER_TIME"`` (datetime64[ns])
+        plus each key of :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
+        (float32). All arrays are 1-D and the same length.
+
+    Raises
+    ------
+    ValueError
+        If no footprint has finite values for every pass-through variable, which would
+        leave nothing to build a product from.
+    """
+    # Open with default decoding so the CF-encoded time coordinate ("nanoseconds since
+    # 1958-01-01") is decoded into datetime64[ns] for us.
+    with xr.open_dataset(l1b_file) as l1b:
+        radiometer_time = l1b[L1B_TIME_VARIABLE].values
+        # Read every pass-through variable, keyed by its FMATCH (output) name.
+        passthrough = {fmatch_name: l1b[l1b_name].values for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items()}
+
+    # Keep only footprints where every pass-through variable is finite. Start from an
+    # all-True mask and AND in each variable's finite mask, so a NaN in ANY variable
+    # drops that footprint.
+    finite = np.ones(radiometer_time.shape, dtype=bool)
+    for values in passthrough.values():
+        finite &= np.isfinite(values)
+
+    n_finite = int(finite.sum())
+    if n_finite == 0:
+        raise ValueError(
+            f"No usable footprints in L1B file {l1b_file}: every record has a non-finite value in at least one of "
+            f"the pass-through variables ({', '.join(sorted(L1B_PASSTHROUGH_VARIABLES))})."
+        )
+    if n_finite < finite.size:
+        logger.info(
+            "Dropped %d of %d L1B footprints with non-finite geolocation/viewing angles",
+            finite.size - n_finite,
+            finite.size,
+        )
+
+    radiometer_time = radiometer_time[finite]
+    passthrough = {name: values[finite] for name, values in passthrough.items()}
+
+    # Cast to the exact dtypes the FMATCH definition declares so conformance checking
+    # passes without an auto-cast. Every pass-through variable is float32 in the
+    # definition and the decoded time is datetime64[ns]; the casts are belt-and-braces
+    # over already-correct dtypes.
+    result: dict[str, np.ndarray] = {
+        FMATCH_RADIOMETER_TIME_COORDINATE: radiometer_time.astype("datetime64[ns]"),
+    }
+    result.update({name: values.astype(np.float32) for name, values in passthrough.items()})
+    return result
+
+
+def load_l1b_camera_dataset(l1b_file: Path) -> xr.Dataset:
+    """Open an L1B Daily Camera file for segmentation into pseudo-footprints.
+
+    The camera-timescale FMATCH modes do not pass L1B columns through; they segment the
+    camera pixel grid with
+    :func:`~libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`,
+    which needs the whole dataset (geolocation grids, altitude, and viewing angles on
+    the ``CAMERA_TIME`` x ``CAMERA_PIXEL_COUNT_X`` x ``CAMERA_PIXEL_COUNT_Y`` grid).
+
+    The dataset is loaded eagerly into memory (``.load()``) and detached from the file
+    handle, so callers may use it after the source file goes away - which matters when
+    the input was materialized into a temporary directory by :class:`_as_local_path`.
+
+    Parameters
+    ----------
+    l1b_file : pathlib.Path
+        Path to a local L1B CAM NetCDF file.
+
+    Returns
+    -------
+    xarray.Dataset
+        The opened, fully-loaded L1B camera dataset.
+    """
+    with xr.open_dataset(l1b_file) as l1b:
+        return l1b.load()
+
+
+def resolve_ancillary_inputs(
+    mode: OperationalMode,
+    root: str | Path | S3Path | None = None,
+    *,
+    strict: bool = False,
+) -> dict[str, list[Path | S3Path]]:
+    """Map each reader active for ``mode`` to its staged granule files.
+
+    Footprint matching aggregates external, non-Libera datasets (ERA5 reanalysis, IGBP
+    land cover, NISE snow/ice, VIIRS products, and - post year one - CERES CLDPIX/SSF)
+    onto each radiometer footprint. Those granules are *not* Libera data products: they
+    have third-party filenames, so they cannot be selected out of a manifest the way
+    :func:`select_manifest_files_by_product_id` selects L1B inputs.
+
+    The pipeline stages ancillary granules into a directory tree with **one
+    subdirectory per reader, named by the reader's registry key**::
+
+        $FMATCH_ANCILLARY_PATH/
+            era5/           ERA5 single-level granules
+            era5_pressure/  ERA5 pressure-level granules
+            igbp/           MCD12Q1 land-cover granules
+            nise/           NISE snow/ice granules
+            viirs_brdf/     VIIRS BRDF granules
+            viirs_cloud/    VIIRS cloud granules
+            viirs_aod/      VIIRS Deep Blue aerosol granules (AOD + aerosol type)
+            cldpix/         CERES CLDPIX granules   (IMAGER-family modes)
+            ssf/            CERES SSF granules      (IMAGER-family modes)
+
+    The active reader set comes from
+    :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
+    so this automatically tracks the mode's latency rank: FMATCH-CAM looks for five
+    readers, while FMATCH-IMAGER additionally looks for ``era5_pressure``,
+    ``viirs_aod``, and the RBSP ``cldpix``/``ssf`` inputs. Using the registry keys as
+    directory names means the set of directories required for a run is *derived* from
+    the registry rather than hard-coded here.
+
+    Parameters
+    ----------
+    mode : OperationalMode
+        The FMATCH operational mode being run.
+    root : str | pathlib.Path | cloudpathlib.S3Path, optional
+        Root of the staged ancillary tree. Defaults to the ``FMATCH_ANCILLARY_PATH``
+        environment variable.
+    strict : bool, optional
+        How to treat missing inputs. When False (the default) a missing root, a
+        missing reader subdirectory, or an empty one is logged as a warning and
+        yields an empty list. When True each of those raises.
+
+        The default is False **in this milestone** because the PSF aggregation engine
+        that consumes these granules is not implemented yet
+        (``product.aggregate_external_variables`` is still a ``TODO[LIBSDC-785]``
+        stub): a runner must not fail on inputs that nothing reads. Flip this default
+        to True in the same change that implements the aggregation engine, at which
+        point a missing granule genuinely invalidates the product.
+
+    Returns
+    -------
+    dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
+        Mapping of reader registry key to the granule files staged for it, sorted by
+        name so repeated runs process files in a deterministic order. Readers with no
+        staged files map to an empty list (when ``strict`` is False).
+
+    Raises
+    ------
+    ValueError
+        If ``root`` is not given and ``FMATCH_ANCILLARY_PATH`` is unset, and ``strict``.
+    FileNotFoundError
+        If the root or a required reader subdirectory does not exist, or a required
+        subdirectory is empty, and ``strict``.
+    """
+    active_readers = ReaderRegistry.get_readers_for_mode(mode)
+
+    ancillary_root = _resolve_ancillary_root(root, mode=mode, strict=strict)
+    if ancillary_root is None:
+        return {key: [] for key in sorted(active_readers)}
+
+    resolved: dict[str, list[Path | S3Path]] = {}
+    for reader_key in sorted(active_readers):
+        resolved[reader_key] = _resolve_reader_directory(ancillary_root, reader_key, strict=strict)
+    return resolved
+
+
+def _resolve_ancillary_root(
+    root: str | Path | S3Path | None,
+    *,
+    mode: OperationalMode,
+    strict: bool,
+) -> Path | S3Path | None:
+    """Resolve and validate the ancillary tree root, or return None when absent and not strict."""
+    if root is None:
+        root = os.getenv(ANCILLARY_PATH_ENV)
+    if not root:
+        message = (
+            f"{ANCILLARY_PATH_ENV} environment variable is not set, so no ancillary inputs can be located for "
+            f"{mode.value}."
+        )
+        if strict:
+            raise ValueError(message)
+        logger.warning("%s Continuing with no ancillary inputs.", message)
+        return None
+
+    # AnyPath gives a local Path or an S3Path depending on the string, so a staged
+    # tree works equally well on local disk and in S3.
+    ancillary_root = AnyPath(root)
+    if not ancillary_root.exists():
+        message = f"Ancillary root directory does not exist: {ancillary_root}"
+        if strict:
+            raise FileNotFoundError(message)
+        logger.warning("%s Continuing with no ancillary inputs.", message)
+        return None
+    return ancillary_root
+
+
+def _resolve_reader_directory(
+    ancillary_root: Path | S3Path,
+    reader_key: str,
+    *,
+    strict: bool,
+) -> list[Path | S3Path]:
+    """List the granule files staged under one reader's subdirectory."""
+    reader_directory = ancillary_root / reader_key
+    if not reader_directory.exists():
+        message = f"No staged ancillary directory for reader '{reader_key}': {reader_directory}"
+        if strict:
+            raise FileNotFoundError(message)
+        logger.warning("%s (expected %s/%s/)", message, ANCILLARY_PATH_ENV, reader_key)
+        return []
+
+    # Sorted for determinism; skip nested directories so a reader subdirectory can
+    # hold per-day subfolders in the future without those being mistaken for granules.
+    files: list[Path | S3Path] = sorted((entry for entry in reader_directory.iterdir() if entry.is_file()), key=str)
+    if not files:
+        message = f"Ancillary directory for reader '{reader_key}' is empty: {reader_directory}"
+        if strict:
+            raise FileNotFoundError(message)
+        logger.warning("%s", message)
+    return files
+
+
+def log_ancillary_inventory(ancillary_inputs: dict[str, list[Path | S3Path]]) -> None:
+    """Log a one-line-per-reader inventory of the staged ancillary inputs.
+
+    Written so an operator can diagnose a staging problem from the task log alone,
+    without shelling into the container: every active reader appears, and the ones
+    with nothing staged are called out explicitly rather than being silently absent.
+
+    Parameters
+    ----------
+    ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
+        The mapping returned by :func:`resolve_ancillary_inputs`.
+    """
+    if not ancillary_inputs:
+        logger.warning("No ancillary readers are active for this run.")
+        return
+    for reader_key, files in sorted(ancillary_inputs.items()):
+        if files:
+            logger.info("Ancillary input '%s': %d file(s)", reader_key, len(files))
+        else:
+            logger.warning("Ancillary input '%s': 0 file(s) -- MISSING", reader_key)
 
 
 def run_footprint_matching(

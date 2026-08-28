@@ -78,7 +78,7 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
 
     Mirrors the product-definition naming rule: every reader-sourced variable is
     named `<source_key>_<spec_name>` (e.g. era5_wind_u10, igbp_surface_type). The
-    reader's instrument is no longer part of the name -- it is recorded in the
+    reader's instrument is not part of the name -- it is recorded in the
     variable's ``long_name`` instead (see
     ``test_reader_instrument_is_recorded_in_long_name``). Specs are gated by
     ``spec_active_in_mode`` -- the ``required_mode`` rank rule (e.g. the ERA5
@@ -199,9 +199,9 @@ class TestFmatchDefinitions:
 
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_reader_instrument_is_recorded_in_long_name(self, mode, definitions):
-        # The instrument token was dropped from the variable name and moved into the
-        # variable's long_name (e.g. era5_wind_u10 -> "... (ECMWF)"). Guard that every
-        # reader-sourced variable's long_name still carries its reader's INSTRUMENT, so
+        # The instrument token is carried in the variable's long_name rather than the
+        # variable name (e.g. era5_wind_u10 has long_name "... (ECMWF)"). Guard that every
+        # reader-sourced variable's long_name carries its reader's INSTRUMENT, so
         # provenance is not silently lost from the ~hundreds of hand-written long_names.
         definition = definitions[mode]
         for key, cls in _production_readers_for_mode(mode).items():
@@ -380,8 +380,8 @@ def _pseudo_footprints(n_footprints: int = 6) -> list:
     import tempfile
     from pathlib import Path as _Path
 
+    from libera_utils.footprint_matching._runner import load_l1b_camera_dataset
     from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
-    from libera_utils.footprint_matching.l1b_inputs import load_l1b_camera_dataset
     from tests.test_data.footprint_matching.fixtures import make_l1b_camera_fixture
 
     with tempfile.TemporaryDirectory() as tmpdir:

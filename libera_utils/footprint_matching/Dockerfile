@@ -114,16 +114,16 @@ ENTRYPOINT ["pytest", "-m", "not integration", "--cov=libera_utils", "--cov-repo
 #                           libera_utils/footprint_matching/ancillary.py for the full layout.
 
 FROM fmatch-base AS fmatch-imager
-ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/imager/fmatch_imager.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/fmatch_imager.py"]
 
 FROM fmatch-base AS fmatch-imager-camtime
-ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/imager_camtime/fmatch_imager_camtime.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/fmatch_imager_camtime.py"]
 
 FROM fmatch-base AS fmatch-imager-flash
-ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/imager_flash/fmatch_imager_flash.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/fmatch_imager_flash.py"]
 
 FROM fmatch-base AS fmatch-cam
-ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/cam/fmatch_cam.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/fmatch_cam.py"]
 
 FROM fmatch-base AS fmatch-cam-camtime
-ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/cam_camtime/fmatch_cam_camtime.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/footprint_matching/fmatch_cam_camtime.py"]

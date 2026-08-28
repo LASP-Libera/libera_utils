@@ -153,8 +153,8 @@ class ERA5ReaderBase(GriddedDataReader, abc.ABC):
         """Slice the cached ERA5 grid to ``bbox``.
 
         Slices the full ascending-latitude grid from :attr:`_native_grid` with an
-        inclusive bounding-box mask (matching xarray's endpoint-inclusive ``.sel``
-        slicing that this previously used).
+        inclusive bounding-box mask (endpoint-inclusive, matching xarray's ``.sel``
+        slicing semantics).
 
         Parameters
         ----------

@@ -87,13 +87,13 @@ ENTRYPOINT ["pytest", "-m", "not integration", "--cov=libera_utils", "--cov-repo
 # write outputs.
 
 FROM scene-id-base AS scene-id-imager
-ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/imager/scene_id_imager.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_imager.py"]
 
 FROM scene-id-base AS scene-id-imager-flash
-ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/imager_flash/scene_id_imager_flash.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_imager_flash.py"]
 
 FROM scene-id-base AS scene-id-cam
-ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/cam/scene_id_cam.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_cam.py"]
 
 FROM scene-id-base AS scene-id-cam-camtime
-ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/cam_camtime/scene_id_cam_camtime.py"]
+ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_cam_camtime.py"]

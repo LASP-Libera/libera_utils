@@ -6,7 +6,7 @@ footprint-matching product. It runs continuously from mission start.
 The operational input is the L1B Daily radiometer product (``RAD-4CH``): one footprint per
 ``RADIOMETER_TIME``, whose geolocation and Sun-surface-sensor viewing angles are carried through to
 the FMATCH product verbatim (see
-:func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`). The runner config
+:func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`). The runner config
 sets ``l1b_input_product_id=DataProductIdentifier.l1b_rad`` so
 :func:`libera_utils.footprint_matching._runner.select_manifest_files_by_product_id` keeps the RAD-4CH files from the
 input manifest.
@@ -34,7 +34,7 @@ RUNNER_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM,
     output_product_id=DataProductIdentifier.aux_fmatch_cam,
     l1b_input_product_id=DataProductIdentifier.l1b_rad,
-    cloud_fraction_product_id=DataProductIdentifier.l2_cf_rad_time,
+    cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam,
     log_prefix="fmatch_cam",
 )
 
