@@ -18,23 +18,23 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
-from libera_utils.scene_identification.cam.scene_id_cam import (
+from libera_utils.scene_identification.scene_id_cam import (
     PRODUCT_DEFINITION_PATH,
     collect_fmatch_cam_input_files,
     create_and_write_data_product_cam,
     run_scene_identification_cam,
 )
-from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import (
+from libera_utils.scene_identification.scene_id_cam_camtime import (
     create_and_write_data_product_cam_camtime,
 )
-from libera_utils.scene_identification.imager.scene_id_imager import (
+from libera_utils.scene_identification.scene_id_imager import (
     PRODUCT_DEFINITION_PATH as IMAGER_PRODUCT_DEFINITION_PATH,
 )
-from libera_utils.scene_identification.imager.scene_id_imager import (
+from libera_utils.scene_identification.scene_id_imager import (
     create_and_write_data_product_imager,
     run_scene_identification_imager,
 )
-from libera_utils.scene_identification.imager_flash.scene_id_imager_flash import (
+from libera_utils.scene_identification.scene_id_imager_flash import (
     create_and_write_data_product_imager_flash,
     run_scene_identification_imager_flash,
 )

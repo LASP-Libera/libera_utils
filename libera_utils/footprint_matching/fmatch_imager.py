@@ -6,7 +6,7 @@ of the radiometer-timed modes, and therefore the one with the largest active rea
 The operational input is the L1B Daily radiometer product (``RAD-4CH``): one footprint per
 ``RADIOMETER_TIME``, whose geolocation and Sun-surface-sensor viewing angles are carried through to
 the FMATCH product verbatim (see
-:func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`).
+:func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`).
 
 The product (``fmatch_imager.yml``) carries the RBSP CLDPIX/SSF cloud fields alongside the ERA5
 single-level and pressure-level reanalysis fields and the VIIRS imager fields.

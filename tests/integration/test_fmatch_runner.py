@@ -15,21 +15,21 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching.ancillary import ANCILLARY_PATH_ENV
-from libera_utils.footprint_matching.cam.fmatch_cam import RUNNER_CONFIG as CAM_CONFIG
-from libera_utils.footprint_matching.cam.fmatch_cam import algorithm as cam_algorithm
-from libera_utils.footprint_matching.cam_camtime.fmatch_cam_camtime import RUNNER_CONFIG as CAM_CAMTIME_CONFIG
-from libera_utils.footprint_matching.cam_camtime.fmatch_cam_camtime import algorithm as cam_camtime_algorithm
-from libera_utils.footprint_matching.imager.fmatch_imager import main as imager_main
-from libera_utils.footprint_matching.imager_camtime.fmatch_imager_camtime import (
+from libera_utils.footprint_matching._runner import ANCILLARY_PATH_ENV
+from libera_utils.footprint_matching.fmatch_cam import RUNNER_CONFIG as CAM_CONFIG
+from libera_utils.footprint_matching.fmatch_cam import algorithm as cam_algorithm
+from libera_utils.footprint_matching.fmatch_cam_camtime import RUNNER_CONFIG as CAM_CAMTIME_CONFIG
+from libera_utils.footprint_matching.fmatch_cam_camtime import algorithm as cam_camtime_algorithm
+from libera_utils.footprint_matching.fmatch_imager import main as imager_main
+from libera_utils.footprint_matching.fmatch_imager_camtime import (
     RUNNER_CONFIG as IMAGER_CAMTIME_CONFIG,
 )
-from libera_utils.footprint_matching.imager_flash.fmatch_imager_flash import RUNNER_CONFIG as IMAGER_FLASH_CONFIG
+from libera_utils.footprint_matching.fmatch_imager_flash import RUNNER_CONFIG as IMAGER_FLASH_CONFIG
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
-from libera_utils.scene_identification.cam.scene_id_cam import run_scene_identification_cam
+from libera_utils.scene_identification.scene_id_cam import run_scene_identification_cam
 from tests.test_data.footprint_matching.fixtures import (
     make_fmatch_product_fixture,
     make_l1b_camera_fixture,
@@ -240,7 +240,7 @@ class TestManifestInputSelection:
         """FMATCH-CAM takes an optional CF-CAM input alongside its L1B input."""
         from libera_utils.footprint_matching._runner import _collect_cloud_fraction_files
 
-        cloud_fraction = _libera_product_name(DataProductIdentifier.l2_cf_rad_time)
+        cloud_fraction = _libera_product_name(DataProductIdentifier.l2_cf_cam)
         manifest = self._manifest(_libera_product_name(DataProductIdentifier.l1b_rad), cloud_fraction)
 
         selected = _collect_cloud_fraction_files(manifest, CAM_CONFIG)
@@ -253,7 +253,7 @@ class TestManifestInputSelection:
 
         manifest = self._manifest(
             _libera_product_name(DataProductIdentifier.l1b_rad),
-            _libera_product_name(DataProductIdentifier.l2_cf_rad_time),
+            _libera_product_name(DataProductIdentifier.l2_cf_cam),
         )
 
         for config in (IMAGER_FLASH_CONFIG, IMAGER_CAMTIME_CONFIG):
@@ -311,12 +311,12 @@ class TestRunnerConfiguration:
     @pytest.mark.parametrize(
         ("config", "mode", "l1b_product", "cloud_fraction_product"),
         [
-            (CAM_CONFIG, OperationalMode.CAM, DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_rad_time),
+            (CAM_CONFIG, OperationalMode.CAM, DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_cam),
             (
                 CAM_CAMTIME_CONFIG,
                 OperationalMode.CAM_CAMTIME,
                 DataProductIdentifier.l1b_cam,
-                DataProductIdentifier.l2_cf_cam_time,
+                DataProductIdentifier.l2_cf_cam_camtime,
             ),
             (IMAGER_FLASH_CONFIG, OperationalMode.IMAGER_FLASH, DataProductIdentifier.l1b_rad, None),
             (IMAGER_CAMTIME_CONFIG, OperationalMode.IMAGER_CAMTIME, DataProductIdentifier.l1b_cam, None),

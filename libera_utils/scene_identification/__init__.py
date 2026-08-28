@@ -12,7 +12,7 @@ scene_definitions
     :class:`Scene` and :class:`SceneDefinition` — the CSV-backed classification rules (TRMM, ERBE, custom).
 
 The most commonly used symbols are re-exported here so that callers (for example the SCENE-ID product runner in
-the ``cam/`` runner) can simply do ``from libera_utils.scene_identification import FootprintData``. Code that
+the ``scene_id_cam`` runner) can simply do ``from libera_utils.scene_identification import FootprintData``. Code that
 needs the internal helpers (e.g. tests) should import them from the specific submodule.
 """
 
