@@ -441,11 +441,15 @@ class SceneDefinition:
 
     def _identify_vectorized(self, data: xr.Dataset, shape: tuple[int, ...]) -> np.ndarray:
         """Vectorized scene identification using numpy arrays."""
-        # Initialize scene_ids with zeros. Scene IDs are small non-negative codes (0 = unmatched, 1-11 = a scene), so a
-        # single unsigned byte is plenty and matches the uint8 scene_id_* variables in the product definition. This
-        # array is only ever used as a set of small labels and is widened to np.intp before being used as an index (see
+        # Initialize scene_ids with zeros (0 = unmatched, positive values = a scene). The dtype is the narrowest
+        # unsigned integer that holds this definition's largest scene_id: uint8 for the ERBE/unfiltering definitions
+        # (IDs 1-11), but the TRMM definition has ~644 scenes with IDs up to 650, which needs uint16. Sizing the array
+        # to the data avoids overflow when np.where assigns a scalar scene_id back into it -- under NumPy 2.x (NEP 50)
+        # that scalar adopts the array's dtype, so a hardcoded uint8 raises OverflowError for IDs > 255. The array is
+        # only ever used as a set of small labels and is widened to np.intp before being used as an index (see
         # _compute_property_bins), so the narrow dtype is safe.
-        scene_ids = np.zeros(shape, dtype=np.uint8)
+        max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
+        scene_ids = np.zeros(shape, dtype=np.min_scalar_type(max_scene_id))
 
         # For each scene, create a mask and assign IDs
         for scene in self.scenes:
