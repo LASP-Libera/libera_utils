@@ -1,0 +1,211 @@
+# Libera SCENE-ID-CAM product definition.
+
+attributes:
+  ProductID: SCENE-ID-CAM
+  # These are populated at write time by the runner / write_libera_data_product (they must be present but their
+  # values vary per file).
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+
+coordinates:
+  # RADIOMETER_TIME is a SHARED coordinate across the Libera radiometer-timescale products, with one value per footprint.
+  RADIOMETER_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: >-
+        Time of each radiometer footprint observation (UTC) against a base reference of the CCSDS Epoch
+        (January 1, 1958). Uniquely identifies each radiometer footprint.
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  ########################
+  # Input scene properties
+  ########################
+  igbp_surface_type:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Solar zenith angle at the footprint surface
+      units: degrees
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Instrument viewing zenith angle at the footprint surface
+      units: degrees
+  # Relative azimuth is referenced to the Sun: 0 degrees means the viewing azimuth is aligned with the Sun's
+  # azimuth (the Sun is the 0-degree reference).
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface (0 degrees = sun aligned)
+      units: degrees
+
+  ##########################
+  # Derived scene properties
+  ##########################
+  surface_type:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Total cloud fraction over the footprint (L2-CF-CAM data product values scaled to percent)
+      units: percent
+
+  ############
+  # Scene IDs
+  ############
+  scene_id_erbe:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: ERBE-like scene classification ID (0 = unmatched, 1-11 = scene)
+  scene_id_unfiltering:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
+
+  ##############################
+  # ERBE scene property-bin bounds
+  ##############################
+  scene_bin_erbe_cloud_fraction_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched ERBE scene
+      units: percent
+  scene_bin_erbe_cloud_fraction_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched ERBE scene
+      units: percent
+  scene_bin_erbe_surface_type_min:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_surface_type_max:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_solar_zenith_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_solar_zenith_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+
+  #####################################
+  # Unfiltering scene property-bin bounds
+  #####################################
+  scene_bin_unfiltering_cloud_fraction_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched unfiltering scene
+      units: percent
+  scene_bin_unfiltering_cloud_fraction_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched unfiltering scene
+      units: percent
+  scene_bin_unfiltering_surface_type_min:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_surface_type_max:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_solar_zenith_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_solar_zenith_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  Quality_Flag:
+    dtype: uint32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Bit flags indicating the quality of the data
+      value_meaning: TBD. Example file from PREFIRE has this information laid out per-bit using [b0], [b1], etc.

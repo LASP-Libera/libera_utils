@@ -1,0 +1,303 @@
+# Libera SCENE-ID-CAM-CAMTIME product definition.
+attributes:
+  ProductID: SCENE-ID-CAM-CAMTIME
+  # These are populated at write time by the runner / write_libera_data_product (they must be present but their
+  # values vary per file).
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+
+coordinates:
+  # FOOTPRINT is the record axis: one entry per classified image subsection (pseudo-footprint). A record is identified
+  # by the composite (CAMERA_TIME, camera_pixel_x, camera_pixel_y); the FOOTPRINT index is the positional unique handle.
+  #
+  # CAMERA_TIME is a NON-UNIQUE auxiliary coordinate on FOOTPRINT: one 2048x2048 image = one camera time, and the image
+  # is segmented into many (possibly overlapping) subsections that all share that time, so CAMERA_TIME repeats across
+  # the records of a given image. It is a SHARED coordinate across the Libera camera-timescale products: for a given
+  # date, FMATCH-CAM-CAMTIME and SCENE-ID-CAM-CAMTIME carry the *identical* CAMERA_TIME values so records align 1:1.
+  # Records are always emitted in CAMERA_TIME order. The values are absolute datetimes; the encoding re-expresses them
+  # as int64 "nanoseconds since 1958-01-01" (the CCSDS epoch used across Libera products).
+  CAMERA_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: >-
+        Camera image acquisition time (UTC) against a base reference of the CCSDS Epoch (January 1, 1958) of the full
+        image this subsection was segmented from. NOT unique across records: all subsections of one image share it.
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+  # Camera pixel-index ranges identifying each subsection's source pixels in the L1B Daily Camera grid. Together with
+  # CAMERA_TIME these coordinates identify the data by camera time and pixel location. Each range is an inclusive
+  # (min, max) pair over the CAMERA_PIXEL_BOUNDS axis: index 0 is the minimum pixel index and index 1 is the maximum,
+  # both inclusive. Subsections may overlap in pixel space. Passed through verbatim from FMATCH-CAM-CAMTIME.
+  camera_pixel_x:
+    dtype: int32
+    dimensions: ["FOOTPRINT", "CAMERA_PIXEL_BOUNDS"]
+    attributes:
+      long_name: >-
+        Inclusive (min, max) camera pixel-column index range of the pseudo-footprint block along
+        CAMERA_PIXEL_COUNT_X
+  camera_pixel_y:
+    dtype: int32
+    dimensions: ["FOOTPRINT", "CAMERA_PIXEL_BOUNDS"]
+    attributes:
+      long_name: >-
+        Inclusive (min, max) camera pixel-row index range of the pseudo-footprint block along
+        CAMERA_PIXEL_COUNT_Y
+
+variables:
+  ########################
+  # Input scene properties
+  ########################
+  igbp_surface_type:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Solar zenith angle at the footprint surface
+      units: degrees
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Instrument viewing zenith angle at the footprint surface
+      units: degrees
+  # Relative azimuth is referenced to the Sun: 0 degrees means the viewing azimuth is aligned with the Sun's
+  # azimuth (the Sun is the 0-degree reference).
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface (0 degrees = sun aligned)
+      units: degrees
+
+  ##########################
+  # Derived scene properties
+  ##########################
+  surface_type:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Total cloud fraction over the footprint (L2-CF-CAM data product values scaled to percent)
+      units: percent
+
+  ############
+  # Scene IDs
+  ############
+  scene_id_erbe:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: ERBE-like scene classification ID (0 = unmatched, 1-11 = scene)
+  scene_id_unfiltering:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
+
+  ##############################
+  # ERBE scene property-bin bounds
+  ##############################
+  scene_bin_erbe_cloud_fraction_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched ERBE scene
+      units: percent
+  scene_bin_erbe_cloud_fraction_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched ERBE scene
+      units: percent
+  scene_bin_erbe_surface_type_min:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_surface_type_max:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched ERBE scene
+  scene_bin_erbe_solar_zenith_angle_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_solar_zenith_angle_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_viewing_zenith_angle_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+  scene_bin_erbe_relative_azimuth_angle_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched ERBE scene
+      units: degrees
+
+  #####################################
+  # Unfiltering scene property-bin bounds
+  #####################################
+  scene_bin_unfiltering_cloud_fraction_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched unfiltering scene
+      units: percent
+  scene_bin_unfiltering_cloud_fraction_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched unfiltering scene
+      units: percent
+  scene_bin_unfiltering_surface_type_min:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_surface_type_max:
+    dtype: uint8
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched unfiltering scene
+  scene_bin_unfiltering_solar_zenith_angle_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_solar_zenith_angle_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_viewing_zenith_angle_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  scene_bin_unfiltering_relative_azimuth_angle_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
+      units: degrees
+  Quality_Flag:
+    dtype: uint32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Bit flags indicating the quality of the data
+      value_meaning: TBD. Example file from PREFIRE has this information laid out per-bit using [b0], [b1], etc.
+
+  # ===========================================================================================================
+  # Footprint identifiers (passed straight through from FMATCH-CAM-CAMTIME)
+  # ===========================================================================================================
+  # These variables are NOT produced by scene identification; they are copied verbatim from the FMATCH-CAM-CAMTIME
+  # input so a consumer can trace each classified subsection back to its source. They are unique to the
+  # camera-timescale product (SCENE-ID-CAM has no equivalent). Definitions mirror fmatch_cam_camtime.yml exactly
+  # (dtype + attributes) so the two products agree bit-for-bit, and all hang on the FOOTPRINT record axis.
+
+  # --- Boresight geolocation -----------------------------------------------------------------------------------------
+  # Center-pixel geolocation of the pseudo-footprint (the boresight stand-in). Passed through from the L1B Daily Camera
+  # geolocation via FMATCH-CAM-CAMTIME.
+  latitude:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+  longitude:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+  altitude:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      # Center-pixel geolocated SURFACE height (terrain elevation above the WGS84 ellipsoid at the footprint
+      # boresight) -- NOT the ~835 km spacecraft altitude.
+      long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
+      units: meters
+
+  # --- PSF bounding box ----------------------------------------------------------------------------------------------
+  # Geographic extent of the pseudo-footprint's point-spread-function bounding box, passed through from
+  # FMATCH-CAM-CAMTIME. Together these four bounds describe the ground footprint the scene was classified over.
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box
+      units: degrees_east
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["FOOTPRINT"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box
+      units: degrees_east
+
+  # --- Camera pixel-block provenance ---------------------------------------------------------------------------------
+  # Each pseudo-footprint is a contiguous block of L1B camera pixels (camera_segmentation.PseudoFootprint). The
+  # indices that trace a subsection back to its source pixels in the L1B Daily Camera grid (dimensions
+  # CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y) are the camera_pixel_x / camera_pixel_y inclusive (min, max) range
+  # coordinates declared above (on FOOTPRINT); there are no camera pixel variables in this section.
