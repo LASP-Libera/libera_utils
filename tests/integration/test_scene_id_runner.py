@@ -46,6 +46,7 @@ class TestSceneIdCamWrite:
 
     def test_write_data_product_is_conformant(self, test_scene_id, tmp_path):
         """A full run + write succeeds under strict conformance and re-opens."""
+        # Targets the CAM run + strict write; asserts the output exists, re-opens, and keeps provenance attrs.
         input_path = test_scene_id / SSF_INPUT_NAME
         footprint_data = run_scene_identification_cam(input_path)
 
@@ -61,6 +62,7 @@ class TestSceneIdCamWrite:
 
     def test_written_product_has_no_undeclared_variables(self, test_scene_id, tmp_path):
         """Intermediate FootprintData inputs must not leak into the written product."""
+        # Targets that only declared vars are written; asserts undeclared list is empty and intermediate inputs gone.
         input_path = test_scene_id / SSF_INPUT_NAME
         footprint_data = run_scene_identification_cam(input_path)
         output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
@@ -91,6 +93,7 @@ class TestCollectInputFiles:
 
     def test_placeholder_mode_keeps_non_libera_files(self):
         """The CAM runner runs in placeholder mode: keep the CERES SSF (non-Libera) file, skip Libera products."""
+        # Targets placeholder-mode selection; asserts collect_ssf_input_files keeps the SSF path, drops the Libera one.
         libera_name = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
         manifest = self._manifest(SSF_INPUT_NAME, libera_name)
 
@@ -100,6 +103,7 @@ class TestCollectInputFiles:
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
+        # Targets product-mode selection; asserts collect_input_files returns only the path matching the product id.
         from libera_utils.scene_identification._runner import collect_input_files
 
         wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
@@ -115,11 +119,7 @@ class TestToTimeProduct:
     """FootprintData.to_time_product prepares the dataset for writing on its time axis."""
 
     def test_promotes_time_and_adds_quality_flag(self, test_scene_id):
-        """to_time_product promotes the named time variable to a coordinate and adds a Quality_Flag.
-
-        Runs the real CAM runner to get a populated FootprintData, converts it on RADIOMETER_TIME,
-        and asserts the time variable is now a coordinate and a Quality_Flag data variable was added.
-        """
+        # Targets to_time_product; asserts the named time var becomes a coordinate and a Quality_Flag data var is added.
         footprint_data = run_scene_identification_cam(test_scene_id / SSF_INPUT_NAME)
         product = footprint_data.to_time_product("RADIOMETER_TIME")
 
@@ -127,11 +127,7 @@ class TestToTimeProduct:
         assert "Quality_Flag" in product.data_vars
 
     def test_missing_time_variable_raises(self):
-        """to_time_product raises when the requested time variable is absent from the dataset.
-
-        Builds a FootprintData whose dataset has the RADIOMETER_TIME dimension but no RADIOMETER_TIME
-        variable, then asserts to_time_product raises ValueError naming the missing variable.
-        """
+        # Targets to_time_product's guard; asserts a missing time variable raises ValueError naming that variable.
         footprint_data = FootprintData(xr.Dataset({"cloud_fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
         with pytest.raises(ValueError, match="RADIOMETER_TIME"):
             footprint_data.to_time_product("RADIOMETER_TIME")
@@ -141,12 +137,12 @@ class TestFmatchReaders:
     """The operational FMATCH readers are not implemented yet."""
 
     def test_from_fmatch_cam_not_implemented(self, tmp_path):
-        """from_fmatch_cam is a not-yet-implemented stub: calling it raises NotImplementedError."""
+        # Targets the unimplemented CAM FMATCH reader; asserts from_fmatch_cam raises NotImplementedError.
         with pytest.raises(NotImplementedError):
             FootprintData.from_fmatch_cam(tmp_path / "fmatch.nc")
 
     def test_from_fmatch_cam_camtime_not_implemented(self, tmp_path):
-        """from_fmatch_cam_camtime is a not-yet-implemented stub: calling it raises NotImplementedError."""
+        # Targets the unimplemented CAM-CAMTIME reader; asserts from_fmatch_cam_camtime raises NotImplementedError.
         with pytest.raises(NotImplementedError):
             FootprintData.from_fmatch_cam_camtime(tmp_path / "fmatch.nc")
 
@@ -198,6 +194,7 @@ class TestSceneIdCamCamtimeWrite:
 
     def test_write_data_product_is_conformant_with_camera_pixel_bounds(self, tmp_path):
         """A full classify + strict write succeeds; data lands on the (CAMERA_TIME, FOOTPRINT) grid."""
+        # Targets the CAM-CAMTIME strict write; asserts data lands on the 2-D grid with int32 camera_pixel bounds.
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
 
@@ -223,6 +220,7 @@ class TestSceneIdCamCamtimeWrite:
 
     def test_write_drops_the_replaced_pixel_variables(self, tmp_path):
         """The retired center_pixel / start-stop / (min,max)-pair variables must not appear in the written product."""
+        # Targets the write's variable pruning; asserts retired center_pixel and start/stop pixel vars are absent.
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)

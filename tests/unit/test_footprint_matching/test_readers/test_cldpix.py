@@ -33,9 +33,11 @@ def _finite(data: np.ndarray, name: str) -> np.ndarray:
 
 class TestCLDPIXReaderClassAttributes:
     def test_reader_key(self):
+        # Targets the reader's registry key; asserts READER_KEY equals the expected "cldpix".
         assert CLDPIXReader.READER_KEY == "cldpix"
 
     def test_resolution_km(self):
+        # Targets the declared native resolution; asserts RESOLUTION_KM equals the imager-pixel 1.0 km value.
         assert CLDPIXReader.RESOLUTION_KM == 1.0
 
     def test_expected_variable_names(self):
@@ -56,6 +58,7 @@ class TestCLDPIXReaderClassAttributes:
 
 class TestCLDPIXReaderLoadSpatialRegion:
     def test_returns_3d_array(self, tmp_path):
+        # Targets load output shape/dtype; asserts a 3-D float32 array with one plane per declared VARIABLE.
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert data.ndim == 3
@@ -63,16 +66,20 @@ class TestCLDPIXReaderLoadSpatialRegion:
         assert data.dtype == np.float32
 
     def test_longitude_normalization_places_points(self, tmp_path):
+        # Targets 0..360 lon normalization; asserts pixels at 345° land in the −15° bbox as finite values.
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.isfinite(data).any()
 
     def test_points_absent_from_unrelated_tile(self, tmp_path):
+        # Targets spatial filtering; asserts a bbox away from the pixel cluster yields no finite values.
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(BoundingBox(39.0, 41.0, 14.0, 16.0))
         assert not np.isfinite(data).any()
 
     def test_continuous_values(self, tmp_path):
+        # Targets continuous-field scaling/aggregation; asserts optical depth, water path, and eff. temp match
+        # the fixture constants after weighted_mean rasterization.
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.allclose(_finite(data, "cloud_optical_depth"), 4.0, atol=1e-4)
@@ -99,6 +106,7 @@ class TestCLDPIXReaderLoadSpatialRegion:
         assert np.allclose(radius, 10.0, atol=1e-3)
 
     def test_categorical_values(self, tmp_path):
+        # Targets categorical-field handling; asserts cloud_mask and cloud_particle_phase retain the fixture's 1.0.
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.allclose(_finite(data, "cloud_mask"), 1.0)
@@ -138,6 +146,7 @@ class TestCLDPIXReaderLoadSpatialRegion:
 
 class TestCLDPIXReaderLoadTile:
     def test_load_tile_source_and_timestamp(self, tmp_path):
+        # Targets load_tile output; asserts it returns a GridTile tagged source "cldpix" with no timestamp_source.
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         key = TileKey("cldpix", int((40.0 + 90.0) // 2), int((-15.0 + 180.0) // 2))
         tile = reader.load_tile(key)
