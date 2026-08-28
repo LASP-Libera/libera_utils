@@ -41,21 +41,27 @@ def _make_synthetic_igbp_data():
 
 class TestIGBPReaderClassAttributes:
     def test_reader_key(self):
+        # Targets the reader's registry key; asserts READER_KEY equals the expected "igbp".
         assert IGBPReader.READER_KEY == "igbp"
 
     def test_resolution_km(self):
+        # Targets the declared source resolution; asserts RESOLUTION_KM is 1.0 km (MCD12Q1).
         assert IGBPReader.RESOLUTION_KM == 1.0
 
     def test_variables_has_one_entry(self):
+        # Targets the reader's variable declaration; asserts VARIABLES holds exactly one entry.
         assert len(IGBPReader.VARIABLES) == 1
 
     def test_variable_name_is_surface_type(self):
+        # Targets the single variable's identity; asserts its name is "surface_type".
         assert IGBPReader.VARIABLES[0].name == "surface_type"
 
     def test_n_categories_is_20(self):
+        # Targets the categorical variable's class count; asserts n_categories is 20 (IGBP classes).
         assert IGBPReader.VARIABLES[0].n_categories == 20
 
     def test_output_cell_deg(self):
+        # Targets the output grid cell size; asserts OUTPUT_CELL_DEG is 0.05 degrees.
         assert IGBPReader.OUTPUT_CELL_DEG == 0.05
 
 
@@ -133,6 +139,7 @@ class TestIGBPReaderLoadTile:
             lambda **kwargs: (data, lats, lons),
         )
 
+        # Targets the output dtype contract; asserts the rasterized subset is float32.
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
         bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
         data_sub, _, _ = reader._load_spatial_region(bbox)
@@ -141,6 +148,8 @@ class TestIGBPReaderLoadTile:
 
     def test_load_tile_via_base_returns_grid_tile(self, tmp_path, monkeypatch):
         """Full end-to-end test through load_tile() template method."""
+        # Targets the base load_tile() template wrapping _load_spatial_region; asserts it returns a
+        # GridTile tagged source="igbp" with no timestamp_source (IGBP is static, non-temporal).
         from libera_utils.footprint_matching.types import GridTile
 
         data, lats, lons = _make_synthetic_igbp_data()

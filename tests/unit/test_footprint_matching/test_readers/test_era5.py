@@ -39,15 +39,19 @@ _IMAGER_SINGLE_LEVEL_SPEC_NAMES = (
 
 class TestERA5ReaderClassAttributes:
     def test_reader_key(self):
+        # Targets the reader's registry key; asserts READER_KEY equals the expected "era5".
         assert ERA5Reader.READER_KEY == "era5"
 
     def test_resolution_km(self):
+        # Targets the reader's grid resolution attribute; asserts RESOLUTION_KM equals 25.0 km.
         assert ERA5Reader.RESOLUTION_KM == 25.0
 
     def test_variables_has_seven_entries(self):
+        # Targets the VARIABLES tuple size; asserts the reader exposes exactly 7 single-level fields.
         assert len(ERA5Reader.VARIABLES) == 7
 
     def test_variable_names(self):
+        # Targets the VARIABLES field names/order; asserts they are the two winds then the five IMAGER fields.
         names = [v.name for v in ERA5Reader.VARIABLES]
         assert names == ["wind_u10", "wind_v10", *_IMAGER_SINGLE_LEVEL_SPEC_NAMES]
 
@@ -57,22 +61,25 @@ class TestERA5ReaderClassAttributes:
         assert [v.name for v in ERA5Reader.VARIABLES] == [name for name, _ in _ERA5_SINGLE_LEVEL_VARIABLES]
 
     def test_wind_variables_are_unrestricted(self):
+        # Targets the two wind variables' mode gating; asserts the first two VARIABLES require CAM mode.
         for v in ERA5Reader.VARIABLES[:2]:
             assert v.required_mode == OperationalMode.CAM
 
     def test_imager_single_level_variables_are_mode_gated(self):
-        # The additional single-level fields exist for the FMATCH-IMAGER product:
-        # mode-gated to IMAGER.
+        # The additional single-level fields exist for the FMATCH-IMAGER product; asserts each of
+        # VARIABLES[2:] has required_mode == IMAGER (mode-gated to IMAGER).
         for v in ERA5Reader.VARIABLES[2:]:
             assert v.required_mode == OperationalMode.IMAGER
 
     def test_variables_have_no_categories(self):
+        # Targets that every field is continuous, not categorical; asserts each VARIABLES entry has n_categories None.
         for v in ERA5Reader.VARIABLES:
             assert v.n_categories is None
 
 
 class TestERA5ReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
+        # Targets _load_spatial_region output shape; asserts a 3D array whose axis 0 holds the 7 variable layers.
         fixture_path = make_era5_netcdf_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
         )
@@ -97,8 +104,8 @@ class TestERA5ReaderLoadSpatialRegion:
             assert np.allclose(data[i], ERA5_SINGLE_LEVEL_FILLS[nc_name], rtol=1e-6), nc_name
 
     def test_lats_are_ascending_order(self, tmp_path):
-        # The fixture stores lats in DESCENDING order (ERA5 convention);
-        # the reader must flip them to ASCENDING order on output.
+        # The fixture stores lats in DESCENDING order (ERA5 convention); asserts the reader flips them
+        # so that np.diff(lats) >= 0 (ascending) on output.
         fixture_path = make_era5_netcdf_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
         )
@@ -108,6 +115,7 @@ class TestERA5ReaderLoadSpatialRegion:
         assert np.all(np.diff(lats) >= 0), f"Lats should be ascending but got: {lats}"
 
     def test_data_dtype_is_float32(self, tmp_path):
+        # Targets the returned data array dtype; asserts _load_spatial_region yields float32 values.
         fixture_path = make_era5_netcdf_fixture(tmp_path, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
@@ -115,6 +123,7 @@ class TestERA5ReaderLoadSpatialRegion:
         assert data.dtype == np.float32
 
     def test_lats_dtype_is_float64(self, tmp_path):
+        # Targets the returned coordinate dtypes; asserts both lats and lons arrays are float64.
         fixture_path = make_era5_netcdf_fixture(tmp_path, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
@@ -123,6 +132,7 @@ class TestERA5ReaderLoadSpatialRegion:
         assert lons.dtype == np.float64
 
     def test_partial_bbox_subsets_grid(self, tmp_path):
+        # Targets bbox spatial subsetting; asserts a sub-range request returns only lats within that range.
         # Fixture covers lat 0–2, lon 10–12 with 8 points in each axis.
         # Request only the lower half of the lat range.
         fixture_path = make_era5_netcdf_fixture(
@@ -138,6 +148,7 @@ class TestERA5ReaderLoadSpatialRegion:
 
 class TestERA5ReaderLoadTile:
     def test_load_tile_returns_grid_tile(self, tmp_path):
+        # Targets load_tile's return type; asserts it returns a GridTile for the given TileKey.
         fixture_path = make_era5_netcdf_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
         )
@@ -148,6 +159,7 @@ class TestERA5ReaderLoadTile:
         assert isinstance(tile, GridTile)
 
     def test_load_tile_source_is_era5(self, tmp_path):
+        # Targets the tile's source label; asserts load_tile stamps tile.source with "era5".
         fixture_path = make_era5_netcdf_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
         )
@@ -157,7 +169,7 @@ class TestERA5ReaderLoadTile:
         assert tile.source == "era5"
 
     def test_load_tile_timestamp_source_is_none(self, tmp_path):
-        # ERA5 is a static reanalysis product; no instrument timestamp.
+        # ERA5 is a static reanalysis product; asserts load_tile leaves tile.timestamp_source None (no timestamp).
         fixture_path = make_era5_netcdf_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
         )
@@ -175,6 +187,7 @@ class TestERA5ReaderValidTimeDimension:
     """
 
     def test_valid_time_dimension_is_dropped(self, tmp_path):
+        # Targets dropping a 'valid_time' dimension; asserts output stays 3D (time dim collapsed), not 4D.
         from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
 
         fixture_path = make_era5_valid_time_fixture(
@@ -188,6 +201,7 @@ class TestERA5ReaderValidTimeDimension:
         assert data.shape[0] == 7
 
     def test_valid_time_values_correct(self, tmp_path):
+        # Targets value integrity after collapsing valid_time; asserts u10/v10 layers equal the fixture fills.
         from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
 
         fixture_path = make_era5_valid_time_fixture(
@@ -212,6 +226,7 @@ class TestERA5ReaderMissingVariables:
     """A partial CDS download (missing required variables) must fail loudly."""
 
     def test_file_missing_variables_raises_key_error(self, tmp_path):
+        # Targets loud failure on incomplete files; asserts _load_spatial_region raises KeyError("missing variable").
         import pytest
         import xarray as xr
 

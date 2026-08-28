@@ -23,11 +23,15 @@ from libera_utils.footprint_matching.readers._swath import (
 
 class TestNormalizeLongitude:
     def test_0_360_maps_to_minus180_180(self):
+        # Targets normalize_longitude wrapping [0, 360) into [-180, 180); asserts each input maps to
+        # its expected signed longitude (e.g. 270 -> -90, 350 -> -10).
         lon = np.array([0.0, 90.0, 180.0, 270.0, 350.0, 359.9])
         out = normalize_longitude(lon)
         assert np.allclose(out, [0.0, 90.0, -180.0, -90.0, -10.0, -0.1], atol=1e-6)
 
     def test_already_in_range_is_unchanged(self):
+        # Targets normalize_longitude idempotence for in-range input; asserts values already in
+        # [-180, 180) pass through unchanged.
         lon = np.array([-179.0, -10.0, 0.0, 45.0, 179.0])
         out = normalize_longitude(lon)
         assert np.allclose(out, lon, atol=1e-6)
@@ -35,12 +39,16 @@ class TestNormalizeLongitude:
 
 class TestApplyFillAndValidRange:
     def test_fill_value_becomes_nan(self):
+        # Targets fill-value masking in apply_fill_and_valid_range; asserts the -999 fill becomes NaN
+        # while the remaining valid values are preserved.
         raw = np.array([1.0, 2.0, -999.0, 3.0])
         out = apply_fill_and_valid_range(raw, fill_value=-999.0)
         assert np.isnan(out[2])
         assert np.allclose(out[[0, 1, 3]], [1.0, 2.0, 3.0])
 
     def test_out_of_valid_range_becomes_nan(self):
+        # Targets valid_range masking; asserts values below/above the (0, 5) range become NaN while
+        # the inclusive endpoints are kept.
         raw = np.array([-1.0, 0.0, 5.0, 6.0])
         out = apply_fill_and_valid_range(raw, valid_range=(0.0, 5.0))
         assert np.isnan(out[0])
@@ -57,11 +65,15 @@ class TestApplyFillAndValidRange:
         assert np.isnan(out[3])
 
     def test_integer_fill_matches_exactly(self):
+        # Targets exact integer fill matching (no float tolerance); asserts the int8 fill 127 becomes
+        # NaN in the float output.
         raw = np.array([1, 2, 127, 3], dtype=np.int8)
         out = apply_fill_and_valid_range(raw, fill_value=127)
         assert np.isnan(out[2])
 
     def test_masked_array_input(self):
+        # Targets numpy MaskedArray handling; asserts masked elements become NaN while unmasked
+        # values pass through.
         raw = np.ma.array([1.0, 2.0, 3.0], mask=[False, True, False])
         out = apply_fill_and_valid_range(raw)
         assert np.isnan(out[1])
@@ -73,6 +85,8 @@ class TestRasterizePointsToGrid:
         return (0.0, 2.0, 0.0, 2.0)
 
     def test_output_grid_shape_and_coords(self):
+        # Targets the rasterizer's output layout; asserts the (n_agg, n_lat, n_lon) shape, float32
+        # dtype, and cell-centre lat/lon axes derived from the bbox and cell size.
         lats = np.array([0.5, 1.5])
         lons = np.array([0.5, 1.5])
         vals = np.array([[1.0, 2.0]])
@@ -175,6 +189,8 @@ class TestRasterizePointsToGrid:
         assert data[0, 0, 0] == pytest.approx(5.0)
 
     def test_nan_values_are_ignored(self):
+        # Targets NaN handling in mean aggregation; asserts a NaN point is skipped so the cell equals
+        # the single remaining valid value (20.0).
         lats = np.array([0.25, 0.75])
         lons = np.array([0.25, 0.75])
         vals = np.array([[np.nan, 20.0]])
@@ -184,6 +200,8 @@ class TestRasterizePointsToGrid:
         assert data[0, 0, 0] == pytest.approx(20.0)
 
     def test_points_outside_bbox_excluded(self):
+        # Targets spatial filtering of out-of-bbox points; asserts the in-bbox point sets its cell to
+        # 1.0 while the far-away value 999 never appears in the grid.
         lats = np.array([0.5, 50.0])
         lons = np.array([0.5, 50.0])
         vals = np.array([[1.0, 999.0]])
@@ -194,6 +212,8 @@ class TestRasterizePointsToGrid:
         assert not np.any(data == 999.0)
 
     def test_all_points_outside_returns_all_nan(self):
+        # Targets the fully-uncovered case; asserts the grid keeps its full (1, 2, 2) shape but every
+        # cell is NaN when no points fall inside the bbox.
         lats = np.array([50.0, 60.0])
         lons = np.array([50.0, 60.0])
         vals = np.array([[1.0, 2.0]])
@@ -204,6 +224,8 @@ class TestRasterizePointsToGrid:
         assert np.all(np.isnan(data))
 
     def test_unknown_aggregation_raises(self):
+        # Targets validation of the aggregations argument; asserts an unrecognized name raises
+        # ValueError matching "Unknown aggregation".
         lats = np.array([0.5])
         lons = np.array([0.5])
         vals = np.array([[1.0]])

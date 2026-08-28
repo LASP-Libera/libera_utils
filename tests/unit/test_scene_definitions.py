@@ -251,6 +251,8 @@ class TestViewingGeometryClassificationVariables:
     )
     def test_geometry_angles_are_required_and_classification_variables(self, config_key):
         """Every standard definition must require and classify on all three geometry angles."""
+        # What: each geometry angle is both a required input and a classification variable in every standard definition.
+        # How: assert every angle name appears in scene_def.required_columns and scene_def.classification_variables.
         scene_def = SceneDefinition(pathlib.Path(config.get(config_key)))
         for variable in self.GEOMETRY_BINS:
             assert variable in scene_def.required_columns
@@ -261,6 +263,8 @@ class TestViewingGeometryClassificationVariables:
     )
     def test_every_scene_uses_full_range_geometry_placeholder_bins(self, config_key):
         """Each scene's geometry bins are the full physical range placeholder (no special-casing needed)."""
+        # What: every scene reuses the shared full-range geometry placeholder bins (no per-scene geometry subdivision).
+        # How: for each scene and angle, assert scene.get_bin_bounds returns the expected full-range bounds.
         scene_def = SceneDefinition(pathlib.Path(config.get(config_key)))
         for scene in scene_def.scenes:
             for variable, expected_bounds in self.GEOMETRY_BINS.items():
@@ -268,6 +272,8 @@ class TestViewingGeometryClassificationVariables:
 
     def test_geometry_bins_reported_by_compute_property_bins(self):
         """_compute_property_bins emits bounded geometry bins for matched footprints and NaN for unmatched."""
+        # What: _compute_property_bins reports per-footprint geometry min/max bin bounds.
+        # How: pass a matched and an unmatched scene id, assert matched gets placeholder bounds and unmatched gets NaN.
         scene_def = SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION")))
         scene_ids = np.array([1, 0])  # one matched scene, one unmatched footprint
         bins = scene_def._compute_property_bins(scene_ids)
@@ -334,6 +340,8 @@ class TestPropertyBins:
 
     def test_continuous_bin_bounds_are_float32(self, scene_definition):
         """Continuous (non-categorical) bin bounds are stored as compact float32, not float64."""
+        # What: continuous bin bounds are stored as compact float32 (not float64).
+        # How: compute the bins and assert the reported cloud_fraction/optical_depth bounds carry np.float32 dtype.
         bins = scene_definition._compute_property_bins(np.array([1, 4, 0]))
         # cloud_fraction / optical_depth are continuous, so they use the default float32 storage dtype.
         assert bins["scene_bin_bins_cloud_fraction_min"].dtype == np.float32
@@ -346,6 +354,8 @@ class TestPropertyBins:
         storage. There is no fill value: an unmatched footprint (scene_id 0) simply gets 0 for its bounds, and
         scene_id == 0 is the authoritative flag that the footprint was not classified.
         """
+        # What: categorical surface_type bin bounds are stored as uint8, and unmatched footprints get 0 (no fill value).
+        # How: assert both bound arrays have uint8 dtype and match expected values, with 0 for the scene_id 0 footprint.
         # Two contiguous bins covering surface_type [0, 6) so the SceneDefinition coverage check passes.
         csv_content = "scene_id,surface_type_min,surface_type_max\n1,0,3\n2,3,6\n"
         csv_file = tmp_path / "surface.csv"
@@ -377,6 +387,8 @@ class TestIdentifyAndUpdateMultidimPassthrough:
         variables. Deriving the working shape from all dataset dimensions (instead of the footprint axis) used to
         raise a broadcast error here.
         """
+        # What: a 2-D passthrough variable must not break per-footprint (1-D) classification.
+        # How: run identify_and_update, assert scene_id stays 1-D with correct IDs while the 2-D var is carried through.
         csv_content = "scene_id,cloud_fraction_min,cloud_fraction_max\n1,0.0,50.0\n2,50.0,100.0\n"
         csv_file = tmp_path / "single.csv"
         csv_file.write_text(csv_content)
@@ -429,6 +441,8 @@ class TestWideSceneDefinitionDtype:
 
     def test_scene_ids_above_uint8_max_do_not_overflow(self, tmp_path):
         """A definition with more than 255 scenes classifies without overflowing and widens to uint16."""
+        # What: a >255-scene definition classifies without overflow, widening the scene-id label array to uint16.
+        # How: classify footprints landing in bins with IDs 1/256/260 and assert the result dtype is uint16 with those IDs.
         scene_definition = self._contiguous_definition(tmp_path, num_scenes=260)
 
         # Footprints landing in the first bin, the bin whose ID is exactly 256 (one past uint8's max), and the last bin.
@@ -444,6 +458,8 @@ class TestWideSceneDefinitionDtype:
 
     def test_small_definition_stays_uint8(self, tmp_path):
         """A definition that fits in a byte keeps the compact uint8 label dtype (efficient storage is preserved)."""
+        # What: a definition whose IDs fit in a byte keeps the compact uint8 label dtype.
+        # How: classify footprints against a 3-scene definition and assert the scene_id dtype is uint8 with expected IDs.
         scene_definition = self._contiguous_definition(tmp_path, num_scenes=3)
 
         data = xr.Dataset({"cloud_fraction": ("footprint", np.array([0.5, 1.5, 2.5], dtype=np.float32))})
