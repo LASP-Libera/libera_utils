@@ -38,7 +38,7 @@ if TYPE_CHECKING:
 # Per-product reader membership
 # ---------------------------------------------------------------------------
 # One fully-enumerated reader set per shipped FMATCH product -- the single source of
-# truth for *which readers contribute to which product*. Readers no longer self-gate
+# truth for *which readers contribute to which product*. Readers do not self-gate
 # by mode; membership is declared here.
 #
 # The structure deliberately mirrors ``product.FMATCH_DEFINITION_FILENAMES``: a map
