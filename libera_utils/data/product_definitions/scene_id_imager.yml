@@ -1,14 +1,24 @@
-# Libera SCENE-ID-CAM product definition.
+# Libera SCENE-ID-IMAGER product definition.
+#
+# Fed by the FMATCH-IMAGER product (see FootprintData.from_fmatch_imager). Unlike SCENE-ID-CAM this product runs
+# the full TRMM classification in addition to ERBE and unfiltering, because the FMATCH-IMAGER carries the extra
+# TRMM inputs: surface wind (from ERA5 winds), cloud phase (from RBSP CLDPIX), and cloud optical depth (from RBSP
+# CLDPIX).
 
 attributes:
-  ProductID: SCENE-ID-CAM
-  # These are populated at write time by the runner / write_libera_data_product (they must be present but their
-  # values vary per file).
+  ProductID: SCENE-ID-IMAGER
+  # Populated at write time by the runner / write_libera_data_product (present but per-file), matching the other
+  # Libera product definitions.
   algorithm_version: null
-  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+  # Provenance attribute set at write time by the shared SCENE-ID runner (create_and_write_data_product), matching
+  # the SCENE-ID-CAM products. TODO[LIBSDC-822]: Update once umm-g writer is implemented.
+  InputGranules: null
 
 coordinates:
-  # RADIOMETER_TIME is a SHARED coordinate across the Libera radiometer-timescale products, with one value per footprint.
+  # Time of observation, one value per footprint. Mirrors the L1B_RAD/CAM coordinate convention so downstream code
+  # can treat scene IDs and L1B records on a common time axis. Encoded as int64 "nanoseconds since 1958-01-01" (the
+  # CCSDS epoch used across Libera products). The coordinate name equals its dimension, so it is an xarray dimension
+  # coordinate (matching SCENE-ID-CAM), not a lowercase auxiliary coordinate.
   RADIOMETER_TIME:
     dtype: datetime64[ns]
     dimensions: ["RADIOMETER_TIME"]
@@ -42,13 +52,11 @@ variables:
     attributes:
       long_name: Instrument viewing zenith angle at the footprint surface
       units: degrees
-  # Relative azimuth is referenced to the Sun: 0 degrees means the viewing azimuth is aligned with the Sun's
-  # azimuth (the Sun is the 0-degree reference).
   relative_azimuth_angle:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface (0 degrees = sun aligned)
+      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface
       units: degrees
 
   ##########################
@@ -63,8 +71,27 @@ variables:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: Total cloud fraction over the footprint (from the L2-CF-CAM data product, in percent)
+      long_name: Total cloud fraction over the footprint, 100 - clear_area (CERES SSF clear coverage)
       units: percent
+  surface_wind:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Surface wind speed magnitude, sqrt(u10^2 + v10^2) from the ERA5 10 m wind components
+      units: m/s
+  cloud_phase:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # 1 = liquid, 2 = ice, NaN = unknown/unavailable. Mapped from the RBSP CLDPIX cloud particle phase; a NaN
+      # leaves the footprint unmatched for any TRMM scene that bounds cloud_phase.
+      long_name: Dominant cloud phase (1 = liquid, 2 = ice)
+  optical_depth:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Cloud optical depth (RBSP CLDPIX cloud optical depth)
+      units: "1"
 
   ############
   # Scene IDs
@@ -79,6 +106,12 @@ variables:
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
+  scene_id_trmm:
+    dtype: uint16
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # uint16 (not uint8): the TRMM definition assigns scene IDs up to 650, which overflows a single byte.
+      long_name: TRMM scene classification ID (0 = unmatched, 1-650 = scene)
 
   ##############################
   # ERBE scene property-bin bounds
@@ -203,6 +236,103 @@ variables:
     attributes:
       long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
       units: degrees
+
+  ##############################
+  # TRMM scene property-bin bounds
+  ##############################
+  scene_bin_trmm_surface_type_min:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched TRMM scene
+  scene_bin_trmm_surface_type_max:
+    dtype: uint8
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched TRMM scene
+  scene_bin_trmm_surface_wind_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_wind bin of the matched TRMM scene
+      units: m/s
+  scene_bin_trmm_surface_wind_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_wind bin of the matched TRMM scene
+      units: m/s
+  scene_bin_trmm_cloud_fraction_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched TRMM scene
+      units: percent
+  scene_bin_trmm_cloud_fraction_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched TRMM scene
+      units: percent
+  scene_bin_trmm_cloud_phase_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_phase bin of the matched TRMM scene
+  scene_bin_trmm_cloud_phase_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_phase bin of the matched TRMM scene
+  scene_bin_trmm_optical_depth_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the optical_depth bin of the matched TRMM scene
+      units: "1"
+  scene_bin_trmm_optical_depth_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the optical_depth bin of the matched TRMM scene
+      units: "1"
+  scene_bin_trmm_solar_zenith_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_solar_zenith_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_viewing_zenith_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_viewing_zenith_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_relative_azimuth_angle_min:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_relative_azimuth_angle_max:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched TRMM scene
+      units: degrees
+
   Quality_Flag:
     dtype: uint32
     dimensions: ["RADIOMETER_TIME"]
