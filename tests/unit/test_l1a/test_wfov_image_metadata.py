@@ -155,8 +155,8 @@ def _make_wfov_packet_dataset(
     )
 
 
-def _packet_rows(ds: xr.Dataset) -> list:
-    """Build the ``list[bytes]`` argument ``_stitch_wfov_images`` expects.
+def _packet_rows(ds: xr.Dataset) -> np.ndarray:
+    """Build the ``(n_packets, width)`` uint8 view ``_stitch_wfov_images`` expects.
 
     Mirrors production's conversion in ``enhance_wfov_l1a_dataset``: a uint8 view rather than
     ``ndarray.tolist()``, since the fixed-width ``|S`` dtype silently strips trailing null bytes on
@@ -166,7 +166,7 @@ def _packet_rows(ds: xr.Dataset) -> list:
     data_var = ds["ICIE__WFOV_DATA"]
     width = data_var.dtype.itemsize
     n_packets = ds.sizes["PACKET"]
-    return [row.tobytes() for row in data_var.values.view(np.uint8).reshape(n_packets, width)]
+    return data_var.values.view(np.uint8).reshape(n_packets, width)
 
 
 def _build_complete_image_blob(
@@ -446,22 +446,6 @@ class TestStitchWfovImages:
         assert stats.n_footer_mismatches == 1
         assert stats.n_header_parse_errors == 0
 
-    def test_packet_rows_are_freed_once_consumed(self):
-        # Every row -- whether folded into a complete image or dropped -- must be released so its
-        # memory can be freed as soon as its fate is decided, not held until the whole stream is
-        # processed.
-        blob = _build_complete_image_blob(b"\x01")
-        ds = _make_wfov_packet_dataset(_complete_rows(blob))
-        rows = _packet_rows(ds)
-        stitched, _ = _stitch_wfov_images(
-            ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values,
-            ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values,
-            ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values,
-            rows,
-        )
-        assert len(stitched) == 1
-        assert rows == [None, None]
-
 
 class TestEnhanceWfovL1aDataset:
     def test_complete_sequence_creates_camera_time_and_drops_wfov_data(self):
@@ -497,17 +481,124 @@ class TestEnhanceWfovL1aDataset:
         assert enhanced["WFOV_FPGA_STATUS_CRC_ERROR"].values[0] == 1
         assert "FPGA status errors flagged" in caplog.text
 
-    def test_incomplete_sequence_drops_wfov_data_and_flags_last_incomplete(self):
+    def test_incomplete_sequence_raises_and_preserves_raw_payload(self):
+        """A granule with no complete image must fail loudly with ICIE__WFOV_DATA still intact."""
         blob = _build_complete_image_blob(b"\x01")
         ds = _make_wfov_packet_dataset([("SOP", 0, len(blob), _pad_packet(blob))])
 
-        enhanced = enhance_wfov_l1a_dataset(ds)
-        assert enhanced.sizes[CAMERA_TIME_COORD] == 0
-        assert enhanced[PACKET_IMAGE_ID_VAR].values.tolist() == [-1]
-        assert "ICIE__WFOV_DATA" not in enhanced.data_vars
-        assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 0
+        with pytest.raises(ValueError, match="No complete WFOV images could be produced"):
+            enhance_wfov_l1a_dataset(ds)
+
+        # The whole point of raising before drop_vars: the caller keeps the packets it needs to
+        # diagnose why nothing stitched.
+        assert "ICIE__WFOV_DATA" in ds.data_vars
+        assert ds.sizes["PACKET"] == 1
+
+    def test_no_complete_images_error_message_carries_counters(self):
+        """The exception must be self-diagnosing; the stats it reports are otherwise lost."""
+        ds = _make_wfov_packet_dataset([("MOP", i * 100, 100, _pad_packet(b"\x00" * 100)) for i in range(3)])
+
+        with pytest.raises(ValueError, match=r"No complete WFOV images") as excinfo:
+            enhance_wfov_l1a_dataset(ds)
+
+        message = str(excinfo.value)
+        assert "3 APID 1040 packets" in message
+        for counter in ("packets_not_used", "header_parse_errors", "first_image_incomplete", "last_image_incomplete"):
+            assert counter in message
+
+    def test_single_flag_warns_and_counts_packet_unused(self, caplog):
+        """SINGLE is unsupported: warn, drop the packet, and record it in the existing stats."""
+        blob = _build_complete_image_blob(b"\x01")
+        rows = [("SINGLE", 0, 400, _pad_packet(b"\x00" * 400)), *_complete_rows(blob)]
+        ds = _make_wfov_packet_dataset(rows)
+
+        with caplog.at_level("WARNING"):
+            enhanced = enhance_wfov_l1a_dataset(ds)
+
+        assert "Unsupported SINGLE-flagged WFOV packet at index 0" in caplog.text
+        assert "not expected during normal operations" in caplog.text
+        # The good image still stitches; only the SINGLE packet is dropped.
+        assert enhanced.sizes[CAMERA_TIME_COORD] == 1
+        assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 1
+        assert enhanced[PACKET_IMAGE_ID_VAR].values[0] == -1
+        assert enhanced[PACKET_IMAGE_ID_VAR].values[1] == 0
+
+    def test_single_flag_mid_collection_aborts_in_progress_image(self, caplog):
+        """A SINGLE arriving mid-collection must abandon the in-progress image, not join it.
+
+        Regresses if the SINGLE branch is ever moved below ``elif state == "COLLECTING"``, where
+        the packet would instead be absorbed as an ordinary data packet.
+        """
+        blob = _build_complete_image_blob(b"\x01")
+        rows = [
+            ("SOP", 0, 100, _pad_packet(b"\x00" * 100)),
+            ("MOP", 100, 100, _pad_packet(b"\x00" * 100)),
+            ("SINGLE", 200, 400, _pad_packet(b"\x00" * 400)),
+            *_complete_rows(blob),
+        ]
+        ds = _make_wfov_packet_dataset(rows)
+
+        with caplog.at_level("WARNING"):
+            enhanced = enhance_wfov_l1a_dataset(ds)
+
+        assert "Unsupported SINGLE-flagged WFOV packet at index 2" in caplog.text
+        assert enhanced.sizes[CAMERA_TIME_COORD] == 1
+        # 2 abandoned collection packets + the SINGLE itself.
+        assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 3
+        assert enhanced[PACKET_IMAGE_ID_VAR].values[:3].tolist() == [-1, -1, -1]
+
+    def test_leading_single_is_not_swallowed_as_edge_truncation(self, caplog):
+        """A SINGLE as the first packet must reach the warning, not the leading-edge gate."""
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset([("SINGLE", 0, 400, _pad_packet(b"\x00" * 400)), *_complete_rows(blob)])
+
+        with caplog.at_level("WARNING"):
+            enhanced = enhance_wfov_l1a_dataset(ds)
+
+        assert "Unsupported SINGLE-flagged WFOV packet at index 0" in caplog.text
         assert enhanced.attrs[FIRST_IMAGE_INCOMPLETE_ATTR] == 0
-        assert enhanced.attrs[LAST_IMAGE_INCOMPLETE_ATTR] == 1
+
+    def test_undecodable_header_discards_image_and_leaves_no_nat(self, caplog):
+        """An image whose header is too short is discarded, not emitted with a NaT time."""
+        good_blob = _build_complete_image_blob(b"\x01")
+        short = WFOV_HEADER_SIZE - 10
+        rows = [
+            # SOP+EOP that stitch to fewer than WFOV_HEADER_SIZE bytes: structurally complete,
+            # but there is no header to decode and therefore no acquisition time.
+            ("SOP", 0, short, _pad_packet(b"\x00" * short)),
+            ("EOP", short, 0, _pad_packet(b"\x00" * 972)),
+            *_complete_rows(good_blob),
+        ]
+        ds = _make_wfov_packet_dataset(rows)
+
+        with caplog.at_level("WARNING"):
+            enhanced = enhance_wfov_l1a_dataset(ds)
+
+        assert "undecodable header" in caplog.text
+        assert enhanced.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 1
+        # Only the good image survives, and CAMERA_TIME is usable for filenaming.
+        assert enhanced.sizes[CAMERA_TIME_COORD] == 1
+        assert not np.isnat(enhanced[CAMERA_TIME_COORD].values).any()
+        assert enhanced[WFOV_HEADER_PARSE_VALID_VAR].values.all()
+        # The discarded image's packets are accounted for and traceable.
+        assert enhanced.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 2
+        assert enhanced[PACKET_IMAGE_ID_VAR].values[:2].tolist() == [-1, -1]
+
+    def test_short_blob_no_longer_double_counts_footer_mismatch(self):
+        """A too-short blob counts only as a header parse error, not also a footer mismatch."""
+        good_blob = _build_complete_image_blob(b"\x01")
+        short = WFOV_HEADER_SIZE - 10
+        ds = _make_wfov_packet_dataset(
+            [
+                ("SOP", 0, short, _pad_packet(b"\x00" * short)),
+                ("EOP", short, 0, _pad_packet(b"\x00" * 972)),
+                *_complete_rows(good_blob),
+            ]
+        )
+
+        enhanced = enhance_wfov_l1a_dataset(ds)
+        assert enhanced.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 1
+        assert enhanced.attrs[FOOTER_MISMATCH_COUNT_ATTR] == 0
 
     def test_camera_time_from_fsw_timestamps(self):
         blob = _build_complete_image_blob(b"\x01", timestamp_seconds=100, timestamp_subseconds=1)

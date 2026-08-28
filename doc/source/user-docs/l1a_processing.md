@@ -349,12 +349,12 @@ This varies by packet but there is some consistent behavior:
 A single wide field of view (WFOV) image is too large for one CCSDS packet, so the camera splits it into a sequence
 of packets, each carrying one slice of the image plus fields describing where that slice belongs:
 
-| Field                        | Description                                                                                                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ICIE__MEM_DUMP_FLAGS_WFOV`  | This packet's position in the image sequence: `SOP` (Start of Photo), `MOP` (Middle of Photo), `EOP` (End of Photo), or `SINGLE` (whole image fit in one packet) |
-| `ICIE__MEM_DUMP_OFFSET_WFOV` | Byte offset of this slice within the reassembled image                                                                                                           |
-| `ICIE__MEM_DUMP_LENGTH_WFOV` | Number of valid image bytes carried in this packet                                                                                                               |
-| `ICIE__WFOV_DATA`            | The raw image-slice payload for this packet                                                                                                                      |
+| Field                        | Description                                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ICIE__MEM_DUMP_FLAGS_WFOV`  | This packet's position in the image sequence: `SOP` (Start of Photo), `MOP` (Middle of Photo), `EOP` (End of Photo), or `SINGLE` (whole image fit in one packet — **not supported**, see below) |
+| `ICIE__MEM_DUMP_OFFSET_WFOV` | Byte offset of this slice within the reassembled image                                                                                                                                          |
+| `ICIE__MEM_DUMP_LENGTH_WFOV` | Number of valid image bytes carried in this packet                                                                                                                                              |
+| `ICIE__WFOV_DATA`            | The raw image-slice payload for this packet                                                                                                                                                     |
 
 libera_utils reconstructs each full image by walking packets in stream order: an `SOP` packet
 with `ICIE__MEM_DUMP_OFFSET_WFOV == 0` opens a new image, each subsequent packet is appended as
@@ -399,9 +399,29 @@ During L1A parsing for APID 1040, libera_utils:
 `ICIE__WFOV_DATA` is removed from the dataset unconditionally, regardless of whether a packet's
 data ended up folded into a complete image or not: for packets in a complete image, that content
 is already duplicated (compressed) in `WFOV_COMPRESSED_IMAGE`; for packets that never completed
-an image — truncated at a window edge or dropped for a genuine anomaly — the raw payload is
-permanently unusable. `PACKET_IMAGE_ID` is the only per-packet trace-back to a stitched image.
-Incomplete or failed images do not receive a `CAMERA_TIME` row.
+an image — truncated at a window edge or dropped for a genuine anomaly — the raw payload cannot be
+assembled into an image from this granule alone. `PACKET_IMAGE_ID` is the only per-packet
+trace-back to a stitched image. Incomplete or failed images do not receive a `CAMERA_TIME` row.
+
+### Granules that yield no images
+
+If **no** complete image can be stitched from the packet stream, `parse_packets_to_l1a_dataset`
+raises `ValueError` instead of returning a dataset, and it does so **before** dropping
+`ICIE__WFOV_DATA` — so the caller still holds every raw packet for diagnosis. The message carries
+the packet count and all four counters.
+
+This is a deliberate hard failure rather than an empty product. A granule with no images has no
+`CAMERA_TIME` rows to derive a filename from and would fail product conformance on every
+`CAMERA_TIME` variable, so there is nothing valid to write; failing at the point of detection is
+more useful than an opaque error from the filenaming code much later.
+
+### Unsupported `SINGLE` packets
+
+A packet flagged `SINGLE` (a whole image in one packet) is **not supported**. It is not expected
+during normal operations, so each one is logged as a warning and dropped: the packet counts toward
+`PacketCountNotUsedInImages` and keeps `PACKET_IMAGE_ID == -1`, but produces no image. A `SINGLE`
+arriving mid-collection also abandons the image in progress. There is no dedicated file-level
+counter — use the warning in the logs and `PACKET_IMAGE_ID == -1` to investigate.
 
 File-level quality attributes:
 
@@ -413,8 +433,11 @@ File-level quality attributes:
   (see `WFOV_FPGA_STATUS_*`)
 - `FooterMismatchCount`: complete images whose trailing 8-byte NAND footer didn't match the
   expected magic bytes
-- `HeaderParseErrorCount`: complete images where the 176-byte WFOV header failed to decode
-  (too few bytes for a stitched blob that should have had a full header)
+- `HeaderParseErrorCount`: structurally complete images **discarded** because the 176-byte WFOV
+  header could not be decoded (too few stitched bytes to contain a full header). Without a header
+  there is no acquisition time, and an image with no time is unusable, so it gets no `CAMERA_TIME`
+  row at all rather than a `NaT` one. Its packets also count toward
+  `PacketCountNotUsedInImages` and keep `PACKET_IMAGE_ID == -1`
 - `FirstImageIncomplete` (0/1, semantically boolean — NetCDF attributes have no bool type): `1` if
   this window's first packet wasn't a qualifying `SOP` (i.e. the image it belongs to started
   before this window)

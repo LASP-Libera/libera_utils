@@ -178,6 +178,11 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: Whether the full WFOV header (FSW block + FPGA block) was parsed from the stitched image blob
+      comment: >-
+        Always true in the current implementation. An image whose 176-byte header cannot be decoded
+        has no acquisition time and is discarded rather than given a row here, counted in
+        HeaderParseErrorCount. Retained as the flag for per-field header validation, which will
+        reintroduce partially-valid headers.
   WFOV_COMPRESSED_IMAGE:
     dtype: uint8
     dimensions: ["CAMERA_TIME", "BLOB_BYTE"]

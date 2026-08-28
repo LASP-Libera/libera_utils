@@ -355,6 +355,27 @@ def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
                 assert img.size == (2048, 2048)
 
 
+def test_wfov_sci_no_complete_images_raises(
+    test_ccsds_2025_221_17_17_58,
+    monkeypatch,
+):
+    """A WFOV granule where no image completes must fail loudly, not emit an unusable product.
+
+    This ISTR file carries 1298 APID 1040 packets that never form a complete SOP->EOP image. Before
+    the raise it produced a dataset with ICIE__WFOV_DATA already dropped, zero CAMERA_TIME rows, and
+    PacketCountNotUsedInImages == 0 -- which then failed to write under strict=True (missing every
+    CAMERA_TIME variable) and under strict=False (IndexError on an empty time coordinate). The raw
+    packets were destroyed either way.
+    """
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+
+    with pytest.raises(ValueError, match=r"No complete WFOV images could be produced"):
+        packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ccsds_2025_221_17_17_58],
+            apid=LiberaApid.icie_wfov_sci.value,
+        )
+
+
 @pytest.mark.filterwarnings("error")
 def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
     test_ditl_camera_with_duplicate_packet,
