@@ -102,8 +102,7 @@ _NADIR_CONE_ANGLE_EPS_DEG: float = 1e-6
 # truth so a change to the L1B fill value propagates to both call sites.
 L1B_FILL_VALUE: float = -999.0
 
-# Backwards-compatible private alias. The value was originally module-private; keep
-# the old name working for any existing importers while the public name is adopted.
+# Private alias of the public fill-value constant, used internally below.
 _L1B_FILL_VALUE: float = L1B_FILL_VALUE
 
 # Number of samples around the PSF angular-extent ellipse perimeter. 72 == every 5 deg.

@@ -8,7 +8,7 @@ does not run during the first year of operation.
 The operational input is the L1B Daily radiometer product (``RAD-4CH``): one footprint per
 ``RADIOMETER_TIME``, whose geolocation and Sun-surface-sensor viewing angles are carried through to
 the FMATCH product verbatim (see
-:func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`).
+:func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`).
 
 Unlike the CAM products, FMATCH-IMAGER-FLASH does not declare ``cloud_fraction_camera`` - its cloud
 information comes from the imager readers rather than the Libera WFOV camera - so this runner takes

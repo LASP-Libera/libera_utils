@@ -46,7 +46,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from libera_utils.config import config
-from libera_utils.footprint_matching.l1b_inputs import L1B_PASSTHROUGH_VARIABLES
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -92,13 +91,39 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
     }
 )
 
+# Mapping of FMATCH product variable name -> L1B RAD-4CH variable name, for the
+# per-footprint quantities FMATCH copies straight out of L1B rather than computing.
+#
+# Viewing angles: the FMATCH solar/viewing zenith and relative azimuth map to the
+# L1B "_Surface" angles (geodetic angles at the Earth point), whose units (degrees)
+# and ranges line up with the FMATCH definition - in particular L1B
+# ``Relative_Azimuth_Surface`` spans [0, 360], matching relative_azimuth_angle's
+# valid_range. Note we do NOT pass through the derived ``sunglint_angle``; that is a
+# computed product variable (see compute_derived_viewing_geometry), not an L1B input.
+#
+# Every variable listed here is declared float32 in the product definition, which is
+# why the reader (``_runner.load_l1b_radiometer_inputs``) can cast them all to float32
+# generically. The L1B time coordinate is handled separately because it maps to the
+# product's time *coordinate* (RADIOMETER_TIME), not a data variable.
+#
+# This lives here, rather than in the runner that reads it, so the assembly path and
+# the runner share one source of truth without the runner (which imports this module)
+# creating a circular import.
+L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
+    "latitude": "Latitude",
+    "longitude": "Longitude",
+    "solar_zenith_angle": "Solar_Zenith_Surface",
+    "viewing_zenith_angle": "Viewing_Zenith_Surface",
+    "relative_azimuth_angle": "Relative_Azimuth_Surface",
+}
+
 # The radiometer-timescale counterpart of _CAMTIME_SEGMENTATION_VARIABLES: the
 # product-definition variables filled with *real* values passed straight through
 # from the L1B Daily radiometer product, rather than computed by footprint
 # matching. These are the "(a) Geolocation inputs (from L1B Daily)" block of each
 # radiometer-timed fmatch_*.yml, and they are exactly the keys (other than the
 # RADIOMETER_TIME coordinate) that
-# ``l1b_inputs.load_l1b_radiometer_inputs`` returns. Kept as one set so the
+# ``_runner.load_l1b_radiometer_inputs`` returns. Kept as one set so the
 # assembly and its tests agree on which variables are "real" this milestone.
 _RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
 
@@ -256,11 +281,6 @@ def compute_derived_viewing_geometry(
       specular reflection of the solar beam; small values indicate potential
       sun glint contamination.
 
-    (The ``scattering_angle`` quantity was previously emitted here too, but has
-    been dropped from the FMATCH product contract; downstream code that needs it
-    can derive it on demand from the geolocation angles that remain in every
-    product.)
-
     Parameters
     ----------
     solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : np.ndarray
@@ -309,7 +329,7 @@ def assemble_fmatch_dataset(
       :class:`PseudoFootprint` objects. See :func:`_assemble_camtime_dataset`.
     * **Radiometer-timescale** (``CAM``, ``IMAGER_FLASH``, ``IMAGER``) - assembled
       from the L1B pass-through arrays produced by
-      :func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`.
+      :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`.
       The first positional argument is that dict. See
       :func:`_assemble_radiometer_dataset`.
 
@@ -633,7 +653,7 @@ def _assemble_radiometer_dataset(
     ----------
     l1b_inputs : dict[str, np.ndarray]
         The pass-through arrays from
-        :func:`libera_utils.footprint_matching.l1b_inputs.load_l1b_radiometer_inputs`:
+        :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`:
         the ``RADIOMETER_TIME`` coordinate plus each of
         :data:`_RADIOMETER_L1B_VARIABLES`, all the same length.
     mode : OperationalMode

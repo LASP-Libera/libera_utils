@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from libera_utils.scene_identification.cam.scene_id_cam import collect_fmatch_cam_input_files
+from libera_utils.scene_identification.scene_id_cam import collect_fmatch_cam_input_files
 
 
 def _fake_manifest(filenames):

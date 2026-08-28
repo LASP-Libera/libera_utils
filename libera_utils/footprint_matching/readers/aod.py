@@ -32,14 +32,13 @@ Aerosol type categories (from the file's ``long_name``)
 
 Why the single-sensor granule (not the GEO-LEO merged one)?
 -----------------------------------------------------------
-FMATCH-IMAGER requires a single, well-characterized VIIRS aerosol source. This
-reader previously read the ``NOAA20_VIIRS`` group of the cross-sensor
-``AERDB_D3_GEOLEO_Merged`` granule for AOD only. The dedicated single-sensor
-``AERDB_D3_VIIRS_NOAA20`` Deep Blue granule provides the *same* NOAA-20 VIIRS
-Deep Blue 550 nm AOD (the merged file just re-bundles the per-sensor L3s) **and**
-the aerosol-type field that the merged file's AOD lacked, so both are now sourced
-from this one authoritative granule. To switch sensors later (e.g. NOAA-21/
-NOAA-22), point the reader at the corresponding ``AERDB_D3_VIIRS_*`` granule.
+FMATCH-IMAGER requires a single, well-characterized VIIRS aerosol source. The
+dedicated single-sensor ``AERDB_D3_VIIRS_NOAA20`` Deep Blue granule provides the
+NOAA-20 VIIRS Deep Blue 550 nm AOD **and** the aerosol-type field, so both are
+sourced from this one authoritative granule. The cross-sensor
+``AERDB_D3_GEOLEO_Merged`` granule only re-bundles the per-sensor L3s and its AOD
+lacks the aerosol-type field. To switch sensors later (e.g. NOAA-21/NOAA-22),
+point the reader at the corresponding ``AERDB_D3_VIIRS_*`` granule.
 TODO[LIBSDC-785]
 
 NetCDF4 layout (AERDB_D3_VIIRS_NOAA20)
