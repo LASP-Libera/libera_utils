@@ -18,6 +18,7 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
+from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_cam import (
     PRODUCT_DEFINITION_PATH,
     collect_fmatch_cam_input_files,
@@ -38,7 +39,6 @@ from libera_utils.scene_identification.scene_id_imager_flash import (
     create_and_write_data_product_imager_flash,
     run_scene_identification_imager_flash,
 )
-from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from tests.test_data.footprint_matching.fixtures import make_fmatch_product_fixture
 
 
