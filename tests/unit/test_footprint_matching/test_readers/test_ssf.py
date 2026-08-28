@@ -33,13 +33,15 @@ def _finite_values(data: np.ndarray, name: str) -> np.ndarray:
 
 class TestSSFReaderClassAttributes:
     def test_reader_key(self):
+        # Targets the reader registry key; asserts READER_KEY equals the expected "ssf".
         assert SSFReader.READER_KEY == "ssf"
 
     def test_resolution_km(self):
+        # Targets the SSF footprint resolution; asserts RESOLUTION_KM equals 20.0 km.
         assert SSFReader.RESOLUTION_KM == 20.0
 
     def test_base_variable_names_present(self):
-        # The original FLASH+ base fields (only_modes=None) are unchanged.
+        # The original FLASH+ base fields (only_modes=None) are unchanged; asserts their name set matches the expected 8.
         names = {v.name for v in SSFReader.VARIABLES if v.only_modes is None}
         assert names == {
             "aerosol_optical_depth",
@@ -77,6 +79,7 @@ class TestSSFReaderClassAttributes:
 
 class TestSSFReaderLoadSpatialRegion:
     def test_returns_3d_array_in_variable_order(self, tmp_path):
+        # Targets region loader output shape/order; asserts a 3-D float32 array with axis 0 = VARIABLES count.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, lats, lons = reader._load_spatial_region(_BBOX)
         assert data.ndim == 3
@@ -84,7 +87,7 @@ class TestSSFReaderLoadSpatialRegion:
         assert data.dtype == np.float32
 
     def test_longitude_normalization_places_points(self, tmp_path):
-        # Footprints stored at 350° must be found in the −10° tile ...
+        # Footprints stored at 350° must be found in the −10° tile; asserts the loaded tile has finite (present) data.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.isfinite(data).any()
@@ -97,16 +100,19 @@ class TestSSFReaderLoadSpatialRegion:
         assert not np.isfinite(data).any()
 
     def test_aerosol_optical_depth_values(self, tmp_path):
+        # Targets AOD passthrough; asserts the five clustered footprints rasterize to [0.10..0.50].
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.allclose(_finite_values(data, "aerosol_optical_depth"), [0.10, 0.20, 0.30, 0.40, 0.50], atol=1e-5)
 
     def test_cloud_optical_depth_uses_lower_layer(self, tmp_path):
+        # Targets that cloud_optical_depth reads the lower layer; asserts the finite values equal [1,2,4,8,16].
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         assert np.allclose(_finite_values(data, "cloud_optical_depth"), [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
 
     def test_cloud_classification_codes_preserved(self, tmp_path):
+        # Targets cloud_classification code passthrough; asserts the finite codes are exactly {1001, 1191}.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
         codes = set(_finite_values(data, "cloud_classification").astype(int))
@@ -192,6 +198,7 @@ class TestSSFReaderExtendedImagerFields:
 
 class TestSSFReaderLoadTileAndCache:
     def test_load_tile_source_and_timestamp(self, tmp_path):
+        # Targets the public load_tile API; asserts it returns a GridTile with source "ssf" and no timestamp_source.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         # Tile index for lat 11, lon -10 in the 2° global grid.
         key = TileKey("ssf", int((11.0 + 90.0) // 2), int((-10.0 + 180.0) // 2))
@@ -201,6 +208,7 @@ class TestSSFReaderLoadTileAndCache:
         assert tile.timestamp_source is None
 
     def test_points_parsed_once_and_cached(self, tmp_path):
+        # Targets that _load_points parses once and caches; asserts repeated calls return the same cached object.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         first = reader._load_points()
         second = reader._load_points()

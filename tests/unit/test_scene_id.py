@@ -702,6 +702,8 @@ class TestIdentifyScenes:
         self, sample_footprint_data, simple_scene_definition_csv
     ):
         """Scene identification keeps footprint data on the RADIOMETER_TIME dimension."""
+        # What: scene identification keeps output on the RADIOMETER_TIME dimension (not a generic footprint axis).
+        # How: run identify_scenes and assert the produced scene_id variable's dims are (RADIOMETER_TIME_DIMENSION,).
         scene_def = SceneDefinition(simple_scene_definition_csv)
         sample_footprint_data.identify_scenes([scene_def])
 
@@ -725,6 +727,8 @@ class TestToRadiometerTimeProduct:
 
     def test_promotes_radiometer_time_to_coordinate(self, footprint_data_with_time):
         """RADIOMETER_TIME is a coordinate on the (unchanged) RADIOMETER_TIME dimension of the product."""
+        # What: to_radiometer_time_product promotes RADIOMETER_TIME to a coordinate on the unchanged time dimension.
+        # How: assert it appears in both product.dims and product.coords, and the added Quality_Flag never leaks to source.
         product = footprint_data_with_time.to_radiometer_time_product()
 
         assert RADIOMETER_TIME_DIMENSION in product.dims
@@ -734,6 +738,8 @@ class TestToRadiometerTimeProduct:
 
     def test_missing_radiometer_time_raises(self):
         """A dataset without a RADIOMETER_TIME variable cannot be turned into a product."""
+        # What: to_radiometer_time_product refuses a dataset lacking a RADIOMETER_TIME variable.
+        # How: assert it raises ValueError whose message mentions RADIOMETER_TIME.
         data = xr.Dataset({FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0])})
         with pytest.raises(ValueError, match=RADIOMETER_TIME_DIMENSION):
             FootprintData(data).to_radiometer_time_product()
@@ -785,6 +791,8 @@ class TestSceneIdCamProductDtypes:
 
     def test_surface_type_variables_are_uint8(self):
         """The categorical surface_type / scene_id variables are declared as compact uint8."""
+        # What: categorical surface_type / scene_id product variables are declared as compact uint8.
+        # How: load the SCENE-ID-CAM definition and assert each variable's declared dtype string equals "uint8".
         definition = self._scene_id_cam_definition()
         assert definition.variables["surface_type"].dtype == "uint8"
         assert definition.variables["igbp_surface_type"].dtype == "uint8"
@@ -793,6 +801,8 @@ class TestSceneIdCamProductDtypes:
 
     def test_continuous_bin_bounds_are_float32(self):
         """The continuous scene-bin bounds are declared as float32 rather than float64."""
+        # What: continuous scene-bin bounds are declared float32 (not float64) in the product definition.
+        # How: assert the cloud_fraction and relative_azimuth_angle bin variable dtypes equal "float32".
         definition = self._scene_id_cam_definition()
         assert definition.variables["scene_bin_erbe_cloud_fraction_min"].dtype == "float32"
         assert definition.variables["scene_bin_unfiltering_relative_azimuth_angle_max"].dtype == "float32"
@@ -803,6 +813,8 @@ class TestSceneIdCamProductDtypes:
         surface_type is categorical, so its bounds stay uint8 to save storage; an unmatched footprint carries 0
         (scene_id 0 is the authoritative unmatched flag). The continuous bin bounds remain float32 with NaN.
         """
+        # What: categorical surface_type bin bounds are declared uint8, and no variable declares a _FillValue.
+        # How: assert the surface_type bin dtypes equal "uint8" and no variable's encoding contains "_FillValue".
         definition = self._scene_id_cam_definition()
         assert definition.variables["scene_bin_erbe_surface_type_min"].dtype == "uint8"
         assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"

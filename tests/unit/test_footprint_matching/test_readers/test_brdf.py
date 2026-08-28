@@ -55,21 +55,26 @@ def _full_bbox() -> BoundingBox:
 
 class TestVIIRSBRDFReaderClassAttributes:
     def test_reader_key(self):
+        # Targets the reader's registry key; asserts READER_KEY equals the expected "viirs_brdf".
         assert VIIRSBRDFReader.READER_KEY == "viirs_brdf"
 
     def test_resolution_km(self):
+        # Targets the declared native resolution; asserts RESOLUTION_KM equals the VJ143C1 5.6 km value.
         assert VIIRSBRDFReader.RESOLUTION_KM == 5.6
 
     def test_variables_count_is_nine(self):
+        # Targets the variable inventory size; asserts VARIABLES has exactly 9 entries (3 bands x 3 params).
         assert len(VIIRSBRDFReader.VARIABLES) == 9
 
     def test_variable_names_cover_three_bands_three_params(self):
+        # Targets variable naming coverage; asserts every band/param pair yields a "brdf_{band}_{param}" name.
         names = {v.name for v in VIIRSBRDFReader.VARIABLES}
         for band in ("shortwave", "vis", "nir"):
             for param in ("fiso", "fvol", "fgeo"):
                 assert f"brdf_{band}_{param}" in names
 
     def test_all_variables_are_float32_weighted_mean(self):
+        # Targets per-variable metadata; asserts each var is float32, weighted_mean aggregation, non-categorical.
         for v in VIIRSBRDFReader.VARIABLES:
             assert v.dtype == "float32"
             assert v.aggregation == "weighted_mean"
@@ -98,6 +103,7 @@ class TestVIIRSBRDFReaderScaleAndFill:
         assert np.isnan(data).sum() == data.shape[0]
 
     def test_non_fill_pixels_are_not_nan(self, tmp_path):
+        # Targets that valid data survives fill handling; asserts not every pixel is NaN after loading.
         reader = _make_reader(tmp_path)
         data, _, _ = reader._load_spatial_region(_full_bbox())
         # At least one pixel (all except [-1, -1]) should be non-NaN.
@@ -106,12 +112,14 @@ class TestVIIRSBRDFReaderScaleAndFill:
 
 class TestVIIRSBRDFReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
+        # Targets output array shape; asserts _load_spatial_region returns a 3-D array with 9 variable planes.
         reader = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
         assert data.ndim == 3
         assert data.shape[0] == 9
 
     def test_data_dtype_is_float32(self, tmp_path):
+        # Targets output dtype; asserts the loaded region array is float32.
         reader = _make_reader(tmp_path)
         data, _, _ = reader._load_spatial_region(_full_bbox())
         assert data.dtype == np.float32
@@ -126,12 +134,14 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         assert np.isclose(lats[0], _LAT_MIN), f"row 0 should be lat_min after flip: {lats}"
 
     def test_spatial_shape_matches_fixture(self, tmp_path):
+        # Targets spatial dimensions of the load; asserts lat/lon axes match the fixture's _N_LAT x _N_LON grid.
         reader = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
         assert data.shape[1] == _N_LAT
         assert data.shape[2] == _N_LON
 
     def test_empty_result_outside_bbox(self, tmp_path):
+        # Targets bbox filtering; asserts a bbox with no overlap yields an empty array that keeps the 9-var axis.
         reader = _make_reader(tmp_path)
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
         data, lats, lons = reader._load_spatial_region(bbox)
@@ -139,6 +149,7 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         assert data.shape[0] == 9
 
     def test_partial_bbox_subsets_correctly(self, tmp_path):
+        # Targets partial bbox subsetting; asserts a half-width lon request returns fewer lon columns than _N_LON.
         reader = _make_reader(tmp_path)
         # Request only the first half of the lon range.
         lon_mid = (_LON_MIN + _LON_MAX) / 2
@@ -149,6 +160,7 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
 
 class TestVIIRSBRDFReaderLoadTile:
     def test_load_tile_returns_grid_tile(self, tmp_path):
+        # Targets load_tile's return type; asserts loading the tile covering the fixture yields a GridTile.
         reader = _make_reader(tmp_path)
         lat_center = (_LAT_MIN + _LAT_MAX) / 2
         lon_center = (_LON_MIN + _LON_MAX) / 2
@@ -159,6 +171,7 @@ class TestVIIRSBRDFReaderLoadTile:
         assert isinstance(tile, GridTile)
 
     def test_source_is_viirs_brdf(self, tmp_path):
+        # Targets tile provenance tagging; asserts the returned GridTile's source field equals "viirs_brdf".
         reader = _make_reader(tmp_path)
         lat_center = (_LAT_MIN + _LAT_MAX) / 2
         lon_center = (_LON_MIN + _LON_MAX) / 2
@@ -169,7 +182,7 @@ class TestVIIRSBRDFReaderLoadTile:
         assert tile.source == "viirs_brdf"
 
     def test_timestamp_source_is_none(self, tmp_path):
-        # BRDF is a static surface property product; no instrument timestamp.
+        # BRDF is a static surface property product; no instrument timestamp, so the tile's timestamp_source is None.
         reader = _make_reader(tmp_path)
         lat_center = (_LAT_MIN + _LAT_MAX) / 2
         lon_center = (_LON_MIN + _LON_MAX) / 2

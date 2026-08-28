@@ -47,54 +47,64 @@ def _full_bbox() -> BoundingBox:
 
 class TestVIIRSCloudReaderClassAttributes:
     def test_reader_key(self):
+        # Targets the reader's registry key; asserts READER_KEY equals the expected "viirs_cloud".
         assert VIIRSCloudReader.READER_KEY == "viirs_cloud"
 
     def test_resolution_km(self):
+        # Targets the declared grid resolution; asserts RESOLUTION_KM equals 111.0 km.
         assert VIIRSCloudReader.RESOLUTION_KM == 111.0
 
     def test_variables_has_two_entries(self):
+        # Targets the VARIABLES count; asserts exactly two variable specs are declared.
         assert len(VIIRSCloudReader.VARIABLES) == 2
 
     def test_variable_names_in_order(self):
+        # Targets VARIABLES ordering; asserts names are ["cloud_optical_thickness", "cloud_top_pressure"].
         names = [v.name for v in VIIRSCloudReader.VARIABLES]
         assert names == ["cloud_optical_thickness", "cloud_top_pressure"]
 
     def test_variables_have_no_categories(self):
+        # Targets that cloud variables are continuous; asserts every spec's n_categories is None.
         for v in VIIRSCloudReader.VARIABLES:
             assert v.n_categories is None
 
 
 class TestVIIRSCloudReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
+        # Targets _load_spatial_region output; asserts a 3-D array whose leading axis holds the 2 variables.
         reader, _ = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
         assert data.ndim == 3
         assert data.shape[0] == 2
 
     def test_variable_stacking_order(self, tmp_path):
-        # cf_fill is still accepted by the fixture (the Cloud_Fraction group is written)
-        # but is no longer read by the reader, so it must not appear in the output.
+        # Targets variable stacking order; asserts data[0] is cloud_optical_thickness and data[1] is cloud_top_pressure,
+        # while the still-written-but-unread Cloud_Fraction group (cf_fill) stays absent from the output.
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
         data, _, _ = reader._load_spatial_region(_full_bbox())
         assert np.allclose(data[0], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
         assert np.allclose(data[1], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
 
     def test_data_dtype_is_float32(self, tmp_path):
+        # Targets output dtype; asserts the loaded data array is float32.
         reader, _ = _make_reader(tmp_path)
         data, _, _ = reader._load_spatial_region(_full_bbox())
         assert data.dtype == np.float32
 
     def test_output_lat_count_matches_n_lat(self, tmp_path):
+        # Targets latitude-axis sizing; asserts the returned lats array has _N_LAT entries.
         reader, _ = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
         assert lats.size == _N_LAT
 
     def test_output_lon_count_matches_n_lon(self, tmp_path):
+        # Targets longitude-axis sizing; asserts the returned lons array has _N_LON entries.
         reader, _ = _make_reader(tmp_path)
         data, lats, lons = reader._load_spatial_region(_full_bbox())
         assert lons.size == _N_LON
 
     def test_empty_result_outside_bbox(self, tmp_path):
+        # Targets querying a bbox with no data; asserts the data array is empty but keeps its leading 2-variable axis.
         reader, _ = _make_reader(tmp_path)
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
         data, lats, lons = reader._load_spatial_region(bbox)
@@ -102,7 +112,7 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
         assert data.shape[0] == 2
 
     def test_fill_value_becomes_nan(self, tmp_path):
-        # Create a fixture where ctp_fill is -9999.0 (the D3 fill value).
+        # Targets D3 fill-value masking; builds a fixture with ctp_fill=-9999.0 (the D3 fill) so the field is all fill.
         fixture_path = make_viirs_cloud_d3_fixture(
             tmp_path,
             n_lat=_N_LAT,
@@ -146,6 +156,7 @@ class TestVIIRSCloudReaderTranspose:
 
 class TestVIIRSCloudReaderLoadTile:
     def test_timestamp_source_is_radiometer(self, tmp_path):
+        # Targets tile timestamp provenance; asserts the loaded tile is a GridTile with timestamp_source "radiometer".
         reader, _ = _make_reader(tmp_path)
         # TileKey that maps to lat [0, 2°], lon [10, 12°]
         key = TileKey("viirs_cloud", 45, 95)
@@ -154,6 +165,7 @@ class TestVIIRSCloudReaderLoadTile:
         assert tile.timestamp_source == "radiometer"
 
     def test_source_is_viirs_cloud(self, tmp_path):
+        # Targets tile provenance labeling; asserts the loaded tile's source is "viirs_cloud".
         reader, _ = _make_reader(tmp_path)
         key = TileKey("viirs_cloud", 45, 95)
         tile = reader.load_tile(key)
