@@ -115,6 +115,11 @@ class TestToTimeProduct:
     """FootprintData.to_time_product prepares the dataset for writing on its time axis."""
 
     def test_promotes_time_and_adds_quality_flag(self, test_scene_id):
+        """to_time_product promotes the named time variable to a coordinate and adds a Quality_Flag.
+
+        Runs the real CAM runner to get a populated FootprintData, converts it on RADIOMETER_TIME,
+        and asserts the time variable is now a coordinate and a Quality_Flag data variable was added.
+        """
         footprint_data = run_scene_identification_cam(test_scene_id / SSF_INPUT_NAME)
         product = footprint_data.to_time_product("RADIOMETER_TIME")
 
@@ -122,6 +127,11 @@ class TestToTimeProduct:
         assert "Quality_Flag" in product.data_vars
 
     def test_missing_time_variable_raises(self):
+        """to_time_product raises when the requested time variable is absent from the dataset.
+
+        Builds a FootprintData whose dataset has the RADIOMETER_TIME dimension but no RADIOMETER_TIME
+        variable, then asserts to_time_product raises ValueError naming the missing variable.
+        """
         footprint_data = FootprintData(xr.Dataset({"cloud_fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
         with pytest.raises(ValueError, match="RADIOMETER_TIME"):
             footprint_data.to_time_product("RADIOMETER_TIME")
@@ -131,10 +141,12 @@ class TestFmatchReaders:
     """The operational FMATCH readers are not implemented yet."""
 
     def test_from_fmatch_cam_not_implemented(self, tmp_path):
+        """from_fmatch_cam is a not-yet-implemented stub: calling it raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
             FootprintData.from_fmatch_cam(tmp_path / "fmatch.nc")
 
     def test_from_fmatch_cam_camtime_not_implemented(self, tmp_path):
+        """from_fmatch_cam_camtime is a not-yet-implemented stub: calling it raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
             FootprintData.from_fmatch_cam_camtime(tmp_path / "fmatch.nc")
 
