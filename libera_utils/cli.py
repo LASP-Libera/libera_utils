@@ -6,6 +6,7 @@ from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.io import product_definition_spreadsheet_to_yaml as pd_spreadsheet
 from libera_utils.version import version as libera_utils_version
 
 
@@ -344,6 +345,42 @@ def parse_cli_args(cli_args: list):
     s3_get_object_parser.add_argument("source_path", type=str, help="The current path path to the object to retrieve")
     s3_get_object_parser.add_argument("dest_path", type=str, help="Destination path to save the object to.")
     s3_get_object_parser.add_argument("--delete", action="store_true", help="If set, deletes files copied from source")
+
+    # ======================================
+    # PRODUCT DEFINITION SPREADSHEET-TO-YAML
+    # ======================================
+    product_definition_parser = subparsers.add_parser(
+        "product-definition-from-spreadsheet",
+        help="Generate a Libera data product definition YAML file from one tab of the Libera Data Product "
+        "Specifications workbook",
+    )
+    product_definition_parser.set_defaults(func=pd_spreadsheet.product_definition_spreadsheet_cli_handler)
+    product_definition_parser.add_argument(
+        "spreadsheet",
+        type=str,
+        metavar="SPREADSHEET",
+        help="Path to the Libera Data Product Specifications workbook (.xlsx). The workbook is only ever read, "
+        "never modified.",
+    )
+    product_definition_parser.add_argument(
+        "product_id",
+        type=pd_spreadsheet.data_product_identifier,
+        metavar="PRODUCT_ID",
+        help="The data product to generate a definition for. The workbook tab of that name is used.",
+    )
+    product_definition_parser.add_argument(
+        "-o",
+        "--output-path",
+        type=str,
+        default=None,
+        help="Where to write the YAML file. Defaults to <PRODUCT_ID>_product_definition.yml in the current directory.",
+    )
+    product_definition_parser.add_argument(
+        "--overwrite", action="store_true", help="Replace the output file if it already exists"
+    )
+    product_definition_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="set DEBUG level logging output"
+    )
 
     parsed_args = parser.parse_args(cli_args)
     return parsed_args
