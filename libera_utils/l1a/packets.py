@@ -22,6 +22,7 @@ from libera_utils.l1a.l1a_packet_configs import (
     TimeFieldMapping,
     get_packet_config,
 )
+from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
 
@@ -114,6 +115,13 @@ def parse_packets_to_l1a_dataset(
         - Main packet data array with packet timestamp dimension
         - Separate arrays for each sample group with optional multi-field expansion
         - All time coordinates properly set as dimensions
+
+    Notes
+    -----
+    For APID 1040 (ICIE WFOV SCI), the packet dataset is post-processed by
+    ``enhance_wfov_l1a_dataset``: complete SOP→EOP images are stitched onto a ``CAMERA_TIME``
+    dimension, compressed payloads and decoded header metadata are attached, ``ICIE__WFOV_DATA``
+    is dropped, and ``PACKET_IMAGE_ID`` traces packets back to stitched images.
     """
     _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
     packet_config = get_packet_config(LiberaApid(apid))
@@ -256,6 +264,9 @@ def parse_packets_to_l1a_dataset(
     }
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
+
+    if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
+        packet_ds = enhance_wfov_l1a_dataset(packet_ds)
 
     return packet_ds
 

@@ -10,10 +10,24 @@ from space_packet_parser.xtce.validation import validate_xtce
 
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
+from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
+from libera_utils.l1a.wfov_image_metadata import (
+    BLOB_BYTE_COORD,
+    CAMERA_TIME_COORD,
+    ERROR_FLAGGED_IMAGE_COUNT_ATTR,
+    FIRST_IMAGE_INCOMPLETE_ATTR,
+    FOOTER_MISMATCH_COUNT_ATTR,
+    HEADER_PARSE_ERROR_COUNT_ATTR,
+    LAST_IMAGE_INCOMPLETE_ATTR,
+    PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR,
+    WFOV_COMPRESSED_IMAGE_LENGTH_VAR,
+    WFOV_COMPRESSED_IMAGE_VAR,
+    WFOV_HEADER_PARSE_VALID_VAR,
+)
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -86,7 +100,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
             "PACKET_ICIE_TIME",
             8,
         ),
-        (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_wfov_sci, "PACKET_ICIE_TIME", 8),
+        (["test_ditl_camera_with_duplicate_packet"], LiberaApid.icie_wfov_sci, CAMERA_TIME_COORD, 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_nom_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_crit_hk, "PACKET_ICIE_TIME", 8),
         (["test_ccsds_2025_221_17_17_58"], LiberaApid.icie_temp_hk, "PACKET_ICIE_TIME", 8),
@@ -133,7 +147,11 @@ def test_process_packets_to_l1a_product(
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", str(skip_header_bytes))
 
     print("Parsing packets to L1A dataset...")
-    dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
+    if apid == LiberaApid.icie_wfov_sci:
+        with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+            dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
+    else:
+        dataset = packets.parse_packets_to_l1a_dataset(packet_files=packet_files, apid=apid.value)
 
     # Verify basic structure
     assert isinstance(dataset, type(dataset)), "Should return an xarray Dataset"
@@ -170,6 +188,24 @@ def test_process_packets_to_l1a_product(
         assert "ICIE__SW_FP_WP_ST_WP" in dataset.data_vars
         assert dataset["ICIE__SW_FP_WP_ST_WP"].dims == ("PACKET", "ARRAY_128")
         assert dataset["ICIE__SW_FP_WP_ST_WP"].shape[1] == 128
+
+    if apid == LiberaApid.icie_wfov_sci:
+        assert CAMERA_TIME_COORD in dataset.coords
+        assert CAMERA_TIME_COORD in dataset.dims
+        assert BLOB_BYTE_COORD in dataset.dims
+        assert "CAMERA_PACKET_INDEX" in dataset.data_vars
+        assert "PACKET_IMAGE_ID" in dataset.data_vars
+        assert WFOV_HEADER_PARSE_VALID_VAR in dataset.data_vars
+        assert WFOV_COMPRESSED_IMAGE_VAR in dataset.data_vars
+        assert WFOV_COMPRESSED_IMAGE_LENGTH_VAR in dataset.data_vars
+        assert dataset.sizes[CAMERA_TIME_COORD] > 0
+        assert "ICIE__WFOV_DATA" not in dataset.data_vars
+        assert PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR in dataset.attrs
+        assert ERROR_FLAGGED_IMAGE_COUNT_ATTR in dataset.attrs
+        assert FOOTER_MISMATCH_COUNT_ATTR in dataset.attrs
+        assert HEADER_PARSE_ERROR_COUNT_ATTR in dataset.attrs
+        assert FIRST_IMAGE_INCOMPLETE_ATTR in dataset.attrs
+        assert LAST_IMAGE_INCOMPLETE_ATTR in dataset.attrs
 
     print("Enforcing LiberaDataProductDefinition on dataset object")
 
@@ -209,6 +245,135 @@ def test_process_packets_to_l1a_product(
             )
 
     print("   ✓ NetCDF file verification complete")
+
+
+@pytest.mark.filterwarnings("error")
+def test_wfov_sci_filename_uses_image_time_bounds(
+    test_ditl_camera_with_duplicate_packet,
+    monkeypatch,
+    tmp_path,
+):
+    """WFOV L1A filenames must reflect FSW image times, not CCSDS packet telemetry times."""
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+    apid = LiberaApid.icie_wfov_sci
+    packet_config = get_packet_config(apid)
+
+    with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+        dataset = packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ditl_camera_with_duplicate_packet],
+            apid=apid.value,
+        )
+
+    expected_first = np.datetime64("2028-02-14T04:23:03.681622", "us")
+    expected_last = np.datetime64("2028-02-14T04:23:13.564655", "us")
+
+    camera_times = dataset[CAMERA_TIME_COORD].values
+    np.testing.assert_equal(camera_times[0], expected_first)
+    np.testing.assert_equal(camera_times[-1], expected_last)
+
+    packet_first = dataset[packet_config.packet_time_coordinate].values[0]
+    packet_last = dataset[packet_config.packet_time_coordinate].values[-1]
+    assert expected_first != packet_first
+    assert expected_last != packet_last
+
+    product_definition_path = get_l1a_product_definition_path(apid)
+    output_filename = write_libera_data_product(
+        data_product_definition=product_definition_path,
+        data=dataset,
+        output_path=tmp_path,
+        time_variable=CAMERA_TIME_COORD,
+        strict=True,
+    )
+    parsed_filename = LiberaDataProductFilename.from_file_path(output_filename.path)
+    filename = parsed_filename.path.name
+    assert "20280214T042303" in filename
+    assert "20280214T042313" in filename
+
+
+@pytest.mark.filterwarnings("error")
+def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
+    test_ditl_camera_with_duplicate_packet,
+    monkeypatch,
+    tmp_path,
+):
+    """DITL WFOV SCI: parse, write, read back, and smoke-test JPEG-LS decompression."""
+    from io import BytesIO
+
+    import pillow_jpls  # noqa: F401 - registers JPEG-LS plugin with Pillow
+    from PIL import Image
+
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+    apid = LiberaApid.icie_wfov_sci
+
+    with pytest.warns(UserWarning, match=r"Detected 1 duplicate PACKET_ICIE_TIME"):
+        dataset = packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ditl_camera_with_duplicate_packet],
+            apid=apid.value,
+        )
+
+    n_complete = dataset.sizes[CAMERA_TIME_COORD]
+    assert n_complete < dataset.sizes["PACKET"]
+    # Fixture has 1509 WFOV SCI packets; only 3 stitch into complete images. The rest are all
+    # leading/trailing edge truncation (this packet window doesn't open on an SOP or close on an
+    # EOP), not genuine anomalies, so they don't count toward PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR.
+    assert dataset.attrs[PACKET_COUNT_NOT_USED_IN_IMAGES_ATTR] == 0
+    assert dataset.attrs[FIRST_IMAGE_INCOMPLETE_ATTR] == 1
+    assert dataset.attrs[LAST_IMAGE_INCOMPLETE_ATTR] == 1
+    assert dataset.attrs[ERROR_FLAGGED_IMAGE_COUNT_ATTR] == 0
+    assert dataset.attrs[FOOTER_MISMATCH_COUNT_ATTR] == 0
+    assert dataset.attrs[HEADER_PARSE_ERROR_COUNT_ATTR] == 0
+
+    pre_write_payloads = []
+    for image_index in range(n_complete):
+        length = int(dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
+        pre_write_payloads.append(dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes())
+
+    product_definition_path = get_l1a_product_definition_path(apid)
+    output_filename = write_libera_data_product(
+        data_product_definition=product_definition_path,
+        data=dataset,
+        output_path=tmp_path,
+        time_variable=CAMERA_TIME_COORD,
+        strict=True,
+    )
+
+    with xr.open_dataset(output_filename.path) as read_dataset:
+        product_config = LiberaDataProductDefinition.from_yaml(product_definition_path)
+        errors = product_config.check_dataset_conformance(read_dataset, strict=False)
+        assert not errors, errors
+
+        assert read_dataset.sizes[CAMERA_TIME_COORD] == n_complete
+        for image_index, expected_payload in enumerate(pre_write_payloads):
+            length = int(read_dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
+            round_tripped = read_dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes()
+            assert round_tripped == expected_payload
+
+        for image_index in range(min(3, n_complete)):
+            length = int(read_dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
+            payload = read_dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes()
+            with Image.open(BytesIO(payload)) as img:
+                assert img.size == (2048, 2048)
+
+
+def test_wfov_sci_no_complete_images_raises(
+    test_ccsds_2025_221_17_17_58,
+    monkeypatch,
+):
+    """A WFOV granule where no image completes must fail loudly, not emit an unusable product.
+
+    This ISTR file carries 1298 APID 1040 packets that never form a complete SOP->EOP image. Before
+    the raise it produced a dataset with ICIE__WFOV_DATA already dropped, zero CAMERA_TIME rows, and
+    PacketCountNotUsedInImages == 0 -- which then failed to write under strict=True (missing every
+    CAMERA_TIME variable) and under strict=False (IndexError on an empty time coordinate). The raw
+    packets were destroyed either way.
+    """
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+
+    with pytest.raises(ValueError, match=r"No complete WFOV images could be produced"):
+        packets.parse_packets_to_l1a_dataset(
+            packet_files=[test_ccsds_2025_221_17_17_58],
+            apid=LiberaApid.icie_wfov_sci.value,
+        )
 
 
 @pytest.mark.filterwarnings("error")
