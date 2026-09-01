@@ -132,6 +132,27 @@ class TestIGBPReaderLoadTile:
         data_sub, _, _ = reader._load_spatial_region(bbox)
         assert np.all(np.isnan(data_sub))
 
+    def test_out_of_domain_codes_are_masked_to_nan(self, tmp_path, monkeypatch):
+        # Regression: MCD12Q1 LC_Type1 valid IGBP codes are 1..17 (17 = Water Bodies),
+        # which align 1:1 with the low IGBPSurfaceType members. Codes outside that domain
+        # -- a stray 0 (which calculate_trmm_surface_type rejects) or an 18/255 -- must be
+        # masked to NaN so the modal class fed downstream is always enum-consistent.
+        _, lats, lons = _make_synthetic_igbp_data()
+        # Row-constant codes: 0 (invalid), 17 (valid, water), 18 (invalid), 5 (valid),
+        # 255 (fill), 1 (valid). Shape (6, 6) to match the coordinate grids.
+        rows = np.array([0.0, 17.0, 18.0, 5.0, 255.0, 1.0], dtype=np.float32)
+        data = np.repeat(rows[:, np.newaxis], 6, axis=1)
+        monkeypatch.setattr(
+            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
+            lambda **kwargs: (data, lats, lons),
+        )
+
+        reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
+        _, _, values = reader._load_points  # cached_property -> (lats, lons, values)
+        finite = values[np.isfinite(values)]
+        # Only the in-domain codes survive; 0, 18, and 255 are gone.
+        assert set(np.unique(finite).tolist()) == {1.0, 5.0, 17.0}
+
     def test_data_dtype_is_float32(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
         monkeypatch.setattr(

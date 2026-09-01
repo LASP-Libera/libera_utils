@@ -801,7 +801,11 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 #     identify_scenes as 100 - clear_area (calculate_cloud_fraction); and
 #   * surface_wind_u / surface_wind_v (from the ERA5 10 m wind components) -> surface_wind is derived as
 #     sqrt(u^2 + v^2) (calculate_surface_wind).
-# surface_type is likewise derived from igbp_surface_type. The three viewing angles are read straight through.
+# surface_type is likewise derived from igbp_surface_type via calculate_trmm_surface_type. The IGBP reader
+# masks LC_Type1 to its valid 1..17 domain (17 = Water Bodies), which aligns 1:1 with the low IGBPSurfaceType
+# members, so a valid modal class maps straight through; igbp_surface_type == 0 only occurs as the no-data
+# sentinel (a footprint with no usable IGBP pixels) and is intentionally rejected by the calculator. The three
+# viewing angles are read straight through.
 _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
     FootprintVariables.CLEAR_AREA: _FmatchColumn("ssf_clear_coverage", np.float32),

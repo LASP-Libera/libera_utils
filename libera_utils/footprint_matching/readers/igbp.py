@@ -30,12 +30,24 @@ from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, 
 
 # IGBP fill / no-data value in the MCD12Q1 HDF4 file.
 # Value 255 is the standard fill for uint8 SDS fields in this product.
-# Values 0–20 are valid land cover categories.
 _IGBP_FILL_VALUE: float = 255.0
 
-# IGBP classification has 20 classes (0–19 valid, where 0 = water).
-# This is stored in the VARIABLES spec so the aggregation engine knows
-# how many category bins to allocate in the PSF histogram.
+# MCD12Q1 ``LC_Type1`` valid IGBP land-cover codes are 1..17, where 17 = Water Bodies
+# (255 is fill). These codes are 1-based and align 1:1 with the low 17 members of
+# ``scene_identification.scene_id.IGBPSurfaceType`` (1 = Evergreen Needleleaf .. 17 =
+# Water Bodies), so a modal class read here maps straight through
+# ``calculate_trmm_surface_type`` without any renumbering. The enum's 18..20 (tundra /
+# fresh-snow / sea-ice) belong to the 20-class TRMM/CERES IGBP variant and are never
+# emitted by MODIS ``LC_Type1``; a value of 0 is likewise not a valid class (it only
+# ever arises downstream as the no-data sentinel when a footprint has no usable IGBP
+# pixels). Out-of-domain codes are masked to NaN at read time so this reader provably
+# emits only enum-consistent classes.
+_IGBP_VALID_MIN: int = 1
+_IGBP_VALID_MAX: int = 17
+
+# Histogram size for the categorical PSF aggregation. Sized to the full 20-class
+# ``IGBPSurfaceType`` domain (an upper bound on ``LC_Type1``'s 1..17) so the bins line
+# up with the enum; unused high bins simply receive zero weight.
 _N_IGBP_CATEGORIES: int = 20
 
 
@@ -141,8 +153,9 @@ class IGBPReader(GriddedDataReader):
             ``(n_pixels,)`` float64 pixel-centre coordinates derived from the
             sinusoidal projection metadata, and ``values`` is float64 shape
             ``(1, n_pixels)`` holding the IGBP class code per pixel. Fill pixels
-            (original value 255) are set to ``NaN`` so the ``weighted_mode``
-            rasterization never selects fill as the modal land-cover class.
+            (original value 255) and any code outside the valid IGBP domain
+            (``1..17``) are set to ``NaN`` so the ``weighted_mode`` rasterization
+            never selects fill or an out-of-domain code as the modal land-cover class.
         """
         data_2d, lats_2d, lons_2d = read_modis_sinusoidal_hdf4(
             file_path=str(self._file_path),
@@ -151,10 +164,13 @@ class IGBPReader(GriddedDataReader):
         )
 
         # read_modis_sinusoidal_hdf4 returns the data and coordinates as 2-D
-        # per-pixel grids. Mask the 255 fill to NaN *before* flattening: the
-        # rasterizer's mode aggregation counts every finite value as a category,
-        # so leaving 255 in would let "fill" win a cell.
-        values_2d = np.where(data_2d == _IGBP_FILL_VALUE, np.nan, data_2d)
+        # per-pixel grids. Mask anything outside the valid IGBP land-cover domain
+        # (1..17) -- including the 255 fill and any stray 0 -- to NaN *before*
+        # flattening: the rasterizer's mode aggregation counts every finite value as a
+        # category, so leaving fill or an out-of-domain code in would let it win a cell
+        # and, downstream, feed calculate_trmm_surface_type a code it cannot map.
+        in_domain = (data_2d >= _IGBP_VALID_MIN) & (data_2d <= _IGBP_VALID_MAX)
+        values_2d = np.where(in_domain, data_2d, np.nan)
 
         lats = np.asarray(lats_2d, dtype=np.float64).ravel()
         lons = np.asarray(lons_2d, dtype=np.float64).ravel()

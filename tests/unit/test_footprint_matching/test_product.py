@@ -19,6 +19,8 @@ imager fields. These tests confirm, for every shipped definition, that:
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -26,12 +28,14 @@ import pytest
 # cross-check the product definitions against their VariableSpecs.
 import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.constants import DataLevel, DataProductIdentifier
+from libera_utils.footprint_matching.geometry import NOMINAL_ALTITUDE_KM
 from libera_utils.footprint_matching.product import (
     _CAMTIME_SEGMENTATION_VARIABLES,
     _RADIOMETER_L1B_VARIABLES,
     FMATCH_DEFINITION_FILENAMES,
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
+    _footprint_geometry,
     assemble_fmatch_dataset,
     build_radiometer_footprints,
     compute_derived_viewing_geometry,
@@ -42,6 +46,7 @@ from libera_utils.footprint_matching.product import (
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.tiling import TileManager
 from libera_utils.footprint_matching.types import (
+    BoundingBox,
     FmatchCoverageFlag,
     OperationalMode,
     VariableSpec,
@@ -699,6 +704,38 @@ class TestBuildRadiometerFootprints:
         assert len(footprints) == 2
         for footprint in footprints:
             assert footprint.bbox.lat_min <= footprint.bbox.lat_max
+        # The on-limb record is a normal observation; the past-the-limb record is marked
+        # off_limb so aggregation skips it (fill + zero coverage) instead of tiling and
+        # weighting its boresight placeholder box as a real observation.
+        assert footprints[0].off_limb is False
+        assert footprints[1].off_limb is True
+
+
+class TestFootprintGeometryAltitude:
+    """The PSF geometry reads a spacecraft altitude in km, never a surface height."""
+
+    def test_radiometer_footprint_uses_its_spacecraft_altitude_km(self):
+        (footprint,) = build_radiometer_footprints(
+            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+        )
+        assert _footprint_geometry(footprint).altitude_km == pytest.approx(NOMINAL_ALTITUDE_KM)
+
+    def test_camera_surface_height_is_not_read_as_spacecraft_altitude(self):
+        # Regression: a camera PseudoFootprint carries ``altitude`` as the center-pixel
+        # *surface height in metres* (an output column), not a spacecraft altitude in km.
+        # The geometry extractor must ignore that field and fall back to the nominal
+        # orbit altitude -- otherwise 835_000 m would be read as 835_000 km, inflating
+        # the PSF ground radius ~1000x.
+        camera_like = SimpleNamespace(
+            bbox=BoundingBox(0.0, 1.0, 0.0, 1.0),
+            latitude=0.5,
+            longitude=0.5,
+            altitude=835_000.0,  # metres of surface height
+            viewing_zenith_angle=0.0,
+        )
+        geom = _footprint_geometry(camera_like)
+        assert geom.altitude_km == pytest.approx(NOMINAL_ALTITUDE_KM)
+        assert geom.altitude_km != pytest.approx(835_000.0)
 
 
 def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:
