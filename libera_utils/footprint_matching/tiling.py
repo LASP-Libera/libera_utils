@@ -318,8 +318,15 @@ class TileManager:
         # Antimeridian crossing: split into two boxes on either side of ±180° and
         # merge the two results (see BoundingBox.wraps_dateline).
         if bbox.wraps_dateline:
+            # A wrapped box is in the [0, 360) representation with lon_min < 180 < lon_max
+            # (see bounding_box_from_points). The west half [lon_min, 180] is already in
+            # range, but the east max must be normalized back into [-180, 180] by
+            # subtracting 360 -- otherwise the non-wrapping east sub-request would select
+            # every longitude tile from -180 through lon_max (a near-global read) instead
+            # of just the -180..(lon_max-360) sliver east of the antimeridian.
+            east_max = bbox.lon_max - 360.0
             west = BoundingBox(bbox.lat_min, bbox.lat_max, bbox.lon_min, 180.0, False, bbox.is_polar, bbox.truncated)
-            east = BoundingBox(bbox.lat_min, bbox.lat_max, -180.0, bbox.lon_max, False, bbox.is_polar, bbox.truncated)
+            east = BoundingBox(bbox.lat_min, bbox.lat_max, -180.0, east_max, False, bbox.is_polar, bbox.truncated)
             return self.merge_tiles([self.get_data(source, west), self.get_data(source, east)])
 
         keys = self.resolve_tile_keys(source, bbox)

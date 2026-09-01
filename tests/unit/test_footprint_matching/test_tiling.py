@@ -209,6 +209,19 @@ class TestDateline:
         # Longitudes from both sides of the antimeridian appear, sorted ascending.
         assert merged.lons.min() < 0 < merged.lons.max()
 
+    def test_wrapped_box_in_360_representation_does_not_read_near_global(self, tmp_path):
+        # Regression: bounding_box_from_points reports a wrapped box in the [0, 360)
+        # representation, so a narrow 179/-179 crossing has lon_max == 181 (not -179).
+        # The east sub-request must normalize that max back into [-180, 180]; otherwise
+        # it selects every longitude tile from -180 through 181 -- a ~180-tile
+        # near-global read -- instead of the two-degree sliver east of the antimeridian.
+        reader = _reader(tmp_path)  # 2 deg tiles
+        tm = _manager(reader)
+        box = BoundingBox(0.0, 2.0, 179.0, 181.0, wraps_dateline=True)
+        tm.get_data("_fake_tiling", box)
+        # West sliver [179, 180] + east sliver [-180, -179] -> exactly two tile reads.
+        assert reader.load_calls == 2
+
 
 # ---------------------------------------------------------------------------
 # Error path (catch -> empty/partial)

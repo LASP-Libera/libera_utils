@@ -82,11 +82,18 @@ class FmatchCoverageFlag(enum.IntFlag):
     LIMB_TRUNCATED
         The footprint's bounding box was clipped at the Earth's limb
         (``BoundingBox.truncated``), so it only ever had partial ground coverage. Bit 3.
+    OFF_LIMB
+        The view's centroid is off the Earth's limb (a space / calibration look), so
+        :func:`compute_footprint_bounding_box` reports *no* Earth footprint at all. The
+        record is retained for index alignment but its external variables are left at
+        their fill sentinel and its coverage is forced to zero -- it must never be
+        scored as a real observation. Bit 4.
     """
 
     PARTIAL_COVERAGE = 0b0001
     INSUFFICIENT_COVERAGE = 0b0100
     LIMB_TRUNCATED = 0b1000
+    OFF_LIMB = 0b10000
 
 
 class BoundingBox(tuple):
@@ -282,9 +289,11 @@ class RadiometerFootprint:
         Geographic box enclosing the footprint's PSF ground contour.
     latitude, longitude : float
         Boresight centroid (L1B ``Latitude``/``Longitude``), degrees.
-    altitude : float
-        Satellite altitude above the surface, km (nominal orbit altitude when the L1B
-        field is unavailable).
+    spacecraft_altitude_km : float
+        Spacecraft altitude above the surface, km (nominal orbit altitude when the L1B
+        field is unavailable). Read only by the PSF geometry; this is the satellite
+        altitude, not a surface/terrain height -- kept explicitly in km and separate
+        from the camera path's metres-valued surface-height output field.
     viewing_zenith_angle : float
         Viewing zenith angle (L1B ``Viewing_Zenith_Surface``), degrees.
     subsatellite_latitude, subsatellite_longitude : float or None
@@ -295,16 +304,23 @@ class RadiometerFootprint:
         Instrument cone-angle rate (L1B ``Cone_Angle_Rate``), degrees per second.
         ``None`` when unavailable. Its sign sets the along-scan PSF orientation and a
         near-zero magnitude flags the stationary-scanner (uniform-FOV) case.
+    off_limb : bool
+        ``True`` for a space / calibration view whose centroid is off the Earth's limb,
+        i.e. one with no Earth footprint (:class:`OffLimbError`). ``bbox`` is then only a
+        boresight placeholder kept for index alignment; the aggregation path skips these
+        records (fill values, zero coverage) and flags them ``OFF_LIMB`` rather than
+        aggregating ancillary data against a fabricated geographic box.
     """
 
     bbox: BoundingBox
     latitude: float
     longitude: float
-    altitude: float
+    spacecraft_altitude_km: float
     viewing_zenith_angle: float
     subsatellite_latitude: float | None = None
     subsatellite_longitude: float | None = None
     cone_angle_rate: float | None = None
+    off_limb: bool = False
 
 
 @dataclass(frozen=True)
