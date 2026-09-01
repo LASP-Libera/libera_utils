@@ -222,6 +222,15 @@ class TestDataProductIdentifier:
             "cal_rad_viirs_lunar_neg_start",
             "cal_wfov_viirs_lunar_pos_start",
             "cal_wfov_viirs_lunar_neg_start",
+            # Event-level calibration products (retained for libera_rad)
+            "cal_gain_combined",
+            "cal_sw_combined",
+            "cal_lw_temp1_combined",
+            "cal_lw_temp2_combined",
+            "cal_lw_temp3_combined",
+            "cal_solar_face1_combined",
+            "cal_solar_face2_combined",
+            "cal_solar_face3_combined",
             # SPICE kernels
             "spice_az_ck",
             "spice_el_ck",
@@ -590,3 +599,29 @@ class TestLiberaApid:
             # Check that the product follows the naming convention
             assert product.name.startswith("l0_")
             assert product.name.endswith("_pds")
+
+
+class TestEventLevelCalibrationProducts:
+    """The event-level CAL products libera_rad writes must stay importable and well-formed."""
+
+    EVENT_LEVEL = (
+        ("cal_gain_combined", "GAIN-COMBINED"),
+        ("cal_sw_combined", "SW-COMBINED"),
+        ("cal_lw_temp1_combined", "LW-TEMP1-COMBINED"),
+        ("cal_lw_temp2_combined", "LW-TEMP2-COMBINED"),
+        ("cal_lw_temp3_combined", "LW-TEMP3-COMBINED"),
+        ("cal_solar_face1_combined", "SOLAR-FACE1-COMBINED"),
+        ("cal_solar_face2_combined", "SOLAR-FACE2-COMBINED"),
+        ("cal_solar_face3_combined", "SOLAR-FACE3-COMBINED"),
+    )
+
+    @pytest.mark.parametrize(("member", "product_name"), EVENT_LEVEL)
+    def test_member_resolves_with_cal_level(self, member, product_name):
+        identifier = getattr(DataProductIdentifier, member)
+        assert identifier.product_name == product_name
+        assert identifier.data_level is DataLevel.CAL
+
+    def test_event_level_and_per_obsid_products_coexist(self):
+        """Both granularities are addressable; neither shadows the other."""
+        assert DataProductIdentifier.cal_gain_combined is not DataProductIdentifier.cal_gain
+        assert str(DataProductIdentifier.cal_gain) == "GAIN"

@@ -253,6 +253,25 @@ class DataProductIdentifier(StrEnum):
     cal_rad_viirs_lunar_neg_start = ("RAD-VIIRS-LUNAR-NEG-START", DataLevel.CAL)
     cal_wfov_viirs_lunar_pos_start = ("WFOV-VIIRS-LUNAR-POS-START", DataLevel.CAL)
     cal_wfov_viirs_lunar_neg_start = ("WFOV-VIIRS-LUNAR-NEG-START", DataLevel.CAL)
+    # Event-level Calibration Products (retained for libera_rad)
+    # ==========================================================
+    # One product per calibration *event* rather than per ObsID: a solar pass spans the four
+    # channel ObsIDs of one diffuser face, and libera_rad's combiners emit a single product for
+    # the event, recording the contributing ObsIDs in a ``source_obsids`` attribute.
+    #
+    # These predate the per-ObsID products above and are still the identifiers libera_rad writes.
+    # Whether the archive keeps event-level products, per-ObsID products, or both is an open
+    # product-definition question (see the PR restoring these); they are kept importable so the
+    # decision can be made deliberately rather than forced by a downstream break.
+    cal_gain_combined = ("GAIN-COMBINED", DataLevel.CAL)
+    cal_sw_combined = ("SW-COMBINED", DataLevel.CAL)
+    cal_lw_temp1_combined = ("LW-TEMP1-COMBINED", DataLevel.CAL)
+    cal_lw_temp2_combined = ("LW-TEMP2-COMBINED", DataLevel.CAL)
+    cal_lw_temp3_combined = ("LW-TEMP3-COMBINED", DataLevel.CAL)
+    cal_solar_face1_combined = ("SOLAR-FACE1-COMBINED", DataLevel.CAL)
+    cal_solar_face2_combined = ("SOLAR-FACE2-COMBINED", DataLevel.CAL)
+    cal_solar_face3_combined = ("SOLAR-FACE3-COMBINED", DataLevel.CAL)
+
     # SPICE kernels
     # =============
     spice_az_ck = ("AZROT-CK", DataLevel.SPICE)
