@@ -301,9 +301,9 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
     """Extract the viewing geometry a PSF weigher needs from a footprint object.
 
     Different footprint objects expose geometry differently (a camera
-    ``PseudoFootprint`` has ``latitude``/``longitude``/``altitude``/
-    ``viewing_zenith_angle``; a bare footprint may only carry a ``bbox``), so we read
-    named attributes when present and fall back sensibly otherwise. The
+    ``PseudoFootprint`` has ``latitude``/``longitude``/``viewing_zenith_angle``; a bare
+    footprint may only carry a ``bbox``), so we read named attributes when present and
+    fall back sensibly otherwise. The
     ``subsatellite_*`` and ``cone_angle_rate`` fields are only used by the
     angular-frame weigher; they are ``None`` when the footprint does not carry them
     (the radial stand-in ignores them, and the angular weigher degrades gracefully).
@@ -319,7 +319,14 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
         # lands inside it, which is good enough for the weight kernel.)
         lat = 0.5 * (bbox.lat_min + bbox.lat_max)
         lon = 0.5 * (bbox.lon_min + bbox.lon_max)
-    altitude = getattr(footprint, "altitude", None)
+    # Spacecraft altitude in km for the PSF ground-radius scaling. Read only the
+    # dedicated ``spacecraft_altitude_km`` field so we never mistake another quantity
+    # for it -- in particular the camera ``PseudoFootprint`` carries a metres-valued
+    # ``altitude`` that is the center-pixel *surface height* (an output column), not a
+    # spacecraft altitude; using it here would inflate the PSF radius ~1000x and make
+    # near-zero terrain heights collapse to the fallback. Camera footprints expose no
+    # spacecraft altitude, so they correctly fall back to the nominal orbit altitude.
+    altitude = getattr(footprint, "spacecraft_altitude_km", None)
     if altitude is None or not (altitude > 0.0):
         altitude = NOMINAL_ALTITUDE_KM
     viewing_zenith = getattr(footprint, "viewing_zenith_angle", 0.0) or 0.0
@@ -488,6 +495,13 @@ def aggregate_external_variables(
     coverage_min = np.full(n_footprints, np.inf, dtype=float)
 
     for i, footprint in enumerate(footprints):
+        if getattr(footprint, "off_limb", False):
+            # Space/calibration view with no Earth footprint: leave every external
+            # variable at its fill sentinel and force zero coverage (coverage_min[i]
+            # stays +inf, mapped to 0.0 below). Never aggregate ancillary data against
+            # the boresight placeholder box -- that would hand a space record valid-
+            # looking external values and nonzero coverage.
+            continue
         geom = _footprint_geometry(footprint)
         for key, reader_cls in reader_classes.items():
             # Merged, cached tile covering this footprint's PSF bounding box.
@@ -672,7 +686,7 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
                     bbox=bounding_box_from_boresight(float(lat), float(lon), float(vza)),
                     latitude=float(lat),
                     longitude=float(lon),
-                    altitude=NOMINAL_ALTITUDE_KM,
+                    spacecraft_altitude_km=NOMINAL_ALTITUDE_KM,
                     viewing_zenith_angle=float(vza),
                 )
             )
@@ -681,6 +695,7 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
         subsatellite_lat = float(subsatellite_lats[i])
         subsatellite_lon = float(subsatellite_lons[i])
         cone_rate = float(cone_rates[i])
+        off_limb = False
         try:
             bbox = compute_footprint_bounding_box(
                 float(lat),
@@ -692,20 +707,24 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
             )
         except OffLimbError:
             # A space/calibration view that slipped past the reader's finite filter has
-            # no Earth footprint; keep index alignment by falling back to the boresight
-            # box rather than dropping the record.
+            # no Earth footprint. Keep index alignment with a boresight placeholder box,
+            # but mark the record off-limb so the aggregation path leaves its external
+            # variables at fill and scores it zero coverage -- rather than tiling and
+            # weighting a fabricated geographic box as if it were a real observation.
             bbox = bounding_box_from_boresight(float(lat), float(lon), float(vza))
+            off_limb = True
         footprints.append(
             RadiometerFootprint(
                 bbox=bbox,
                 latitude=float(lat),
                 longitude=float(lon),
-                altitude=NOMINAL_ALTITUDE_KM,
+                spacecraft_altitude_km=NOMINAL_ALTITUDE_KM,
                 viewing_zenith_angle=float(vza),
                 subsatellite_latitude=subsatellite_lat,
                 subsatellite_longitude=subsatellite_lon,
                 # A fill/NaN cone-angle rate means "unknown scan rate" -> None.
                 cone_angle_rate=None if not np.isfinite(cone_rate) else cone_rate,
+                off_limb=off_limb,
             )
         )
     return footprints
@@ -800,7 +819,9 @@ def _merge_coverage_qa(
     Implements design-doc section 2.4.2.7 as *flags*, not discards (Decision 4 of the
     wiring plan): coverage in ``[0.75, 0.95)`` sets ``PARTIAL_COVERAGE``; coverage
     below ``0.75`` sets ``INSUFFICIENT_COVERAGE``; a limb-truncated bounding box sets
-    ``LIMB_TRUNCATED``. These bits are OR-ed into any ``q_flags`` already present (the
+    ``LIMB_TRUNCATED``; an off-limb (space/calibration) view with no Earth footprint sets
+    ``OFF_LIMB`` (and, via its forced zero coverage, ``INSUFFICIENT_COVERAGE``). These
+    bits are OR-ed into any ``q_flags`` already present (the
     camera path sets its segmentation flags first), so a footprint carries both its
     segmentation and its coverage provenance.
 
@@ -828,9 +849,11 @@ def _merge_coverage_qa(
     partial = (coverage >= ACCEPT_COVERAGE_THRESHOLD) & (coverage < PARTIAL_COVERAGE_THRESHOLD)
     insufficient = coverage < ACCEPT_COVERAGE_THRESHOLD
     truncated = np.array([bool(getattr(f.bbox, "truncated", False)) for f in footprints], dtype=bool)
+    off_limb = np.array([bool(getattr(f, "off_limb", False)) for f in footprints], dtype=bool)
     qbits[partial] |= int(FmatchCoverageFlag.PARTIAL_COVERAGE)
     qbits[insufficient] |= int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
     qbits[truncated] |= int(FmatchCoverageFlag.LIMB_TRUNCATED)
+    qbits[off_limb] |= int(FmatchCoverageFlag.OFF_LIMB)
     # OR into any q_flags already assembled (e.g. camera segmentation flags).
     existing = data.get("q_flags")
     if existing is not None:

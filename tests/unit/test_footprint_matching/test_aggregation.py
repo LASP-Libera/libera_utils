@@ -109,6 +109,16 @@ class TestWeightedMode:
     def test_no_data_returns_nan_mode(self):
         assert math.isnan(agg.weighted_mode(np.array([np.nan]), np.array([1.0]), n_categories=3)["mode"])
 
+    def test_top_of_range_code_not_dropped_for_one_based_scheme(self):
+        # Regression: CLDPIX cloud phase uses 1-based codes 1..5 and declares
+        # n_categories=5. The category domain must include code 5 (it lands at
+        # bincount index 5, one past the declared count) rather than truncating it.
+        values = np.array([5.0, 5.0, 1.0])
+        weights = np.array([2.0, 2.0, 1.0])  # code 5 has the most weight
+        result = agg.weighted_mode(values, weights, n_categories=5)
+        assert result["mode"] == pytest.approx(5.0)
+        assert result["coverage_fractions"][5] == pytest.approx(4.0 / 5.0)
+
 
 class TestRankedMode:
     """primary/secondary/tertiary = 1st/2nd/3rd most common class by weight."""

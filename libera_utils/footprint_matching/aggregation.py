@@ -247,9 +247,18 @@ def _weighted_category_weights(
     if v.size == 0:
         return np.empty(0, dtype=int), np.empty(0, dtype=float)
     if n_categories is not None:
-        categories = np.arange(n_categories, dtype=int)
+        # ``n_categories`` gives the size of a fixed 0-based code domain (e.g. IGBP's
+        # 20 classes 0..19). Some categorical schemes are 1-based, though: CLDPIX cloud
+        # phase uses codes 1..5, so the highest valid code (5) lands at ``bincount``
+        # index 5 -- one past the declared count. Extend the histogram to cover the
+        # largest code actually present so a valid top-of-range code is never silently
+        # dropped; any unused low index (e.g. 0 for a 1-based scheme) simply gets zero
+        # weight and is excluded from the mode/coverage outputs. Values are already
+        # ``valid_range``-masked by the readers, so ``v.max()`` is bounded.
+        domain = max(int(n_categories), int(v.max()) + 1)
+        categories = np.arange(domain, dtype=int)
         # np.bincount sums the weights for each integer category in one pass.
-        category_weight = np.bincount(v, weights=w, minlength=n_categories)[:n_categories]
+        category_weight = np.bincount(v, weights=w, minlength=domain)
     else:
         categories, inverse = np.unique(v, return_inverse=True)
         category_weight = np.bincount(inverse, weights=w, minlength=categories.size)
