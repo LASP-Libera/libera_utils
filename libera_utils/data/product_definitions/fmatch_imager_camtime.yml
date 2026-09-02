@@ -388,37 +388,37 @@ variables:
     attributes:
       long_name: Clear-sky areal coverage (within-footprint standard deviation) (NOAA20)
       units: "percent"
-  ssf_cloud_optical_depth:
+  ssf_cloud_optical_depth_lower:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Cloud optical depth (CERES SSF imager layer) (NOAA20)
+      long_name: Cloud optical depth (CERES SSF imager lower layer) (NOAA20)
       units: "1"
-  ssf_cloud_optical_depth_standard_deviation:
+  ssf_cloud_optical_depth_lower_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
-      long_name: Cloud optical depth (CERES SSF imager layer) (within-footprint standard deviation) (NOAA20)
+      long_name: Cloud optical depth (CERES SSF imager lower layer) (within-footprint standard deviation) (NOAA20)
       units: "1"
-  ssf_cloud_water_particle_radius:
+  ssf_cloud_water_particle_radius_lower:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
       long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer) (NOAA20)
       units: "um"
-  ssf_cloud_water_particle_radius_standard_deviation:
+  ssf_cloud_water_particle_radius_lower_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
       long_name: Effective cloud water particle radius at 3.7 um (SSF lower layer) (within-footprint standard deviation) (NOAA20)
       units: "um"
-  ssf_cloud_ice_particle_radius:
+  ssf_cloud_ice_particle_radius_lower:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:
       long_name: Effective cloud ice particle radius at 3.7 um (SSF lower layer) (NOAA20)
       units: "um"
-  ssf_cloud_ice_particle_radius_standard_deviation:
+  ssf_cloud_ice_particle_radius_lower_standard_deviation:
     dtype: float32
     dimensions: ["FOOTPRINT"]
     attributes:

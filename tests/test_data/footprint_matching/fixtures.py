@@ -634,15 +634,16 @@ def make_ssf_fixture(
 
     Replicates the grouped, per-footprint structure of the real SSF product:
     - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
-      ``AeroTypePct`` (7) / ``AlbedoDim`` (10) secondary axes the reader flattens
+      ``AeroTypePct`` (7) secondary axis the reader flattens
     - ``Time_and_Position/instrument_fov_latitude`` and ``…_longitude``
       (**longitude stored in the 0..360 convention**, matching the real file)
     - One variable per supported reader field across the corresponding groups,
       with float fill ``3.4028235e38`` and int16 fill ``32767``. This includes the
       FMATCH-IMAGER-only extended fields: the layered cloud fields (both layers,
       upper offset from lower), ``Assimilated_Aerosol_Properties`` (``match_aot``,
-      ``aerosol_type_percentage``), the land/ocean 0.55 µm imager AODs, and
-      ``Surface_Map/broadband_surface_albedo``.
+      ``aerosol_type_percentage``), the land/ocean 0.55 µm imager AODs,
+      ``Auxillary_Properties/surface_albedo`` (1-D, 0..1), and
+      ``Observed_TOA_Fluxes/toa_incoming_solar_radiation`` (1-D, W/m²).
 
     All arrays default to a small deterministic set of footprints clustered near
     lat ≈ 10–11°, lon ≈ −10° (written as 350° in the 0..360 file convention) so
@@ -735,7 +736,7 @@ def make_ssf_fixture(
             var.valid_range = np.array(valid_range, dtype=np.float32)
 
     def _add_2d(grp, name, values_2d, dim_name, fill, valid_range=None):
-        """Write a 2-D (Footprints, <dim_name>) variable (e.g. AeroTypePct, AlbedoDim)."""
+        """Write a 2-D (Footprints, <dim_name>) variable (e.g. AeroTypePct)."""
         var = grp.createVariable(name, "f4", ("Footprints", dim_name), fill_value=fill)
         var[:] = values_2d.astype(np.float32)
         if valid_range is not None:
@@ -748,9 +749,8 @@ def make_ssf_fixture(
     with netCDF4.Dataset(str(out_path), "w") as ds:
         ds.createDimension("Footprints", n)
         ds.createDimension("LowerUpper", 2)
-        # Secondary axes flattened by the reader into _typeN / _bandN 1-D variables.
+        # Secondary axis flattened by the reader into _typeN 1-D variables.
         ds.createDimension("AeroTypePct", 7)
-        ds.createDimension("AlbedoDim", 10)
 
         tp = ds.createGroup("Time_and_Position")
         _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
@@ -843,11 +843,13 @@ def make_ssf_fixture(
             (0.0, 5.0),
         )
 
-        # FMATCH-IMAGER-only surface albedo, (Footprints, AlbedoDim=10): band b gets
-        # (b+1)*3 + footprint index.
-        smp = ds.createGroup("Surface_Map")
-        albedo = (np.arange(1, 11, dtype=np.float32)[None, :] * 3.0) + ramp[:, None]
-        _add_2d(smp, "broadband_surface_albedo", albedo, "AlbedoDim", fill_f, (0.0, 100.0))
+        # FMATCH-IMAGER-only surface albedo: a single 1-D (Footprints,) broadband value
+        # (0..1 fraction) in Auxillary_Properties, matching CER_SSF's surface_albedo.
+        _add(aux, "surface_albedo", (0.1 + ramp * 0.05).astype(np.float32), fill_f, (0.0, 1.0))
+
+        # FMATCH-IMAGER-only TOA incoming solar radiation: 1-D (Footprints,), W/m^2.
+        otf = ds.createGroup("Observed_TOA_Fluxes")
+        _add(otf, "toa_incoming_solar_radiation", (1360.0 + ramp).astype(np.float32), fill_f, (0.0, 1400.0))
 
     return out_path
 
