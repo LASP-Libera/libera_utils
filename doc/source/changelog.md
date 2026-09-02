@@ -1,5 +1,16 @@
 # Version Changes
 
+## 5.10.5
+
+- FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_COMPRESSED_IMAGE` (`uint8`/`BLOB_BYTE` + `WFOV_COMPRESSED_IMAGE_LENGTH`), and traces packets back to their image with `PACKET_IMAGE_ID`.
+- FEAT: Decode the 176-byte WFOV header (FSW + FPGA) onto `CAMERA_TIME` as `WFOV_FSW_HEADER_*`, `WFOV_IMAGE_HEADER_*`, `WFOV_IMAGE_FOOTER_*`, and `WFOV_FPGA_STATUS_*`; trailing 8-byte NAND footer is validated against a known magic pattern (`FooterMismatchCount`).
+- FEAT: Add file-level quality attrs `PacketCountNotUsedInImages`, `ErrorFlaggedImageCount`, `FooterMismatchCount`, `HeaderParseErrorCount`, plus `FirstImageIncomplete` / `LastImageIncomplete` flagging expected truncation at a packet window's leading/trailing edge (`PacketCountNotUsedInImages` counts only genuine mid-stream anomalies).
+- BREAKING: `CAMERA_TIME` now contains one row per **complete** stitched image only (not every qualifying SOP). Removed redundant `WFOV_IMAGE_COMPLETE`.
+- BREAKING: `ICIE__WFOV_DATA` is dropped from the WFOV L1A product entirely — every packet's raw payload is by then either duplicated in `WFOV_COMPRESSED_IMAGE` or unusable from this granule alone. `PACKET_IMAGE_ID` is the only remaining per-packet trace-back.
+- FEAT: WFOV SCI processing now raises `ValueError` when no complete image can be stitched. The raise happens before `ICIE__WFOV_DATA` is dropped, so the raw packets survive for diagnosis, and the message carries all stitch counters.
+- FIX: A structurally complete image whose 176-byte header cannot be decoded is now discarded and counted in `HeaderParseErrorCount`, rather than emitted with a `NaT` `CAMERA_TIME` that crashed filename generation. `CAMERA_TIME` is therefore always free of `NaT`.
+- FIX: `SINGLE`-flagged WFOV packets (whole image in one packet) are unsupported and were silently misattributed to window-edge truncation. They now log a warning and count toward `PacketCountNotUsedInImages`; a `SINGLE` mid-collection abandons the image in progress.
+
 ## 5.10.4
 
 - FEAT: Register ADM-specific standard dimensions in `libera_dimensions.yml` (viewing-geometry, surface-type, and cloud/wind property bins for ERBE-like and TRMM-like ADM products)

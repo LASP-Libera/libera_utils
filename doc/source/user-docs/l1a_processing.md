@@ -241,9 +241,10 @@ icie_rad_sample:
 
 ### AggregationGroup
 
-Some packets carry large binary payloads that XTCE decodes into many numbered scalar fields (e.g.
-972 individual single-byte fields for WFOV camera data). `AggregationGroup` reassembles these into
-a single bytes-typed variable per packet, reducing variable count and simplifying downstream access.
+Some packets carry large binary payloads that XTCE decodes into many numbered scalar fields
+instead of one binary field (e.g. hundreds of individual single-byte fields for a single payload).
+`AggregationGroup` reassembles these into a single bytes-typed variable per packet, reducing
+variable count and simplifying downstream access.
 
 | Field           | Type            | Description                                                         |
 | --------------- | --------------- | ------------------------------------------------------------------- |
@@ -255,17 +256,26 @@ a single bytes-typed variable per packet, reducing variable count and simplifyin
 The total byte size of all aggregated fields must equal `dtype.itemsize`. A `ValueError` is raised
 at processing time if there is a mismatch.
 
+> **No packet currently uses `aggregation_groups`.** WFOV SCI (`icie_wfov_sci`) used to be the
+> motivating case, reassembling `ICIE__WFOV_DATA` from 972 individual byte fields. Its XTCE
+> definition now decodes `ICIE__WFOV_DATA` directly as a single `BinaryParameterType` field, so
+> Space Packet Parser hands back the whole payload as one field already and `icie_wfov_sci`
+> declares no `aggregation_groups` at all. The mechanism is still fully supported for any future
+> packet whose XTCE definition splits a binary payload into many numbered scalar fields the same
+> way WFOV's used to; the example below is illustrative of that shape, not a real current config.
+
 ```yaml
-# WFOV_SCI: 972 individual byte fields reassembled into one 972-byte blob per packet
-icie_wfov_sci:
-  packet_apid: "icie_wfov_sci"
+# Illustrative: reassembling a hypothetical 972-byte payload split into 972 numbered byte fields
+# by its XTCE definition (no current packet configuration actually needs this)
+some_packet:
+  packet_apid: "some_packet"
   packet_time_fields:
-    day_field: "ICIE__TM_DAY_WFOV_SCI"
-    ms_field: "ICIE__TM_MS_WFOV_SCI"
-    us_field: "ICIE__TM_US_WFOV_SCI"
+    day_field: "SOME_PACKET_TM_DAY"
+    ms_field: "SOME_PACKET_TM_MS"
+    us_field: "SOME_PACKET_TM_US"
   aggregation_groups:
-    - name: "ICIE__WFOV_DATA"
-      field_pattern: "ICIE__WFOV_DATA_%i"
+    - name: "SOME_PACKET_DATA"
+      field_pattern: "SOME_PACKET_DATA_%i"
       field_count: 972
       dtype: "|S972"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
@@ -331,6 +341,141 @@ This varies by packet but there is some consistent behavior:
 - Every sample group has a `{name}_packet_index` variable (integer, same dimension as the sample
   data) that maps each sample back to its originating packet index in the `PACKET` dimension.
   This enables efficient joins between per-packet metadata and per-sample science data.
+
+### WFOV camera science (APID 1040) image metadata
+
+#### Packet Data Structure - Slicing and Reconstructing
+
+A single wide field of view (WFOV) image is too large for one CCSDS packet, so the camera splits it into a sequence
+of packets, each carrying one slice of the image plus fields describing where that slice belongs:
+
+| Field                        | Description                                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ICIE__MEM_DUMP_FLAGS_WFOV`  | This packet's position in the image sequence: `SOP` (Start of Photo), `MOP` (Middle of Photo), `EOP` (End of Photo), or `SINGLE` (whole image fit in one packet — **not supported**, see below) |
+| `ICIE__MEM_DUMP_OFFSET_WFOV` | Byte offset of this slice within the reassembled image                                                                                                                                          |
+| `ICIE__MEM_DUMP_LENGTH_WFOV` | Number of valid image bytes carried in this packet                                                                                                                                              |
+| `ICIE__WFOV_DATA`            | The raw image-slice payload for this packet                                                                                                                                                     |
+
+libera_utils reconstructs each full image by walking packets in stream order: an `SOP` packet
+with `ICIE__MEM_DUMP_OFFSET_WFOV == 0` opens a new image, each subsequent packet is appended as
+long as its offset matches the running byte count, and an `EOP` packet closes the image out. Any
+break in that sequence — an offset that doesn't line up, an `EOP` with no preceding `SOP`, or a
+`SOP` left dangling with no matching `EOP` — discards the in-progress image instead of stitching
+it incorrectly, and is counted in `PacketCountNotUsedInImages` below.
+
+**Edge-of-window truncation is expected and handled separately.** Each call to this pipeline
+processes one packet-stream window (e.g. one processing run's worth of downlinked packets), and
+it's normal — not an error — for the first packet in that window to not be a qualifying `SOP`
+(the image it belongs to started before the window) and for the last packet to not be an `EOP`
+(its image continues into the next window). Both edges are silently dropped from the output the
+same way a genuine mid-stream break is, but are **not** counted in `PacketCountNotUsedInImages`,
+since that attribute is reserved for real anomalies. Instead, `FirstImageIncomplete` /
+`LastImageIncomplete` (booleans, see below) flag whether _this_ window's leading/trailing edge was
+truncated at all.
+
+WFOV science packets carry two independent time sources:
+
+- **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every
+  packet. This coordinate is used for packet ordering and deduplication.
+- **`CAMERA_TIME`**: FSW image acquisition time decoded from each **complete** stitched image (SOP→EOP with
+  valid offsets). One row is added per successfully stitched image in **packet stream order**.
+
+During L1A parsing for APID 1040, libera_utils:
+
+1. Stitches image slice packets from a qualifying `SOP` (`ICIE__MEM_DUMP_FLAGS_WFOV == "SOP"` and
+   `ICIE__MEM_DUMP_OFFSET_WFOV == 0`) through `EOP` into a full NAND image blob.
+2. Stores the complete compressed JPEG-LS image on `CAMERA_TIME` as `WFOV_COMPRESSED_IMAGE`
+   (`uint8`/`BLOB_BYTE` with `WFOV_COMPRESSED_IMAGE_LENGTH`; readers must use `image[:length]` to
+   drop zero padding).
+3. Decodes the 176-byte WFOV header (36-byte FSW block + 140-byte FPGA block) as a single atomic
+   unit — either there are enough bytes for the whole header or there aren't; there's no
+   independent per-sub-block size check. Fields land on `CAMERA_TIME` across four categories:
+   `WFOV_FSW_HEADER_*`, `WFOV_IMAGE_HEADER_*`, `WFOV_IMAGE_FOOTER_*`, and `WFOV_FPGA_STATUS_*`.
+   Separately, the trailing 8-byte NAND footer is checked against a known-good magic byte pattern
+   (not decoded into fields) to catch corrupted images; mismatches count toward `FooterMismatchCount`.
+4. Drops `ICIE__WFOV_DATA` from the output entirely and sets `PACKET_IMAGE_ID` (0..N-1, or `-1`
+   for packets not part of a complete image).
+
+`ICIE__WFOV_DATA` is removed from the dataset unconditionally, regardless of whether a packet's
+data ended up folded into a complete image or not: for packets in a complete image, that content
+is already duplicated (compressed) in `WFOV_COMPRESSED_IMAGE`; for packets that never completed
+an image — truncated at a window edge or dropped for a genuine anomaly — the raw payload cannot be
+assembled into an image from this granule alone. `PACKET_IMAGE_ID` is the only per-packet
+trace-back to a stitched image. Incomplete or failed images do not receive a `CAMERA_TIME` row.
+
+### Granules that yield no images
+
+If **no** complete image can be stitched from the packet stream, `parse_packets_to_l1a_dataset`
+raises `ValueError` instead of returning a dataset, and it does so **before** dropping
+`ICIE__WFOV_DATA` — so the caller still holds every raw packet for diagnosis. The message carries
+the packet count and all four counters.
+
+This is a deliberate hard failure rather than an empty product. A granule with no images has no
+`CAMERA_TIME` rows to derive a filename from and would fail product conformance on every
+`CAMERA_TIME` variable, so there is nothing valid to write; failing at the point of detection is
+more useful than an opaque error from the filenaming code much later.
+
+### Unsupported `SINGLE` packets
+
+A packet flagged `SINGLE` (a whole image in one packet) is **not supported**. It is not expected
+during normal operations, so each one is logged as a warning and dropped: the packet counts toward
+`PacketCountNotUsedInImages` and keeps `PACKET_IMAGE_ID == -1`, but produces no image. A `SINGLE`
+arriving mid-collection also abandons the image in progress. There is no dedicated file-level
+counter — use the warning in the logs and `PACKET_IMAGE_ID == -1` to investigate.
+
+File-level quality attributes:
+
+- `PacketCountNotUsedInImages` (integer ≥ 0): total packets swept up in a rejected/incomplete
+  SOP→EOP attempt due to a genuine anomaly (dangling SOP aborted by a new SOP, offset gap, orphan
+  EOP, bad SOP offset) — **excludes** the expected truncation at this window's own leading/trailing
+  edge, which is reported separately below
+- `ErrorFlaggedImageCount`: complete images whose FPGA status block has any error bit set
+  (see `WFOV_FPGA_STATUS_*`)
+- `FooterMismatchCount`: complete images whose trailing 8-byte NAND footer didn't match the
+  expected magic bytes
+- `HeaderParseErrorCount`: structurally complete images **discarded** because the 176-byte WFOV
+  header could not be decoded (too few stitched bytes to contain a full header). Without a header
+  there is no acquisition time, and an image with no time is unusable, so it gets no `CAMERA_TIME`
+  row at all rather than a `NaT` one. Its packets also count toward
+  `PacketCountNotUsedInImages` and keep `PACKET_IMAGE_ID == -1`
+- `FirstImageIncomplete` (0/1, semantically boolean — NetCDF attributes have no bool type): `1` if
+  this window's first packet wasn't a qualifying `SOP` (i.e. the image it belongs to started
+  before this window)
+- `LastImageIncomplete` (0/1, semantically boolean): `1` if this window ended mid-collection (a
+  dangling `SOP` that never reached its `EOP` because the window ran out, not because of an
+  anomaly)
+
+Decoded metadata on the `CAMERA_TIME` dimension:
+
+- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_HEADER_PARSE_VALID`, `WFOV_COMPRESSED_IMAGE`,
+  `WFOV_COMPRESSED_IMAGE_LENGTH`
+- FSW header fields: `WFOV_FSW_HEADER_*` (19 uppercase field names matching the libera_cam FSW header layout)
+- Image header fields: `WFOV_IMAGE_HEADER_*` (21 fields from the FPGA block's image header)
+- Image footer fields: `WFOV_IMAGE_FOOTER_*` (5 fields from the FPGA block's internal footer)
+- FPGA status fields: `WFOV_FPGA_STATUS_*` (7 single-bit error flags from the FPGA status word)
+
+When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
+`write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
+packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
+
+#### Dual exposure and VIDEO timing
+
+- **`CAMERA_TIME` is the first integration time.** FSW stamps one acquisition time per complete image.
+  In DUAL mode (`WFOV_FSW_HEADER_IMG_MODE == 0`), the second sequential exposure lags the first by about
+  **111–350 ms**. That offset is not stored as a separate L1A time coordinate (also noted on the
+  `WFOV_FSW_HEADER_IMG_MODE` variable attributes).
+- **Which pixels used which exposure** is encoded in the **13th bit** of each decompressed pixel.
+  L1A keeps the JPEG-LS payload compressed in `WFOV_COMPRESSED_IMAGE`, so per-pixel exposure masks and
+  per-pixel times are an L1B responsibility after decompression.
+- **VIDEO mode** (`WFOV_FSW_HEADER_IMG_MODE == 1`) can produce two NAND images from one camera trigger with
+  identical FSW timestamps. Distinguish members with `CAMERA_PACKET_INDEX` (and packet stream order);
+  do not assume `CAMERA_TIME` alone is a unique image key. `WFOV_IMAGE_HEADER_READOUT` is independent of
+  `WFOV_FSW_HEADER_IMG_MODE` and should not be used to infer VIDEO pairing.
+
+**Downstream (libera_cam):** Each `CAMERA_TIME` row already has a complete compressed JPEG-LS image in
+`WFOV_COMPRESSED_IMAGE` (trim with `WFOV_COMPRESSED_IMAGE_LENGTH`) plus decoded FSW/FPGA metadata on
+the same dimension. L1B decompresses that payload directly; it does not re-stitch packets or re-parse
+headers.
 
 For example, for `N` packets, the `AXIS_SAMPLE` packet containing Azimuth and Elevation mechanism data
 comes down with 50 Az and El samples per packet (a sample group). It's L1A product has:
