@@ -163,16 +163,35 @@ This is what makes the shared-ECR dispatch pattern possible: the radiometer cal-
 `ProcessingStepIdentifier` members (`cal-gain-family`, `cal-swc-family`, `cal-lwc-family`,
 `cal-solar-family`) all set `shared_ecr_name=CAL_RAD_SHARED_ECR_NAME`, so
 `ProcessingStepIdentifier.ecr_name` resolves every one of them to the same `cal-rad-docker-repo`
-image, and each step's `products` list is exactly the CAL products of its family's ObsIDs. A Batch
-job reads the ObsID out of the trimmed input it was handed (or from the `LIBERA_CAL_OBSID`
-environment variable), looks it up in a dispatch table like the one above, and runs the matching
-algorithm — one container image, and one deployed step per family, instead of one per calibration
-event. A downstream repo can also use `get_obsid_spec` at runtime to confirm the ObsID(s) actually
-present in its input telemetry match what it was dispatched for, and fail closed if they don't.
+image, and each step's `products` list the CAL products of its family's ObsIDs. A Batch
+job reads the ObsID out of the trimmed input it was handed, and runs the matching algorithm. This leads to one container image, and one deployed step per family, instead of one per calibration event.
 
-None of this requires the downstream repo to know about NOM-HK field names, ObsID collisions, or
-product-naming conventions — that's exactly what registering a new ObsID here, once, is meant to
-replace.
+## The other L1A inputs a cal step needs
+
+NOM-HK is the only product the L1A preprocessor trims. A calibration algorithm needs more than
+NOM-HK — the shortwave LED cal, for instance, also needs PEV-SW, PEC-SW, RAD-SAMPLE, CAL-SAMPLE
+and AXIS-SAMPLE — and those arrive as the **full daily L1A granules**. The cal container reads the
+run's time range off the TRIMMED NOM-HK filename it was handed and subsets them itself.
+
+Which products those are is stored in `libera_utils/data/trim_family_inputs.csv`.
+This file maps each family to its L1A inputs, and the two catalog files are cross-checked at import, so a
+family cannot exist in one without the other:
+
+```python
+from libera_utils.constants import DataProductIdentifier
+from libera_utils.obsids import get_family_inputs
+
+get_family_inputs(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
+# (PEV-SW-STAT-DECODED, PEC-SW-STAT-DECODED,
+#  RAD-SAMPLE-DECODED, CAL-SAMPLE-DECODED, AXIS-SAMPLE-DECODED)
+```
+
+That tuple, **plus the family's own TRIMMED product**, is what a `cal-*-family` node's
+`input-products` should list in libera_cdk's `processing_system_dag.json`. The full-day
+`NOM-HK-DECODED` granule is deliberately absent: the family's NOM-HK arrives already trimmed as
+the TRIMMED product itself, so listing it here would stage a second, redundant NOM-HK input.
+Families whose processing step is still deferred return an empty tuple — the dependency set is
+undecided, not empty — and declaring it is part of closing `TODO[LIBSDC-811]`.
 
 ## Current coverage
 
@@ -186,6 +205,11 @@ replace.
   (L1A preprocessing) is wired up for camera ObsIDs so far.
 - Science/scan mode entries (Cross Track, RAP Scan, Along Track, Earth Target, the Geo scans) are
   catalog-only and never trim-eligible.
+- Camera cal ObsIDs are registered on `WFOV` only, and the loader enforces that. Science modes are
+  dual-registered because both instruments assert them, but CT video (129-131), RAPS video
+  (133-135) and the darks (256-258) are asserted only on `ICIE__SW_OBSID_WFOV` — ICIE has
+  confirmed `ICIE__SW_OBSID_RAD` never carries those values. `get_obsid_spec(NomHkObsidSource.RAD,
+129)` therefore raises `KeyError` by design; the asymmetry is not a missing row.
 
 ## Extending the registry
 
@@ -201,7 +225,11 @@ When a new calibration ObsID needs to be added:
    spreadsheet app that may rewrite quoting, since descriptions contain commas. No Python change is
    needed for an ObsID joining an existing family.
 3. If the ObsID joins the family of an existing cal step, add its CAL product to that step's
-   `products` list so the step still declares everything it can emit.
+   `products` list so the step still declares everything it can emit. If instead you added a new
+   TRIMMED family in step 1, add a matching row to
+   `libera_utils/data/trim_family_inputs.csv` naming the L1A products that family's algorithm
+   consumes — import fails if the two files disagree. Leave `required_inputs` empty if the
+   dependency set is not settled yet.
 4. Do this here, in `libera_utils`, first — not as a local dict in a downstream repo. Downstream
    dispatch tables should be derived from `get_family_specs`/`iter_trim_eligible`/`get_obsid_spec`,
    matching the pattern in [Consumer 2](#consumer-2-downstream-cal-combine-dispatch) above.

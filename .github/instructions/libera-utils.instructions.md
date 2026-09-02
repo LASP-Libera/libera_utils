@@ -23,7 +23,7 @@ generation, Libera file naming, and AWS pipeline integration.
 | `l1a/`          | CCSDS telemetry packet parsing, XTCE-based packet configs                    |
 | `libera_spice/` | SPICE kernel generation via SpiceyPy + Curryer                               |
 | `constants.py`  | Canonical enums: `DataLevel`, `DataProductIdentifier`, `LiberaApid`          |
-| `obsids.py`     | Loader/API over the ICIE ObsID catalog CSV in `data/obsid_registry.csv`      |
+| `obsids.py`     | Loader/API over the ObsID catalog CSVs in `data/` (registry + family inputs) |
 | `logutil.py`    | Structured JSON logging; use `configure_task_logging()` for task-level setup |
 | `config.py`     | JSON config with env-var override and templated string formatting            |
 | `cli.py`        | `libera-utils` CLI entry point                                               |
@@ -78,6 +78,16 @@ generation, Libera file naming, and AWS pipeline integration.
     `get_family_specs` / `iter_trim_eligible`) instead of hand-maintaining a duplicate mapping per repo — this is
     what lets multiple calibration steps share one Docker/ECR image, dispatched at runtime by
     ObsID.
+  - A companion catalog, `data/trim_family_inputs.csv`, maps each TRIMMED family to the L1A
+    products its cal step consumes _besides its own TRIMMED product_ (`FAMILY_INPUTS` /
+    `get_family_inputs()`). The two files are cross-checked at import and must list exactly the
+    same families, so a new TRIMMED family needs a row in both; an empty `required_inputs` cell
+    means the dependency set is still undecided. A family product plus its `required_inputs` is
+    what a libera_cdk `cal-*-family` node should declare as its `input-products`. Never list
+    `l1a_icie_nom_hk_decoded` — the family's NOM-HK arrives already trimmed as the family product,
+    so the full-day granule would be a redundant second input.
+    NOM-HK is the only product the L1A preprocessor trims — a cal container subsets the full daily
+    L1A inputs itself, using the time range on the TRIMMED NOM-HK filename it was handed.
   - When adding a new calibration ObsID, add a row to `data/obsid_registry.csv` first rather
     than adding a parallel ObsID → product mapping in a downstream repo. Edit the CSV with a
     text editor or the `csv` module, never a spreadsheet app that may rewrite quoting —

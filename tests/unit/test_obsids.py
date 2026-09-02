@@ -8,16 +8,31 @@ from libera_utils import obsids
 from libera_utils.constants import DataLevel, DataProductIdentifier, LiberaApid
 from libera_utils.obsids import (
     _COLUMNS,
+    _FAMILY_INPUT_COLUMNS,
+    FAMILY_INPUTS,
     OBSID_REGISTRY,
     OBSID_REGISTRY_CSV,
     TRIM_FAMILIES,
+    TRIM_FAMILY_INPUTS_CSV,
     NomHkObsidSource,
     ObsIdKind,
     _parse_row,
+    get_family_inputs,
     get_family_specs,
     get_obsid_spec,
     iter_trim_eligible,
 )
+
+#: Families whose cal-combine ProcessingStepIdentifier is still deferred (TODO[LIBSDC-811]), and
+#: which therefore have no settled input dependency set yet.
+DEFERRED_FAMILIES = {
+    DataProductIdentifier.l1a_icie_nom_hk_lunar_family_trimmed,
+    DataProductIdentifier.l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed,
+    DataProductIdentifier.l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed,
+    DataProductIdentifier.l1a_icie_nom_hk_ct_video_family_trimmed,
+    DataProductIdentifier.l1a_icie_nom_hk_raps_video_family_trimmed,
+    DataProductIdentifier.l1a_icie_nom_hk_darks_family_trimmed,
+}
 
 
 def read_registry_csv() -> list[dict[str, str]]:
@@ -419,4 +434,158 @@ class TestObsidRegistryLoaderCrossRowChecks:
                     "RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_gain,Gain calibration",
                     "RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_noise,Gain calibration again",
                 ],
+            )
+
+
+class TestFamilyInputs:
+    """Tests for the per-family calibration input catalog."""
+
+    def test_covers_exactly_the_registered_families(self):
+        """A family without declared inputs, or inputs for an unregistered family, is a bug."""
+        assert set(FAMILY_INPUTS) == set(TRIM_FAMILIES)
+
+    def test_radiometer_families_declare_inputs(self):
+        """The four families with deployed cal steps must name what those steps consume."""
+        for family in set(TRIM_FAMILIES) - DEFERRED_FAMILIES:
+            assert FAMILY_INPUTS[family], f"{family.name} has a cal step but declares no inputs"
+
+    def test_deferred_families_declare_no_inputs(self):
+        """Families whose step is deferred have an undecided dependency set, not an empty one."""
+        for family in DEFERRED_FAMILIES:
+            assert FAMILY_INPUTS[family] == ()
+
+    def test_every_declared_input_is_an_l1a_product(self):
+        """Cal steps consume L1A granules; anything else means a wrong column or a typo."""
+        for family, inputs in FAMILY_INPUTS.items():
+            for product in inputs:
+                assert product.data_level is DataLevel.L1A, f"{family.name} declares {product.name}"
+
+    def test_swc_family_inputs_match_the_historical_combined_list(self):
+        """The SWC list is the pre-family `SW-COMBINED` one, less the daily NOM-HK."""
+        assert get_family_inputs(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed) == (
+            DataProductIdentifier.l1a_pev_sw_stat_decoded,
+            DataProductIdentifier.l1a_pec_sw_stat_decoded,
+            DataProductIdentifier.l1a_icie_rad_sample_decoded,
+            DataProductIdentifier.l1a_icie_cal_sample_decoded,
+            DataProductIdentifier.l1a_icie_axis_sample_decoded,
+        )
+
+    def test_gain_family_inputs_match_the_historical_combined_list(self):
+        """Gain and noise share one family, and the old `GAIN-COMBINED` comment's inputs."""
+        assert get_family_inputs(DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed) == (
+            DataProductIdentifier.l1a_icie_rad_full_decoded,
+            DataProductIdentifier.l1a_icie_cal_full_decoded,
+        )
+
+    def test_no_family_requires_the_daily_nom_hk(self):
+        """A family's NOM-HK arrives as its TRIMMED product, so the daily granule is redundant."""
+        for family, inputs in FAMILY_INPUTS.items():
+            assert DataProductIdentifier.l1a_icie_nom_hk_decoded not in inputs, (
+                f"{family.name} lists the full-day NOM-HK; the trimmed family product supplies it"
+            )
+
+    def test_get_family_inputs_rejects_a_non_family_product(self):
+        """Asking for the inputs of something that is not a TRIMMED family is an error."""
+        with pytest.raises(KeyError, match="is not a TRIMMED calibration family ProductID"):
+            get_family_inputs(DataProductIdentifier.l1a_icie_nom_hk_decoded)
+
+    def test_every_catalog_row_is_loaded(self):
+        """Every row in the shipped CSV reaches FAMILY_INPUTS."""
+        with TRIM_FAMILY_INPUTS_CSV.open(newline="", encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        assert len(rows) == len(FAMILY_INPUTS)
+        assert {DataProductIdentifier[row["trimmed_product"]] for row in rows} == set(FAMILY_INPUTS)
+
+
+class TestFamilyInputsLoader:
+    """Validation performed while reading the family-inputs catalog."""
+
+    @staticmethod
+    def _load(tmp_path, monkeypatch, rows: list[str], families=None):
+        """Run _load_family_inputs against a synthetic catalog instead of the shipped one."""
+        catalog = tmp_path / "trim_family_inputs.csv"
+        catalog.write_text("\n".join([",".join(_FAMILY_INPUT_COLUMNS), *rows]) + "\n", encoding="utf-8")
+        monkeypatch.setattr(obsids, "TRIM_FAMILY_INPUTS_CSV", catalog)
+        if families is None:
+            families = [DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed]
+        return obsids._load_family_inputs(families)
+
+    def test_valid_catalog_parses(self, tmp_path, monkeypatch):
+        """A well-formed row resolves each semicolon-separated member name."""
+        inputs = self._load(
+            tmp_path,
+            monkeypatch,
+            ["l1a_icie_nom_hk_gain_family_trimmed,l1a_icie_nom_hk_decoded;l1a_icie_rad_full_decoded"],
+        )
+        assert inputs == {
+            DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed: (
+                DataProductIdentifier.l1a_icie_nom_hk_decoded,
+                DataProductIdentifier.l1a_icie_rad_full_decoded,
+            )
+        }
+
+    def test_empty_inputs_cell_is_allowed(self, tmp_path, monkeypatch):
+        """An undecided dependency set is expressed as an empty cell, not a missing row."""
+        inputs = self._load(tmp_path, monkeypatch, ["l1a_icie_nom_hk_gain_family_trimmed,"])
+        assert inputs == {DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed: ()}
+
+    def test_family_missing_from_this_catalog_raises(self, tmp_path, monkeypatch):
+        """Registering a family without declaring its inputs must not pass silently."""
+        with pytest.raises(ValueError, match="Families with no declared inputs"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                ["l1a_icie_nom_hk_gain_family_trimmed,l1a_icie_nom_hk_decoded"],
+                families=[
+                    DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed,
+                    DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed,
+                ],
+            )
+
+    def test_family_not_in_the_obsid_registry_raises(self, tmp_path, monkeypatch):
+        """Inputs for a family no ObsID produces are dead weight and probably a typo."""
+        with pytest.raises(ValueError, match="registered against no ObsID"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                [
+                    "l1a_icie_nom_hk_gain_family_trimmed,l1a_icie_nom_hk_decoded",
+                    "l1a_icie_nom_hk_swc_family_trimmed,l1a_icie_nom_hk_decoded",
+                ],
+            )
+
+    def test_non_l1a_input_raises(self, tmp_path, monkeypatch):
+        """A CAL or L0 product in the inputs column means the wrong catalog was edited."""
+        with pytest.raises(ValueError, match="is a CAL product, expected L1A"):
+            self._load(tmp_path, monkeypatch, ["l1a_icie_nom_hk_gain_family_trimmed,cal_gain"])
+
+    def test_unknown_input_name_raises(self, tmp_path, monkeypatch):
+        """Cells hold DataProductIdentifier member names, not ProductID string values."""
+        with pytest.raises(ValueError, match="is not a DataProductIdentifier member name"):
+            self._load(tmp_path, monkeypatch, ["l1a_icie_nom_hk_gain_family_trimmed,NOM-HK-DECODED"])
+
+    def test_duplicate_family_row_raises(self, tmp_path, monkeypatch):
+        """Two rows for one family leave it ambiguous which input list wins."""
+        with pytest.raises(ValueError, match="duplicate entry for TRIMMED family"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                [
+                    "l1a_icie_nom_hk_gain_family_trimmed,l1a_icie_nom_hk_decoded",
+                    "l1a_icie_nom_hk_gain_family_trimmed,l1a_icie_rad_full_decoded",
+                ],
+            )
+
+    def test_missing_family_cell_raises(self, tmp_path, monkeypatch):
+        """A row has to name the family it declares inputs for."""
+        with pytest.raises(ValueError, match="a family ProductID is required"):
+            self._load(tmp_path, monkeypatch, [",l1a_icie_nom_hk_decoded"])
+
+    def test_surplus_columns_raise(self, tmp_path, monkeypatch):
+        """An unquoted extra comma would otherwise silently truncate the inputs list."""
+        with pytest.raises(ValueError, match="expected exactly 2 columns"):
+            self._load(
+                tmp_path,
+                monkeypatch,
+                ["l1a_icie_nom_hk_gain_family_trimmed,l1a_icie_nom_hk_decoded,surplus"],
             )

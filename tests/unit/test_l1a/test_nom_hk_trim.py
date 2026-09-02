@@ -9,6 +9,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
+from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a.nom_hk_trim import (
     find_obsid_runs,
     get_trimmed_nom_hk_product_definition,
@@ -57,6 +58,14 @@ class TestGetTrimmedNomHkProductDefinition:
     def test_rejects_non_trimmed_product(self):
         with pytest.raises(ValueError, match="not a known TRIMMED"):
             get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_decoded)
+
+    def test_callers_get_independent_definitions(self):
+        """Stamping one family's ProductID must not leak into another's definition."""
+        swc = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
+        gain = get_trimmed_nom_hk_product_definition(DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed)
+        assert swc is not gain
+        assert swc.attributes["ProductID"] == "NOM-HK-SWC-FAMILY-TRIMMED"
+        assert gain.attributes["ProductID"] == "NOM-HK-GAIN-FAMILY-TRIMMED"
 
 
 class TestFindObsidRuns:
@@ -210,3 +219,44 @@ class TestWriteTrimmedNomHkProducts:
             write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
 
         assert mock_write.call_args_list[0].args[1].attrs["algorithm_version"] == libera_utils_version()
+
+    def test_definition_is_built_once_per_family_not_once_per_run(self, tmp_path):
+        """Four runs across three families cost three definitions, not four."""
+        # 256/257 -> SWC family, 512 -> GAIN family, 320 (contiguous pair) -> LWC family
+        ds = _synthetic_nom_hk(rad_obsids=[256, 257, 512, 320, 320])
+        mock_filename = MagicMock()
+        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-FAMILY-TRIMMED_fake.nc"
+
+        with (
+            patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename),
+            patch(
+                "libera_utils.l1a.nom_hk_trim.get_trimmed_nom_hk_product_definition",
+                wraps=get_trimmed_nom_hk_product_definition,
+            ) as mock_definition,
+            patch(
+                "libera_utils.l1a.nom_hk_trim.LiberaDataProductDefinition.from_yaml",
+                wraps=LiberaDataProductDefinition.from_yaml,
+            ) as mock_from_yaml,
+        ):
+            written = write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+
+        assert len(written) == 4, "one file per contiguous ObsID run"
+        assert mock_definition.call_count == 3, "definition built once per family, not once per run"
+        assert mock_from_yaml.call_count == 3, "definition YAML parsed once per family, not once per run"
+
+    def test_missing_packet_time_warns_but_still_writes(self, tmp_path, caplog):
+        """Without PACKET_ICIE_TIME the ordering guard cannot run, so it says so."""
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257]).drop_vars("PACKET_ICIE_TIME")
+        mock_filename = MagicMock()
+        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-FAMILY-TRIMMED_fake.nc"
+
+        with (
+            patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename),
+            caplog.at_level("WARNING"),
+        ):
+            written = write_trimmed_nom_hk_products(
+                ds, tmp_path, source_product_filename=_PARENT_GRANULE, time_variable="PACKET", strict=False
+            )
+
+        assert len(written) == 1
+        assert any("skipping the packet-time ordering check" in r.message for r in caplog.records)

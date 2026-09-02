@@ -213,10 +213,12 @@ class DataProductIdentifier(StrEnum):
     cal_solar_tot_ter = ("SOLAR-TOT-TER", DataLevel.CAL)
     cal_solar_lw_ter = ("SOLAR-LW-TER", DataLevel.CAL)
     cal_solar_sw_ter = ("SOLAR-SW-TER", DataLevel.CAL)
-    # Lunar Calibration (ObsIDs 448-449); cal-combine / ProcessingStepIdentifiers deferred
+    # Lunar Calibration (ObsIDs 448-449)
+    # TODO[LIBSDC-811]: cal-combine step and ProcessingStepIdentifier deferred
     cal_lunar_south_pole = ("LUNAR-SOUTH-POLE", DataLevel.CAL)
     cal_lunar_north_pole = ("LUNAR-NORTH-POLE", DataLevel.CAL)
-    # Camera calibration events (WFOV ObsIDs; ProcessingStepIdentifiers deferred)
+    # Camera calibration events (WFOV ObsIDs)
+    # TODO[LIBSDC-811]: ProcessingStepIdentifiers deferred
     cal_ct_video_6min = ("CT-VIDEO-6MIN", DataLevel.CAL)
     cal_ct_video_12min = ("CT-VIDEO-12MIN", DataLevel.CAL)
     cal_ct_video_18min = ("CT-VIDEO-18MIN", DataLevel.CAL)
@@ -226,7 +228,8 @@ class DataProductIdentifier(StrEnum):
     cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL)
     cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL)
     cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL)
-    # VIIRS lunar cal (ObsIDs 513-514 on both RAD and WFOV); ProcessingStepIdentifiers deferred
+    # VIIRS lunar cal (ObsIDs 513-514, registered separately on RAD and WFOV)
+    # TODO[LIBSDC-811]: ProcessingStepIdentifiers deferred
     cal_rad_viirs_lunar_pos_start = ("RAD-VIIRS-LUNAR-POS-START", DataLevel.CAL)
     cal_rad_viirs_lunar_neg_start = ("RAD-VIIRS-LUNAR-NEG-START", DataLevel.CAL)
     cal_wfov_viirs_lunar_pos_start = ("WFOV-VIIRS-LUNAR-POS-START", DataLevel.CAL)
@@ -649,13 +652,17 @@ class ProcessingStepIdentifier(StrEnum):
 
         Returns
         -------
-        ProcessingStepIdentifier
-            The processing step that produces this data product
+        ProcessingStepIdentifier or None
+            The processing step that produces this data product, or None when no deployed step
+            produces it.
 
-        Raises
-        ------
-        ValueError
-            If no processing step is found for the data product
+        Notes
+        -----
+        None is a normal result, not a failure: the CAL products of calibration families whose
+        steps are still deferred (TODO[LIBSDC-811]) are archived products that no step yet
+        declares. Orchestration is driven by the libera_cdk processing system DAG
+        (``input-products`` / ``output-products`` per node), not by this lookup, so a None here
+        means "no step deployed yet" rather than a broken product.
         """
         for step in cls:
             if data_product in step.products:
