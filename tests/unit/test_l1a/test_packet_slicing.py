@@ -242,7 +242,7 @@ class TestSliceL1aDatasetToTimeWindow:
         assert out["RAD_SAMPLE_FPE_TIME"].values.max() > t1
 
     def test_sample_time_selection_differs_from_packet_time_under_skew(self):
-        """Sample-clock skew is what makes sample-time selection the right criterion."""
+        """Under packet/sample clock skew, sample time and packet time select different packets."""
         ds = _sample_product(n_packets=6, samples_per_packet=4, sample_offset_s=3)
         t0 = np.datetime64("2028-02-13T02:00:03")
         t1 = np.datetime64("2028-02-13T02:00:05")
@@ -255,7 +255,7 @@ class TestSliceL1aDatasetToTimeWindow:
         np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2])
 
     def test_interleaving_outside_the_window_does_not_fail_the_slice(self):
-        """Regression: a clock-skew anomaly elsewhere in the granule must not fail this window."""
+        """A clock-skew anomaly elsewhere in the granule must not fail this window."""
         ds = _interleave_packet_pair(_sample_product(n_packets=8, samples_per_packet=4), 0, 4)
         out = slice_l1a_dataset_to_time_window(
             ds, np.datetime64("2028-02-13T02:00:05"), np.datetime64("2028-02-13T02:00:06.500")

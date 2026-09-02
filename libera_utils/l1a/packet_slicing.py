@@ -1,33 +1,27 @@
 """Subset decoded L1A Datasets along ``PACKET``, carrying sample axes with their packets.
 
-Decoded L1A products carry two kinds of axis: a ``PACKET`` axis holding one row per CCSDS
-packet, and one sample axis per sample group (e.g. ``RAD_FULL_FPE_TIME``) holding the samples
-expanded out of those packets. Each sample belongs to exactly one packet, and that mapping is
-recorded explicitly in the ``{sample_group}_packet_index`` variable written by
+Decoded L1A products carry a ``PACKET`` axis holding one row per CCSDS packet and one sample
+axis per sample group (e.g. ``RAD_FULL_FPE_TIME``) holding the samples expanded out of those
+packets. Each sample belongs to exactly one packet, recorded in the
+``{sample_group}_packet_index`` variable written by
 :func:`~libera_utils.l1a.packets.create_l1a_dataset`.
 
-Subsetting either axis on its own silently breaks the correspondence: ``PACKET`` shrinks while
-the sample axis keeps rows belonging to packets that are no longer present, and the stored
-packet indices go on pointing at the pre-subset numbering. Any consumer that needs to slice a
-decoded product must therefore go through this module, which treats the packet axis as the
-driver:
+This module is the supported way to subset such a product; subsetting either axis directly
+leaves the two out of correspondence. The packet axis is the driver:
 
 - packets are selected first, and every sample of a selected packet is kept while every sample
   of an unselected packet is dropped, so whole packets survive or none of them does;
 - ``{sample_group}_packet_index`` is renumbered from 0 against the surviving packet axis, which
   keeps it usable as the sample-to-packet validation link in derived products.
 
-The sample axis is stored in sample-time order, which is *almost* but not exactly packet order:
+The sample axis is stored in sample-time order, which is almost but not exactly packet order:
 where two adjacent packets' sample clocks skew by less than a sample interval their sample blocks
-interleave, and ``{sample_group}_packet_index`` steps backwards at those few positions. Nothing
-here assumes packet-major blocks — the index is applied element-wise — so an interleaved run is
-sliced correctly and only logged. In particular, a skew anomaly anywhere in a granule must not
-fail a slice of a window that does not contain it.
+interleave, and ``{sample_group}_packet_index`` steps backwards at those few positions. The index
+is applied element-wise throughout, so an interleaved run is sliced correctly and logged.
 
-Selecting a time window (:func:`slice_l1a_dataset_to_time_window`) is driven by *sample* time
-where sample axes exist, because the samples are the science data being windowed. Whole packets
-are still the unit that survives, so a selected packet contributes samples on both sides of the
-window boundary.
+:func:`slice_l1a_dataset_to_time_window` selects on sample time where sample axes exist and on
+the packet time coordinate otherwise. Whole packets survive either way, so a selected packet
+contributes samples on both sides of the window boundary.
 """
 
 from __future__ import annotations
@@ -53,9 +47,8 @@ def find_sample_dims(dataset: xr.Dataset) -> set[str]:
 
     A sample axis is any dimension other than ``PACKET`` that either carries its own
     ``datetime64`` dimension coordinate (e.g. ``RAD_FULL_FPE_TIME``) or owns a
-    ``*_packet_index`` variable. The second rule matters for Datasets opened with
-    ``decode_times=False``, where a real sample coordinate is a plain integer array and the
-    dtype rule alone would misclassify the product as packet-only.
+    ``*_packet_index`` variable. The second rule also catches sample coordinates in Datasets
+    opened with ``decode_times=False``, where the coordinate is a plain integer array.
 
     Array-index dimensions such as ``ARRAY_128`` are excluded by both rules.
 
@@ -78,6 +71,10 @@ def find_sample_dims(dataset: xr.Dataset) -> set[str]:
         if coord is not None and np.issubdtype(coord.dtype, np.datetime64):
             sample_dims.add(dim_name)
 
+    # TODO[LIBSDC-567]: WFOV SCI (APID 1040) carries a datetime64 CAMERA_TIME axis whose index
+    # variable is CAMERA_PACKET_INDEX, which does not match PACKET_INDEX_SUFFIX, so slicing that
+    # product falls through to positional arithmetic and raises. Handle CAMERA_TIME when the
+    # camera calibration products are built.
     for name, variable in dataset.variables.items():
         if not str(name).endswith(PACKET_INDEX_SUFFIX):
             continue
@@ -164,9 +161,8 @@ def _samples_per_packet(dataset: xr.Dataset, sample_dim: str) -> int:
         configured_note = f" (packet config says {configured}/packet)" if configured is not None else ""
         raise ValueError(
             f"{sample_dim} has {n_samples} samples for {n_packets} packets, which is not an exact "
-            f"multiple{configured_note}. Samples cannot be matched to packets positionally and the "
-            f"Dataset carries no {sample_dim} packet index variable. This usually means duplicate "
-            f"sample timestamps were dropped during decode; re-decode from the source packet files."
+            f"multiple{configured_note}, and the Dataset carries no {sample_dim} packet index "
+            f"variable, so samples cannot be matched to packets."
         )
 
     ratio = n_samples // n_packets
@@ -186,12 +182,10 @@ def sample_to_packet_index(dataset: xr.Dataset, sample_dim: str) -> np.ndarray:
     duplicate samples have been dropped. Falls back to positional arithmetic
     (``sample i -> packet i // samples_per_packet``) only when no index variable is present.
 
-    The returned mapping is *not* required to be monotonically non-decreasing. Sample axes are
-    sorted by sample time in :func:`~libera_utils.l1a.packets.create_l1a_dataset`, so a few
-    microseconds of skew between two adjacent packets' sample clocks is enough to interleave
-    their sample blocks. That is a real property of the telemetry, not corruption, and every
-    operation in this module indexes through the mapping element-wise rather than assuming
-    packet-major blocks, so interleaving is carried through faithfully. It is logged, not raised.
+    The mapping is not necessarily monotonically non-decreasing: sample axes are sorted by
+    sample time, so skew between two adjacent packets' sample clocks interleaves their sample
+    blocks and the mapping steps backwards at those positions. Interleaving is logged, not
+    raised.
 
     Parameters
     ----------
@@ -228,9 +222,8 @@ def sample_to_packet_index(dataset: xr.Dataset, sample_dim: str) -> np.ndarray:
     n_inversions = int(np.count_nonzero(np.diff(packet_index) < 0))
     if n_inversions:
         logger.info(
-            "%s steps backwards at %d of %d sample positions, so %s is not strictly packet-major. "
-            "This is expected where adjacent packets' sample clocks skew enough to interleave their "
-            "sample blocks; the mapping is used element-wise and stays correct.",
+            "%s steps backwards at %d of %d sample positions, so %s is not strictly packet-major; "
+            "adjacent packets' sample clocks skew enough to interleave their sample blocks.",
             index_var,
             n_inversions,
             packet_index.size,
@@ -246,9 +239,8 @@ def select_packets(dataset: xr.Dataset, keep_packets: slice | np.ndarray) -> xr.
     dropped, so whole packets survive. Each ``*_packet_index`` variable is renumbered from 0
     against the surviving packet axis.
 
-    Packet order is preserved: the selection is applied as a sorted integer indexer, never a
-    sort, so downstream filename generation (which reads the first and last time value
-    positionally) stays correct.
+    Packet order is preserved; an unordered integer indexer is sorted rather than applied as a
+    reordering.
 
     Parameters
     ----------
@@ -274,8 +266,7 @@ def select_packets(dataset: xr.Dataset, keep_packets: slice | np.ndarray) -> xr.
         raise ValueError(f"Dataset is missing required dimension {PACKET_DIM!r}")
 
     n_packets = dataset.sizes[PACKET_DIM]
-    # Sorting the indexer makes the isel order-preserving even when the caller passes an unordered
-    # integer array; a reordered packet axis would corrupt positional filename time extraction.
+    # Sort the indexer so isel preserves packet order even for an unordered integer array
     keep = np.unique(np.arange(n_packets)[keep_packets])
     packet_mask = np.zeros(n_packets, dtype=bool)
     packet_mask[keep] = True
@@ -320,10 +311,7 @@ def slice_l1a_dataset_to_time_window(
     *packet_time_var* instead.
 
     Whole packets always survive, so a selected packet contributes all of its samples even where
-    some of them fall outside the window. Sample time drives the *selection* because the samples
-    are the science data being windowed; where a packet's sample timestamps disagree with its
-    packet timestamp that is an instrument anomaly, and the product carries it through
-    deliberately rather than papering over it.
+    some of them fall outside the window.
 
     Parameters
     ----------
@@ -360,6 +348,7 @@ def slice_l1a_dataset_to_time_window(
             )
         packet_times = dataset[packet_time_var].values
         keep_mask = (packet_times >= t0) & (packet_times <= t1)
+        _log_selection(dataset, keep_mask, t0, t1, packet_time_var, criterion="packet time")
         return select_packets(dataset, keep_mask)
 
     keep_mask = np.zeros(n_packets, dtype=bool)
@@ -368,7 +357,7 @@ def slice_l1a_dataset_to_time_window(
         in_window = (sample_times >= t0) & (sample_times <= t1)
         keep_mask[np.unique(sample_to_packet_index(dataset, sample_dim)[in_window])] = True
 
-    _log_selection(dataset, keep_mask, t0, t1, packet_time_var)
+    _log_selection(dataset, keep_mask, t0, t1, packet_time_var, criterion="sample time")
     return select_packets(dataset, keep_mask)
 
 
@@ -378,23 +367,18 @@ def _log_selection(
     t0: np.datetime64,
     t1: np.datetime64,
     packet_time_var: str,
+    criterion: str,
 ) -> None:
-    """Report the sample-time selection and how it differs from a packet-time selection."""
+    """Report how many packets a time window selected, and warn if the retained run has gaps."""
     n_selected = int(keep_mask.sum())
+    logger.info("Selected %d/%d packets on %s for window [%s — %s]", n_selected, keep_mask.size, criterion, t0, t1)
     if packet_time_var in dataset:
         packet_times = dataset[packet_time_var].values
         n_packet_time = int(((packet_times >= t0) & (packet_times <= t1)).sum())
-        logger.info(
-            "Selected %d/%d packets on sample time for window [%s — %s]; packet time would have "
-            "selected %d (a difference indicates packet/sample clock skew)",
-            n_selected,
-            keep_mask.size,
-            t0,
-            t1,
-            n_packet_time,
-        )
-    else:
-        logger.info("Selected %d/%d packets on sample time for window [%s — %s]", n_selected, keep_mask.size, t0, t1)
+        if n_packet_time != n_selected:
+            logger.info(
+                "Packet time would have selected %d packets, indicating packet/sample clock skew", n_packet_time
+            )
 
     if n_selected:
         # Count transitions from unselected to selected to detect gaps in the retained run

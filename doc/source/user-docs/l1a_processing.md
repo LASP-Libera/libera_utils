@@ -560,15 +560,14 @@ trimmed_paths = write_trimmed_nom_hk_products(
 ```
 
 TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (and thus
-the filename product token) changes. Science/scan modes (ObsIDs 128, 132, and 136–140)
+the filename product token) changes. Science/scan modes (ObsIDs 0-2, 128, 132, and 136–140)
 are cataloged but do not emit TRIMMED files.
 
 The `ProductID` names the run's **calibration dependency family**
 (`NOM-HK-SWC-FAMILY-TRIMMED`, `NOM-HK-SOLAR-FAMILY-TRIMMED`, …) rather than its individual
-ObsID, because downstream algorithms process every ObsID in a family the same way and one
-processing step is deployed per family. One day therefore normally produces several files
-sharing a family `ProductID` — one per ObsID in that family — distinguished by their
-filename time ranges. Each file still covers exactly one ObsID run, and the ObsID stays
+ObsID, and one processing step is deployed per family. One day therefore normally produces
+several files sharing a family `ProductID` — one per ObsID in that family — distinguished
+by their filename time ranges. Each file covers exactly one ObsID run, and the ObsID stays
 readable from the `ICIE__SW_OBSID_RAD` / `ICIE__SW_OBSID_WFOV` variable inside the file.
 
 Normal operations expect each calibration ObsID at most once per day. If the same
@@ -576,10 +575,6 @@ Normal operations expect each calibration ObsID at most once per day. If the sam
 file and a warning is logged. Two _different_ ObsIDs of one family are not that case and
 do not warn.
 
-**Preprocessor note (CDK follow-on):** after writing `NOM-HK-DECODED`, call
-`write_trimmed_nom_hk_products` and stage each TRIMMED path the same way as other L1A
-outputs so ingest can trigger the family cal steps.
-
-See [the ObsID Registry page](obsid_registry.md) for why the registry is keyed by
-`(source, obsid)`, how downstream repos dispatch cal-combine steps from it, and how to
-register a new calibration ObsID.
+See [the ObsID Registry page](obsid_registry.md) for the `(source, obsid)` keying, how
+downstream repos dispatch cal-combine steps from it, and how to register a new calibration
+ObsID.

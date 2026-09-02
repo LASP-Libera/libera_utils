@@ -1,13 +1,12 @@
 """Trim decoded NOM-HK L1A Datasets to contiguous calibration ObsID runs.
 
-One file is written per contiguous ObsID run, but the ProductID it carries names the run's
-*calibration dependency family* rather than its ObsID: ObsIDs that downstream algorithms process
-identically share one TRIMMED ProductID so that libera_cdk deploys one processing step per family
-instead of one per ObsID (see :mod:`libera_utils.obsids`). A day therefore normally yields several
-files sharing one family ProductID — six ``NOM-HK-SWC-FAMILY-TRIMMED`` granules for the six
-shortwave LED ObsIDs, for example — distinguished by their filename time ranges. Each file still
-covers exactly one ObsID run, and the ObsID itself stays readable from the ``ICIE__SW_OBSID_*``
-variable the file carries, which is where a consumer should recover it from.
+One file is written per contiguous ObsID run, stamped with the run's *calibration dependency
+family* ProductID rather than its ObsID: ObsIDs that downstream algorithms process identically
+share one TRIMMED ProductID (see :mod:`libera_utils.obsids`). A day therefore normally yields
+several files sharing one family ProductID — six ``NOM-HK-SWC-FAMILY-TRIMMED`` granules for the
+six shortwave LED ObsIDs, for example — distinguished by their filename time ranges. Each file
+covers exactly one ObsID run, and the ObsID is read from the ``ICIE__SW_OBSID_*`` variable the
+file carries.
 """
 
 from __future__ import annotations
@@ -69,9 +68,10 @@ def get_trimmed_nom_hk_product_definition(
 def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
     """Verify the ``PACKET`` axis is in non-decreasing packet-time order.
 
-    Decoded L1A products are written packet-time sorted, so this is a guard rather than a fixup.
-    Sorting here instead would silently reorder the packet axis, invalidating the positional run
-    indices produced by :func:`find_obsid_runs` and any ``*_packet_index`` variables.
+    Decoded L1A products are written packet-time sorted, so this is a guard, not a fixup; the
+    positional run indices from :func:`find_obsid_runs` are only meaningful against a
+    time-ordered packet axis. If ``PACKET_ICIE_TIME`` is absent the check is skipped with a
+    warning and the packet axis is trusted as-is.
 
     Parameters
     ----------
@@ -82,13 +82,6 @@ def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
     ------
     ValueError
         If ``PACKET_ICIE_TIME`` is present but not monotonically non-decreasing.
-
-    Notes
-    -----
-    If ``PACKET_ICIE_TIME`` is absent the check is skipped and the packet axis is trusted
-    positionally rather than verified, so run slices could silently span the wrong packets. A
-    decoded NOM-HK product always carries it, so this is logged as a warning; writing would
-    fail later anyway when deriving filename time bounds, but with a less specific message.
     """
     if DEFAULT_TIME_VARIABLE not in nom_hk:
         logger.warning(
@@ -101,8 +94,7 @@ def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
     if times.size and np.any(np.diff(times) < np.timedelta64(0, "ns")):
         raise ValueError(
             f"NOM-HK Dataset is not sorted by {DEFAULT_TIME_VARIABLE}. Decoded L1A products are "
-            f"written in packet-time order; re-decode the source product rather than sorting here, "
-            f"which would invalidate sample-to-packet indices."
+            f"written in packet-time order; re-decode the source product."
         )
 
 
@@ -143,8 +135,6 @@ def find_obsid_runs(
     if PACKET_DIM not in nom_hk.dims:
         raise ValueError(f"NOM-HK Dataset is missing required dimension {PACKET_DIM!r}")
 
-    # Runs are positional slices into PACKET, so they are only chronologically meaningful if the
-    # packet axis is already time ordered
     _check_packet_time_sorted(nom_hk)
 
     runs: list[tuple[ObsIdSpec, slice]] = []
@@ -171,9 +161,9 @@ def _prepare_trimmed_attrs(
 ) -> xr.Dataset:
     """Stamp ProductID and refresh dynamic attributes on a trimmed Dataset.
 
-    ``input_files`` is rewritten to the single NOM-HK-DECODED granule this product was trimmed
-    from. Inheriting it from the parent would claim the ~128 raw L0 packet files that fed the
-    original decode, which are this product's grandparents, not its inputs.
+    ``input_files`` is set to the single NOM-HK-DECODED granule this product was trimmed from,
+    replacing the parent's own L0 packet-file provenance, and ``algorithm_version`` is restamped
+    with the running libera_utils version.
     """
     out = trimmed.copy(deep=False)
     # Drop source-file encodings so conformance enforce does not warn on leftovers
@@ -183,8 +173,6 @@ def _prepare_trimmed_attrs(
     out.attrs["ProductID"] = trimmed_product.value
     out.attrs["date_created"] = datetime.now(tz=UTC).isoformat()
     out.attrs["input_files"] = [Path(str(source_product_filename)).name]
-    # Both the decode and the trim ship in libera_utils, so this is normally unchanged; restamping
-    # keeps the version honest when an older granule is re-trimmed by newer software.
     out.attrs["algorithm_version"] = libera_utils_version()
     return out
 
@@ -203,7 +191,7 @@ def write_trimmed_nom_hk_products(
 
     Each file is stamped with its run's calibration dependency family ProductID, so several
     files written from one Dataset normally share a ProductID — one per ObsID in that family —
-    and are told apart by their filename time ranges. That is expected, not a collision.
+    and are told apart by their filename time ranges.
 
     When the same ``(source, obsid)`` appears in multiple disjoint runs, each run
     is written separately and a warning is logged (unexpected in normal ops).
@@ -246,21 +234,15 @@ def write_trimmed_nom_hk_products(
                 n,
             )
 
-    # One definition per distinct family rather than one per run: several runs in a day share a
-    # family ProductID, and each definition costs a parse of the NOM-HK definition YAML.
-    # dict.fromkeys rather than a set so the build order follows the runs.
-    distinct_products = dict.fromkeys(spec.trimmed_product for spec, _ in runs if spec.trimmed_product is not None)
+    # One definition per distinct family, not per run; dict.fromkeys keeps the run order
+    distinct_products = dict.fromkeys(spec.trimmed_product for spec, _ in runs)
     definitions = {product: get_trimmed_nom_hk_product_definition(product) for product in distinct_products}
 
     written: list[LiberaDataProductFilename] = []
     source_attrs = dict(nom_hk.attrs)
     for spec, pkt_slice in runs:
-        if spec.trimmed_product is None:
-            continue
         trimmed_product = spec.trimmed_product
         trimmed = select_packets(nom_hk, pkt_slice)
-        if trimmed.sizes.get(PACKET_DIM, 0) == 0:
-            continue
         trimmed = _prepare_trimmed_attrs(trimmed, trimmed_product, source_attrs, source_product_filename)
         filename = write_libera_data_product(
             definitions[trimmed_product],

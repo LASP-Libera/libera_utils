@@ -6,9 +6,9 @@ from typing import Union
 
 from libera_utils.aws.constants import LiberaAccountSuffix, LiberaDataBucketName
 
-# Shared ECR repository name for the radiometer calibration-family combine steps.
-# CDK should create one ECR repo with this name and attach it to each cal-* Batch job; the job
-# dispatches to the per-ObsID algorithm at runtime from the ObsID carried in its trimmed input.
+# Shared ECR repository name for the radiometer calibration-family combine steps. One repo is
+# attached to each cal-* Batch job, which dispatches to the per-ObsID algorithm from the ObsID
+# carried in its trimmed input.
 CAL_RAD_SHARED_ECR_NAME = "cal-rad-docker-repo"
 
 
@@ -163,7 +163,6 @@ class DataProductIdentifier(StrEnum):
     # L1A Calibration Dependency Family trimmed NOM-HK products
     # Daily NOM-HK subset to one ObsID time range for a given dependency family
     # Produced by L1A preprocessing; consumed by libera_rad and libera_cam for cal-combine steps.
-    # Separated by dependency family to allow for accurate retrieval of dependency files in libera_cdk.
     # =============================================================================
     # Radiometer calibration families
     l1a_icie_nom_hk_gain_family_trimmed = ("NOM-HK-GAIN-FAMILY-TRIMMED", DataLevel.L1A)
@@ -427,8 +426,7 @@ class ProcessingStepIdentifier(StrEnum):
             List of DataProductIdentifier members that this step produces
         shared_ecr_name : str, optional
             Shared ECR repository name. When set, ``ecr_name`` returns this value
-            instead of ``{step}-docker-repo``. Used so the calibration family cal steps
-            can share one radiometer calibration image repository.
+            instead of ``{step}-docker-repo``.
         """
         if value != value.lower():
             raise ValueError(
@@ -448,10 +446,10 @@ class ProcessingStepIdentifier(StrEnum):
     l1b_rad = ("l1b-rad", [DataProductIdentifier.l1b_rad])
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
 
-    # Radiometer calibration event combination steps (shared cal-rad ECR; one step per calibration
-    # dependency family). Each step consumes the family's NOM-HK-*-FAMILY-TRIMMED products and
-    # dispatches to the per-ObsID algorithm at runtime, so the products listed here are every CAL
-    # product the family can yield. Family membership lives in data/obsid_registry.csv.
+    # Radiometer calibration event combination steps: one step per calibration dependency family,
+    # sharing the cal-rad ECR. Each step consumes its family's NOM-HK-*-FAMILY-TRIMMED product and
+    # dispatches to the per-ObsID algorithm, so its products are every CAL product the family can
+    # yield. Family membership lives in data/obsid_registry.csv.
     cal_gain_family = (
         "cal-gain-family",
         [DataProductIdentifier.cal_gain, DataProductIdentifier.cal_noise],
@@ -593,9 +591,7 @@ class ProcessingStepIdentifier(StrEnum):
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
         with on a regular basis.
 
-        When a step was created with ``shared_ecr_name`` (e.g. radiometer cal-combine steps),
-        that shared repository name is returned so CDK can attach one ECR to many Batch jobs.
-        Otherwise returns ``{step}-docker-repo``.
+        Returns the step's ``shared_ecr_name`` when it has one, otherwise ``{step}-docker-repo``.
         """
         if self._shared_ecr_name is not None:
             return self._shared_ecr_name
@@ -654,15 +650,7 @@ class ProcessingStepIdentifier(StrEnum):
         -------
         ProcessingStepIdentifier or None
             The processing step that produces this data product, or None when no deployed step
-            produces it.
-
-        Notes
-        -----
-        None is a normal result, not a failure: the CAL products of calibration families whose
-        steps are still deferred (TODO[LIBSDC-811]) are archived products that no step yet
-        declares. Orchestration is driven by the libera_cdk processing system DAG
-        (``input-products`` / ``output-products`` per node), not by this lookup, so a None here
-        means "no step deployed yet" rather than a broken product.
+            declares it.
         """
         for step in cls:
             if data_product in step.products:

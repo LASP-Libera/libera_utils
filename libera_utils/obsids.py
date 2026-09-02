@@ -6,12 +6,11 @@ integer can mean different events depending on whether it appears in
 ``(NomHkObsidSource, obsid)``.
 
 Several ObsIDs share one TRIMMED product. A TRIMMED product names a *calibration
-dependency family* (e.g. ``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED
-ObsIDs) because downstream algorithms process every member of a family the same way
-and one processing step is deployed per family, not per ObsID. The trimmed file
-itself still carries the source NOM-HK ObsID field, so a consumer recovers the exact
-ObsID from the data rather than from the ProductID. Each ObsID keeps its own CAL
-product, which is what a family step dispatches on.
+dependency family* — ``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED
+ObsIDs — and one processing step is deployed per family, not per ObsID. The trimmed
+file carries the source NOM-HK ObsID field, so a consumer recovers the exact ObsID
+from the data rather than from the ProductID. Each ObsID keeps its own CAL product,
+which is what a family step dispatches on.
 
 The catalog itself lives in :data:`OBSID_REGISTRY_CSV` (``libera_utils/data``)
 rather than in this module. Product columns hold
@@ -24,19 +23,18 @@ all raise :class:`ValueError` at import time.
 
 A companion file, :data:`TRIM_FAMILY_INPUTS_CSV`, records the L1A products each family's
 cal step consumes *besides* its own TRIMMED product, exposed as :data:`FAMILY_INPUTS` /
-:func:`get_family_inputs`. The two
-files must cover exactly the same set of families, which is checked at import, so
-registering a new family without declaring its inputs is an error rather than a silent
-gap. Trimming is not applied to those inputs here: a cal container reads its run's time
-range off the TRIMMED NOM-HK filename it was handed and subsets the full daily L1A
-products itself.
+:func:`get_family_inputs`. The two files must cover exactly the same set of families, which
+is checked at import; an empty ``required_inputs`` cell means the dependency set is still
+undecided. A cal step is expected to take its family's NOM-HK already trimmed as the family
+product, so ``required_inputs`` normally names only the other APIDs. Trimming is not applied
+to those inputs here: a cal container reads its run's time range off the TRIMMED NOM-HK
+filename it was handed and subsets the full daily L1A products itself.
 
 The list of ObsIDs in this repo is meant for practical purposes of science data
 processing and is a subset of the instrument level source of truth of all ObsIDs, which
-is owned by the engineering team and lives on the ICIE ObsID page in LASP Confluence (no
-URL here on purpose — Confluence links rot). That page is the authority: whenever
-calibration ObsIDs are added, removed, or renamed upstream, this registry has to be
-reconciled against it.
+is owned by the engineering team and available in internal team documentation. That
+documentation is the authority: when calibration ObsIDs are added, removed, or renamed
+upstream, this registry has to be reconciled against it.
 """
 
 from __future__ import annotations
@@ -71,11 +69,9 @@ class ObsIdKind(StrEnum):
     SCIENCE = "science"
 
 
-#: NOM-HK ObsID field each calibration kind must be registered against. The asymmetry this
-#: enforces is real, not an omission: the camera cal ObsIDs (CT video 129-131, RAPS video 133-135,
-#: darks 256-258) are asserted only on ``ICIE__SW_OBSID_WFOV``. ICIE has confirmed
-#: ``ICIE__SW_OBSID_RAD`` never carries those values, so ``get_obsid_spec(RAD, 129)`` raising
-#: KeyError is correct behavior rather than a missing row.
+#: NOM-HK ObsID field each calibration kind must be registered against. The camera cal ObsIDs
+#: (CT video 129-131, RAPS video 133-135, darks 256-258) are asserted only on
+#: ``ICIE__SW_OBSID_WFOV``, so ``get_obsid_spec(RAD, 129)`` raises KeyError.
 _SOURCE_BY_CAL_KIND = {
     ObsIdKind.RAD_CAL: NomHkObsidSource.RAD,
     ObsIdKind.CAM_CAL: NomHkObsidSource.WFOV,
@@ -90,8 +86,7 @@ _COLUMNS = ("source", "obsid", "kind", "trimmed_product", "cal_product", "descri
 #: Columns every family-inputs catalog row must provide.
 _FAMILY_INPUT_COLUMNS = ("trimmed_product", "required_inputs")
 
-#: Separator between product names inside the ``required_inputs`` cell. Not a comma, because
-#: that is the CSV delimiter and descriptions in the sibling catalog already need quoting.
+#: Separator between product names inside the ``required_inputs`` cell.
 _INPUT_SEPARATOR = ";"
 
 #: Key that :class:`csv.DictReader` parks surplus cells under (a row with too many columns).
@@ -269,8 +264,7 @@ def _load_registry() -> tuple[
                     raise ValueError(
                         f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: CAL product "
                         f"{spec.cal_product.name!r} is already claimed by ObsID {owner.obsid} on "
-                        f"{owner.source.name}. ObsIDs share a TRIMMED family, but each one needs its "
-                        "own CAL product so a family cal step still maps every ObsID to a distinct output."
+                        f"{owner.source.name}. Each ObsID needs its own CAL product."
                     )
                 cal_owner[spec.cal_product] = spec
             if spec.trimmed_product is not None:
@@ -280,8 +274,8 @@ def _load_registry() -> tuple[
                         f"{OBSID_REGISTRY_CSV.name}:{reader.line_num}: TRIMMED family "
                         f"{spec.trimmed_product.name!r} is registered on {members[0].source.name} by ObsID "
                         f"{members[0].obsid} but on {spec.source.name} by ObsID {spec.obsid}. A family is "
-                        "trimmed by scanning a single NOM-HK ObsID field, so it must not span both "
-                        "(register a separate family per source, as RAD/WFOV VIIRS lunar do)."
+                        "trimmed by scanning a single NOM-HK ObsID field; register a separate family "
+                        "per source."
                     )
                 members.append(spec)
             registry[key] = spec
@@ -297,15 +291,14 @@ def _load_family_inputs(
     ----------
     families : collection of DataProductIdentifier
         TRIMMED family ProductIDs registered in :data:`OBSID_REGISTRY_CSV`. The two catalogs
-        must cover exactly the same families, so that registering a family in one file without
-        the other is an import-time error rather than a silent gap.
+        must cover exactly the same families.
 
     Returns
     -------
     dict
         Mapping of each TRIMMED family ProductID to the L1A products a cal step for that family
         consumes, in catalog order. An empty tuple means the dependency set has not been settled
-        yet, which is the case for the families whose processing steps are deferred.
+        yet.
 
     Raises
     ------
@@ -375,15 +368,14 @@ def _load_family_inputs(
 OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec]
 
 #: Inverse view of the TRIMMED column: each calibration dependency family ProductID mapped to the
-#: ObsIDs it covers. One processing step is deployed per family, so this is the membership a
-#: downstream cal step dispatches over.
+#: ObsIDs it covers. This is the membership a downstream cal step dispatches over.
 TRIM_FAMILIES: dict[DataProductIdentifier, tuple[ObsIdSpec, ...]]
 
 #: L1A products each calibration dependency family's cal step consumes *besides* its own TRIMMED
 #: product, loaded from :data:`TRIM_FAMILY_INPUTS_CSV`. Together with the family product these are
-#: the dependency set libera_cdk deploys a family step against; an empty tuple means it has not
-#: been settled yet. Cal containers subset these daily products themselves using the time range on
-#: the TRIMMED NOM-HK filename they are handed.
+#: the dependency set a family step is deployed against; an empty tuple means it has not been
+#: settled yet. Cal containers subset these daily products themselves using the time range on the
+#: TRIMMED NOM-HK filename they are handed.
 FAMILY_INPUTS: dict[DataProductIdentifier, tuple[DataProductIdentifier, ...]]
 
 OBSID_REGISTRY, TRIM_FAMILIES = _load_registry()
@@ -419,10 +411,9 @@ def get_obsid_spec(source: NomHkObsidSource, obsid: int) -> ObsIdSpec:
 def get_family_specs(trimmed_product: DataProductIdentifier) -> tuple[ObsIdSpec, ...]:
     """Return every ObsID belonging to a TRIMMED calibration dependency family.
 
-    A TRIMMED ProductID covers a family of ObsIDs that downstream algorithms process the
-    same way (e.g. ``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED ObsIDs), so
-    this is how a cal step enumerates the ObsIDs — and the CAL products — it is responsible
-    for without hand-maintaining the mapping.
+    A TRIMMED ProductID covers a family of ObsIDs that downstream algorithms process the same
+    way (``NOM-HK-SWC-FAMILY-TRIMMED`` covers all six shortwave LED ObsIDs), so this is how a
+    cal step enumerates the ObsIDs — and the CAL products — it is responsible for.
 
     Parameters
     ----------
@@ -451,11 +442,11 @@ def get_family_inputs(trimmed_product: DataProductIdentifier) -> tuple[DataProdu
     """Return the L1A products a calibration dependency family's cal step consumes.
 
     These are the *other* L1A products a family's algorithm needs: a step's full
-    ``input-products`` set is ``trimmed_product`` itself plus this tuple. The family's NOM-HK
-    arrives already trimmed as ``trimmed_product``, so the full-day ``NOM-HK-DECODED`` granule is
-    deliberately not listed here. The cal container subsets these to the calibration run itself,
-    using the time range carried by the TRIMMED NOM-HK filename it was handed; no other APID is
-    trimmed by the L1A preprocessor.
+    ``input-products`` set is ``trimmed_product`` itself plus this tuple. The family's NOM-HK is
+    expected to arrive already trimmed as ``trimmed_product``, so the full-day ``NOM-HK-DECODED``
+    granule is normally not listed here. The cal container subsets these to the calibration run
+    itself, using the time range carried by the TRIMMED NOM-HK filename it was handed; no other
+    APID is trimmed by the L1A preprocessor.
 
     Parameters
     ----------
@@ -465,8 +456,8 @@ def get_family_inputs(trimmed_product: DataProductIdentifier) -> tuple[DataProdu
     Returns
     -------
     tuple of DataProductIdentifier
-        L1A input products in catalog order. Empty for families whose processing step, and
-        therefore whose dependency set, is still deferred.
+        L1A input products in catalog order. Empty for families whose dependency set is still
+        undecided.
 
     Raises
     ------

@@ -4,10 +4,10 @@ Libera's ICIE flight software tags certain telemetry packets with a small intege
 identifying which calibration event or scan mode is running (gain/noise cal, a specific LED or
 blackbody temperature, a solar diffuser face, a lunar scan, cross-track imaging, and so on).
 `libera_utils.obsids` is the sole source of truth mapping those ObsIDs to the
-`DataProductIdentifier`s they produce. This page explains why the registry is shaped the way it
-is, and how it's actually used — both inside this package and by downstream algorithm repos.
+`DataProductIdentifier`s they produce. This page covers how the registry is structured and how it
+is used, both inside this package and by downstream algorithm repos.
 
-## Why a registry, and why keyed by source
+## ObsID sources
 
 ObsIDs are reported in two separate NOM-HK telemetry fields, one per instrument:
 
@@ -65,13 +65,11 @@ so an unrecognized ObsID in telemetry surfaces immediately rather than being mis
 
 ## Calibration dependency families
 
-An ObsID does **not** get its own TRIMMED product. Several ObsIDs share one, because downstream
-algorithms process every member of a group identically — `libera_rad` runs the same shortwave-LED
-cal on ObsIDs 256 through 261 regardless of wavelength. What actually differs between processing
-steps is the _set of input products a step depends on_, and that is what libera_cdk deploys against.
-So the TRIMMED column names a **calibration dependency family**: one product per group of ObsIDs
-sharing a dependency, and therefore one `ProcessingStepIdentifier` per family instead of one per
-ObsID.
+An ObsID does **not** get its own TRIMMED product. Several ObsIDs share one: the TRIMMED column
+names a **calibration dependency family**, one product per group of ObsIDs that a downstream
+algorithm processes identically and that therefore share a set of input products. `libera_rad` runs
+the same shortwave-LED cal on ObsIDs 256 through 261 regardless of wavelength, so all six share
+`NOM-HK-SWC-FAMILY-TRIMMED`. There is one `ProcessingStepIdentifier` per family, not per ObsID.
 
 | Family ProductID                         | Source | ObsIDs        |
 | ---------------------------------------- | ------ | ------------- |
@@ -99,14 +97,14 @@ for spec in get_family_specs(DataProductIdentifier.l1a_icie_nom_hk_swc_family_tr
 
 Two invariants hold, and both are enforced at import time:
 
-- **Each ObsID keeps its own CAL product.** A family groups inputs, not outputs, so a family step
-  still maps every ObsID it sees to exactly one distinct CAL product. A duplicate `cal_product`
-  cell raises `ValueError`.
-- **A family never spans both NOM-HK ObsID fields.** Trimming scans one field (`spec.source.value`)
-  at a time, so a family confined to `RAD` or to `WFOV` is what makes a trimmed file attributable
-  to a source. ObsIDs 513/514 (VIIRS lunar) run on both instruments and are therefore registered as
-  _two_ families, `NOM-HK-RAD-VIIRS-LUNAR-FAMILY-TRIMMED` and
-  `NOM-HK-WFOV-VIIRS-LUNAR-FAMILY-TRIMMED`, each with its own CAL products.
+- **Each ObsID keeps its own CAL product.** A family groups inputs, not outputs: a family step
+  maps every ObsID it sees to exactly one distinct CAL product. A duplicate `cal_product` cell
+  raises `ValueError`.
+- **A family never spans both NOM-HK ObsID fields.** Trimming scans one field
+  (`spec.source.value`) at a time, so every trimmed file is attributable to one source. ObsIDs
+  513/514 (VIIRS lunar) run on both instruments and are registered as _two_ families,
+  `NOM-HK-RAD-VIIRS-LUNAR-FAMILY-TRIMMED` and `NOM-HK-WFOV-VIIRS-LUNAR-FAMILY-TRIMMED`, each with
+  its own CAL products.
 
 The ObsID itself is never lost: a trimmed file still carries the `ICIE__SW_OBSID_RAD` /
 `ICIE__SW_OBSID_WFOV` variable it was cut on, so a consumer recovers the exact ObsID from the data
@@ -145,8 +143,8 @@ family are not that case and do not warn.
 ## Consumer 2: downstream cal-combine dispatch
 
 The registry's second job is letting downstream algorithm repos (e.g. `libera_rad`) build their
-own ObsID dispatch **without hand-maintaining a duplicate ObsID → product mapping**. Instead of a
-locally-owned dict, a downstream repo derives its dispatch table directly from the registry, e.g.:
+own ObsID dispatch **without hand-maintaining a duplicate ObsID → product mapping**. A downstream
+repo derives its dispatch table directly from the registry:
 
 ```python
 from libera_utils.constants import DataProductIdentifier
@@ -159,12 +157,12 @@ cal_event_by_obsid = {
 }
 ```
 
-This is what makes the shared-ECR dispatch pattern possible: the radiometer cal-combine
-`ProcessingStepIdentifier` members (`cal-gain-family`, `cal-swc-family`, `cal-lwc-family`,
-`cal-solar-family`) all set `shared_ecr_name=CAL_RAD_SHARED_ECR_NAME`, so
-`ProcessingStepIdentifier.ecr_name` resolves every one of them to the same `cal-rad-docker-repo`
-image, and each step's `products` list the CAL products of its family's ObsIDs. A Batch
-job reads the ObsID out of the trimmed input it was handed, and runs the matching algorithm. This leads to one container image, and one deployed step per family, instead of one per calibration event.
+The radiometer cal-combine `ProcessingStepIdentifier` members (`cal-gain-family`,
+`cal-swc-family`, `cal-lwc-family`, `cal-solar-family`) all set
+`shared_ecr_name=CAL_RAD_SHARED_ECR_NAME`, so `ProcessingStepIdentifier.ecr_name` resolves every
+one of them to the same `cal-rad-docker-repo` image, and each step's `products` are the CAL
+products of its family's ObsIDs. A Batch job reads the ObsID out of the trimmed input it was
+handed and runs the matching algorithm: one container image, and one deployed step per family.
 
 ## The other L1A inputs a cal step needs
 
@@ -173,9 +171,9 @@ NOM-HK — the shortwave LED cal, for instance, also needs PEV-SW, PEC-SW, RAD-S
 and AXIS-SAMPLE — and those arrive as the **full daily L1A granules**. The cal container reads the
 run's time range off the TRIMMED NOM-HK filename it was handed and subsets them itself.
 
-Which products those are is stored in `libera_utils/data/trim_family_inputs.csv`.
-This file maps each family to its L1A inputs, and the two catalog files are cross-checked at import, so a
-family cannot exist in one without the other:
+Which products those are is stored in `libera_utils/data/trim_family_inputs.csv`. This file maps
+each family to its L1A inputs, and the two catalog files are cross-checked at import, so a family
+cannot exist in one without the other:
 
 ```python
 from libera_utils.constants import DataProductIdentifier
@@ -187,29 +185,25 @@ get_family_inputs(DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed)
 ```
 
 That tuple, **plus the family's own TRIMMED product**, is what a `cal-*-family` node's
-`input-products` should list in libera_cdk's `processing_system_dag.json`. The full-day
-`NOM-HK-DECODED` granule is deliberately absent: the family's NOM-HK arrives already trimmed as
-the TRIMMED product itself, so listing it here would stage a second, redundant NOM-HK input.
-Families whose processing step is still deferred return an empty tuple — the dependency set is
-undecided, not empty — and declaring it is part of closing `TODO[LIBSDC-811]`.
+`input-products` should list in libera_cdk's `processing_system_dag.json`. A cal step is expected
+to take its family's NOM-HK already trimmed as the TRIMMED product, so `required_inputs` normally
+omits the full-day `NOM-HK-DECODED` granule — listing it would stage a second, redundant NOM-HK
+input. Families whose dependency set is still undecided return an empty tuple; declaring it is
+part of closing `TODO[LIBSDC-811]`.
 
-## Current coverage
+## Coverage
 
-- Radiometer (`RAD_CAL`) and camera (`CAM_CAL`) entries all have `trimmed_product` and
-  `cal_product` set, so they're trim-eligible today.
-- Four radiometer cal-combine steps exist: `cal-gain-family`, `cal-swc-family`, `cal-lwc-family`,
-  and `cal-solar-family`.
-- The lunar (448/449) and VIIRS-lunar (513/514) families are registered, but no
-  `ProcessingStepIdentifier` cal-combine steps exist for them yet (`TODO[LIBSDC-811]`).
-- Camera `ProcessingStepIdentifier` cal-combine steps are deferred entirely; only the TRIMMED side
-  (L1A preprocessing) is wired up for camera ObsIDs so far.
-- Science/scan mode entries (Cross Track, RAP Scan, Along Track, Earth Target, the Geo scans) are
-  catalog-only and never trim-eligible.
+- Every radiometer (`RAD_CAL`) and camera (`CAM_CAL`) entry has both `trimmed_product` and
+  `cal_product` set, so all of them are trim-eligible.
+- Science/scan mode entries (Boot-Up, Safe Mode, Stowed, Cross Track, RAP Scan, Along Track, Earth
+  Target, the Geo scans) are catalog-only and never trim-eligible.
+- Radiometer cal-combine steps exist for the gain, SWC, LWC and solar families. The lunar
+  (448/449), VIIRS-lunar (513/514) and camera families have no `ProcessingStepIdentifier` step
+  (`TODO[LIBSDC-811]`); only the TRIMMED side is wired up for them.
 - Camera cal ObsIDs are registered on `WFOV` only, and the loader enforces that. Science modes are
-  dual-registered because both instruments assert them, but CT video (129-131), RAPS video
-  (133-135) and the darks (256-258) are asserted only on `ICIE__SW_OBSID_WFOV` — ICIE has
-  confirmed `ICIE__SW_OBSID_RAD` never carries those values. `get_obsid_spec(NomHkObsidSource.RAD,
-129)` therefore raises `KeyError` by design; the asymmetry is not a missing row.
+  dual-registered, since both instruments assert them, but CT video (129-131), RAPS video
+  (133-135) and the darks (256-258) are asserted only on `ICIE__SW_OBSID_WFOV`, so
+  `get_obsid_spec(NomHkObsidSource.RAD, 129)` raises `KeyError`.
 
 ## Extending the registry
 

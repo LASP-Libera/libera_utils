@@ -412,7 +412,7 @@ class TestObsidRegistryLoaderCrossRowChecks:
 
     def test_family_spanning_both_sources_raises(self, tmp_path, monkeypatch):
         """A family is trimmed off one NOM-HK ObsID field, so it must not span RAD and WFOV."""
-        with pytest.raises(ValueError, match="must not span both"):
+        with pytest.raises(ValueError, match="register a separate family per source"):
             self._load(
                 tmp_path,
                 monkeypatch,

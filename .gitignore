@@ -84,3 +84,4 @@ pytest.ini
 .devcontainer
 .claude/settings.local.json
 **/*mcp.json
+reviews/*

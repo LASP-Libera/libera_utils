@@ -83,9 +83,10 @@ generation, Libera file naming, and AWS pipeline integration.
     `get_family_inputs()`). The two files are cross-checked at import and must list exactly the
     same families, so a new TRIMMED family needs a row in both; an empty `required_inputs` cell
     means the dependency set is still undecided. A family product plus its `required_inputs` is
-    what a libera_cdk `cal-*-family` node should declare as its `input-products`. Never list
-    `l1a_icie_nom_hk_decoded` — the family's NOM-HK arrives already trimmed as the family product,
-    so the full-day granule would be a redundant second input.
+    what a libera_cdk `cal-*-family` node should declare as its `input-products`. A cal step is
+    expected to take its family's NOM-HK already trimmed as the family product, so
+    `required_inputs` normally omits `l1a_icie_nom_hk_decoded`; listing the full-day granule would
+    stage a redundant second NOM-HK input.
     NOM-HK is the only product the L1A preprocessor trims — a cal container subsets the full daily
     L1A inputs itself, using the time range on the TRIMMED NOM-HK filename it was handed.
   - When adding a new calibration ObsID, add a row to `data/obsid_registry.csv` first rather
@@ -97,8 +98,8 @@ generation, Libera file naming, and AWS pipeline integration.
     dependency, which is also when a new `ProcessingStepIdentifier` is warranted.
   - The TRIMMED column names a **calibration dependency family**, not a single ObsID: ObsIDs a
     downstream algorithm processes identically share one `NOM-HK-<FAMILY>-FAMILY-TRIMMED` product
-    (all six SWC LEDs share `NOM-HK-SWC-FAMILY-TRIMMED`), because what libera_cdk deploys against
-    is the set of input products a step depends on — one processing step per family, not per ObsID.
+    (all six SWC LEDs share `NOM-HK-SWC-FAMILY-TRIMMED`) — one processing step per family, not
+    per ObsID, since what libera_cdk deploys against is a step's set of input products.
     Each ObsID still gets its own CAL product, and a family never spans both ObsID fields (VIIRS
     lunar 513/514 is registered as two families, `NOM-HK-RAD-VIIRS-LUNAR-...` and
     `NOM-HK-WFOV-VIIRS-LUNAR-...`) so a trimmed file always attributes to one source. Use
