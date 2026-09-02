@@ -46,17 +46,18 @@ class TestSSFReaderClassAttributes:
         assert names == {
             "aerosol_optical_depth",
             "clear_coverage",
-            "cloud_optical_depth",
-            "cloud_water_particle_radius",
-            "cloud_ice_particle_radius",
+            "cloud_optical_depth_lower",
+            "cloud_water_particle_radius_lower",
+            "cloud_ice_particle_radius_lower",
             "cloud_classification",
             "shortwave_adm_type",
             "longwave_adm_type",
         }
 
     def test_extended_fields_are_imager_only(self):
-        # The extended cloud/aerosol/albedo fields are pinned to FMATCH-IMAGER via
-        # only_modes; spot-check representative flattened names across the three axes.
+        # The extended cloud/aerosol/surface/TOA fields are pinned to FMATCH-IMAGER via
+        # only_modes; spot-check representative names, including the two 1-D scalar
+        # fields (surface_albedo, toa_incoming_solar_radiation).
         names = {v.name for v in SSFReader.VARIABLES}
         for name in (
             "layer_coverage_lower",
@@ -66,15 +67,17 @@ class TestSSFReaderClassAttributes:
             "match_aot",
             "aerosol_type_percentage_type0",
             "aerosol_type_percentage_type6",
-            "broadband_surface_albedo_band0",
-            "broadband_surface_albedo_band9",
+            "surface_albedo",
+            "toa_incoming_solar_radiation",
         ):
             assert name in names, f"missing extended field {name}"
         imager_only = [v for v in SSFReader.VARIABLES if v.name in names and v.only_modes is not None]
         assert all(v.only_modes == (OperationalMode.IMAGER,) for v in imager_only)
-        # Both secondary axes are fully flattened (7 aerosol types, 10 albedo bands).
+        # The aerosol-type axis is fully flattened (7 types); surface_albedo and the TOA
+        # field are genuinely 1-D, so each appears exactly once (no _bandN flattening).
         assert sum(n.startswith("aerosol_type_percentage_type") for n in names) == 7
-        assert sum(n.startswith("broadband_surface_albedo_band") for n in names) == 10
+        assert sum(n == "surface_albedo" for n in names) == 1
+        assert sum(n == "toa_incoming_solar_radiation" for n in names) == 1
 
 
 class TestSSFReaderLoadSpatialRegion:
@@ -106,10 +109,10 @@ class TestSSFReaderLoadSpatialRegion:
         assert np.allclose(_finite_values(data, "aerosol_optical_depth"), [0.10, 0.20, 0.30, 0.40, 0.50], atol=1e-5)
 
     def test_cloud_optical_depth_uses_lower_layer(self, tmp_path):
-        # Targets that cloud_optical_depth reads the lower layer; asserts the finite values equal [1,2,4,8,16].
+        # Targets that cloud_optical_depth_lower reads the lower layer; asserts the finite values equal [1,2,4,8,16].
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        assert np.allclose(_finite_values(data, "cloud_optical_depth"), [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
+        assert np.allclose(_finite_values(data, "cloud_optical_depth_lower"), [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
 
     def test_cloud_classification_codes_preserved(self, tmp_path):
         # Targets cloud_classification code passthrough; asserts the finite codes are exactly {1001, 1191}.
@@ -120,12 +123,12 @@ class TestSSFReaderLoadSpatialRegion:
 
     def test_cloud_water_particle_radius_uses_lower_layer(self, tmp_path):
         # Fixture defaults: lower-layer water radii are [5, 6, 7, 8, 9] μm for the
-        # five clustered footprints. The base `cloud_water_particle_radius` spec reads
-        # only the lower layer (index 0); the upper layer is exposed separately as the
-        # IMAGER-only `cloud_water_particle_radius_upper` spec.
+        # five clustered footprints. The base `cloud_water_particle_radius_lower` spec
+        # reads only the lower layer (index 0); the upper layer is exposed separately as
+        # the IMAGER-only `cloud_water_particle_radius_upper` spec.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        values = _finite_values(data, "cloud_water_particle_radius")
+        values = _finite_values(data, "cloud_water_particle_radius_lower")
         assert values.size > 0
         assert np.all((values >= 5.0) & (values <= 9.0))
 
@@ -134,7 +137,7 @@ class TestSSFReaderLoadSpatialRegion:
         # five clustered footprints. The base spec reads only the lower layer.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        values = _finite_values(data, "cloud_ice_particle_radius")
+        values = _finite_values(data, "cloud_ice_particle_radius_lower")
         assert values.size > 0
         assert np.all((values >= 20.0) & (values <= 40.0))
 
@@ -163,7 +166,7 @@ class TestSSFReaderExtendedImagerFields:
         # cloud_optical_depth lower = [1,2,4,8,16]; upper = lower + 1 = [2,3,5,9,17].
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        lower = _finite_values(data, "cloud_optical_depth")
+        lower = _finite_values(data, "cloud_optical_depth_lower")
         upper = _finite_values(data, "cloud_optical_depth_upper")
         assert np.allclose(lower, [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
         assert np.allclose(upper, [2.0, 3.0, 5.0, 9.0, 17.0], atol=1e-4)
@@ -188,12 +191,19 @@ class TestSSFReaderExtendedImagerFields:
         assert np.allclose(_finite_values(data, "aerosol_type_percentage_type3"), [20, 21, 22, 23, 24], atol=1e-3)
         assert np.allclose(_finite_values(data, "aerosol_type_percentage_type0"), [5, 6, 7, 8, 9], atol=1e-3)
 
-    def test_broadband_surface_albedo_selects_band_index(self, tmp_path):
-        # broadband_surface_albedo[:, b] = (b+1)*3 + ramp. Band 5 -> 18 + ramp.
+    def test_surface_albedo_scalar_read(self, tmp_path):
+        # surface_albedo is a 1-D (Footprints,) fraction (0..1): 0.1 + 0.05*ramp.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data, _, _ = reader._load_spatial_region(_BBOX)
-        assert np.allclose(_finite_values(data, "broadband_surface_albedo_band5"), [18, 19, 20, 21, 22], atol=1e-3)
-        assert np.allclose(_finite_values(data, "broadband_surface_albedo_band0"), [3, 4, 5, 6, 7], atol=1e-3)
+        assert np.allclose(_finite_values(data, "surface_albedo"), [0.10, 0.15, 0.20, 0.25, 0.30], atol=1e-5)
+
+    def test_toa_incoming_solar_radiation_scalar_read(self, tmp_path):
+        # toa_incoming_solar_radiation is a 1-D (Footprints,) field (W/m^2): 1360 + ramp.
+        reader = SSFReader(make_ssf_fixture(tmp_path))
+        data, _, _ = reader._load_spatial_region(_BBOX)
+        assert np.allclose(
+            _finite_values(data, "toa_incoming_solar_radiation"), [1360, 1361, 1362, 1363, 1364], atol=1e-3
+        )
 
 
 class TestSSFReaderLoadTileAndCache:

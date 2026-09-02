@@ -105,9 +105,9 @@ class _SSFField(NamedTuple):
     layer_index : int or None
         For 2-D ``(Footprints, <second axis>)`` variables, the index to select
         along the second axis. Despite the name it is not limited to the
-        ``LowerUpper`` layer axis -- it also selects an ``AeroTypePct`` type or an
-        ``AlbedoDim`` band, since all are read as ``raw[:, layer_index]``.
-        ``None`` for 1-D ``(Footprints,)`` variables.
+        ``LowerUpper`` layer axis -- it also selects an ``AeroTypePct`` type, since
+        all are read as ``raw[:, layer_index]``. ``None`` for 1-D ``(Footprints,)``
+        variables.
     n_categories : int or None
         Category count for categorical variables; ``None`` for continuous.
     required_mode : OperationalMode
@@ -163,7 +163,7 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         None,
     ),
     _SSFField(
-        "cloud_optical_depth",
+        "cloud_optical_depth_lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
         "weighted_log_mean",
@@ -175,10 +175,10 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
     # Effective cloud particle radius separated by thermodynamic phase (μm).
     # SSF stores water and ice radii in separate 2-D (Footprints, LowerUpper)
     # variables; both use _CLOUD_LAYER_INDEX to select the lower cloud layer,
-    # consistent with cloud_optical_depth. The combined (blended) radius is
+    # consistent with cloud_optical_depth_lower. The combined (blended) radius is
     # not available in SSF — use cldpix.cloud_particle_radius for that.
     _SSFField(
-        "cloud_water_particle_radius",
+        "cloud_water_particle_radius_lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
@@ -188,7 +188,7 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         None,
     ),
     _SSFField(
-        "cloud_ice_particle_radius",
+        "cloud_ice_particle_radius_lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
@@ -233,12 +233,13 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
 # (IMAGER-CAMTIME outranks IMAGER), so every generated field is pinned with
 # only_modes=(IMAGER,); see VariableSpec.only_modes / spec_active_in_mode.
 #
-# The source fields carry a second axis of varying size -- LowerUpper (2) for the cloud
-# layers, AeroTypePct (7) for aerosol_type_percentage, AlbedoDim (10) for
-# broadband_surface_albedo. FMATCH products are strictly 1-D per footprint, so (like
-# era5_pressure's per-level flattening) each second-axis index becomes its own 1-D spec
-# via a name suffix (_lower/_upper, _typeN, _bandN). Every field is continuous float32
-# and therefore also gains a _standard_deviation companion in product_variable_specs().
+# Some source fields carry a second axis of varying size -- LowerUpper (2) for the cloud
+# layers, AeroTypePct (7) for aerosol_type_percentage. FMATCH products are strictly 1-D
+# per footprint, so (like era5_pressure's per-level flattening) each second-axis index
+# becomes its own 1-D spec via a name suffix (_lower/_upper, _typeN). Genuinely 1-D
+# source fields (surface_albedo, toa_incoming_solar_radiation) are emitted as a single
+# spec via _SCALAR_MEMBER. Every field is continuous float32 and therefore also gains a
+# _standard_deviation companion in product_variable_specs().
 _IMAGER_ONLY: tuple[OperationalMode, ...] = (OperationalMode.IMAGER,)
 
 # Zero-axis members for a 1-D (Footprints,) source field: one output, no index.
@@ -299,9 +300,10 @@ _IMAGER_SSF_SOURCES: tuple[
         _BOTH_LAYERS,
     ),
     # Three fields whose LOWER layer is already carried by the base specs above
-    # (cloud_optical_depth / cloud_water_particle_radius / cloud_ice_particle_radius);
-    # add only the UPPER layer here to avoid a redundant lower duplicate. Valid ranges
-    # match the base specs so lower/upper stay consistent.
+    # (cloud_optical_depth_lower / cloud_water_particle_radius_lower /
+    # cloud_ice_particle_radius_lower); add only the UPPER layer here to avoid a
+    # redundant lower duplicate. Valid ranges match the base specs so lower/upper
+    # stay consistent.
     (
         "cloud_optical_depth",
         "Cloudy_Imager_Footprint_Layer",
@@ -355,19 +357,22 @@ _IMAGER_SSF_SOURCES: tuple[
         (0.0, 5.0),
         _SCALAR_MEMBER,
     ),
-    # --- Surface field ---
-    # broadband_surface_albedo is (Footprints, AlbedoDim=10) (file long_name "Imager
-    # Spectral Albedo"; valid_range 0..100). The band wavelengths are not recorded in
-    # the file; flattened to placeholder _band0.._band9 suffixes.
-    # TODO[LIBSDC-794]: replace with the real albedo-band names once confirmed, and
-    # confirm whether one broadband value (not 10 spectral bands) is actually wanted.
+    # --- Surface field (1-D, footprint only) ---
+    # Auxillary_Properties/surface_albedo is a single 1-D (Footprints,) broadband value
+    # (file long_name "Surface Albedo"; valid_range 0..1, a fraction — no units attr).
+    # This replaces the earlier (Footprints, AlbedoDim=10) "Imager Spectral Albedo"
+    # (Surface_Map/broadband_surface_albedo), which we no longer read.
+    ("surface_albedo", "Auxillary_Properties", "surface_albedo", "weighted_mean", (0.0, 1.0), _SCALAR_MEMBER),
+    # --- TOA flux field (1-D, footprint only) ---
+    # Observed_TOA_Fluxes/toa_incoming_solar_radiation (file units "W/m^2";
+    # valid_range 0..1400).
     (
-        "broadband_surface_albedo",
-        "Surface_Map",
-        "broadband_surface_albedo",
+        "toa_incoming_solar_radiation",
+        "Observed_TOA_Fluxes",
+        "toa_incoming_solar_radiation",
         "weighted_mean",
-        (0.0, 100.0),
-        tuple((f"band{i}", i) for i in range(10)),
+        (0.0, 1400.0),
+        _SCALAR_MEMBER,
     ),
 )
 
