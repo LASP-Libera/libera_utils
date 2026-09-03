@@ -155,21 +155,23 @@ class TestFmatchReaders:
         for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle", "RADIOMETER_TIME"):
             assert required in dataset.variables
 
-    def test_from_fmatch_cam_camtime_reads_records_on_footprint_axis(self, tmp_path):
-        """from_fmatch_cam_camtime reads FMATCH-CAM-CAMTIME onto the FOOTPRINT axis, carrying CAMERA_TIME and the 2-D
-        camera_pixel range coordinates through (but not the FMATCH-only center pixel)."""
+    def test_from_fmatch_cam_camtime_reads_records_on_camera_grid(self, tmp_path):
+        """from_fmatch_cam_camtime reads FMATCH-CAM-CAMTIME onto the 2-D (CAMERA_TIME, FOOTPRINT) grid, carrying
+        CAMERA_TIME and the four camera_pixel bound coordinates through (but not the FMATCH-only center pixel)."""
         input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM_CAMTIME, n_footprints=6)
         dataset = FootprintData.from_fmatch_cam_camtime(input_path)._data
 
-        # Records live on FOOTPRINT; CAMERA_TIME rides on that axis (a plain variable pre-write).
-        assert dataset.sizes["FOOTPRINT"] == 6
-        assert dataset["CAMERA_TIME"].dims == ("FOOTPRINT",)
-        # Classification inputs the pipeline consumes/derives from are present on the record axis.
+        # Records live on the 2-D grid; CAMERA_TIME is the 1-D image-acquisition axis (a plain variable pre-write).
+        assert dataset.sizes["CAMERA_TIME"] == 6
+        assert "FOOTPRINT" in dataset.sizes
+        assert dataset["CAMERA_TIME"].dims == ("CAMERA_TIME",)
+        # Classification inputs the pipeline consumes/derives from are present on the 2-D grid.
         for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle"):
             assert required in dataset.variables
-        # The camera pixel-index ranges pass through as 2-D coordinates; the boresight center pixel does not.
-        for name in ("camera_pixel_x", "camera_pixel_y"):
-            assert dataset[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+            assert dataset[required].dims == ("CAMERA_TIME", "FOOTPRINT")
+        # The four camera pixel-block bounds pass through as 2-D coordinates; the boresight center pixel does not.
+        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+            assert dataset[name].dims == ("CAMERA_TIME", "FOOTPRINT")
         assert "center_pixel_x" not in dataset.variables
 
     def test_from_fmatch_imager_flash_injects_nan_cloud_phase(self, tmp_path):
@@ -297,7 +299,7 @@ class TestSceneIdCamCamtimeWrite:
 
     def test_end_to_end_from_written_fmatch_file(self, tmp_path):
         """End-to-end guard (replaces the retired demo generator): a written FMATCH-CAM-CAMTIME file read by the real
-        reader, classified, and written as a conformant SCENE-ID-CAM-CAMTIME product on the FOOTPRINT axis."""
+        reader, classified, and written as a conformant SCENE-ID-CAM-CAMTIME product on the 2-D grid."""
         fmatch_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM_CAMTIME, n_footprints=6)
         footprint_data = FootprintData.from_fmatch_cam_camtime(fmatch_path)
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
@@ -306,10 +308,11 @@ class TestSceneIdCamCamtimeWrite:
 
         assert output_file.path.exists()
         reopened = xr.open_dataset(output_file.path)
-        assert reopened.sizes["FOOTPRINT"] == 6
-        assert reopened["CAMERA_TIME"].dims == ("FOOTPRINT",)
-        for name in ("camera_pixel_x", "camera_pixel_y"):
-            assert reopened[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+        assert reopened.sizes["CAMERA_TIME"] == 6
+        assert reopened["CAMERA_TIME"].dims == ("CAMERA_TIME",)
+        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+            assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+        assert reopened["scene_id_erbe"].dims == ("CAMERA_TIME", "FOOTPRINT")
         assert "scene_id_erbe" in reopened.variables
         assert "center_pixel_x" not in reopened.variables
 

@@ -248,12 +248,13 @@ class TestCamtimeAssembly:
         # Conformance: dtypes/dims/attributes all satisfy the product definition.
         assert definition.check_dataset_conformance(dataset, strict=False) == []
 
-        # Real, segmentation-derived columns match the footprints. Records live on the FOOTPRINT axis (CAMERA_TIME is
-        # a non-unique coordinate riding on it).
+        # Real, segmentation-derived columns match the footprints on the 2-D (CAMERA_TIME, FOOTPRINT) grid. The
+        # single-image fixture yields one CAMERA_TIME row, so the footprints fill that row along FOOTPRINT.
+        assert dataset["latitude"].dims == ("CAMERA_TIME", "FOOTPRINT")
         assert dataset.sizes["FOOTPRINT"] == len(footprints)
-        np.testing.assert_allclose(dataset["latitude"].values, [f.latitude for f in footprints], rtol=1e-4)
+        np.testing.assert_allclose(dataset["latitude"].values.ravel(), [f.latitude for f in footprints], rtol=1e-4)
         np.testing.assert_allclose(dataset["viewing_zenith_angle"].values, 8.0, rtol=1e-4)
-        np.testing.assert_array_equal(dataset["q_flags"].values, [int(f.q_flags) for f in footprints])
+        np.testing.assert_array_equal(dataset["q_flags"].values.ravel(), [int(f.q_flags) for f in footprints])
 
         # A placeholder (aggregation-owned) variable is filled with NaN, not real data.
         assert np.all(np.isnan(dataset["sunglint_angle"].values))

@@ -41,9 +41,10 @@ CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 # Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
 # straight through -- the camera pixel-index ranges (camera_pixel_x/y, 2-D inclusive (min, max) pairs on the
 # CAMERA_PIXEL_BOUNDS axis), the PSF bounding box, and the boresight geolocation -- so a scene can be traced back to
-# the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own dimensions) by
-# from_fmatch_cam_camtime and are not consumed by the classification; they simply ride along to the written product.
-# The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
+# the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own 2-D
+# (CAMERA_TIME, FOOTPRINT) grid dimensions) by from_fmatch_cam_camtime and are not consumed by the classification;
+# they simply ride along to the written product. The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately
+# NOT listed: SCENE-ID does not carry it.
 _FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "latitude",
     "longitude",
@@ -52,8 +53,10 @@ _FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "psf_bbox_lat_max",
     "psf_bbox_lon_min",
     "psf_bbox_lon_max",
-    "camera_pixel_x",
-    "camera_pixel_y",
+    "camera_pixel_x_min",
+    "camera_pixel_x_max",
+    "camera_pixel_y_min",
+    "camera_pixel_y_max",
 )
 
 # Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
@@ -809,13 +812,13 @@ _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
 }
 
-# FMATCH-IMAGER-FLASH: optical_depth is the single already-aggregated CERES SSF cloud optical depth (injected
-# directly -- the two-layer calculate_cloud_fraction_weighted_optical_depth is bypassed because FMATCH carries one
-# value per footprint, not lower/upper layers). FLASH carries NO cloud-phase source; the reader injects cloud_phase
+# FMATCH-IMAGER-FLASH: optical_depth is the CERES SSF lower-layer cloud optical depth (ssf_cloud_optical_depth_lower),
+# injected directly -- the two-layer calculate_cloud_fraction_weighted_optical_depth is bypassed because FLASH carries
+# only the single lower-layer value per footprint. FLASH carries NO cloud-phase source; the reader injects cloud_phase
 # as all-NaN (see nan_columns in from_fmatch_imager_flash) so the phase-gated TRMM scenes fall through to unmatched.
 _FMATCH_IMAGER_FLASH_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     **_FMATCH_IMAGER_COMMON_COLUMNS,
-    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("ssf_cloud_optical_depth", np.float32),
+    FootprintVariables.OPTICAL_DEPTH: _FmatchColumn("ssf_cloud_optical_depth_lower", np.float32),
 }
 
 # FMATCH-IMAGER (RBSP): prefer the native RBSP CLDPIX fields where both CLDPIX and SSF exist. The
@@ -953,7 +956,7 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimension=RADIOMETER_TIME_DIMENSION,
+            record_dimensions=(RADIOMETER_TIME_DIMENSION,),
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             context="SCENE-ID-CAM reader (FMATCH-CAM)",
@@ -988,7 +991,7 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimension=FOOTPRINT_DIMENSION,
+            record_dimensions=(CAMERA_TIME_VARIABLE, FOOTPRINT_DIMENSION),
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES,
@@ -1020,7 +1023,7 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimension=RADIOMETER_TIME_DIMENSION,
+            record_dimensions=(RADIOMETER_TIME_DIMENSION,),
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_FLASH_COLUMN_MAP,
             # FMATCH-IMAGER-FLASH has no cloud-phase field; inject an all-NaN cloud_phase so identify_scenes does
@@ -1054,7 +1057,7 @@ class FootprintData:
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimension=RADIOMETER_TIME_DIMENSION,
+            record_dimensions=(RADIOMETER_TIME_DIMENSION,),
             time_variable=RADIOMETER_TIME_DIMENSION,
             column_map=_FMATCH_IMAGER_COLUMN_MAP,
             context=(
@@ -1098,7 +1101,7 @@ class FootprintData:
     def _extract_data_from_fmatch(
         fmatch_path: pathlib.Path,
         *,
-        record_dimension: str,
+        record_dimensions: tuple[str, ...],
         time_variable: str,
         column_map: dict[FootprintVariables, "_FmatchColumn"],
         nan_columns: tuple[FootprintVariables, ...] = (),
@@ -1107,9 +1110,11 @@ class FootprintData:
     ) -> xr.Dataset:
         """Extract the classification inputs (and any pass-through identifiers) from a FMATCH product.
 
-        The radiometer- and camera-timescale FMATCH products (CAM, CAM-CAMTIME, IMAGER-FLASH, IMAGER)
-        share a flat, one-value-per-footprint layout but draw their classification inputs from different source
-        variables. This helper is therefore driven by a declarative ``column_map`` supplied by each concrete reader:
+        The radiometer-timescale FMATCH products (CAM, IMAGER-FLASH, IMAGER) carry a flat one-value-per-footprint
+        (1-D ``RADIOMETER_TIME``) layout; the camera-timescale product (CAM-CAMTIME) carries a 2-D
+        ``(CAMERA_TIME, FOOTPRINT)`` grid. Each classification column is emitted on its FMATCH source variable's own
+        dimensions, so both layouts flow through unchanged. This helper is driven by a declarative ``column_map``
+        supplied by each concrete reader:
         it reads each mapped source variable, applies its dtype/scale/transform, and emits it under the standardized
         :class:`FootprintVariables` name the scene classifier consumes. Some emitted columns are *raw inputs* to the
         derived-variable calculators (e.g. ``clear_area`` -> ``cloud_fraction``, ``surface_wind_u``/``_v`` ->
@@ -1123,11 +1128,11 @@ class FootprintData:
         ----------
         fmatch_path : pathlib.Path
             Path to a Libera FMATCH NetCDF product file.
-        record_dimension : str
-            The per-record dimension the classification columns are emitted on: ``RADIOMETER_TIME`` for the
-            radiometer-timescale readers (where it also names the time coordinate), or ``FOOTPRINT`` for the
-            camera-timescale reader (where the time coordinate is the separate, non-unique ``CAMERA_TIME`` riding on
-            this axis).
+        record_dimensions : tuple of str
+            The record-grid dimensions of the product: ``("RADIOMETER_TIME",)`` for the radiometer-timescale readers,
+            or ``("CAMERA_TIME", "FOOTPRINT")`` for the camera-timescale reader. Classification columns are emitted on
+            their own source dimensions (which match this grid); this tuple sizes the all-NaN ``nan_columns`` fill so
+            it spans the full grid.
         time_variable : str
             Name of the datetime time coordinate, read from the FMATCH file and emitted under the same name (it is
             the SCENE-ID product's declared time-coordinate name): ``RADIOMETER_TIME`` for SCENE-ID-CAM and
@@ -1149,7 +1154,7 @@ class FootprintData:
         Returns
         -------
         xr.Dataset
-            Footprint data on ``record_dimension`` ready for :meth:`identify_scenes`.
+            Footprint data on ``record_dimensions`` ready for :meth:`identify_scenes`.
         """
         logger.info("Reading FMATCH product %s", fmatch_path)
         try:
@@ -1168,39 +1173,46 @@ class FootprintData:
 
         data_variables: dict[str, tuple[list[str], NDArray]] = {}
         for target, column in column_map.items():
-            values = fmatch_dataset[column.source_name].to_numpy()
+            source_variable = fmatch_dataset[column.source_name]
+            values = source_variable.to_numpy()
             # A transform (a code remap such as CLDPIX phase -> {liquid, ice}) is applied on the raw source values;
             # otherwise an optional multiplicative scale is applied when the source units differ from the target.
             if column.transform is not None:
                 values = column.transform(values)
             elif column.scale != 1.0:
                 values = values * column.scale
-            # Cast last so the emitted column always matches the dtype the SCENE-ID product definition declares
-            # (np.where in a transform can widen to float64, and the scale multiply can promote dtype).
-            data_variables[target] = ([record_dimension], np.asarray(values).astype(column.dtype, copy=False))
+            # Emit on the source variable's own dimensions so radiometer inputs stay 1-D (RADIOMETER_TIME) while
+            # camera-timescale inputs keep their 2-D (CAMERA_TIME, FOOTPRINT) grid. Cast last so the emitted column
+            # always matches the dtype the SCENE-ID product definition declares (np.where in a transform can widen to
+            # float64, and the scale multiply can promote dtype).
+            data_variables[target] = (list(source_variable.dims), np.asarray(values).astype(column.dtype, copy=False))
 
-        # Columns with no FMATCH source: emit all-NaN float32 (see nan_columns docstring above).
-        number_of_footprints = fmatch_dataset.sizes[record_dimension]
+        # Columns with no FMATCH source: emit all-NaN float32 over the full record grid (see nan_columns docstring).
+        grid_shape = tuple(fmatch_dataset.sizes[dimension] for dimension in record_dimensions)
         for target in nan_columns:
             data_variables[target] = (
-                [record_dimension],
-                np.full(number_of_footprints, np.nan, dtype=np.float32),
+                list(record_dimensions),
+                np.full(grid_shape, np.nan, dtype=np.float32),
             )
 
-        # The FMATCH time coordinate (RADIOMETER_TIME, or the non-unique CAMERA_TIME riding on FOOTPRINT) is decoded to
-        # datetime64[ns] by xarray; carry it as a plain data variable on the record axis under the SCENE-ID product's
-        # declared name (``time_variable``), so to_time_product can promote it to the product's time coordinate.
-        data_variables[time_variable] = ([record_dimension], fmatch_dataset[time_variable].to_numpy())
+        # The FMATCH time coordinate is decoded to datetime64[ns] by xarray; carry it on its own dimension(s) -- the
+        # 1-D RADIOMETER_TIME axis, or the 1-D CAMERA_TIME axis of the camera-timescale grid -- under the SCENE-ID
+        # product's declared name (``time_variable``), so to_time_product can promote it to the product's time
+        # coordinate.
+        data_variables[time_variable] = (
+            list(fmatch_dataset[time_variable].dims),
+            fmatch_dataset[time_variable].to_numpy(),
+        )
 
         # Copy each identifier variable verbatim, preserving its own dimensions so a multi-dimensional passthrough
-        # (the 2-D camera_pixel_x/y range coordinates on FOOTPRINT x CAMERA_PIXEL_BOUNDS) rides through unchanged, not
-        # just the 1-D per-record identifiers.
+        # (the 2-D camera_pixel_{x,y}_{min,max} provenance coordinates on the (CAMERA_TIME, FOOTPRINT) grid) rides
+        # through unchanged, not just the 1-D per-record identifiers.
         for variable_name in passthrough_variables:
             source_variable = fmatch_dataset[variable_name]
             data_variables[variable_name] = (list(source_variable.dims), source_variable.to_numpy())
 
         parsed_dataset = xr.Dataset(data_variables)
-        logger.info("FMATCH product read successfully with %d records", parsed_dataset.sizes[record_dimension])
+        logger.info("FMATCH product read successfully with sizes %s", dict(parsed_dataset.sizes))
         return parsed_dataset
 
     def identify_scenes(

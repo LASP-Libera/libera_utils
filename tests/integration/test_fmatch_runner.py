@@ -144,16 +144,17 @@ class TestCameraRunnerWorkflow:
         )
 
         with xr.open_dataset(product_path) as product:
-            # Records live on the FOOTPRINT axis: one pseudo-footprint per pixel at this (coarse) fixture
-            # spacing: 2 images x 4 x 4. CAMERA_TIME is a non-unique coordinate riding on FOOTPRINT.
-            assert product.sizes["FOOTPRINT"] == 32
-            assert product["CAMERA_TIME"].dims == ("FOOTPRINT",)
+            # The product is a 2-D (CAMERA_TIME, FOOTPRINT) grid: one CAMERA_TIME per image (2 images), each image
+            # segmented into 16 subsections at this coarse 4 x 4 fixture spacing.
+            assert product.sizes["CAMERA_TIME"] == 2
+            assert product.sizes["FOOTPRINT"] == 16
+            assert product["CAMERA_TIME"].dims == ("CAMERA_TIME",)
             # Pixel-block provenance is real, not placeholder: a scene can be traced to its pixels. The block extent
-            # is the 2-D camera_pixel_x/y range coordinates; the boresight pixel stays as center_pixel_x.
+            # is the four camera_pixel_{x,y}_{min,max} coordinates; the boresight pixel stays as center_pixel_x.
             assert "center_pixel_x" in product.variables
-            for name in ("camera_pixel_x", "camera_pixel_y"):
+            for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
                 assert name in product.coords
-                assert product[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+                assert product[name].dims == ("CAMERA_TIME", "FOOTPRINT")
 
     def test_multiple_l1b_inputs_produce_multiple_products(self, tmp_path, dropbox, staged_ancillary):
         """A manifest may stage more than one L1B file; each yields its own product."""
