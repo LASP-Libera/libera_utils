@@ -75,8 +75,6 @@ def test_build_docker_image(test_data_path):
 @pytest.mark.parametrize(
     ("image_reference", "image_tag", "expected"),
     [
-        # No tag anywhere: 'latest' is the default, as it always has been.
-        ("my-image", None, ("my-image", "latest")),
         # Preferred syntax: the tag rides along with the image name.
         ("my-image:1.2.3", None, ("my-image", "1.2.3")),
         ("my-image:latest", None, ("my-image", "latest")),
@@ -86,7 +84,6 @@ def test_build_docker_image(test_data_path):
         # Both syntaxes together, in agreement, is allowed.
         ("my-image:1.2.3", "1.2.3", ("my-image", "1.2.3")),
         # A colon in a registry host:port is not a tag separator.
-        ("localhost:5000/my-image", None, ("localhost:5000/my-image", "latest")),
         ("localhost:5000/my-image:1.2.3", None, ("localhost:5000/my-image", "1.2.3")),
         ("localhost:5000/my-image", "1.2.3", ("localhost:5000/my-image", "1.2.3")),
     ],
@@ -100,6 +97,10 @@ def test_split_local_image_reference(image_reference, image_tag, expected):
     ("image_reference", "image_tag", "match"),
     [
         ("my-image:1.2.3", "4.5.6", "Conflicting local image tags"),
+        # 'latest' is not assumed, so a reference with no tag at all is rejected.
+        ("my-image", None, "No tag given for local image"),
+        # The colon here is a registry port, not a tag, so this reference is untagged too.
+        ("localhost:5000/my-image", None, "No tag given for local image"),
         ("my-image:", None, "ends in ':' with no tag"),
         (":1.2.3", None, "no image name before"),
         ("my-image@sha256:abc123", None, "Digest references are not supported"),
@@ -115,7 +116,6 @@ def test_split_local_image_reference_invalid(image_reference, image_tag, match):
 @pytest.mark.parametrize(
     ("image_name", "image_tag", "expected_name", "expected_tag"),
     [
-        ("test-image", None, "test-image", "latest"),
         ("test-image:1.2.3", None, "test-image", "1.2.3"),
         ("test-image", "1.2.3", "test-image", "1.2.3"),
     ],
@@ -163,7 +163,7 @@ def test_ecr_upload_cli_handler_image_reference_forms(
 @pytest.mark.parametrize(
     ("image_name", "image_tag", "expect_warning", "suggested_name"),
     [
-        ("test-image", None, False, None),
+        ("test-image:1.2.3", None, False, None),
         ("test-image", "1.2.3", True, "test-image"),
         # The suggested command must use the resolved name: the colon here is a registry port, not a tag.
         ("localhost:5000/my-image", "1.2.3", True, "localhost:5000/my-image"),
@@ -208,6 +208,35 @@ def test_ecr_upload_cli_handler_warns_on_deprecated_image_tag(
     if expect_warning:
         # The warning shows the equivalent preferred invocation, built from the resolved name and tag.
         assert deprecation_warnings[0].args[1:] == ("l1b-rad", suggested_name, image_tag)
+
+
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_requires_a_tag(mock_resolve_session, mock_push_image_to_ecr):
+    """An untagged image reference fails immediately: 'latest' is not assumed.
+
+    The failure has to land before the session is resolved, since assuming an L2 Team Role is a slow
+    round-trip with its own failure modes -- the old 'latest' default surfaced this as a much later and
+    much vaguer "Local image not found" from inside the push.
+    """
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name="test-image",
+        image_tag=None,
+        ecr_tags=None,
+        ignore_docker_config=False,
+        profile=None,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
+    )
+
+    with pytest.raises(ValueError, match="No tag given for local image"):
+        ecr_upload.ecr_upload_cli_handler(args)
+
+    mock_resolve_session.assert_not_called()
+    mock_push_image_to_ecr.assert_not_called()
 
 
 @mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")

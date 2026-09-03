@@ -3,7 +3,8 @@
 ## 5.10.8
 
 - BUGFIX: `libera-utils ecr-upload` now accepts the local image in the usual Docker form, `image-name:image-tag` (e.g. `ecr-upload l2-comp-flux my-image:1.2.3`). Previously this positional argument had to be a bare image name and the tag had to be passed separately, so a `name:tag` value silently produced a `Local image not found: name:tag:latest` error. Colons in a registry host:port (`localhost:5000/my-image`) are not treated as tags.
-- MAINT: The `ecr-upload --image-tag` option is deprecated in favor of `image-name:image-tag`. It still works and logs a warning pointing at the new syntax; supplying both is an error unless they agree. `push_image_to_ecr` accepts `image_tag=None` and takes the tag from `image_name` instead.
+- BREAKING: `ecr-upload` now requires a local image tag instead of defaulting to `latest`. Algorithm images are built under an explicit `docker build -t <name>:<version>`, so a local `latest` usually does not exist and the old default failed later with an opaque `Local image not found: <name>:latest` — after the L2 Team Role assumption round-trip. Omitting the tag now fails immediately with an explanatory error. Pass `my-image:latest` explicitly if that really is the image you want. The `--ecr-tags` default of `latest` for the _remote_ ECR tag is unchanged.
+- MAINT: The `ecr-upload --image-tag` option is deprecated in favor of `image-name:image-tag`. It still works and logs a warning pointing at the new syntax; supplying both is an error unless they agree. `push_image_to_ecr` accepts `image_tag=None` and takes the tag from `image_name` instead, which must then carry one.
 
 ## 5.10.7
 

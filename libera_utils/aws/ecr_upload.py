@@ -222,15 +222,14 @@ def _get_fresh_ecr_auth(region_name: str, *, boto_session: boto3.Session) -> dic
         raise
 
 
-DEFAULT_LOCAL_IMAGE_TAG = "latest"
-
-
 def _split_local_image_reference(image_reference: str, image_tag: str | None = None) -> tuple[str, str]:
     """Resolve a local Docker image reference, and an optionally separate tag, into a (name, tag) pair.
 
     Two syntaxes are supported. The preferred one carries the tag in the reference itself
     (``my-image:1.2.3``); the deprecated one passes a bare image name and supplies the tag separately
-    (the ``--image-tag`` CLI option). If neither carries a tag, ``latest`` is used.
+    (the ``--image-tag`` CLI option). Exactly one of them must carry a tag: ``latest`` is deliberately
+    not assumed, because algorithm images are built under an explicit ``docker build -t`` version and a
+    local ``latest`` usually does not exist.
 
     A colon is only read as a tag separator when it appears in the last path component, so a registry
     reference carrying a port (``localhost:5000/my-image``) is not mistaken for a tagged image.
@@ -251,12 +250,15 @@ def _split_local_image_reference(image_reference: str, image_tag: str | None = N
     Raises
     ------
     ValueError
-        If ``image_reference`` is malformed (empty name or empty tag), if it is a digest reference
-        (``my-image@sha256:...``, which is not supported), or if a tag in ``image_reference``
-        conflicts with a separately supplied ``image_tag``.
+        If no tag is supplied at all, if ``image_reference`` is malformed (empty name or empty tag), if it
+        is a digest reference (``my-image@sha256:...``, which is not supported), or if a tag in
+        ``image_reference`` conflicts with a separately supplied ``image_tag``.
     """
     if image_tag is not None and not image_tag:
-        raise ValueError("An empty image tag was supplied. Omit the tag entirely to default to 'latest'.")
+        raise ValueError(
+            "An empty image tag was supplied. Give the tag explicitly as part of the image reference "
+            "(e.g. my-image:1.2.3)."
+        )
 
     if "@" in image_reference:
         raise ValueError(
@@ -276,7 +278,13 @@ def _split_local_image_reference(image_reference: str, image_tag: str | None = N
         raise ValueError(f"Image reference {image_reference!r} has no image name before the ':'.")
 
     if image_tag is None:
-        return image_name, tag_from_reference or DEFAULT_LOCAL_IMAGE_TAG
+        if tag_from_reference is None:
+            raise ValueError(
+                f"No tag given for local image {image_reference!r}. Specify the tag explicitly, e.g. "
+                f"{image_name}:1.2.3. 'latest' is not assumed, so pass {image_name}:latest if that is "
+                f"really the image you mean."
+            )
+        return image_name, tag_from_reference
 
     if tag_from_reference is not None and tag_from_reference != image_tag:
         raise ValueError(
@@ -455,7 +463,7 @@ def push_image_to_ecr(
         ('my-image:1.2.3'). A tag given here must not conflict with `image_tag`.
     image_tag : str or None
         Local tag of the Docker image, for callers that keep the tag separate from the name. Pass None to
-        take the tag from `image_name` instead, falling back to 'latest' if it carries none.
+        take the tag from `image_name` instead, which must then carry one ('latest' is not assumed).
     processing_step_id : Union[str, ProcessingStepIdentifier]
         Processing step ID string or object used to determine ECR repository name.
         L0 processing step IDs are not supported as they have no associated ECR.

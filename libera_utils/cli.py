@@ -92,8 +92,8 @@ def parse_cli_args(cli_args: list):
     ecr_upload_parser.add_argument(
         "image_name",
         type=str,
-        help="Local image to upload, either `image-name` or `image-name:image-tag` "
-        "(e.g. `my-image:1.2.3`). If no tag is given, 'latest' is used.",
+        help="Local image to upload, as `image-name:image-tag` (e.g. `my-image:1.2.3`). The tag is "
+        "required; 'latest' is not assumed, so pass it explicitly if that is the image you mean.",
     )
     ecr_upload_parser.add_argument(
         "--image-tag",
