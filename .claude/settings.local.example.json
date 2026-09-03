@@ -1,0 +1,10 @@
+{
+  "enabledMcpjsonServers": ["aws-mcp", "github", "lasp-dmz-atlassian"],
+  "disabledMcpjsonServers": [],
+  "env": {
+    "GITHUB_MCP_PAT": "<your GitHub fine-grained PAT>",
+    "FLARES_JIRA_PAT": "<your Flares Jira personal access token>",
+    "GALAXY_CONFLUENCE_PAT": "<your Galaxy Confluence personal access token>",
+    "AWS_MCP_PROXY_PROFILES": "dev-sc-aws-mcp stage-sc-aws-mcp prod-sc-aws-mcp"
+  }
+}

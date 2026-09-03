@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "aws-mcp": {
+      "command": "uvx",
+      "args": [
+        "mcp-proxy-for-aws-cli==1.6.5",
+        "https://aws-mcp.us-east-1.api.aws/mcp",
+        "--metadata",
+        "AWS_REGION=us-west-2"
+      ],
+      "env": {
+        "AWS_MCP_PROXY_PROFILES": "${AWS_MCP_PROXY_PROFILES:-dev-sc-aws-mcp stage-sc-aws-mcp prod-sc-aws-mcp}"
+      },
+      "timeout": 100000,
+      "transport": "stdio"
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_MCP_PAT}",
+        "X-MCP-Toolsets": "default,actions"
+      }
+    },
+    "lasp-dmz-atlassian": {
+      "command": "uvx",
+      "args": ["mcp-atlassian@0.23.1"],
+      "env": {
+        "JIRA_URL": "https://lasp.colorado.edu/flares",
+        "JIRA_PERSONAL_TOKEN": "${FLARES_JIRA_PAT}",
+        "READ_ONLY_MODE": "true",
+        "TOOLSETS": "default,jira_agile,jira_projects",
+        "JIRA_PROJECTS_FILTER": "LIBSDC",
+        "CONFLUENCE_URL": "https://lasp.colorado.edu/galaxy",
+        "CONFLUENCE_PERSONAL_TOKEN": "${GALAXY_CONFLUENCE_PAT}",
+        "CONFLUENCE_SPACES_FILTER": "LS"
+      }
+    }
+  }
+}

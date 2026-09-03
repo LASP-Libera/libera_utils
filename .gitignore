@@ -82,6 +82,11 @@ venv
 .python-version
 pytest.ini
 .devcontainer
+# Ignore local claude settings files per Claude docs
 .claude/settings.local.json
+.claude/CLAUDE.local.md
+# Ignore all mcp.json files, which may contain sensitive information such as API keys
 **/*mcp.json
+# ...except the project's shared server config, which holds only ${VAR} placeholders
+!/.mcp.json
 reviews/*
