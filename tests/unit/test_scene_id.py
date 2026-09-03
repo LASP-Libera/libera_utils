@@ -15,6 +15,7 @@ from libera_utils.scene_identification.scene_id import (
     FootprintVariables,
     IGBPSurfaceType,
     TRMMSurfaceType,
+    add_placeholder_quality_flag,
     calculate_cloud_fraction,
     calculate_cloud_fraction_weighted_optical_depth,
     calculate_cloud_phase,
@@ -736,6 +737,32 @@ class TestToRadiometerTimeProduct:
         data = xr.Dataset({FootprintVariables.CLEAR_AREA: ([RADIOMETER_TIME_DIMENSION], [80.0, 50.0, 20.0])})
         with pytest.raises(ValueError, match=RADIOMETER_TIME_DIMENSION):
             FootprintData(data).to_radiometer_time_product()
+
+
+class TestAddPlaceholderQualityFlag:
+    """add_placeholder_quality_flag must cover the full record grid (1-D radiometer or 2-D camtime)."""
+
+    def test_one_dimensional_default(self):
+        """The default RADIOMETER_TIME dimension yields a 1-D all-zero uint32 flag."""
+        product = xr.Dataset({"cloud_fraction": ([RADIOMETER_TIME_DIMENSION], [10.0, 20.0, 30.0])})
+
+        flagged = add_placeholder_quality_flag(product)
+
+        assert flagged["Quality_Flag"].dims == (RADIOMETER_TIME_DIMENSION,)
+        assert flagged["Quality_Flag"].dtype == np.uint32
+        assert not np.any(flagged["Quality_Flag"].values)
+
+    def test_two_dimensional_grid(self):
+        """A (CAMERA_TIME, FOOTPRINT) grid yields a 2-D all-zero uint32 flag of the same shape."""
+        grid_dims = ("CAMERA_TIME", "FOOTPRINT")
+        product = xr.Dataset({"cloud_fraction": (grid_dims, np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32))})
+
+        flagged = add_placeholder_quality_flag(product, dimensions=grid_dims)
+
+        assert flagged["Quality_Flag"].dims == grid_dims
+        assert flagged["Quality_Flag"].shape == (2, 2)
+        assert flagged["Quality_Flag"].dtype == np.uint32
+        assert not np.any(flagged["Quality_Flag"].values)
 
 
 class TestSceneIdCamProductDtypes:

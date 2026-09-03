@@ -8,7 +8,7 @@ based on footprint data from satellite observations.
 import enum
 import logging
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import netCDF4 as nc
@@ -83,22 +83,24 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
     return definitions
 
 
-def add_placeholder_quality_flag(product: xr.Dataset, dimension: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
+def add_placeholder_quality_flag(
+    product: xr.Dataset, dimensions: str | Sequence[str] = RADIOMETER_TIME_DIMENSION
+) -> xr.Dataset:
     """Add the SCENE-ID ``Quality_Flag`` variable as an all-zero placeholder.
 
     The SCENE-ID product definitions (e.g. ``scene_id_cam.yml``) declare a per-footprint ``Quality_Flag`` bit-flag
     variable. Per-footprint quality flagging is not implemented yet, so this fills every footprint with ``0``
-    ("no flags set") so the product still conforms to its definition. The variable is added on the product's
-    per-footprint time dimension, so the input must already be on that axis.
+    ("no flags set") so the product still conforms to its definition. The variable is added over the product's
+    record grid, so the input must already carry those dimensions.
 
     Parameters
     ----------
     product : xr.Dataset
         A per-footprint product dataset to add the flag to.
-    dimension : str, optional
-        Name of the per-footprint dimension to add the flag along. Defaults to ``RADIOMETER_TIME`` (the
-        radiometer-timescale products); the camera-timescale product passes ``FOOTPRINT`` (the axis its non-unique
-        ``CAMERA_TIME`` coordinate lives on).
+    dimensions : str or sequence of str, optional
+        Name(s) of the record grid dimension(s) to add the flag over. Defaults to ``RADIOMETER_TIME`` (the
+        radiometer-timescale products, whose records are 1-D); the camera-timescale product passes the 2-D grid
+        ``("CAMERA_TIME", "FOOTPRINT")`` so the flag spans one entry per (image, subsection).
 
     Returns
     -------
@@ -113,9 +115,10 @@ def add_placeholder_quality_flag(product: xr.Dataset, dimension: str = RADIOMETE
     # TODO[LIBSDC-810]: replace this all-zero placeholder with real per-footprint quality flagging (for example,
     # flagging unmatched footprints, fill/NaN inputs, and out-of-range viewing geometry). Until then every
     # footprint is reported as "no flags set" (0).
-    number_of_footprints = product.sizes[dimension]
-    quality_flag = np.zeros(number_of_footprints, dtype=np.uint32)
-    product[QUALITY_FLAG_VARIABLE] = (dimension, quality_flag)
+    grid_dimensions = (dimensions,) if isinstance(dimensions, str) else tuple(dimensions)
+    grid_shape = tuple(product.sizes[dimension] for dimension in grid_dimensions)
+    quality_flag = np.zeros(grid_shape, dtype=np.uint32)
+    product[QUALITY_FLAG_VARIABLE] = (grid_dimensions, quality_flag)
     return product
 
 
@@ -799,12 +802,16 @@ class FootprintData:
     def from_fmatch_cam_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
         """Read a FMATCH-CAM-CAMTIME product into a FootprintData (camera timescale).
 
-        FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME: many pseudo-footprints per
-        ``CAMERA_TIME`` (each a contiguous, possibly overlapping block of L1B WFOV camera pixels), carrying both the
-        scene properties and the footprint *identifier* variables (camera pixel-index ranges
-        ``camera_pixel_x``/``camera_pixel_y`` as inclusive (min, max) pairs, PSF bounding box, boresight geolocation)
-        that the camera-timescale product passes straight through. Records live on the ``FOOTPRINT`` axis, with
-        ``CAMERA_TIME`` carried as a non-unique coordinate on it.
+        FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME. It is defined on a 2-D
+        ``(CAMERA_TIME, FOOTPRINT)`` grid: one ``CAMERA_TIME`` entry per 2048x2048 image and one ``FOOTPRINT`` entry
+        per image subsection (each a contiguous, possibly overlapping block of L1B WFOV camera pixels). It carries
+        both the scene properties and the footprint *identifier* variables (the inclusive pixel-block bounds
+        ``camera_pixel_x_min``/``camera_pixel_x_max``/``camera_pixel_y_min``/``camera_pixel_y_max``, PSF bounding
+        box, boresight geolocation) that the camera-timescale product passes straight through.
+
+        When implemented, the reader must also merge the CF-CAM-CAMTIME cloud-fraction input, which is defined on the
+        *same* ``(CAMERA_TIME, FOOTPRINT)`` grid so it aligns 1:1 with FMATCH; the two inputs must share identical
+        ``CAMERA_TIME`` and ``FOOTPRINT`` extents.
 
         Parameters
         ----------
@@ -814,7 +821,7 @@ class FootprintData:
         Returns
         -------
         FootprintData
-            Footprint data on the ``FOOTPRINT`` dimension (one record per image subsection), ready for
+            Footprint data on the ``(CAMERA_TIME, FOOTPRINT)`` grid (one entry per image subsection), ready for
             :meth:`identify_scenes`.
 
         Raises
@@ -823,7 +830,8 @@ class FootprintData:
             Always, until the FMATCH-CAM-CAMTIME product format is finalized and this reader is implemented.
         """
         # TODO[LIBSDC-794]: implement once the FMATCH-CAM-CAMTIME product definition/format is available. It must
-        # also carry through the identifier variables declared in scene_id_cam_camtime.yml.
+        # read the pixel-block bounds as the four separate camera_pixel_{x,y}_{min,max} variables and carry through
+        # the identifier variables declared in scene_id_cam_camtime.yml on the (CAMERA_TIME, FOOTPRINT) grid.
         raise NotImplementedError(
             "FootprintData.from_fmatch_cam_camtime is not implemented yet: the FMATCH-CAM-CAMTIME input product "
             "format is not available."
@@ -1221,13 +1229,15 @@ class FootprintData:
         return parsed_dataset
 
     def to_time_product(self, time_variable: str = RADIOMETER_TIME_DIMENSION) -> xr.Dataset:
-        """Return the footprint data ready to write on its per-footprint time axis.
+        """Return the footprint data ready to write on its record grid.
 
-        The scene-ID CAM/IMAGER/FLASH products contain exactly one footprint per observation time and are written
-        on the same time dimension as their upstream product, so downstream consumers can align scene IDs to the
-        upstream records positionally. :class:`FootprintData` already carries data on that dimension, so this
-        method only promotes the time variable to a coordinate so the result is ready to hand to
-        :func:`libera_utils.io.netcdf.write_libera_data_product` with the matching ``time_variable``.
+        The radiometer-timescale scene-ID products (CAM/IMAGER/FLASH) contain exactly one footprint per observation
+        time and are written on the same 1-D time dimension as their upstream product, so downstream consumers can
+        align scene IDs to the upstream records positionally. The camera-timescale product (CAM-CAMTIME) is instead
+        written on a 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid: one entry per image subsection. :class:`FootprintData`
+        already carries data on the correct dimensions, so this method only promotes the time variable to a
+        coordinate so the result is ready to hand to :func:`libera_utils.io.netcdf.write_libera_data_product` with
+        the matching ``time_variable``.
 
         Parameters
         ----------
@@ -1239,7 +1249,7 @@ class FootprintData:
         -------
         xr.Dataset
             A copy of the internal dataset with the time variable promoted to a coordinate and a placeholder
-            ``Quality_Flag`` added on the same dimension.
+            ``Quality_Flag`` added over the record grid.
 
         Raises
         ------
@@ -1256,12 +1266,19 @@ class FootprintData:
         # Work on a copy so callers that inspect FootprintData._data afterwards still see the internal
         # representation (set_coords otherwise mutates the shared dataset).
         product = self._data.set_coords(time_variable)
-        # The per-footprint dimension is whatever axis the time variable lives on: RADIOMETER_TIME for the
-        # radiometer-timescale products (where the time variable is a dimension coordinate), or FOOTPRINT for the
-        # camera-timescale product (where CAMERA_TIME is a non-unique coordinate riding on the FOOTPRINT axis).
+        # The time coordinate is 1-D on its own axis: RADIOMETER_TIME for the radiometer-timescale products (where
+        # the time variable is a dimension coordinate), or CAMERA_TIME for the camera-timescale product.
         (time_dimension,) = product[time_variable].dims
+        # The record grid is the set of dimensions the per-record data variables span: (RADIOMETER_TIME,) for the
+        # radiometer-timescale products, or (CAMERA_TIME, FOOTPRINT) for the camera-timescale product. Derive it
+        # from the widest data variable lying on the time dimension (rather than from the 1-D time coordinate alone)
+        # so the placeholder Quality_Flag covers the full grid.
+        record_variables = [product[name] for name in product.data_vars if time_dimension in product[name].dims]
+        grid_dimensions = (
+            max(record_variables, key=lambda variable: variable.ndim).dims if record_variables else (time_dimension,)
+        )
         # TODO[LIBSDC-810]: Add real quality flag to the product
-        product = add_placeholder_quality_flag(product, dimension=time_dimension)
+        product = add_placeholder_quality_flag(product, dimensions=grid_dimensions)
         return product
 
     def to_radiometer_time_product(self) -> xr.Dataset:

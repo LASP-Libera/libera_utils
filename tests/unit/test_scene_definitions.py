@@ -366,38 +366,35 @@ class TestPropertyBins:
         np.testing.assert_array_equal(max_bounds, np.array([3, 6, 0], dtype=np.uint8))
 
 
-class TestIdentifyAndUpdateMultidimPassthrough:
-    """identify_and_update classifies along the footprint axis, ignoring extra dimensions on passthrough variables."""
+class TestIdentifyAndUpdateGrid:
+    """identify_and_update classifies elementwise over the (CAMERA_TIME, FOOTPRINT) grid of camtime products."""
 
-    def test_multidim_passthrough_variable_does_not_distort_scene_mask(self, tmp_path):
-        """A 2-D passthrough variable must not break per-footprint classification.
+    def test_two_dimensional_grid_classification(self, tmp_path):
+        """A 2-D (CAMERA_TIME, FOOTPRINT) classification variable yields 2-D scene IDs of the same shape.
 
-        Regression guard for the CAM-CAMTIME ``camera_pixel_x``/``camera_pixel_y`` ``(min, max)`` ranges, which ride
-        on a size-2 ``CAMERA_PIXEL_BOUNDS`` axis in the same dataset as the 1-D per-footprint classification
-        variables. Deriving the working shape from all dataset dimensions (instead of the footprint axis) used to
-        raise a broadcast error here.
+        The camtime product is defined on a 2-D grid, so the scene-id mask must match the classification variables'
+        own shape (derived from a reference classification variable rather than from all dataset dims), and the
+        pixel-block bound passthroughs on the same grid must be carried through untouched.
         """
         csv_content = "scene_id,cloud_fraction_min,cloud_fraction_max\n1,0.0,50.0\n2,50.0,100.0\n"
         csv_file = tmp_path / "single.csv"
         csv_file.write_text(csv_content)
         scene_definition = SceneDefinition(csv_file)
 
+        grid_dims = ("CAMERA_TIME", "FOOTPRINT")
         data = xr.Dataset(
             {
-                "cloud_fraction": ("CAMERA_TIME", np.array([10.0, 60.0, 90.0], dtype=np.float32)),
-                # 2-D passthrough on an extra size-2 axis; classification must ignore it.
-                "camera_pixel_x": (
-                    ("CAMERA_TIME", "CAMERA_PIXEL_BOUNDS"),
-                    np.array([[0, 5], [6, 9], [10, 12]], dtype=np.int32),
-                ),
+                "cloud_fraction": (grid_dims, np.array([[10.0, 60.0], [90.0, 40.0]], dtype=np.float32)),
+                # Pixel-block bound passthrough on the same grid; classification must carry it through untouched.
+                "camera_pixel_x_min": (grid_dims, np.array([[0, 6], [10, 3]], dtype=np.int32)),
             }
         )
 
         updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
 
         scene_ids = updated["scene_id_single"]
-        # Scene IDs stay 1-D on the footprint axis, one per footprint.
-        assert scene_ids.dims == ("CAMERA_TIME",)
-        np.testing.assert_array_equal(scene_ids.values, np.array([1, 2, 2], dtype=np.uint8))
-        # The passthrough variable is carried through untouched, still 2-D.
-        assert updated["camera_pixel_x"].dims == ("CAMERA_TIME", "CAMERA_PIXEL_BOUNDS")
+        # Scene IDs stay 2-D on the (CAMERA_TIME, FOOTPRINT) grid, one per subsection.
+        assert scene_ids.dims == grid_dims
+        np.testing.assert_array_equal(scene_ids.values, np.array([[1, 2], [2, 1]], dtype=np.uint8))
+        # The passthrough variable is carried through untouched.
+        assert updated["camera_pixel_x_min"].dims == grid_dims

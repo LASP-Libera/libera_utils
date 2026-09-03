@@ -321,10 +321,11 @@ class SceneDefinition:
         """
         self._validate_footprint_data_columns_present(data)
 
-        # Scene classification is per-footprint and 1-D along the footprint axis. Derive the working dimension(s) and
-        # shape from a classification variable rather than from data.sizes (all dataset dims), so unrelated
-        # multi-dimensional passthrough variables -- e.g. the CAM-CAMTIME camera_pixel (min, max) ranges carried on
-        # the size-2 CAMERA_PIXEL_BOUNDS axis -- do not distort the scene-id mask shape.
+        # Scene classification is elementwise per footprint. Derive the working dimension(s) and shape from a
+        # classification variable rather than from data.sizes (all dataset dims), so the scene-id mask matches the
+        # classification variables' own shape. This is 1-D along the footprint axis for the radiometer-timescale
+        # products and 2-D on the (CAMERA_TIME, FOOTPRINT) grid for the camera-timescale product, and it keeps any
+        # unrelated multi-dimensional passthrough variable from distorting the mask shape.
         reference_variable = data[self.classification_variables[0]]
         dims = list(reference_variable.dims)
         shape = reference_variable.shape
