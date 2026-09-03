@@ -1,13 +1,13 @@
 """Scene ID CAM-CAMTIME processing code for the Libera radiometer.
 
-This is the *camera*-timescale runner: it reads ``FMATCH-CAM-CAMTIME`` (many pseudo-footprints per ``CAMERA_TIME``) and
-writes ``SCENE-ID-CAM-CAMTIME``. Each record is one image subsection (pseudo-footprint) and the product's record axis is
-``FOOTPRINT``; ``CAMERA_TIME`` is carried as a *non-unique* coordinate on ``FOOTPRINT`` (one 2048x2048 image is
-segmented into many, possibly overlapping, subsections that all share its time). The distinctive behavior of this
-product is that it additionally carries the FMATCH footprint *identifier* variables (camera time, camera pixel-index
-ranges, PSF bounding box, and boresight geolocation) straight through from the input, so a classified scene can be
-traced back to the exact camera pixels and ground footprint it came from. That passthrough is performed by
-:meth:`FootprintData.from_fmatch_cam_camtime` and declared in ``scene_id_cam_camtime.yml``.
+This is the *camera*-timescale runner: it reads ``FMATCH-CAM-CAMTIME`` and writes ``SCENE-ID-CAM-CAMTIME``. The
+product is defined on a 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid: each value is identified by the combination of the time
+its image was taken (``CAMERA_TIME``, one unique entry per 2048x2048 image) and which spatial subsection of that image
+it is (``FOOTPRINT``, one entry per pseudo-footprint; subsections may overlap and do not tile the image). The
+distinctive behavior of this product is that it additionally carries the FMATCH footprint *identifier* variables (the
+inclusive camera pixel-block bounds, PSF bounding box, and boresight geolocation) straight through from the input, so a
+classified scene can be traced back to the exact camera pixels and ground footprint it came from. That passthrough is
+performed by :meth:`FootprintData.from_fmatch_cam_camtime` and declared in ``scene_id_cam_camtime.yml``.
 """
 
 import argparse

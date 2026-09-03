@@ -152,78 +152,77 @@ class TestFmatchReaders:
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
-    """Build a small CAM-CAMTIME FootprintData on the ``FOOTPRINT`` record axis.
+    """Build a small CAM-CAMTIME FootprintData on the 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid.
 
     Mirrors the raw inputs the (unimplemented) FMATCH-CAM-CAMTIME reader will supply: the scene-property inputs the
     pipeline derives ``surface_type``/``cloud_fraction`` from, the viewing angles, the boresight geolocation + PSF
-    bbox passthroughs, and the ``camera_pixel_x``/``camera_pixel_y`` inclusive ``(min, max)`` ranges carried on the
-    size-2 ``CAMERA_PIXEL_BOUNDS`` axis.
+    bbox passthroughs, and the four inclusive ``camera_pixel_{x,y}_{min,max}`` pixel-block bounds.
 
-    The four records are two images (two distinct ``CAMERA_TIME`` values), each segmented into two subsections, so
-    ``CAMERA_TIME`` is deliberately NON-unique and the pixel ranges deliberately OVERLAP (e.g. x = 0..2000 and
-    1000..2047 within one image) -- exactly the model the ``FOOTPRINT`` axis exists to represent. Records are in
-    ``CAMERA_TIME`` order.
+    The grid is two images (two distinct ``CAMERA_TIME`` values) each segmented into two subsections (``FOOTPRINT``
+    of size 2). The pixel blocks deliberately OVERLAP within an image (e.g. x = 0..2000 and 1000..2047) -- exactly
+    the model the grid exists to represent. ``CAMERA_TIME`` is unique and sorted.
     """
-    record_dim = "FOOTPRINT"
-    pair_dims = (record_dim, "CAMERA_PIXEL_BOUNDS")
-    # Two images x two subsections: CAMERA_TIME repeats (non-unique) and stays sorted.
-    camera_time = np.array(
-        ["2028-02-12T00:00:00", "2028-02-12T00:00:00", "2028-02-12T00:00:01", "2028-02-12T00:00:01"],
-        dtype="datetime64[ns]",
-    )
-    latitude = np.array([10.0, -20.0, 45.0, -60.0], dtype=np.float32)
-    longitude = np.array([100.0, -50.0, 170.0, -179.0], dtype=np.float32)
+    grid_dims = ("CAMERA_TIME", "FOOTPRINT")
+    # Two images (unique, sorted CAMERA_TIME), each segmented into two subsections along FOOTPRINT.
+    camera_time = np.array(["2028-02-12T00:00:00", "2028-02-12T00:00:01"], dtype="datetime64[ns]")
+    latitude = np.array([[10.0, -20.0], [45.0, -60.0]], dtype=np.float32)
+    longitude = np.array([[100.0, -50.0], [170.0, -179.0]], dtype=np.float32)
     dataset = xr.Dataset(
         {
-            "igbp_surface_type": (record_dim, np.array([1, 5, 10, 17], dtype=np.uint8)),
+            "igbp_surface_type": (grid_dims, np.array([[1, 5], [10, 17]], dtype=np.uint8)),
             # clear_area is an intermediate the pipeline inverts into cloud_fraction; it is dropped before writing.
-            "clear_area": (record_dim, np.array([100.0, 40.0, 0.0, 75.0], dtype=np.float32)),
-            "solar_zenith_angle": (record_dim, np.array([10.0, 45.0, 80.0, 30.0], dtype=np.float32)),
-            "viewing_zenith_angle": (record_dim, np.array([5.0, 20.0, 60.0, 15.0], dtype=np.float32)),
-            "relative_azimuth_angle": (record_dim, np.array([30.0, 120.0, 200.0, 300.0], dtype=np.float32)),
-            "latitude": (record_dim, latitude),
-            "longitude": (record_dim, longitude),
-            "altitude": (record_dim, np.array([0.0, 100.0, 500.0, 1200.0], dtype=np.float32)),
-            "psf_bbox_lat_min": (record_dim, (latitude - 1.0).astype(np.float32)),
-            "psf_bbox_lat_max": (record_dim, (latitude + 1.0).astype(np.float32)),
-            "psf_bbox_lon_min": (record_dim, (longitude - 1.0).astype(np.float32)),
-            "psf_bbox_lon_max": (record_dim, (longitude + 1.0).astype(np.float32)),
-            # Overlapping inclusive (min, max) ranges within each image (x = 0..2000 overlaps 1000..2047).
-            "camera_pixel_x": (pair_dims, np.array([[0, 2000], [1000, 2047], [0, 1024], [1000, 2047]], dtype=np.int32)),
-            "camera_pixel_y": (pair_dims, np.array([[0, 2047], [0, 2047], [0, 1024], [1000, 2047]], dtype=np.int32)),
-            "CAMERA_TIME": (record_dim, camera_time),
+            "clear_area": (grid_dims, np.array([[100.0, 40.0], [0.0, 75.0]], dtype=np.float32)),
+            "solar_zenith_angle": (grid_dims, np.array([[10.0, 45.0], [80.0, 30.0]], dtype=np.float32)),
+            "viewing_zenith_angle": (grid_dims, np.array([[5.0, 20.0], [60.0, 15.0]], dtype=np.float32)),
+            "relative_azimuth_angle": (grid_dims, np.array([[30.0, 120.0], [200.0, 300.0]], dtype=np.float32)),
+            "latitude": (grid_dims, latitude),
+            "longitude": (grid_dims, longitude),
+            "altitude": (grid_dims, np.array([[0.0, 100.0], [500.0, 1200.0]], dtype=np.float32)),
+            "psf_bbox_lat_min": (grid_dims, (latitude - 1.0).astype(np.float32)),
+            "psf_bbox_lat_max": (grid_dims, (latitude + 1.0).astype(np.float32)),
+            "psf_bbox_lon_min": (grid_dims, (longitude - 1.0).astype(np.float32)),
+            "psf_bbox_lon_max": (grid_dims, (longitude + 1.0).astype(np.float32)),
+            # Inclusive pixel-block bounds; blocks overlap within each image (x = 0..2000 overlaps 1000..2047).
+            "camera_pixel_x_min": (grid_dims, np.array([[0, 1000], [0, 1000]], dtype=np.int32)),
+            "camera_pixel_x_max": (grid_dims, np.array([[2000, 2047], [1024, 2047]], dtype=np.int32)),
+            "camera_pixel_y_min": (grid_dims, np.array([[0, 0], [0, 1000]], dtype=np.int32)),
+            "camera_pixel_y_max": (grid_dims, np.array([[2047, 2047], [1024, 2047]], dtype=np.int32)),
+            "CAMERA_TIME": ("CAMERA_TIME", camera_time),
         }
     )
     return FootprintData(dataset)
 
 
 class TestSceneIdCamCamtimeWrite:
-    """The CAM-CAMTIME runner must write a conformant product carrying the 2-D camera_pixel range coordinates."""
+    """The CAM-CAMTIME runner must write a conformant product on the 2-D (CAMERA_TIME, FOOTPRINT) grid."""
 
-    def test_write_data_product_is_conformant_with_camera_pixel_ranges(self, tmp_path):
-        """A full classify + strict write succeeds; records land on FOOTPRINT with 2-D camera_pixel ranges."""
+    def test_write_data_product_is_conformant_with_camera_pixel_bounds(self, tmp_path):
+        """A full classify + strict write succeeds; data lands on the (CAMERA_TIME, FOOTPRINT) grid."""
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
 
-        # Writes with strict=True; a non-conformant definition/dataset (including the 2-D coordinates) would raise.
+        # Writes with strict=True; a non-conformant definition/dataset (including the 2-D grid) would raise.
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
 
         assert output_file.path.exists()
         reopened = xr.open_dataset(output_file.path)
-        # Records live on the FOOTPRINT axis; CAMERA_TIME is a non-unique coordinate riding on it.
+        # Data lives on the 2-D grid; CAMERA_TIME is a unique, sorted 1-D dimension coordinate.
+        assert "CAMERA_TIME" in reopened.sizes
         assert "FOOTPRINT" in reopened.sizes
-        assert "CAMERA_TIME" not in reopened.sizes
-        assert reopened["CAMERA_TIME"].dims == ("FOOTPRINT",)
-        assert bool(reopened["CAMERA_TIME"].to_series().duplicated().any())
-        for name in ("camera_pixel_x", "camera_pixel_y"):
-            assert name in reopened.coords
-            assert reopened[name].dims == ("FOOTPRINT", "CAMERA_PIXEL_BOUNDS")
+        assert reopened["CAMERA_TIME"].dims == ("CAMERA_TIME",)
+        assert not bool(reopened["CAMERA_TIME"].to_series().duplicated().any())
+        for name in ("cloud_fraction", "scene_id_erbe", "Quality_Flag"):
+            assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+            assert name in reopened.variables
+            assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
             assert reopened[name].dtype == np.int32
-            # Inclusive (min, max): the max endpoint is never below the min.
-            assert bool(np.all(reopened[name].values[:, 1] >= reopened[name].values[:, 0]))
+        # Inclusive (min, max): the max endpoint is never below the min, elementwise across the grid.
+        assert bool(np.all(reopened["camera_pixel_x_max"].values >= reopened["camera_pixel_x_min"].values))
+        assert bool(np.all(reopened["camera_pixel_y_max"].values >= reopened["camera_pixel_y_min"].values))
 
     def test_write_drops_the_replaced_pixel_variables(self, tmp_path):
-        """The retired center_pixel / start-stop variables must not appear in the written product."""
+        """The retired center_pixel / start-stop / (min,max)-pair variables must not appear in the written product."""
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
@@ -236,5 +235,9 @@ class TestSceneIdCamCamtimeWrite:
             "camera_pixel_x_stop",
             "camera_pixel_y_start",
             "camera_pixel_y_stop",
+            # The replaced (min, max)-pair coordinates and their axis are gone.
+            "camera_pixel_x",
+            "camera_pixel_y",
         ):
             assert retired not in reopened.variables
+        assert "CAMERA_PIXEL_BOUNDS" not in reopened.dims
