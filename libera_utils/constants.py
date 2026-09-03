@@ -6,6 +6,11 @@ from typing import Union
 
 from libera_utils.aws.constants import LiberaAccountSuffix, LiberaDataBucketName
 
+# Shared ECR repository name for the radiometer calibration-family combine steps. One repo is
+# attached to each cal-* Batch job, which dispatches to the per-ObsID algorithm from the ObsID
+# carried in its trimmed input.
+CAL_RAD_SHARED_ECR_NAME = "cal-rad-docker-repo"
+
 
 class ManifestType(StrEnum):
     """Enumerated legal manifest type values"""
@@ -155,52 +160,24 @@ class DataProductIdentifier(StrEnum):
     l1a_icie_ana_hk_decoded = ("ANA-HK-DECODED", DataLevel.L1A)
     l1a_icie_temp_hk_decoded = ("TEMP-HK-DECODED", DataLevel.L1A)
 
-    # L1A ObsID-trimmed NOM-HK products (daily NOM-HK subset to one calibration ObsID)
+    # L1A Calibration Dependency Family trimmed NOM-HK products
+    # Daily NOM-HK subset to one ObsID time range for a given dependency family
+    # Produced by L1A preprocessing; consumed by libera_rad and libera_cam for cal-combine steps.
     # =============================================================================
-    # Produced by L1A preprocessing (Step 1); consumed by ObsID-specific cal-combine steps.
-    l1a_icie_nom_hk_gain_trimmed = ("NOM-HK-GAIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_noise_trimmed = ("NOM-HK-NOISE-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_365nm_trimmed = ("NOM-HK-SWC-365NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_405nm_trimmed = ("NOM-HK-SWC-405NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_520nm_trimmed = ("NOM-HK-SWC-520NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_635nm_trimmed = ("NOM-HK-SWC-635NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_840nm_trimmed = ("NOM-HK-SWC-840NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_swc_1550nm_trimmed = ("NOM-HK-SWC-1550NM-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_310k_trimmed = ("NOM-HK-LWC-310K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_320k_trimmed = ("NOM-HK-LWC-320K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_335k_trimmed = ("NOM-HK-LWC-335K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_300k_trimmed = ("NOM-HK-LWC-300K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lwc_305k_trimmed = ("NOM-HK-LWC-305K-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_ssw_pri_trimmed = ("NOM-HK-SOLAR-SSW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_pri_trimmed = ("NOM-HK-SOLAR-TOT-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_pri_trimmed = ("NOM-HK-SOLAR-LW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_pri_trimmed = ("NOM-HK-SOLAR-SW-PRI-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_ssw_sec_trimmed = ("NOM-HK-SOLAR-SSW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_sec_trimmed = ("NOM-HK-SOLAR-TOT-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_sec_trimmed = ("NOM-HK-SOLAR-LW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_sec_trimmed = ("NOM-HK-SOLAR-SW-SEC-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_ssw_ter_trimmed = ("NOM-HK-SOLAR-SSW-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_tot_ter_trimmed = ("NOM-HK-SOLAR-TOT-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_lw_ter_trimmed = ("NOM-HK-SOLAR-LW-TER-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_solar_sw_ter_trimmed = ("NOM-HK-SOLAR-SW-TER-TRIMMED", DataLevel.L1A)
-    # Camera ObsID-trimmed NOM-HK (WFOV source field)
-    l1a_icie_nom_hk_ct_video_6min_trimmed = ("NOM-HK-CT-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_ct_video_12min_trimmed = ("NOM-HK-CT-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_ct_video_18min_trimmed = ("NOM-HK-CT-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_6min_trimmed = ("NOM-HK-RAPS-VIDEO-6MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_12min_trimmed = ("NOM-HK-RAPS-VIDEO-12MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_raps_video_18min_trimmed = ("NOM-HK-RAPS-VIDEO-18MIN-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_darks_of_darks_trimmed = ("NOM-HK-DARKS-OF-DARKS-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_led_of_dark_trimmed = ("NOM-HK-LED-OF-DARK-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_nominal_darks_trimmed = ("NOM-HK-NOMINAL-DARKS-TRIMMED", DataLevel.L1A)
-    # VIIRS lunar calibration operations (ObsIDs 513-514 appear on both RAD and WFOV, one TRIMMED product each)
-    l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-POS-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-NEG-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-POS-START-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-NEG-START-TRIMMED", DataLevel.L1A)
-    # Radiometer lunar calibration ObsID-trimmed NOM-HK (RAD source field)
-    l1a_icie_nom_hk_lunar_south_pole_trimmed = ("NOM-HK-LUNAR-SOUTH-POLE-TRIMMED", DataLevel.L1A)
-    l1a_icie_nom_hk_lunar_north_pole_trimmed = ("NOM-HK-LUNAR-NORTH-POLE-TRIMMED", DataLevel.L1A)
+    # Radiometer calibration families
+    l1a_icie_nom_hk_gain_family_trimmed = ("NOM-HK-GAIN-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_swc_family_trimmed = ("NOM-HK-SWC-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_lwc_family_trimmed = ("NOM-HK-LWC-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_solar_family_trimmed = ("NOM-HK-SOLAR-FAMILY-TRIMMED", DataLevel.L1A)
+    # Camera calibration families
+    l1a_icie_nom_hk_ct_video_family_trimmed = ("NOM-HK-CT-VIDEO-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_raps_video_family_trimmed = ("NOM-HK-RAPS-VIDEO-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_darks_family_trimmed = ("NOM-HK-DARKS-FAMILY-TRIMMED", DataLevel.L1A)
+    # VIIRS lunar calibration operations
+    l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed = ("NOM-HK-RAD-VIIRS-LUNAR-FAMILY-TRIMMED", DataLevel.L1A)
+    l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed = ("NOM-HK-WFOV-VIIRS-LUNAR-FAMILY-TRIMMED", DataLevel.L1A)
+    # Radiometer lunar calibration families
+    l1a_icie_nom_hk_lunar_family_trimmed = ("NOM-HK-LUNAR-FAMILY-TRIMMED", DataLevel.L1A)
 
     # Calibration Event Products (one product per radiometer / camera calibration ObsID)
     # ==================================================================================
@@ -235,10 +212,12 @@ class DataProductIdentifier(StrEnum):
     cal_solar_tot_ter = ("SOLAR-TOT-TER", DataLevel.CAL)
     cal_solar_lw_ter = ("SOLAR-LW-TER", DataLevel.CAL)
     cal_solar_sw_ter = ("SOLAR-SW-TER", DataLevel.CAL)
-    # Lunar Calibration (ObsIDs 448-449); cal-combine / ProcessingStepIdentifiers deferred
+    # Lunar Calibration (ObsIDs 448-449)
+    # TODO[LIBSDC-811]: cal-combine step and ProcessingStepIdentifier deferred
     cal_lunar_south_pole = ("LUNAR-SOUTH-POLE", DataLevel.CAL)
     cal_lunar_north_pole = ("LUNAR-NORTH-POLE", DataLevel.CAL)
-    # Camera calibration events (WFOV ObsIDs; ProcessingStepIdentifiers deferred)
+    # Camera calibration events (WFOV ObsIDs)
+    # TODO[LIBSDC-811]: ProcessingStepIdentifiers deferred
     cal_ct_video_6min = ("CT-VIDEO-6MIN", DataLevel.CAL)
     cal_ct_video_12min = ("CT-VIDEO-12MIN", DataLevel.CAL)
     cal_ct_video_18min = ("CT-VIDEO-18MIN", DataLevel.CAL)
@@ -248,7 +227,8 @@ class DataProductIdentifier(StrEnum):
     cal_darks_of_darks = ("DARKS-OF-DARKS", DataLevel.CAL)
     cal_led_of_dark = ("LED-OF-DARK", DataLevel.CAL)
     cal_nominal_darks = ("NOMINAL-DARKS", DataLevel.CAL)
-    # VIIRS lunar cal (ObsIDs 513-514 on both RAD and WFOV); ProcessingStepIdentifiers deferred
+    # VIIRS lunar cal (ObsIDs 513-514, registered separately on RAD and WFOV)
+    # TODO[LIBSDC-811]: ProcessingStepIdentifiers deferred
     cal_rad_viirs_lunar_pos_start = ("RAD-VIIRS-LUNAR-POS-START", DataLevel.CAL)
     cal_rad_viirs_lunar_neg_start = ("RAD-VIIRS-LUNAR-NEG-START", DataLevel.CAL)
     cal_wfov_viirs_lunar_pos_start = ("WFOV-VIIRS-LUNAR-POS-START", DataLevel.CAL)
@@ -410,9 +390,10 @@ class ProcessingStepIdentifier(StrEnum):
 
     The string values are the processing step names used in orchestration.
 
-    Each member is defined as a tuple: (step_name, products_list)
+    Each member is defined as a tuple: (step_name, products_list[, shared_ecr_name])
     - step_name: The string value used in orchestration and AWS resources
     - products_list: List of DataProductIdentifier members that this step produces
+    - shared_ecr_name: Optional ECR repository name shared by multiple steps (e.g. cal-rad steps)
 
     Example:
         >>> step = ProcessingStepIdentifier.l1b_rad
@@ -422,20 +403,30 @@ class ProcessingStepIdentifier(StrEnum):
 
     When adding new processing steps:
         1. Add the enum member with its step name and list of produced products
-        2. No need to update any lookup dictionaries - relationships are embedded!
+        2. Optionally pass a shared ECR name when multiple steps use one image repository
+        3. No need to update any lookup dictionaries - relationships are embedded!
     """
 
     _products: list["DataProductIdentifier"]
+    _shared_ecr_name: str | None
 
-    def __new__(cls, value: str, products: list[DataProductIdentifier] = None):  # type: ignore
+    def __new__(
+        cls,
+        value: str,
+        products: list[DataProductIdentifier] | None = None,
+        shared_ecr_name: str | None = None,
+    ):  # type: ignore
         """Create a new ProcessingStepIdentifier with embedded metadata.
 
         Parameters
         ----------
         value : str
             The string value for this processing step (used in orchestration)
-        products : list
+        products : list, optional
             List of DataProductIdentifier members that this step produces
+        shared_ecr_name : str, optional
+            Shared ECR repository name. When set, ``ecr_name`` returns this value
+            instead of ``{step}-docker-repo``.
         """
         if value != value.lower():
             raise ValueError(
@@ -444,6 +435,7 @@ class ProcessingStepIdentifier(StrEnum):
         obj = str.__new__(cls, value)
         obj._value_ = value
         obj._products = products or []
+        obj._shared_ecr_name = shared_ecr_name
         return obj
 
     # SPICE processing steps
@@ -453,6 +445,58 @@ class ProcessingStepIdentifier(StrEnum):
     # L1B processing steps
     l1b_rad = ("l1b-rad", [DataProductIdentifier.l1b_rad])
     l1b_cam = ("l1b-cam", [DataProductIdentifier.l1b_cam])
+
+    # Radiometer calibration event combination steps: one step per calibration dependency family,
+    # sharing the cal-rad ECR. Each step consumes its family's NOM-HK-*-FAMILY-TRIMMED product and
+    # dispatches to the per-ObsID algorithm, so its products are every CAL product the family can
+    # yield. Family membership lives in data/obsid_registry.csv.
+    cal_gain_family = (
+        "cal-gain-family",
+        [DataProductIdentifier.cal_gain, DataProductIdentifier.cal_noise],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    cal_swc_family = (
+        "cal-swc-family",
+        [
+            DataProductIdentifier.cal_swc_365nm,
+            DataProductIdentifier.cal_swc_405nm,
+            DataProductIdentifier.cal_swc_520nm,
+            DataProductIdentifier.cal_swc_635nm,
+            DataProductIdentifier.cal_swc_840nm,
+            DataProductIdentifier.cal_swc_1550nm,
+        ],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    cal_lwc_family = (
+        "cal-lwc-family",
+        [
+            DataProductIdentifier.cal_lwc_310k,
+            DataProductIdentifier.cal_lwc_320k,
+            DataProductIdentifier.cal_lwc_335k,
+            DataProductIdentifier.cal_lwc_300k,
+            DataProductIdentifier.cal_lwc_305k,
+        ],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    cal_solar_family = (
+        "cal-solar-family",
+        [
+            DataProductIdentifier.cal_solar_ssw_pri,
+            DataProductIdentifier.cal_solar_tot_pri,
+            DataProductIdentifier.cal_solar_lw_pri,
+            DataProductIdentifier.cal_solar_sw_pri,
+            DataProductIdentifier.cal_solar_ssw_sec,
+            DataProductIdentifier.cal_solar_tot_sec,
+            DataProductIdentifier.cal_solar_lw_sec,
+            DataProductIdentifier.cal_solar_sw_sec,
+            DataProductIdentifier.cal_solar_ssw_ter,
+            DataProductIdentifier.cal_solar_tot_ter,
+            DataProductIdentifier.cal_solar_lw_ter,
+            DataProductIdentifier.cal_solar_sw_ter,
+        ],
+        CAL_RAD_SHARED_ECR_NAME,
+    )
+    # TODO[LIBSDC-811]: Add lunar (RAD/VIIRS) and camera calibration family steps
 
     # L2 processing steps — camera cloud fraction track
     l2_unf_rad_cam = ("l2-unf-rad-cam", [DataProductIdentifier.l2_unf_rad_cam])
@@ -546,7 +590,11 @@ class ProcessingStepIdentifier(StrEnum):
 
         We name our ECRs in CDK because they are one of the few resources that humans will need to interact
         with on a regular basis.
+
+        Returns the step's ``shared_ecr_name`` when it has one, otherwise ``{step}-docker-repo``.
         """
+        if self._shared_ecr_name is not None:
+            return self._shared_ecr_name
         return f"{str(self)}-docker-repo"
 
     @property
@@ -600,13 +648,9 @@ class ProcessingStepIdentifier(StrEnum):
 
         Returns
         -------
-        ProcessingStepIdentifier
-            The processing step that produces this data product
-
-        Raises
-        ------
-        ValueError
-            If no processing step is found for the data product
+        ProcessingStepIdentifier or None
+            The processing step that produces this data product, or None when no deployed step
+            declares it.
         """
         for step in cls:
             if data_product in step.products:

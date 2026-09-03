@@ -8,10 +8,8 @@ Libera instrument
     > Azimuth Mechanism
     > Elevation Mechanism
     > Wide Field of View (WFOV) Camera
-    > Short Wave (SW) Radiometer
-    > Split Short Wave (SSW) Radiometer
-    > Long Wave (LW) Radiometer
-    > Total (TOT) Radiometer
+    > Radiometer (the four channels -- SW, SSW, LW, TOT -- are assumed
+      co-aligned and share a single frame)
 as well as the frame definition for the JPSS spacecraft.
 
 This frame kernel also includes a kernel pool variable that defines the
@@ -60,17 +58,15 @@ Frames Hierarchy
  "WFOV_CAMERA"                        |
  -------------                        V
                          "LIBERA_ELEVATION_MECHANISM"
-       +------------------------------------------------------------+
-       |                   |                   |                    |
-       | <- fixed          | <- fixed          | <- fixed           | <- fixed
-       V                   V                   V                    V
-"SW_RADIOMETER"     "SSW_RADIOMETER"     "LW_RADIOMETER"     "TOT_RADIOMETER"
----------------     ----------------     ---------------     ----------------
+                         ----------------------------
+                                      |
+                                      | <- fixed
+                                      V
+                              "LIBERA_RADIOMETER"
+                              -------------------
 
-NOTE: In this diagram, we are making no assumptions about the precision of
-radiometer alignment. In reality, we may be fortunate enough to have all
-radiometers aligned closely enough that we don't need separate quaternions
-for each one.
+NOTE: The four radiometer channels (SW, SSW, LW, TOT) are assumed co-aligned
+and share the single LIBERA_RADIOMETER frame.
 
 NOTE: If we need to account for the offset between origins between SC origin,
 Az/El origins, and radiometer origins, we need an SPK for each of those offsets
@@ -139,41 +135,14 @@ Frame Specification
   TKFRAME_-143013010_AXES          = (  1,         2,        3      )
   TKFRAME_-143013010_UNITS         = 'DEGREES'
 
-  FRAME_LIBERA_SW_RADIOMETER       = -143013011
-  FRAME_-143013011_NAME            = 'LIBERA_SW_RADIOMETER'
+  FRAME_LIBERA_RADIOMETER          = -143013011
+  FRAME_-143013011_NAME            = 'LIBERA_RADIOMETER'
   FRAME_-143013011_CLASS           =  4
   FRAME_-143013011_CLASS_ID        = -143013011
   FRAME_-143013011_CENTER          = -143013
   TKFRAME_-143013011_SPEC          = 'QUATERNION'
   TKFRAME_-143013011_RELATIVE      = 'LIBERA_ELEVATION_MECHANISM'
   TKFRAME_-143013011_Q             = (1.0, 0.0, 0.0, 0.0)
-
-  FRAME_LIBERA_SSW_RADIOMETER      = -143013012
-  FRAME_-143013012_NAME            = 'LIBERA_SSW_RADIOMETER'
-  FRAME_-143013012_CLASS           =  4
-  FRAME_-143013012_CLASS_ID        = -143013012
-  FRAME_-143013012_CENTER          = -143013
-  TKFRAME_-143013012_SPEC          = 'QUATERNION'
-  TKFRAME_-143013012_RELATIVE      = 'LIBERA_ELEVATION_MECHANISM'
-  TKFRAME_-143013012_Q             = (1.0, 0.0, 0.0, 0.0)
-
-  FRAME_LIBERA_LW_RADIOMETER       = -143013013
-  FRAME_-143013013_NAME            = 'LIBERA_LW_RADIOMETER'
-  FRAME_-143013013_CLASS           =  4
-  FRAME_-143013013_CLASS_ID        = -143013013
-  FRAME_-143013013_CENTER          = -143013
-  TKFRAME_-143013013_SPEC          = 'QUATERNION'
-  TKFRAME_-143013013_RELATIVE      = 'LIBERA_ELEVATION_MECHANISM'
-  TKFRAME_-143013013_Q             = (1.0, 0.0, 0.0, 0.0)
-
-  FRAME_LIBERA_TOT_RADIOMETER      = -143013014
-  FRAME_-143013014_NAME            = 'LIBERA_TOT_RADIOMETER'
-  FRAME_-143013014_CLASS           =  4
-  FRAME_-143013014_CLASS_ID        = -143013014
-  FRAME_-143013014_CENTER          = -143013
-  TKFRAME_-143013014_SPEC          = 'QUATERNION'
-  TKFRAME_-143013014_RELATIVE      = 'LIBERA_ELEVATION_MECHANISM'
-  TKFRAME_-143013014_Q             = (1.0, 0.0, 0.0, 0.0)
 
 \begintext
 

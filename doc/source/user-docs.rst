@@ -18,3 +18,4 @@ all of it.
     user-docs/logging
     user-docs/spice_kernels
     user-docs/l1a_processing
+    user-docs/obsid_registry

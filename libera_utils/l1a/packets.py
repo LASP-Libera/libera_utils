@@ -143,8 +143,13 @@ def parse_packets_to_l1a_dataset(
     # Drop duplicates from the packet dataset before we process samples
     # This drops full duplicate packets based on identical packet timestamps
     packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
-    packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
-    packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)
+
+    # Sort the packet axis into its final order before samples are expanded; the
+    # "{sample_group}_packet_index" variables built below enumerate this axis positionally.
+    # TODO[LIBSDC-830]: cross-check packet ordering against SRC_SEQ_CTR rather than relying on
+    # packet time alone, and reconcile packet_index with that ordering.
+    packet_ds = packet_ds.sortby(packet_time_coordinate)
+    packet_times_us = packet_ds[packet_time_coordinate].values
 
     # Start building the dataset containing expanded sample fields
     sample_ds = xr.Dataset()
@@ -246,9 +251,6 @@ def parse_packets_to_l1a_dataset(
 
     # The "PACKET" dimension is retained to enable sample-to-packet traceability
     # packet_time_dimension remains as a non-dimension coordinate
-
-    # Sort the resulting Dataset by the packet time coordinate to ensure data is properly ordered
-    packet_ds = packet_ds.sortby(packet_time_coordinate)
 
     # Force any Unicode (U-type) string variables to byte (S-type) strings. We know all the FSW strings
     # are ASCII and sticking to bytes preserves better compatibility in NetCDF (i.e. doesn't rely on the NC_STRING

@@ -12,6 +12,7 @@ from libera_utils.constants import (
     ManifestType,
     ProcessingStepIdentifier,
 )
+from libera_utils.obsids import get_family_specs
 
 
 class TestManifestType:
@@ -140,47 +141,17 @@ class TestDataProductIdentifier:
             "l1a_icie_nom_hk_decoded",
             "l1a_icie_ana_hk_decoded",
             "l1a_icie_temp_hk_decoded",
-            # L1A ObsID-trimmed NOM-HK products
-            "l1a_icie_nom_hk_gain_trimmed",
-            "l1a_icie_nom_hk_noise_trimmed",
-            "l1a_icie_nom_hk_swc_365nm_trimmed",
-            "l1a_icie_nom_hk_swc_405nm_trimmed",
-            "l1a_icie_nom_hk_swc_520nm_trimmed",
-            "l1a_icie_nom_hk_swc_635nm_trimmed",
-            "l1a_icie_nom_hk_swc_840nm_trimmed",
-            "l1a_icie_nom_hk_swc_1550nm_trimmed",
-            "l1a_icie_nom_hk_lwc_310k_trimmed",
-            "l1a_icie_nom_hk_lwc_320k_trimmed",
-            "l1a_icie_nom_hk_lwc_335k_trimmed",
-            "l1a_icie_nom_hk_lwc_300k_trimmed",
-            "l1a_icie_nom_hk_lwc_305k_trimmed",
-            "l1a_icie_nom_hk_solar_ssw_pri_trimmed",
-            "l1a_icie_nom_hk_solar_tot_pri_trimmed",
-            "l1a_icie_nom_hk_solar_lw_pri_trimmed",
-            "l1a_icie_nom_hk_solar_sw_pri_trimmed",
-            "l1a_icie_nom_hk_solar_ssw_sec_trimmed",
-            "l1a_icie_nom_hk_solar_tot_sec_trimmed",
-            "l1a_icie_nom_hk_solar_lw_sec_trimmed",
-            "l1a_icie_nom_hk_solar_sw_sec_trimmed",
-            "l1a_icie_nom_hk_solar_ssw_ter_trimmed",
-            "l1a_icie_nom_hk_solar_tot_ter_trimmed",
-            "l1a_icie_nom_hk_solar_lw_ter_trimmed",
-            "l1a_icie_nom_hk_solar_sw_ter_trimmed",
-            "l1a_icie_nom_hk_ct_video_6min_trimmed",
-            "l1a_icie_nom_hk_ct_video_12min_trimmed",
-            "l1a_icie_nom_hk_ct_video_18min_trimmed",
-            "l1a_icie_nom_hk_raps_video_6min_trimmed",
-            "l1a_icie_nom_hk_raps_video_12min_trimmed",
-            "l1a_icie_nom_hk_raps_video_18min_trimmed",
-            "l1a_icie_nom_hk_darks_of_darks_trimmed",
-            "l1a_icie_nom_hk_led_of_dark_trimmed",
-            "l1a_icie_nom_hk_nominal_darks_trimmed",
-            "l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed",
-            "l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed",
-            "l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed",
-            "l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed",
-            "l1a_icie_nom_hk_lunar_south_pole_trimmed",
-            "l1a_icie_nom_hk_lunar_north_pole_trimmed",
+            # L1A calibration dependency family trimmed NOM-HK products
+            "l1a_icie_nom_hk_gain_family_trimmed",
+            "l1a_icie_nom_hk_swc_family_trimmed",
+            "l1a_icie_nom_hk_lwc_family_trimmed",
+            "l1a_icie_nom_hk_solar_family_trimmed",
+            "l1a_icie_nom_hk_ct_video_family_trimmed",
+            "l1a_icie_nom_hk_raps_video_family_trimmed",
+            "l1a_icie_nom_hk_darks_family_trimmed",
+            "l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed",
+            "l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed",
+            "l1a_icie_nom_hk_lunar_family_trimmed",
             # Calibration Event Products (per ObsID)
             "cal_gain",
             "cal_noise",
@@ -314,10 +285,10 @@ class TestDataProductIdentifier:
             assert product.data_level.archive_bucket_name == DataLevel.CAL.archive_bucket_name
 
     def test_trimmed_nom_hk_products_metadata(self):
-        """Test L1A ObsID-trimmed NOM-HK products associate with NOM-HK APID."""
-        trimmed = DataProductIdentifier.l1a_icie_nom_hk_gain_trimmed
+        """Test L1A calibration family trimmed NOM-HK products associate with NOM-HK APID."""
+        trimmed = DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed
         assert trimmed.data_level is DataLevel.L1A
-        assert trimmed.value == "NOM-HK-GAIN-TRIMMED"
+        assert trimmed.value == "NOM-HK-GAIN-FAMILY-TRIMMED"
         assert trimmed.associated_apid is LiberaApid.icie_nom_hk
 
     def test_get_partial_archive_bucket_name_deprecation(self):
@@ -349,6 +320,11 @@ class TestProcessingStepIdentifier:
             # L1B steps
             "l1b_rad",
             "l1b_cam",
+            # Radiometer calibration dependency family combine steps
+            "cal_gain_family",
+            "cal_swc_family",
+            "cal_lwc_family",
+            "cal_solar_family",
             # L2 steps — camera cloud fraction track
             "l2_unf_rad_cam",
             "l2_cf_cam",
@@ -464,6 +440,27 @@ class TestProcessingStepIdentifier:
             name = step.ecr_name
             assert isinstance(name, str)
             assert name.endswith("-docker-repo")
+
+    def test_cal_steps_share_ecr_name(self):
+        """Radiometer cal-combine steps share one ECR repository name for CDK reuse."""
+        cal_steps = [step for step in ProcessingStepIdentifier if str(step).startswith("cal-")]
+        assert len(cal_steps) == 4
+        shared = {step.ecr_name for step in cal_steps}
+        assert shared == {"cal-rad-docker-repo"}
+        assert ProcessingStepIdentifier.l1b_rad.ecr_name == "l1b-rad-docker-repo"
+
+    def test_cal_family_steps_produce_their_families_cal_products(self):
+        """Each cal family step declares exactly the CAL products of its trimmed family's ObsIDs."""
+        expected = {
+            ProcessingStepIdentifier.cal_gain_family: DataProductIdentifier.l1a_icie_nom_hk_gain_family_trimmed,
+            ProcessingStepIdentifier.cal_swc_family: DataProductIdentifier.l1a_icie_nom_hk_swc_family_trimmed,
+            ProcessingStepIdentifier.cal_lwc_family: DataProductIdentifier.l1a_icie_nom_hk_lwc_family_trimmed,
+            ProcessingStepIdentifier.cal_solar_family: DataProductIdentifier.l1a_icie_nom_hk_solar_family_trimmed,
+        }
+        for step, trimmed_product in expected.items():
+            family_cal_products = [spec.cal_product for spec in get_family_specs(trimmed_product)]
+            assert step.products == family_cal_products
+            assert step.level is DataLevel.CAL
 
     def test_l2_team_iam_role_property(self):
         """Test l2_team_iam_role maps L2/ADM steps to their team role and returns None otherwise."""
