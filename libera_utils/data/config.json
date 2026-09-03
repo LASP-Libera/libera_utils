@@ -27,10 +27,7 @@
     "{LIBERA_KERNEL_DIR}/libera_az.fixed_offset.spk.json",
     "{LIBERA_KERNEL_DIR}/libera_wfov_cam.fixed_offset.spk.json",
     "{LIBERA_KERNEL_DIR}/libera_el.fixed_offset.spk.json",
-    "{LIBERA_KERNEL_DIR}/libera_sw_rad.fixed_offset.spk.json",
-    "{LIBERA_KERNEL_DIR}/libera_ssw_rad.fixed_offset.spk.json",
-    "{LIBERA_KERNEL_DIR}/libera_lw_rad.fixed_offset.spk.json",
-    "{LIBERA_KERNEL_DIR}/libera_tot_rad.fixed_offset.spk.json"
+    "{LIBERA_KERNEL_DIR}/libera_rad.fixed_offset.spk.json"
   ],
   "LIBERA_KERNEL_SC_SPK_CONFIG": "{LIBERA_KERNEL_DIR}/jpss4_sc.ephemeris.spk.json",
   "LIBERA_KERNEL_SC_CK_CONFIG": "{LIBERA_KERNEL_DIR}/jpss4_sc.attitude.ck.json",

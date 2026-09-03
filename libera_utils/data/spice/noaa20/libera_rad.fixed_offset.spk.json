@@ -2,7 +2,7 @@
   "kernel": {
     "class_path": "curryer.kernels.ephemeris.EphemerisStateProperties",
     "properties": {
-      "input_body": "LIBERA_TOT_RAD",
+      "input_body": "LIBERA_RAD",
       "input_frame": "LIBERA_EL_COORD",
       "input_center": "LIBERA_EL",
       "input_data_units": {

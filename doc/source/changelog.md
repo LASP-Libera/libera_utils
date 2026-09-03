@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.10.7
+
+- BREAKING: The four per-channel radiometer frames (`LIBERA_SW_RAD_COORD`, `LIBERA_SSW_RAD_COORD`, `LIBERA_LW_RAD_COORD`, `LIBERA_TOT_RAD_COORD`) are replaced by a single co-aligned `LIBERA_RAD_COORD` frame and one `LIBERA_RAD` instrument/FOV in the frame and instrument kernels for both JPSS-4 and NOAA-20. The four channels share a boresight, so the per-channel definitions carried identical geometry. Downstream callers must transform to `LIBERA_RAD_COORD` instead of a per-channel frame.
+- BREAKING: The four per-channel fixed-offset SPK configs are replaced by one `libera_rad.fixed_offset.spk.json` per mission, so `LIBERA_KERNEL_STATIC_SPK_CONFIGS` in `data/config.json` drops from 8 static SPK configs to 5.
+
 ## 5.10.6
 
 - BREAKING: L1A trimmed NOM-HK products are now one per _calibration dependency family_ rather than one per ObsID: 10 `NOM-HK-<FAMILY>-FAMILY-TRIMMED` members replace the 40 `NOM-HK-<EVENT>-TRIMMED` members added in 5.10.3. Each ObsID keeps its own CAL product, and the ObsID stays readable from the `ICIE__SW_OBSID_*` variable inside each trimmed file. A family never spans both ObsID fields, so RAD and WFOV VIIRS lunar (513/514) are registered as separate families with distinct ProductIDs.

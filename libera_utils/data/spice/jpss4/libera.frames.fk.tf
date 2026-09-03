@@ -14,10 +14,7 @@ Frame definitions for Libera on the JPSS-4 spacecraft
     LIBERA_AZ_COORD         LIBERA_BASE_COORD   CK          -143013002
     LIBERA_WFOV_CAM_COORD   LIBERA_AZ_COORD     FIXED       -143013010
     LIBERA_EL_COORD         LIBERA_AZ_COORD     CK          -143013003
-    LIBERA_SW_RAD_COORD     LIBERA_EL_COORD     FIXED       -143013011
-    LIBERA_SSW_RAD_COORD    LIBERA_EL_COORD     FIXED       -143013012
-    LIBERA_LW_RAD_COORD     LIBERA_EL_COORD     FIXED       -143013013
-    LIBERA_TOT_RAD_COORD    LIBERA_EL_COORD     FIXED       -143013014
+    LIBERA_RAD_COORD        LIBERA_EL_COORD     FIXED       -143013011
 
                   "J2000" <- inertial
                   -----------------------------------------+
@@ -43,12 +40,12 @@ Frame definitions for Libera on the JPSS-4 spacecraft
  "LIBERA_WFOV_CAM_COORD"              |
  -----------------------              V
                               "LIBERA_EL_COORD"
-       +------------------------------------------------------------+
-       |                   |                   |                    |
-       | <- fixed          | <- fixed          | <- fixed           | <- fixed
-       V                   V                   |                    |
-"LIBERA_SW_RAD_COORD" "LIBERA_SSW_RAD_COORD"   V                    V
-                                    "LIBERA_LW_RAD_COORD" "LIBERA_TOT_RAD_COORD"
+                              -----------------
+                                      |
+                                      | <- fixed
+                                      V
+                              "LIBERA_RAD_COORD"
+                              ------------------
 
 
     Notes
@@ -182,19 +179,20 @@ Frame definitions
 
     Radiometer boresight (LIBSDC-806)
     ---------------------------------
-        The four radiometer TK frames below carry a measured boresight rotation (not a
-        translation): each orients its +Z boresight to the Total-radiometer line-of-sight
+        The radiometer TK frame below carries a measured boresight rotation (not a
+        translation): it orients its +Z boresight to the Total-radiometer line-of-sight
         at corrected elevation = 0 deg (EL0_Z in LIBERA_BASE, ~0.264 deg off +Z), from OAV3
-        ground testing. All four share this value until per-radiometer boresights exist.
+        ground testing. The four radiometer channels (SW, SSW, LW, TOT) are assumed
+        co-aligned and share this single frame.
         Derived from LIBERA_EL0_Z_IN_STAND (see Measured frame misalignments above).
 
-    Libera SW Radiometer (-143013011) - Instrument (TK)
-    ---------------------------------------------------
+    Libera Radiometer (-143013011) - Instrument (TK)
+    ------------------------------------------------
 
         \begindata
 
-        FRAME_LIBERA_SW_RAD_COORD   = -143013011
-        FRAME_-143013011_NAME       = 'LIBERA_SW_RAD_COORD'
+        FRAME_LIBERA_RAD_COORD      = -143013011
+        FRAME_-143013011_NAME       = 'LIBERA_RAD_COORD'
         FRAME_-143013011_CLASS      = 4
         FRAME_-143013011_CLASS_ID   = -143013011
         FRAME_-143013011_CENTER     = -143013003
@@ -202,60 +200,6 @@ Frame definitions
         TKFRAME_-143013011_SPEC     = 'QUATERNION'
         TKFRAME_-143013011_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
 
-        OBJECT_-143013011_FRAME     = 'LIBERA_SW_RAD_COORD'
-
-        \begintext
-
-    Libera SSW Radiometer (-143013012) - Instrument (TK)
-    ----------------------------------------------------
-
-        \begindata
-
-        FRAME_LIBERA_SSW_RAD_COORD  = -143013012
-        FRAME_-143013012_NAME       = 'LIBERA_SSW_RAD_COORD'
-        FRAME_-143013012_CLASS      = 4
-        FRAME_-143013012_CLASS_ID   = -143013012
-        FRAME_-143013012_CENTER     = -143013003
-        TKFRAME_-143013012_RELATIVE = 'LIBERA_EL_COORD'
-        TKFRAME_-143013012_SPEC     = 'QUATERNION'
-        TKFRAME_-143013012_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
-
-        OBJECT_-143013012_FRAME     = 'LIBERA_SSW_RAD_COORD'
-
-        \begintext
-
-    Libera LW Radiometer (-143013013) - Instrument (TK)
-    ---------------------------------------------------
-
-        \begindata
-
-        FRAME_LIBERA_LW_RAD_COORD   = -143013013
-        FRAME_-143013013_NAME       = 'LIBERA_LW_RAD_COORD'
-        FRAME_-143013013_CLASS      = 4
-        FRAME_-143013013_CLASS_ID   = -143013013
-        FRAME_-143013013_CENTER     = -143013003
-        TKFRAME_-143013013_RELATIVE = 'LIBERA_EL_COORD'
-        TKFRAME_-143013013_SPEC     = 'QUATERNION'
-        TKFRAME_-143013013_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
-
-        OBJECT_-143013013_FRAME     = 'LIBERA_LW_RAD_COORD'
-
-        \begintext
-
-    Libera TOT Radiometer (-143013014) - Instrument (TK)
-    ----------------------------------------------------
-
-        \begindata
-
-        FRAME_LIBERA_TOT_RAD_COORD  = -143013014
-        FRAME_-143013014_NAME       = 'LIBERA_TOT_RAD_COORD'
-        FRAME_-143013014_CLASS      = 4
-        FRAME_-143013014_CLASS_ID   = -143013014
-        FRAME_-143013014_CENTER     = -143013003
-        TKFRAME_-143013014_RELATIVE = 'LIBERA_EL_COORD'
-        TKFRAME_-143013014_SPEC     = 'QUATERNION'
-        TKFRAME_-143013014_Q        = ( 0.999997348236771, 0.000152505896243, -0.002297881932832, 0.000000000000000 )
-
-        OBJECT_-143013014_FRAME     = 'LIBERA_TOT_RAD_COORD'
+        OBJECT_-143013011_FRAME     = 'LIBERA_RAD_COORD'
 
         \begintext

@@ -69,7 +69,7 @@ def test_geolocate_noaa20(
     with sp.ext.load_kernel([mkrn.sds_kernels, mission_kernels, noaa20_kernels]):
         # Geolocate to the ellipsoid.
         ellips_lla_df, sc_xyz_df, ellips_qf_ds = spatial.instrument_intersect_ellipsoid(
-            ugps_times, sp.obj.Body("LIBERA_SW_RAD", frame=True), geodetic=True, degrees=True
+            ugps_times, sp.obj.Body("LIBERA_RAD", frame=True), geodetic=True, degrees=True
         )
 
         # Sanity checks.

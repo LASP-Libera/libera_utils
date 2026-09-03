@@ -26,20 +26,8 @@
       "frame": true,
       "attitude": true
     },
-    "LIBERA_SW_RAD": {
+    "LIBERA_RAD": {
       "id_code": -143013011,
-      "frame": true
-    },
-    "LIBERA_SSW_RAD": {
-      "id_code": -143013012,
-      "frame": true
-    },
-    "LIBERA_LW_RAD": {
-      "id_code": -143013013,
-      "frame": true
-    },
-    "LIBERA_TOT_RAD": {
-      "id_code": -143013014,
       "frame": true
     }
   },
