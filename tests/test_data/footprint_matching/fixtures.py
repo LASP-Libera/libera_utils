@@ -1012,10 +1012,18 @@ def make_fmatch_product_fixture(
 
     data: dict[str, np.ndarray] = {time_variable: times}
 
-    # Fill any non-time coordinate the definition declares. On the camera-timescale products this is the pair of 2-D
-    # camera_pixel_x/y range coordinates (FOOTPRINT x CAMERA_PIXEL_BOUNDS); the radiometer products have none. The
-    # record axis length is n_footprints; CAMERA_PIXEL_BOUNDS is the fixed size-2 (min, max) pair.
-    dimension_sizes = {"RADIOMETER_TIME": n_footprints, "FOOTPRINT": n_footprints, "CAMERA_PIXEL_BOUNDS": 2}
+    # The camera-timescale products (CAM-CAMTIME, IMAGER-CAMTIME) are defined on a 2-D (CAMERA_TIME, FOOTPRINT) grid:
+    # one unique CAMERA_TIME per image (n_footprints of them), each image segmented into a small fixed number of
+    # subsections along FOOTPRINT. The radiometer products are 1-D on RADIOMETER_TIME. Every non-time coordinate and
+    # variable is sized from these dimensions; the camtime camera_pixel_{x,y}_{min,max} provenance coordinates and all
+    # record variables hang on (CAMERA_TIME, FOOTPRINT).
+    is_camera_timescale = mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME)
+    n_footprints_per_image = 2 if is_camera_timescale else n_footprints
+    dimension_sizes = {
+        "RADIOMETER_TIME": n_footprints,
+        "CAMERA_TIME": n_footprints,
+        "FOOTPRINT": n_footprints_per_image,
+    }
     for name, coord_def in definition.coordinates.items():
         if name == time_variable:
             continue
@@ -1023,20 +1031,22 @@ def make_fmatch_product_fixture(
         data[name] = np.zeros(shape, dtype=coord_def.dtype)
 
     for name, var_def in definition.variables.items():
+        shape = tuple(dimension_sizes[dimension] for dimension in var_def.dimensions)
+        size = int(np.prod(shape))
         if name == "igbp_surface_type":
-            data[name] = (np.arange(n_footprints) % 17 + 1).astype(var_def.dtype)
+            data[name] = (np.arange(size) % 17 + 1).reshape(shape).astype(var_def.dtype)
         elif name == "ssf_clear_coverage":
             # Clear-sky percentage in [0, 100]; the imager scene-ID readers derive cloud_fraction = 100 -
             # clear_coverage, so a spread across the full range gives the classifier both cloudy and (near-)clear
             # footprints -- the latter exercise the clear/surface TRMM scenes that FLASH can match despite having no
             # cloud phase.
-            data[name] = np.linspace(0, 100, n_footprints).astype(var_def.dtype)
+            data[name] = np.linspace(0, 100, size).reshape(shape).astype(var_def.dtype)
         elif name == "cldpix_cloud_particle_phase":
             # Valid CLDPIX phase codes cycling liquid(1)/ice(2) so map_cldpix_phase_to_trmm yields usable 1/2
             # values (rather than all-NaN) for the TRMM classification.
-            data[name] = (np.arange(n_footprints) % 2 + 1).astype(var_def.dtype)
+            data[name] = (np.arange(size) % 2 + 1).reshape(shape).astype(var_def.dtype)
         else:
-            data[name] = np.zeros(n_footprints, dtype=var_def.dtype)
+            data[name] = np.zeros(shape, dtype=var_def.dtype)
 
     dynamic_attrs = {
         "algorithm_version": "0.1.0",

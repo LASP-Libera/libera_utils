@@ -52,7 +52,7 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 if TYPE_CHECKING:
     # Imported only for type hints to avoid pulling heavy deps at import time.
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from xarray import Dataset
 
@@ -364,7 +364,32 @@ def assemble_fmatch_dataset(
     return _assemble_radiometer_dataset(*args, mode=mode, cloud_fraction_camera=cloud_fraction_camera, **kwargs)
 
 
-def _placeholder_variable_array(variable_definition: Any, n_footprints: int) -> np.ndarray:
+def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
+    """Return the ``(dtype, fill_value)`` a variable or coordinate uses for absent cells.
+
+    The fill is the definition's declared ``_FillValue`` when present, and otherwise ``NaN``
+    for floating-point definitions or ``0`` for integer ones (integers cannot represent NaN).
+    Used both for not-yet-computed placeholder variables and for the padded cells of the
+    camera-timescale grid (images segmented into fewer subsections than the widest image).
+
+    Parameters
+    ----------
+    variable_definition : LiberaVariableDefinition
+        The product-definition entry for the variable or coordinate.
+
+    Returns
+    -------
+    tuple[numpy.dtype, Any]
+        The declared dtype and the fill value to use for missing/padded cells.
+    """
+    dtype = np.dtype(variable_definition.dtype)
+    fill_value = variable_definition.attributes.get("_FillValue")
+    if fill_value is None:
+        fill_value = np.nan if np.issubdtype(dtype, np.floating) else 0
+    return dtype, fill_value
+
+
+def _placeholder_variable_array(variable_definition: Any, shape: int | tuple[int, ...]) -> np.ndarray:
     """Build a conformant placeholder array for a not-yet-computed product variable.
 
     Variables owned by the aggregation / derived-geometry engines (not built yet)
@@ -379,27 +404,24 @@ def _placeholder_variable_array(variable_definition: Any, n_footprints: int) -> 
     ----------
     variable_definition : LiberaVariableDefinition
         The product-definition entry for the variable.
-    n_footprints : int
-        Length of the footprint (time) axis.
+    shape : int or tuple of int
+        Shape of the placeholder array: the length of the 1-D record axis for the
+        radiometer-timescale products, or the ``(CAMERA_TIME, FOOTPRINT)`` grid shape
+        for the camera-timescale products.
 
     Returns
     -------
     np.ndarray
-        A 1-D array of length ``n_footprints`` of the variable's declared dtype.
+        An array of the given ``shape`` and the variable's declared dtype.
     """
-    dtype = np.dtype(variable_definition.dtype)
-    fill_value = variable_definition.attributes.get("_FillValue")
-    if fill_value is None:
-        # No declared fill: NaN reads as "missing" for floats; 0 is the neutral
-        # integer stand-in (integers cannot represent NaN).
-        fill_value = np.nan if np.issubdtype(dtype, np.floating) else 0
-    return np.full(n_footprints, fill_value, dtype=dtype)
+    dtype, fill_value = _fill_value_for(variable_definition)
+    return np.full(shape, fill_value, dtype=dtype)
 
 
 def _fill_placeholder_variables(
     data: dict[str, np.ndarray],
     definition: LiberaDataProductDefinition,
-    n_footprints: int,
+    shape: int | tuple[int, ...],
 ) -> None:
     """Fill every declared variable missing from ``data`` with a conformant placeholder.
 
@@ -415,12 +437,14 @@ def _fill_placeholder_variables(
         The variable arrays assembled so far (the real, input-derived columns).
     definition : LiberaDataProductDefinition
         The product definition naming every variable the file must contain.
-    n_footprints : int
-        Length of the footprint (time) axis.
+    shape : int or tuple of int
+        Shape each placeholder array is built at: the 1-D record-axis length for the
+        radiometer-timescale products, or the ``(CAMERA_TIME, FOOTPRINT)`` grid shape for
+        the camera-timescale products.
     """
     for name, variable_definition in definition.variables.items():
         if name not in data:
-            data[name] = _placeholder_variable_array(variable_definition, n_footprints)
+            data[name] = _placeholder_variable_array(variable_definition, shape)
 
 
 def _finalize_product_dataset(
@@ -542,10 +566,39 @@ def _assemble_camtime_dataset(
 
     time_variable = fmatch_time_variable(mode)  # "CAMERA_TIME"
 
-    # The real, segmentation-derived 1-D columns. Longitudes of the PSF box are wrapped
-    # into [-180, 180) to satisfy the product definition's valid range. center_pixel_x/y
-    # are the boresight stand-in pixel; they are FMATCH-only provenance (the block's
-    # inclusive extent is emitted as the camera_pixel_x/y range coordinates below).
+    # Recover the rectangular (CAMERA_TIME, FOOTPRINT) grid from the flat footprint list.
+    # Real segmentation is ragged -- each image is tiled into a *variable* number of
+    # subsections (off-Earth blocks are dropped and the block size is estimated per image) --
+    # but the product is defined on a rectangular 2-D grid. Group the footprints by image
+    # (unique, sorted CAMERA_TIME on the first axis; each image's subsections, in
+    # segmentation order, on the second). Images with fewer subsections than the widest image
+    # are padded along FOOTPRINT with each variable's fill value (NaN / declared _FillValue),
+    # so those padded cells carry no real data and downstream classification (which skips
+    # NaN inputs) leaves them unmatched.
+    unique_times = sorted({f.time for f in footprints})
+    n_camera_times = len(unique_times)
+    row_of_time = {time: row for row, time in enumerate(unique_times)}
+    rows = np.array([row_of_time[f.time] for f in footprints])
+    # Column = running position of each footprint within its own image (footprints arrive in
+    # segmentation order), so subsections fill their image row left-to-right.
+    columns = np.empty(n_footprints, dtype=int)
+    footprints_in_row = np.zeros(n_camera_times, dtype=int)
+    for flat_index, row in enumerate(rows):
+        columns[flat_index] = footprints_in_row[row]
+        footprints_in_row[row] += 1
+    n_footprints_per_image = int(footprints_in_row.max())
+    grid_shape = (n_camera_times, n_footprints_per_image)
+
+    def to_grid(values: Sequence[Any], dtype: np.dtype, fill_value: Any) -> np.ndarray:
+        """Scatter one flat per-footprint column into the rectangular (CAMERA_TIME, FOOTPRINT) grid."""
+        grid = np.full(grid_shape, fill_value, dtype=dtype)
+        grid[rows, columns] = np.asarray(values, dtype=dtype)
+        return grid
+
+    # The real, segmentation-derived columns. Longitudes of the PSF box are wrapped into
+    # [-180, 180) to satisfy the product definition's valid range. center_pixel_x/y are the
+    # boresight stand-in pixel; they are FMATCH-only provenance (the block's inclusive extent
+    # is emitted as the camera_pixel_{x,y}_{min,max} coordinates below).
     real_columns: dict[str, list[float]] = {
         "latitude": [f.latitude for f in footprints],
         "longitude": [f.longitude for f in footprints],
@@ -562,41 +615,43 @@ def _assemble_camtime_dataset(
         "center_pixel_y": [f.center_iy for f in footprints],
     }
 
-    # Start the data dict with the time coordinate (nanosecond datetimes; note the values
-    # repeat within an image -- see segment_l1b_camera's docstring). CAMERA_TIME is a
-    # coordinate on the FOOTPRINT record axis: create_product_dataset routes it to .coords
-    # because the definition declares it under coordinates:.
+    # CAMERA_TIME is the 1-D image-acquisition axis: one unique, sorted entry per image.
+    # create_product_dataset routes it to .coords because the definition declares it under
+    # coordinates:.
     data: dict[str, np.ndarray] = {
-        time_variable: np.array([f.time for f in footprints], dtype="datetime64[ns]"),
+        time_variable: np.array(unique_times, dtype="datetime64[ns]"),
     }
 
-    # Camera pixel-index ranges as inclusive (min, max) pairs on the CAMERA_PIXEL_BOUNDS
-    # axis. slice_x/slice_y are half-open [start, stop), so the inclusive maximum is
-    # stop - 1. These are 2-D coordinates (FOOTPRINT x CAMERA_PIXEL_BOUNDS) that both
-    # camtime products declare and that pass straight through to SCENE-ID-CAM-CAMTIME.
-    pixel_ranges: dict[str, list[tuple[int, int]]] = {
-        "camera_pixel_x": [(f.slice_x.start, f.slice_x.stop - 1) for f in footprints],
-        "camera_pixel_y": [(f.slice_y.start, f.slice_y.stop - 1) for f in footprints],
+    # Camera pixel-block provenance as four separate inclusive-bound coordinates on the 2-D
+    # grid. slice_x/slice_y are half-open [start, stop), so the inclusive maximum is stop - 1.
+    # Both camtime products declare these and pass them straight through to SCENE-ID-CAM-CAMTIME.
+    pixel_columns: dict[str, list[int]] = {
+        "camera_pixel_x_min": [f.slice_x.start for f in footprints],
+        "camera_pixel_x_max": [f.slice_x.stop - 1 for f in footprints],
+        "camera_pixel_y_min": [f.slice_y.start for f in footprints],
+        "camera_pixel_y_max": [f.slice_y.stop - 1 for f in footprints],
     }
-    for coordinate_name, ranges in pixel_ranges.items():
-        coordinate_definition = definition.coordinates[coordinate_name]
-        data[coordinate_name] = np.asarray(ranges, dtype=np.dtype(coordinate_definition.dtype))
+    for coordinate_name, values in pixel_columns.items():
+        dtype, fill_value = _fill_value_for(definition.coordinates[coordinate_name])
+        data[coordinate_name] = to_grid(values, dtype, fill_value)
 
-    # Cast each real 1-D column to the exact dtype the definition declares. Only columns
-    # the definition actually declares are written; both camtime products declare the same
-    # segmentation variables, but the guard keeps the assembly robust to definition drift.
+    # Cast each real column to the exact dtype the definition declares and scatter it into the
+    # grid. Only columns the definition actually declares are written; both camtime products
+    # declare the same segmentation variables, but the guard keeps the assembly robust to
+    # definition drift.
     for name, values in real_columns.items():
         variable_definition = definition.variables.get(name)
         if variable_definition is None:
             continue
-        data[name] = np.asarray(values, dtype=np.dtype(variable_definition.dtype))
+        dtype, fill_value = _fill_value_for(variable_definition)
+        data[name] = to_grid(values, dtype, fill_value)
 
-    # Optional internal (non-reader) Camera Cloud Fraction values. Guarded on the
-    # definition declaring the variable, because IMAGER-CAMTIME does not.
-    _merge_cloud_fraction_camera(data, definition, cloud_fraction_camera)
+    # Optional internal (non-reader) Camera Cloud Fraction values, scattered into the same
+    # grid. Guarded on the definition declaring the variable, because IMAGER-CAMTIME does not.
+    _merge_cloud_fraction_camera(data, definition, cloud_fraction_camera, to_grid=to_grid)
 
     # Every remaining declared variable is filled with a placeholder until its engine exists.
-    _fill_placeholder_variables(data, definition, n_footprints)
+    _fill_placeholder_variables(data, definition, grid_shape)
 
     return _finalize_product_dataset(
         definition,
@@ -610,6 +665,7 @@ def _merge_cloud_fraction_camera(
     data: dict[str, np.ndarray],
     definition: LiberaDataProductDefinition,
     cloud_fraction_camera: np.ndarray | None,
+    to_grid: Callable[[Any, np.dtype, Any], np.ndarray] | None = None,
 ) -> None:
     """Merge the CF-CAM cloud fraction into ``data`` when it is supplied and declared.
 
@@ -618,6 +674,11 @@ def _merge_cloud_fraction_camera(
     the reader/aggregation path and is merged straight in. Only the CAM-family
     definitions declare it; passing values for an IMAGER mode is ignored rather than
     raising, so a caller can hand the same inputs to any mode.
+
+    For the radiometer-timescale products the values are stored on the 1-D record axis as
+    given. For the camera-timescale products the caller passes ``to_grid`` so the flat
+    per-footprint values are scattered into the rectangular ``(CAMERA_TIME, FOOTPRINT)``
+    grid (padded cells taking the declared fill).
     """
     if cloud_fraction_camera is None:
         return
@@ -628,7 +689,11 @@ def _merge_cloud_fraction_camera(
             definition.attributes.get("ProductID", "this product"),
         )
         return
-    data["cloud_fraction_camera"] = np.asarray(cloud_fraction_camera, dtype=np.dtype(variable_definition.dtype))
+    dtype, fill_value = _fill_value_for(variable_definition)
+    if to_grid is None:
+        data["cloud_fraction_camera"] = np.asarray(cloud_fraction_camera, dtype=dtype)
+    else:
+        data["cloud_fraction_camera"] = to_grid(cloud_fraction_camera, dtype, fill_value)
 
 
 def _assemble_radiometer_dataset(
