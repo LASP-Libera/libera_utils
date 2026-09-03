@@ -45,3 +45,16 @@ repos:
         exclude: ".pre-commit-config.yaml"
         verbose: true
         always_run: true
+  - repo: https://github.com/betterleaks/betterleaks
+    rev: v1.8.1
+    hooks:
+      # Entry overridden from the upstream default
+      # (`betterleaks git --pre-commit --staged`), which only ever scans the staged
+      # diff and therefore finds nothing under `pre-commit run --all-files` in CI.
+      # Scanning the filenames pre-commit hands us means CI checks every tracked
+      # file, no matter how old, while gitignored files (e.g. the real credentials
+      # in .claude/settings.local.json) are never read.
+      - id: betterleaks
+        name: Detect hardcoded secrets
+        entry: betterleaks dir --redact --verbose --no-banner
+        pass_filenames: true
