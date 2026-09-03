@@ -89,13 +89,18 @@ def parse_cli_args(cli_args: list):
         choices=processing_steps,
         help=f"Algorithm name used to determine the ECR repo name, Options are:\n {steps_with_ecrs}",
     )
-    ecr_upload_parser.add_argument("image_name", type=str, help="Image name of image to upload (image-name:image-tag)")
+    ecr_upload_parser.add_argument(
+        "image_name",
+        type=str,
+        help="Local image to upload, as `image-name:image-tag` (e.g. `my-image:1.2.3`). The tag is "
+        "required; 'latest' is not assumed, so pass it explicitly if that is the image you mean.",
+    )
     ecr_upload_parser.add_argument(
         "--image-tag",
         type=str,
-        default="latest",
-        help="The current image tag of the local image that will be uploaded "
-        "(image-name:image-tag). Default value is 'latest'",
+        default=None,
+        help="(DEPRECATED) The current tag of the local image that will be uploaded. Give the tag as part "
+        "of the image name instead (e.g. `my-image:1.2.3`). If both are given, they must agree.",
     )
     ecr_upload_parser.add_argument(
         "--ecr-tags",

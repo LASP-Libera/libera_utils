@@ -17,6 +17,7 @@ from libera_utils.aws.ecr_upload import (
     _get_fresh_ecr_auth,
     _process_push_logs,
     _push_single_tag,
+    _split_local_image_reference,
     build_docker_image,
     push_image_to_ecr,
 )
@@ -69,6 +70,197 @@ def test_build_docker_image(test_data_path):
         assert call_args[1]["target"] == "test-target"
         assert call_args[1]["tag"] == "test-image:latest"
         assert call_args[1]["platform"] == "linux/amd64"
+
+
+@pytest.mark.parametrize(
+    ("image_reference", "image_tag", "expected"),
+    [
+        # Preferred syntax: the tag rides along with the image name.
+        ("my-image:1.2.3", None, ("my-image", "1.2.3")),
+        ("my-image:latest", None, ("my-image", "latest")),
+        ("repo/my-image:1.2.3", None, ("repo/my-image", "1.2.3")),
+        # Deprecated syntax: bare name plus a separate tag.
+        ("my-image", "1.2.3", ("my-image", "1.2.3")),
+        # Both syntaxes together, in agreement, is allowed.
+        ("my-image:1.2.3", "1.2.3", ("my-image", "1.2.3")),
+        # A colon in a registry host:port is not a tag separator.
+        ("localhost:5000/my-image:1.2.3", None, ("localhost:5000/my-image", "1.2.3")),
+        ("localhost:5000/my-image", "1.2.3", ("localhost:5000/my-image", "1.2.3")),
+    ],
+)
+def test_split_local_image_reference(image_reference, image_tag, expected):
+    """Both the `image-name:tag` and the deprecated separate-tag syntaxes resolve to the same (name, tag) pair."""
+    assert _split_local_image_reference(image_reference, image_tag) == expected
+
+
+@pytest.mark.parametrize(
+    ("image_reference", "image_tag", "match"),
+    [
+        ("my-image:1.2.3", "4.5.6", "Conflicting local image tags"),
+        # 'latest' is not assumed, so a reference with no tag at all is rejected.
+        ("my-image", None, "No tag given for local image"),
+        # The colon here is a registry port, not a tag, so this reference is untagged too.
+        ("localhost:5000/my-image", None, "No tag given for local image"),
+        ("my-image:", None, "ends in ':' with no tag"),
+        (":1.2.3", None, "no image name before"),
+        ("my-image@sha256:abc123", None, "Digest references are not supported"),
+        ("my-image", "", "empty image tag"),
+    ],
+)
+def test_split_local_image_reference_invalid(image_reference, image_tag, match):
+    """Malformed references, digest references, and disagreeing tags are rejected with an explanatory error."""
+    with pytest.raises(ValueError, match=match):
+        _split_local_image_reference(image_reference, image_tag)
+
+
+@pytest.mark.parametrize(
+    ("image_name", "image_tag", "expected_name", "expected_tag"),
+    [
+        ("test-image:1.2.3", None, "test-image", "1.2.3"),
+        ("test-image", "1.2.3", "test-image", "1.2.3"),
+    ],
+)
+@mock.patch("libera_utils.aws.ecr_upload.put_new_algorithm_image_event")
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_image_reference_forms(
+    mock_resolve_session,
+    mock_push_image_to_ecr,
+    mock_put_event,
+    image_name,
+    image_tag,
+    expected_name,
+    expected_tag,
+):
+    """The handler resolves the local image reference, whichever syntax was used, before pushing."""
+    mock_push_image_to_ecr.return_value = {"latest": "sha256:aaa"}
+
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name=image_name,
+        image_tag=image_tag,
+        ecr_tags=None,
+        ignore_docker_config=False,
+        profile=None,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
+    )
+
+    ecr_upload.ecr_upload_cli_handler(args)
+
+    mock_push_image_to_ecr.assert_called_once_with(
+        expected_name,
+        expected_tag,
+        ProcessingStepIdentifier("l1b-rad"),
+        ecr_image_tags=None,
+        ignore_docker_config=False,
+        boto_session=mock_resolve_session.return_value,
+    )
+
+
+@pytest.mark.parametrize(
+    ("image_name", "image_tag", "expect_warning", "suggested_name"),
+    [
+        ("test-image:1.2.3", None, False, None),
+        ("test-image", "1.2.3", True, "test-image"),
+        # The suggested command must use the resolved name: the colon here is a registry port, not a tag.
+        ("localhost:5000/my-image", "1.2.3", True, "localhost:5000/my-image"),
+    ],
+)
+@mock.patch("libera_utils.aws.ecr_upload.logger")
+@mock.patch("libera_utils.aws.ecr_upload.put_new_algorithm_image_event")
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_warns_on_deprecated_image_tag(
+    mock_resolve_session,
+    mock_push_image_to_ecr,
+    mock_put_event,
+    mock_logger,
+    image_name,
+    image_tag,
+    expect_warning,
+    suggested_name,
+):
+    """Using --image-tag logs a deprecation warning pointing at the `image-name:tag` syntax."""
+    mock_push_image_to_ecr.return_value = {"latest": "sha256:aaa"}
+
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name=image_name,
+        image_tag=image_tag,
+        ecr_tags=None,
+        ignore_docker_config=False,
+        profile=None,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
+    )
+
+    ecr_upload.ecr_upload_cli_handler(args)
+
+    deprecation_warnings = [
+        call for call in mock_logger.warning.call_args_list if "--image-tag is deprecated" in call.args[0]
+    ]
+    assert bool(deprecation_warnings) is expect_warning
+    if expect_warning:
+        # The warning shows the equivalent preferred invocation, built from the resolved name and tag.
+        assert deprecation_warnings[0].args[1:] == ("l1b-rad", suggested_name, image_tag)
+
+
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_requires_a_tag(mock_resolve_session, mock_push_image_to_ecr):
+    """An untagged image reference fails immediately: 'latest' is not assumed.
+
+    The failure has to land before the session is resolved, since assuming an L2 Team Role is a slow
+    round-trip with its own failure modes -- the old 'latest' default surfaced this as a much later and
+    much vaguer "Local image not found" from inside the push.
+    """
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name="test-image",
+        image_tag=None,
+        ecr_tags=None,
+        ignore_docker_config=False,
+        profile=None,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
+    )
+
+    with pytest.raises(ValueError, match="No tag given for local image"):
+        ecr_upload.ecr_upload_cli_handler(args)
+
+    mock_resolve_session.assert_not_called()
+    mock_push_image_to_ecr.assert_not_called()
+
+
+@mock.patch("libera_utils.aws.ecr_upload.push_image_to_ecr")
+@mock.patch("libera_utils.aws.ecr_upload._resolve_algorithm_specific_session")
+def test_ecr_upload_cli_handler_conflicting_tags(mock_resolve_session, mock_push_image_to_ecr):
+    """A tag in the image reference that disagrees with --image-tag fails before any session or push work."""
+    args = argparse.Namespace(
+        func=ecr_upload.ecr_upload_cli_handler,
+        algorithm_name="l1b-rad",
+        image_name="test-image:1.2.3",
+        image_tag="4.5.6",
+        ecr_tags=None,
+        ignore_docker_config=False,
+        profile=None,
+        verbose=False,
+        verify=False,
+        timeout=300.0,
+    )
+
+    with pytest.raises(ValueError, match="Conflicting local image tags"):
+        ecr_upload.ecr_upload_cli_handler(args)
+
+    mock_resolve_session.assert_not_called()
+    mock_push_image_to_ecr.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -431,6 +623,26 @@ def test_push_image_to_ecr_returns_digest_mapping(mock_push_single_tag, mock_doc
     )
 
     assert result == {"1.2.3": "sha256:aaa", "latest": "sha256:bbb"}
+
+
+@mock_aws
+@mock.patch("docker.from_env")
+@mock.patch("libera_utils.aws.ecr_upload._push_single_tag")
+def test_push_image_to_ecr_tag_in_image_name(mock_push_single_tag, mock_docker_from_env):
+    """push_image_to_ecr looks up the right local image when the tag is part of the image name."""
+    mock_docker_client = MagicMock()
+    mock_docker_client.images.get.return_value = MagicMock()
+    mock_docker_from_env.return_value = mock_docker_client
+
+    push_image_to_ecr(
+        "test-image:1.2.3",
+        None,
+        ProcessingStepIdentifier.l1b_rad,
+        ecr_image_tags=["1.2.3"],
+        region_name="us-west-2",
+    )
+
+    mock_docker_client.images.get.assert_called_once_with("test-image:1.2.3")
 
 
 @mock_aws
