@@ -23,8 +23,14 @@ def short_tmp_path():
 
 @pytest.fixture
 def curryer_lsk(test_lsk, monkeypatch):
-    """Loads the Libera LSK for use by Curryer and sets the environment variable temporarily"""
-    # TODO[LIBSDC-600]: Reconsider after curryer LSK logic is updated.
+    """Loads the test LSK into the kernel pool and points curryer's default-LSK lookup at it.
+
+    Curryer resolves a leapsecond kernel via ``spicetime.leapsecond.find_default_file()`` whenever a
+    kernel config omits ``leapsecond_kernel`` (all Libera configs do), searching the directory named
+    by ``LEAPSECOND_FILE_ENV``. In production ``KernelManager.load_naif_kernels()`` downloads an LSK
+    and sets that variable; tests set it here instead so kernel creation stays offline.
+    """
+    # TODO[CURRYER-97]: Remove once curryer's leapsecond fetch no longer relies on this env var.
     monkeypatch.setenv("LEAPSECOND_FILE_ENV", str(test_lsk.parent))
     spicetime.leapsecond.load(test_lsk)
     return test_lsk
