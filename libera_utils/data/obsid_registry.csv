@@ -1,44 +1,44 @@
 source,obsid,kind,trimmed_product,cal_product,description
-RAD,512,rad_cal,l1a_icie_nom_hk_gain_trimmed,cal_gain,Gain calibration
-RAD,515,rad_cal,l1a_icie_nom_hk_noise_trimmed,cal_noise,Noise calibration
-RAD,256,rad_cal,l1a_icie_nom_hk_swc_365nm_trimmed,cal_swc_365nm,Shortwave LED calibration at 365 nm
-RAD,257,rad_cal,l1a_icie_nom_hk_swc_405nm_trimmed,cal_swc_405nm,Shortwave LED calibration at 405 nm
-RAD,258,rad_cal,l1a_icie_nom_hk_swc_520nm_trimmed,cal_swc_520nm,Shortwave LED calibration at 520 nm
-RAD,259,rad_cal,l1a_icie_nom_hk_swc_635nm_trimmed,cal_swc_635nm,Shortwave LED calibration at 635 nm
-RAD,260,rad_cal,l1a_icie_nom_hk_swc_840nm_trimmed,cal_swc_840nm,Shortwave LED calibration at 840 nm
-RAD,261,rad_cal,l1a_icie_nom_hk_swc_1550nm_trimmed,cal_swc_1550nm,Shortwave LED calibration at 1550 nm
-RAD,320,rad_cal,l1a_icie_nom_hk_lwc_310k_trimmed,cal_lwc_310k,Longwave blackbody calibration temperature 1 - 310 K
-RAD,321,rad_cal,l1a_icie_nom_hk_lwc_320k_trimmed,cal_lwc_320k,Longwave blackbody calibration temperature 2 - 320 K
-RAD,322,rad_cal,l1a_icie_nom_hk_lwc_335k_trimmed,cal_lwc_335k,Longwave blackbody calibration temperature 3 - 335 K
-RAD,323,rad_cal,l1a_icie_nom_hk_lwc_300k_trimmed,cal_lwc_300k,Longwave blackbody calibration temperature 4 - 300 K
-RAD,324,rad_cal,l1a_icie_nom_hk_lwc_305k_trimmed,cal_lwc_305k,Longwave blackbody calibration temperature 5 - 305 K
-RAD,384,rad_cal,l1a_icie_nom_hk_solar_ssw_pri_trimmed,cal_solar_ssw_pri,Solar diffuser for the Split Shortwave channel using the primary face of the solar diffuser
-RAD,385,rad_cal,l1a_icie_nom_hk_solar_tot_pri_trimmed,cal_solar_tot_pri,Solar diffuser for the Total channel using the primary face of the solar diffuser
-RAD,386,rad_cal,l1a_icie_nom_hk_solar_lw_pri_trimmed,cal_solar_lw_pri,Solar diffuser for the Longwave channel using the primary face of the solar diffuser
-RAD,387,rad_cal,l1a_icie_nom_hk_solar_sw_pri_trimmed,cal_solar_sw_pri,Solar diffuser for the Shortwave channel using the primary face of the solar diffuser
-RAD,388,rad_cal,l1a_icie_nom_hk_solar_ssw_sec_trimmed,cal_solar_ssw_sec,Solar diffuser for the Split Shortwave channel using the secondary face of the solar diffuser
-RAD,389,rad_cal,l1a_icie_nom_hk_solar_tot_sec_trimmed,cal_solar_tot_sec,Solar diffuser for the Total channel using the secondary face of the solar diffuser
-RAD,390,rad_cal,l1a_icie_nom_hk_solar_lw_sec_trimmed,cal_solar_lw_sec,Solar diffuser for the Longwave channel using the secondary face of the solar diffuser
-RAD,391,rad_cal,l1a_icie_nom_hk_solar_sw_sec_trimmed,cal_solar_sw_sec,Solar diffuser for the Shortwave channel using the secondary face of the solar diffuser
-RAD,392,rad_cal,l1a_icie_nom_hk_solar_ssw_ter_trimmed,cal_solar_ssw_ter,Solar diffuser for the Split Shortwave channel using the tertiary face of the solar diffuser
-RAD,393,rad_cal,l1a_icie_nom_hk_solar_tot_ter_trimmed,cal_solar_tot_ter,Solar diffuser for the Total channel using the tertiary face of the solar diffuser
-RAD,394,rad_cal,l1a_icie_nom_hk_solar_lw_ter_trimmed,cal_solar_lw_ter,Solar diffuser for the Longwave channel using the tertiary face of the solar diffuser
-RAD,395,rad_cal,l1a_icie_nom_hk_solar_sw_ter_trimmed,cal_solar_sw_ter,Solar diffuser for the Shortwave channel using the tertiary face of the solar diffuser
-RAD,448,rad_cal,l1a_icie_nom_hk_lunar_south_pole_trimmed,cal_lunar_south_pole,"Lunar Calibration #1 South Pole - Monthly, Azimuth scans from 57 to 69 degrees and Elevation scans from 62.5 to 73 degrees"
-RAD,449,rad_cal,l1a_icie_nom_hk_lunar_north_pole_trimmed,cal_lunar_north_pole,"Lunar Calibration #2 North Pole - Quarterly, Azimuth scans from -67 to -57 degrees and Elevation scans from 62.5 to 73 degrees"
-RAD,513,rad_cal,l1a_icie_nom_hk_rad_viirs_lunar_pos_start_trimmed,cal_rad_viirs_lunar_pos_start,VIIRS lunar calibration several times a year with a positive azimuth position start. Azimuth scans from 110 to -5 and back to 110 degrees
-RAD,514,rad_cal,l1a_icie_nom_hk_rad_viirs_lunar_neg_start_trimmed,cal_rad_viirs_lunar_neg_start,VIIRS lunar calibration several times a year with a negative azimuth position start. Azimuth scans from -110 to 5 and back to -110 degrees
-WFOV,129,cam_cal,l1a_icie_nom_hk_ct_video_6min_trimmed,cal_ct_video_6min,Cross track mode with video - 6 minute sequence
-WFOV,130,cam_cal,l1a_icie_nom_hk_ct_video_12min_trimmed,cal_ct_video_12min,Cross track mode with video - 12 minute sequence
-WFOV,131,cam_cal,l1a_icie_nom_hk_ct_video_18min_trimmed,cal_ct_video_18min,Cross track mode with video - 18 minute sequence
-WFOV,133,cam_cal,l1a_icie_nom_hk_raps_video_6min_trimmed,cal_raps_video_6min,RAPS mode with video - 6 minute sequence
-WFOV,134,cam_cal,l1a_icie_nom_hk_raps_video_12min_trimmed,cal_raps_video_12min,RAPS mode with video - 12 minute sequence
-WFOV,135,cam_cal,l1a_icie_nom_hk_raps_video_18min_trimmed,cal_raps_video_18min,RAPS mode with video - 18 minute sequence
-WFOV,256,cam_cal,l1a_icie_nom_hk_darks_of_darks_trimmed,cal_darks_of_darks,Monthly WFOVC calibration-LED darks for dark current sampling and detector linearity/stability tracking
-WFOV,257,cam_cal,l1a_icie_nom_hk_led_of_dark_trimmed,cal_led_of_dark,Monthly WFOVC calibration-LED measurements for dark current sampling and detector linearity/stability tracking
-WFOV,258,cam_cal,l1a_icie_nom_hk_nominal_darks_trimmed,cal_nominal_darks,Monthly dark images at 1 ms and 12 ms integration times
-WFOV,513,cam_cal,l1a_icie_nom_hk_wfov_viirs_lunar_pos_start_trimmed,cal_wfov_viirs_lunar_pos_start,VIIRS lunar calibration several times a year with a positive azimuth position start. Azimuth scans from 110 to -5 and back to 110 degrees
-WFOV,514,cam_cal,l1a_icie_nom_hk_wfov_viirs_lunar_neg_start_trimmed,cal_wfov_viirs_lunar_neg_start,VIIRS lunar calibration several times a year with a negative azimuth position start. Azimuth scans from -110 to 5 and back to -110 degrees
+RAD,512,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_gain,Gain calibration
+RAD,515,rad_cal,l1a_icie_nom_hk_gain_family_trimmed,cal_noise,Noise calibration
+RAD,256,rad_cal,l1a_icie_nom_hk_swc_family_trimmed,cal_swc_365nm,Shortwave LED calibration at 365 nm
+RAD,257,rad_cal,l1a_icie_nom_hk_swc_family_trimmed,cal_swc_405nm,Shortwave LED calibration at 405 nm
+RAD,258,rad_cal,l1a_icie_nom_hk_swc_family_trimmed,cal_swc_520nm,Shortwave LED calibration at 520 nm
+RAD,259,rad_cal,l1a_icie_nom_hk_swc_family_trimmed,cal_swc_635nm,Shortwave LED calibration at 635 nm
+RAD,260,rad_cal,l1a_icie_nom_hk_swc_family_trimmed,cal_swc_840nm,Shortwave LED calibration at 840 nm
+RAD,261,rad_cal,l1a_icie_nom_hk_swc_family_trimmed,cal_swc_1550nm,Shortwave LED calibration at 1550 nm
+RAD,320,rad_cal,l1a_icie_nom_hk_lwc_family_trimmed,cal_lwc_310k,Longwave blackbody calibration temperature 1 - 310 K
+RAD,321,rad_cal,l1a_icie_nom_hk_lwc_family_trimmed,cal_lwc_320k,Longwave blackbody calibration temperature 2 - 320 K
+RAD,322,rad_cal,l1a_icie_nom_hk_lwc_family_trimmed,cal_lwc_335k,Longwave blackbody calibration temperature 3 - 335 K
+RAD,323,rad_cal,l1a_icie_nom_hk_lwc_family_trimmed,cal_lwc_300k,Longwave blackbody calibration temperature 4 - 300 K
+RAD,324,rad_cal,l1a_icie_nom_hk_lwc_family_trimmed,cal_lwc_305k,Longwave blackbody calibration temperature 5 - 305 K
+RAD,384,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_ssw_pri,Solar diffuser for the Split Shortwave channel using the primary face of the solar diffuser
+RAD,385,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_tot_pri,Solar diffuser for the Total channel using the primary face of the solar diffuser
+RAD,386,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_lw_pri,Solar diffuser for the Longwave channel using the primary face of the solar diffuser
+RAD,387,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_sw_pri,Solar diffuser for the Shortwave channel using the primary face of the solar diffuser
+RAD,388,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_ssw_sec,Solar diffuser for the Split Shortwave channel using the secondary face of the solar diffuser
+RAD,389,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_tot_sec,Solar diffuser for the Total channel using the secondary face of the solar diffuser
+RAD,390,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_lw_sec,Solar diffuser for the Longwave channel using the secondary face of the solar diffuser
+RAD,391,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_sw_sec,Solar diffuser for the Shortwave channel using the secondary face of the solar diffuser
+RAD,392,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_ssw_ter,Solar diffuser for the Split Shortwave channel using the tertiary face of the solar diffuser
+RAD,393,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_tot_ter,Solar diffuser for the Total channel using the tertiary face of the solar diffuser
+RAD,394,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_lw_ter,Solar diffuser for the Longwave channel using the tertiary face of the solar diffuser
+RAD,395,rad_cal,l1a_icie_nom_hk_solar_family_trimmed,cal_solar_sw_ter,Solar diffuser for the Shortwave channel using the tertiary face of the solar diffuser
+RAD,448,rad_cal,l1a_icie_nom_hk_lunar_family_trimmed,cal_lunar_south_pole,"Lunar Calibration #1 South Pole - Monthly, Azimuth scans from 57 to 69 degrees and Elevation scans from 62.5 to 73 degrees"
+RAD,449,rad_cal,l1a_icie_nom_hk_lunar_family_trimmed,cal_lunar_north_pole,"Lunar Calibration #2 North Pole - Quarterly, Azimuth scans from -67 to -57 degrees and Elevation scans from 62.5 to 73 degrees"
+RAD,513,rad_cal,l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed,cal_rad_viirs_lunar_pos_start,VIIRS lunar calibration several times a year with a positive azimuth position start. Azimuth scans from 110 to -5 and back to 110 degrees
+RAD,514,rad_cal,l1a_icie_nom_hk_rad_viirs_lunar_family_trimmed,cal_rad_viirs_lunar_neg_start,VIIRS lunar calibration several times a year with a negative azimuth position start. Azimuth scans from -110 to 5 and back to -110 degrees
+WFOV,129,cam_cal,l1a_icie_nom_hk_ct_video_family_trimmed,cal_ct_video_6min,Cross track mode with video - 6 minute sequence
+WFOV,130,cam_cal,l1a_icie_nom_hk_ct_video_family_trimmed,cal_ct_video_12min,Cross track mode with video - 12 minute sequence
+WFOV,131,cam_cal,l1a_icie_nom_hk_ct_video_family_trimmed,cal_ct_video_18min,Cross track mode with video - 18 minute sequence
+WFOV,133,cam_cal,l1a_icie_nom_hk_raps_video_family_trimmed,cal_raps_video_6min,RAPS mode with video - 6 minute sequence
+WFOV,134,cam_cal,l1a_icie_nom_hk_raps_video_family_trimmed,cal_raps_video_12min,RAPS mode with video - 12 minute sequence
+WFOV,135,cam_cal,l1a_icie_nom_hk_raps_video_family_trimmed,cal_raps_video_18min,RAPS mode with video - 18 minute sequence
+WFOV,256,cam_cal,l1a_icie_nom_hk_darks_family_trimmed,cal_darks_of_darks,Monthly WFOVC calibration-LED darks for dark current sampling and detector linearity/stability tracking
+WFOV,257,cam_cal,l1a_icie_nom_hk_darks_family_trimmed,cal_led_of_dark,Monthly WFOVC calibration-LED measurements for dark current sampling and detector linearity/stability tracking
+WFOV,258,cam_cal,l1a_icie_nom_hk_darks_family_trimmed,cal_nominal_darks,Monthly dark images at 1 ms and 12 ms integration times
+WFOV,513,cam_cal,l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed,cal_wfov_viirs_lunar_pos_start,VIIRS lunar calibration several times a year with a positive azimuth position start. Azimuth scans from 110 to -5 and back to 110 degrees
+WFOV,514,cam_cal,l1a_icie_nom_hk_wfov_viirs_lunar_family_trimmed,cal_wfov_viirs_lunar_neg_start,VIIRS lunar calibration several times a year with a negative azimuth position start. Azimuth scans from -110 to 5 and back to -110 degrees
 RAD,0,science,,,Instrument Boot-Up from Power Off
 WFOV,0,science,,,Instrument Boot-Up from Power Off
 RAD,1,science,,,Instrument Safe Mode

@@ -341,6 +341,11 @@ This varies by packet but there is some consistent behavior:
 - Every sample group has a `{name}_packet_index` variable (integer, same dimension as the sample
   data) that maps each sample back to its originating packet index in the `PACKET` dimension.
   This enables efficient joins between per-packet metadata and per-sample science data.
+  The sample axis is sorted by sample time, not by packet, so `{name}_packet_index` is _usually_
+  but not necessarily non-decreasing: where two adjacent packets' sample clocks skew by less than
+  a sample interval their sample blocks interleave and the index steps backwards at those
+  positions. Consumers must use it as an element-wise mapping and must not assume that each
+  packet's samples form one contiguous block.
 
 ### WFOV camera science (APID 1040) image metadata
 
@@ -534,3 +539,42 @@ variables:
       long_name: Packet index for axis sample data
       comment: Maps each axis sample to its originating packet index
 ```
+
+## ObsID-trimmed NOM-HK products
+
+After a daily `NOM-HK-DECODED` product is produced, calibration pipelines need a per-ObsID
+subset of that file. Helpers in `libera_utils.l1a.nom_hk_trim` detect contiguous runs of
+known calibration Observation IDs (ObsIDs) (as cataloged in `libera_utils.obsids.OBSID_REGISTRY`) and write
+one NetCDF per run:
+
+```python
+from libera_utils.l1a.nom_hk_trim import write_trimmed_nom_hk_products
+
+# After parse_packets_to_l1a_dataset(...) for NOM-HK:
+trimmed_paths = write_trimmed_nom_hk_products(
+    nom_hk_ds,
+    output_dir,
+    time_variable="PACKET_ICIE_TIME",
+    add_archive_path_prefix=True,  # L1A preprocessor / ingest dropbox
+)
+```
+
+TRIMMED products reuse the `NOM-HK-DECODED` variable schema; only `ProductID` (and thus
+the filename product token) changes. Science/scan modes (ObsIDs 0-2, 128, 132, and 136–140)
+are cataloged but do not emit TRIMMED files.
+
+The `ProductID` names the run's **calibration dependency family**
+(`NOM-HK-SWC-FAMILY-TRIMMED`, `NOM-HK-SOLAR-FAMILY-TRIMMED`, …) rather than its individual
+ObsID, and one processing step is deployed per family. One day therefore normally produces
+several files sharing a family `ProductID` — one per ObsID in that family — distinguished
+by their filename time ranges. Each file covers exactly one ObsID run, and the ObsID stays
+readable from the `ICIE__SW_OBSID_RAD` / `ICIE__SW_OBSID_WFOV` variable inside the file.
+
+Normal operations expect each calibration ObsID at most once per day. If the same
+`(source, obsid)` appears in multiple disjoint runs, each run is written as a separate
+file and a warning is logged. Two _different_ ObsIDs of one family are not that case and
+do not warn.
+
+See [the ObsID Registry page](obsid_registry.md) for the `(source, obsid)` keying, how
+downstream repos dispatch cal-combine steps from it, and how to register a new calibration
+ObsID.

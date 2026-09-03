@@ -1,5 +1,18 @@
 # Version Changes
 
+## 5.10.6
+
+- BREAKING: L1A trimmed NOM-HK products are now one per _calibration dependency family_ rather than one per ObsID: 10 `NOM-HK-<FAMILY>-FAMILY-TRIMMED` members replace the 40 `NOM-HK-<EVENT>-TRIMMED` members added in 5.10.3. Each ObsID keeps its own CAL product, and the ObsID stays readable from the `ICIE__SW_OBSID_*` variable inside each trimmed file. A family never spans both ObsID fields, so RAD and WFOV VIIRS lunar (513/514) are registered as separate families with distinct ProductIDs.
+- BREAKING: Registry validation now rejects a CAL product claimed by more than one ObsID, and a TRIMMED family registered on both the RAD and WFOV ObsID fields. The 5.10.3 check that a TRIMMED product is claimed by only one ObsID is removed, since sharing one is what defines a family.
+- FEAT: Add four radiometer cal-combine `ProcessingStepIdentifier` family steps (`cal-gain-family`, `cal-swc-family`, `cal-lwc-family`, `cal-solar-family`), each declaring every CAL product its family's ObsIDs can yield. Lunar and camera family steps are deferred (`TODO[LIBSDC-811]`).
+- FEAT: `ProcessingStepIdentifier.ecr_name` supports an optional shared ECR name so all radiometer cal steps resolve to `cal-rad-docker-repo`. Each job dispatches on the ObsID carried by the TRIMMED input it is handed, so no per-job step identity has to be configured separately.
+- FEAT: Add `libera_utils.obsids.TRIM_FAMILIES` and `get_family_specs()` so a cal step enumerates the ObsIDs — and CAL products — of its trimmed input family without hand-maintaining the mapping.
+- FEAT: Add `data/trim_family_inputs.csv` (`FAMILY_INPUTS` / `get_family_inputs()`) recording the L1A products each family's cal step consumes besides its own TRIMMED product; the two together are the `input-products` set a libera_cdk `cal-*-family` node should declare. The two catalogs are cross-checked at import.
+- FEAT: Add `libera_utils.l1a.nom_hk_trim` to detect contiguous ObsID runs in decoded NOM-HK and write one trimmed file per run, stamped with that run's family ProductID. Several files per day normally share a family ProductID and are told apart by their filename time ranges.
+- FEAT: Add `libera_utils.l1a.packet_slicing` as the supported way to subset a decoded L1A product. `select_packets` and `slice_l1a_dataset_to_time_window` treat `PACKET` as the driver — whole packets survive or none of them does — and renumber `{sample_group}_packet_index` against the surviving packet axis, so sample-to-packet traceability holds across a subset. Slicing either axis directly does not.
+- FIX: `parse_packets_to_l1a_dataset` now sorts the packet axis into its final order _before_ samples are expanded, instead of sorting at the end. The trailing sort permuted `PACKET` without permuting the sample axes, silently invalidating the `{sample_group}_packet_index` variables it had already written. Output ordering is unchanged; the indices are now correct.
+- DOCS: Add the ObsID Registry user-docs page, covering the `(source, obsid)` keying, how downstream repos dispatch cal-combine steps from the registry, and the decision that NOM-HK is the only product the preprocessor trims — cal containers subset the full daily L1A inputs themselves.
+
 ## 5.10.5
 
 - FEAT: WFOV SCI (APID 1040) L1A processing stitches complete SOP→EOP images onto `CAMERA_TIME`, stores compressed JPEG-LS payloads in `WFOV_COMPRESSED_IMAGE` (`uint8`/`BLOB_BYTE` + `WFOV_COMPRESSED_IMAGE_LENGTH`), and traces packets back to their image with `PACKET_IMAGE_ID`.
