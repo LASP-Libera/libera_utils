@@ -284,9 +284,10 @@ def create_and_write_data_product(
     keep = [name for name in product_dataset.variables if name in declared]
     product_dataset = product_dataset[keep]
 
-    # Promote any declared coordinate that is still a plain data variable (e.g. the CAM-CAMTIME pixel-block
-    # bounds, which the product definition declares as coordinates on CAMERA_TIME) so the written product places
-    # them in .coords and passes the coordinate conformance check. No-op for CAM.
+    # Promote any declared coordinate that is still a plain data variable so the written product places them in
+    # .coords and passes the coordinate conformance check. For CAM-CAMTIME the only declared coordinate is
+    # CAMERA_TIME (already promoted by to_time_product), and the pixel-block bounds are plain data variables, so
+    # this is a no-op today; it remains as a general safety net should a definition declare other coordinates.
     coords_to_promote = [
         name
         for name in definition.coordinates
