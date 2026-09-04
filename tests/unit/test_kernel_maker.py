@@ -151,9 +151,7 @@ def test_create_kernel_from_l1a_missing_encoder_columns_raises(
         )
 
 
-@mock.patch(
-    "libera_utils.io.manifest.Manifest.output_manifest_from_input_manifest", return_value=mock.MagicMock(Manifest)
-)
+@mock.patch("libera_utils.io.manifest.Manifest.for_output_from_input", return_value=mock.MagicMock(Manifest))
 @mock.patch(
     "libera_utils.io.manifest.Manifest.from_file",
     return_value=mock.MagicMock(Manifest, files=[mock.MagicMock(ManifestFileRecord, filename="/fake/fake_l1a.nc")]),
@@ -212,7 +210,7 @@ def test_from_manifest_multi_kernel_processing(mock_manifest_class, mock_create_
         mock.Mock(filename="l1a_file.nc"),
     ]
     mock_manifest_class.from_file.return_value = mock_mani
-    mock_manifest_class.output_manifest_from_input_manifest.return_value = mock.Mock()
+    mock_manifest_class.for_output_from_input.return_value = mock.Mock()
 
     # Mock from_args to return a unique filename for each call
     mock_create_kernel_from_l1a.side_effect = ["output1.bsp", "output2.bsp"]
@@ -252,7 +250,7 @@ def test_from_manifest_exception_handling(mock_manifest_class, create_kernel_fro
     mock_mani.files = [mock.Mock(filename="l1a_file.nc")]
     mock_manifest_class.from_file.return_value = mock_mani
     mock_pedi = mock.Mock()
-    mock_manifest_class.output_manifest_from_input_manifest.return_value = mock_pedi
+    mock_manifest_class.for_output_from_input.return_value = mock_pedi
 
     # Mock from_args to raise exception for first DPI, succeed for second
     create_kernel_from_l1a.side_effect = [Exception("Test error"), "output2.bsp"]

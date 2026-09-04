@@ -853,7 +853,7 @@ def create_kernels_from_manifest(
     outputs = sorted(set(outputs))
 
     # Generate output manifest.
-    pedi = Manifest.output_manifest_from_input_manifest(mani)
+    pedi = Manifest.for_output_from_input(mani)
     pedi.add_files(*outputs)
 
     # Automatically generates a proper output manifest filename and writes it to the path specified,
