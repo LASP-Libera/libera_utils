@@ -11,11 +11,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
 - Link the UMM-G granule page from the user docs index.
+- `Manifest.write(out_path, filename=None)` accepts either a directory/S3 prefix or a full manifest file path as `out_path`. `filename` must be a bare name (no directory part) and must agree with `out_path` when that already names a file; conflicts raise `ManifestError` with an explanatory message.
+- File-state tracking. Manifests returned by `from_file()` are file-backed (`source_path`, `is_file_backed`) and can be written back in place with `save()`; `save()` on a manifest built in code raises `ManifestError`. `copy()` returns a detached deep copy that is not file-backed.
+- Factory methods `Manifest.for_input(files=(), configuration=None, ulid_code=None)` (a new INPUT manifest with its ULID and bare filename assigned up front) and `Manifest.for_output_from_input(input_manifest, files=(), configuration=None)` (an OUTPUT manifest carrying the input's ULID, with the input file records under `configuration["input_manifest_files"]`). `for_output_from_input` raises `ManifestError` when the input has no ULID, since traceability cannot be preserved.
 
 ### Changed
 
 - The docs build fails on any warning: `doc/Makefile` runs `sphinx-build -W --keep-going`, and `.readthedocs.yaml` sets `fail_on_warning`.
 - ReadTheDocs builds the docs on Python 3.13 (Ubuntu 24.04), and the `docgen` dependency group requires Sphinx 9.1 or newer on Python 3.12 or newer.
+- **BREAKING:** `Manifest.ulid_code` is now a computed, read-only property derived from `Manifest.filename` (`None` without a filename) instead of a separately stored field, so the two can no longer disagree. The `default_factory=lambda data: ...` that populated it only works on Pydantic >= 2.10 and raised on older releases allowed by our dependency bound. `ulid_code=` is still accepted by the constructor: with no `filename` it yields a bare `LIBERA_<TYPE>_MANIFEST_<ULID>.json` filename, and with one it must agree with the filename's ULID (otherwise `ValidationError`). Assigning `manifest.ulid_code = ...` is no longer possible. `from_file()` now ignores any `filename`/`ulid_code` recorded inside the JSON (the path on disk is the source of truth) and warns when the stored ULID disagrees with the filename.
+- Filename validation is lenient on read and strict on write. `Manifest.from_file()` reads a badly named file with a warning, yielding `filename=None` and no ULID, instead of raising `ValueError`. `write()` and `save()` raise `ManifestError` rather than producing a file whose name is not a valid manifest filename or whose `INPUT`/`OUTPUT` label disagrees with `manifest_type`. A type mismatch between a preset `filename` and `manifest_type` logs a warning at construction.
+- Rewrite the manifest user-docs page around the new API (ULID in the filename, lenient read / strict write, `write()` path rules, `save()`/`copy()`).
+
+### Deprecated
+
+- `Manifest.output_manifest_from_input_manifest()` is deprecated in favor of `Manifest.for_output_from_input()`. It still works, delegates to the new method, and emits a `DeprecationWarning`. `kernel_maker` uses the new method.
 
 ### Removed
 
@@ -25,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix the docstring, markdown and Sphinx config defects behind the docs build's 9841 warnings, including cross-references to private or renamed targets (`create_l1a_dataset` is now `parse_packets_to_l1a_dataset`).
 - Fix the docs build warnings and errors in the `footprint_matching` and `scene_identification` docstrings and the `write_libera_data_product` and `LiberaVariableDefinition` `Raises` sections, which the build now treats as failures.
+- `Manifest.write()` no longer mutates `Manifest.filename`. It used to overwrite the object's filename with the full path it had just written, so a second `write()` to a different directory silently re-targeted the first location (local) or raised `TypeError` (S3). Writing is now side-effect free and one manifest can be written to several locations.
+- `Manifest.write()` uses only the basename of a preset `filename`, so a manifest read from `s3://a/LIBERA_INPUT_MANIFEST_<ULID>.json` and written to `/other/dir` lands in `/other/dir` rather than back at its original path.
+- A manifest without a filename serialized `"filename": "None"` (the string) instead of `null`.
+- A written manifest's on-disk `ulid_code` always matches the ULID in its filename. Previously `Manifest(manifest_type=INPUT).write(dir)` generated a filename with a fresh ULID but wrote `"ulid_code": null`.
 
 ## [5.12.0] - 2026-10-21
 
