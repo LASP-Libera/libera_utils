@@ -14,14 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **BREAKING:** `AbstractValidFilename.__eq__` compares paths only and returns `NotImplemented` for non-filename operands, so `filename == "some string"` is `False` instead of raising `AttributeError`. Two filenames with the same basename in different directories or buckets are not equal. Previously the parsed filename parts were compared as well, which was redundant because they are derived from the path.
+- **BREAKING:** Libera data product filenames use a ULID for the revision part (LIBSDC-840): `LIBERA_{level}_{product}_{version}_{utc_start}_{utc_end}_{ULID}.{ext}`, e.g. `LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc`. The previous second-resolution `R%y%j%H%M%S` timestamp let files produced within the same second clobber each other in the dropbox bucket. This is a hard cutover: old-format names no longer parse (including by `libera-utils s3-utils put` and the kernel maker's L1A input check), and the UMM-G GranuleUR, which is the filename stem, changes shape. The companion `.cmr.json` metadata name follows the same convention.
+- **BREAKING:** `LiberaDataProductFilename.from_filename_parts` takes `revision: ulid.ULID | None` (default: a fresh ULID per call) instead of a `datetime`, and `filename_parts.revision` is a `ulid.ULID` whose `.datetime` is the creation time.
+- UMM-G generation falls back to the creation time embedded in the filename's ULID revision, instead of `datetime.now()`, when a dataset lacks `ProductionDateTime`, so regenerated metadata is reproducible.
+- `kernel_maker` no longer hand-builds a revision timestamp for SPICE kernel filenames; the default per-call ULID applies.
+- The data product and `.cmr.json` regexes are built from one shared body fragment, and `ULID_REGEX_FRAGMENT` is shared with the manifest filename regex.
+- Test fixture files are renamed to the new convention with ULIDs whose timestamps preserve the original revision times.
 
 ### Removed
 
 - The never-assigned `AbstractValidFilename._required_parts` class annotation.
+- `libera_utils.io.filenaming.REVISION_TS_FORMAT`; revisions are no longer timestamps.
 
 ### Fixed
 
 - Comparing two `Manifest` models when one has `filename=None` no longer raises `AttributeError` from the filename comparison.
+- The `revision` default in `from_filename_parts` was `datetime.now(tz=UTC)` evaluated once at import, so every product written by one process (e.g. via `write_libera_data_product`, which omits `revision`) shared a single revision. Revisions are now generated per call.
+- A stray debug `print` in `UMMGDatasetTransformer.extract_temporal_extent` is removed.
 
 ## [5.10.8] - 2026-09-03
 

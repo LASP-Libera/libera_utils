@@ -227,7 +227,11 @@ def test_l1a_sc_pos_product_file(test_data_path: Path) -> Path:
     """Path to a test L1A spacecraft position product file
     This product was generated from JPSS4 test data packets.
     """
-    return test_data_path / "l1a" / "LIBERA_L1A_SC-POS-DECODED_V5-2-1_20250819T041329_20250819T043128_R25328192108.nc"
+    return (
+        test_data_path
+        / "l1a"
+        / "LIBERA_L1A_SC-POS-DECODED_V5-2-1_20250819T041329_20250819T043128_01KAVN03500000000000000000.nc"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -236,7 +240,9 @@ def test_l1a_axis_sample_product_file(test_data_path: Path) -> Path:
     This product was generated from ISTR ground test data packets.
     """
     return (
-        test_data_path / "l1a" / "LIBERA_L1A_AXIS-SAMPLE-DECODED_V5-2-1_20250809T171756_20250809T171904_R25328192108.nc"
+        test_data_path
+        / "l1a"
+        / "LIBERA_L1A_AXIS-SAMPLE-DECODED_V5-2-1_20250809T171756_20250809T171904_01KAVN03500000000000000000.nc"
     )
 
 
@@ -245,12 +251,14 @@ def test_l1a_nom_hk_obsid_trim_subset(test_data_path: Path) -> Path:
     """Compact NOM-HK-DECODED subset for ObsID trim integration tests.
 
     Sliced from DITL granule
-    ``LIBERA_L1A_NOM-HK-DECODED_V5-8-5RC1_20280213T020114_20280213T040013_R26163174745.nc``
+    ``LIBERA_L1A_NOM-HK-DECODED_V5-8-5RC1_20280213T020114_20280213T040013_01KTYF4VF80000000000000000.nc``
     keeping RAD cal runs 257 (SWC-405NM), 385 (SOLAR-TOT-PRI), and 386 (SOLAR-LW-PRI)
     plus a thin pad of non-cal packets around each run.
     """
     return (
-        test_data_path / "l1a" / "LIBERA_L1A_NOM-HK-DECODED_V5-8-5RC1_20280213T021705_20280213T040005_R26163174745.nc"
+        test_data_path
+        / "l1a"
+        / "LIBERA_L1A_NOM-HK-DECODED_V5-8-5RC1_20280213T021705_20280213T040005_01KTYF4VF80000000000000000.nc"
     )
 
 

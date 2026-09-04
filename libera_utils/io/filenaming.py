@@ -1,4 +1,18 @@
-"""Module for file naming utilities"""
+"""Module for file naming utilities
+
+Libera data product filenames follow the convention::
+
+    LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}
+
+e.g. ``LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc``
+
+- ``data_level`` and ``product_name`` are the string values of :class:`~libera_utils.constants.DataLevel` and
+  :class:`~libera_utils.constants.DataProductIdentifier`.
+- ``version`` is the algorithm semantic version in ``VM-m-p[RCn]`` form.
+- ``utc_start`` / ``utc_end`` bound the data in the file, formatted ``YYYYMMDDTHHMMSS``.
+- ``revision`` is a ULID that uniquely identifies this production of the file; its embedded timestamp is the
+  creation time.
+"""
 
 import re
 import warnings
@@ -21,8 +35,6 @@ from libera_utils.constants import (
     ProcessingStepIdentifier,
 )
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
-
-REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
 
 
 def _ensure_utc_timezone(dt_obj: datetime) -> datetime:
@@ -70,31 +82,28 @@ DATA_LEVELS = "|".join([level.value for level in DataLevel])
 # Get all data product names
 DATA_PRODUCT_NAMES = "|".join([str(dpi) for dpi in DataProductIdentifier])
 
-LIBERA_DATA_PRODUCT_REGEX = re.compile(
+# A ULID rendered in Crockford base32 (26 characters, excludes I, L, O, U)
+ULID_REGEX_FRAGMENT = r"[0-9A-HJ-NP-TV-Z]{26}"
+
+# Everything in a data product filename except the extension. Shared by the data file and its UMM-G metadata file.
+_LIBERA_DATA_PRODUCT_BODY_REGEX = (
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
     r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-    r"_(?P<revision>R[0-9]{11})"
-    r"\.(?P<extension>nc|h5|bsp|bc)$"
+    rf"_(?P<revision>{ULID_REGEX_FRAGMENT})"
 )
 
-LIBERA_METADATA_PRODUCT_REGEX = re.compile(
-    rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
-    rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
-    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
-    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
-    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-    r"_(?P<revision>R[0-9]{11})"
-    r"\.(?P<extension>cmr\.json)$"
-)
+LIBERA_DATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>nc|h5|bsp|bc)$")
+
+LIBERA_METADATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>cmr\.json)$")
 
 MANIFEST_FILE_REGEX = re.compile(
     r"^LIBERA"
     r"_(?P<manifest_type>INPUT|OUTPUT)"
     r"_MANIFEST"
-    r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
+    rf"_(?P<ulid_code>{ULID_REGEX_FRAGMENT})"
     r"\.json"
 )
 
@@ -532,11 +541,11 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         utc_start: datetime,
         utc_end: datetime,
         data_level: str | DataLevel | None = None,
-        revision: datetime = datetime.now(tz=UTC),
+        revision: ulid.ULID | None = None,
         extension: str | None = None,
         basepath: str | Path | S3Path | None = None,
     ):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+        """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part names are named according to the regex for the file type.
@@ -554,8 +563,9 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             First timestamp in the SPK
         utc_end : datetime.datetime
             Last timestamp in the SPK
-        revision: datetime.datetime
-            Time when the file was created. Default is now in UTC time.
+        revision : ulid.ULID | None
+            ULID that uniquely identifies this production of the file. Default None generates a new ULID, whose
+            embedded timestamp is the creation time.
         extension : str | None
             File extension. Default None will infer extension based on product_name.
         basepath : Optional[Union[str, Path, S3Path]]
@@ -585,6 +595,9 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
         data_level = dpi.data_level
 
+        if revision is None:
+            revision = ulid.ULID()
+
         return cls._from_filename_parts(
             basepath=basepath,
             data_level=data_level,
@@ -592,7 +605,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             version=version,
             utc_start=_ensure_utc_timezone(utc_start),
             utc_end=_ensure_utc_timezone(utc_end),
-            revision=_ensure_utc_timezone(revision),
+            revision=revision,
             extension=extension,
         )
 
@@ -605,7 +618,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         version: str,
         utc_start: datetime,
         utc_end: datetime,
-        revision: datetime,
+        revision: ulid.ULID,
         extension: str,
     ):
         """Construct a path from filename parts
@@ -624,8 +637,8 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             First timestamp in the SPK
         utc_end : datetime.datetime
             Last timestamp in the SPK
-        revision: datetime.datetime
-            Time when the file was created.
+        revision : ulid.ULID
+            ULID identifying this production of the file
         extension : str
             File extension (.nc or .h5)
 
@@ -643,7 +656,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             version=version,
             utc_start=_ensure_utc_timezone(utc_start).strftime(PRINTABLE_TS_FORMAT),
             utc_end=_ensure_utc_timezone(utc_end).strftime(PRINTABLE_TS_FORMAT),
-            revision=_ensure_utc_timezone(revision).strftime(REVISION_TS_FORMAT),
+            revision=str(revision),
             extension=extension,
         )
 
@@ -658,7 +671,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         d = self.regex_match(self.path)
         d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
-        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT).replace(tzinfo=UTC)
+        d["revision"] = ulid.ULID.from_str(d["revision"])
         return SimpleNamespace(**d)
 
 

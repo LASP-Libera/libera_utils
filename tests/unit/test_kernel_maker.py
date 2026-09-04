@@ -1,7 +1,7 @@
 """Unit tests for kernel_maker module"""
 
 import argparse
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
@@ -11,10 +11,12 @@ import pandas as pd
 import pytest
 import xarray as xr
 from cloudpathlib import AnyPath
+from ulid import ULID
 
 from libera_utils import kernel_maker
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier, LiberaApid
+from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest, ManifestFileRecord
 from libera_utils.l1a.l1a_packet_configs import PacketConfiguration
 
@@ -63,7 +65,6 @@ def test_create_kernel_from_packets(
     ],
 )
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V2-5-2")
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch(
     "libera_utils.kernel_maker.create_kernel_dataframe_from_l1a",
     return_value=(
@@ -87,7 +88,6 @@ def test_create_kernel_from_l1a(
     out_ext,
 ):
     """Test the kernel maker create from L1A function"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     # Mock KernelManager instance
     mock_km_instance = mock.Mock()
@@ -108,16 +108,24 @@ def test_create_kernel_from_l1a(
     # Assert call to create the Curryer data frame
     mock_create_kernel_dataframe_from_l1a.assert_called_once()
     # Assert call to make the kernel (call out to Curryer)
-    mock_make_kernel.assert_called_once_with(
-        config_file=Path(config.get(config_key)),
-        output_kernel=Path(
-            f"/fake/dropbox/LIBERA_SPICE_{kernel_dpi}_V2-5-2_20200101T000000_20200101T235959_R25056154513.{out_ext}"
-        ),
-        input_data=mock_create_kernel_dataframe_from_l1a.return_value[0],
-        overwrite=False,
-        append=False,
-    )
-    kernel_maker.datetime.now.assert_called()
+    mock_make_kernel.assert_called_once()
+    make_kernel_kwargs = mock_make_kernel.call_args.kwargs
+    assert make_kernel_kwargs["config_file"] == Path(config.get(config_key))
+    assert make_kernel_kwargs["input_data"] is mock_create_kernel_dataframe_from_l1a.return_value[0]
+    assert make_kernel_kwargs["overwrite"] is False
+    assert make_kernel_kwargs["append"] is False
+    # The revision is a freshly generated ULID, so check the output kernel name by its parts rather than as a string
+    output_kernel = make_kernel_kwargs["output_kernel"]
+    assert output_kernel.parent == Path("/fake/dropbox")
+    kernel_filename = filenaming.LiberaDataProductFilename(output_kernel)
+    parts = kernel_filename.filename_parts
+    assert parts.data_level == "SPICE"
+    assert parts.product_name == kernel_dpi
+    assert parts.version == "V2-5-2"
+    assert parts.utc_start == datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
+    assert parts.utc_end == datetime(2020, 1, 1, 23, 59, 59, tzinfo=UTC)
+    assert isinstance(parts.revision, ULID)
+    assert parts.extension == out_ext
 
     # Encoder correction + mechanism-quaternion generation run only for the Az/El mechanism CKs.
     if kernel_dpi in ("AZROT-CK", "ELSCAN-CK"):
@@ -668,12 +676,10 @@ class TestEncoderCorrection:
 
 
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V2-5-2")
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.libera_spice.spice_utils.make_kernel", return_value=AnyPath("/fake/kernel.bc"))
 @mock.patch("libera_utils.kernel_maker.KernelManager")
 def test_create_kernel_from_l1a_applies_encoder_corrections(mock_kernel_manager_class, mock_make_kernel, mock_version):
     """create_kernel_from_l1a corrects the raw Az/El encoder angles before handing them to make_kernel."""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     mock_kernel_manager_class.return_value = mock.Mock()
 
     raw_az = np.array([0.1, 0.5, 1.0])
