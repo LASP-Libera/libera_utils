@@ -699,3 +699,77 @@ def test_ummg_metadata_filename_stem_mismatch():
     fn._path = _make_mock_path(_VALID_L1B_NC, mismatched_ummg_name)
     with pytest.raises(ValueError, match="does not match its data file path"):
         fn.ummg_metadata_filename
+
+
+# --- Hashing and equality -------------------------------------------------------------------------------------------
+
+
+def test_hash_and_equality_data_product():
+    """Test that data product filenames are hashable and compare equal when their paths are equal"""
+    name = "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
+    a = filenaming.LiberaDataProductFilename(f"/some/dir/{name}")
+    b = filenaming.LiberaDataProductFilename(Path("/some/dir") / name)
+
+    assert a == b
+    assert hash(a) == hash(b)
+    assert hash(a) == hash(a.path)
+    assert len({a, b}) == 1
+    assert {a: "value"}[b] == "value"
+
+    # Same basename in a different directory or bucket is a different file
+    local_other_dir = filenaming.LiberaDataProductFilename(f"/other/dir/{name}")
+    in_s3 = filenaming.LiberaDataProductFilename(f"s3://bucket/some/dir/{name}")
+    assert a != local_other_dir
+    assert a != in_s3
+    assert len({a, local_other_dir, in_s3}) == 3
+
+    # Same directory, different revision
+    other_revision = filenaming.LiberaDataProductFilename(
+        "/some/dir/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112234.nc"
+    )
+    assert a != other_revision
+    assert len({a, other_revision}) == 2
+
+
+def test_hash_and_equality_other_filename_types():
+    """Test that L0 and manifest filenames are hashable too, and that different classes never compare equal"""
+    l0_a = filenaming.L0Filename("/dir/P1590011SOMESCIENCEAAA99030231459001.PDS")
+    l0_b = filenaming.L0Filename("/dir/P1590011SOMESCIENCEAAA99030231459001.PDS")
+    manifest_a = filenaming.ManifestFilename("/dir/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json")
+    manifest_b = filenaming.ManifestFilename("/dir/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json")
+    product = filenaming.LiberaDataProductFilename(
+        "/dir/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
+    )
+
+    assert l0_a == l0_b
+    assert hash(l0_a) == hash(l0_b)
+    assert manifest_a == manifest_b
+    assert hash(manifest_a) == hash(manifest_b)
+    assert len({l0_a, l0_b, manifest_a, manifest_b, product}) == 3
+    assert l0_a != manifest_a
+    assert l0_a != product
+    assert manifest_a != product
+
+
+def test_equality_with_non_filename_objects():
+    """Test that comparing a filename with something that is not a filename is False rather than an error"""
+    fn = filenaming.LiberaDataProductFilename(
+        "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
+    )
+    assert fn != str(fn.path)
+    assert fn != fn.path
+    assert fn is not None
+    assert (fn == None) is False  # noqa: E711 - exercising __eq__ with None explicitly
+    assert (fn != None) is True  # noqa: E711
+    assert fn != 42
+
+
+def test_hash_changes_when_path_is_reassigned():
+    """Test that the hash follows the path, so an instance must not be mutated while it is a set member"""
+    fn = filenaming.LiberaDataProductFilename(
+        "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
+    )
+    before = hash(fn)
+    fn.path = Path("/tmp/elsewhere") / fn.path.name
+    assert hash(fn) != before
+    assert hash(fn) == hash(fn.path)
