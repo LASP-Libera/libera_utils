@@ -108,11 +108,13 @@ class AbstractValidFilename(ABC):
     -----
     - This is an abstract base class that must be inherited by concrete filename classes.
     - This class internally stores a CloudPath or Path object in the `path` property (composition).
+    - Instances are hashable and compare equal when their paths are equal (as given; a relative and an absolute
+      spelling of the same file are distinct). Reassigning `path` changes the hash, so do not mutate an instance
+      that is already a member of a set or a dict key.
     """
 
     _regex: re.Pattern
     _fmt: str
-    _required_parts: tuple
     _path: PathType
 
     def __init__(self, *args, **kwargs):
@@ -121,10 +123,13 @@ class AbstractValidFilename(ABC):
     def __str__(self):
         return str(self.path)
 
-    def __eq__(self, other):
-        if self.path == other.path and self.filename_parts == other.filename_parts:
-            return True
-        return False
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, AbstractValidFilename):
+            return NotImplemented
+        return self.path == other.path
+
+    def __hash__(self) -> int:
+        return hash(self.path)
 
     @classmethod
     def from_file_path(cls, *args, **kwargs):
