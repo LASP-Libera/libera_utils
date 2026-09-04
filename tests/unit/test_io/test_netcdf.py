@@ -713,23 +713,55 @@ class TestNetcdfEngineConfig:
         with xr.open_dataset(result.path, engine="netcdf4") as ds:
             assert "fil_rad" in ds
 
-    def test_write_libera_data_netcdf4_s3_fails(
-        self, monkeypatch, test_product_definition, test_data_dict, create_mock_bucket
+    @pytest.mark.parametrize("engine", ["netcdf4", "h5netcdf"])
+    def test_write_libera_data_product_to_s3_with_either_engine(
+        self, engine, monkeypatch, test_product_definition, test_data_dict, create_mock_bucket
     ):
-        """
-        CRITICAL TEST: Verifies that the 'netcdf4' engine path is actually taken and
-        correctly fails on S3 paths (proving the branching logic works).
-        """
-        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", "netcdf4")
+        """Both engines write to S3, because the product is staged locally and uploaded"""
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", engine)
 
         mock_bucket = create_mock_bucket()
         output_path = S3Path(f"s3://{mock_bucket.name}/test-prefix")
 
-        # Expect OSError/FileNotFoundError because netcdf4 cannot handle S3 URIs
-        with pytest.raises((OSError, FileNotFoundError)):
-            write_libera_data_product(
-                data_product_definition=test_product_definition,
-                data=test_data_dict,
-                output_path=output_path,
-                time_variable="radiometer_time",
-            )
+        result = write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_data_dict,
+            output_path=output_path,
+            time_variable="radiometer_time",
+        )
+
+        uploaded = [obj.key for obj in mock_bucket.objects.all()]
+        assert uploaded == [f"test-prefix/{result.path.name}"]
+
+    @pytest.mark.parametrize("engine", ["netcdf4", "h5netcdf"])
+    @pytest.mark.parametrize("to_s3", [False, True], ids=["local", "s3"])
+    def test_write_libera_data_product_never_hands_the_engine_a_file_object(
+        self, engine, to_s3, monkeypatch, test_product_definition, test_data_dict, tmp_path, create_mock_bucket
+    ):
+        """The engine must receive a path, never an open file object
+
+        xarray wraps the argument in a CachingFileManager that pickles as its opener and
+        arguments so a Dask worker can reopen the file. An open file object has no path to
+        reopen from, so the distributed scheduler fails on it.
+        """
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", engine)
+        output_path = S3Path(f"s3://{create_mock_bucket().name}/test-prefix") if to_s3 else tmp_path
+
+        seen = []
+        original_to_netcdf = xr.Dataset.to_netcdf
+
+        def record_target(self, path=None, *args, **kwargs):
+            seen.append(path)
+            return original_to_netcdf(self, path, *args, **kwargs)
+
+        monkeypatch.setattr(xr.Dataset, "to_netcdf", record_target)
+        write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_data_dict,
+            output_path=output_path,
+            time_variable="radiometer_time",
+        )
+
+        assert seen, "to_netcdf was never called"
+        for target in seen:
+            assert isinstance(target, str | Path), f"{engine} was handed {type(target).__name__}"

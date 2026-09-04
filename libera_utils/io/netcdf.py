@@ -1,11 +1,13 @@
 """Module containing utilities for writing Libera-conforming NetCDF4 data products"""
 
 import logging
+import tempfile
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Literal
 
 import xarray as xr
-from cloudpathlib import AnyPath
+from cloudpathlib import AnyPath, CloudPath
 from numpy.typing import NDArray
 
 from libera_utils.config import config
@@ -20,8 +22,8 @@ logger = logging.getLogger(__name__)
 class NetcdfEngine(StrEnum):
     """String enum class for our allowed NetCDF engines for xarray
 
-    The netcdf4 engine does not support writing to filelike objects (e.g. S3 objects via cloudpathlib).
-    The h5netcdf engine does support writing to filelike objects.
+    Neither engine streams to object storage. Products destined for S3 are staged on local disk
+    and uploaded, so both engines support cloud output paths equally. See `_write_dataset`.
     """
 
     netcdf4 = "netcdf4"
@@ -117,11 +119,37 @@ def write_libera_data_product(
     else:
         data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
 
-    netcdf4_engine = NetcdfEngine.get_from_config()
-    if netcdf4_engine == NetcdfEngine.netcdf4:
-        logger.info("Using netcdf4 engine to write data product, this will not work for S3 paths")
-        dataset.to_netcdf(data_product_filename.path, engine=NetcdfEngine.netcdf4)
-    else:
-        with data_product_filename.path.open("w+b") as fh:
-            dataset.to_netcdf(fh, engine=NetcdfEngine.h5netcdf)
+    engine = NetcdfEngine.get_from_config()
+    logger.info(f"Writing data product with the {engine} engine")
+    _write_dataset(dataset, data_product_filename.path, engine)
     return data_product_filename
+
+
+def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEngine) -> None:
+    """Write a Dataset to `path`, always handing the NetCDF engine a real filesystem path
+
+    Cloud destinations are staged on local disk and uploaded. That is what `CloudPath.open`
+    already did internally, opening the cloudpathlib cache file and uploading it on close, but
+    doing it here keeps the engine's argument picklable. `xarray` wraps that argument in a
+    `CachingFileManager`, which pickles as its opener and arguments so each Dask worker can
+    reopen the file; an open file object has no path to reopen from, so the distributed
+    scheduler fails on it with `TypeError: cannot pickle '_io.BufferedRandom' object`.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Dataset to write.
+    path : PathType
+        Destination path. A `CloudPath` is staged locally and uploaded; a `Path` is written
+        directly.
+    engine : T_XarrayNetcdfEngine
+        NetCDF engine to write with.
+    """
+    if isinstance(path, CloudPath):
+        with tempfile.TemporaryDirectory() as staging_dir:
+            staged_path = Path(staging_dir) / path.name
+            dataset.to_netcdf(staged_path, engine=engine)
+            logger.info(f"Uploading staged product to {path}")
+            path.upload_from(staged_path, force_overwrite_to_cloud=True)
+    else:
+        dataset.to_netcdf(path, engine=engine)
