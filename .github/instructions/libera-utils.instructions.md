@@ -36,6 +36,11 @@ generation, Libera file naming, and AWS pipeline integration.
 - **Docstrings**: Numpy-style on all public symbols.
 - **Pre-commit**: Hooks are required (`pre-commit install`). Never bypass with `--no-verify`.
 - **To-Do Items**: Must reference a JIRA tag (e.g. `TODO[LIBSDC-1234]` or `TODO[CURRYER-1234]`).
+- **Changelog**: `CHANGELOG.md` at the repo root follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+  Record every user-visible change under `## [Unreleased]` in the matching `### Added` / `### Changed` /
+  `### Deprecated` / `### Removed` / `### Fixed` / `### Security` subsection, prefixing backwards-incompatible entries
+  with `**BREAKING:**`. Do not bump `pyproject.toml` or convert `[Unreleased]` into a versioned heading unless the PR is
+  the one releasing that version; see `doc/source/developer-docs/build_release.md`.
 - **Security**: Bandit scanning is mandatory (NASA NPR7150.2C compliance). Do not suppress
   security warnings without explicit justification.
 
