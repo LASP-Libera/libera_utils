@@ -1,7 +1,7 @@
 """File for describing pydantic model and utility functions for UMM Granules."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
@@ -1125,6 +1125,7 @@ class UMMGDatasetTransformer:
 
         self.log_warnings = log_warnings
         self.warnings = []
+        self.filepath = filepath
 
         self.umm_granule = self._to_umm_granule(filepath)
 
@@ -1152,9 +1153,18 @@ class UMMGDatasetTransformer:
                 )
 
         if not output_dates:
-            self._warn(f"Unable to find ProviderDate values from attributes {provider_datetime_attributes} in dataset.")
-            output_dates.append(ProviderDateType(Date=datetime.now(UTC).isoformat(), Type=ProviderDateTypeEnum.CREATE))
+            self._warn(
+                f"Unable to find ProviderDate values from attributes {provider_datetime_attributes} in dataset; "
+                "using the creation time embedded in the filename revision."
+            )
+            output_dates.append(
+                ProviderDateType(Date=self._revision_datetime_isoformat(), Type=ProviderDateTypeEnum.CREATE)
+            )
         return output_dates
+
+    def _revision_datetime_isoformat(self) -> str:
+        """Creation time of the data file, taken from the ULID revision in its filename, as an ISO 8601 string."""
+        return self.filepath.filename_parts.revision.datetime.isoformat()
 
     def extract_collection_reference(self) -> CollectionReferenceType:
         """Extract collection reference from dataset attributes."""
@@ -1195,8 +1205,11 @@ class UMMGDatasetTransformer:
 
         if file_type is not None:
             if production_datetime is None:
-                production_datetime = datetime.now(UTC).isoformat()
-                self._warn("No production datetime found while creating DataGranule; using current time.")
+                production_datetime = self._revision_datetime_isoformat()
+                self._warn(
+                    "No production datetime found while creating DataGranule; "
+                    "using the creation time embedded in the filename revision."
+                )
 
             data_granule = DataGranuleType(
                 ArchiveAndDistributionInformation=[file_type],
@@ -1221,7 +1234,6 @@ class UMMGDatasetTransformer:
         end_time = self.dataset_attrs.get("RangeEndingTime", None)
 
         production_datetime = self.dataset_attrs.get("ProductionDateTime", None)
-        print(f"Production datetime: {production_datetime}")
 
         if start_date and start_time and end_date and end_time:
             beginning_datetime = f"{start_date}T{start_time}Z"

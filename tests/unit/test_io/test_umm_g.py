@@ -29,7 +29,9 @@ from libera_utils.io.umm_g import (
 
 # Valid LiberaDataProductFilename used across UMMGDatasetTransformer tests.
 # GranuleUR is derived from filepath.path.stem, so assertions should reference this constant.
-_TEST_FILEPATH = LiberaDataProductFilename("LIBERA_L1B_RAD-4CH_V1-0-0_20240101T000000_20240101T235959_R24001120000.nc")
+_TEST_FILEPATH = LiberaDataProductFilename(
+    "LIBERA_L1B_RAD-4CH_V1-0-0_20240101T000000_20240101T235959_01HK2EA8G00000000000000000.nc"
+)
 
 
 def create_test_libera_dataset(
@@ -445,3 +447,18 @@ def test_granule_ur_equals_filename_stem():
     transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
 
     assert transformer.umm_granule.GranuleUR == _TEST_FILEPATH.path.stem
+
+
+def test_production_datetime_falls_back_to_filename_revision():
+    """Test that a dataset without ProductionDateTime gets its production time from the filename's ULID revision."""
+    test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    assert "ProductionDateTime" not in test_dataset.attrs
+
+    transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
+    umm_granule = transformer.umm_granule
+
+    # The model parses ISO strings into datetimes, so compare against the ULID's datetime directly
+    expected = _TEST_FILEPATH.filename_parts.revision.datetime
+    assert umm_granule.DataGranule.ProductionDateTime == expected
+    assert [provider_date.Date for provider_date in umm_granule.ProviderDates] == [expected]
+    assert any("filename revision" in warning for warning in transformer.warnings)

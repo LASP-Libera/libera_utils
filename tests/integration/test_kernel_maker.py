@@ -1,20 +1,41 @@
 """Tests for kernel_maker CLI module"""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest import mock
 
 import pytest
 from cloudpathlib import AnyPath, S3Path
+from ulid import ULID
 
 from libera_utils import kernel_maker
+from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
 from libera_utils.io.manifest import Manifest
 
 # Mark test module as integration tests
 pytestmark = pytest.mark.integration
 
+_VERSION = "V3-14-159"
 
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+
+def _assert_kernel_written(output_dir: PathType, product_name: str, utc_start: datetime, utc_end: datetime) -> None:
+    """Assert that exactly one kernel for the given product was written to output_dir with the expected time range.
+
+    The revision part of the filename is a freshly generated ULID, so the name cannot be predicted as a string; find
+    the file by product and check its parsed parts instead.
+    """
+    prefix = f"LIBERA_SPICE_{product_name}_{_VERSION}_"
+    matches = [p for p in output_dir.iterdir() if p.name.startswith(prefix)]
+    assert len(matches) == 1, f"Expected exactly one {product_name} kernel in {output_dir}, found {matches}"
+    parts = LiberaDataProductFilename(matches[0]).filename_parts
+    assert parts.product_name == product_name
+    assert parts.version == _VERSION
+    assert parts.utc_start == utc_start
+    assert parts.utc_end == utc_end
+    assert isinstance(parts.revision, ULID)
+    assert parts.extension == ("bsp" if product_name.endswith("SPK") else "bc")
+
+
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_jpss_spk(
     mocked_get_current_version_str,
     test_jpss1_pds_file_1,
@@ -24,7 +45,6 @@ def test_make_jpss_spk(
     spice_test_data_path,
 ):
     """Test creating a SPK from packets"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))  # added for using kernel manager
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
@@ -37,14 +57,16 @@ def test_make_jpss_spk(
             output_dir=str(short_tmp_path),
             overwrite=False,
         )
-        assert (
-            short_tmp_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp"
-        ).exists()
+        _assert_kernel_written(
+            short_tmp_path,
+            "JPSS-SPK",
+            datetime(2021, 4, 9, 0, 0, 0, tzinfo=UTC),
+            datetime(2021, 4, 9, 1, 59, 59, tzinfo=UTC),
+        )
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_jpss_spk_aws(
     mocked_get_current_version_str,
     test_jpss1_pds_file_1,
@@ -54,7 +76,6 @@ def test_make_jpss_spk_aws(
     curryer_lsk,
 ):
     """Test creating a SPK from packets stored in AWS S3"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
@@ -70,17 +91,17 @@ def test_make_jpss_spk_aws(
         overwrite=False,
     )
 
-    s3_output_path = S3Path(s3_output_directory)
-    assert (
-        s3_output_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp"
-    ).exists()
+    _assert_kernel_written(
+        S3Path(s3_output_directory),
+        "JPSS-SPK",
+        datetime(2021, 4, 9, 0, 0, 0, tzinfo=UTC),
+        datetime(2021, 4, 9, 1, 59, 59, tzinfo=UTC),
+    )
 
 
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_jpss_ck(mocked_get_current_version_str, test_jpss1_pds_file_1, short_tmp_path, curryer_lsk):
     """Test creating a CK from packets"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
@@ -92,14 +113,16 @@ def test_make_jpss_ck(mocked_get_current_version_str, test_jpss1_pds_file_1, sho
             output_dir=str(short_tmp_path),
             overwrite=False,
         )
-        assert (
-            short_tmp_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc"
-        ).exists()
+        _assert_kernel_written(
+            short_tmp_path,
+            "JPSS-CK",
+            datetime(2021, 4, 8, 23, 59, 59, tzinfo=UTC),
+            datetime(2021, 4, 9, 1, 59, 58, tzinfo=UTC),
+        )
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_jpss_ck_aws(
     mocked_get_current_version_str,
     test_jpss1_pds_file_1,
@@ -109,7 +132,6 @@ def test_make_jpss_ck_aws(
     curryer_lsk,
 ):
     """Test creating a CK from packets stored in AWS S3"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
@@ -124,18 +146,20 @@ def test_make_jpss_ck_aws(
         output_dir=str(s3_output_directory),
         overwrite=False,
     )
-    s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc").exists()
+    _assert_kernel_written(
+        S3Path(s3_output_directory),
+        "JPSS-CK",
+        datetime(2021, 4, 8, 23, 59, 59, tzinfo=UTC),
+        datetime(2021, 4, 9, 1, 59, 58, tzinfo=UTC),
+    )
 
 
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_az_ck(
     mocked_get_current_version_str, test_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk, monkeypatch
 ):
     """Test creating an Az CK from AzEl packets"""
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
         new_callable=mock.PropertyMock,
@@ -147,14 +171,16 @@ def test_make_az_ck(
             output_dir=str(short_tmp_path),
             overwrite=False,
         )
-        assert (
-            short_tmp_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc"
-        ).exists()
+        _assert_kernel_written(
+            short_tmp_path,
+            "AZROT-CK",
+            datetime(2025, 8, 6, 18, 37, 30, tzinfo=UTC),
+            datetime(2025, 8, 6, 18, 41, 27, tzinfo=UTC),
+        )
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_az_ck_aws(
     mocked_get_current_version_str,
     test_ccsds_2025_218_18_37_32,
@@ -166,7 +192,6 @@ def test_make_az_ck_aws(
 ):
     """Test creating an Az CK from AzEl packets stored in AWS S3"""
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
@@ -181,17 +206,19 @@ def test_make_az_ck_aws(
         output_dir=str(s3_output_directory),
         overwrite=False,
     )
-    s3_output_path = S3Path(s3_output_directory)
-    assert (s3_output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc").exists()
+    _assert_kernel_written(
+        S3Path(s3_output_directory),
+        "AZROT-CK",
+        datetime(2025, 8, 6, 18, 37, 30, tzinfo=UTC),
+        datetime(2025, 8, 6, 18, 41, 27, tzinfo=UTC),
+    )
 
 
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_el_ck(
     mocked_get_current_version_str, test_ccsds_2025_218_18_37_32, short_tmp_path, curryer_lsk, monkeypatch
 ):
     """Test creating an El CK from AzEl packets"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
     with mock.patch(
         "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
@@ -204,14 +231,16 @@ def test_make_el_ck(
             output_dir=str(short_tmp_path),
             overwrite=False,
         )
-        assert (
-            short_tmp_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc"
-        ).exists()
+        _assert_kernel_written(
+            short_tmp_path,
+            "ELSCAN-CK",
+            datetime(2025, 8, 6, 18, 37, 30, tzinfo=UTC),
+            datetime(2025, 8, 6, 18, 41, 27, tzinfo=UTC),
+        )
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, S3Path, str])
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_el_ck_aws(
     mocked_get_current_version_str,
     test_ccsds_2025_218_18_37_32,
@@ -222,7 +251,6 @@ def test_make_el_ck_aws(
     monkeypatch,
 ):
     """Test creating an El CK from AzEl packets stored in AWS S3"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     bucket = create_mock_bucket()
     bucket = bucket.name
     key = "some_path"
@@ -238,22 +266,21 @@ def test_make_el_ck_aws(
         output_dir=str(s3_output_directory),
         overwrite=False,
     )
-    s3_output_path = S3Path(s3_output_directory)
-    assert (
-        s3_output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc"
-    ).exists()
+    _assert_kernel_written(
+        S3Path(s3_output_directory),
+        "ELSCAN-CK",
+        datetime(2025, 8, 6, 18, 37, 30, tzinfo=UTC),
+        datetime(2025, 8, 6, 18, 41, 27, tzinfo=UTC),
+    )
 
 
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_jpss_kernels_from_manifest(
     mocked_get_current_version_str, setup_jpss1_kernel_maker_environment_with_manifest, curryer_lsk
 ):
     # Test that the kernels are generated when no desired range
     # is given.
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
-
     input_manifest_path, output_path = setup_jpss1_kernel_maker_environment_with_manifest
 
     mani_out = kernel_maker.create_kernels_from_manifest(input_manifest_path, ["JPSS-CK", "JPSS-SPK"], output_path)
@@ -261,14 +288,15 @@ def test_make_jpss_kernels_from_manifest(
     assert isinstance(mani_out, Manifest)
     assert len(mani_out.files) == 2  # Two kernel types.
     # Time ranges are real based on the input L1A packet data
-    assert (output_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20280505T041329_20280505T043128_R25056154513.bsp").exists()
-    assert (output_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20280505T041329_20280505T043128_R25056154513.bc").exists()
+    utc_start = datetime(2028, 5, 5, 4, 13, 29, tzinfo=UTC)
+    utc_end = datetime(2028, 5, 5, 4, 31, 28, tzinfo=UTC)
+    _assert_kernel_written(output_path, "JPSS-SPK", utc_start, utc_end)
+    _assert_kernel_written(output_path, "JPSS-CK", utc_start, utc_end)
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
 
 
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_make_azel_kernels_from_manifest(
     mocked_get_current_version_str, setup_azel_kernel_maker_environment_with_manifest, curryer_lsk, monkeypatch
 ):
@@ -277,8 +305,6 @@ def test_make_azel_kernels_from_manifest(
     """
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")  # Set skip header bytes for ground test data
 
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
-
     input_manifest_path, output_path = setup_azel_kernel_maker_environment_with_manifest
 
     mani_out = kernel_maker.create_kernels_from_manifest(input_manifest_path, ["AZROT-CK", "ELSCAN-CK"], output_path)
@@ -286,13 +312,14 @@ def test_make_azel_kernels_from_manifest(
     assert isinstance(mani_out, Manifest)
     assert len(mani_out.files) == 2  # Two kernel types.
     # Time ranges are real based on the input L1A packet data
-    assert (output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250809T171756_20250809T171904_R25056154513.bc").exists()
-    assert (output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250809T171756_20250809T171904_R25056154513.bc").exists()
+    utc_start = datetime(2025, 8, 9, 17, 17, 56, tzinfo=UTC)
+    utc_end = datetime(2025, 8, 9, 17, 19, 4, tzinfo=UTC)
+    _assert_kernel_written(output_path, "AZROT-CK", utc_start, utc_end)
+    _assert_kernel_written(output_path, "ELSCAN-CK", utc_start, utc_end)
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
 
 
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
-@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value=_VERSION)
 def test_create_kernel_from_l1a_furnishes_kernels(
     mocked_get_current_version_str,
     test_l1a_sc_pos_product_file,
@@ -304,7 +331,6 @@ def test_create_kernel_from_l1a_furnishes_kernels(
     Test that create_kernel_from_l1a properly furnishes kernels via KernelManager: validating that kernel_maker uses
     kernel_manager to furnish required kernels before calling spice_utils.make_kernel().
     """
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
 
     # Main Test: Create Kernel from existing L1A, which should internally:

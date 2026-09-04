@@ -21,7 +21,7 @@ output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest)
 # Add files. This will raise a credentials error because it tries to checksum the file but can't access S3
 # without credentials provided (your Docker images will have proper credentials attached).
 output_manifest.add_files(
-    "s3://some-dropbox/LIBERA_L2_CF-CAM_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc"
+    "s3://some-dropbox/LIBERA_L2_CF-CAM_V1-2-3_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc"
 )
 
 # Automatically generates a proper output manifest filename and writes it to the path specified,
