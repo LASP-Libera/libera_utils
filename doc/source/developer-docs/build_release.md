@@ -11,9 +11,19 @@ consistency.
 
 ## Release Process for Major and (Usually) Minor Releases
 
-Every PR (with a few exceptions) should include a version bump to the package and an update in to `doc/source/changelog.md`.
-When a PR is merged, the version should already be updated. Once a PR is merged, one of the lead developers is
-responsible for tagging the commit in `main` and pushing the tag to trigger the CI pipeline that pushes the release to PyPI.
+Every PR (with a few exceptions) should record its changes in `CHANGELOG.md`, which follows the
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format:
+
+- Add entries under the `## [Unreleased]` heading at the top, in the appropriate `### Added`, `### Changed`,
+  `### Deprecated`, `### Removed`, `### Fixed`, or `### Security` subsection. Prefix backwards-incompatible entries with
+  `**BREAKING:**`.
+- The PR that releases a version (usually the last PR before a tag, or the only PR when a single change is released on
+  its own) bumps the version in `pyproject.toml`, renames `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, inserts a
+  fresh empty `## [Unreleased]` heading above it, and adds the `[X.Y.Z]: .../compare/<previous>...X.Y.Z` link at the
+  bottom of the file (updating the `[Unreleased]` compare link to start from the new version).
+
+When a release PR is merged, the version should already be updated. One of the lead developers is then responsible
+for tagging the commit in `main` and pushing the tag to trigger the CI pipeline that pushes the release to PyPI.
 
 To tag a commit and push the tag, use an "annotated" tag as follows:
 
