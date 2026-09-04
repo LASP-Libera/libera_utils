@@ -76,6 +76,11 @@ extensions = [
 
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 
+# autosectionlabel creates a label for every heading. CHANGELOG.md (Keep a Changelog format) repeats the same
+# "Added" / "Changed" / "Fixed" subsection headings under every release, which are legitimately duplicated, so the
+# duplicate-label warning is noise here. Labels are still generated, so existing {ref} links keep working.
+suppress_warnings = ["autosectionlabel.*"]
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
 
