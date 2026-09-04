@@ -18,7 +18,9 @@ from libera_utils.l1a.nom_hk_trim import (
 from libera_utils.obsids import NomHkObsidSource
 from libera_utils.version import version as libera_utils_version
 
-_PARENT_GRANULE = "/some/dir/LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R28044120000.nc"
+_PARENT_GRANULE = (
+    "/some/dir/LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_01NC3438G00000000000000000.nc"
+)
 
 
 def _synthetic_nom_hk(
@@ -203,7 +205,7 @@ class TestWriteTrimmedNomHkProducts:
 
         written_attrs = mock_write.call_args_list[0].args[1].attrs
         assert written_attrs["input_files"] == [
-            "LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R28044120000.nc"
+            "LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_01NC3438G00000000000000000.nc"
         ]
         # The parent's L0 provenance must not leak through
         assert "fake.bin" not in written_attrs["input_files"]
