@@ -107,14 +107,14 @@ filename = write_libera_data_product(
 )
 
 print(f"Created data product: {filename.path}")
-# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T002739_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc
+# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_2024-01-01_20240101T000000_20240101T002739_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc
 ```
 
 The function automatically:
 
 - Validates data against the product definition
-- Generates a standardized filename from the product, algorithm version, and time range, with a unique ULID
-  revision
+- Generates a standardized filename from the product, algorithm version, and time range, with the applicable
+  date (midpoint of the time range) and a unique ULID revision
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
 

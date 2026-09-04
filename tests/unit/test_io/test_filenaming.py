@@ -1,6 +1,7 @@
 """Tests for filenaming module"""
 
 import datetime as dt
+import random
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,12 +9,13 @@ from unittest import mock
 
 import pytest
 from cloudpathlib import S3Path
+from packaging.version import Version
 from ulid import ULID
 
 from libera_utils.constants import DataLevel, DataProductIdentifier, ManifestType
 from libera_utils.io import filenaming
 
-# Fixed ULID revisions used throughout so that expected filenames are deterministic.
+# Fixed ULID revisions used throughout so that expected filenames are deterministic. _REV_B sorts after _REV_A.
 _REV_A = "01J8ZQ3K9X7M2N4P6Q8R0S1T2V"
 _REV_B = "01J8ZQ3K9X7M2N4P6Q8R0S1T2W"
 _ULID_A = ULID.from_str(_REV_A)
@@ -27,19 +29,19 @@ _ULID_B = ULID.from_str(_REV_B)
         (Path("/fake-path/P1590011SOMESCIENCEAAA99030231459001.PDS"), filenaming.L0Filename),
         ("s3://fake-bucket/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
         (
-            f"/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"/some/fake/path/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             filenaming.LiberaDataProductFilename,
         ),
         (
-            f"/some/fake/path/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"/some/fake/path/LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             filenaming.LiberaDataProductFilename,
         ),
         (
-            f"/some/foobar/path/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bsp",
+            f"/some/foobar/path/LIBERA_SPICE_JPSS-SPK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp",
             filenaming.LiberaDataProductFilename,
         ),
         (
-            f"/some/foobar/path/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bc",
+            f"/some/foobar/path/LIBERA_SPICE_JPSS-CK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc",
             filenaming.LiberaDataProductFilename,
         ),
         ("/some/fake/path/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json", filenaming.ManifestFilename),
@@ -59,43 +61,44 @@ def test_from_filename(filename, filename_type):
             S3Path("s3://my-bucket/PDS/0011/P1590011SOMESCIENCEAAA99030231459001.PDS"),
         ),
         (
-            f"/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"/ignore/this/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             "/absolute/local",
             Path(
-                f"/absolute/local/CAM/2027/01/02/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"
+                "/absolute/local/CAM/2027/01/02/"
+                f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
             ),
         ),
         (
-            f"LIBERA_L2_CF-CAM_V3-14-159_20270102T000000_20270103T000000_{_REV_A}.nc",
+            f"LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T000000_20270103T000000_{_REV_A}.nc",
             "/absolute/local",
             Path(
                 "/absolute/local/CF-CAM/2027/01/02/"
-                f"LIBERA_L2_CF-CAM_V3-14-159_20270102T000000_20270103T000000_{_REV_A}.nc"
+                f"LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T000000_20270103T000000_{_REV_A}.nc"
             ),
         ),
         (
-            f"ignore/relative/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bsp",
+            f"ignore/relative/LIBERA_SPICE_JPSS-SPK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp",
             "/absolute/local",
             Path(
                 "/absolute/local/JPSS-SPK/2027/01/02/"
-                f"LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bsp"
+                f"LIBERA_SPICE_JPSS-SPK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp"
             ),
         ),
         (
             # The archive prefix follows the applicable date part, not the time range
-            f"LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_{_REV_B}.bc",
+            f"LIBERA_SPICE_AZROT-CK_V3-14-159_2027-01-15_20270101T010203_20270130T010203_{_REV_B}.bc",
             "/absolute/local",
             Path(
                 "/absolute/local/AZROT-CK/2027/01/15/"
-                f"LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_{_REV_B}.bc"
+                f"LIBERA_SPICE_AZROT-CK_V3-14-159_2027-01-15_20270101T010203_20270130T010203_{_REV_B}.bc"
             ),
         ),
         (
-            f"/ignore/this/LIBERA_L1A_SC-POS-DECODED_V3-14-159_20270102T000000_20270103T000000_{_REV_A}.nc",
+            f"/ignore/this/LIBERA_L1A_SC-POS-DECODED_V3-14-159_2027-01-02_20270102T000000_20270103T000000_{_REV_A}.nc",
             "s3://my-archive-bucket",
             S3Path(
                 "s3://my-archive-bucket/SC-POS-DECODED/2027/01/02/"
-                f"LIBERA_L1A_SC-POS-DECODED_V3-14-159_20270102T000000_20270103T000000_{_REV_A}.nc"
+                f"LIBERA_L1A_SC-POS-DECODED_V3-14-159_2027-01-02_20270102T000000_20270103T000000_{_REV_A}.nc"
             ),
         ),
         (
@@ -191,25 +194,31 @@ def test_L0Filename_parts(filename, basepath, parts):
 @pytest.mark.parametrize(
     "filename",
     [
-        f"/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        Path(f"/fake-path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"),
-        f"s3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        S3Path(f"s3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"),
-        f"~/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        f"LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        f"/some/fake/path/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        Path(f"/fake-path/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"),
-        f"s3://fake-bucket/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        S3Path(f"s3://fake-bucket/LIBERA_L2_UNF-RAD-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"),
-        f"~/LIBERA_L2_TOA-FLUX-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-        f"LIBERA_L2_COMP-FLUX_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+        f"/some/fake/path/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        Path(f"/fake-path/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"),
+        f"s3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        S3Path(f"s3://fake-bucket/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"),
+        f"~/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        f"LIBERA_L1B_RAD-4CH_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        f"/some/fake/path/LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        Path(f"/fake-path/LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"),
+        f"s3://fake-bucket/LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        S3Path(
+            f"s3://fake-bucket/LIBERA_L2_UNF-RAD-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
+        ),
+        f"~/LIBERA_L2_TOA-FLUX-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        f"LIBERA_L2_COMP-FLUX_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
         # Release candidate version
-        f"LIBERA_L2_COMP-FLUX_V3-14-159RC1_20270102T112233_20270102T122233_{_REV_A}.nc",
+        f"LIBERA_L2_COMP-FLUX_V3-14-159RC1_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+        # Multi-digit release candidate number
+        f"LIBERA_L2_COMP-FLUX_V3-14-159RC12_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
         # SPICE filenames
-        f"/some/fake/path/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bsp",
-        Path(f"/fake-path/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bc"),
-        f"s3://fake-bucket/LIBERA_SPICE_ELSCAN-CK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bc",
-        S3Path(f"s3://fake-bucket/LIBERA_SPICE_AZROT-CK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bc"),
+        f"/some/fake/path/LIBERA_SPICE_JPSS-SPK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp",
+        Path(f"/fake-path/LIBERA_SPICE_JPSS-CK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc"),
+        f"s3://fake-bucket/LIBERA_SPICE_ELSCAN-CK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc",
+        S3Path(
+            f"s3://fake-bucket/LIBERA_SPICE_AZROT-CK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc"
+        ),
     ],
 )
 def test_LiberaDataProductFilename(filename):
@@ -220,14 +229,20 @@ def test_LiberaDataProductFilename(filename):
 @pytest.mark.parametrize(
     "filename",
     [
-        # Old convention: timestamp revision. No longer parseable.
+        # Old convention: timestamp revision and no applicable date part. No longer parseable.
         "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-        # Revision is too short to be a ULID
-        "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2.nc",
+        # Revision is not a ULID
+        "LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_R27002112233.nc",
+        # Applicable date part missing
+        f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+        # Applicable date not YYYY-MM-DD
+        f"LIBERA_L1B_CAM_V3-14-159_20270102_20270102T112233_20270102T122233_{_REV_A}.nc",
         # ULID contains excluded Crockford characters
-        "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1TIL.nc",
+        "LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1TIL.nc",
+        # Empty version components
+        f"LIBERA_L1B_CAM_V--_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
         # Unknown product
-        f"LIBERA_L1B_NOT-A-PRODUCT_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+        f"LIBERA_L1B_NOT-A-PRODUCT_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
     ],
 )
 def test_LiberaDataProductFilename_invalid(filename):
@@ -240,7 +255,7 @@ def test_LiberaDataProductFilename_invalid(filename):
     ("filename", "basepath", "parts"),
     [
         (
-            f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             None,
             dict(
                 data_level=DataLevel.L1B,
@@ -253,7 +268,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"/tmp/foo/LIBERA_L1B_RAD-4CH_V3-14-159_20250102T112233_20250102T122233_{_REV_A}.nc",
+            f"/tmp/foo/LIBERA_L1B_RAD-4CH_V3-14-159_2025-01-02_20250102T112233_20250102T122233_{_REV_A}.nc",
             "/tmp/foo",
             dict(
                 data_level=DataLevel.L1B,
@@ -266,7 +281,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"s3://bucket/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"s3://bucket/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             "s3://bucket/",
             dict(
                 data_level=DataLevel.L1B,
@@ -279,7 +294,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             None,
             dict(
                 data_level=DataLevel.L2,
@@ -292,7 +307,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"/tmp/foo/LIBERA_L2_TOA-FLUX-CAM_V3-14-159_20250102T112233_20250102T122233_{_REV_A}.nc",
+            f"/tmp/foo/LIBERA_L2_TOA-FLUX-CAM_V3-14-159_2025-01-02_20250102T112233_20250102T122233_{_REV_A}.nc",
             "/tmp/foo",
             dict(
                 data_level=DataLevel.L2,
@@ -305,7 +320,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"s3://bucket/LIBERA_L2_CF-CAM_V3-14-159RC1_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"s3://bucket/LIBERA_L2_CF-CAM_V3-14-159RC1_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
             "s3://bucket/",
             dict(
                 data_level=DataLevel.L2,
@@ -317,9 +332,24 @@ def test_LiberaDataProductFilename_invalid(filename):
                 extension="nc",
             ),
         ),
+        (
+            # Explicit applicable date that differs from the midpoint of the time range
+            f"LIBERA_L1A_NOM-HK-DECODED_V5-10-0_2028-02-13_20280213T230000_20280214T010000_{_REV_A}.nc",
+            None,
+            dict(
+                data_level=DataLevel.L1A,
+                product_name=DataProductIdentifier.l1a_icie_nom_hk_decoded,
+                utc_start=dt.datetime(2028, 2, 13, 23, 0, 0, tzinfo=dt.UTC),
+                utc_end=dt.datetime(2028, 2, 14, 1, 0, 0, tzinfo=dt.UTC),
+                version="V5-10-0",
+                applicable_date=dt.date(2028, 2, 13),
+                revision=_ULID_A,
+                extension="nc",
+            ),
+        ),
         # SPICE filename test cases
         (
-            f"/some/foobar/path/LIBERA_SPICE_JPSS-SPK_V3-14-159RC1_20270102T112233_20270102T122233_{_REV_B}.bsp",
+            f"/some/foobar/path/LIBERA_SPICE_JPSS-SPK_V3-14-159RC1_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp",
             "/some/foobar/path",
             dict(
                 data_level=DataLevel.SPICE,
@@ -332,7 +362,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"s3://bucket/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bc",
+            f"s3://bucket/LIBERA_SPICE_JPSS-CK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc",
             "s3://bucket",
             dict(
                 data_level=DataLevel.SPICE,
@@ -345,7 +375,7 @@ def test_LiberaDataProductFilename_invalid(filename):
             ),
         ),
         (
-            f"LIBERA_SPICE_AZROT-CK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bc",
+            f"LIBERA_SPICE_AZROT-CK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc",
             None,
             dict(
                 data_level=DataLevel.SPICE,
@@ -380,7 +410,7 @@ def test_LiberaDataProductFilename_parts(filename, basepath, parts):
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 revision=_ULID_B,
             ),
-            f"LIBERA_SPICE_JPSS-SPK_V1-2-3_20270102T112233_20270102T122233_{_REV_B}.bsp",
+            f"LIBERA_SPICE_JPSS-SPK_V1-2-3_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp",
         ),
         (
             dict(
@@ -391,7 +421,7 @@ def test_LiberaDataProductFilename_parts(filename, basepath, parts):
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 revision=_ULID_B,
             ),
-            f"LIBERA_SPICE_JPSS-CK_V1-2-3_20270102T112233_20270102T122233_{_REV_B}.bc",
+            f"LIBERA_SPICE_JPSS-CK_V1-2-3_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bc",
         ),
         (
             dict(
@@ -402,7 +432,19 @@ def test_LiberaDataProductFilename_parts(filename, basepath, parts):
                 utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
                 revision=_ULID_B,
             ),
-            f"LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_{_REV_B}.nc",
+            f"LIBERA_L1B_RAD-4CH_V1-2-3_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.nc",
+        ),
+        (
+            # Explicit applicable date and a datetime instead of a date (reduced to its date)
+            dict(
+                product_name="RAD-4CH",
+                version="V1-2-3",
+                utc_start=dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
+                utc_end=dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC),
+                applicable_date=dt.datetime(2027, 1, 2, 23, 59, 59, tzinfo=dt.UTC),
+                revision=_ULID_B,
+            ),
+            f"LIBERA_L1B_RAD-4CH_V1-2-3_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.nc",
         ),
     ],
 )
@@ -431,12 +473,14 @@ def test_round_trip_filename_parts():
         version="3.14.159rc1",
         utc_start=dt.datetime(2027, 1, 2, 11, 22, 33),  # naive, assumed UTC
         utc_end=dt.datetime(2027, 1, 2, 12, 22, 33),
+        applicable_date=dt.date(2027, 1, 2),
         revision=_ULID_A,
     )
     parts = fn.filename_parts
     assert parts.data_level == "L1B"
     assert parts.product_name == "RAD-4CH"
     assert parts.version == "V3-14-159RC1"
+    assert parts.applicable_date == dt.date(2027, 1, 2)
     assert parts.utc_start == dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
     assert parts.utc_end == dt.datetime(2027, 1, 2, 12, 22, 33, tzinfo=dt.UTC)
     assert parts.revision == _ULID_A
@@ -527,7 +571,7 @@ def test_missing_required_parts_argument():
 
 def test_changing_path():
     """Test ability to mess with a filename object's path"""
-    name = f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.h5"
+    name = f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.h5"
     p = filenaming.LiberaDataProductFilename(name)
     # Add an S3 prefix
     p.path = S3Path("s3://bucket") / p.path
@@ -544,12 +588,35 @@ def test_changing_path():
     assert p.path.name == name
 
 
+def test_filename_parts_cached_and_refreshed_on_path_change():
+    """Test that filename_parts is parsed once per path assignment"""
+    p = filenaming.LiberaDataProductFilename(
+        f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
+    )
+    first = p.filename_parts
+    assert p.filename_parts is first  # cached, not re-parsed
+
+    # Changing only the directory keeps the parts equal but re-parses them
+    p.path = Path("/tmp/elsewhere") / p.path.name
+    assert p.filename_parts == first
+    assert p.filename_parts is not first
+
+    # Changing the name changes the parts
+    p.path = f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.nc"
+    assert p.filename_parts.revision == _ULID_B
+
+    # A rejected assignment leaves the cached parts alone
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
+        p.path = "not-a-libera-file.nc"
+    assert p.filename_parts.revision == _ULID_B
+
+
 # --- Hashing and equality -------------------------------------------------------------------------------------------
 
 
 def test_hash_and_equality_data_product():
     """Test that data product filenames are hashable and compare equal when their paths are equal"""
-    name = f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"
+    name = f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
     a = filenaming.LiberaDataProductFilename(f"/some/dir/{name}")
     b = filenaming.LiberaDataProductFilename(Path("/some/dir") / name)
 
@@ -568,7 +635,7 @@ def test_hash_and_equality_data_product():
 
     # Same directory, different revision
     other_revision = filenaming.LiberaDataProductFilename(
-        f"/some/dir/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.nc"
+        f"/some/dir/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.nc"
     )
     assert a != other_revision
     assert len({a, other_revision}) == 2
@@ -581,7 +648,7 @@ def test_hash_and_equality_other_filename_types():
     manifest_a = filenaming.ManifestFilename("/dir/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json")
     manifest_b = filenaming.ManifestFilename("/dir/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json")
     product = filenaming.LiberaDataProductFilename(
-        f"/dir/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc"
+        f"/dir/LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
     )
 
     assert l0_a == l0_b
@@ -596,7 +663,9 @@ def test_hash_and_equality_other_filename_types():
 
 def test_hash_changes_when_path_is_reassigned():
     """Test that the hash follows the path, so an instance must not be mutated while it is a set member"""
-    fn = filenaming.LiberaDataProductFilename(f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc")
+    fn = filenaming.LiberaDataProductFilename(
+        f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
+    )
     before = hash(fn)
     fn.path = Path("/tmp/elsewhere") / fn.path.name
     assert hash(fn) != before
@@ -605,13 +674,161 @@ def test_hash_changes_when_path_is_reassigned():
 
 def test_equality_with_non_filename_objects():
     """Test that comparing a filename with something that is not a filename is False rather than an error"""
-    fn = filenaming.LiberaDataProductFilename(f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc")
+    fn = filenaming.LiberaDataProductFilename(
+        f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc"
+    )
     assert fn != str(fn.path)
     assert fn != fn.path
     assert fn is not None
     assert (fn == None) is False  # noqa: E711 - exercising __eq__ with None explicitly
     assert (fn != None) is True  # noqa: E711
     assert fn != 42
+
+
+# --- Ordering ---------------------------------------------------------------------------------------------------------
+
+
+def _product(
+    product_name: str = "RAD-4CH",
+    version: str = "V1-2-3",
+    utc_start: dt.datetime = dt.datetime(2027, 1, 2, tzinfo=dt.UTC),
+    utc_end: dt.datetime = dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
+    applicable_date: dt.date | None = None,
+    revision: ULID = _ULID_A,
+    basepath: str | None = None,
+) -> filenaming.LiberaDataProductFilename:
+    """Build a data product filename with sensible defaults for ordering tests"""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # Some ordering cases deliberately use odd dates
+        return filenaming.LiberaDataProductFilename.from_filename_parts(
+            product_name=product_name,
+            version=version,
+            utc_start=utc_start,
+            utc_end=utc_end,
+            applicable_date=applicable_date,
+            revision=revision,
+            basepath=basepath,
+        )
+
+
+@pytest.mark.parametrize(
+    ("smaller", "larger"),
+    [
+        # Data level (string order) beats everything after it
+        pytest.param(
+            _product(product_name="NOM-HK-DECODED", version="V9-0-0"), _product(product_name="CAM"), id="level"
+        ),
+        # Product name within a level
+        pytest.param(_product(product_name="CAM", version="V9-0-0"), _product(product_name="RAD-4CH"), id="product"),
+        # Version compares numerically, not as a string
+        pytest.param(_product(version="V1-9-0"), _product(version="V1-10-0"), id="version-numeric"),
+        pytest.param(_product(version="V2-0-0"), _product(version="V10-0-0"), id="version-major"),
+        # Release candidates precede the release
+        pytest.param(_product(version="V1-2-3RC1"), _product(version="V1-2-3"), id="version-rc"),
+        pytest.param(_product(version="V1-2-3RC2"), _product(version="V1-2-3RC10"), id="version-rc-numeric"),
+        # Applicable date beats revision
+        pytest.param(
+            _product(applicable_date=dt.date(2027, 1, 2), revision=_ULID_B),
+            _product(applicable_date=dt.date(2027, 1, 3), revision=_ULID_A),
+            id="applicable-date",
+        ),
+        # Revision (ULID) beats the time range
+        pytest.param(
+            _product(revision=_ULID_A, utc_start=dt.datetime(2027, 1, 2, 12, tzinfo=dt.UTC)),
+            _product(revision=_ULID_B, utc_start=dt.datetime(2027, 1, 2, 0, tzinfo=dt.UTC)),
+            id="revision",
+        ),
+        # Time range tie-breakers
+        pytest.param(
+            _product(utc_start=dt.datetime(2027, 1, 2, 0, tzinfo=dt.UTC)),
+            _product(utc_start=dt.datetime(2027, 1, 2, 1, tzinfo=dt.UTC), applicable_date=dt.date(2027, 1, 2)),
+            id="utc-start",
+        ),
+        pytest.param(
+            _product(utc_end=dt.datetime(2027, 1, 3, 0, tzinfo=dt.UTC)),
+            _product(utc_end=dt.datetime(2027, 1, 3, 1, tzinfo=dt.UTC), applicable_date=dt.date(2027, 1, 2)),
+            id="utc-end",
+        ),
+        # Identical names in different directories are ordered by path so that the order is total
+        pytest.param(_product(basepath="/a"), _product(basepath="/b"), id="path"),
+    ],
+)
+def test_LiberaDataProductFilename_ordering_pairs(smaller, larger):
+    """Test the ordering of data product filenames one key at a time"""
+    assert smaller < larger
+    assert smaller <= larger
+    assert larger > smaller
+    assert larger >= smaller
+    assert not larger < smaller
+    assert smaller != larger
+
+
+def test_LiberaDataProductFilename_sorting():
+    """Test sorting a shuffled list of data product filenames and finding the newest one"""
+    expected = [
+        _product(product_name="CAM", version="V1-0-0"),
+        _product(version="V1-9-0", applicable_date=dt.date(2027, 1, 2)),
+        _product(version="V1-9-0", applicable_date=dt.date(2027, 1, 3)),
+        _product(version="V1-10-0RC1", revision=_ULID_A),
+        _product(version="V1-10-0RC1", revision=_ULID_B),
+        _product(version="V1-10-0", revision=_ULID_A),
+        _product(version="V1-10-0", revision=_ULID_B),
+    ]
+    shuffled = expected.copy()
+    random.Random(42).shuffle(shuffled)
+    assert sorted(shuffled) == expected
+    assert max(shuffled) == expected[-1]
+    assert min(shuffled) == expected[0]
+
+    # Equal objects are neither less than nor greater than each other
+    same = _product()
+    assert not same < _product()
+    assert not same > _product()
+    assert same <= _product()
+    assert same >= _product()
+
+
+def test_L0Filename_ordering():
+    """Test that L0 files order by APID, then created time, then file number"""
+    expected = [
+        filenaming.L0Filename("P1590009SOMESCIENCEAAA99030231459002.PDS"),  # lower APID first
+        filenaming.L0Filename("P1590011SOMESCIENCEAAA99030231458002.PDS"),  # earlier creation time
+        filenaming.L0Filename("P1590011SOMESCIENCEAAA99030231459000.PDS"),  # construction record
+        filenaming.L0Filename("P1590011SOMESCIENCEAAA99030231459001.PDS"),  # first PDS
+        filenaming.L0Filename("P1590011SOMESCIENCEAAA99030231459002.PDS"),  # second PDS
+    ]
+    shuffled = expected.copy()
+    random.Random(7).shuffle(shuffled)
+    assert sorted(shuffled) == expected
+    assert expected[2] < expected[3] < expected[4]
+
+
+def test_ManifestFilename_ordering():
+    """Test that manifests order by type and then by ULID, i.e. creation time"""
+    expected = [
+        filenaming.ManifestFilename("LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json"),
+        filenaming.ManifestFilename("LIBERA_INPUT_MANIFEST_01MBBXN2589RSGT2NZKDS6QM3F.json"),
+        filenaming.ManifestFilename("LIBERA_OUTPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json"),
+    ]
+    shuffled = expected.copy()
+    random.Random(3).shuffle(shuffled)
+    assert sorted(shuffled) == expected
+
+
+def test_ordering_across_types_is_not_supported():
+    """Test that filenames of different classes, or non-filenames, cannot be ordered"""
+    product = _product()
+    l0 = filenaming.L0Filename("P1590011SOMESCIENCEAAA99030231459001.PDS")
+    manifest = filenaming.ManifestFilename("LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json")
+
+    with pytest.raises(TypeError):
+        _ = product < l0
+    with pytest.raises(TypeError):
+        _ = manifest > product
+    with pytest.raises(TypeError):
+        _ = product < str(product.path)
+    with pytest.raises(TypeError):
+        sorted([product, l0, manifest])
 
 
 # --- Version helpers ------------------------------------------------------------------------------------------------
@@ -636,11 +853,15 @@ def test_check_version_number_format():
     # Valid versions
     assert filenaming.check_version_number_format("V1-0-0")
     assert filenaming.check_version_number_format("V12-34-56RC1")
+    assert filenaming.check_version_number_format("V12-34-56RC12")
 
     assert not filenaming.check_version_number_format("2.3.4")  # Semantic versioning fails
     assert not filenaming.check_version_number_format("V1.0.0")  # Dots instead of dashes
     assert not filenaming.check_version_number_format("Version1-0-0")  # Missing 'V' prefix
     assert not filenaming.check_version_number_format("V1-0")  # Too few components
+    assert not filenaming.check_version_number_format("V1--0")  # Empty component
+    assert not filenaming.check_version_number_format("V1-0-0garbage")  # Trailing junk
+    assert not filenaming.check_version_number_format("V1-0-0RC")  # RC without a number
 
 
 def test_format_from_semantic_version():
@@ -657,6 +878,30 @@ def test_format_from_semantic_version():
 
     with pytest.raises(ValueError, match="Invalid semantic version string"):
         filenaming.format_from_semantic_version("foo.bar.baz")  # Not numeric values
+
+
+@pytest.mark.parametrize(
+    ("version_string", "expected"),
+    [
+        ("V1-0-0", Version("1.0.0")),
+        ("V3-14-159", Version("3.14.159")),
+        ("V3-14-159RC1", Version("3.14.159rc1")),
+        ("V10-20-30RC12", Version("10.20.30rc12")),
+    ],
+)
+def test_semantic_version_from_format(version_string, expected):
+    """Test parsing a filename version string back into a semantic version object"""
+    parsed = filenaming.semantic_version_from_format(version_string)
+    assert parsed == expected
+    # Round trip
+    assert filenaming.format_from_semantic_version(str(parsed)) == version_string
+
+
+@pytest.mark.parametrize("bad_version", ["1.0.0", "V1-0", "V1.0.0", "V1-0-0garbage", ""])
+def test_semantic_version_from_format_invalid(bad_version):
+    """Test that non-Libera version strings are rejected"""
+    with pytest.raises(ValueError, match="not in Libera filename format"):
+        filenaming.semantic_version_from_format(bad_version)
 
 
 def test_working_with_mocked_s3_paths(create_mock_bucket):
@@ -720,41 +965,112 @@ def test_working_with_mocked_s3_paths(create_mock_bucket):
         ),
     ],
 )
-def test_applicable_date(utc_start, utc_end, expected_date, should_warn):
-    """Test the applicable_date property with various time ranges"""
-    filename = filenaming.LiberaDataProductFilename.from_filename_parts(
-        product_name="CAM", version="V3-14-159", utc_start=utc_start, utc_end=utc_end, revision=_ULID_A
-    )
-
+def test_midpoint_applicable_date(utc_start, utc_end, expected_date, should_warn):
+    """Test the default applicable date computation, directly and via from_filename_parts"""
     if should_warn:
         with pytest.warns(UserWarning, match="Time range for filename spans more than 24 hours"):
-            result = filename.applicable_date
+            result = filenaming.midpoint_applicable_date(utc_start, utc_end)
+        with pytest.warns(UserWarning, match="Time range for filename spans more than 24 hours"):
+            filename = filenaming.LiberaDataProductFilename.from_filename_parts(
+                product_name="CAM", version="V3-14-159", utc_start=utc_start, utc_end=utc_end, revision=_ULID_A
+            )
     else:
         with warnings.catch_warnings():
             warnings.simplefilter("error")  # Turn warnings into errors to ensure no warning is issued
-            result = filename.applicable_date
+            result = filenaming.midpoint_applicable_date(utc_start, utc_end)
+            filename = filenaming.LiberaDataProductFilename.from_filename_parts(
+                product_name="CAM", version="V3-14-159", utc_start=utc_start, utc_end=utc_end, revision=_ULID_A
+            )
 
     assert result == expected_date
+    assert filename.applicable_date == expected_date
+    assert f"_{expected_date.isoformat()}_" in filename.path.name
+
+    # Reading the applicable date back from the filename never warns, even for long ranges
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert filenaming.LiberaDataProductFilename(filename.path).applicable_date == expected_date
 
 
 def test_applicable_date_warning_message():
-    """Test that the warning message is correctly formatted"""
-    filename = filenaming.LiberaDataProductFilename.from_filename_parts(
-        data_level="SPICE",
-        product_name="JPSS-SPK",
-        version="V1-0-0",
-        utc_start=dt.datetime(2027, 1, 1, 0, 0, 0),
-        utc_end=dt.datetime(2027, 1, 3, 0, 0, 0),  # 48 hours
-        revision=_ULID_A,
-    )
-
+    """Test that the warning message for long time ranges is correctly formatted"""
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        _ = filename.applicable_date
+        filenaming.LiberaDataProductFilename.from_filename_parts(
+            data_level="SPICE",
+            product_name="JPSS-SPK",
+            version="V1-0-0",
+            utc_start=dt.datetime(2027, 1, 1, 0, 0, 0),
+            utc_end=dt.datetime(2027, 1, 3, 0, 0, 0),  # 48 hours
+            revision=_ULID_A,
+        )
 
         assert len(w) == 1
         assert issubclass(w[0].category, UserWarning)
         assert "Time range for filename spans more than 24 hours" in str(w[0].message)
+
+
+def test_applicable_date_explicit():
+    """Test that an explicit applicable date overrides the midpoint and drives the archive prefix"""
+    utc_start = dt.datetime(2027, 1, 2, 23, 0, 0, tzinfo=dt.UTC)
+    utc_end = dt.datetime(2027, 1, 3, 1, 0, 0, tzinfo=dt.UTC)  # midpoint is 2027-01-03
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        explicit = filenaming.LiberaDataProductFilename.from_filename_parts(
+            product_name="CAM",
+            version="V1-0-0",
+            utc_start=utc_start,
+            utc_end=utc_end,
+            applicable_date=dt.date(2027, 1, 2),
+            revision=_ULID_A,
+        )
+        default = filenaming.LiberaDataProductFilename.from_filename_parts(
+            product_name="CAM", version="V1-0-0", utc_start=utc_start, utc_end=utc_end, revision=_ULID_A
+        )
+
+    assert explicit.applicable_date == dt.date(2027, 1, 2)
+    assert "_2027-01-02_" in explicit.path.name
+    assert explicit.archive_prefix == "CAM/2027/01/02"
+
+    assert default.applicable_date == dt.date(2027, 1, 3)
+    assert "_2027-01-03_" in default.path.name
+    assert default.archive_prefix == "CAM/2027/01/03"
+
+    assert explicit != default
+    assert explicit < default  # applicable date is part of the sort key
+
+
+@pytest.mark.parametrize(
+    ("applicable_date", "should_warn"),
+    [
+        (dt.date(2027, 1, 2), False),  # start day
+        (dt.date(2027, 1, 3), False),  # end day
+        (dt.date(2027, 1, 1), True),  # day before the range
+        (dt.date(2027, 1, 4), True),  # day after the range
+        (dt.date(2026, 12, 25), True),
+    ],
+)
+def test_applicable_date_out_of_range_warns_but_builds(applicable_date, should_warn):
+    """Test that an applicable date outside the time range warns but still produces a valid filename"""
+    kwargs = dict(
+        product_name="CAM",
+        version="V1-0-0",
+        utc_start=dt.datetime(2027, 1, 2, 12, 0, 0, tzinfo=dt.UTC),
+        utc_end=dt.datetime(2027, 1, 3, 12, 0, 0, tzinfo=dt.UTC),
+        applicable_date=applicable_date,
+        revision=_ULID_A,
+    )
+    if should_warn:
+        with pytest.warns(UserWarning, match="lies outside the filename time range"):
+            fn = filenaming.LiberaDataProductFilename.from_filename_parts(**kwargs)
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            fn = filenaming.LiberaDataProductFilename.from_filename_parts(**kwargs)
+
+    assert fn.applicable_date == applicable_date
+    assert filenaming.LiberaDataProductFilename(fn.path).applicable_date == applicable_date
 
 
 # --- UMM-G metadata filenames ---------------------------------------------------------------------------------------
@@ -764,16 +1080,16 @@ def test_applicable_date_warning_message():
     ("filename", "expected_ummg_filename"),
     [
         (
-            f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-            f"LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.cmr.json",
+            f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"LIBERA_L1B_CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.cmr.json",
         ),
         (
-            f"/tmp/foo/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.nc",
-            f"/tmp/foo/LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_{_REV_A}.cmr.json",
+            f"/tmp/foo/LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.nc",
+            f"/tmp/foo/LIBERA_L2_CF-CAM_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_A}.cmr.json",
         ),
         (
-            f"s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.bsp",
-            f"s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_{_REV_B}.cmr.json",
+            f"s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.bsp",
+            f"s3://bucket/LIBERA_SPICE_JPSS-SPK_V3-14-159_2027-01-02_20270102T112233_20270102T122233_{_REV_B}.cmr.json",
         ),
     ],
 )
@@ -814,16 +1130,16 @@ def _make_mock_path(data_name: str, ummg_name: str) -> mock.MagicMock:
 
 
 # A valid L1B data product filename used as the base for ummg_metadata_filename error tests
-_VALID_L1B_NC = f"LIBERA_L1B_RAD-4CH_V0-5-0_20251120T175950_20251120T180950_{_REV_A}.nc"
+_VALID_L1B_NC = f"LIBERA_L1B_RAD-4CH_V0-5-0_2025-11-20_20251120T175950_20251120T180950_{_REV_A}.nc"
 
 
 @pytest.mark.parametrize(
     "bad_ummg_name",
     [
         # Extension is .json only — the required .cmr part is missing
-        f"LIBERA_L1B_RAD-4CH_V0-5-0_20251120T175950_20251120T180950_{_REV_A}.json",
+        f"LIBERA_L1B_RAD-4CH_V0-5-0_2025-11-20_20251120T175950_20251120T180950_{_REV_A}.json",
         # Extension has a typo: .jsno instead of .json
-        f"LIBERA_L1B_RAD-4CH_V0-5-0_20251120T175950_20251120T180950_{_REV_A}.cmr.jsno",
+        f"LIBERA_L1B_RAD-4CH_V0-5-0_2025-11-20_20251120T175950_20251120T180950_{_REV_A}.cmr.jsno",
     ],
 )
 def test_ummg_metadata_filename_invalid_extension(bad_ummg_name):
@@ -838,7 +1154,7 @@ def test_ummg_metadata_filename_stem_mismatch():
     """Test that ummg_metadata_filename raises ValueError when the UMM-G filename stem doesn't match its data file."""
     fn = filenaming.LiberaDataProductFilename(_VALID_L1B_NC)
     # Structurally valid CMR filename, but product name (CAM) differs from the data file (RAD-4CH)
-    mismatched_ummg_name = f"LIBERA_L1B_CAM_V0-5-0_20251120T175950_20251120T180950_{_REV_A}.cmr.json"
+    mismatched_ummg_name = f"LIBERA_L1B_CAM_V0-5-0_2025-11-20_20251120T175950_20251120T180950_{_REV_A}.cmr.json"
     fn._path = _make_mock_path(_VALID_L1B_NC, mismatched_ummg_name)
     with pytest.raises(ValueError, match="does not match its data file path"):
         fn.ummg_metadata_filename

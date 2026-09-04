@@ -1,7 +1,7 @@
 """Unit tests for kernel_maker module"""
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
@@ -122,6 +122,7 @@ def test_create_kernel_from_l1a(
     assert parts.data_level == "SPICE"
     assert parts.product_name == kernel_dpi
     assert parts.version == "V2-5-2"
+    assert parts.applicable_date == date(2020, 1, 1)
     assert parts.utc_start == datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
     assert parts.utc_end == datetime(2020, 1, 1, 23, 59, 59, tzinfo=UTC)
     assert isinstance(parts.revision, ULID)

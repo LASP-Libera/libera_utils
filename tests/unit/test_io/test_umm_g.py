@@ -30,7 +30,7 @@ from libera_utils.io.umm_g import (
 # Valid LiberaDataProductFilename used across UMMGDatasetTransformer tests.
 # GranuleUR is derived from filepath.path.stem, so assertions should reference this constant.
 _TEST_FILEPATH = LiberaDataProductFilename(
-    "LIBERA_L1B_RAD-4CH_V1-0-0_20240101T000000_20240101T235959_01HK2EA8G00000000000000000.nc"
+    "LIBERA_L1B_RAD-4CH_V1-0-0_2024-01-01_20240101T000000_20240101T235959_01HK2EA8G00000000000000000.nc"
 )
 
 

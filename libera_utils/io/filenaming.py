@@ -2,18 +2,23 @@
 
 Libera data product filenames follow the convention::
 
-    LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}
+    LIBERA_{data_level}_{product_name}_{version}_{applicable_date}_{utc_start}_{utc_end}_{revision}.{extension}
 
-e.g. ``LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc``
+e.g. ``LIBERA_L1B_RAD-4CH_V1-2-3_2027-01-02_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc``
 
 - ``data_level`` and ``product_name`` are the string values of :class:`~libera_utils.constants.DataLevel` and
   :class:`~libera_utils.constants.DataProductIdentifier`.
 - ``version`` is the algorithm semantic version in ``VM-m-p[RCn]`` form.
+- ``applicable_date`` is the ``YYYY-MM-DD`` date the product applies to (by default the midpoint of the time range).
 - ``utc_start`` / ``utc_end`` bound the data in the file, formatted ``YYYYMMDDTHHMMSS``.
 - ``revision`` is a ULID that uniquely identifies this production of the file; its embedded timestamp is the
   creation time.
+
+All filename classes are hashable and orderable. ``LiberaDataProductFilename`` sorts by data level, product name,
+numeric algorithm version, applicable date, and then revision, so ``max(filenames)`` yields the newest file.
 """
 
+import functools
 import re
 import warnings
 from abc import ABC, abstractmethod
@@ -35,6 +40,8 @@ from libera_utils.constants import (
     ProcessingStepIdentifier,
 )
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
+
+APPLICABLE_DATE_FORMAT = "%Y-%m-%d"
 
 
 def _ensure_utc_timezone(dt_obj: datetime) -> datetime:
@@ -85,11 +92,16 @@ DATA_PRODUCT_NAMES = "|".join([str(dpi) for dpi in DataProductIdentifier])
 # A ULID rendered in Crockford base32 (26 characters, excludes I, L, O, U)
 ULID_REGEX_FRAGMENT = r"[0-9A-HJ-NP-TV-Z]{26}"
 
+# Libera filename version format VM-m-p with an optional release candidate suffix RCn
+LIBERA_SEM_VER_REGEX_FRAGMENT = r"V[0-9]+-[0-9]+-[0-9]+(?:RC[0-9]+)?"
+LIBERA_SEM_VER_REGEX = re.compile(LIBERA_SEM_VER_REGEX_FRAGMENT)
+
 # Everything in a data product filename except the extension. Shared by the data file and its UMM-G metadata file.
 _LIBERA_DATA_PRODUCT_BODY_REGEX = (
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
-    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    rf"_(?P<version>{LIBERA_SEM_VER_REGEX_FRAGMENT})"
+    r"_(?P<applicable_date>[0-9]{4}-[0-9]{2}-[0-9]{2})"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
     rf"_(?P<revision>{ULID_REGEX_FRAGMENT})"
@@ -107,9 +119,8 @@ MANIFEST_FILE_REGEX = re.compile(
     r"\.json"
 )
 
-LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 
-
+@functools.total_ordering
 class AbstractValidFilename(ABC):
     """Filename class that ensures validity of a filename based on regex pattern.
 
@@ -120,11 +131,16 @@ class AbstractValidFilename(ABC):
     - Instances are hashable and compare equal when their paths are equal (as given; a relative and an absolute
       spelling of the same file are distinct). Reassigning `path` changes the hash, so do not mutate an instance
       that is already a member of a set or a dict key.
+    - Instances of the same concrete class are totally ordered by `_sort_key`. Comparing instances of different
+      concrete classes raises TypeError.
+    - `filename_parts` is parsed once per path assignment and cached; the returned namespace is shared, so callers
+      must not mutate it.
     """
 
     _regex: re.Pattern
     _fmt: str
     _path: PathType
+    _filename_parts: SimpleNamespace
 
     def __init__(self, *args, **kwargs):
         self.path = AnyPath(*args, **kwargs)
@@ -139,6 +155,25 @@ class AbstractValidFilename(ABC):
 
     def __hash__(self) -> int:
         return hash(self.path)
+
+    def __lt__(self, other: object) -> bool:
+        if type(other) is not type(self):
+            return NotImplemented
+        return self._sort_key() < other._sort_key()
+
+    @abstractmethod
+    def _sort_key(self) -> tuple:
+        """Key tuple that defines the ordering of instances of this class.
+
+        Implementations must end the tuple with ``str(self.path)`` so that the ordering is total and consistent
+        with equality (two instances compare equal only when their paths are equal).
+
+        Returns
+        -------
+        : tuple
+            Comparable key
+        """
+        raise NotImplementedError()
 
     @classmethod
     def from_file_path(cls, *args, **kwargs):
@@ -171,11 +206,12 @@ class AbstractValidFilename(ABC):
             _new_path = new_path
         self.regex_match(_new_path)  # validates against regex pattern
         self._path = _new_path
+        self._filename_parts = self._parse_filename_parts()
 
     @property
-    def filename_parts(self):
-        """Property that contains a namespace of filename parts"""
-        return self._parse_filename_parts()
+    def filename_parts(self) -> SimpleNamespace:
+        """Property that contains a namespace of filename parts, parsed when the path was last set"""
+        return self._filename_parts
 
     @property
     @abstractmethod
@@ -324,6 +360,11 @@ class L0Filename(AbstractDataProductFilename):
         # 2023-07-14: This prefix might become too large over the course of the Libera mission
         return f"{l0_file_type}/{apid:0>4}"
 
+    def _sort_key(self) -> tuple:
+        """Order L0 files by APID, then creation time, then file number (construction record first)"""
+        parts = self.filename_parts
+        return (parts.first_apid, parts.created_time, parts.file_number, str(self.path))
+
     @classmethod
     def from_filename_parts(
         cls,  # noqa pylint: disable=arguments-differ
@@ -461,7 +502,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
     """Filename validation class for Libera SDC data products."""
 
     _regex = LIBERA_DATA_PRODUCT_REGEX
-    _fmt = "LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}"
+    _fmt = "LIBERA_{data_level}_{product_name}_{version}_{applicable_date}_{utc_start}_{utc_end}_{revision}.{extension}"
 
     @property
     def processing_step_id(self) -> ProcessingStepIdentifier | None:
@@ -510,27 +551,32 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
     @property
     def applicable_date(self) -> date:
-        """Property that returns the applicable date based on the midpoint of start and end times.
-
-        Issues a warning if the time range covers more than 24 hours.
+        """Property that returns the applicable date carried in the filename.
 
         Returns
         -------
         : datetime.date
-            The date of the midpoint between utc_start and utc_end
+            The YYYY-MM-DD applicable date part of the filename
         """
-        utc_start = self.filename_parts.utc_start
-        utc_end = self.filename_parts.utc_end
+        return self.filename_parts.applicable_date
 
-        # Check if time range covers more than 24 hours and issue warning
-        if utc_end - utc_start > timedelta(hours=24):
-            warnings.warn("Time range for filename spans more than 24 hours", UserWarning, stacklevel=2)
+    def _sort_key(self) -> tuple:
+        """Order data products by level, product, numeric version, applicable date, then revision.
 
-        # Calculate the midpoint date
-        # In all production processing cases, utc_start and utc_end should be roughly midnight on consecutive days
-        # The applicable date is considered to be the mean between the two, ignoring hours, minutes, seconds
-        t_mean = utc_start + 0.5 * (utc_end - utc_start)
-        return t_mean.date()
+        The ULID revision is time-ordered to the millisecond; two files produced within the same millisecond sort
+        arbitrarily relative to each other. The time range and path are trailing tie-breakers only.
+        """
+        parts = self.filename_parts
+        return (
+            parts.data_level,
+            parts.product_name,
+            semantic_version_from_format(parts.version),
+            parts.applicable_date,
+            parts.revision,
+            parts.utc_start,
+            parts.utc_end,
+            str(self.path),
+        )
 
     @classmethod
     def from_filename_parts(
@@ -541,6 +587,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         utc_start: datetime,
         utc_end: datetime,
         data_level: str | DataLevel | None = None,
+        applicable_date: date | None = None,
         revision: ulid.ULID | None = None,
         extension: str | None = None,
         basepath: str | Path | S3Path | None = None,
@@ -552,17 +599,22 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
         Parameters
         ----------
-        data_level : str | DataLevel | None
-            L1B or L2 identifying the level of the data product. Default None will infer the data level from the product name (DataProductIdentifier)
         product_name : str | DataProductIdentifier
             Product type. e.g. CF-CAM for L2 or RAD-4CH for L1B. May contain anything except for underscores.
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
         utc_start : datetime.datetime
-            First timestamp in the SPK
+            First timestamp of the data in the file
         utc_end : datetime.datetime
-            Last timestamp in the SPK
+            Last timestamp of the data in the file
+        data_level : str | DataLevel | None
+            Level of the data product. Default None will infer the data level from the product name
+            (DataProductIdentifier). If provided, it must agree with the product name.
+        applicable_date : datetime.date | None
+            Date the product applies to. Default None uses the date of the midpoint of the time range (see
+            `midpoint_applicable_date`). An explicit date outside the days covered by the time range is allowed but
+            issues a UserWarning because it is likely a mistake.
         revision : ulid.ULID | None
             ULID that uniquely identifies this production of the file. Default None generates a new ULID, whose
             embedded timestamp is the creation time.
@@ -595,6 +647,23 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
 
         data_level = dpi.data_level
 
+        utc_start = _ensure_utc_timezone(utc_start)
+        utc_end = _ensure_utc_timezone(utc_end)
+
+        if applicable_date is None:
+            applicable_date = midpoint_applicable_date(utc_start, utc_end)
+        else:
+            if isinstance(applicable_date, datetime):
+                # datetime is a subclass of date; reduce it so it formats as a date only
+                applicable_date = _ensure_utc_timezone(applicable_date).date()
+            if not utc_start.date() <= applicable_date <= utc_end.date():
+                warnings.warn(
+                    f"Applicable date {applicable_date.isoformat()} lies outside the filename time range "
+                    f"[{utc_start.isoformat()}, {utc_end.isoformat()}]; this is likely a mistake",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
         if revision is None:
             revision = ulid.ULID()
 
@@ -603,8 +672,9 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             data_level=data_level,
             product_name=product_name,
             version=version,
-            utc_start=_ensure_utc_timezone(utc_start),
-            utc_end=_ensure_utc_timezone(utc_end),
+            applicable_date=applicable_date,
+            utc_start=utc_start,
+            utc_end=utc_end,
             revision=revision,
             extension=extension,
         )
@@ -616,6 +686,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         data_level: str,
         product_name: str,
         version: str,
+        applicable_date: date,
         utc_start: datetime,
         utc_end: datetime,
         revision: ulid.ULID,
@@ -633,10 +704,12 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         version : str
             Software version that the file was created with. Corresponds to the algorithm version as determined
             by the algorithm software.
+        applicable_date : datetime.date
+            Date the product applies to
         utc_start : datetime.datetime
-            First timestamp in the SPK
+            First timestamp of the data in the file
         utc_end : datetime.datetime
-            Last timestamp in the SPK
+            Last timestamp of the data in the file
         revision : ulid.ULID
             ULID identifying this production of the file
         extension : str
@@ -654,6 +727,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             data_level=data_level.upper(),
             product_name=product_name.upper(),
             version=version,
+            applicable_date=applicable_date.strftime(APPLICABLE_DATE_FORMAT),
             utc_start=_ensure_utc_timezone(utc_start).strftime(PRINTABLE_TS_FORMAT),
             utc_end=_ensure_utc_timezone(utc_end).strftime(PRINTABLE_TS_FORMAT),
             revision=str(revision),
@@ -669,6 +743,7 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             namespace object containing filename parts as parsed objects
         """
         d = self.regex_match(self.path)
+        d["applicable_date"] = date.fromisoformat(d["applicable_date"])
         d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["revision"] = ulid.ULID.from_str(d["revision"])
@@ -694,6 +769,11 @@ class ManifestFilename(AbstractValidFilename):
         applicable_date = self.filename_parts.ulid_code.datetime
 
         return f"{manifest_type}/{applicable_date.year:0>4}/{applicable_date.month:0>2}/{applicable_date.day:0>2}"
+
+    def _sort_key(self) -> tuple:
+        """Order manifests by type, then by ULID (i.e. creation time)"""
+        parts = self.filename_parts
+        return (parts.manifest_type, parts.ulid_code, str(self.path))
 
     @classmethod
     def from_filename_parts(
@@ -758,9 +838,37 @@ class ManifestFilename(AbstractValidFilename):
         return SimpleNamespace(**d)
 
 
+def midpoint_applicable_date(utc_start: datetime, utc_end: datetime) -> date:
+    """Compute the default applicable date for a data product as the date of the midpoint of its time range.
+
+    In all production processing cases, utc_start and utc_end should be roughly midnight on consecutive days, so
+    the midpoint falls on the day the product applies to. Issues a UserWarning if the range spans more than 24 hours.
+
+    Parameters
+    ----------
+    utc_start : datetime.datetime
+        First timestamp of the data in the file. Naive datetimes are assumed to be UTC.
+    utc_end : datetime.datetime
+        Last timestamp of the data in the file. Naive datetimes are assumed to be UTC.
+
+    Returns
+    -------
+    : datetime.date
+        The date of the midpoint between utc_start and utc_end
+    """
+    utc_start = _ensure_utc_timezone(utc_start)
+    utc_end = _ensure_utc_timezone(utc_end)
+
+    if utc_end - utc_start > timedelta(hours=24):
+        warnings.warn("Time range for filename spans more than 24 hours", UserWarning, stacklevel=2)
+
+    t_mean = utc_start + 0.5 * (utc_end - utc_start)
+    return t_mean.date()
+
+
 def check_version_number_format(version: str) -> bool:
     """Ensures that a version string is in VM-m-p format for Libera filenaming. M, m, and p are integers
-    representing Major, minor, and patch respectively.
+    representing Major, minor, and patch respectively. An optional release candidate suffix RCn is allowed.
 
     Parameters
     ----------
@@ -772,9 +880,29 @@ def check_version_number_format(version: str) -> bool:
     : bool
         True if version string is in VM-m-p format, False otherwise
     """
-    if LIBERA_SEM_VER_REGEX.match(version) is None:
+    if LIBERA_SEM_VER_REGEX.fullmatch(version) is None:
         return False
     return True
+
+
+def semantic_version_from_format(version: str) -> Version:
+    """Parse a Libera filename version string like V3-14-159RC1 into a comparable semantic version object.
+
+    This is the inverse of `format_from_semantic_version` and is used to order filenames by version numerically
+    (V1-10-0 sorts after V1-9-0, and V1-2-3RC1 sorts before V1-2-3).
+
+    Parameters
+    ----------
+    version : str
+        Version string in VM-m-p[RCn] form
+
+    Returns
+    -------
+    : packaging.version.Version
+    """
+    if not check_version_number_format(version):
+        raise ValueError(f"Version string {version} is not in Libera filename format VM-m-p[RCn]")
+    return Version(version[1:].replace("-", "."))
 
 
 def format_from_semantic_version(semantic_version: str) -> str:

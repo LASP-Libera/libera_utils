@@ -111,7 +111,8 @@ generation, Libera file naming, and AWS pipeline integration.
     `TRIM_FAMILIES` / `get_family_specs()` to go from a family product to its ObsIDs and CAL
     products.
   - `nom_hk_trim` still writes one file per contiguous ObsID run, so several files per day normally
-    share a family `ProductID` and are told apart by their filename time ranges; the exact ObsID is
+    share a family `ProductID` and an applicable date and are told apart by their filename time ranges and
+    ULID revisions; the exact ObsID is
     recovered from the `ICIE__SW_OBSID_*` variable the trimmed file carries, not from its name.
   - **Note**: the list of ObsIDs in this repo is meant for practical purposes of science data
     processing and is a subset of the instrument level source of truth of all ObsIDs which is owned

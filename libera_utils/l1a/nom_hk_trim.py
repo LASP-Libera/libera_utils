@@ -4,7 +4,7 @@ One file is written per contiguous ObsID run, stamped with the run's *calibratio
 family* ProductID rather than its ObsID: ObsIDs that downstream algorithms process identically
 share one TRIMMED ProductID (see :mod:`libera_utils.obsids`). A day therefore normally yields
 several files sharing one family ProductID — six ``NOM-HK-SWC-FAMILY-TRIMMED`` granules for the
-six shortwave LED ObsIDs, for example — distinguished by their filename time ranges. Each file
+six shortwave LED ObsIDs, for example — distinguished by their filename time ranges and revisions. Each file
 covers exactly one ObsID run, and the ObsID is read from the ``ICIE__SW_OBSID_*`` variable the
 file carries.
 """
@@ -191,7 +191,7 @@ def write_trimmed_nom_hk_products(
 
     Each file is stamped with its run's calibration dependency family ProductID, so several
     files written from one Dataset normally share a ProductID — one per ObsID in that family —
-    and are told apart by their filename time ranges.
+    and are told apart by their filename time ranges and revisions.
 
     When the same ``(source, obsid)`` appears in multiple disjoint runs, each run
     is written separately and a warning is logged (unexpected in normal ops).

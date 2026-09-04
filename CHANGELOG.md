@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.0] - 2026-09-04
+
 ### Added
 
 - All `Filename` classes in `libera_utils.io.filenaming` are hashable (LIBSDC-723). `hash()` is the hash of the path as given, so filenames can be dictionary keys and set members. Reassigning `path` changes the hash, so do not mutate a filename that is already in a set or a dict.
+- All `Filename` classes are totally ordered within a class (LIBSDC-841). `LiberaDataProductFilename` sorts by data level, product name, algorithm version compared numerically (`V1-9-0 < V1-10-0`, `V1-2-3RC1 < V1-2-3`), applicable date, then revision, so `max()` of a product's files yields the newest production. `L0Filename` sorts by APID, creation time, then file number (construction record first); `ManifestFilename` by type then ULID. Comparing filenames of different classes raises `TypeError`.
+- `LiberaDataProductFilename.from_filename_parts` accepts an optional `applicable_date: date | None` (default: the date of the midpoint of the time range). An explicit date outside the days covered by the time range issues a `UserWarning` but is allowed.
+- `midpoint_applicable_date()` (the former default computation, including its more-than-24-hours `UserWarning`), `semantic_version_from_format()` (inverse of `format_from_semantic_version`), and the `LIBERA_SEM_VER_REGEX_FRAGMENT` and `APPLICABLE_DATE_FORMAT` constants.
 
 ### Changed
 
@@ -20,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `kernel_maker` no longer hand-builds a revision timestamp for SPICE kernel filenames; the default per-call ULID applies.
 - The data product and `.cmr.json` regexes are built from one shared body fragment, and `ULID_REGEX_FRAGMENT` is shared with the manifest filename regex.
 - Test fixture files are renamed to the new convention with ULIDs whose timestamps preserve the original revision times.
+- **BREAKING:** Libera data product filenames carry a `YYYY-MM-DD` applicable date part after the version (LIBSDC-841): `LIBERA_{level}_{product}_{version}_{applicable_date}_{utc_start}_{utc_end}_{ULID}.{ext}`, e.g. `LIBERA_L1B_RAD-4CH_V1-2-3_2027-01-02_20270102T112233_20270102T122233_01J8ZQ3K9X7M2N4P6Q8R0S1T2V.nc`, so consumers no longer have to compute the applicable date from the time range. Names without the date part no longer parse. `filename_parts.applicable_date` is a `datetime.date`.
+- **BREAKING:** `LiberaDataProductFilename.applicable_date` reads the filename part instead of recomputing the midpoint of the time range on every access; the more-than-24-hours warning now fires when a filename is built with the default date rather than when the property is read.
+- **BREAKING:** The filename version regex requires digits in every component and allows multi-digit release candidates (`V1-2-3RC12`); `check_version_number_format` matches the whole string, so `V1-0-0garbage` is rejected.
+- `filename_parts` is parsed once per `path` assignment and cached; the returned namespace is shared and must not be mutated.
+- Same-day trimmed NOM-HK files share a family ProductID and an applicable date and are told apart by their time ranges and revisions (docs and docstrings updated accordingly).
 
 ### Removed
 
@@ -716,7 +726,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.10.8...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.0...HEAD
+[5.11.0]: https://github.com/LASP-Libera/libera_utils/compare/5.10.8...5.11.0
 [5.10.8]: https://github.com/LASP-Libera/libera_utils/compare/5.10.7...5.10.8
 [5.10.7]: https://github.com/LASP-Libera/libera_utils/compare/5.10.6...5.10.7
 [5.10.6]: https://github.com/LASP-Libera/libera_utils/compare/5.10.5...5.10.6
