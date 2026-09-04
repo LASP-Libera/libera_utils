@@ -7,6 +7,15 @@ including dynamic switching between the two, to simplify the transition between 
 
 Full specifics including all available file naming classes are available [in the filenaming API documentation here](../api-doc/generated/libera_utils.io.filenaming.rst)
 
+## Hashing and Equality
+
+All `Filename` classes are hashable and compare equal when their paths are equal, so they can be used as dictionary
+keys and set members. Two filenames with the same basename in different directories or buckets are distinct, and
+comparing a filename with anything that is not a filename is simply `False`. Reassigning `path` changes the object's
+hash, so do not modify a filename that is already a set member or a dictionary key.
+
+## Working With Paths
+
 Below is an example test using a `LiberaDataProductFilename` instance to manage a filename string, including switching
 between S3 and local paths to show the flexibility of the classes.
 
