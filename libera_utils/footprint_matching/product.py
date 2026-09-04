@@ -118,8 +118,8 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
         "q_flags",
         # Boresight (centre) pixel provenance: which L1B camera pixel this pseudo-footprint's
         # boresight stand-in falls on. Real per-footprint integers straight off the
-        # PseudoFootprint. The block's inclusive (min, max) pixel extent is emitted separately
-        # as the 2-D camera_pixel_x/y range COORDINATES, which this set (real data *variables*)
+        # PseudoFootprint. The block's inclusive pixel extent is emitted separately as the four
+        # camera_pixel_{x,y}_{min,max} COORDINATES, which this set (real data *variables*)
         # deliberately does not list.
         "center_pixel_x",
         "center_pixel_y",
@@ -787,6 +787,7 @@ def _merge_computed_variables(
         ``(CAMERA_TIME, FOOTPRINT)`` grid, supplied by the camera-timescale assembly. When ``None`` (the
         radiometer-timescale products) each computed column is stored 1-D as-is.
     """
+
     # The engine computes one value per footprint (flat). For the camera-timescale products the caller passes a
     # ``to_grid`` scatter so each computed column lands on the 2-D (CAMERA_TIME, FOOTPRINT) grid (padded cells taking
     # the declared fill); the radiometer products keep the 1-D column as-is.

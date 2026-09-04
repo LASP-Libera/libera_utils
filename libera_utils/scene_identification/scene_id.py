@@ -39,8 +39,8 @@ FOOTPRINT_DIMENSION = "FOOTPRINT"
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
 # Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
-# straight through -- the camera pixel-index ranges (camera_pixel_x/y, 2-D inclusive (min, max) pairs on the
-# CAMERA_PIXEL_BOUNDS axis), the PSF bounding box, and the boresight geolocation -- so a scene can be traced back to
+# straight through -- the camera pixel-block bounds (the four camera_pixel_{x,y}_{min,max} inclusive bounds), the PSF
+# bounding box, and the boresight geolocation -- so a scene can be traced back to
 # the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own 2-D
 # (CAMERA_TIME, FOOTPRINT) grid dimensions) by from_fmatch_cam_camtime and are not consumed by the classification;
 # they simply ride along to the written product. The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately
