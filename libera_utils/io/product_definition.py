@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from cloudpathlib import AnyPath
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from xarray import DataArray, Dataset
 
 from libera_utils.config import config
@@ -164,7 +164,31 @@ class LiberaVariableDefinition(BaseModel):
                     f"this warning, set the encoding value to '{v}' in your product definition.",
                     UserWarning,
                 )
-        return {**encoding, **DEFAULT_ENCODING}
+        merged = {**encoding, **DEFAULT_ENCODING}
+        # YAML parses a sequence into a list, but the h5netcdf engine requires a tuple and raises
+        # "chunksize must be a tuple" on a list. The netcdf4 engine accepts either, so an
+        # uncoerced list makes the product definition silently engine-dependent.
+        if merged.get("chunksizes") is not None:
+            merged["chunksizes"] = tuple(merged["chunksizes"])
+        return merged
+
+    @model_validator(mode="after")
+    def _check_chunksizes_rank(self):
+        """Reject a chunksizes that does not match the variable's dimensionality.
+
+        Raises
+        ------
+        ValueError
+            If ``encoding['chunksizes']`` has a different length than ``dimensions``. Both
+            engines fail on a rank mismatch at write time, long after the definition is loaded.
+        """
+        chunksizes = self.encoding.get("chunksizes")
+        if chunksizes is not None and len(chunksizes) != len(self.dimensions):
+            raise ValueError(
+                f"encoding 'chunksizes' {chunksizes} has {len(chunksizes)} entries but the variable has "
+                f"{len(self.dimensions)} dimension(s) {self.dimensions}. They must match."
+            )
+        return self
 
     @property
     def static_attributes(self) -> dict:

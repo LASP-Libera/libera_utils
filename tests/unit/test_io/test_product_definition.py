@@ -867,3 +867,42 @@ class TestLiberaDataProductDefinitionCreateMethods:
         assert ds["fil_rad"].attrs["long_name"] == "Custom Radiance"
         # Other attributes should still be present
         assert ds["fil_rad"].attrs["units"] == "W/(m^2*sr*nm)"
+
+
+class TestVariableChunksizesEncoding:
+    """chunksizes must survive YAML as something both NetCDF engines accept."""
+
+    _DIMS = ["CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y"]
+
+    def _definition(self, chunksizes) -> LiberaVariableDefinition:
+        spec = yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\nencoding: {{chunksizes: {chunksizes}}}\n")
+        return LiberaVariableDefinition(**spec)
+
+    def test_chunksizes_from_yaml_is_coerced_to_a_tuple(self):
+        """YAML yields a list; h5netcdf requires a tuple and netcdf4 accepts either."""
+        variable = self._definition([2, 128, 128])
+        assert variable.encoding["chunksizes"] == (2, 128, 128)
+        assert isinstance(variable.encoding["chunksizes"], tuple)
+
+    @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])
+    def test_declared_chunksizes_are_written_by_either_engine(self, engine, tmp_path):
+        """Before coercion this raised 'chunksize must be a tuple' on h5netcdf only."""
+        h5py = pytest.importorskip("h5py")
+        variable = self._definition([2, 128, 128])
+        data_array = xr.DataArray(np.zeros((4, 256, 256), dtype="float32"), dims=self._DIMS)
+        data_array.encoding.update(variable.encoding)
+
+        output_path = tmp_path / f"{engine}.nc"
+        xr.Dataset({"X": data_array}).to_netcdf(output_path, engine=engine)
+
+        with h5py.File(output_path) as f:
+            assert f["X"].chunks == (2, 128, 128)
+
+    def test_chunksizes_rank_mismatch_is_rejected(self):
+        """A rank mismatch otherwise fails at write time, long after the definition loads."""
+        with pytest.raises(ValidationError, match="chunksizes"):
+            self._definition([2, 128])
+
+    def test_encoding_without_chunksizes_is_untouched(self):
+        variable = LiberaVariableDefinition(**yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\n"))
+        assert "chunksizes" not in variable.encoding
