@@ -122,6 +122,30 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     assert uncompressed_contents == compressed_contents
 
 
+@pytest.mark.parametrize("wrapper", [AnyPath, Path, str])
+def test_smart_open_gzip_closes_underlying_file(test_txt_gz, wrapper):
+    """Closing the returned GzipFile must also close the file object underneath it.
+
+    GzipFile only closes the underlying object when it opened that object itself, so smart_open
+    has to arrange the cascade explicitly. Without it the handle survives as cyclic garbage and
+    raises a ResourceWarning whenever the garbage collector eventually finalizes it, which pytest
+    then reports as an unraisable exception against an unrelated test.
+    """
+    gz = smart_open(wrapper(test_txt_gz.absolute()))
+    underlying = gz.fileobj  # GzipFile clears this attribute on close, so grab it first
+    gz.read()
+    gz.close()
+    assert gz.closed
+    assert underlying.closed
+
+    # The context manager form is how callers actually use this, so check it closes too
+    gz = smart_open(wrapper(test_txt_gz.absolute()))
+    underlying = gz.fileobj
+    with gz:
+        gz.read()
+    assert underlying.closed
+
+
 @pytest.mark.parametrize("wrapper", [AnyPath, str])
 def test_smart_copy_file_local_to_local_file(tmp_path, test_txt, wrapper):
     """Test smart copy for a local file to local file path"""
