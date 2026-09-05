@@ -103,8 +103,8 @@ def l1a_test_product(
     )
 
     # Create sample data (synthetic sine waves)
-    az_data = 45.0 + 10.0 * np.sin(np.linspace(0, 4 * np.pi, total_samples))
-    el_data = 30.0 + 5.0 * np.cos(np.linspace(0, 4 * np.pi, total_samples))
+    az_data = np.deg2rad(45.0 + 10.0 * np.sin(np.linspace(0, 4 * np.pi, total_samples)))
+    el_data = np.deg2rad(30.0 + 5.0 * np.cos(np.linspace(0, 4 * np.pi, total_samples)))
 
     # Create packet index (maps each sample to its originating packet)
     packet_indices = np.repeat(np.arange(num_packets), samples_per_packet)
@@ -144,14 +144,14 @@ def l1a_test_product(
     az_data_var = xr.DataArray(
         az_data,
         dims=[time_dim],
-        attrs={"long_name": "ICIE azimuth axis filtered encoder reading", "units": "degrees"},
+        attrs={"long_name": "ICIE azimuth axis filtered encoder reading", "units": "radians"},
     )
     az_data_var.encoding = {"zlib": True, "complevel": 4}
 
     el_data_var = xr.DataArray(
         el_data,
         dims=[time_dim],
-        attrs={"long_name": "ICIE elevation axis filtered encoder reading", "units": "degrees"},
+        attrs={"long_name": "ICIE elevation axis filtered encoder reading", "units": "radians"},
     )
     el_data_var.encoding = {"zlib": True, "complevel": 4}
 
