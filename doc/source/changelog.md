@@ -1,5 +1,11 @@
 # Version Changes
 
+## 5.10.9
+
+- BUGFIX: `smart_open` now closes the underlying file object when the `GzipFile` it returns is closed. `GzipFile` only closes a file it opened itself, so reading any `*.gz` through `smart_open` leaked an open file handle until the garbage collector finalized it. This affected library callers, not just tests — `calculate_checksum`, `metadata_writer`, and SPICE kernel downloads all read through this path.
+- BUGFIX: `calculate_checksum` no longer decompresses `*.gz` input before hashing. A manifest checksum has to cover the bytes as stored so it can be compared against the file a data provider delivered; the previous value hashed content that exists nowhere on disk and would change if the file were recompressed at a different level. Any checksum an earlier version recorded for a `*.gz` file must be regenerated.
+- MAINT: Fix the intermittent `PytestUnraisableExceptionWarning` CI failures. The leaked handles above, plus test fixtures that detached root logging handlers without closing them and an `h5py.File` handed a file object it does not own, produced `ResourceWarning`s during garbage collection. pytest drains those from one global queue at each test's setup, call and teardown, so the failure landed on whichever unrelated test was running at the time — observed on 3.11 and 3.12, against different tests and different files each time. Tests that assert no warnings now use the shared `strict_warnings` mark, which keeps warnings-as-errors but declines to own unraisable exceptions leaked elsewhere in the suite.
+
 ## 5.10.8
 
 - BUGFIX: `libera-utils ecr-upload` now accepts the local image in the usual Docker form, `image-name:image-tag` (e.g. `ecr-upload l2-comp-flux my-image:1.2.3`). Previously this positional argument had to be a bare image name and the tag had to be passed separately, so a `name:tag` value silently produced a `Local image not found: name:tag:latest` error. Colons in a registry host:port (`localhost:5000/my-image`) are not treated as tags.
