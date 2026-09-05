@@ -82,9 +82,11 @@ def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrappe
 
     hdf5_wrapped = wrapper(hdf5_uri)
     # Check that the contents of the files match, regardless of s3 or local
-    with h5.File(smart_open(test_hdf5), "r") as fh:
+    # h5py.File.close() does not close a file object handed to it, so the smart_open handle needs
+    # its own context manager or it leaks until garbage collection.
+    with smart_open(test_hdf5) as local_fileobj, h5.File(local_fileobj, "r") as fh:
         dataset_local = np.array(fh[list(fh.keys())[0]])
-    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
+    with smart_open(hdf5_wrapped) as s3_fileobj, h5.File(s3_fileobj, "r") as fh:
         dataset_s3 = np.array(fh[list(fh.keys())[0]])
     assert dataset_local.all() == dataset_s3.all()
 
@@ -104,7 +106,7 @@ def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, test_hdf
     with smart_open(hdf5_wrapped, "wb") as fh:
         with h5.File(fh, "r+") as hdf:
             hdf.create_group("new_group")
-    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
+    with smart_open(hdf5_wrapped) as fileobj, h5.File(fileobj, "r") as fh:
         group_name = list(fh.keys())[0]
     assert group_name == "new_group"
 
