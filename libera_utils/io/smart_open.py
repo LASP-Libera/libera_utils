@@ -92,7 +92,13 @@ def smart_open(path: str | Path | S3Path, mode: str | None = "rb", enable_gzip: 
         if is_gzip(path) and enable_gzip:
             if "b" not in mode:
                 raise OSError(f"Gzip files must be opened in binary (b) mode. Got {mode}.")
-            return GzipFile(filename=path, fileobj=fileobj)
+            gzip_file = GzipFile(filename=path, fileobj=fileobj)
+            # GzipFile.close() only closes the underlying file object if GzipFile opened it itself,
+            # which it records by setting myfileobj. Since we hand it an already-open fileobj, that
+            # attribute stays None and closing the GzipFile would leak fileobj until garbage
+            # collection. Setting it here is how gzip.open() itself arranges the same cascade.
+            gzip_file.myfileobj = fileobj
+            return gzip_file
         return fileobj
 
     if isinstance(path, Path | S3Path):
