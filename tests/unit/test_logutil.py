@@ -16,8 +16,12 @@ TEST_APP_PACKAGE_NAME = "my_test_app"
 
 
 @pytest.fixture
-def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path):
+def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path, cleanup_loggers):
     """Set up a test task logger and clear out all the handlers afterwards
+
+    Teardown is delegated to the cleanup_loggers fixture, which closes the handlers before
+    detaching them. log_dir gives this task a RotatingFileHandler, so simply dropping the
+    handlers would leak its open file.
 
     Note: This fixes a problem with caplog that breaks caplog when loggers are instantiated
     inside a test rather than a fixture. Solution is to just instantiate loggers in a fixture like this.
@@ -26,9 +30,6 @@ def setup_test_logger(mock_cloudwatch_context, monkeypatch, tmp_path):
     logutil.configure_task_logging(
         "test-task-1", limit_debug_loggers=(TEST_APP_PACKAGE_NAME,), console_log_level="INFO", log_dir=tmp_path
     )
-    root_log = logging.getLogger()  # root logger
-    yield
-    root_log.handlers = []
 
 
 def test_task_logging_behavior(setup_test_logger, caplog):
