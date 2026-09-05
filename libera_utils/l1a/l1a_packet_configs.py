@@ -124,7 +124,7 @@ class SampleGroup(BaseModel):
     epoch_time_fields : TimeFieldMapping | None
         Mapping of time fields to units for a single epoch timestamp.
         Used with sample_period to calculate sample times.
-    sample_period : timedelta | None
+    sample_period : datetime.timedelta | None
         Fixed time period between samples, used with epoch_time_fields.
     data_field_patterns : list[str]
         List of data field name patterns. Use %i for sample index if multiple samples.

@@ -69,7 +69,7 @@ def put_new_algorithm_image_event(
         job definition references the tag, not the digest.
     region_name : str, optional
         AWS region containing the target ECR registry. If ``None`` (the default), the region is taken from the
-        session's AWS configuration (see :func:`libera_utils.aws.utils._session_region`).
+        session's AWS configuration (see ``_session_region``).
     verify : bool, optional
         If True, block after emitting the event until the corresponding job definition is confirmed
         registered (see :func:`verify_algorithm_registration`). Default False.

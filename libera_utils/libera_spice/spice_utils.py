@@ -91,7 +91,7 @@ class KernelFileCache:
     """Download, cache, and furnish SPICE kernel files under the user cache directory.
 
     On first access of :attr:`kernel_path`, a valid cached copy (younger than
-    :attr:`max_cache_age`) is reused; otherwise the kernel is materialized from
+    ``max_cache_age``) is reused; otherwise the kernel is materialized from
     its source into the cache and that path is returned.
 
     Supported sources for ``kernel_url``:
