@@ -64,7 +64,7 @@ is `latest`, the command logs a warning and registers nothing. Add `--verify` to
 job definition is confirmed created **and** its ECR image is confirmed present, waiting up to `--timeout` seconds
 (default 300). Verification needs only read permissions.
 
-```shell
+```text
 usage: libera-utils ecr-upload [-h] [--image-tag IMAGE_TAG] [--ecr-tags ECR_TAGS [ECR_TAGS ...]]
                                [--ignore-docker-config] [-v] [--verify] [--timeout TIMEOUT]
                                [--profile PROFILE]
@@ -156,7 +156,7 @@ definition already exists, so you never register a job definition for an image t
 `--image-digest` is optional and carried only for provenance — the job definition references the tag, not the
 digest.
 
-```shell
+```text
 usage: libera-utils register-algorithm-image [-h] [--image-digest IMAGE_DIGEST] [--verify] [--timeout TIMEOUT]
                                              [--profile PROFILE]
                                              algorithm_name algorithm_version

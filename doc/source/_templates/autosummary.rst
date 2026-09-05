@@ -1,6 +1,11 @@
 {{ fullname | escape | underline}}
 
+{# :no-members: overrides autodoc_default_options["members"] for the module page only. Without it
+   the module page documents every function and class inline AND the per-object stub pages below
+   document them again, which Sphinx reports as "duplicate object description" (~1000 of them).
+   The rubrics below still summarize and link to the stub pages, so nothing becomes unreachable. #}
 .. automodule:: {{ fullname }}
+    :no-members:
 
     {% block attributes %}
     {% if attributes %}

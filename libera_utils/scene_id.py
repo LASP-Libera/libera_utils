@@ -55,11 +55,7 @@ class IGBPSurfaceType(enum.IntEnum):
     These surface types are derived from IGBP (International Geosphere-Biosphere Programme)
     land cover classifications.
 
-    Attributes
-    ----------
-    IGBP_1 through IGBP_20 : int
-        TRMM surface type categories (values: 1-20)
-
+    Members are the 20 TRMM surface type categories, with values 1-20.
     """
 
     EVERGREEN_NEEDLELEAF_FOREST = 1

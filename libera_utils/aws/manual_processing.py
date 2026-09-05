@@ -254,7 +254,7 @@ def start_manual_processing(
 
     Parameters
     ----------
-    applicable_dates : list of str, date, or datetime
+    applicable_dates : list[str | datetime.date | datetime.datetime]
         The applicable dates to process data for. A separate job is created for each date.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler (with the LiberaUtils role
@@ -380,7 +380,7 @@ def step_function_trigger(
     ----------
     algorithm_name : str or ProcessingStepIdentifier
         The processing step to run.
-    applicable_day : str, date, or datetime
+    applicable_day : str | datetime.date | datetime.datetime
         The day of data to process.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions.

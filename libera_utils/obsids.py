@@ -12,7 +12,7 @@ file carries the source NOM-HK ObsID field, so a consumer recovers the exact Obs
 from the data rather than from the ProductID. Each ObsID keeps its own CAL product,
 which is what a family step dispatches on.
 
-The catalog itself lives in :data:`OBSID_REGISTRY_CSV` (``libera_utils/data``)
+The catalog itself lives in ``OBSID_REGISTRY_CSV`` (``libera_utils/data``)
 rather than in this module. Product columns hold
 :class:`~libera_utils.constants.DataProductIdentifier` *member names* (e.g.
 ``cal_gain``), which are resolved and validated when this module is imported.
@@ -21,7 +21,7 @@ disagrees with ``source``, a duplicate ``(source, obsid)`` key, a CAL product cl
 by more than one ObsID, or a TRIMMED family spanning more than one NOM-HK ObsID field
 all raise :class:`ValueError` at import time.
 
-A companion file, :data:`TRIM_FAMILY_INPUTS_CSV`, records the L1A products each family's
+A companion file, ``TRIM_FAMILY_INPUTS_CSV``, records the L1A products each family's
 cal step consumes *besides* its own TRIMMED product, exposed as :data:`FAMILY_INPUTS` /
 :func:`get_family_inputs`. The two files must cover exactly the same set of families, which
 is checked at import; an empty ``required_inputs`` cell means the dependency set is still
@@ -290,7 +290,7 @@ def _load_family_inputs(
     Parameters
     ----------
     families : collection of DataProductIdentifier
-        TRIMMED family ProductIDs registered in :data:`OBSID_REGISTRY_CSV`. The two catalogs
+        TRIMMED family ProductIDs registered in ``OBSID_REGISTRY_CSV``. The two catalogs
         must cover exactly the same families.
 
     Returns
@@ -364,15 +364,15 @@ def _load_family_inputs(
 
 #: Sole source of truth for ObsID → CAL / TRIMMED ProductIDs and catalog metadata.
 #: Keyed by (source, obsid) because RAD and WFOV namespaces overlap.
-#: Loaded from :data:`OBSID_REGISTRY_CSV`; edit that file to register a new ObsID.
+#: Loaded from ``OBSID_REGISTRY_CSV``; edit that file to register a new ObsID.
 OBSID_REGISTRY: dict[tuple[NomHkObsidSource, int], ObsIdSpec]
 
-#: Inverse view of the TRIMMED column: each calibration dependency family ProductID mapped to the
-#: ObsIDs it covers. This is the membership a downstream cal step dispatches over.
+#: Inverse view of the TRIMMED column. Each calibration dependency family ProductID is mapped to
+#: the ObsIDs it covers. This is the membership a downstream cal step dispatches over.
 TRIM_FAMILIES: dict[DataProductIdentifier, tuple[ObsIdSpec, ...]]
 
 #: L1A products each calibration dependency family's cal step consumes *besides* its own TRIMMED
-#: product, loaded from :data:`TRIM_FAMILY_INPUTS_CSV`. Together with the family product these are
+#: product, loaded from ``TRIM_FAMILY_INPUTS_CSV``. Together with the family product these are
 #: the dependency set a family step is deployed against; an empty tuple means it has not been
 #: settled yet. Cal containers subset these daily products themselves using the time range on the
 #: TRIMMED NOM-HK filename they are handed.

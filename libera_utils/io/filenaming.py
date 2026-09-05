@@ -208,7 +208,7 @@ class AbstractValidFilename(ABC):
     def _format_filename_parts(cls, *args: Any, **kwargs: Any):
         """Format parts into a filename
 
-        Note: When this is implemented by concrete classes, *args and **kwargs become specific parameters
+        Note: When this is implemented by concrete classes, ``*args`` and ``**kwargs`` become specific parameters
         """
         raise NotImplementedError()
 
