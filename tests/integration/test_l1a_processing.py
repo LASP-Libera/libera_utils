@@ -28,6 +28,7 @@ from libera_utils.l1a.wfov_image_metadata import (
     WFOV_COMPRESSED_IMAGE_VAR,
     WFOV_HEADER_PARSE_VALID_VAR,
 )
+from tests.marks import strict_warnings
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -62,7 +63,7 @@ def check_cf_conformance(file: str | Path, silent=True, **kwargs):
     return checker
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 @pytest.mark.parametrize(
     ("packet_file_fixtures", "apid", "time_dimension", "skip_header_bytes"),
     [
@@ -247,7 +248,7 @@ def test_process_packets_to_l1a_product(
     print("   ✓ NetCDF file verification complete")
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 def test_wfov_sci_filename_uses_image_time_bounds(
     test_ditl_camera_with_duplicate_packet,
     monkeypatch,
@@ -290,7 +291,7 @@ def test_wfov_sci_filename_uses_image_time_bounds(
     assert "20280214T042313" in filename
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
     test_ditl_camera_with_duplicate_packet,
     monkeypatch,
@@ -376,7 +377,7 @@ def test_wfov_sci_no_complete_images_raises(
         )
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
     test_ditl_camera_with_duplicate_packet,
     monkeypatch,

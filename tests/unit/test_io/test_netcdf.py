@@ -14,9 +14,10 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
+from tests.marks import strict_warnings
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 class TestWriteLiberaDataProduct:
     """Tests for the write_libera_data_product function"""
 
