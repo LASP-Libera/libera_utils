@@ -82,9 +82,11 @@ def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrappe
 
     hdf5_wrapped = wrapper(hdf5_uri)
     # Check that the contents of the files match, regardless of s3 or local
-    with h5.File(smart_open(test_hdf5), "r") as fh:
+    # h5py.File.close() does not close a file object handed to it, so the smart_open handle needs
+    # its own context manager or it leaks until garbage collection.
+    with smart_open(test_hdf5) as local_fileobj, h5.File(local_fileobj, "r") as fh:
         dataset_local = np.array(fh[list(fh.keys())[0]])
-    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
+    with smart_open(hdf5_wrapped) as s3_fileobj, h5.File(s3_fileobj, "r") as fh:
         dataset_s3 = np.array(fh[list(fh.keys())[0]])
     assert dataset_local.all() == dataset_s3.all()
 
@@ -104,7 +106,7 @@ def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, test_hdf
     with smart_open(hdf5_wrapped, "wb") as fh:
         with h5.File(fh, "r+") as hdf:
             hdf.create_group("new_group")
-    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
+    with smart_open(hdf5_wrapped) as fileobj, h5.File(fileobj, "r") as fh:
         group_name = list(fh.keys())[0]
     assert group_name == "new_group"
 
@@ -120,6 +122,30 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     with smart_open(gz_wrapped) as fh_compressed:
         compressed_contents = fh_compressed.readlines()
     assert uncompressed_contents == compressed_contents
+
+
+@pytest.mark.parametrize("wrapper", [AnyPath, Path, str])
+def test_smart_open_gzip_closes_underlying_file(test_txt_gz, wrapper):
+    """Closing the returned GzipFile must also close the file object underneath it.
+
+    GzipFile only closes the underlying object when it opened that object itself, so smart_open
+    has to arrange the cascade explicitly. Without it the handle survives as cyclic garbage and
+    raises a ResourceWarning whenever the garbage collector eventually finalizes it, which pytest
+    then reports as an unraisable exception against an unrelated test.
+    """
+    gz = smart_open(wrapper(test_txt_gz.absolute()))
+    underlying = gz.fileobj  # GzipFile clears this attribute on close, so grab it first
+    gz.read()
+    gz.close()
+    assert gz.closed
+    assert underlying.closed
+
+    # The context manager form is how callers actually use this, so check it closes too
+    gz = smart_open(wrapper(test_txt_gz.absolute()))
+    underlying = gz.fileobj
+    with gz:
+        gz.read()
+    assert underlying.closed
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, str])
