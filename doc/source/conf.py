@@ -71,10 +71,31 @@ extensions = [
     "sphinx.ext.napoleon",  # Handles numpy style docstrings
     "sphinx.ext.autosectionlabel",
     "myst_parser",  # Markdown
-    "numpydoc",  # Numpy style docstrings
+    # NOTE: numpydoc is deliberately NOT enabled. napoleon (above) already parses numpy style
+    # docstrings, and running both is a long standing conflict (sphinx-doc/sphinx#1384). Worse,
+    # numpydoc's autodoc-process-signature hook crashes Sphinx 9's rewritten autodoc on members
+    # inherited from builtins, e.g. the str methods a StrEnum inherits (sphinx-doc/sphinx#14576),
+    # which autosummary then reports as "failed to import object". numpydoc also emitted a second,
+    # noisier copy of every class Methods table. Between them these accounted for roughly 7700 of
+    # the ~9800 warnings this build used to produce. If we want numpydoc's docstring linting back,
+    # numpydoc_validation_checks is available as a standalone pre-commit hook.
 ]
 
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
+
+# Prefix autosectionlabel targets with the document name so that two pages may both have a section
+# with the same title (e.g. "Basic Usage") without colliding.
+autosectionlabel_prefix_document = True
+
+# Render a docstring "Attributes" section as an :ivar: field list rather than as standalone
+# .. attribute:: directives. Several classes (the scene_id enums in particular) document their
+# members in an Attributes section, which autodoc also documents from the source; emitting both as
+# object descriptions makes them "duplicate object description".
+napoleon_use_ivar = True
+
+# Generate anchors for markdown headings down to <h3> so that in-page links like
+# [Consumer 2](#consumer-2-downstream-cal-combine-dispatch) resolve.
+myst_heading_anchors = 3
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -98,7 +119,10 @@ html_logo = "_static/libera_logo.png"
 # -- Autodoc -----------------------------------------------------------------
 autodoc_default_options = {
     "members": True,
-    # "undoc-members": True,
+    # Enum members and pydantic model fields carry no docstrings of their own, so without this
+    # autodoc skips them while the autosummary class template still lists them, producing a
+    # "reference target not found" for every one. Documenting them is both more useful and quieter.
+    "undoc-members": True,
     "private-members": True,
 }
 
@@ -115,18 +139,42 @@ nitpicky = True
 # Ignore certain warnings.
 # Some inherited method targets aren't found through intersphinx
 # NOTE: When developing, periodically turn these off to see if we are accidentally excluding warnings we care about.
+# NOTE: nitpick_ignore_regex matches with re.fullmatch against BOTH the role and the target, so
+# every pattern here has to describe the whole target, not a fragment. Beware of writing [a|b]
+# where (a|b) was meant: the former is a character class and silently over-matches.
 nitpick_ignore_regex = [
     (r"py:.*", r".*libera_utils\.backports.*"),  # Since we're not documenting this module, others can't link to it
     (r"py:.*", r".*bitstring.*"),  # Bitstring library doesn't appear to support intersphinx
-    (r"py:.*", r".*h5py\._hl\.files\.File.*"),  # h5py.File doesn't resolve for some reason
-    (r"py:.*", r".*sqlalchemy\.orm\.decl_api\.Base.*"),  # Can't find the intersphinx for some sqlalchemy classes
-    (r"py:.*", r".*numpy.float64.*"),
-    # Autodoc doesn't seem to handle enums well. The following filter out some known issues.
-    (r"py:.*", r".*ManifestType\.[input|output|INPUT|OUTPUT].*"),
-    (r"py:.*", r".*libera_utils\.spice_utils\.Spice[Body|Frame].*"),
-    (r"py:.*", r".*libera_utils\.io\.filenaming\.DataLevel\.[L0|L1B|L2].*"),
-    (r"py:.*", r".*APID\..*"),
-    (r"py:.*", r".*IntEnum.*"),
+    # pydantic Field constraint metadata leaking out of Annotated[...] (sphinx-doc/sphinx#12601).
+    # Sphinx stringifies each Annotated metadata item and cross-references the callee of the
+    # resulting ast.Call, so these render as dangling references by design.
+    (r"py:.*", r"annotated_types\..*"),
+    (r"py:class", r"(FieldInfo|MinLen|MaxLen|Ge|Gt|Le|Lt|MultipleOf|NoneType)"),
+    # numpy's inventory registers its typing aliases as py:data, but autodoc emits signature
+    # references as py:class, so nitpicky can never resolve them (sphinx-doc/sphinx#14005).
+    (r"py:class", r"numpy\._?typing\..*"),
+    (r"py:class", r"pandas\.core\..*"),  # pandas documents these under their public re-export path
+    # Abbreviations and bare names used in numpy style docstring type strings. napoleon turns each
+    # comma separated element of a "name : type" line into its own cross-reference, so these are
+    # prose, not real targets.
+    (r"py:class", r"(np|npt|pd|xr)\..*"),
+    (r"py:class", r"(optional|Path|PathLike|PathType|S3Path|CloudPath|Dataset|DataArray|ndarray|datetime|ULID|str)"),
+    (r"py:class", r"(AngleLike|ulid\.ULID|boto3\.Session|filenaming\.PathType|LiberaDataProductFilename)"),
+    # pydantic internals that surface in model signatures and validator descriptors.
+    (r"py:class", r"(PydanticUndefined|FieldValidatorDecoratorInfo)"),
+    (r"py:class", r"pydantic\._internal\..*"),
+    # netCDF4 publishes no intersphinx inventory.
+    (r"py:class", r"netCDF4(\._netCDF4)?\.Dataset"),
+    # Module private helpers that appear inside Annotated[...] validators or as TypeVars, neither of
+    # which autodoc gives a documentable target.
+    (r"py:class", r"libera_utils\.io\.umm_g\.validate_iso_datetime"),
+    (r"py:class", r"libera_utils\.libera_spice\.spice_utils\._F"),
+    # Third party exceptions whose projects publish no inventory (or none we subscribe to).
+    (r"py:exc", r"(requests\.exceptions|docker\.errors|boto3\.exceptions)\..*"),
+    # Artifact, not a real reference: Sphinx splits a pydantic model's generated __signature__ on
+    # the comma inside a subscripted annotation, so "attributes: dict[str, Any]" is rendered as two
+    # parameters and the fragment "dict[str" is looked up as a class.
+    (r"py:class", r"dict\[str"),
 ]
 
 # -- Intersphinx -------------------------------------------------------------
@@ -139,5 +187,7 @@ intersphinx_mapping = {
     "cloudpathlib": ("https://cloudpathlib.drivendata.org/stable/", None),
     "space_packet_parser": ("https://space-packet-parser.readthedocs.io/en/stable/", None),
     "sqlalchemy": ("https://docs.sqlalchemy.org/en/14/", None),
-    "h5py": (" https://docs.h5py.org/en/stable", None),
+    "h5py": ("https://docs.h5py.org/en/stable", None),
+    "pydantic": ("https://docs.pydantic.dev/latest/", None),
+    "boto3": ("https://boto3.amazonaws.com/v1/documentation/api/latest/", None),
 }
