@@ -11,7 +11,7 @@ from cloudpathlib import S3Path
 from pydantic import ValidationError
 
 from libera_utils.constants import ManifestType
-from libera_utils.io.manifest import Manifest, ManifestFileRecord
+from libera_utils.io.manifest import Manifest, ManifestFileRecord, calculate_checksum
 from libera_utils.io.smart_open import smart_open
 
 
@@ -169,6 +169,23 @@ def test_validate_checksums(test_jpss_manifest, caplog):
         checksum = md5(fh.read()).hexdigest()
     m.files = [ManifestFileRecord(filename=str(test_jpss_manifest.absolute()), checksum=checksum)]
     m.validate_checksums()
+
+
+def test_calculate_checksum_of_gzip_file_covers_compressed_bytes(test_txt_gz):
+    """A checksum must cover the bytes on disk, not the decompressed contents.
+
+    smart_open transparently decompresses *.gz by default, which would produce a checksum of
+    content that exists nowhere on disk and cannot be compared against the file a data provider
+    delivered. calculate_checksum therefore has to opt out of that decompression.
+    """
+    with test_txt_gz.open("rb") as fh:
+        compressed_checksum = md5(fh.read(), usedforsecurity=False).hexdigest()
+    with smart_open(test_txt_gz) as fh:
+        decompressed_checksum = md5(fh.read(), usedforsecurity=False).hexdigest()
+    # Guard against the two hashes coinciding, which would make this test prove nothing
+    assert compressed_checksum != decompressed_checksum
+
+    assert calculate_checksum(test_txt_gz) == compressed_checksum
 
 
 @pytest.mark.parametrize(
