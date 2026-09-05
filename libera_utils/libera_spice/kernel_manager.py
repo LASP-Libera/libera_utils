@@ -431,13 +431,13 @@ class KernelManager:
 
         This will load static and NAIF kernels first when requested and they are not already loaded.
 
-        Every source is materialized through :class:`KernelFileCache` with ``max_cache_age`` equal to
+        Every source is materialized through :class:`~libera_utils.libera_spice.spice_utils.KernelFileCache` with ``max_cache_age`` equal to
         ``cache_timeout_days`` from construction.
 
         Parameters
         ----------
-        dynamic_kernel_sources : sequence of str, pathlib.Path, or cloudpathlib.S3Path
-            One cache entry per element; see :class:`KernelFileCache` for local paths vs remote URLs.
+        dynamic_kernel_sources : collections.abc.Sequence[str | pathlib.Path | cloudpathlib.S3Path]
+            One cache entry per element; see :class:`~libera_utils.libera_spice.spice_utils.KernelFileCache` for local paths vs remote URLs.
             Use ``[single_path]`` or ``[\"https://...\"]`` — bare ``Path`` / ``str`` / ``bytes`` arguments are rejected
             because ``str`` is a Python ``Sequence``.
         needs_static_kernels : bool

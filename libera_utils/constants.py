@@ -386,6 +386,7 @@ class ProcessingStepIdentifier(StrEnum):
     In orchestration code, these are used as "NodeID" values to identify processing steps:
         The processing_step_node_id values used in libera_cdk deployment of processing steps
         and the node names in processing_system_dag.json must match these.
+
     They must also be passed to the ecr_upload module called by some libera_cdk integration tests.
 
     The string values are the processing step names used in orchestration.

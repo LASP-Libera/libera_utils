@@ -4,7 +4,7 @@ Decoded L1A products carry a ``PACKET`` axis holding one row per CCSDS packet an
 axis per sample group (e.g. ``RAD_FULL_FPE_TIME``) holding the samples expanded out of those
 packets. Each sample belongs to exactly one packet, recorded in the
 ``{sample_group}_packet_index`` variable written by
-:func:`~libera_utils.l1a.packets.create_l1a_dataset`.
+:func:`~libera_utils.l1a.packets.parse_packets_to_l1a_dataset`.
 
 This module is the supported way to subset such a product; subsetting either axis directly
 leaves the two out of correspondence. The packet axis is the driver:
