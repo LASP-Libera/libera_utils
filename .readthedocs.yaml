@@ -17,3 +17,6 @@ formats:
 
 sphinx:
   configuration: doc/source/conf.py
+  # The build is warning clean, so any new warning is a regression worth failing on. This is what
+  # catches things like a subpackage silently dropping out of the API docs.
+  fail_on_warning: true
