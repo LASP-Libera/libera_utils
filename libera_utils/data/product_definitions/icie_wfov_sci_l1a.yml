@@ -305,8 +305,8 @@ variables:
     dimensions: ["CAMERA_TIME"]
     attributes:
       long_name: FSW azimuth angle
-      units: radians
-      comment: FSW-reported instrument azimuth; distinct from L1B geometric viewing/solar azimuth angles
+      units: degrees
+      comment: FSW-reported instrument azimuth motor position in degrees
   WFOV_IMAGE_HEADER_IMAGE_LENGTH:
     dtype: uint32
     dimensions: ["CAMERA_TIME"]

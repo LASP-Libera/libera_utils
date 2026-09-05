@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.10.9
+
+- BUGFIX: `WFOV_FSW_HEADER_AZIMUTH_ANGLE` in the ICIE WFOV SCI L1A product is documented as `degrees`, not `radians` as it was incorrectly listed before.
+- FIX: Whitespace clean up in trim family csv
+
 ## 5.10.8
 
 - BUGFIX: `libera-utils ecr-upload` now accepts the local image in the usual Docker form, `image-name:image-tag` (e.g. `ecr-upload l2-comp-flux my-image:1.2.3`). Previously this positional argument had to be a bare image name and the tag had to be passed separately, so a `name:tag` value silently produced a `Local image not found: name:tag:latest` error. Colons in a registry host:port (`localhost:5000/my-image`) are not treated as tags.

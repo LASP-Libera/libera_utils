@@ -39,14 +39,14 @@ variables:
     dimensions: ["AXIS_SAMPLE_ICIE_TIME"]
     attributes:
       long_name: ICIE azimuth axis filtered encoder reading
-      units: degrees
+      units: radians
 
   ICIE__AXIS_EL_FILT:
     dtype: float64
     dimensions: ["AXIS_SAMPLE_ICIE_TIME"]
     attributes:
       long_name: ICIE elevation axis filtered encoder reading
-      units: degrees
+      units: radians
 
   AXIS_SAMPLE_packet_index:
     dtype: int64
