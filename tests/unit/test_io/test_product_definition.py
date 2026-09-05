@@ -17,6 +17,7 @@ from libera_utils.io.product_definition import (
     LiberaDimensionDefinition,
     LiberaVariableDefinition,
 )
+from tests.marks import strict_warnings
 
 
 def _libera_dimensions_yaml_path() -> Path:
@@ -63,7 +64,7 @@ class TestLiberaStandardDimensions:
         assert variable_definition.dimensions == [dimension_name]
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 class TestLiberaDataProductDefinition:
     """Basic tests for the LiberaDataProductDefinition class."""
 
@@ -100,7 +101,7 @@ class TestLiberaDataProductDefinition:
         assert fn.filename_parts.utc_end == datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 class TestLiberaDataProductDefinitionConformanceChecking:
     """Tests for the check_dataset_conformance method of LiberaDataProductDefinition"""
 
@@ -318,7 +319,7 @@ class TestLiberaDataProductDefinitionConformanceChecking:
                 definition.check_dataset_conformance(test_dataset, strict=True)
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 class TestLiberaDataProductDefinitionConformanceEnforcement:
     """Tests for the enforce_dataset_conformance method of LiberaDataProductDefinition"""
 
@@ -648,7 +649,7 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
             definition.enforce_dataset_conformance(ds)
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 class TestVariableCreateMethods:
     """Tests for Variable class methods"""
 
@@ -709,7 +710,7 @@ class TestVariableCreateMethods:
             var_def.create_variable_data_array(data, "fil_rad", {})
 
 
-@pytest.mark.filterwarnings("error")
+@strict_warnings
 class TestLiberaDataProductDefinitionCreateMethods:
     """Tests for LiberaDataProductDefinition.create_conforming_dataset method"""
 
