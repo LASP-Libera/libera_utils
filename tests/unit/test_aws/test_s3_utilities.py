@@ -72,8 +72,8 @@ class TestManualIngestPut:
                 "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
                 "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             ],
-            # Canonical ground CCSDS capture basename (no extension)
-            ["ccsds_2025_318_13_53_06"],
+            # Demuxed ground CCSDS basename (single APID, no extension)
+            ["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"],
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(

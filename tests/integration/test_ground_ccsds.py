@@ -1,149 +1,70 @@
-"""Integration tests for ground-test CCSDS discovery and data-time extraction."""
+"""Integration tests for ground-test CCSDS scanning and data-time extraction."""
 
 import pytest
 
 from libera_utils.constants import LiberaApid
-from libera_utils.l1a.data_time_extractors import DATA_TIME_INDEXED_APIDS, extract_data_time_range
+from libera_utils.l1a.data_time_extractors import extract_data_time_range
 from libera_utils.l1a.ground_ccsds import scan_ground_ccsds_file
-from libera_utils.l1a.l1a_packet_configs import get_packet_config
 
 pytestmark = pytest.mark.integration
 
 
-def _has_packet_config(apid: LiberaApid) -> bool:
-    """Return True if ``apid`` has an L1A packet configuration."""
-    try:
-        get_packet_config(apid)
-    except KeyError:
-        return False
-    return True
-
-
+# Demuxed fixtures are one APID per file with no record header; see
+# test_data/packets/libera_ditl_demux/notes.md. ``data_span`` is "interval" when the file holds
+# more than one distinct data time, "point" for a single SOP, and None when data times are
+# unavailable. A point span anywhere else would mean timestamps were dropped after the min/max
+# collapse instead of before it.
 @pytest.mark.parametrize(
-    ("fixture_name", "expected_configured", "expected_data_time_apids", "sample_unknowns"),
+    ("basename", "apid", "packet_date", "data_date", "data_span"),
     [
+        ("LIBERA_SDC_1036_ccsds_2025_318_13_00_00", LiberaApid.icie_rad_sample, "2028-02-15", "2028-02-15", "interval"),
         (
-            "test_ditl_camera_with_duplicate_packet",
-            {
-                LiberaApid.pev_sw_stat,
-                LiberaApid.pec_sw_stat,
-                LiberaApid.icie_rad_sample,
-                LiberaApid.icie_wfov_sci,
-                LiberaApid.icie_axis_sample,
-                LiberaApid.icie_crit_hk,
-                LiberaApid.icie_nom_hk,
-                LiberaApid.icie_temp_hk,
-            },
-            {LiberaApid.icie_rad_sample, LiberaApid.icie_wfov_sci, LiberaApid.icie_axis_sample},
-            (105, 116, 215, 1006, 1008, 1058, 1200),
+            "LIBERA_SDC_1048_ccsds_2025_318_13_00_00",
+            LiberaApid.icie_axis_sample,
+            "2028-02-15",
+            "2028-02-15",
+            "interval",
         ),
-        (
-            "test_iov_swc_event",
-            {
-                LiberaApid.pev_sw_stat,
-                LiberaApid.pec_sw_stat,
-                LiberaApid.icie_rad_sample,
-                LiberaApid.icie_cal_sample,
-                LiberaApid.icie_axis_sample,
-                LiberaApid.icie_crit_hk,
-                LiberaApid.icie_nom_hk,
-                LiberaApid.icie_temp_hk,
-            },
-            {LiberaApid.icie_rad_sample, LiberaApid.icie_cal_sample, LiberaApid.icie_axis_sample},
-            (112, 115, 116, 212, 215, 1018, 1058, 1200),
-        ),
-        (
-            "test_istr_gain_event",
-            {
-                LiberaApid.pev_sw_stat,
-                LiberaApid.pec_sw_stat,
-                LiberaApid.icie_rad_full,
-                LiberaApid.icie_cal_full,
-                LiberaApid.icie_cal_sample,
-                LiberaApid.icie_axis_sample,
-                LiberaApid.icie_crit_hk,
-                LiberaApid.icie_nom_hk,
-                LiberaApid.icie_temp_hk,
-            },
-            {
-                LiberaApid.icie_rad_full,
-                LiberaApid.icie_cal_full,
-                LiberaApid.icie_cal_sample,
-                LiberaApid.icie_axis_sample,
-            },
-            (217, 218, 412, 1006, 1008, 1058, 1200),
-        ),
-        (
-            "test_ccsds_2025_221_17_17_58",
-            {
-                LiberaApid.pev_sw_stat,
-                LiberaApid.pec_sw_stat,
-                LiberaApid.icie_rad_sample,
-                LiberaApid.icie_wfov_sci,
-                LiberaApid.icie_axis_sample,
-                LiberaApid.icie_crit_hk,
-                LiberaApid.icie_nom_hk,
-                LiberaApid.icie_temp_hk,
-            },
-            {LiberaApid.icie_rad_sample, LiberaApid.icie_wfov_sci, LiberaApid.icie_axis_sample},
-            (215, 216, 217, 218, 1006, 1008, 1200),
-        ),
-        (
-            "test_ccsds_2025_218_18_41_30",
-            {
-                LiberaApid.pev_sw_stat,
-                LiberaApid.pec_sw_stat,
-                LiberaApid.icie_rad_sample,
-                LiberaApid.icie_axis_sample,
-                LiberaApid.icie_crit_hk,
-                LiberaApid.icie_nom_hk,
-                LiberaApid.icie_temp_hk,
-            },
-            {LiberaApid.icie_rad_sample, LiberaApid.icie_axis_sample},
-            (112, 212, 217, 218, 1006, 1008, 1058, 1200),
-        ),
+        ("LIBERA_SDC_1057_ccsds_2025_318_13_00_00", LiberaApid.icie_nom_hk, "2028-02-15", None, None),
+        ("LIBERA_SDC_1040_ccsds_2025_318_13_00_00", LiberaApid.icie_wfov_sci, "2028-02-15", "2028-02-14", "point"),
+        ("LIBERA_SDC_1040_ccsds_2025_318_13_20_00", LiberaApid.icie_wfov_sci, "2028-02-15", None, None),
     ],
-    ids=("ditl", "iov_swc", "istr_gain", "istr_wfov", "istr_unused"),
+    ids=("rad_sample", "axis_sample", "nom_hk_no_data_times", "wfov_with_sop", "wfov_no_sop"),
 )
-def test_scan_ground_ccsds_file_across_captures(
-    fixture_name,
-    expected_configured,
-    expected_data_time_apids,
-    sample_unknowns,
-    request,
-):
-    """Scan multi-APID ground captures for known/unknown APIDs and time spans."""
-    packet_file = request.getfixturevalue(fixture_name)
-    result = scan_ground_ccsds_file(packet_file, skip_header_bytes=8)
+def test_scan_demuxed_ground_ccsds_file(basename, apid, packet_date, data_date, data_span, test_ditl_demux_path):
+    """Scanning a demuxed file resolves its APID from the name and returns its time spans."""
+    span = scan_ground_ccsds_file(test_ditl_demux_path / basename)
 
-    assert set(result.known_apids).issubset(set(LiberaApid))
-    assert all(int(apid) in result.all_apids for apid in result.known_apids)
-    assert expected_configured.issubset(set(result.known_apids))
-    assert expected_configured.issubset(set(result.time_spans))
+    assert span.apid == apid
+    assert span.first_packet_time <= span.last_packet_time
+    assert span.first_packet_time.date().isoformat() == packet_date
 
-    for unknown in sample_unknowns:
-        assert unknown in result.all_apids
-        assert unknown not in {int(apid) for apid in result.known_apids}
-
-    # Known APIDs without packet config appear in known_apids but not time_spans
-    for apid in result.known_apids:
-        if _has_packet_config(apid):
-            assert apid in result.time_spans
+    if data_date is None:
+        assert span.first_data_time is None
+        assert span.last_data_time is None
+    else:
+        assert span.first_data_time.date().isoformat() == data_date
+        assert span.last_data_time.date().isoformat() == data_date
+        if data_span == "interval":
+            assert span.first_data_time < span.last_data_time
         else:
-            assert apid not in result.time_spans
+            assert span.first_data_time == span.last_data_time
 
-    assert set(result.time_spans).issubset(set(result.known_apids))
-    assert expected_data_time_apids.issubset(set(result.time_spans))
 
-    for apid, span in result.time_spans.items():
-        assert span.first_packet_time <= span.last_packet_time
-        if apid in DATA_TIME_INDEXED_APIDS:
-            assert span.first_data_time is not None
-            assert span.last_data_time is not None
-            assert span.first_data_time <= span.last_data_time
-        else:
-            assert span.first_data_time is None
-            assert span.last_data_time is None
+def test_scan_demuxed_wfov_without_sop_is_degraded_not_failed(test_ditl_demux_path):
+    """A WFOV file with no SOP keeps its packet span and explains the missing data times."""
+    span = scan_ground_ccsds_file(test_ditl_demux_path / "LIBERA_SDC_1040_ccsds_2025_318_13_20_00")
+
+    assert span.first_packet_time is not None
+    assert span.first_data_time is None
+    assert LiberaApid.icie_wfov_sci.name in span.degraded_reason
+
+
+def test_demuxed_wfov_data_time_precedes_its_packet_time(test_ditl_demux_path):
+    """Camera images are downlinked well after capture, so data time can precede packet time."""
+    span = scan_ground_ccsds_file(test_ditl_demux_path / "LIBERA_SDC_1040_ccsds_2025_318_13_00_00")
+
+    assert span.first_data_time < span.first_packet_time
 
 
 # ``multi_time`` says the fixture supplies more than one distinct data time for that APID, so the

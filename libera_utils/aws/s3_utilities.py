@@ -269,9 +269,10 @@ def verify_ingestion(
             spec["data_product_id"] = str(libera_filename.data_product_id)
             spec["version"] = libera_filename.filename_parts.version
         elif isinstance(libera_filename, LiberaGroundCcsdsFilename):
-            # The ingester's per-APID searchable rows use PK={basename}#{apid}, a different
-            # partition key from the base row's PK=basename. DynamoDB has no begins_with on a
-            # partition key, so reaching them would require knowing the capture's APID set.
+            # The ingester's searchable row uses PK={basename}#{apid}, a different partition key
+            # from the base row's PK=basename, so a query on the basename cannot see it. The APID
+            # is on the filename, so a get_item could reach it once the ingester's schema for
+            # demuxed captures is confirmed.
             spec["expected_metadata_count"] = 1
         else:
             # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets both a base

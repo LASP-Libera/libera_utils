@@ -81,13 +81,13 @@ def extract_data_time_range(
     Parameters
     ----------
     packet_file : PathLike | str
-        Path to a PDS or ground CCSDS packet file.
+        Path to a single-APID PDS or demuxed ground CCSDS packet file.
     apid : int
         Application Process Identifier.
     skip_header_bytes : int | None, optional
         Bytes to skip before each CCSDS primary header. When ``None``, uses
-        ``SKIP_PACKET_HEADER_BYTES`` from config (default ``0`` for flight PDS;
-        pass ``8`` for ground CCSDS).
+        ``SKIP_PACKET_HEADER_BYTES`` from config (default ``0``, which is correct for
+        flight PDS and for demuxed ground CCSDS).
 
     Returns
     -------

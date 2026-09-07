@@ -183,7 +183,8 @@ def parse_packets_to_l1a_dataset(
         If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
     skip_header_bytes : int | None, optional
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
-        config (default ``0`` for flight PDS; pass ``8`` for ground CCSDS).
+        config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
+        carry a per-packet record header need ``8``).
 
     Returns
     -------

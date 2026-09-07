@@ -161,6 +161,15 @@ def test_ditl_camera_with_duplicate_packet(test_data_path):
     return test_data_path / "packets/libera_ditl_packets/ccsds_2025_318_13_16_34"
 
 
+@pytest.fixture(scope="session")
+def test_ditl_demux_path(test_data_path):
+    """Directory of demuxed single-APID ground CCSDS files.
+
+    See test_data/packets/libera_ditl_demux/notes.md for the per-file contents.
+    """
+    return test_data_path / "packets/libera_ditl_demux"
+
+
 # SPICE test data
 # ---------------
 @pytest.fixture(scope="session")

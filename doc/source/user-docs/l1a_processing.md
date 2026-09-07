@@ -35,10 +35,14 @@ L1A processing draws on three layers of configuration:
 By default, `SKIP_PACKET_HEADER_BYTES` is `0` in `config.json`. This is correct for flight and
 production data delivered through the SDC downlink pipeline.
 
-Ground testing data generated from hardware-in-the-loop systems (e.g. Hydra/FSW) prepends an extra
-**8-byte header** to each packet before the standard CCSDS primary header. To process this data, set
-`SKIP_PACKET_HEADER_BYTES` to `8`. This is a **global** setting that affects all packets in a
-processing run.
+Raw ground testing captures from hardware-in-the-loop systems (e.g. Hydra/FSW) prepend an extra
+**8-byte record header** to each packet before the standard CCSDS primary header. To process a raw
+capture directly, set `SKIP_PACKET_HEADER_BYTES` to `8`. This is a **global** setting that affects
+all packets in a processing run.
+
+Ground captures delivered to the SDC are demuxed beforehand (see
+[Demuxed ground CCSDS files](#demuxed-ground-ccsds-files)) with the record header already stripped,
+so they need the default `0` and none of this applies to them.
 
 Set it via environment variable before running:
 
@@ -55,43 +59,71 @@ monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 The value is read once per call to `parse_packets_to_l1a_dataset()` (or overridden via its
 `skip_header_bytes=` argument) and forwarded to Space Packet Parser as `skip_header_bytes`.
 `extract_data_time_range` follows the same rule: explicit `skip_header_bytes=` if given,
-otherwise the config value. The ground CCSDS helpers do not — `scan_ground_ccsds_file` and
-`discover_ground_ccsds_apids` default to `GROUND_CCSDS_SKIP_HEADER_BYTES` (8) and never consult
-config. They do not validate that the file is ground-format, so the caller must dispatch on
-filename type before calling them.
+otherwise the config value. `scan_ground_ccsds_file` does not consult config at all — it defaults to
+`GROUND_CCSDS_SKIP_HEADER_BYTES` (`0`), which is what a demuxed file needs.
 
-### Ground CCSDS filename
+### Demuxed ground CCSDS files
 
-Canonical ground-test capture basenames (no extension) match:
+Ground captures are demuxed outside the pipeline into **one file per APID**, with the 8-byte record
+header stripped. Basenames (no extension) match:
 
 ```text
-ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
+LIBERA_SDC_<apid>_ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
 ```
 
-Example: `ccsds_2025_318_13_53_06`. Use `LiberaGroundCcsdsFilename` /
-`AbstractValidFilename.from_file_path` to validate and to derive the L0 archive prefix
-`GroundCCSDS/<yyyy>/<mm>/<dd>/` from the capture UTC encoded in the name. The DPI is
-`DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`), distinct from EDOS PDS products.
-Canonical ground names are accepted by the manual ingest CLI (`s3-utils put` /
-`manual_ingest_data_products`) so captures can be staged into the SDC Ingest Dropbox
-without CNM/ASDC delivery.
+Example: `LIBERA_SDC_1057_ccsds_2026_191_14_00_00`. Use `LiberaGroundCcsdsFilename` /
+`AbstractValidFilename.from_file_path` to validate one and to read its APID and archive prefix:
 
-For ground test captures the filename encodes the **file creation time**, not the time span of
-the data inside it. Unlike flight PDS files — where a Construction Record supplies data times
-without opening the packets — a ground capture would have to be fully parsed to learn anything
-about its contents, which is too expensive for filenaming. The
-`GroundCCSDS/<yyyy>/<mm>/<dd>/` prefix is therefore just an expansion of the filename's date
-fields and carries no guarantee about the data times within. Searchable data times come from File
-Metadata at ingest, not from the archive path. Under DITL the two can differ by years, since the
-simulated spacecraft clock runs at a mission-era epoch while the capture filename records
-wall-clock time. Camera data times also legitimately lag packet times by many hours, because WFOV
-images are downlinked well after they are taken.
+```python
+from libera_utils.io.filenaming import LiberaGroundCcsdsFilename
 
-Unlike flight PDS files (one APID per file + Construction Record), a ground CCSDS file is a
-**multi-APID** stream. Use `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to list all
-APIDs present (including unknowns outside `LiberaApid`) and per-known-APID packet/data time spans
-for File Metadata indexing. Unknown APIDs are recorded on the discovery list only; searchable
-metadata is limited to known `LiberaApid` values that have an L1A packet configuration.
+fn = LiberaGroundCcsdsFilename("LIBERA_SDC_1057_ccsds_2026_191_14_00_00")
+fn.apid              # 1057
+fn.bin_start         # datetime(2026, 7, 10, 14, 0, tzinfo=UTC)
+fn.archive_prefix    # "GroundCCSDS/1057/2026/07/10"
+```
+
+The APID field accepts any value in the CCSDS 11-bit range (0-2047), including APIDs with no
+`LiberaApid` member, so an unmodelled APID can still be archived. The DPI is
+`DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`) for every APID, distinct from EDOS PDS
+products. These names are accepted by the manual ingest CLI (`s3-utils put` /
+`manual_ingest_data_products`) so captures can be staged into the SDC Ingest Dropbox without
+CNM/ASDC delivery.
+
+The time fields are the **start of the time bin** the file was cut from, not the span of the packets
+inside it — packet times can fall outside the bin, and in practice do. The
+`GroundCCSDS/<apid>/<yyyy>/<mm>/<dd>/` prefix is just an expansion of those fields and carries no
+guarantee about the packet or data times within. Searchable times come from File Metadata at ingest,
+not from the archive path. Under DITL the two can differ by years, since the simulated spacecraft
+clock runs at a mission-era epoch while the filename records wall-clock binning. Camera data times
+also legitimately precede packet times by hours, because WFOV images are downlinked well after they
+are taken.
+
+### Scanning a demuxed ground file
+
+`libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` returns the packet and science data time
+spans one file contributes to File Metadata. The APID comes from the basename unless passed
+explicitly:
+
+```python
+from libera_utils.l1a.ground_ccsds import scan_ground_ccsds_file
+
+span = scan_ground_ccsds_file("LIBERA_SDC_1036_ccsds_2026_191_14_00_00")
+span.apid                                        # LiberaApid.icie_rad_sample
+span.first_packet_time, span.last_packet_time
+span.first_data_time, span.last_data_time        # None unless data-time indexed
+span.degraded_reason                             # why data times are absent, else None
+```
+
+It raises `GroundCcsdsScanError` when no packet-time span can be produced at all: the APID has no
+`LiberaApid` member, has no L1A packet configuration, or the file holds nothing parseable for it.
+Several APIDs present in ground captures (`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`,
+`icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`) currently have no packet configuration, so they
+archive but yield no searchable times.
+
+A data-time failure is narrower: the packet-time span is still returned, with
+`first_data_time`/`last_data_time` left `None` and `degraded_reason` set. This is the expected
+outcome for a WFOV file whose `SOP` packet landed in a different bin.
 
 ### Implausible timestamps
 
@@ -129,7 +161,7 @@ applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_dat
   WFOV file with no in-window `SOP` packet.
 - `extract_data_time_range_from_dataset` takes an already-parsed packet dataset, so a caller that
   has parsed the APID once (as `scan_ground_ccsds_file` does) need not re-read the file.
-- Ground CCSDS uses the same `SKIP_PACKET_HEADER_BYTES` setting as L1A parsing (no separate flag).
+- Demuxed ground CCSDS files need no header skip; the default `SKIP_PACKET_HEADER_BYTES` of `0` is correct.
 
 All other APIDs remain **packet-time indexed** (Construction Record first/last packet times).
 
