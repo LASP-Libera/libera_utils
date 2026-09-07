@@ -3,6 +3,8 @@
 ## 5.11.0
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for lightweight per-file science data-time spans without full L1A assembly, covering every `DATA_TIME_INDEXED_APIDS` member (WFOV SOP FSW image times; RAD/CAL/AXIS sample epoch+period or per-sample times). Extracted spans exclude timestamps at or before `MIN_VALID_TELEMETRY_TIME` (default `2020-01-01`, config-overridable), since ground/TVAC captures can carry a leading packet with an unsynced onboard clock that decodes to just after `CCSDS_EPOCH` (1958-01-01), and `extract_data_time_range` returns `None` rather than a bogus/missing span for a WFOV packet file/window with no `SOP` packet in it — expected when a large image's mem-dump is chunked across files or downlink passes. Ground headers use `SKIP_PACKET_HEADER_BYTES` (same as L1A parsing) rather than a `ground_data` flag; `extract_data_time_range` and `parse_packets_to_l1a_dataset` also accept an optional `skip_header_bytes=` override (falling back to `SKIP_PACKET_HEADER_BYTES` when omitted) so a single process handling both flight and ground files — e.g. a reused Lambda execution environment — never has to mutate the shared config to switch between them per call.
+- FEAT: `libera_utils.l1a.packets.expand_sample_times` is now public (was `_expand_sample_times`), and
+  `parse_packets_to_l1a_dataset` takes `ground_data` and `verbose` as keyword-only arguments.
 - FEAT: Add ground-test CCSDS capture support: `LiberaGroundCcsdsFilename` and `DataProductIdentifier.l0_ground_ccsds` for the canonical `ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>` naming (L0 archive prefix `GroundCCSDS/<yyyy>/<mm>/<dd>/`), `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to discover all APIDs (known + unknown) and per-known-`LiberaApid` packet/data time spans for File Metadata ingest (`skip_header_bytes=8` by default), and manual ingest (`s3-utils put` / `manual_ingest_data_products`) support for these captures.
 
 ## 5.10.11
@@ -31,7 +33,7 @@
 - BREAKING: The four per-channel radiometer frames (`LIBERA_SW_RAD_COORD`, `LIBERA_SSW_RAD_COORD`, `LIBERA_LW_RAD_COORD`, `LIBERA_TOT_RAD_COORD`) are replaced by a single co-aligned `LIBERA_RAD_COORD` frame and one `LIBERA_RAD` instrument/FOV in the frame and instrument kernels for both JPSS-4 and NOAA-20. The four channels share a boresight, so the per-channel definitions carried identical geometry. Downstream callers must transform to `LIBERA_RAD_COORD` instead of a per-channel frame.
 - BREAKING: The four per-channel fixed-offset SPK configs are replaced by one `libera_rad.fixed_offset.spk.json` per mission, so `LIBERA_KERNEL_STATIC_SPK_CONFIGS` in `data/config.json` drops from 8 static SPK configs to 5.
 
-## 5.10.6
+## 5.11.0
 
 - BREAKING: L1A trimmed NOM-HK products are now one per _calibration dependency family_ rather than one per ObsID: 10 `NOM-HK-<FAMILY>-FAMILY-TRIMMED` members replace the 40 `NOM-HK-<EVENT>-TRIMMED` members added in 5.10.3. Each ObsID keeps its own CAL product, and the ObsID stays readable from the `ICIE__SW_OBSID_*` variable inside each trimmed file. A family never spans both ObsID fields, so RAD and WFOV VIIRS lunar (513/514) are registered as separate families with distinct ProductIDs.
 - BREAKING: Registry validation now rejects a CAL product claimed by more than one ObsID, and a TRIMMED family registered on both the RAD and WFOV ObsID fields. The 5.10.3 check that a TRIMMED product is claimed by only one ObsID is removed, since sharing one is what defines a family.

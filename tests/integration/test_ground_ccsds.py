@@ -146,21 +146,25 @@ def test_scan_ground_ccsds_file_across_captures(
             assert span.last_data_time is None
 
 
+# ``multi_time`` says the fixture supplies more than one distinct data time for that APID, so the
+# span must be an interval. A WFOV span comes only from SOP packets, and test_ccsds_2025_221_17_17_58
+# holds exactly one SOP, so a point span is correct there. Everywhere else a point span means
+# timestamps were dropped after the min/max instead of before it.
 @pytest.mark.parametrize(
-    ("fixture_name", "apid", "expected_date"),
+    ("fixture_name", "apid", "expected_date", "multi_time"),
     [
-        ("test_ditl_camera_with_duplicate_packet", LiberaApid.icie_wfov_sci, "2028-02-14"),
-        ("test_ditl_camera_with_duplicate_packet", LiberaApid.icie_rad_sample, "2028-02-15"),
-        ("test_ditl_camera_with_duplicate_packet", LiberaApid.icie_axis_sample, "2028-02-15"),
-        ("test_istr_gain_event", LiberaApid.icie_rad_full, "2025-08-06"),
-        ("test_istr_gain_event", LiberaApid.icie_cal_full, "2025-08-06"),
-        ("test_istr_gain_event", LiberaApid.icie_cal_sample, "2025-08-06"),
-        ("test_iov_swc_event", LiberaApid.icie_cal_sample, "2025-12-12"),
-        ("test_iov_swc_event", LiberaApid.icie_rad_sample, "2025-12-12"),
-        ("test_iov_swc_event", LiberaApid.icie_axis_sample, "2025-12-12"),
-        ("test_ccsds_2025_221_17_17_58", LiberaApid.icie_wfov_sci, "2025-08-09"),
-        ("test_ccsds_2025_221_17_17_58", LiberaApid.icie_rad_sample, "2025-08-09"),
-        ("test_ccsds_2025_218_18_41_30", LiberaApid.icie_rad_sample, "2025-08-06"),
+        ("test_ditl_camera_with_duplicate_packet", LiberaApid.icie_wfov_sci, "2028-02-14", True),
+        ("test_ditl_camera_with_duplicate_packet", LiberaApid.icie_rad_sample, "2028-02-15", True),
+        ("test_ditl_camera_with_duplicate_packet", LiberaApid.icie_axis_sample, "2028-02-15", True),
+        ("test_istr_gain_event", LiberaApid.icie_rad_full, "2025-08-06", True),
+        ("test_istr_gain_event", LiberaApid.icie_cal_full, "2025-08-06", True),
+        ("test_istr_gain_event", LiberaApid.icie_cal_sample, "2025-08-06", True),
+        ("test_iov_swc_event", LiberaApid.icie_cal_sample, "2025-12-12", True),
+        ("test_iov_swc_event", LiberaApid.icie_rad_sample, "2025-12-12", True),
+        ("test_iov_swc_event", LiberaApid.icie_axis_sample, "2025-12-12", True),
+        ("test_ccsds_2025_221_17_17_58", LiberaApid.icie_wfov_sci, "2025-08-09", False),  # single SOP
+        ("test_ccsds_2025_221_17_17_58", LiberaApid.icie_rad_sample, "2025-08-09", True),
+        ("test_ccsds_2025_218_18_41_30", LiberaApid.icie_rad_sample, "2025-08-06", True),
     ],
     ids=(
         "ditl_wfov",
@@ -177,11 +181,14 @@ def test_scan_ground_ccsds_file_across_captures(
         "istr41_rad_sample",
     ),
 )
-def test_extract_data_time_range_from_ground_ccsds(fixture_name, apid, expected_date, request):
+def test_extract_data_time_range_from_ground_ccsds(fixture_name, apid, expected_date, multi_time, request):
     """Data-time extractors return science spans for all DATA_TIME_INDEXED_APIDS in fixtures."""
     packet_file = request.getfixturevalue(fixture_name)
     first, last = extract_data_time_range(packet_file, apid, skip_header_bytes=8)
 
-    assert first <= last
+    if multi_time:
+        assert first < last
+    else:
+        assert first == last
     assert first.date().isoformat() == expected_date
     assert last.date().isoformat() == expected_date

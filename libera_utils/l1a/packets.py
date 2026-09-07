@@ -37,8 +37,8 @@ SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variab
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
 
-def drop_unsynced_clock_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
-    """Filter out packet/sample times at or before the clock-not-yet-synced sanity floor.
+def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
+    """Filter out packet/sample times outside the plausible telemetry window.
 
     Onboard clocks read out a near-zero day/second counter before the first time-sync command
     is applied on the ground, which decodes as a timestamp just after ``CCSDS_EPOCH``
@@ -46,10 +46,20 @@ def drop_unsynced_clock_times(times_us: np.ndarray, *, context: str) -> np.ndarr
     calculation (e.g. driving a File Metadata applicable-date walk across ~68 years), so these
     are dropped before span extraction rather than treated as real telemetry times.
 
+    A corrupted high-order bit in a day or second counter produces the same failure at the
+    other end, so the window is bounded above as well. The ceiling is ``now`` plus
+    ``MAX_TELEMETRY_TIME_LEAD_DAYS`` (default 10 years) rather than a fixed date: DITL and
+    other simulated-clock captures legitimately run at a mission-era epoch years ahead of
+    wall clock, so the lead has to be generous. It still catches the realistic corruption
+    mode, where a flipped high bit moves a CDS day counter by decades or centuries.
+
+    Times are compared strictly, so a time exactly at the floor is dropped.
+
     Parameters
     ----------
     times_us : np.ndarray
-        Array of ``datetime64[us]`` packet or sample times.
+        Array of ``datetime64[us]`` packet or sample times. ``NaT`` entries compare false
+        against both bounds and are therefore dropped.
     context : str
         Description of what is being processed (APID/file), used in the warning log and in the
         error raised if nothing remains.
@@ -57,7 +67,7 @@ def drop_unsynced_clock_times(times_us: np.ndarray, *, context: str) -> np.ndarr
     Returns
     -------
     np.ndarray
-        ``times_us`` with any pre-floor entries removed.
+        ``times_us`` with any implausible entries removed.
 
     Raises
     ------
@@ -65,18 +75,33 @@ def drop_unsynced_clock_times(times_us: np.ndarray, *, context: str) -> np.ndarr
         If no times remain after filtering.
     """
     floor = np.datetime64(config.get("MIN_VALID_TELEMETRY_TIME"), "us")
-    valid_mask = times_us > floor
-    n_excluded = int((~valid_mask).sum())
-    if n_excluded:
+    lead_days = int(config.get("MAX_TELEMETRY_TIME_LEAD_DAYS"))
+    ceiling = np.datetime64(datetime.now(UTC).replace(tzinfo=None), "us") + np.timedelta64(lead_days, "D")
+
+    below = times_us <= floor
+    above = times_us > ceiling
+    n_below = int(below.sum())
+    n_above = int(above.sum())
+    if n_below:
         logger.warning(
             "Excluded %d time(s) at or before sanity floor %s (likely clock not yet time-synced) for %s",
-            n_excluded,
+            n_below,
             floor,
             context,
         )
-    filtered = times_us[valid_mask]
+    if n_above:
+        logger.warning(
+            "Excluded %d time(s) after sanity ceiling %s (likely corrupted time counter) for %s",
+            n_above,
+            ceiling,
+            context,
+        )
+
+    filtered = times_us[~(below | above)]
     if filtered.size == 0:
-        raise ValueError(f"All times for {context} were before the sanity floor {floor}; none remain.")
+        raise ValueError(
+            f"No times for {context} fall between the sanity floor {floor} and ceiling {ceiling}; none remain."
+        )
     return filtered
 
 
@@ -132,9 +157,9 @@ def parse_packets_to_dataset(
 def parse_packets_to_l1a_dataset(
     packet_files: list[PathLike | str],
     apid: int,
+    *,
     ground_data: bool = False,
     verbose: bool = False,
-    *,
     skip_header_bytes: int | None = None,
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
@@ -518,7 +543,7 @@ def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[
     # Calculate sample times
     if group.time_field_patterns:
         # Explicit per-sample timestamps
-        sample_times = _expand_sample_times(dataset, group.time_field_patterns, n_samples)
+        sample_times = expand_sample_times(dataset, group.time_field_patterns, n_samples)
     elif group.epoch_time_fields and group.sample_period:
         # Use epoch + period to calculate sample timestamps
         epoch_times_dt64 = multipart_to_dt64(dataset, **group.epoch_time_fields.multipart_kwargs)
@@ -549,7 +574,7 @@ def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[
     return field_arrays, sample_times
 
 
-def _expand_sample_times(dataset: xr.Dataset, time_fields: TimeFieldMapping, n_samples: int) -> np.ndarray:
+def expand_sample_times(dataset: xr.Dataset, time_fields: TimeFieldMapping, n_samples: int) -> np.ndarray:
     """Expand sample time fields into a flat array.
 
     Parameters

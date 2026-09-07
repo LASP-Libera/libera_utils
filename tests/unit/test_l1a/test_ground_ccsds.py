@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import xarray as xr
 
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.data_time_extractors import DATA_TIME_INDEXED_APIDS, DataTimeUndeterminedError
@@ -71,7 +72,7 @@ def test_scan_ground_ccsds_file_ditl(test_ditl_camera_with_duplicate_packet):
 
 
 def test_scan_skips_known_apid_without_packet_config(tmp_path: Path, monkeypatch):
-    """Known LiberaApid without XTCE/packet config is listed but omitted from time_spans."""
+    """Known LiberaApid without XTCE/packet config is reported as failed, not silently skipped."""
     from libera_utils.l1a import ground_ccsds as mod
 
     dummy = tmp_path / "ccsds_2025_001_00_00_00"
@@ -82,6 +83,9 @@ def test_scan_skips_known_apid_without_packet_config(tmp_path: Path, monkeypatch
     result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
     assert result.known_apids == (LiberaApid.icie_seq_hk,)
     assert result.time_spans == {}
+    assert LiberaApid.icie_seq_hk in result.failed_apids
+    assert "No packet configuration" in result.failed_apids[LiberaApid.icie_seq_hk]
+    assert result.degraded_apids == {}
 
 
 def test_scan_isolates_apid_unparsable_failure(tmp_path: Path, monkeypatch):
@@ -104,6 +108,7 @@ def test_scan_isolates_apid_unparsable_failure(tmp_path: Path, monkeypatch):
     assert result.time_spans == {}
     assert LiberaApid.icie_wfov_sci in result.failed_apids
     assert "1040" in result.failed_apids[LiberaApid.icie_wfov_sci]
+    assert result.degraded_apids == {}
 
 
 def test_extract_packet_time_span_drops_unsynced_clock_packet(tmp_path: Path, monkeypatch):
@@ -152,6 +157,7 @@ def test_scan_isolates_data_time_undetermined_failure(tmp_path: Path, monkeypatc
     dummy.write_bytes(b"")
 
     monkeypatch.setattr(mod, "discover_ground_ccsds_apids", lambda *a, **k: (1040,))
+    monkeypatch.setattr(mod, "_parse_known_apid", lambda *a, **k: xr.Dataset())
     monkeypatch.setattr(
         mod,
         "_extract_packet_time_span",
@@ -162,7 +168,7 @@ def test_scan_isolates_data_time_undetermined_failure(tmp_path: Path, monkeypatc
     )
     monkeypatch.setattr(
         mod,
-        "extract_data_time_range",
+        "extract_data_time_range_from_dataset",
         lambda *a, **k: (_ for _ in ()).throw(DataTimeUndeterminedError("no SOP times")),
     )
     result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
@@ -171,7 +177,9 @@ def test_scan_isolates_data_time_undetermined_failure(tmp_path: Path, monkeypatc
     assert span.last_packet_time == datetime(2025, 1, 1, 1, tzinfo=UTC)
     assert span.first_data_time is None
     assert span.last_data_time is None
-    assert result.failed_apids == {LiberaApid.icie_wfov_sci: "no SOP times"}
+    assert result.failed_apids == {}
+    assert LiberaApid.icie_wfov_sci in result.degraded_apids
+    assert result.degraded_apids == {LiberaApid.icie_wfov_sci: "no SOP times"}
 
 
 def test_scan_records_packet_time_when_no_sop_in_window(tmp_path: Path, monkeypatch):
@@ -184,6 +192,7 @@ def test_scan_records_packet_time_when_no_sop_in_window(tmp_path: Path, monkeypa
     dummy.write_bytes(b"")
 
     monkeypatch.setattr(mod, "discover_ground_ccsds_apids", lambda *a, **k: (1040,))
+    monkeypatch.setattr(mod, "_parse_known_apid", lambda *a, **k: xr.Dataset())
     monkeypatch.setattr(
         mod,
         "_extract_packet_time_span",
@@ -192,7 +201,7 @@ def test_scan_records_packet_time_when_no_sop_in_window(tmp_path: Path, monkeypa
             datetime(2025, 1, 1, 1, tzinfo=UTC),
         ),
     )
-    monkeypatch.setattr(mod, "extract_data_time_range", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "extract_data_time_range_from_dataset", lambda *a, **k: None)
 
     result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
     span = result.time_spans[LiberaApid.icie_wfov_sci]
@@ -201,3 +210,47 @@ def test_scan_records_packet_time_when_no_sop_in_window(tmp_path: Path, monkeypa
     assert span.first_data_time is None
     assert span.last_data_time is None
     assert result.failed_apids == {}
+    assert LiberaApid.icie_wfov_sci in result.degraded_apids
+
+
+def test_scan_result_reason_dicts_partition_known_apids(tmp_path: Path, monkeypatch):
+    """failed_apids never overlaps time_spans; degraded_apids is always a subset of it.
+
+    Covers all three outcomes in one scan: no packet config (failed), a data-time failure
+    (degraded), and a clean extraction (neither).
+    """
+    from datetime import UTC, datetime
+
+    from libera_utils.l1a import ground_ccsds as mod
+
+    dummy = tmp_path / "ccsds_2025_001_00_00_00"
+    dummy.write_bytes(b"")
+
+    # 1017 icie_seq_hk has no packet time span; 1040 wfov degrades; 1036 rad_sample succeeds.
+    monkeypatch.setattr(mod, "discover_ground_ccsds_apids", lambda *a, **k: (1017, 1036, 1040))
+
+    def _packet_span(_ds, apid, **_kwargs):
+        if apid == LiberaApid.icie_seq_hk:
+            raise mod._PacketTimeSpanUnavailable("No packet configuration for known APID 1017")
+        return datetime(2025, 1, 1, tzinfo=UTC), datetime(2025, 1, 1, 1, tzinfo=UTC)
+
+    monkeypatch.setattr(mod, "_parse_known_apid", lambda *a, **k: xr.Dataset())
+    monkeypatch.setattr(mod, "_extract_packet_time_span", _packet_span)
+
+    def _data_span(_ds, apid, **_kwargs):
+        if apid == int(LiberaApid.icie_wfov_sci):
+            raise DataTimeUndeterminedError("no SOP times")
+        return datetime(2025, 1, 1, tzinfo=UTC), datetime(2025, 1, 1, 1, tzinfo=UTC)
+
+    monkeypatch.setattr(mod, "extract_data_time_range_from_dataset", _data_span)
+
+    result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+
+    assert set(result.failed_apids) == {LiberaApid.icie_seq_hk}
+    assert set(result.degraded_apids) == {LiberaApid.icie_wfov_sci}
+    assert set(result.time_spans) == {LiberaApid.icie_wfov_sci, LiberaApid.icie_rad_sample}
+
+    assert not set(result.failed_apids) & set(result.time_spans)
+    assert set(result.degraded_apids) <= set(result.time_spans)
+    assert result.time_spans[LiberaApid.icie_rad_sample].first_data_time is not None
+    assert result.time_spans[LiberaApid.icie_wfov_sci].first_data_time is None

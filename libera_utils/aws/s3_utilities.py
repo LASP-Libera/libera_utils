@@ -221,6 +221,10 @@ def verify_ingestion(
        ground CCSDS files, which the SDC does not write availability records for).
     3. A File Metadata record exists for the file basename.
 
+    For a ground CCSDS capture this confirms archival and the base File Metadata row only. The
+    per-APID searchable rows are keyed by ``{basename}#{apid}`` and are not checked here, so a
+    successful verification does not mean every APID's time span was indexed.
+
     All required AWS resources are resolved once up front; finding zero or more than one of any resource raises
     immediately (it indicates a mismatch between Libera Utils and the deployed SDC). Checks are polled every
     ``poll_interval`` seconds and each check stops being polled as soon as it passes. A per-file summary is always
@@ -266,8 +270,11 @@ def verify_ingestion(
             spec["data_product_id"] = str(libera_filename.data_product_id)
             spec["version"] = libera_filename.filename_parts.version
         elif isinstance(libera_filename, LiberaGroundCcsdsFilename):
-            # Ground CCSDS: base ``#`` row under PK=basename; searchable rows use PK={basename}#{apid}.
-            # Verify only that the base row exists under the basename PK.
+            # Ground CCSDS: the base row is PK=basename, but the per-APID searchable rows the
+            # ingester writes use PK={basename}#{apid}, a different partition key. A query on
+            # PK=basename cannot see them, and DynamoDB has no begins_with on a partition key,
+            # so checking them would mean scanning the capture here to learn its APID set.
+            # This check therefore covers archival and the base row only.
             spec["expected_metadata_count"] = 1
         else:
             # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets both a base

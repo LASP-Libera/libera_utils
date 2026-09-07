@@ -174,7 +174,4 @@ def dt64_to_utc_datetime(value: np.datetime64) -> datetime:
     """
     if np.isnat(value):
         raise ValueError("Encountered NaT datetime64 value")
-    ts = pd.Timestamp(value)
-    if ts.tzinfo is None:
-        return ts.to_pydatetime().replace(tzinfo=UTC)
-    return ts.to_pydatetime().astimezone(UTC)
+    return pd.Timestamp(value).to_pydatetime().replace(tzinfo=UTC)

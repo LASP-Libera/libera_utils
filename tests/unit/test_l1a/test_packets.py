@@ -309,8 +309,8 @@ def test_validate_duplicate_values_ground_data_warns_for_each_differing_value():
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
-def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
-    """Test _expand_sample_times with single sample per packet"""
+def testexpand_sample_times_single_sample(mock_multipart_to_dt64):
+    """Test expand_sample_times with single sample per packet"""
     # Create mock dataset
     ds = xr.Dataset({"SEC_FIELD": (["PACKET"], [10, 20]), "USEC_FIELD": (["PACKET"], [100, 200])})
 
@@ -320,15 +320,15 @@ def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
 
     time_fields = TimeFieldMapping(s_field="SEC_FIELD", us_field="USEC_FIELD")
 
-    result = libera_packets._expand_sample_times(ds, time_fields, n_samples=1)
+    result = libera_packets.expand_sample_times(ds, time_fields, n_samples=1)
 
     assert len(result) == 2
     assert result.dtype == np.dtype("datetime64[us]")
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
-def test_expand_sample_times_multi_sample(mock_multipart_to_dt64):
-    """Test _expand_sample_times with multiple samples per packet"""
+def testexpand_sample_times_multi_sample(mock_multipart_to_dt64):
+    """Test expand_sample_times with multiple samples per packet"""
     # Create mock dataset with 2 packets, 3 samples each
     ds = xr.Dataset(
         {
@@ -355,7 +355,7 @@ def test_expand_sample_times_multi_sample(mock_multipart_to_dt64):
 
     time_fields = TimeFieldMapping(s_field="SEC_FIELD%i", us_field="USEC_FIELD%i")
 
-    result = libera_packets._expand_sample_times(ds, time_fields, n_samples=3)
+    result = libera_packets.expand_sample_times(ds, time_fields, n_samples=3)
 
     # Should have 2 packets * 3 samples = 6 total times
     assert len(result) == 6
@@ -965,33 +965,58 @@ def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
     assert mock_config_get.call_args_list == [(("LIBERA_PACKET_DEFINITION",),)]
 
 
-def test_drop_unsynced_clock_times_removes_pre_floor_entries(caplog):
+def test_drop_implausible_telemetry_times_removes_pre_floor_entries(caplog):
     """A single pre-sync-era timestamp (near CCSDS_EPOCH) is dropped, real times survive."""
     times = np.array(
         ["1958-01-01T00:00:02", "2026-07-10T15:13:56", "2026-07-10T15:13:57"],
         dtype=libera_packets.DATETIME_USEC_DTYPE,
     )
     with caplog.at_level("WARNING"):
-        filtered = libera_packets.drop_unsynced_clock_times(times, context="test context")
+        filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
     assert list(filtered) == list(times[1:])
     assert "test context" in caplog.text
 
 
-def test_drop_unsynced_clock_times_no_op_when_all_valid():
+def test_drop_implausible_telemetry_times_no_op_when_all_valid():
     """No entries are removed and no warning-worthy exclusion occurs when all times are sane."""
     times = np.array(
         ["2026-07-10T15:13:56", "2026-07-10T15:13:57"],
         dtype=libera_packets.DATETIME_USEC_DTYPE,
     )
-    filtered = libera_packets.drop_unsynced_clock_times(times, context="test context")
+    filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
     assert list(filtered) == list(times)
 
 
-def test_drop_unsynced_clock_times_raises_when_all_pre_floor():
+def test_drop_implausible_telemetry_times_raises_when_all_pre_floor():
     """If every time is before the sanity floor, nothing remains and a ValueError is raised."""
     times = np.array(
         ["1958-01-01T00:00:02", "1958-01-01T00:00:03"],
         dtype=libera_packets.DATETIME_USEC_DTYPE,
     )
     with pytest.raises(ValueError, match="test context"):
-        libera_packets.drop_unsynced_clock_times(times, context="test context")
+        libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+
+def test_drop_implausible_telemetry_times_removes_far_future_entries(caplog):
+    """A corrupted counter reading far in the future poisons max() the way a pre-sync one poisons min()."""
+    import numpy as np
+
+    far_future = (np.datetime64("now", "us") + np.timedelta64(4000, "D")).astype("datetime64[us]")
+    times = np.array(["2025-01-01T00:00:00", "2025-01-01T00:01:00"], dtype="datetime64[us]")
+    times = np.append(times, far_future)
+
+    with caplog.at_level("WARNING"):
+        filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+    assert filtered.size == 2
+    assert filtered.max() == np.datetime64("2025-01-01T00:01:00", "us")
+    assert "sanity ceiling" in caplog.text
+
+
+def test_drop_implausible_telemetry_times_keeps_simulated_mission_era_clock():
+    """DITL captures run years ahead of wall clock and must not be rejected by the ceiling."""
+    import numpy as np
+
+    times = np.array(["2028-02-15T13:16:00", "2028-02-15T13:17:00"], dtype="datetime64[us]")
+    filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+    assert filtered.size == 2

@@ -65,9 +65,17 @@ LIBERA_L0_REGEX = re.compile(
 )
 
 # Canonical ground-test CCSDS capture names (no extension): ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
+# Field ranges are enforced here rather than left to the strptime round-trip in
+# _parse_filename_parts, which the `path` setter never runs — without them a name like
+# ccsds_2025_999_00_00_00 constructs and passes ingest validation, then raises from
+# archive_prefix at staging time. A regex cannot express leap years, so 366 in a common
+# year still falls through to strptime.
 LIBERA_GROUND_CCSDS_REGEX = re.compile(
-    r"^ccsds_(?P<year>[0-9]{4})_(?P<doy>[0-9]{3})"
-    r"_(?P<hour>[0-9]{2})_(?P<minute>[0-9]{2})_(?P<second>[0-9]{2})$"
+    r"^ccsds_(?P<year>[0-9]{4})"
+    r"_(?P<doy>00[1-9]|0[1-9][0-9]|[12][0-9]{2}|3[0-5][0-9]|36[0-6])"
+    r"_(?P<hour>[01][0-9]|2[0-3])"
+    r"_(?P<minute>[0-5][0-9])"
+    r"_(?P<second>[0-5][0-9])$"
 )
 
 # Get all data levels for the regex
@@ -450,6 +458,22 @@ class L0Filename(AbstractDataProductFilename):
         return SimpleNamespace(**d)
 
 
+def _parse_ground_ccsds_capture_time(year: int, doy: int, hour: int, minute: int, second: int) -> datetime:
+    """Build the UTC capture time for a ground CCSDS capture from its filename fields.
+
+    Raises
+    ------
+    ValueError
+        If the fields do not name a real instant, including DOY 366 in a common year --
+        ``strptime`` rolls that into 1 January of the following year rather than failing,
+        which would silently archive the file under the wrong year.
+    """
+    capture_time = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
+    if capture_time.year != year:
+        raise ValueError(f"Day of year {doy} does not exist in {year}")
+    return _ensure_utc_timezone(capture_time)
+
+
 class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     """Filename validation class for ground-test multi-APID CCSDS captures.
 
@@ -460,6 +484,17 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
 
     _regex = LIBERA_GROUND_CCSDS_REGEX
     _fmt = "ccsds_{year:04d}_{doy:03d}_{hour:02d}_{minute:02d}_{second:02d}"
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting a name whose fields do not form a real capture time.
+
+        The base setter validates against the regex only. The regex cannot express leap
+        years, so DOY 366 in a common year needs the parse to run here — otherwise the name
+        passes ingest validation and fails later, when ``archive_prefix`` is computed.
+        """
+        AbstractValidFilename.path.fset(self, new_path)
+        self._parse_filename_parts()
 
     @property
     def data_product_id(self) -> DataProductIdentifier:
@@ -525,8 +560,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         second: int,
     ):
         """Construct a basename from filename parts."""
-        # Validate by round-tripping through datetime (rejects invalid DOY/HMS)
-        datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
+        _parse_ground_ccsds_capture_time(year, doy, hour, minute, second)
         return cls._fmt.format(year=year, doy=doy, hour=hour, minute=minute, second=second)
 
     def _parse_filename_parts(self):
@@ -537,8 +571,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
         hour = int(d["hour"])
         minute = int(d["minute"])
         second = int(d["second"])
-        capture_time = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
-        capture_time = _ensure_utc_timezone(capture_time)
+        capture_time = _parse_ground_ccsds_capture_time(year, doy, hour, minute, second)
         return SimpleNamespace(
             year=year,
             doy=doy,

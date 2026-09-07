@@ -744,3 +744,37 @@ def test_ummg_metadata_filename_stem_mismatch():
     fn._path = _make_mock_path(_VALID_L1B_NC, mismatched_ummg_name)
     with pytest.raises(ValueError, match="does not match its data file path"):
         fn.ummg_metadata_filename
+
+
+@pytest.mark.parametrize(
+    "basename",
+    [
+        "ccsds_2025_000_00_00_00",  # DOY below range
+        "ccsds_2025_999_00_00_00",  # DOY above range
+        "ccsds_2025_367_00_00_00",  # DOY above range
+        "ccsds_2025_366_00_00_00",  # DOY 366 in a common year
+        "ccsds_2025_001_24_00_00",  # hour out of range
+        "ccsds_2025_001_00_60_00",  # minute out of range
+        "ccsds_2025_001_00_00_60",  # second out of range
+        "ccsds_2025_001_99_99_99",
+    ],
+)
+def test_LiberaGroundCcsdsFilename_rejects_impossible_capture_times(basename):
+    """Invalid field values are rejected at construction, not deferred to archive_prefix.
+
+    A name that constructs but blows up later passes ingest validation and only fails at
+    staging, when the archive prefix is computed.
+    """
+    # Out-of-range fields fail the regex; DOY 366 in a common year fails the date parse.
+    bad_name = "failed validation against regex pattern|does not exist"
+    with pytest.raises(ValueError, match=bad_name):
+        filenaming.LiberaGroundCcsdsFilename(basename)
+
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(basename)
+
+
+def test_LiberaGroundCcsdsFilename_accepts_leap_day_366():
+    """DOY 366 is valid in a leap year."""
+    fn = filenaming.LiberaGroundCcsdsFilename("ccsds_2024_366_00_00_00")
+    assert fn.archive_prefix == "GroundCCSDS/2024/12/31"

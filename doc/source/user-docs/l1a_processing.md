@@ -54,8 +54,11 @@ monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 
 The value is read once per call to `parse_packets_to_l1a_dataset()` (or overridden via its
 `skip_header_bytes=` argument) and forwarded to Space Packet Parser as `skip_header_bytes`.
-Helpers such as `extract_data_time_range` and `scan_ground_ccsds_file` also accept an explicit
-`skip_header_bytes=` argument so callers need not rely on process-wide config alone.
+`extract_data_time_range` follows the same rule: explicit `skip_header_bytes=` if given,
+otherwise the config value. The ground CCSDS helpers do not. `scan_ground_ccsds_file` and
+`discover_ground_ccsds_apids` default to `GROUND_CCSDS_SKIP_HEADER_BYTES` (8) and never consult
+config, because a caller has already dispatched on filename type to reach them and the record
+layout is therefore known.
 
 ### Ground CCSDS filename
 
@@ -73,6 +76,17 @@ Canonical ground names are accepted by the manual ingest CLI (`s3-utils put` /
 `manual_ingest_data_products`) so captures can be staged into the SDC Ingest Dropbox
 without CNM/ASDC delivery.
 
+For ground test captures the filename encodes the **file creation time**, not the time span of
+the data inside it. Unlike flight PDS files — where a Construction Record supplies data times
+without opening the packets — a ground capture would have to be fully parsed to learn anything
+about its contents, which is too expensive for filenaming. The
+`GroundCCSDS/<yyyy>/<mm>/<dd>/` prefix is therefore just an expansion of the filename's date
+fields and carries no guarantee about the data times within. Searchable data times come from File
+Metadata at ingest, not from the archive path. Under DITL the two can differ by years, since the
+simulated spacecraft clock runs at a mission-era epoch while the capture filename records
+wall-clock time. Camera data times also legitimately lag packet times by many hours, because WFOV
+images are downlinked well after they are taken.
+
 Unlike flight PDS files (one APID per file + Construction Record), a ground CCSDS file is a
 **multi-APID** stream. Use `libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` to list all
 APIDs present (including unknowns outside `LiberaApid`) and per-known-APID packet/data time spans
@@ -87,11 +101,14 @@ timestamp just after `CCSDS_EPOCH` (1958-01-01) — clearly not a real telemetry
 poison a naive `min()`/`max()` packet-time span (and, downstream, the File Metadata
 applicable-date day-walk, which would otherwise iterate across ~68 years for a single bad packet).
 
-`_extract_packet_time_span` (used by `scan_ground_ccsds_file`) and `extract_data_time_range` both
-drop any timestamp at or before `MIN_VALID_TELEMETRY_TIME` (config key, default `2020-01-01`)
-before computing the span, via `libera_utils.l1a.packets.drop_unsynced_clock_times`. Exclusions are
-logged at `WARNING`; if every timestamp for an APID is before the floor, `GroundCcsdsApidAbsentError`
-/ `DataTimeUndeterminedError` is raised rather than silently returning a bogus span.
+`scan_ground_ccsds_file` and `extract_data_time_range` both drop any timestamp at or before
+`MIN_VALID_TELEMETRY_TIME` (config key, default `2020-01-01`) via
+`libera_utils.l1a.packets.drop_implausible_telemetry_times`, **before** any `min()`/`max()` is taken —
+filtering afterwards would discard a pre-floor value only once it had already become the span's
+start, collapsing the span to a single point. Exclusions are logged at `WARNING`. If every
+timestamp for an APID is before the floor, the APID is reported in the scan's `failed_apids` (or
+`DataTimeUndeterminedError` is raised from `extract_data_time_range`) rather than silently
+returning a bogus span.
 
 ## Data-time extraction (ingest applicable dates)
 
@@ -99,11 +116,16 @@ Camera and radiometer science times are **not** the same as CCSDS packet times. 
 applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_data_time_range`:
 
 - **Data-time indexed APIDs** (`DATA_TIME_INDEXED_APIDS`): `icie_wfov_sci`, `icie_rad_sample`,
-  `icie_rad_full`, `icie_cal_sample`, `icie_cal_full`.
+  `icie_rad_full`, `icie_cal_sample`, `icie_cal_full`, `icie_axis_sample`.
 - **Camera:** SOP packet FSW image timestamps (reuses `wfov_image_metadata` helpers).
-- **Radiometer / cal sample APIDs:** sample epoch + period (or per-sample times) from the L1A
-  processing config — without expanding all sample data fields into an L1A product.
-- Raises `DataTimeUndeterminedError` when the span cannot be determined.
+- **Radiometer / cal sample APIDs:** sample epoch + period from the L1A processing config —
+  without expanding all sample data fields into an L1A product.
+- **`icie_axis_sample`:** the only APID on the per-sample (`time_field_patterns`) path; every
+  sample carries its own timestamp rather than being derived from an epoch plus a fixed period.
+- Raises `DataTimeUndeterminedError` when the span cannot be determined, and returns `None` for a
+  WFOV file with no in-window `SOP` packet.
+- `extract_data_time_range_from_dataset` takes an already-parsed packet dataset, so a caller that
+  has parsed the APID once (as `scan_ground_ccsds_file` does) need not re-read the file.
 - Ground CCSDS uses the same `SKIP_PACKET_HEADER_BYTES` setting as L1A parsing (no separate flag).
 
 All other APIDs remain **packet-time indexed** (Construction Record first/last packet times).
