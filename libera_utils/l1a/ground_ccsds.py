@@ -31,20 +31,12 @@ from libera_utils.time import dt64_to_utc_datetime, multipart_to_dt64
 
 logger = logging.getLogger(__name__)
 
-# Ground captures prefix each CCSDS primary header with an 8-byte record header. Unlike
-# flight PDS parsing, these helpers do not consult SKIP_PACKET_HEADER_BYTES: a caller has
-# already dispatched by filename type to get here, so the ground layout is known.
+# Ground captures prefix each CCSDS primary header with an 8-byte record header.
 GROUND_CCSDS_SKIP_HEADER_BYTES = 8
 
 
 class _PacketTimeSpanUnavailable(Exception):
-    """No packet time span can be produced for a known APID.
-
-    Covers every reason the span is unavailable — no packet configuration, an XTCE parse
-    failure, no packets for the APID, or no timestamp surviving the unsynced-clock floor —
-    because callers act on all four identically. Module-private: ``scan_ground_ccsds_file``
-    turns it into a ``failed_apids`` entry and it never reaches a caller.
-    """
+    """No packet time span can be produced for a known APID, for any reason."""
 
 
 @dataclass(frozen=True)
@@ -61,20 +53,15 @@ class GroundCcsdsTimeSpan:
 class GroundCcsdsScanResult:
     """APID discovery and per-known-APID time spans from a ground CCSDS file.
 
-    ``time_spans`` is the contract for what searchable metadata can be written. The two
-    reason dicts explain the gaps and never overlap:
-
-    - ``failed_apids`` — no span at all; the APID is absent from ``time_spans``.
-    - ``degraded_apids`` — a packet-time span was recorded but science data times were not;
-      the APID is present in ``time_spans`` with ``first_data_time`` / ``last_data_time``
-      set to ``None``.
+    ``time_spans`` determines what searchable metadata can be written; the two reason dicts
+    map each APID missing from it, or degraded within it, to why.
     """
 
     all_apids: tuple[int, ...]  # sorted unique, known + unknown
     known_apids: tuple[LiberaApid, ...]  # intersection with LiberaApid
     time_spans: dict[LiberaApid, GroundCcsdsTimeSpan]
-    failed_apids: dict[LiberaApid, str]  # keys disjoint from time_spans
-    degraded_apids: dict[LiberaApid, str]  # keys are a subset of time_spans
+    failed_apids: dict[LiberaApid, str]  # no span at all; keys disjoint from time_spans
+    degraded_apids: dict[LiberaApid, str]  # packet times only; keys a subset of time_spans
 
 
 def _is_known_libera_apid(apid: int) -> bool:
@@ -93,10 +80,9 @@ def discover_ground_ccsds_apids(
 ) -> tuple[int, ...]:
     """Return sorted unique APID integers present in a ground CCSDS file.
 
-    This function does not validate that ``packet_file`` is actually ground-format;
-    callers are expected to have already dispatched by filename type (as
-    ``libera_cdk``'s ``record_handler`` does) before calling this with the ground
-    ``skip_header_bytes`` default.
+    Does not validate that ``packet_file`` is ground-format. The caller must have already
+    dispatched by filename type, as ``libera_cdk``'s ``record_handler`` does; passing a
+    flight PDS file here decodes garbage rather than failing.
 
     Parameters
     ----------
@@ -126,8 +112,8 @@ def _parse_known_apid(
 ) -> xr.Dataset:
     """Parse one known APID out of a ground capture using its configured XTCE definition.
 
-    The scan parses each APID once and derives both its packet-time and data-time spans from
-    the result, so the file is not re-read per span.
+    Reads the whole file, keeping only ``apid``, so a scan costs one pass per known APID.
+    Both the packet-time and data-time spans are derived from the returned dataset.
 
     Raises ``_PacketTimeSpanUnavailable`` if no usable dataset can be produced.
     """
@@ -194,27 +180,15 @@ def scan_ground_ccsds_file(
 ) -> GroundCcsdsScanResult:
     """Scan a ground CCSDS file for APIDs and per-known-APID time spans.
 
-    Unknown APIDs (not in ``LiberaApid``) appear only in ``all_apids``. Known
-    APIDs are listed in ``known_apids``. Time spans are produced only for known
-    APIDs that have an L1A packet configuration (XTCE + time fields); a known APID
-    without one is recorded in ``failed_apids`` (no searchable metadata can be
-    written without times). Data-time-indexed APIDs also get science data-time
-    spans via ``extract_data_time_range_from_dataset``.
+    Unknown APIDs (not in ``LiberaApid``) appear only in ``all_apids``. See
+    ``GroundCcsdsScanResult`` for how ``time_spans``, ``failed_apids``, and
+    ``degraded_apids`` partition the known APIDs.
 
-    A packet-time failure drops the whole APID: it is recorded in ``failed_apids``
-    and scanning continues with the remaining known APIDs. A science data-time
-    failure for a data-time-indexed APID (``extract_data_time_range_from_dataset`` returning
-    ``None`` or raising ``DataTimeUndeterminedError``) is narrower: the APID keeps
-    its packet-time entry in ``time_spans`` with ``first_data_time``/
-    ``last_data_time`` left ``None``, and the reason is recorded in
-    ``degraded_apids``. Every known, time-span-eligible APID therefore lands in
-    exactly one of ``failed_apids`` or ``time_spans``. Only a failure to discover
-    APIDs at all (``discover_ground_ccsds_apids``, e.g. an unreadable or
-    unparsable file) is a hard failure for the whole scan.
+    Per-APID failures are isolated: a packet-time failure records the APID in
+    ``failed_apids`` and scanning continues. Only a failure to discover APIDs at all
+    (an unreadable or unparsable file) fails the whole scan.
 
-    Like ``discover_ground_ccsds_apids``, this function does not validate that
-    ``packet_file`` is actually ground-format; correctness of ``skip_header_bytes``
-    depends on the caller having already dispatched by filename type.
+    Costs one pass over the file to discover APIDs plus one more per known APID.
 
     Parameters
     ----------
@@ -260,9 +234,22 @@ def scan_ground_ccsds_file(
                 data_span = None
                 reason = str(exc)
             else:
-                reason = "No SOP packet in this file/window to recover an image time from"
+                # A None return means the APID's own no-data-time condition was met, which
+                # carries no exception message. Today only WFOV (no SOP in window) returns it.
+                reason = f"No in-window data time available for {apid.name}"
 
-            if data_span is not None:
+            if data_span is None:
+                logger.warning(
+                    {
+                        "msg": "No science data time determined for known APID; recording packet time only",
+                        "apid": int(apid),
+                        "libera_apid": apid.name,
+                        "file": str(packet_file),
+                        "error": reason,
+                    }
+                )
+                degraded_apids[apid] = reason
+            else:
                 first_data, last_data = data_span
                 logger.info(
                     {
@@ -274,17 +261,6 @@ def scan_ground_ccsds_file(
                         "last_data_time": last_data.isoformat(),
                     }
                 )
-            else:
-                logger.warning(
-                    {
-                        "msg": "No science data time determined for known APID; recording packet time only",
-                        "apid": int(apid),
-                        "libera_apid": apid.name,
-                        "file": str(packet_file),
-                        "error": reason,
-                    }
-                )
-                degraded_apids[apid] = reason
 
         time_spans[apid] = GroundCcsdsTimeSpan(
             first_packet_time=first_pkt,

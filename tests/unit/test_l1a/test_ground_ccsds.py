@@ -213,6 +213,28 @@ def test_scan_records_packet_time_when_no_sop_in_window(tmp_path: Path, monkeypa
     assert LiberaApid.icie_wfov_sci in result.degraded_apids
 
 
+def test_scan_degraded_reason_names_the_apid_that_returned_none(tmp_path: Path, monkeypatch):
+    """A None data span records a reason for the APID it came from, not a hard-coded WFOV message."""
+    from datetime import UTC, datetime
+
+    from libera_utils.l1a import ground_ccsds as mod
+
+    dummy = tmp_path / "ccsds_2025_001_00_00_00"
+    dummy.write_bytes(b"")
+
+    monkeypatch.setattr(mod, "discover_ground_ccsds_apids", lambda *a, **k: (1036,))
+    monkeypatch.setattr(mod, "_parse_known_apid", lambda *a, **k: xr.Dataset())
+    monkeypatch.setattr(
+        mod,
+        "_extract_packet_time_span",
+        lambda *a, **k: (datetime(2025, 1, 1, tzinfo=UTC), datetime(2025, 1, 1, 1, tzinfo=UTC)),
+    )
+    monkeypatch.setattr(mod, "extract_data_time_range_from_dataset", lambda *a, **k: None)
+
+    result = scan_ground_ccsds_file(dummy, skip_header_bytes=8)
+    assert LiberaApid.icie_rad_sample.name in result.degraded_apids[LiberaApid.icie_rad_sample]
+
+
 def test_scan_result_reason_dicts_partition_known_apids(tmp_path: Path, monkeypatch):
     """failed_apids never overlaps time_spans; degraded_apids is always a subset of it.
 

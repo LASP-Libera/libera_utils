@@ -40,26 +40,24 @@ DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
     """Filter out packet/sample times outside the plausible telemetry window.
 
-    Onboard clocks read out a near-zero day/second counter before the first time-sync command
-    is applied on the ground, which decodes as a timestamp just after ``CCSDS_EPOCH``
-    (1958-01-01). A single such packet is enough to poison a ``min()``/``max()`` time-span
-    calculation (e.g. driving a File Metadata applicable-date walk across ~68 years), so these
-    are dropped before span extraction rather than treated as real telemetry times.
+    An onboard clock reads out a near-zero day/second counter before the first time-sync
+    command is applied on the ground, decoding as a timestamp just after ``CCSDS_EPOCH``
+    (1958-01-01). One such packet is enough to stretch a ``min()``/``max()`` span across ~68
+    years, so the window is bounded below by ``MIN_VALID_TELEMETRY_TIME``. A corrupted
+    high-order bit in a day counter produces the same failure at the other end, so it is
+    bounded above by ``MAX_VALID_TELEMETRY_TIME``. Both bounds are fixed config dates: a span
+    written to File Metadata must not depend on when the extraction ran.
 
-    A corrupted high-order bit in a day or second counter produces the same failure at the
-    other end, so the window is bounded above as well. The ceiling is ``now`` plus
-    ``MAX_TELEMETRY_TIME_LEAD_DAYS`` (default 10 years) rather than a fixed date: DITL and
-    other simulated-clock captures legitimately run at a mission-era epoch years ahead of
-    wall clock, so the lead has to be generous. It still catches the realistic corruption
-    mode, where a flipped high bit moves a CDS day counter by decades or centuries.
+    The ceiling is far enough out to admit DITL and other simulated-clock captures, which
+    legitimately run at a mission-era epoch years ahead of wall clock.
 
-    Times are compared strictly, so a time exactly at the floor is dropped.
+    Comparisons are strict, so a time exactly at the floor is dropped. ``NaT`` is dropped
+    explicitly: it compares false against both bounds, so a range test alone would keep it.
 
     Parameters
     ----------
     times_us : np.ndarray
-        Array of ``datetime64[us]`` packet or sample times. ``NaT`` entries compare false
-        against both bounds and are therefore dropped.
+        Array of ``datetime64[us]`` packet or sample times.
     context : str
         Description of what is being processed (APID/file), used in the warning log and in the
         error raised if nothing remains.
@@ -75,13 +73,16 @@ def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> n
         If no times remain after filtering.
     """
     floor = np.datetime64(config.get("MIN_VALID_TELEMETRY_TIME"), "us")
-    lead_days = int(config.get("MAX_TELEMETRY_TIME_LEAD_DAYS"))
-    ceiling = np.datetime64(datetime.now(UTC).replace(tzinfo=None), "us") + np.timedelta64(lead_days, "D")
+    ceiling = np.datetime64(config.get("MAX_VALID_TELEMETRY_TIME"), "us")
 
+    invalid = np.isnat(times_us)
     below = times_us <= floor
     above = times_us > ceiling
+    n_invalid = int(invalid.sum())
     n_below = int(below.sum())
     n_above = int(above.sum())
+    if n_invalid:
+        logger.warning("Excluded %d NaT time(s) for %s", n_invalid, context)
     if n_below:
         logger.warning(
             "Excluded %d time(s) at or before sanity floor %s (likely clock not yet time-synced) for %s",
@@ -97,7 +98,7 @@ def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> n
             context,
         )
 
-    filtered = times_us[~(below | above)]
+    filtered = times_us[~(invalid | below | above)]
     if filtered.size == 0:
         raise ValueError(
             f"No times for {context} fall between the sanity floor {floor} and ceiling {ceiling}; none remain."
@@ -202,8 +203,6 @@ def parse_packets_to_l1a_dataset(
     _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
     packet_config = get_packet_config(LiberaApid(apid))
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
-    # Ground test data packets have extra 8 byte headers that need to be skipped.
-    # Prefer the explicit argument; otherwise read SKIP_PACKET_HEADER_BYTES from config.
     if skip_header_bytes is None:
         skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
     packet_ds = parse_packets_to_dataset(

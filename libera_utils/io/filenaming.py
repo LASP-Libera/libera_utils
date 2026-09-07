@@ -65,11 +65,6 @@ LIBERA_L0_REGEX = re.compile(
 )
 
 # Canonical ground-test CCSDS capture names (no extension): ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
-# Field ranges are enforced here rather than left to the strptime round-trip in
-# _parse_filename_parts, which the `path` setter never runs — without them a name like
-# ccsds_2025_999_00_00_00 constructs and passes ingest validation, then raises from
-# archive_prefix at staging time. A regex cannot express leap years, so 366 in a common
-# year still falls through to strptime.
 LIBERA_GROUND_CCSDS_REGEX = re.compile(
     r"^ccsds_(?P<year>[0-9]{4})"
     r"_(?P<doy>00[1-9]|0[1-9][0-9]|[12][0-9]{2}|3[0-5][0-9]|36[0-6])"
@@ -464,9 +459,8 @@ def _parse_ground_ccsds_capture_time(year: int, doy: int, hour: int, minute: int
     Raises
     ------
     ValueError
-        If the fields do not name a real instant, including DOY 366 in a common year --
-        ``strptime`` rolls that into 1 January of the following year rather than failing,
-        which would silently archive the file under the wrong year.
+        If the fields do not name a real instant. This includes DOY 366 in a common year,
+        which ``strptime`` rolls into 1 January of the following year rather than rejecting.
     """
     capture_time = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
     if capture_time.year != year:
@@ -489,9 +483,7 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
     def path(self, new_path: str | PathType):
         """Set the path, rejecting a name whose fields do not form a real capture time.
 
-        The base setter validates against the regex only. The regex cannot express leap
-        years, so DOY 366 in a common year needs the parse to run here — otherwise the name
-        passes ingest validation and fails later, when ``archive_prefix`` is computed.
+        The base setter validates against the regex only, which cannot express leap years.
         """
         AbstractValidFilename.path.fset(self, new_path)
         self._parse_filename_parts()

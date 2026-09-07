@@ -55,10 +55,10 @@ monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 The value is read once per call to `parse_packets_to_l1a_dataset()` (or overridden via its
 `skip_header_bytes=` argument) and forwarded to Space Packet Parser as `skip_header_bytes`.
 `extract_data_time_range` follows the same rule: explicit `skip_header_bytes=` if given,
-otherwise the config value. The ground CCSDS helpers do not. `scan_ground_ccsds_file` and
+otherwise the config value. The ground CCSDS helpers do not — `scan_ground_ccsds_file` and
 `discover_ground_ccsds_apids` default to `GROUND_CCSDS_SKIP_HEADER_BYTES` (8) and never consult
-config, because a caller has already dispatched on filename type to reach them and the record
-layout is therefore known.
+config. They do not validate that the file is ground-format, so the caller must dispatch on
+filename type before calling them.
 
 ### Ground CCSDS filename
 
@@ -93,22 +93,25 @@ APIDs present (including unknowns outside `LiberaApid`) and per-known-APID packe
 for File Metadata indexing. Unknown APIDs are recorded on the discovery list only; searchable
 metadata is limited to known `LiberaApid` values that have an L1A packet configuration.
 
-### Unsynced-clock sentinel timestamps
+### Implausible timestamps
 
 Hardware-in-the-loop ground testing can emit a leading packet before the onboard clock has
 received its first time-sync command. Its day/second counters read near-zero, which decodes to a
-timestamp just after `CCSDS_EPOCH` (1958-01-01) — clearly not a real telemetry time, but enough to
-poison a naive `min()`/`max()` packet-time span (and, downstream, the File Metadata
-applicable-date day-walk, which would otherwise iterate across ~68 years for a single bad packet).
+timestamp just after `CCSDS_EPOCH` (1958-01-01) — enough to stretch a `min()`/`max()` span across
+~68 years, and downstream to send the File Metadata applicable-date day-walk across the same
+range. A corrupted high-order bit in a day counter does the same at the other end.
 
-`scan_ground_ccsds_file` and `extract_data_time_range` both drop any timestamp at or before
-`MIN_VALID_TELEMETRY_TIME` (config key, default `2020-01-01`) via
-`libera_utils.l1a.packets.drop_implausible_telemetry_times`, **before** any `min()`/`max()` is taken —
-filtering afterwards would discard a pre-floor value only once it had already become the span's
-start, collapsing the span to a single point. Exclusions are logged at `WARNING`. If every
-timestamp for an APID is before the floor, the APID is reported in the scan's `failed_apids` (or
-`DataTimeUndeterminedError` is raised from `extract_data_time_range`) rather than silently
-returning a bogus span.
+`scan_ground_ccsds_file` and `extract_data_time_range` both filter through
+`libera_utils.l1a.packets.drop_implausible_telemetry_times`, which drops `NaT` and anything
+outside `MIN_VALID_TELEMETRY_TIME`–`MAX_VALID_TELEMETRY_TIME` (config keys, defaults `2020-01-01`
+and `2045-01-01`). Both bounds are fixed dates so that a span written to File Metadata does not
+depend on when the extraction ran; the ceiling is far enough out to admit DITL captures running at
+a mission-era epoch.
+
+Filtering happens **before** any `min()`/`max()` is taken; afterwards would collapse the span to a
+single point. Exclusions are logged at `WARNING`. If nothing survives for an APID, it is reported
+in the scan's `failed_apids` (or `DataTimeUndeterminedError` is raised from
+`extract_data_time_range`) rather than returning a bogus span.
 
 ## Data-time extraction (ingest applicable dates)
 

@@ -11,6 +11,7 @@ from datetime import datetime
 from os import PathLike
 
 import numpy as np
+import xarray as xr
 from cloudpathlib import AnyPath
 
 from libera_utils.config import config
@@ -74,9 +75,8 @@ def extract_data_time_range(
 ) -> tuple[datetime, datetime] | None:
     """Extract the min/max science data time span from a single packet file.
 
-    This is intentionally cheaper than ``parse_packets_to_l1a_dataset``: it uses
-    XTCE packet parsing only (no sample-field expansion into L1A product form,
-    no WFOV image stitching / NetCDF assembly).
+    Uses XTCE packet parsing only: no sample-field expansion into L1A product form and no
+    WFOV image stitching or NetCDF assembly.
 
     Parameters
     ----------
@@ -92,23 +92,14 @@ def extract_data_time_range(
     Returns
     -------
     tuple[datetime, datetime] | None
-        ``(first_data_time, last_data_time)`` as timezone-aware UTC datetimes, or
-        ``None`` if this WFOV packet file/window contains no ``SOP`` packet to
-        recover an image time from (expected for a mem-dump chunk whose ``SOP``
-        landed in an earlier file/pass). Callers should fall back to packet time
-        in that case rather than treating it as a failure.
-
-    Notes
-    -----
-    Ground CCSDS with an 8-byte record header is handled via ``SKIP_PACKET_HEADER_BYTES``
-    (same as ``parse_packets_to_l1a_dataset``) or the ``skip_header_bytes`` argument.
+        As ``extract_data_time_range_from_dataset``. A ``None`` return means the caller
+        should fall back to packet time, not that extraction failed.
 
     Raises
     ------
     DataTimeUndeterminedError
-        If the APID is not data-time indexed, or usable data times cannot be
-        determined for a reason other than a missing in-window ``SOP`` (e.g. a
-        malformed packet dataset, or sample-group times that fail parsing).
+        As ``extract_data_time_range_from_dataset``, and additionally if the file cannot be
+        parsed or holds no packets for ``apid``.
     """
     libera_apid = LiberaApid(apid)
     if libera_apid not in DATA_TIME_INDEXED_APIDS:
@@ -118,8 +109,6 @@ def extract_data_time_range(
 
     packet_config = get_packet_config(libera_apid)
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
-    # Ground test data: set SKIP_PACKET_HEADER_BYTES=8 (see l1a_processing user docs)
-    # or pass skip_header_bytes=8 explicitly.
     if skip_header_bytes is None:
         skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
 
@@ -139,11 +128,10 @@ def extract_data_time_range(
     return extract_data_time_range_from_dataset(packet_ds, apid)
 
 
-def extract_data_time_range_from_dataset(packet_ds, apid: int) -> tuple[datetime, datetime] | None:
+def extract_data_time_range_from_dataset(packet_ds: xr.Dataset, apid: int) -> tuple[datetime, datetime] | None:
     """Extract the min/max science data time span from an already-parsed packet dataset.
 
-    Lets a caller that has already parsed an APID's packets reuse that dataset instead of
-    re-reading the file; ``extract_data_time_range`` is the file-taking wrapper.
+    ``extract_data_time_range`` is the file-taking wrapper around this.
 
     Parameters
     ----------
@@ -184,7 +172,7 @@ def extract_data_time_range_from_dataset(packet_ds, apid: int) -> tuple[datetime
         raise DataTimeUndeterminedError("Encountered NaT in data time span") from exc
 
 
-def _normalize_flag(flag) -> bytes:
+def _normalize_flag(flag: bytes | np.bytes_ | str | object) -> bytes:
     """Normalize MEM_DUMP flag values to ASCII bytes."""
     if isinstance(flag, bytes | np.bytes_):
         return bytes(flag).rstrip(b"\x00")
@@ -193,20 +181,15 @@ def _normalize_flag(flag) -> bytes:
     return bytes(str(flag), "ascii", errors="ignore")
 
 
-def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64] | None:
+def _camera_sop_time_span(packet_ds: xr.Dataset) -> tuple[np.datetime64, np.datetime64] | None:
     """Return min/max FSW image times from SOP packets in a WFOV packet dataset.
 
-    Returns ``None`` (rather than raising) when the dataset has no ``SOP``-flagged
-    packet at all: a mem-dump chunk that starts and ends mid-image (its ``SOP``
-    landed in an earlier file/downlink pass) is an expected condition, not a
-    failure — see ``_stitch_wfov_images`` in ``wfov_image_metadata.py`` for the
-    same first/last-incomplete handling in the full stitching path.
+    Returns ``None`` rather than raising when the dataset holds no ``SOP``-flagged packet: a
+    mem-dump chunk starting and ending mid-image is expected, not a failure.
 
-    Every ``SOP`` in the window contributes, including one whose image is truncated at the
-    end of the file. The file does contain packets from that image and its FSW timestamp is
-    real, so counting it keeps the span continuous with the file that carries the remainder.
-    The consequence is deliberate: for a chunked WFOV file this span will not match the L1A
-    product's ``CAMERA_TIME`` range, which covers only images that complete ``SOP``-to-``EOP``.
+    Every ``SOP`` in the window contributes, including one whose image is truncated at the end
+    of the file, so this span will not match the L1A product's ``CAMERA_TIME`` range for a
+    chunked file — ``CAMERA_TIME`` covers only images completing ``SOP``-to-``EOP``.
     """
     required = [MEM_DUMP_FLAGS_VAR, MEM_DUMP_OFFSET_VAR, MEM_DUMP_LENGTH_VAR, WFOV_DATA_VAR]
     missing = [name for name in required if name not in packet_ds]
@@ -258,11 +241,11 @@ def _camera_sop_time_span(packet_ds) -> tuple[np.datetime64, np.datetime64] | No
     return arr.min(), arr.max()
 
 
-def _drop_unsynced_group_times(times_us: np.ndarray, apid: LiberaApid, group_name: str, kind: str) -> np.ndarray:
-    """Apply the unsynced-clock floor to one sample group's times.
+def _drop_implausible_group_times(times_us: np.ndarray, apid: LiberaApid, group_name: str, kind: str) -> np.ndarray:
+    """Apply the plausibility window to one sample group's times.
 
-    Returns an empty array when nothing survives the floor, so the caller can skip that group;
-    only an APID whose every group is empty is a failure.
+    Returns an empty array when nothing survives, so the caller can skip that group; only an
+    APID whose every group is empty is a failure.
     """
     if times_us.size == 0:
         return times_us
@@ -273,13 +256,12 @@ def _drop_unsynced_group_times(times_us: np.ndarray, apid: LiberaApid, group_nam
         return times_us[:0]
 
 
-def _sample_group_time_span(packet_ds, apid: LiberaApid) -> tuple[np.datetime64, np.datetime64]:
+def _sample_group_time_span(packet_ds: xr.Dataset, apid: LiberaApid) -> tuple[np.datetime64, np.datetime64]:
     """Return min/max sample times using epoch + period (or per-sample times) from config.
 
-    Unsynced-clock times are dropped per group, before any min/max collapse. An
-    epoch-and-period group is reduced to its first and last sample here, so filtering after
-    that collapse would drop a pre-floor epoch only once it had already become the group's
-    ``first``, leaving the span a single point at the end of the data.
+    Implausible times must be dropped per group, before the min/max collapse below: an
+    epoch-and-period group is reduced to its first and last sample here, so filtering
+    afterwards would collapse the span to a single point.
     """
     packet_config = get_packet_config(apid)
     if not packet_config.sample_groups:
@@ -289,18 +271,17 @@ def _sample_group_time_span(packet_ds, apid: LiberaApid) -> tuple[np.datetime64,
     for group in packet_config.sample_groups:
         if group.epoch_time_fields and group.sample_period:
             epoch_times = multipart_to_dt64(packet_ds, **group.epoch_time_fields.multipart_kwargs)
-            epoch_us = _drop_unsynced_group_times(
+            epoch_us = _drop_implausible_group_times(
                 epoch_times.values.astype(DATETIME_USEC_DTYPE), apid, group.name, "epochs"
             )
             if epoch_us.size == 0:
                 continue
-            period_us = np.timedelta64(int(group.sample_period.total_seconds() * 1e6), "us")
-            # Span is first epoch through last sample of last packet
+            period_us = np.timedelta64(round(group.sample_period.total_seconds() * 1e6), "us")
             first = epoch_us.min()
             last = epoch_us.max() + (group.sample_count - 1) * period_us
             all_times.append(np.asarray([first, last], dtype=DATETIME_USEC_DTYPE))
         elif group.time_field_patterns:
-            sample_times = _drop_unsynced_group_times(
+            sample_times = _drop_implausible_group_times(
                 expand_sample_times(packet_ds, group.time_field_patterns, group.sample_count).astype(
                     DATETIME_USEC_DTYPE
                 ),

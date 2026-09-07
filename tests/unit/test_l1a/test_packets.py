@@ -999,11 +999,10 @@ def test_drop_implausible_telemetry_times_raises_when_all_pre_floor():
 
 def test_drop_implausible_telemetry_times_removes_far_future_entries(caplog):
     """A corrupted counter reading far in the future poisons max() the way a pre-sync one poisons min()."""
-    import numpy as np
-
-    far_future = (np.datetime64("now", "us") + np.timedelta64(4000, "D")).astype("datetime64[us]")
-    times = np.array(["2025-01-01T00:00:00", "2025-01-01T00:01:00"], dtype="datetime64[us]")
-    times = np.append(times, far_future)
+    times = np.array(
+        ["2025-01-01T00:00:00", "2025-01-01T00:01:00", "2140-06-01T00:00:00"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
 
     with caplog.at_level("WARNING"):
         filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
@@ -1015,8 +1014,46 @@ def test_drop_implausible_telemetry_times_removes_far_future_entries(caplog):
 
 def test_drop_implausible_telemetry_times_keeps_simulated_mission_era_clock():
     """DITL captures run years ahead of wall clock and must not be rejected by the ceiling."""
-    import numpy as np
-
-    times = np.array(["2028-02-15T13:16:00", "2028-02-15T13:17:00"], dtype="datetime64[us]")
+    times = np.array(
+        ["2028-02-15T13:16:00", "2028-02-15T13:17:00"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
     filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
     assert filtered.size == 2
+
+
+def test_drop_implausible_telemetry_times_drops_nat(caplog):
+    """NaT compares false against both bounds, so it must be excluded explicitly."""
+    times = np.array(
+        ["2026-07-10T15:13:56", "NaT", "2026-07-10T15:13:57"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    with caplog.at_level("WARNING"):
+        filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+    assert filtered.size == 2
+    assert not np.isnat(filtered).any()
+    assert not np.isnat(filtered.min())
+    assert "NaT" in caplog.text
+
+
+def test_drop_implausible_telemetry_times_raises_when_only_nat():
+    """A dataset whose every time is NaT has no usable span and must fail rather than return NaT."""
+    times = np.array(["NaT", "NaT"], dtype=libera_packets.DATETIME_USEC_DTYPE)
+    with pytest.raises(ValueError, match="test context"):
+        libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+
+def test_drop_implausible_telemetry_times_bounds_do_not_depend_on_wall_clock(monkeypatch):
+    """Both bounds come from fixed config dates so a re-run yields the same span."""
+    times = np.array(
+        ["2030-01-01T00:00:00", "2044-12-31T23:59:59"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    monkeypatch.setenv("MAX_VALID_TELEMETRY_TIME", "2045-01-01T00:00:00")
+    assert libera_packets.drop_implausible_telemetry_times(times, context="test context").size == 2
+
+    monkeypatch.setenv("MAX_VALID_TELEMETRY_TIME", "2035-01-01T00:00:00")
+    filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+    assert filtered.size == 1
+    assert filtered[0] == np.datetime64("2030-01-01T00:00:00", "us")
