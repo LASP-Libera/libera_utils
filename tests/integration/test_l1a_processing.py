@@ -14,6 +14,7 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
+from libera_utils.l1a.data_time_extractors import extract_data_time_range
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
 from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
@@ -28,6 +29,7 @@ from libera_utils.l1a.wfov_image_metadata import (
     WFOV_COMPRESSED_IMAGE_VAR,
     WFOV_HEADER_PARSE_VALID_VAR,
 )
+from libera_utils.time import dt64_to_utc_datetime, multipart_to_dt64
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -431,3 +433,37 @@ def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
 def test_packet_definition_validity(packet_definition):
     """Test that the XTCE packet definitions are valid"""
     validate_xtce(packet_definition, level="all")
+
+
+@pytest.mark.parametrize(
+    "pds_fixture",
+    ["test_jpss1_pds_file_1", "test_jpss4_pds_file_1"],
+)
+def test_jpss_sc_pos_data_time_range_spans_both_sample_groups(pds_fixture, request):
+    """APID 11's extent runs from the earliest to the latest of its ADGPS/ADCFA sample times."""
+    packet_file = request.getfixturevalue(pds_fixture)
+    apid = LiberaApid.jpss_sc_pos
+    packet_config = get_packet_config(apid)
+
+    first, last = extract_data_time_range(packet_file, int(apid), skip_header_bytes=0)
+
+    packet_ds = packets.parse_packets_to_dataset(
+        [packet_file],
+        str(config.get(packet_config.packet_definition_config_key)),
+        int(apid),
+        skip_header_bytes=0,
+    )
+    group_spans = {}
+    for group in packet_config.sample_groups:
+        times = multipart_to_dt64(packet_ds, **group.time_field_patterns.multipart_kwargs).values
+        group_spans[group.name] = (times.min(), times.max())
+    assert set(group_spans) == {"ADGPS", "ADCFA"}
+
+    assert first < last
+    assert first == dt64_to_utc_datetime(min(group_first for group_first, _ in group_spans.values()))
+    assert last == dt64_to_utc_datetime(max(group_last for _, group_last in group_spans.values()))
+
+    # Every group's own span sits inside the reported extent, which the overlap would not cover.
+    for group_first, group_last in group_spans.values():
+        assert first <= dt64_to_utc_datetime(group_first)
+        assert last >= dt64_to_utc_datetime(group_last)

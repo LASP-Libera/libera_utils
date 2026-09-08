@@ -94,7 +94,7 @@ The time fields are the **start of the time bin** the file was cut from, not the
 inside it — packet times can fall outside the bin, and in practice do. The
 `GroundCCSDS/<apid>/<yyyy>/<mm>/<dd>/` prefix is just an expansion of those fields and carries no
 guarantee about the packet or data times within. Searchable times come from File Metadata at ingest,
-not from the archive path. Under DITL the two can differ by years, since the simulated spacecraft
+not from the archive path. During ground testing the two can differ by large gaps, since the simulated spacecraft
 clock runs at a mission-era epoch while the filename records wall-clock binning. Camera data times
 also legitimately precede packet times by hours, because WFOV images are downlinked well after they
 are taken.
@@ -140,23 +140,23 @@ and `2045-01-01`). Both bounds are fixed dates so that a span written to File Me
 depend on when the extraction ran; the ceiling is far enough out to admit DITL captures running at
 a mission-era epoch.
 
-Filtering happens **before** any `min()`/`max()` is taken; afterwards would collapse the span to a
-single point. Exclusions are logged at `WARNING`. If nothing survives for an APID, it is reported
+Filtering happens before any `min()`/`max()` is taken. Exclusions are logged at `WARNING`. If nothing survives for an APID, it is reported
 in the scan's `failed_apids` (or `DataTimeUndeterminedError` is raised from
 `extract_data_time_range`) rather than returning a bogus span.
 
 ## Data-time extraction (ingest applicable dates)
 
-Camera and radiometer science times are **not** the same as CCSDS packet times. For File Metadata
+Camera and radiometer science times are **not** the same as CCSDS secondary header packet times. For File Metadata
 applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_data_time_range`:
 
 - **Data-time indexed APIDs** (`DATA_TIME_INDEXED_APIDS`): `icie_wfov_sci`, `icie_rad_sample`,
-  `icie_rad_full`, `icie_cal_sample`, `icie_cal_full`, `icie_axis_sample`.
+  `icie_rad_full`, `icie_cal_sample`, `icie_cal_full`, `icie_axis_sample`, `jpss_sc_pos`.
 - **Camera:** SOP packet FSW image timestamps (reuses `wfov_image_metadata` helpers).
 - **Radiometer / cal sample APIDs:** sample epoch + period from the L1A processing config —
   without expanding all sample data fields into an L1A product.
-- **`icie_axis_sample`:** the only APID on the per-sample (`time_field_patterns`) path; every
-  sample carries its own timestamp rather than being derived from an epoch plus a fixed period.
+- **`icie_axis_sample`:** on the per-sample (`time_field_patterns`) path; every sample carries its
+  own timestamp rather than being derived from an epoch plus a fixed period.
+- **`jpss_sc_pos` (APID 11):** the extent of both of its sample groups (see below).
 - Raises `DataTimeUndeterminedError` when the span cannot be determined, and returns `None` for a
   WFOV file with no in-window `SOP` packet.
 - `extract_data_time_range_from_dataset` takes an already-parsed packet dataset, so a caller that
@@ -164,6 +164,47 @@ applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_dat
 - Demuxed ground CCSDS files need no header skip; the default `SKIP_PACKET_HEADER_BYTES` of `0` is correct.
 
 All other APIDs remain **packet-time indexed** (Construction Record first/last packet times).
+
+### What a data time span means
+
+A span is the **full extent of data present in the file**: the earliest data time to the latest,
+across every timeseries the file carries, even when those times come from different clocks. It is
+deliberately _not_ narrowed to the range where all of a file's timeseries are simultaneously
+available.
+
+The purpose of the span is ingest indexing — answering "what data exists, and roughly when" so a
+file can be found. Completeness is a separate judgement, and it belongs to the consumer, which
+knows what it actually needs:
+
+- **WFOV:** every in-window `SOP` contributes, including one whose image is truncated at the end of
+  the file. The span therefore does not match the L1A product's `CAMERA_TIME` range for a chunked
+  file, where `CAMERA_TIME` covers only images completing `SOP`-to-`EOP`.
+- **`jpss_sc_pos` (APID 11):** both sample groups contribute, so the span is not restricted to the
+  range covered by both.
+
+### JPSS SC position (APID 11): two sample-time clocks
+
+A JPSS SC position packet carries three timeseries: its own packet time, an ephemeris sample time
+(`ADAET1*`, the `ADGPS` sample group) and an attitude sample time (`ADAET2*`, the `ADCFA` group).
+The two sample times are applied independently by the spacecraft and do not coincide — on the
+`jpss1` test PDS they run 100 ms apart, so each group's span starts and ends at a different instant.
+
+The recorded extent runs from the earliest time either group reports to the latest, so on that
+file it starts on an ADCFA sample and ends on an ADGPS one. Disjoint groups are not an error: the
+span simply covers both and the gap between them. If one group is filtered out entirely by the
+plausibility window, the surviving group's times are the whole span; only an APID with no usable
+times in any group raises `DataTimeUndeterminedError`.
+
+A consumer that needs ephemeris and attitude together — geolocation does — must intersect the two
+sample-time ranges itself from the samples in the file. The span in File Metadata will not have
+done that for it, and a file whose span covers a given instant does not guarantee both timeseries
+cover it.
+
+The 24-hour L1A granule assembled from these packets is not built by this repo yet. When it is, it
+has the same choice to make for its filename time range, and the same distinction applies: the
+filename advertises what the granule holds, while a step needing continuous attitude _and_
+ephemeris coverage across the full 24 hours has to check the two sample-time ranges, and gather
+enough packets on either side of the day boundary for their overlap to span the day.
 
 ## L1A Packet Processing Configurations
 

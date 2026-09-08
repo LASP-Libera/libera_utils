@@ -1,5 +1,6 @@
 """Unit tests for lightweight data-time extractors."""
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +14,7 @@ from libera_utils.l1a.data_time_extractors import (
     _camera_sop_time_span,
     _sample_group_time_span,
     extract_data_time_range,
+    extract_data_time_range_from_dataset,
     is_data_time_indexed_apid,
 )
 from libera_utils.l1a.wfov_image_metadata import (
@@ -29,6 +31,12 @@ def test_data_time_indexed_apid_set():
     assert is_data_time_indexed_apid(LiberaApid.icie_rad_sample)
     assert not is_data_time_indexed_apid(LiberaApid.icie_nom_hk)
     assert LiberaApid.icie_cal_full in DATA_TIME_INDEXED_APIDS
+
+
+def test_jpss_sc_pos_is_data_time_indexed():
+    """APID 11's searchable extent comes from its sample groups, not its packet times."""
+    assert is_data_time_indexed_apid(LiberaApid.jpss_sc_pos)
+    assert LiberaApid.jpss_sc_pos in DATA_TIME_INDEXED_APIDS
 
 
 def test_data_time_indexed_apid_unknown_int_returns_false():
@@ -161,3 +169,70 @@ def test_sample_group_time_span_per_sample_path_drops_pre_floor_times():
 
     assert first == np.datetime64("2025-11-14T10:00:01", "us")
     assert last == np.datetime64("2025-11-14T10:00:03", "us")
+
+
+def _jpss_sc_pos_dataset(adgps_seconds: list[int], adcfa_seconds: list[int]) -> xr.Dataset:
+    """jpss_sc_pos packet dataset with one ADGPS and one ADCFA sample time per packet.
+
+    Both groups use day/ms/us fields, so seconds are supplied as milliseconds against the
+    CCSDS epoch day count of zero.
+    """
+    n_packets = len(adgps_seconds)
+    zeros = np.zeros(n_packets, dtype=np.int64)
+    return xr.Dataset(
+        {
+            "ADAET1DAY": ("PACKET", zeros.copy()),
+            "ADAET1MS": ("PACKET", np.asarray(adgps_seconds, dtype=np.int64) * 1000),
+            "ADAET1US": ("PACKET", zeros.copy()),
+            "ADAET2DAY": ("PACKET", zeros.copy()),
+            "ADAET2MS": ("PACKET", np.asarray(adcfa_seconds, dtype=np.int64) * 1000),
+            "ADAET2US": ("PACKET", zeros.copy()),
+        }
+    )
+
+
+def test_jpss_sc_pos_span_spans_both_groups():
+    """The reported extent runs from the earliest to the latest time either group reports.
+
+    The ADGPS (ephemeris) and ADCFA (attitude) timestamps are applied independently by the
+    spacecraft, so the groups start and end at different instants. Both contribute: ingest
+    records the extent of data present, leaving the overlap for consumers to work out.
+    """
+    adgps = [_ccsds_seconds(f"2025-11-14T10:00:0{n}") for n in (0, 1, 2, 3)]
+    adcfa = [_ccsds_seconds(f"2025-11-14T10:00:0{n}") for n in (1, 2, 3, 4)]
+
+    first, last = _sample_group_time_span(_jpss_sc_pos_dataset(adgps, adcfa), LiberaApid.jpss_sc_pos)
+
+    assert first == np.datetime64("2025-11-14T10:00:00", "us")  # earliest ADGPS
+    assert last == np.datetime64("2025-11-14T10:00:04", "us")  # latest ADCFA
+
+
+def test_extract_data_time_range_from_dataset_spans_both_groups_for_jpss_sc_pos():
+    adgps = [_ccsds_seconds(f"2025-11-14T10:00:0{n}") for n in (0, 1, 2, 3)]
+    adcfa = [_ccsds_seconds(f"2025-11-14T10:00:0{n}") for n in (1, 2, 3, 4)]
+
+    first, last = extract_data_time_range_from_dataset(_jpss_sc_pos_dataset(adgps, adcfa), int(LiberaApid.jpss_sc_pos))
+
+    assert first == datetime(2025, 11, 14, 10, 0, 0, tzinfo=UTC)
+    assert last == datetime(2025, 11, 14, 10, 0, 4, tzinfo=UTC)
+
+
+def test_jpss_sc_pos_span_covers_groups_that_do_not_overlap():
+    """Disjoint groups are not an error; the span covers both and the gap between them."""
+    adgps = [_ccsds_seconds("2025-11-14T10:00:00"), _ccsds_seconds("2025-11-14T10:00:01")]
+    adcfa = [_ccsds_seconds("2025-11-14T11:00:00"), _ccsds_seconds("2025-11-14T11:00:01")]
+
+    first, last = _sample_group_time_span(_jpss_sc_pos_dataset(adgps, adcfa), LiberaApid.jpss_sc_pos)
+
+    assert first == np.datetime64("2025-11-14T10:00:00", "us")
+    assert last == np.datetime64("2025-11-14T11:00:01", "us")
+
+
+def test_jpss_sc_pos_span_falls_back_to_the_surviving_group():
+    """A group filtered down to nothing leaves the other group's times as the whole span."""
+    adgps = [_ccsds_seconds("2025-11-14T10:00:00"), _ccsds_seconds("2025-11-14T10:00:01")]
+
+    first, last = _sample_group_time_span(_jpss_sc_pos_dataset(adgps, [0, 1]), LiberaApid.jpss_sc_pos)
+
+    assert first == np.datetime64("2025-11-14T10:00:00", "us")
+    assert last == np.datetime64("2025-11-14T10:00:01", "us")

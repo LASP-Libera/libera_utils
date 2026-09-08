@@ -1,7 +1,8 @@
 """Lightweight data-time range extraction for L0 packet files.
 
 Used by the Data Ingester to assign applicable dates from science data times
-(camera image times, radiometer sample times) without full L1A NetCDF assembly.
+(camera image times, radiometer sample times, spacecraft ephemeris/attitude sample times)
+without full L1A NetCDF assembly.
 """
 
 from __future__ import annotations
@@ -43,6 +44,15 @@ class DataTimeUndeterminedError(Exception):
 
 # APIDs whose File Metadata applicable date should be based on internal data times,
 # not Construction Record packet times.
+#
+# A span is the full extent of data present in the file: earliest to latest data time across every
+# timeseries it carries, even where those come from different clocks. A JPSS SC position packet
+# (APID 11) carries an ephemeris timeseries (ADGPS) and an attitude timeseries (ADCFA) with
+# independently applied spacecraft timestamps, and both contribute; the span is not narrowed to the
+# range covered by both. WFOV is treated the same way: every in-window SOP contributes, including
+# one whose image is truncated at the end of the file. Ingest records what data is available and
+# leaves completeness judgements (ADGPS/ADCFA overlap, whole-image coverage) to the consumers of
+# that index, which know what they need.
 DATA_TIME_INDEXED_APIDS: frozenset[LiberaApid] = frozenset(
     {
         LiberaApid.icie_wfov_sci,
@@ -51,6 +61,7 @@ DATA_TIME_INDEXED_APIDS: frozenset[LiberaApid] = frozenset(
         LiberaApid.icie_cal_sample,
         LiberaApid.icie_cal_full,
         LiberaApid.icie_axis_sample,
+        LiberaApid.jpss_sc_pos,
     }
 )
 
@@ -257,7 +268,12 @@ def _drop_implausible_group_times(times_us: np.ndarray, apid: LiberaApid, group_
 
 
 def _sample_group_time_span(packet_ds: xr.Dataset, apid: LiberaApid) -> tuple[np.datetime64, np.datetime64]:
-    """Return min/max sample times using epoch + period (or per-sample times) from config."""
+    """Return min/max sample times using epoch + period (or per-sample times) from config.
+
+    Every configured sample group contributes to one span, so the result runs from the earliest
+    time any group reports to the latest, even when the groups are separate timeseries carrying
+    independently applied timestamps (as ADGPS and ADCFA do on ``jpss_sc_pos``).
+    """
     packet_config = get_packet_config(apid)
     if not packet_config.sample_groups:
         raise DataTimeUndeterminedError(f"APID {apid} has no sample_groups for data-time extraction")
