@@ -168,8 +168,8 @@ def scan_ground_ccsds_file(
         Time spans for File Metadata ingest, or ``None`` if no packet-time span can be produced
         at all: the APID is not a ``LiberaApid`` member, has no packet configuration, the file
         does not parse, holds no packets for the APID, or every packet time is implausible. The
-        reason is logged; a caller with nothing to write should surface that None as its own
-        error, since no searchable metadata is possible for the file.
+        reason is logged. No searchable metadata is possible for such a file, so a caller should
+        surface the ``None`` as its own error.
 
     Raises
     ------

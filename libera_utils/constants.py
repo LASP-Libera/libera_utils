@@ -107,7 +107,7 @@ class DataProductIdentifier(StrEnum):
     # ==================================
     # PDS Construction Record (metadata file)
     l0_pds_cr = ("PDS-CR", DataLevel.L0)
-    # Ground-test multi-APID CCSDS captures (TVAC/DITL/ISTR/IOV); not EDOS PDS
+    # Demuxed ground-test CCSDS files (TVAC/DITL/ISTR/IOV); not EDOS PDS
     l0_ground_ccsds = ("GROUND-CCSDS", DataLevel.L0)
     # PDS data files (contain CCSDS packets for a single APID)
     # NOTE: These names are derived directly from the packet names used by Libera FSW (see LiberaApid)

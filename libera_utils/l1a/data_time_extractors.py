@@ -45,14 +45,11 @@ class DataTimeUndeterminedError(Exception):
 # APIDs whose File Metadata applicable date should be based on internal data times,
 # not Construction Record packet times.
 #
-# A span is the full extent of data present in the file: earliest to latest data time across every
-# timeseries it carries, even where those come from different clocks. A JPSS SC position packet
-# (APID 11) carries an ephemeris timeseries (ADGPS) and an attitude timeseries (ADCFA) with
-# independently applied spacecraft timestamps, and both contribute; the span is not narrowed to the
-# range covered by both. WFOV is treated the same way: every in-window SOP contributes, including
-# one whose image is truncated at the end of the file. Ingest records what data is available and
-# leaves completeness judgements (ADGPS/ADCFA overlap, whole-image coverage) to the consumers of
-# that index, which know what they need.
+# A span is the full extent of data in the file: earliest to latest data time across every
+# timeseries it carries, even where those come from different clocks, and it is not narrowed to the
+# range all of them cover. Both of APID 11's independently timestamped sample groups (ADGPS
+# ephemeris, ADCFA attitude) contribute, and every in-window WFOV SOP contributes including one
+# whose image is truncated at the end of the file. Completeness judgements belong to consumers.
 DATA_TIME_INDEXED_APIDS: frozenset[LiberaApid] = frozenset(
     {
         LiberaApid.icie_wfov_sci,

@@ -68,9 +68,8 @@ def test_demuxed_wfov_data_time_precedes_its_packet_time(test_ditl_demux_path):
 
 
 # ``multi_time`` says the fixture supplies more than one distinct data time for that APID, so the
-# span must be an interval. A WFOV span comes only from SOP packets, and test_ccsds_2025_221_17_17_58
-# holds exactly one SOP, so a point span is correct there. Everywhere else a point span means
-# timestamps were dropped after the min/max instead of before it.
+# span must be an interval. test_ccsds_2025_221_17_17_58 holds exactly one SOP, and a WFOV span comes
+# only from SOP packets, so a point span is correct there.
 @pytest.mark.parametrize(
     ("fixture_name", "apid", "expected_date", "multi_time"),
     [

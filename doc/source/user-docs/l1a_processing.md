@@ -140,9 +140,9 @@ and `2045-01-01`). Both bounds are fixed dates so that a span written to File Me
 depend on when the extraction ran; the ceiling is far enough out to admit DITL captures running at
 a mission-era epoch.
 
-Filtering happens before any `min()`/`max()` is taken. Exclusions are logged at `WARNING`. If nothing survives for an APID, it is reported
-in the scan's `failed_apids` (or `DataTimeUndeterminedError` is raised from
-`extract_data_time_range`) rather than returning a bogus span.
+Filtering happens before any `min()`/`max()` is taken, and exclusions are logged at `WARNING`. If
+nothing survives for an APID, `scan_ground_ccsds_file` returns `None` and
+`extract_data_time_range` raises `DataTimeUndeterminedError`, rather than returning a bogus span.
 
 ## Data-time extraction (ingest applicable dates)
 
@@ -170,11 +170,7 @@ All other APIDs remain **packet-time indexed** (Construction Record first/last p
 A span is the **full extent of data present in the file**: the earliest data time to the latest,
 across every timeseries the file carries, even when those times come from different clocks. It is
 deliberately _not_ narrowed to the range where all of a file's timeseries are simultaneously
-available.
-
-The purpose of the span is ingest indexing — answering "what data exists, and roughly when" so a
-file can be found. Completeness is a separate judgement, and it belongs to the consumer, which
-knows what it actually needs:
+available, because the span exists for ingest indexing. Completeness is the consumer's judgement:
 
 - **WFOV:** every in-window `SOP` contributes, including one whose image is truncated at the end of
   the file. The span therefore does not match the L1A product's `CAMERA_TIME` range for a chunked
@@ -199,12 +195,6 @@ A consumer that needs ephemeris and attitude together — geolocation does — m
 sample-time ranges itself from the samples in the file. The span in File Metadata will not have
 done that for it, and a file whose span covers a given instant does not guarantee both timeseries
 cover it.
-
-The 24-hour L1A granule assembled from these packets is not built by this repo yet. When it is, it
-has the same choice to make for its filename time range, and the same distinction applies: the
-filename advertises what the granule holds, while a step needing continuous attitude _and_
-ephemeris coverage across the full 24 hours has to check the two sample-time ranges, and gather
-enough packets on either side of the day boundary for their overlap to span the day.
 
 ## L1A Packet Processing Configurations
 

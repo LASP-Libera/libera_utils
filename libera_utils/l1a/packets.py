@@ -40,19 +40,15 @@ DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
     """Filter out packet/sample times outside the plausible telemetry window.
 
-    An onboard clock reads out a near-zero day/second counter before the first time-sync
-    command is applied on the ground, decoding as a timestamp just after ``CCSDS_EPOCH``
-    (1958-01-01). One such packet is enough to stretch a ``min()``/``max()`` span across ~68
-    years, so the window is bounded below by ``MIN_VALID_TELEMETRY_TIME``. A corrupted
-    high-order bit in a day counter produces the same failure at the other end, so it is
-    bounded above by ``MAX_VALID_TELEMETRY_TIME``. Both bounds are fixed config dates: a span
-    written to File Metadata must not depend on when the extraction ran.
+    The window is ``MIN_VALID_TELEMETRY_TIME`` to ``MAX_VALID_TELEMETRY_TIME`` from config. Both
+    are fixed dates, not offsets from now, so a span written to File Metadata does not depend on
+    when extraction ran; the ceiling admits simulated-clock captures running at a mission-era
+    epoch. A clock that has not yet received its first time-sync command reads out a near-zero
+    day/second counter, decoding to just after ``CCSDS_EPOCH`` (1958-01-01), and one such packet
+    stretches a ``min()``/``max()`` span across ~68 years.
 
-    The ceiling is far enough out to admit DITL and other simulated-clock captures, which
-    legitimately run at a mission-era epoch years ahead of wall clock.
-
-    Comparisons are strict, so a time exactly at the floor is dropped. ``NaT`` is dropped
-    explicitly: it compares false against both bounds, so a range test alone would keep it.
+    A time exactly at the floor is dropped. ``NaT`` is dropped explicitly, since it compares false
+    against both bounds.
 
     Parameters
     ----------
