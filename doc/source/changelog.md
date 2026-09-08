@@ -4,6 +4,7 @@
 
 - BUGFIX: `WFOV_FSW_HEADER_AZIMUTH_ANGLE` in the ICIE WFOV SCI L1A product is documented as `degrees`, not `radians` as it was incorrectly listed before.
 - FIX: Whitespace clean up in trim family csv
+- BUGIX: Test L1A product definition units for Axis-Sample updated to match the actual products
 
 ## 5.10.8
 
