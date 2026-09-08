@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.10.11
+
+- MAINT: The production Docker image no longer sets `LEAPSECOND_FILE_ENV`. It pointed at a directory containing no `naif*.tls`, so curryer's lookup found nothing there; `KernelManager.load_naif_kernels` sets the variable at runtime to the directory of the LSK it furnishes.
+
 ## 5.10.9
 
 - BUGFIX: `WFOV_FSW_HEADER_AZIMUTH_ANGLE` in the ICIE WFOV SCI L1A product is documented as `degrees`, not `radians` as it was incorrectly listed before.
