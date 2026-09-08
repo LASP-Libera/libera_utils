@@ -737,7 +737,7 @@ class TestDestructor:
 
 
 # ============================================================================
-# Kernel Coverage Check Tests (LIBSDC-788)
+# Kernel Coverage Check Tests
 # ============================================================================
 
 TEXT_PCK_CONTENT = b"KPL/PCK\n\n\\begindata\nBODY399_TEST_VALUE = ( 1.0 )\n\\begintext\n"

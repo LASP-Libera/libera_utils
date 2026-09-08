@@ -609,6 +609,14 @@ class KernelManager:
         as a SPICE failure deep inside a later computation, or as silently wrong numbers
         with no traceback at all.
 
+        Opt-in, and order matters: call it once after the kernels for a run are furnished
+        and before the first computation that reads them. Nothing calls it automatically,
+        because the manager cannot know which targets or which window a caller needs --
+        those come from the algorithm (the instrument frame it points, the granule it
+        processes), not from the kernel set. Checking every furnished object over its own
+        coverage union would answer a different and much weaker question. Skipping the call
+        changes no other behavior; what it costs is the early, named failure.
+
         Parameters
         ----------
         targets : sequence of int or str
