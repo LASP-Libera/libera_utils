@@ -322,7 +322,7 @@ def calculate_trmm_surface_type(igbp_surface_type: int | NDArray[np.integer]) ->
     Returns
     -------
     int or ndarray of int
-        TRMM surface type codes (0=ocean ... 5=snow)
+        TRMM surface type codes (0=ocean ... 5=snow), emitted as uint8
 
     Raises
     ------
@@ -369,7 +369,9 @@ def calculate_trmm_surface_type(igbp_surface_type: int | NDArray[np.integer]) ->
             failed_values = igbp_surface_type[failed_mask].tolist()
         raise ValueError(f"Cannot convert IGBP surface type value to TRMM surface type: {failed_values}")
 
-    return result
+    # Emit the declared uint8 dtype directly (the six TRMM categories, 0-5, are naturally uint8). The -1 "invalid"
+    # sentinel is validated above in signed-int space, so it can never survive into this narrowing cast.
+    return result.astype(np.uint8)
 
 
 def calculate_cloud_fraction_weighted_optical_depth(
@@ -993,23 +995,12 @@ class FootprintData:
         if all(var in calculated for var in spec.input_vars):
             inputs = [self._data[var] for var in spec.input_vars]
 
-            # Calculate using xarray's apply_ufunc with proper output dtype specification
             result = xr.apply_ufunc(
                 spec.function,
                 *inputs,
                 output_dtypes=[spec.output_datatype],
                 keep_attrs=True,
             )
-            # ``output_dtypes`` is only a *hint* for apply_ufunc (it is used for dask graph metadata and is ignored for
-            # eager numpy execution), so the array's real dtype is whatever the calculation function returns. For
-            # *integer* outputs we enforce the declared dtype explicitly: calculate_trmm_surface_type returns int64
-            # from np.where, but surface_type must be emitted as uint8 to match the product definition -- and the
-            # write-time conformance check only performs *safe* casts, so it would refuse an automatic int64->uint8
-            # narrowing and raise. Float outputs are left at their naturally computed precision (narrowing them here
-            # would change long-standing numerical results), and the product definition / conformance step handles any
-            # float dtype reconciliation at write time.
-            if np.issubdtype(np.dtype(spec.output_datatype), np.integer):
-                result = result.astype(spec.output_datatype)
             self._data[spec.output_var] = result
         else:
             raise ValueError(f"Cannot calculate fields - missing dependencies {spec.input_vars}")
@@ -1126,10 +1117,9 @@ class FootprintData:
             logger.debug(f"Clear area shape: {clear_area_np.shape}")
 
             # Viewing-geometry angles, one value per footprint, read from the CERES SSF "Viewing_Angles" group. These
-            # feed the geometry classification bins on every scene definition. The SSF stores them as float32 degrees;
-            # solar zenith spans 0-180, viewing zenith 0-90, relative azimuth 0-360 (see the variables' valid_range
-            # attributes and https://ceres.larc.nasa.gov/data/#ssf-level-2). NOTE the SSF variable is named
-            # "view_zenith_angle"; we carry it forward under the pipeline name "viewing_zenith_angle".
+            # feed the geometry classification bins on every scene definition (their physical ranges are declared in
+            # the product definition). NOTE the SSF variable is named "view_zenith_angle"; we carry it forward under
+            # the pipeline name "viewing_zenith_angle".
             viewing_angles_group = dataset.groups["Viewing_Angles"]
             solar_zenith_angle_np = np.array(viewing_angles_group.variables["solar_zenith_angle"][:])
             viewing_zenith_angle_np = np.array(viewing_angles_group.variables["view_zenith_angle"][:])
