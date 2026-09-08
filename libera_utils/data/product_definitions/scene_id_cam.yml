@@ -58,7 +58,12 @@ variables:
     dtype: uint8
     dimensions: ["RADIOMETER_TIME"]
     attributes:
-      long_name: TRMM surface type mapped from the IGBP land cover code (0 = ocean ... 5 = snow)
+      # Surface-type category used as a scene-classification input (the TRMM 6-category scheme), collapsed from the
+      # finer IGBP land-cover code. This is a surface-type label, not a "TRMM scene": it feeds both the ERBE-like and
+      # unfiltering scene definitions.
+      long_name: >-
+        Surface-type category mapped from the IGBP land-cover code (0 = ocean, 1 = hi_shrub, 2 = low_shrub,
+        3 = dark_desert, 4 = bright_desert, 5 = snow)
   cloud_fraction:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
