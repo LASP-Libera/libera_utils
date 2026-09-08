@@ -1292,17 +1292,3 @@ class FootprintData:
             A copy of the internal dataset with the ``RADIOMETER_TIME`` variable promoted to a coordinate.
         """
         return self.to_time_product(RADIOMETER_TIME_DIMENSION)
-
-    def export_to_netcdf(self, netcdf_path: str | pathlib.Path) -> None:
-        """Write the internal footprint dataset straight to a NetCDF file.
-
-        This is a raw dump of the working dataset (no product-definition conformance step); use it for debugging
-        or intermediate inspection. Operational products are written via
-        :func:`libera_utils.io.netcdf.write_libera_data_product`.
-
-        Parameters
-        ----------
-        netcdf_path : str or pathlib.Path
-            Destination path for the NetCDF file. An existing file is overwritten.
-        """
-        self._data.to_netcdf(path=netcdf_path, mode="w")
