@@ -35,10 +35,6 @@ logger = logging.getLogger(__name__)
 GROUND_CCSDS_SKIP_HEADER_BYTES = 0
 
 
-class GroundCcsdsScanError(Exception):
-    """No packet time span can be produced for a ground CCSDS file, for any reason."""
-
-
 @dataclass(frozen=True)
 class GroundCcsdsTimeSpan:
     """Packet and optional science data time span for one demuxed ground CCSDS file."""
@@ -50,6 +46,20 @@ class GroundCcsdsTimeSpan:
     last_data_time: datetime | None
     # Why data times are absent despite a packet-time span; None when nothing is missing.
     degraded_reason: str | None = None
+
+
+def _log_no_packet_span(apid: LiberaApid | int, packet_file: PathLike | str, reason: str) -> None:
+    """Log why a file yields no packet-time span, and so no searchable File Metadata."""
+    libera_apid = apid if isinstance(apid, LiberaApid) else None
+    logger.warning(
+        {
+            "msg": "No packet time span available; no searchable metadata can be written",
+            "apid": int(apid),
+            "libera_apid": libera_apid.name if libera_apid is not None else None,
+            "file": str(packet_file),
+            "reason": reason,
+        }
+    )
 
 
 def apid_from_ground_ccsds_filename(packet_file: PathLike | str) -> int:
@@ -68,18 +78,20 @@ def _parse_ground_ccsds(
     apid: LiberaApid,
     *,
     skip_header_bytes: int,
-) -> xr.Dataset:
+) -> xr.Dataset | None:
     """Parse a demuxed ground CCSDS file using the APID's configured XTCE definition.
 
-    Raises ``GroundCcsdsScanError`` if no usable dataset can be produced.
+    Returns ``None``, having logged the reason, if no usable dataset can be produced.
     """
     try:
         packet_config = get_packet_config(apid)
-    except KeyError as exc:
-        raise GroundCcsdsScanError(
-            f"No packet configuration for APID {int(apid)} ({apid.name}); "
-            "cannot extract packet times for searchable File Metadata"
-        ) from exc
+    except KeyError:
+        _log_no_packet_span(
+            apid,
+            packet_file,
+            f"No packet configuration for APID {int(apid)} ({apid.name})",
+        )
+        return None
 
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
     try:
@@ -90,12 +102,12 @@ def _parse_ground_ccsds(
             skip_header_bytes=skip_header_bytes,
         )
     except Exception as exc:
-        raise GroundCcsdsScanError(
-            f"Failed to parse packets for APID {int(apid)} ({apid.name}) from {packet_file}: {exc}"
-        ) from exc
+        _log_no_packet_span(apid, packet_file, f"Failed to parse packets: {exc}")
+        return None
 
     if packet_ds.sizes.get("PACKET", 0) == 0:
-        raise GroundCcsdsScanError(f"No packets found for APID {int(apid)} ({apid.name}) in {packet_file}")
+        _log_no_packet_span(apid, packet_file, "File holds no packets for this APID")
+        return None
 
     return packet_ds
 
@@ -105,12 +117,11 @@ def _extract_packet_time_span(
     apid: LiberaApid,
     *,
     packet_file: PathLike | str,
-) -> tuple[datetime, datetime]:
+) -> tuple[datetime, datetime] | None:
     """Return min/max packet times from an already-parsed dataset.
 
-    ``packet_file`` is used only for log and error context.
-
-    Raises ``GroundCcsdsScanError`` for every reason no span can be produced.
+    ``packet_file`` is used only for log context. Returns ``None``, having logged the reason,
+    if no span can be produced.
     """
     packet_config = get_packet_config(apid)
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
@@ -120,13 +131,13 @@ def _extract_packet_time_span(
             packet_times_us, context=f"APID {int(apid)} ({apid.name}) packet times in {packet_file}"
         )
     except ValueError as exc:
-        raise GroundCcsdsScanError(str(exc)) from exc
+        _log_no_packet_span(apid, packet_file, str(exc))
+        return None
     try:
         return dt64_to_utc_datetime(np.min(packet_times_us)), dt64_to_utc_datetime(np.max(packet_times_us))
     except ValueError as exc:
-        raise GroundCcsdsScanError(
-            f"Packet times for APID {int(apid)} ({apid.name}) in {packet_file} are not representable: {exc}"
-        ) from exc
+        _log_no_packet_span(apid, packet_file, f"Packet times are not representable: {exc}")
+        return None
 
 
 def scan_ground_ccsds_file(
@@ -134,7 +145,7 @@ def scan_ground_ccsds_file(
     *,
     apid: int | None = None,
     skip_header_bytes: int = GROUND_CCSDS_SKIP_HEADER_BYTES,
-) -> GroundCcsdsTimeSpan:
+) -> GroundCcsdsTimeSpan | None:
     """Scan one demuxed ground CCSDS file for its packet and science data time spans.
 
     A data-time-indexed APID also gets science data times via
@@ -153,26 +164,32 @@ def scan_ground_ccsds_file(
 
     Returns
     -------
-    GroundCcsdsTimeSpan
-        Time spans for File Metadata ingest.
+    GroundCcsdsTimeSpan | None
+        Time spans for File Metadata ingest, or ``None`` if no packet-time span can be produced
+        at all: the APID is not a ``LiberaApid`` member, has no packet configuration, the file
+        does not parse, holds no packets for the APID, or every packet time is implausible. The
+        reason is logged; a caller with nothing to write should surface that None as its own
+        error, since no searchable metadata is possible for the file.
 
     Raises
     ------
-    GroundCcsdsScanError
-        If no packet-time span can be produced, or the APID is not a ``LiberaApid`` member.
     ValueError
         If ``apid`` is omitted and the basename is not a valid ground CCSDS filename.
     """
     resolved_apid = apid_from_ground_ccsds_filename(packet_file) if apid is None else apid
     try:
         libera_apid = LiberaApid(resolved_apid)
-    except ValueError as exc:
-        raise GroundCcsdsScanError(
-            f"APID {resolved_apid} in {packet_file} is not a known LiberaApid; no searchable metadata can be written"
-        ) from exc
+    except ValueError:
+        _log_no_packet_span(resolved_apid, packet_file, "APID is not a known LiberaApid")
+        return None
 
     packet_ds = _parse_ground_ccsds(packet_file, libera_apid, skip_header_bytes=skip_header_bytes)
-    first_pkt, last_pkt = _extract_packet_time_span(packet_ds, libera_apid, packet_file=packet_file)
+    if packet_ds is None:
+        return None
+    packet_span = _extract_packet_time_span(packet_ds, libera_apid, packet_file=packet_file)
+    if packet_span is None:
+        return None
+    first_pkt, last_pkt = packet_span
 
     first_data: datetime | None = None
     last_data: datetime | None = None

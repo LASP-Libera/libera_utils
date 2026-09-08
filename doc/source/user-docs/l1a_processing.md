@@ -115,11 +115,11 @@ span.first_data_time, span.last_data_time        # None unless data-time indexed
 span.degraded_reason                             # why data times are absent, else None
 ```
 
-It raises `GroundCcsdsScanError` when no packet-time span can be produced at all: the APID has no
-`LiberaApid` member, has no L1A packet configuration, or the file holds nothing parseable for it.
-Several APIDs present in ground captures (`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`,
-`icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`) currently have no packet configuration, so they
-archive but yield no searchable times.
+It returns `None`, logging the reason, when no packet-time span can be produced at all: the APID
+has no `LiberaApid` member, has no L1A packet configuration, the file holds nothing parseable for
+it, or every packet time is implausible. Several APIDs present in ground captures
+(`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`, `icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`)
+currently have no packet configuration, so they archive but yield no searchable times.
 
 A data-time failure is narrower: the packet-time span is still returned, with
 `first_data_time`/`last_data_time` left `None` and `degraded_reason` set. This is the expected

@@ -257,12 +257,7 @@ def _drop_implausible_group_times(times_us: np.ndarray, apid: LiberaApid, group_
 
 
 def _sample_group_time_span(packet_ds: xr.Dataset, apid: LiberaApid) -> tuple[np.datetime64, np.datetime64]:
-    """Return min/max sample times using epoch + period (or per-sample times) from config.
-
-    Implausible times must be dropped per group, before the min/max collapse below: an
-    epoch-and-period group is reduced to its first and last sample here, so filtering
-    afterwards would collapse the span to a single point.
-    """
+    """Return min/max sample times using epoch + period (or per-sample times) from config."""
     packet_config = get_packet_config(apid)
     if not packet_config.sample_groups:
         raise DataTimeUndeterminedError(f"APID {apid} has no sample_groups for data-time extraction")

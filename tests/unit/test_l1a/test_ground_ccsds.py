@@ -1,5 +1,6 @@
 """Unit tests for demuxed ground-test CCSDS scanning."""
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,7 +11,6 @@ from libera_utils.constants import LiberaApid
 from libera_utils.l1a.data_time_extractors import DataTimeUndeterminedError
 from libera_utils.l1a.ground_ccsds import (
     GROUND_CCSDS_SKIP_HEADER_BYTES,
-    GroundCcsdsScanError,
     apid_from_ground_ccsds_filename,
     scan_ground_ccsds_file,
 )
@@ -108,29 +108,32 @@ def test_scan_degraded_reason_names_the_apid_that_returned_none(tmp_path: Path, 
     assert LiberaApid.icie_rad_sample.name in span.degraded_reason
 
 
-def test_scan_rejects_apid_outside_libera_apid(tmp_path: Path):
+def test_scan_returns_none_for_apid_outside_libera_apid(tmp_path: Path, caplog):
     """An APID with no LiberaApid member cannot produce searchable metadata."""
     f = tmp_path / "LIBERA_SDC_9_ccsds_2025_318_13_00_00"
     f.write_bytes(b"")
 
-    with pytest.raises(GroundCcsdsScanError, match="not a known LiberaApid"):
-        scan_ground_ccsds_file(f)
+    with caplog.at_level(logging.WARNING):
+        assert scan_ground_ccsds_file(f) is None
+    assert "not a known LiberaApid" in caplog.text
 
 
-def test_scan_raises_when_apid_has_no_packet_config(tmp_path: Path):
+def test_scan_returns_none_when_apid_has_no_packet_config(tmp_path: Path, caplog):
     """A known APID with no L1A packet configuration yields no times at all."""
     # 1013 icie_sw_stat is a LiberaApid member with no entry in the L1A processing configs.
     f = tmp_path / "LIBERA_SDC_1013_ccsds_2025_318_13_00_00"
     f.write_bytes(b"")
 
-    with pytest.raises(GroundCcsdsScanError, match="No packet configuration"):
-        scan_ground_ccsds_file(f)
+    with caplog.at_level(logging.WARNING):
+        assert scan_ground_ccsds_file(f) is None
+    assert "No packet configuration" in caplog.text
 
 
-def test_scan_wraps_parse_failure(tmp_path: Path):
-    """A file with nothing parseable for its APID fails as a scan error, not an empty span."""
+def test_scan_returns_none_on_parse_failure(tmp_path: Path, caplog):
+    """A file with nothing parseable for its APID yields no span, not an empty one."""
     f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
     f.write_bytes(b"")
 
-    with pytest.raises(GroundCcsdsScanError, match="Failed to parse packets for APID 1036"):
-        scan_ground_ccsds_file(f)
+    with caplog.at_level(logging.WARNING):
+        assert scan_ground_ccsds_file(f) is None
+    assert "Failed to parse packets" in caplog.text
