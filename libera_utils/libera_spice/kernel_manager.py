@@ -36,12 +36,6 @@ from libera_utils.libera_spice.spice_utils import (
 
 logger = logging.getLogger(__name__)
 
-# Ensure the leap second file in libera_utils is used by curryer for all kernel making operations
-# TODO[CURRYER-97]: This environment variable must be set or a leapsecond kernel must be in a specific relative
-# path location for curryer to make any kernels. This obscures the process and should be re-evaluated and improved
-# in the future.
-# os.environ["LEAPSECOND_FILE_ENV"] = config.get("GENERIC_KERNEL_DIR")
-
 
 # TODO[LIBSDC-687]: This class should likely be in curryer instead of libera_utils.
 class KernelManager:
@@ -343,7 +337,22 @@ class KernelManager:
         FileNotFoundError
             If kernel files cannot be found at expected paths.
         RuntimeError
-            If kernel loading fails.
+            If kernel loading fails, or if no leapsecond kernel is among the NAIF kernels.
+
+        Notes
+        -----
+        The leapsecond kernel is the one file two libraries have to agree on. This method
+        furnishes it into the pool and then points ``LEAPSECOND_FILE_ENV`` at its directory.
+        Curryer resolves an LSK for every kernel-making call through
+        ``spicetime.leapsecond.find_default_file``, whose precedence is
+        ``LEAPSECOND_USER_FILE_PATH``, then ``LEAPSECOND_FILE_ENV``, then the kernel packaged
+        with curryer plus any newer one in curryer's own cache.
+
+        Since curryer 0.6.0 that packaged kernel resolves on its own, so the override is not
+        what makes kernel creation work. It is set so curryer builds against the same LSK
+        that is in the pool: Libera kernel configs name no ``leapsecond_kernel``, so without
+        it curryer could pick a different one and a run would carry two leapsecond
+        definitions.
         """
         if self._naif_kernels_loaded:
             logger.debug("NAIF kernels already loaded, skipping")
