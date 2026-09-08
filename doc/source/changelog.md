@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.10.11
+
+- MAINT: The production Docker image no longer sets `LEAPSECOND_FILE_ENV`. It pointed at a directory containing no `naif*.tls`, so curryer's lookup found nothing there; `KernelManager.load_naif_kernels` sets the variable at runtime to the directory of the LSK it furnishes.
+
 ## 5.10.10
 
 - FEAT: `KernelManager.ensure_kernel_coverage` verifies that the furnished kernels cover every requested target across a time window, raising before a gap surfaces as an obscure SPICE failure deep in a later computation or as silently wrong numbers. Opt-in: call it after furnishing and before the first computation that reads the kernels.
