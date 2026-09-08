@@ -348,7 +348,7 @@ class KernelManager:
         ``LEAPSECOND_USER_FILE_PATH``, then ``LEAPSECOND_FILE_ENV``, then the kernel packaged
         with curryer plus any newer one in curryer's own cache.
 
-        Since curryer 0.6.0 that packaged kernel resolves on its own, so the override is not
+        Since curryer 0.5.2 that packaged kernel resolves on its own, so the override is not
         what makes kernel creation work. It is set so curryer builds against the same LSK
         that is in the pool: Libera kernel configs name no ``leapsecond_kernel``, so without
         it curryer could pick a different one and a run would carry two leapsecond

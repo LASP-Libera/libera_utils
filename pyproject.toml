@@ -41,9 +41,9 @@ classifiers = [
 # These are the dependencies used in the package metadata when building the project
 dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
-    # 0.6.0 brings curryer.kernels.coverage (needed by ensure_kernel_coverage) and the packaged
+    # 0.5.2 brings curryer.kernels.coverage (needed by ensure_kernel_coverage) and the packaged
     # leapsecond kernel that makes LEAPSECOND_FILE_ENV an override rather than a requirement.
-    "lasp-curryer >= 0.6.0, <1.0",
+    "lasp-curryer >= 0.5.2, <1.0",
     "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
     "netCDF4>=1.7.0,<2.0.0,!=1.7.3",  # netcdf4 engine support for xarray
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
