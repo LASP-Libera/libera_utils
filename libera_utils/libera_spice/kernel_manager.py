@@ -189,9 +189,9 @@ class KernelManager:
             # Validate path length if enabled
             validate_path_length(temp_path, KernelManager._max_path_length)
 
-            # Furnish the leap second kernel first
-            # TODO[CURRYER-97]: This is required for curryer kernel making to work, but should be improved in the future
-            # potentially with caching or tracking explicitly of the leap second kernel by the KernelManager
+            # Furnish the NAIF kernels first: creating the static kernels runs through curryer,
+            # which needs a leapsecond kernel, and `load_naif_kernels` is what sets the override
+            # keeping it on the same LSK this manager furnishes.
             if not self._naif_kernels_loaded:
                 self.load_naif_kernels()
 
@@ -405,9 +405,10 @@ class KernelManager:
             for kernel_path in naif_kernel_paths:
                 self._loaded_kernels.load(kernel_path)
 
-        # Set leap second file environment variable for curryer usage
-        # TODO[CURRYER-97]: This is required for curryer kernel making to work when libera_utils is imported,
-        #  but should be improved in the future
+        # Point curryer's default-LSK lookup at the same leapsecond kernel furnished here. Curryer
+        # ships an LSK and resolves one without this, but every Libera kernel config omits
+        # `leapsecond_kernel`, so without the override curryer would make kernels against its own
+        # packaged LSK rather than the one in the pool -- two leapsecond definitions for one run.
         lsk_path = [Path(p).parent for p in naif_kernel_paths if re.match(NAIF_LSK_REGEX, Path(p).name)]
         if len(lsk_path) == 0:
             raise RuntimeError("No leap second kernel loaded, cannot set LEAPSECOND_FILE_ENV")

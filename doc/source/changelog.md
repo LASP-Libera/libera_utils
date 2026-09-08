@@ -3,6 +3,7 @@
 ## 5.10.10
 
 - FEAT: `KernelManager.ensure_kernel_coverage` verifies that the furnished kernels cover every requested target across a time window, raising before a gap surfaces as an obscure SPICE failure deep in a later computation or as silently wrong numbers. Opt-in: call it after furnishing and before the first computation that reads the kernels.
+- MAINT: Require `lasp-curryer >= 0.6.0`, for `curryer.kernels.coverage` and the packaged leapsecond kernel that makes `LEAPSECOND_FILE_ENV` an override rather than a requirement.
 
 ## 5.10.9
 
