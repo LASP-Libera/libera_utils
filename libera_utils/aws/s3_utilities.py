@@ -221,8 +221,8 @@ def verify_ingestion(
        ground CCSDS files, which the SDC does not write availability records for).
     3. A File Metadata record exists for the file basename.
 
-    For a ground CCSDS capture, a successful verification does not mean every APID's time span
-    was indexed; only archival and the base File Metadata row are checked.
+    A ground CCSDS capture passes on its base File Metadata row alone, so a successful
+    verification does not mean its packet time span was indexed into a searchable row.
 
     All required AWS resources are resolved once up front; finding zero or more than one of any resource raises
     immediately (it indicates a mismatch between Libera Utils and the deployed SDC). Checks are polled every
@@ -269,15 +269,16 @@ def verify_ingestion(
             spec["data_product_id"] = str(libera_filename.data_product_id)
             spec["version"] = libera_filename.filename_parts.version
         elif isinstance(libera_filename, LiberaGroundCcsdsFilename):
-            # The ingester's searchable row uses PK={basename}#{apid}, a different partition key
-            # from the base row's PK=basename, so a query on the basename cannot see it.
-            spec["expected_metadata_count"] = 1
+            # A ground capture gets its base record plus a searchable record per applicable date its
+            # packets cover. A file whose packets yield no usable time span keeps only its base
+            # record, so the base record alone counts as ingested.
+            spec["min_metadata_count"] = 1
         else:
-            # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets both a base
-            # record and a product record (SK=applicable_date). We can't derive a PDS's applicable date here, so we
-            # verify via record count: one record for a CR, two for a PDS.
+            # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets a base
+            # record plus a product record (SK=applicable_date) per applicable date it covers. We can't derive
+            # a PDS's applicable dates here, so we verify via record count.
             is_construction_record = libera_filename.data_product_id == DataProductIdentifier.l0_pds_cr
-            spec["expected_metadata_count"] = 1 if is_construction_record else 2
+            spec["min_metadata_count"] = 1 if is_construction_record else 2
         file_specs.append(spec)
 
     metadata_table = dynamodb.Table(
@@ -314,11 +315,11 @@ def verify_ingestion(
                     response = metadata_table.get_item(Key={"PK": spec["name"], "SK": spec["applicable_date"]})
                     passed = "Item" in response
                 else:
-                    # L0: the ingester writes a base record (SK="#") for every file plus a product record
-                    # (SK=applicable_date) for PDS files. We can't derive a PDS's applicable date here, so verify by
-                    # counting records under the unique basename PK: 1 for a CR, 2 for a PDS.
+                    # L0 and ground CCSDS: the ingester writes a base record (SK="#") for every file, plus a
+                    # product record (SK=applicable_date) per applicable date the file covers. A file's data
+                    # can span more than one day, so this count is a floor rather than an exact number.
                     response = metadata_table.query(KeyConditionExpression=Key("PK").eq(spec["name"]))
-                    passed = response.get("Count", 0) == spec["expected_metadata_count"]
+                    passed = response.get("Count", 0) >= spec["min_metadata_count"]
             else:  # availability
                 # The Data Availability table is keyed by PK=applicable_date, SK="<DataProductId>#<Version>".
                 memo_key = (spec["applicable_date"], spec["data_product_id"], spec["version"])
