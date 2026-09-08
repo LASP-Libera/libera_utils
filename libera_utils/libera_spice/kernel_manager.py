@@ -18,6 +18,7 @@ from pathlib import Path
 from cloudpathlib import AnyPath, S3Path
 from curryer import meta
 from curryer import spicierpy as sp
+from curryer.kernels import coverage
 
 from libera_utils.config import config
 from libera_utils.io.caching import get_local_cache_dir, get_local_short_temp_dir, validate_path_length
@@ -182,9 +183,9 @@ class KernelManager:
             # Validate path length if enabled
             validate_path_length(temp_path, KernelManager._max_path_length)
 
-            # Furnish the leap second kernel first
-            # TODO[CURRYER-97]: This is required for curryer kernel making to work, but should be improved in the future
-            # potentially with caching or tracking explicitly of the leap second kernel by the KernelManager
+            # Furnish the NAIF kernels first: creating the static kernels runs through curryer,
+            # which needs a leapsecond kernel, and `load_naif_kernels` is what sets the override
+            # keeping it on the same LSK this manager furnishes.
             if not self._naif_kernels_loaded:
                 self.load_naif_kernels()
 
@@ -336,7 +337,22 @@ class KernelManager:
         FileNotFoundError
             If kernel files cannot be found at expected paths.
         RuntimeError
-            If kernel loading fails.
+            If kernel loading fails, or if no leapsecond kernel is among the NAIF kernels.
+
+        Notes
+        -----
+        The leapsecond kernel is the one file two libraries have to agree on. This method
+        furnishes it into the pool and then points ``LEAPSECOND_FILE_ENV`` at its directory.
+        Curryer resolves an LSK for every kernel-making call through
+        ``spicetime.leapsecond.find_default_file``, whose precedence is
+        ``LEAPSECOND_USER_FILE_PATH``, then ``LEAPSECOND_FILE_ENV``, then the kernel packaged
+        with curryer plus any newer one in curryer's own cache.
+
+        Since curryer 0.5.2 that packaged kernel resolves on its own, so the override is not
+        what makes kernel creation work. It is set so curryer builds against the same LSK
+        that is in the pool: Libera kernel configs name no ``leapsecond_kernel``, so without
+        it curryer could pick a different one and a run would carry two leapsecond
+        definitions.
         """
         if self._naif_kernels_loaded:
             logger.debug("NAIF kernels already loaded, skipping")
@@ -398,9 +414,10 @@ class KernelManager:
             for kernel_path in naif_kernel_paths:
                 self._loaded_kernels.load(kernel_path)
 
-        # Set leap second file environment variable for curryer usage
-        # TODO[CURRYER-97]: This is required for curryer kernel making to work when libera_utils is imported,
-        #  but should be improved in the future
+        # Point curryer's default-LSK lookup at the same leapsecond kernel furnished here. Curryer
+        # ships an LSK and resolves one without this, but every Libera kernel config omits
+        # `leapsecond_kernel`, so without the override curryer would make kernels against its own
+        # packaged LSK rather than the one in the pool -- two leapsecond definitions for one run.
         lsk_path = [Path(p).parent for p in naif_kernel_paths if re.match(NAIF_LSK_REGEX, Path(p).name)]
         if len(lsk_path) == 0:
             raise RuntimeError("No leap second kernel loaded, cannot set LEAPSECOND_FILE_ENV")
@@ -586,6 +603,67 @@ class KernelManager:
             )
             # All expected kernels are furnished, so we consider this a success
             return
+
+    def ensure_kernel_coverage(
+        self,
+        targets: Sequence[int | str],
+        start_ugps: int,
+        stop_ugps: int,
+        error: bool = True,
+    ) -> None:
+        """
+        Verify the furnished kernels cover every target across a time window.
+
+        Wraps :func:`curryer.kernels.coverage.coverage_gaps`, scoped to the kernels this
+        manager furnished. Raises rather than warns: an uncovered window otherwise surfaces
+        as a SPICE failure deep inside a later computation, or as silently wrong numbers
+        with no traceback at all.
+
+        Opt-in, and order matters: call it once after the kernels for a run are furnished
+        and before the first computation that reads them. Nothing calls it automatically,
+        because the manager cannot know which targets or which window a caller needs --
+        those come from the algorithm (the instrument frame it points, the granule it
+        processes), not from the kernel set. Checking every furnished object over its own
+        coverage union would answer a different and much weaker question. Skipping the call
+        changes no other behavior; what it costs is the early, named failure.
+
+        Parameters
+        ----------
+        targets : sequence of int or str
+            Objects that must be covered across the whole window: body IDs or names for
+            SPK coverage, frame IDs or names for CK. Binary PCKs are also in scope, and
+            their coverage is keyed on the frame *class* ID rather than the body or frame
+            ID -- pass the frame name and curryer resolves it. Names require the kernels
+            that define them to be furnished.
+        start_ugps : int
+            Window start, in microseconds since the GPS epoch.
+        stop_ugps : int
+            Window stop, in microseconds since the GPS epoch.
+        error : bool
+            Raise on a coverage gap (default). Set False to warn instead, for callers that
+            already degrade gracefully per sample and want the gap surfaced rather than
+            fatal.
+
+        Raises
+        ------
+        RuntimeError
+            If this manager has furnished no kernels.
+        ValueError
+            If ``error`` is True and a target has no coverage in any furnished kernel, or
+            the requested window is not fully covered for every target.
+        """
+        if self._loaded_kernels is None or not self._loaded_kernels.loaded:
+            raise RuntimeError(
+                "No kernels are furnished; call load_naif_kernels, load_static_kernels, or "
+                "load_libera_dynamic_kernels before checking coverage."
+            )
+
+        # Only SPK/CK/binary-PCK carry time coverage. Passing the text kernels (LSK, FK,
+        # SCLK) would make coverage_gaps warn about each one on every call.
+        furnished = set(self._loaded_kernels.loaded)
+        scope = [rec.file for rec in sp.ext.loaded_kernels(coverage.COVERAGE_KERNEL_TYPES) if rec.file in furnished]
+
+        coverage.coverage_gaps(targets, start_ugps, stop_ugps, kernels=scope, error=error)
 
     def __enter__(self):
         """Enter context manager, loading static kernels automatically."""
