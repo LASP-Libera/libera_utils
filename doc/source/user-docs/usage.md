@@ -72,12 +72,16 @@ usage: libera-utils ecr-upload [-h] [--image-tag IMAGE_TAG] [--ecr-tags ECR_TAGS
 
 positional arguments:
   algorithm_name        Processing step identifier used to determine the ECR repository name
-  image_name            Image name to upload
+  image_name            Local image to upload, as `image-name:image-tag` (e.g. `my-image:1.2.3`). The
+                        tag is required; latest is not assumed, so pass it explicitly if that is the
+                        image you mean.
 
 options:
   -h, --help            show this help message and exit
   --image-tag IMAGE_TAG
-                        Current tag of the local image. Default is latest.
+                        (DEPRECATED) The current tag of the local image that will be uploaded. Give the tag
+                        as part of the image name instead (e.g. `my-image:1.2.3`). If both are given, they
+                        must agree.
   --ecr-tags ECR_TAGS [ECR_TAGS ...]
                         Tags to apply in ECR. Default is latest.
   --ignore-docker-config
@@ -105,14 +109,28 @@ l2-nb-bb-imager-camtime
 l2-toa-flux-imager
 ```
 
+The local image is named the same way `docker` names it: give the tag directly in the positional image
+argument, as `image-name:image-tag`. The tag is **required**: algorithm images are built under an explicit
+`docker build -t <name>:<version>`, so a local `latest` usually does not exist, and omitting the tag now fails
+immediately with an explanatory error rather than dying later on a missing `image-name:latest`. If `latest` is
+genuinely the image you want, pass `my-image:latest` explicitly. The `--image-tag` option is a deprecated way
+of supplying the same tag separately; it still works, but if both are given they must agree or the command
+errors out.
+
 Example usage:
 
 ```shell
-# Upload a concrete version (registration of 1.2.3 happens automatically):
-libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux --ecr-tags latest 1.2.3 --ignore-docker-config
+# Upload the locally built sfc-flux:1.2.3 image (registration of 1.2.3 happens automatically):
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux:1.2.3 --ecr-tags latest 1.2.3 --ignore-docker-config
 
 # Upload, register, and verify the Batch job definition and ECR image in one step:
-libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux --ecr-tags latest 1.2.3 --verify
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux:1.2.3 --ecr-tags latest 1.2.3 --verify
+
+# Deprecated equivalent of the first example, kept working for backwards compatibility:
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux --image-tag 1.2.3 --ecr-tags latest 1.2.3
+
+# Errors out: no local tag given, and latest is not assumed.
+libera-utils ecr-upload l2-comp-flux recently-built-sfc-flux --ecr-tags latest 1.2.3
 ```
 
 To get a list of specific algorithm names allowed in this command, run `libera-utils ecr-upload -h`
