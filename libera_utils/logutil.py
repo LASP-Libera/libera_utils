@@ -261,21 +261,21 @@ def configure_task_logging(
     Example 1: The following will configure DEBUG console-only logging for anything in your script but all
     other loggers will be limited to INFO level.
 
-    ```python
-    configure_task_logging("my-script", limit_debug_loggers=("__main__",), console_log_level=logging.DEBUG)
-    ```
+    .. code-block:: python
+
+        configure_task_logging("my-script", limit_debug_loggers=("__main__",), console_log_level=logging.DEBUG)
 
     Example 2: This will allow all debug messages through from all loggers
     and sets up file-based logging and a custom cloudwatch
     log group. Also console messages will be logged in serialized JSON.
 
-    ```python
-    configure_task_logging("my-script",
-                           console_log_level=logging.DEBUG,
-                           log_dir=Path("/tmp/my-script"),
-                           console_log_json=True,
-                           cloudwatch_log_group="custom-log-group")
-    ```
+    .. code-block:: python
+
+        configure_task_logging("my-script",
+                               console_log_level=logging.DEBUG,
+                               log_dir=Path("/tmp/my-script"),
+                               console_log_json=True,
+                               cloudwatch_log_group="custom-log-group")
 
     Parameters
     ----------

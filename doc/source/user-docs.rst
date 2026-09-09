@@ -14,6 +14,7 @@ all of it.
     user-docs/file_handling
     user-docs/file_naming
     user-docs/netcdf
+    user-docs/umm_granule
     user-docs/manifest_files
     user-docs/logging
     user-docs/spice_kernels

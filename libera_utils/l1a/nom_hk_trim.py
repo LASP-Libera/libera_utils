@@ -130,7 +130,7 @@ def find_obsid_runs(
     ------
     ValueError
         If ``nom_hk`` has no ``PACKET`` dimension, or if its ``PACKET_ICIE_TIME`` variable is
-        present but not in non-decreasing order (see :func:`_check_packet_time_sorted`).
+        present but not in non-decreasing order (see ``_check_packet_time_sorted``).
     """
     if PACKET_DIM not in nom_hk.dims:
         raise ValueError(f"NOM-HK Dataset is missing required dimension {PACKET_DIM!r}")
@@ -208,9 +208,9 @@ def write_trimmed_nom_hk_products(
     time_variable : str
         Time coordinate used for filename start/end times.
     add_archive_path_prefix : bool
-        Forwarded to :func:`write_libera_data_product`.
+        Forwarded to :func:`~libera_utils.io.netcdf.write_libera_data_product`.
     strict : bool
-        Forwarded to :func:`write_libera_data_product`.
+        Forwarded to :func:`~libera_utils.io.netcdf.write_libera_data_product`.
     source : NomHkObsidSource or None
         Optional filter to only emit TRIMMED products for one ObsID field.
 

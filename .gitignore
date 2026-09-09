@@ -1,6 +1,7 @@
 # Hidden Analysis Code #
 ########################
 analysis
+_hidden
 
 # Compiled source #
 ###################
@@ -83,5 +84,6 @@ venv
 pytest.ini
 .devcontainer
 .claude/settings.local.json
-**/*mcp.json
+.claude/CLAUDE.local.md
+.mcp.json
 reviews/*
