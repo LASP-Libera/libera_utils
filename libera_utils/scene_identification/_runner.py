@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils import Manifest, smart_copy_file
@@ -284,17 +285,16 @@ def create_and_write_data_product(
     keep = [name for name in product_dataset.variables if name in declared]
     product_dataset = product_dataset[keep]
 
-    # Promote any declared coordinate that is still a plain data variable so the written product places them in
-    # .coords and passes the coordinate conformance check. For CAM-CAMTIME the only declared coordinate is
-    # CAMERA_TIME (already promoted by to_time_product), and the pixel-block bounds are plain data variables, so
-    # this is a no-op today; it remains as a general safety net should a definition declare other coordinates.
-    coords_to_promote = [
-        name
-        for name in definition.coordinates
-        if name in product_dataset.variables and name not in product_dataset.coords
-    ]
-    if coords_to_promote:
-        product_dataset = product_dataset.set_coords(coords_to_promote)
+    # Materialize any declared coordinate not yet present in .coords so the written product passes the coordinate
+    # conformance check.
+    for name, coord_def in definition.coordinates.items():
+        if name in product_dataset.coords:
+            continue
+        if name in product_dataset.variables:
+            product_dataset = product_dataset.set_coords(name)
+        elif name in product_dataset.dims:
+            index = np.arange(product_dataset.sizes[name], dtype=coord_def.dtype)
+            product_dataset = product_dataset.assign_coords({name: (name, index)})
 
     product_dataset.attrs["InputGranules"] = input_file_name
     # TODO[LIBSDC-672]: source the algorithm version from package metadata once SCENE-ID is versioned/released.

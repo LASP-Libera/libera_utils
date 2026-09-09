@@ -51,17 +51,3 @@ RUN poetry install --only main
 # path to the input manifest) are forwarded to the script. The runner also reads the PROCESSING_PATH environment
 # variable to determine where to write outputs.
 ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/cam/scene_id_cam.py"]
-
-
-# scene-id-cam-test
-# -----------------
-FROM scene-id-cam AS scene-id-cam-test
-
-# Install dev dependencies (not installed in the scene-id-cam image).
-RUN poetry install
-
-# Copy tests over.
-COPY tests $LIBERA_UTILS_DIRECTORY/tests
-
-# Run the (non-integration) unit tests with coverage.
-ENTRYPOINT ["pytest", "-m", "not integration", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]

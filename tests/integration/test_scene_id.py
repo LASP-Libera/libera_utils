@@ -12,36 +12,10 @@ import xarray as xr
 
 from libera_utils.config import config
 from libera_utils.scene_identification.scene_id import (
-    RADIOMETER_TIME_DIMENSION,
     FootprintData,
     FootprintVariables,
     SceneDefinition,
-    default_scene_definitions,
 )
-
-
-def assert_scene_ids_match_reference_off_nan(dataset, expected, scene_definition):
-    """Assert new scene IDs equal the reference oracle except at footprints with a NaN classification input.
-
-    The NaN->unmatched fix (a footprint with a NaN in any classification variable is now left unmatched, scene ID
-    0, instead of being assigned to an arbitrary first-matching scene) only changes results for footprints that
-    have a NaN in one of this definition's classification variables. Everywhere else the vectorized matcher is
-    byte-for-byte identical to the pre-fix code, so those footprints must still match the committed reference
-    fixture exactly. The changed (NaN-input) footprints are validated separately by
-    :func:`assert_property_bins_consistent`.
-    """
-    scene_id_col = f"scene_id_{scene_definition.type.lower()}"
-    new = dataset[scene_id_col].values
-    old = expected[scene_id_col].values
-
-    # Footprints with a NaN in any classification variable are exactly the ones whose classification the fix can
-    # change; build that mask from this definition's classification variables.
-    nan_input = np.zeros(new.shape, dtype=bool)
-    for variable in scene_definition.classification_variables:
-        nan_input |= np.isnan(dataset[variable].values)
-
-    # Where no classification input is NaN, the scene ID is unaffected by the fix and must match the reference.
-    np.testing.assert_array_equal(new[~nan_input], old[~nan_input])
 
 
 def _absent_bin_mask(array):
@@ -103,32 +77,10 @@ class TestEndToEndSceneIdentification:
         fp = FootprintData.from_ceres_ssf(input_file_path)
         fp.identify_scenes()
         expected = xr.open_dataset(expected_file_path)
-        # The reference fixture predates the rename of the internal dimension to RADIOMETER_TIME (it was written
-        # on the old "footprint" dimension); align its dimension name before comparing values.
-        expected = expected.rename({"footprint": RADIOMETER_TIME_DIMENSION})
-        # The reference fixture predates the property-bin output; compare the variables it contains and verify the
-        # new bin columns separately below. Scene ID columns are compared with a NaN-aware helper: the
-        # NaN->unmatched fix legitimately reclassifies footprints with a missing classification input, so those
-        # footprints are checked by assert_property_bins_consistent below rather than against the stale oracle.
-        expected_vars = list(expected.data_vars)
-        scene_id_vars = [var for var in expected_vars if var.startswith("scene_id_")]
-        non_scene_id_vars = [var for var in expected_vars if not var.startswith("scene_id_")]
-        # RADIOMETER_TIME is now an auto-promoted dimension coordinate that rides along on any variable selection,
-        # but the oracle predates it (it carries no time coordinate), so drop it from both sides before comparing
-        # data-variable values. The time coordinate itself is exercised by the runner integration/unit tests.
-        left = fp._data[non_scene_id_vars].drop_vars(RADIOMETER_TIME_DIMENSION, errors="ignore")
-        right = expected[non_scene_id_vars].drop_vars(RADIOMETER_TIME_DIMENSION, errors="ignore")
-        xr.testing.assert_equal(left, right)
-        definitions_by_type = {definition.type: definition for definition in default_scene_definitions()}
-        for scene_id_var in scene_id_vars:
-            scene_type = scene_id_var[len("scene_id_") :]
-            assert_scene_ids_match_reference_off_nan(fp._data, expected, definitions_by_type[scene_type])
-        # Viewing-geometry angles are classification variables on every scene definition, so the property-bin
-        # bounds must be reported and internally consistent alongside surface_type and cloud_fraction.
+        xr.testing.assert_equal(fp._data, expected)
         geometry_variables = ["solar_zenith_angle", "viewing_zenith_angle", "relative_azimuth_angle"]
         assert_property_bins_consistent(fp._data, "trmm", ["surface_type", "cloud_fraction", *geometry_variables])
         assert_property_bins_consistent(fp._data, "erbe", ["surface_type", "cloud_fraction", *geometry_variables])
-        # The geometry angles themselves must be carried through from the CERES SSF input.
         for geometry_variable in geometry_variables:
             assert geometry_variable in fp._data.data_vars
 
@@ -145,10 +97,8 @@ class TestEndToEndSceneIdentification:
         fp.identify_scenes(scene_definitions=[scene_definition])
         expected_file_path = test_scene_id / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
         expected = xr.open_dataset(expected_file_path)
-        # The reference fixture was written on the old "footprint" dimension; align its name before comparing.
-        expected = expected.rename({"footprint": RADIOMETER_TIME_DIMENSION})
-        # Scene IDs match the reference except where a classification input is NaN (now unmatched by design).
-        assert_scene_ids_match_reference_off_nan(fp._data, expected, scene_definition)
+        scene_id_col = f"scene_id_{scene_definition.type.lower()}"
+        np.testing.assert_array_equal(fp._data[scene_id_col].values, expected[scene_id_col].values)
 
     @pytest.mark.parametrize(
         ("input_file_name", "scene_definition", "expected_file_name"),

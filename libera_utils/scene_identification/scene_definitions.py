@@ -10,11 +10,9 @@ import xarray as xr
 logger = logging.getLogger(__name__)
 
 # Storage dtype for each classification variable's property-bin bounds (the scene_bin_{type}_{variable}_min/max
-# variables produced by _compute_property_bins). surface_type is a small categorical code (0-6), so its bounds are
-# stored as a compact uint8; every other (continuous) variable uses float32. There is no fill value: a float bound
-# uses NaN for an unbounded side or an unmatched footprint, while an integer bound is simply left at 0 for those
-# cases -- scene_id == 0 is the authoritative flag for an unmatched footprint, so consumers key off that rather
-# than a missing/sentinel bound value.
+# variables from _compute_property_bins). surface_type is a categorical code, stored as uint8; other (continuous)
+# variables use float32. There is no fill value: unbounded/unmatched sides are NaN for floats and 0 for ints, and
+# scene_id == 0 is the authoritative unmatched flag consumers key off.
 _BIN_BOUND_DTYPES: dict[str, type] = {"surface_type": np.uint8}
 _DEFAULT_BIN_BOUND_DTYPE: type = np.float32
 
@@ -321,11 +319,9 @@ class SceneDefinition:
         """
         self._validate_footprint_data_columns_present(data)
 
-        # Scene classification is elementwise per footprint. Derive the working dimension(s) and shape from a
-        # classification variable rather than from data.sizes (all dataset dims), so the scene-id mask matches the
-        # classification variables' own shape. This is 1-D along the footprint axis for the radiometer-timescale
-        # products and 2-D on the (CAMERA_TIME, FOOTPRINT) grid for the camera-timescale product, and it keeps any
-        # unrelated multi-dimensional passthrough variable from distorting the mask shape.
+        # Derive the mask shape from a classification variable, not data.sizes, so it matches the classification
+        # variables' own shape (1-D footprint axis for radiometer-timescale, 2-D (CAMERA_TIME, FOOTPRINT) for
+        # camera-timescale) and unrelated passthrough variables don't distort it.
         reference_variable = data[self.classification_variables[0]]
         dims = list(reference_variable.dims)
         shape = reference_variable.shape
@@ -414,11 +410,9 @@ class SceneDefinition:
             dtype = _BIN_BOUND_DTYPES.get(var_name, _DEFAULT_BIN_BOUND_DTYPE)
             is_float = np.issubdtype(np.dtype(dtype), np.floating)
 
-            # Float bounds represent an unbounded bin side with NaN. Integer bounds cannot hold NaN, so an unbounded
-            # side of a *matched* scene is clamped to the variable's global range instead (e.g. an unbounded
-            # surface_type max becomes the top of the surface_type range) -- equivalent to "unbounded" for a
-            # categorical code, and unambiguous. Unmatched footprints (scene_id 0) are left at the initial value:
-            # NaN for float bounds, 0 for integer bounds, with scene_id == 0 the authoritative "unmatched" flag.
+            # Float bounds use NaN for an unbounded side. Integer bounds can't hold NaN, so an unbounded side of a
+            # matched scene is clamped to the variable's global range instead (unambiguous for a categorical code).
+            # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, 0 for ints.
             if is_float:
                 min_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
                 max_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
@@ -442,13 +436,10 @@ class SceneDefinition:
 
     def _identify_vectorized(self, data: xr.Dataset, shape: tuple[int, ...]) -> np.ndarray:
         """Vectorized scene identification using numpy arrays."""
-        # Initialize scene_ids with zeros (0 = unmatched, positive values = a scene). The dtype is the narrowest
-        # unsigned integer that holds this definition's largest scene_id: uint8 for the ERBE/unfiltering definitions
-        # (IDs 1-11), but the TRMM definition has ~644 scenes with IDs up to 650, which needs uint16. Sizing the array
-        # to the data avoids overflow when np.where assigns a scalar scene_id back into it -- under NumPy 2.x (NEP 50)
-        # that scalar adopts the array's dtype, so a hardcoded uint8 raises OverflowError for IDs > 255. The array is
-        # only ever used as a set of small labels and is widened to np.intp before being used as an index (see
-        # _compute_property_bins), so the narrow dtype is safe.
+        # scene_ids: 0 = unmatched, positive = a scene. Sized to the narrowest unsigned int holding this
+        # definition's largest scene_id (uint8 for ERBE/unfiltering IDs 1-11; uint16 for TRMM's IDs up to 650).
+        # Sizing to the data avoids OverflowError under NEP 50, where np.where's scalar adopts the array dtype. The
+        # values are only small labels, widened to np.intp before indexing in _compute_property_bins, so this is safe.
         max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
         scene_ids = np.zeros(shape, dtype=np.min_scalar_type(max_scene_id))
 
@@ -462,9 +453,8 @@ class SceneDefinition:
                 min_val, max_val = scene.variable_ranges[var_name]
                 var_data = data[var_name].values  # Get numpy array from xarray
 
-                # A NaN classification value (e.g. a missing viewing angle) never matches any scene, so a footprint
-                # with a NaN in any bounded classification variable is left unmatched (scene ID 0). Seeding the mask
-                # with ~is_nan enforces that and keeps this vectorized path consistent with Scene.matches().
+                # A NaN classification value never matches any scene, so ~is_nan leaves such
+                # footprints unmatched (scene ID 0), consistent with Scene.matches().
                 is_nan = np.isnan(var_data)
                 var_mask = ~is_nan
 
