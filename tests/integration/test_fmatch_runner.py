@@ -11,6 +11,7 @@ for the SCENE-ID product family.
 
 from datetime import UTC, datetime
 
+import numpy as np
 import pytest
 import xarray as xr
 
@@ -149,6 +150,10 @@ class TestCameraRunnerWorkflow:
             assert product.sizes["CAMERA_TIME"] == 2
             assert product.sizes["FOOTPRINT"] == 16
             assert product["CAMERA_TIME"].dims == ("CAMERA_TIME",)
+            # FOOTPRINT is a real 0-based int32 coordinate on the written product (matches SCENE-ID-CAM-CAMTIME).
+            assert product["FOOTPRINT"].dims == ("FOOTPRINT",)
+            assert product["FOOTPRINT"].dtype == np.int32
+            assert list(product["FOOTPRINT"].values) == list(range(product.sizes["FOOTPRINT"]))
             # Pixel-block provenance is real, not placeholder: a scene can be traced to its pixels. The block extent
             # is the four camera_pixel_{x,y}_{min,max} coordinates; the boresight pixel stays as center_pixel_x.
             assert "center_pixel_x" in product.variables

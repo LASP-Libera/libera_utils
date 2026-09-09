@@ -31,20 +31,19 @@ logger = logging.getLogger(__name__)
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
 # The camera-timescale counterparts of the constants above. The camera-timescale scene-ID product (CAM-CAMTIME) is
-# written on the FOOTPRINT record axis (one record per image subsection / pseudo-footprint), with CAMERA_TIME carried
-# as a NON-UNIQUE coordinate on FOOTPRINT (one 2048x2048 image is segmented into many, possibly overlapping,
-# subsections that all share its time), mirroring its FMATCH-CAM-CAMTIME input. FOOTPRINT names the record dimension;
-# CAMERA_TIME names the datetime coordinate riding on it (its name != its dimension, unlike RADIOMETER_TIME).
+# written on a 2-D (CAMERA_TIME, FOOTPRINT) grid mirroring its FMATCH-CAM-CAMTIME input: CAMERA_TIME is the unique,
+# sorted image-acquisition axis (one 2048x2048 image = one entry) and FOOTPRINT is the 0-based subsection index within
+# each image (subsections may overlap and do not tile the image). Both are dimension coordinates and every data
+# variable hangs on both.
 FOOTPRINT_DIMENSION = "FOOTPRINT"
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
 # Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
-# straight through -- the camera pixel-index ranges (camera_pixel_x/y, 2-D inclusive (min, max) pairs on the
-# CAMERA_PIXEL_BOUNDS axis), the PSF bounding box, and the boresight geolocation -- so a scene can be traced back to
-# the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own 2-D
-# (CAMERA_TIME, FOOTPRINT) grid dimensions) by from_fmatch_cam_camtime and are not consumed by the classification;
-# they simply ride along to the written product. The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately
-# NOT listed: SCENE-ID does not carry it.
+# straight through -- the four inclusive camera pixel-block bounds (camera_pixel_{x,y}_{min,max}), the PSF bounding
+# box, and the boresight geolocation -- so a scene can be traced back to the exact camera pixels and ground footprint.
+# These are copied verbatim (each keeping its own 2-D (CAMERA_TIME, FOOTPRINT) grid dimensions) by
+# from_fmatch_cam_camtime and are not consumed by the classification; they simply ride along to the written product.
+# The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
 _FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "latitude",
     "longitude",

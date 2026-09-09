@@ -615,11 +615,13 @@ def _assemble_camtime_dataset(
         "center_pixel_y": [f.center_iy for f in footprints],
     }
 
-    # CAMERA_TIME is the 1-D image-acquisition axis: one unique, sorted entry per image.
-    # create_product_dataset routes it to .coords because the definition declares it under
-    # coordinates:.
+    # Grid coordinates: CAMERA_TIME is the 1-D image-acquisition axis (one unique, sorted entry per image);
+    # FOOTPRINT is the 0-based subsection index within each image, generated here. create_product_dataset routes
+    # both to .coords because the definition declares them under coordinates:.
+    footprint_dtype, _ = _fill_value_for(definition.coordinates["FOOTPRINT"])
     data: dict[str, np.ndarray] = {
         time_variable: np.array(unique_times, dtype="datetime64[ns]"),
+        "FOOTPRINT": np.arange(n_footprints_per_image, dtype=footprint_dtype),
     }
 
     # Camera pixel-block provenance as four separate inclusive-bound coordinates on the 2-D

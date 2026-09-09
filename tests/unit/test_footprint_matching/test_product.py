@@ -516,6 +516,20 @@ class TestCamtimeAssembly:
         assert retired.isdisjoint(set(definition.variables) | set(definition.coordinates))
         assert retired.isdisjoint(set(dataset.variables))
 
+    @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
+    def test_footprint_is_a_zero_based_coordinate(self, mode, definitions):
+        """FOOTPRINT is a declared int32 coordinate: a 0-based index over the subsection axis, generated at write
+        time. Matches SCENE-ID-CAM-CAMTIME so the shared axis is identical across producer and consumer.
+        """
+        definition = definitions[mode]
+        dataset = assemble_fmatch_dataset(mode, _pseudo_footprints())
+
+        assert "FOOTPRINT" in definition.coordinates
+        assert "FOOTPRINT" in dataset.coords
+        assert dataset["FOOTPRINT"].dims == ("FOOTPRINT",)
+        assert dataset["FOOTPRINT"].dtype == np.int32
+        assert list(dataset["FOOTPRINT"].values) == list(range(dataset.sizes["FOOTPRINT"]))
+
     def test_ragged_images_pad_short_rows_on_the_grid(self):
         """Images with fewer subsections than the widest image pad along FOOTPRINT with fill values.
 
