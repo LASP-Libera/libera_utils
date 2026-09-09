@@ -19,7 +19,6 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.cam.scene_id_cam import (
     PRODUCT_DEFINITION_PATH,
-    collect_ssf_input_files,
     create_and_write_data_product_cam,
     run_scene_identification_cam,
 )
@@ -78,25 +77,18 @@ class TestSceneIdCamWrite:
 
 
 class TestCollectInputFiles:
-    """collect_input_files selects the right manifest entries in placeholder vs product mode."""
+    """collect_input_files selects the right manifest entries by product id."""
 
     # Manifest records must be absolute paths; the runner keys off the filename (basename) when parsing.
     _INPUT_DIR = "/dropbox/inputs"
 
     def _manifest(self, *filenames: str) -> Manifest:
+        # checksum is a required ManifestFileRecord field but irrelevant to collect_input_files, which selects
+        # purely by filename; a fixed placeholder keeps these selection cases readable.
         return Manifest(
             manifest_type=ManifestType.INPUT,
             files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}", checksum="0") for name in filenames],
         )
-
-    def test_placeholder_mode_keeps_non_libera_files(self):
-        """The CAM runner runs in placeholder mode: keep the CERES SSF (non-Libera) file, skip Libera products."""
-        libera_name = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
-        manifest = self._manifest(SSF_INPUT_NAME, libera_name)
-
-        selected = collect_ssf_input_files(manifest)
-
-        assert selected == [f"{self._INPUT_DIR}/{SSF_INPUT_NAME}"]
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
@@ -211,6 +203,11 @@ class TestSceneIdCamCamtimeWrite:
         assert "FOOTPRINT" in reopened.sizes
         assert reopened["CAMERA_TIME"].dims == ("CAMERA_TIME",)
         assert not bool(reopened["CAMERA_TIME"].to_series().duplicated().any())
+        # FOOTPRINT is a coordinate: a 0-based int32 index generated over the FOOTPRINT dimension.
+        assert "FOOTPRINT" in reopened.coords
+        assert reopened["FOOTPRINT"].dims == ("FOOTPRINT",)
+        assert reopened["FOOTPRINT"].dtype == np.int32
+        assert list(reopened["FOOTPRINT"].values) == list(range(reopened.sizes["FOOTPRINT"]))
         for name in ("cloud_fraction", "scene_id_erbe", "Quality_Flag"):
             assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
         for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
