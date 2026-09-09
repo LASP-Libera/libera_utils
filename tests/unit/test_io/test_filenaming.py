@@ -20,6 +20,9 @@ from libera_utils.io import filenaming
         ("/some/fake/path/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
         (Path("/fake-path/P1590011SOMESCIENCEAAA99030231459001.PDS"), filenaming.L0Filename),
         ("s3://fake-bucket/P1590011SOMESCIENCEAAA99030231459001.PDS", filenaming.L0Filename),
+        ("/data/LIBERA_SDC_1040_ccsds_2025_318_13_16_34", filenaming.LiberaGroundCcsdsFilename),
+        (Path("/data/LIBERA_SDC_1057_ccsds_2025_318_13_53_06"), filenaming.LiberaGroundCcsdsFilename),
+        ("s3://bucket/dropbox/LIBERA_SDC_11_ccsds_2025_346_13_29_47", filenaming.LiberaGroundCcsdsFilename),
         (
             "/some/fake/path/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             filenaming.LiberaDataProductFilename,
@@ -50,6 +53,11 @@ def test_from_filename(filename, filename_type):
             "/ignore/this/P1590011SOMESCIENCEAAA99030231459001.PDS",
             "s3://my-bucket",
             S3Path("s3://my-bucket/PDS/0011/P1590011SOMESCIENCEAAA99030231459001.PDS"),
+        ),
+        (
+            "/ignore/this/LIBERA_SDC_1040_ccsds_2025_318_13_16_34",
+            "s3://my-l0-bucket",
+            S3Path("s3://my-l0-bucket/GroundCCSDS/1040/2025/11/14/LIBERA_SDC_1040_ccsds_2025_318_13_16_34"),
         ),
         (
             "/ignore/this/LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
@@ -177,6 +185,54 @@ def test_L0Filename_parts(filename, basepath, parts):
     assert fn_from_parts == fn
     assert fn_from_parts.path == fn.path
     assert fn_from_parts.filename_parts == fn.filename_parts
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "/some/fake/path/LIBERA_SDC_1040_ccsds_2025_318_13_16_34",
+        Path("/fake-path/LIBERA_SDC_1057_ccsds_2025_318_13_53_06"),
+        "s3://fake-bucket/LIBERA_SDC_1036_ccsds_2025_346_13_29_47",
+        S3Path("s3://fake-bucket/LIBERA_SDC_1040_ccsds_2025_318_13_16_34"),
+        "LIBERA_SDC_11_ccsds_2025_001_00_00_00",
+        "LIBERA_SDC_0_ccsds_2025_001_00_00_00",
+        "LIBERA_SDC_2047_ccsds_2025_001_00_00_00",
+    ],
+)
+def test_LiberaGroundCcsdsFilename(filename):
+    """Test LiberaGroundCcsdsFilename accepts demuxed ground names."""
+    fn = filenaming.LiberaGroundCcsdsFilename(filename)
+    assert fn.data_product_id == DataProductIdentifier.l0_ground_ccsds
+
+
+def test_LiberaGroundCcsdsFilename_parts_and_archive_prefix():
+    """Test round-trip from parts and the APID-scoped GroundCCSDS archive prefix."""
+    filename = "LIBERA_SDC_1040_ccsds_2025_318_13_16_34"
+    fn = filenaming.LiberaGroundCcsdsFilename(filename)
+    parts = fn.filename_parts
+    assert parts.apid == 1040
+    assert parts.year == 2025
+    assert parts.doy == 318
+    assert parts.hour == 13
+    assert parts.minute == 16
+    assert parts.second == 34
+    assert parts.bin_start == dt.datetime(2025, 11, 14, 13, 16, 34, tzinfo=dt.UTC)
+    assert fn.archive_prefix == "GroundCCSDS/1040/2025/11/14"
+    assert fn.apid == parts.apid
+    assert fn.bin_start == parts.bin_start
+
+    fn_from_parts = filenaming.LiberaGroundCcsdsFilename.from_filename_parts(
+        apid=1040, year=2025, doy=318, hour=13, minute=16, second=34
+    )
+    assert fn_from_parts.path.name == filename
+    assert fn_from_parts.archive_prefix == fn.archive_prefix
+
+
+def test_LiberaGroundCcsdsFilename_archive_prefix_zero_pads_short_apid():
+    """A sub-1000 APID pads to four digits so the archive sorts consistently."""
+    fn = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_11_ccsds_2025_318_13_16_34")
+    assert fn.apid == 11
+    assert fn.archive_prefix == "GroundCCSDS/0011/2025/11/14"
 
 
 @pytest.mark.parametrize(
@@ -699,3 +755,43 @@ def test_ummg_metadata_filename_stem_mismatch():
     fn._path = _make_mock_path(_VALID_L1B_NC, mismatched_ummg_name)
     with pytest.raises(ValueError, match="does not match its data file path"):
         fn.ummg_metadata_filename
+
+
+@pytest.mark.parametrize(
+    "basename",
+    [
+        "LIBERA_SDC_1040_ccsds_2025_000_00_00_00",  # DOY below range
+        "LIBERA_SDC_1040_ccsds_2025_999_00_00_00",  # DOY above range
+        "LIBERA_SDC_1040_ccsds_2025_367_00_00_00",  # DOY above range
+        "LIBERA_SDC_1040_ccsds_2025_366_00_00_00",  # DOY 366 in a common year
+        "LIBERA_SDC_1040_ccsds_2025_001_24_00_00",  # hour out of range
+        "LIBERA_SDC_1040_ccsds_2025_001_00_60_00",  # minute out of range
+        "LIBERA_SDC_1040_ccsds_2025_001_00_00_60",  # second out of range
+        "LIBERA_SDC_1040_ccsds_2025_001_99_99_99",
+        "LIBERA_SDC_2048_ccsds_2025_001_00_00_00",  # APID above the 11-bit CCSDS maximum
+        "LIBERA_SDC_9999_ccsds_2025_001_00_00_00",  # APID above the 11-bit CCSDS maximum
+        "ccsds_2025_001_00_00_00",  # pre-demux naming, no APID
+        "LIBERA_SDC_ccsds_2025_001_00_00_00",  # APID field missing
+        "LIBERA_SDC_1040_ccsds_2025_001_00_00_00.bin",  # extension not part of the convention
+    ],
+)
+def test_LiberaGroundCcsdsFilename_rejects_invalid_names(basename):
+    """Invalid field values are rejected at construction, not deferred to archive_prefix.
+
+    A name that constructs but blows up later passes ingest validation and only fails at
+    staging, when the archive prefix is computed.
+    """
+    # Out-of-range fields and wrong shapes fail the regex; DOY 366 in a common year fails the
+    # date parse; an in-regex but illegal APID fails the CCSDS range check.
+    bad_name = "failed validation against regex pattern|does not exist|outside the CCSDS range"
+    with pytest.raises(ValueError, match=bad_name):
+        filenaming.LiberaGroundCcsdsFilename(basename)
+
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(basename)
+
+
+def test_LiberaGroundCcsdsFilename_accepts_leap_day_366():
+    """DOY 366 is valid in a leap year."""
+    fn = filenaming.LiberaGroundCcsdsFilename("LIBERA_SDC_1040_ccsds_2024_366_00_00_00")
+    assert fn.archive_prefix == "GroundCCSDS/1040/2024/12/31"

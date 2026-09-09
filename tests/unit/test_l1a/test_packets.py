@@ -309,8 +309,8 @@ def test_validate_duplicate_values_ground_data_warns_for_each_differing_value():
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
-def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
-    """Test _expand_sample_times with single sample per packet"""
+def testexpand_sample_times_single_sample(mock_multipart_to_dt64):
+    """Test expand_sample_times with single sample per packet"""
     # Create mock dataset
     ds = xr.Dataset({"SEC_FIELD": (["PACKET"], [10, 20]), "USEC_FIELD": (["PACKET"], [100, 200])})
 
@@ -320,15 +320,15 @@ def test_expand_sample_times_single_sample(mock_multipart_to_dt64):
 
     time_fields = TimeFieldMapping(s_field="SEC_FIELD", us_field="USEC_FIELD")
 
-    result = libera_packets._expand_sample_times(ds, time_fields, n_samples=1)
+    result = libera_packets.expand_sample_times(ds, time_fields, n_samples=1)
 
     assert len(result) == 2
     assert result.dtype == np.dtype("datetime64[us]")
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
-def test_expand_sample_times_multi_sample(mock_multipart_to_dt64):
-    """Test _expand_sample_times with multiple samples per packet"""
+def testexpand_sample_times_multi_sample(mock_multipart_to_dt64):
+    """Test expand_sample_times with multiple samples per packet"""
     # Create mock dataset with 2 packets, 3 samples each
     ds = xr.Dataset(
         {
@@ -355,7 +355,7 @@ def test_expand_sample_times_multi_sample(mock_multipart_to_dt64):
 
     time_fields = TimeFieldMapping(s_field="SEC_FIELD%i", us_field="USEC_FIELD%i")
 
-    result = libera_packets._expand_sample_times(ds, time_fields, n_samples=3)
+    result = libera_packets.expand_sample_times(ds, time_fields, n_samples=3)
 
     # Should have 2 packets * 3 samples = 6 total times
     assert len(result) == 6
@@ -855,7 +855,10 @@ def test_parse_packets_to_l1a_dataset_basic(
             )
         ],
     )
-    mock_config_get.return_value = "fake_definition.xml"
+    mock_config_get.side_effect = lambda key: {
+        "LIBERA_PACKET_DEFINITION": "fake_definition.xml",
+        "SKIP_PACKET_HEADER_BYTES": 0,
+    }.get(key, None)
     mock_get_packet_config.return_value = config
 
     # Create mock packet dataset
@@ -907,6 +910,150 @@ def test_parse_packets_to_l1a_dataset_basic(
     # Verify non-expanded fields remain
     assert "OTHER_FIELD" in result.data_vars
 
-    # Verify global attributes were added
-    assert "algorithm_version" in result.attrs
-    assert "date_created" in result.attrs
+    mock_parse_packets.assert_called_once()
+    assert mock_parse_packets.call_args.kwargs.get("skip_header_bytes") == 0
+
+
+@mock.patch("libera_utils.l1a.packets.parse_packets_to_dataset")
+@mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
+@mock.patch("libera_utils.l1a.packets.get_packet_config")
+@mock.patch("libera_utils.config.config.get")
+def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
+    mock_config_get, mock_get_packet_config, mock_multipart, mock_parse_packets
+):
+    """Explicit skip_header_bytes overrides config for ground CCSDS decode."""
+    config = PacketConfiguration(
+        packet_apid=LiberaApid.icie_nom_hk,
+        packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
+        sample_groups=[
+            SampleGroup(
+                name="TEST_SAMPLE",
+                sample_count=1,
+                data_field_patterns=["SAMPLE_DATA"],
+                time_field_patterns=TimeFieldMapping(day_field="SAMPLE_DAY", ms_field="SAMPLE_MS"),
+                time_source=SampleTimeSource.ICIE,
+            )
+        ],
+    )
+    mock_config_get.side_effect = lambda key: {
+        "LIBERA_PACKET_DEFINITION": "fake_definition.xml",
+        "SKIP_PACKET_HEADER_BYTES": 0,
+    }.get(key, None)
+    mock_get_packet_config.return_value = config
+    packet_ds = xr.Dataset(
+        {
+            "PKT_DAY": (["PACKET"], [1000]),
+            "PKT_MS": (["PACKET"], [0]),
+            "SAMPLE_DAY": (["PACKET"], [1000]),
+            "SAMPLE_MS": (["PACKET"], [500]),
+            "SAMPLE_DATA": (["PACKET"], [1.5]),
+            "OTHER_FIELD": (["PACKET"], [100]),
+        }
+    )
+    mock_parse_packets.return_value = packet_ds
+
+    def multipart_side_effect(ds, **kwargs):
+        return pd.Series([np.datetime64("2025-01-01T00:00:00")])
+
+    mock_multipart.side_effect = multipart_side_effect
+
+    libera_packets.parse_packets_to_l1a_dataset(
+        packet_files=["fake.bin"], apid=LiberaApid.icie_nom_hk.value, skip_header_bytes=8
+    )
+
+    assert mock_parse_packets.call_args.kwargs["skip_header_bytes"] == 8
+    assert mock_config_get.call_args_list == [(("LIBERA_PACKET_DEFINITION",),)]
+
+
+def test_drop_implausible_telemetry_times_removes_pre_floor_entries(caplog):
+    """A single pre-sync-era timestamp (near CCSDS_EPOCH) is dropped, real times survive."""
+    times = np.array(
+        ["1958-01-01T00:00:02", "2026-07-10T15:13:56", "2026-07-10T15:13:57"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    with caplog.at_level("WARNING"):
+        filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+    assert list(filtered) == list(times[1:])
+    assert "test context" in caplog.text
+
+
+def test_drop_implausible_telemetry_times_no_op_when_all_valid():
+    """No entries are removed and no warning-worthy exclusion occurs when all times are sane."""
+    times = np.array(
+        ["2026-07-10T15:13:56", "2026-07-10T15:13:57"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+    assert list(filtered) == list(times)
+
+
+def test_drop_implausible_telemetry_times_raises_when_all_pre_floor():
+    """If every time is before the sanity floor, nothing remains and a ValueError is raised."""
+    times = np.array(
+        ["1958-01-01T00:00:02", "1958-01-01T00:00:03"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    with pytest.raises(ValueError, match="test context"):
+        libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+
+def test_drop_implausible_telemetry_times_removes_far_future_entries(caplog):
+    """A corrupted counter reading far in the future poisons max() the way a pre-sync one poisons min()."""
+    times = np.array(
+        ["2025-01-01T00:00:00", "2025-01-01T00:01:00", "2140-06-01T00:00:00"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+
+    with caplog.at_level("WARNING"):
+        filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+    assert filtered.size == 2
+    assert filtered.max() == np.datetime64("2025-01-01T00:01:00", "us")
+    assert "sanity ceiling" in caplog.text
+
+
+def test_drop_implausible_telemetry_times_keeps_simulated_mission_era_clock():
+    """DITL captures run years ahead of wall clock and must not be rejected by the ceiling."""
+    times = np.array(
+        ["2028-02-15T13:16:00", "2028-02-15T13:17:00"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+    assert filtered.size == 2
+
+
+def test_drop_implausible_telemetry_times_drops_nat(caplog):
+    """NaT compares false against both bounds, so it must be excluded explicitly."""
+    times = np.array(
+        ["2026-07-10T15:13:56", "NaT", "2026-07-10T15:13:57"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    with caplog.at_level("WARNING"):
+        filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+    assert filtered.size == 2
+    assert not np.isnat(filtered).any()
+    assert not np.isnat(filtered.min())
+    assert "NaT" in caplog.text
+
+
+def test_drop_implausible_telemetry_times_raises_when_only_nat():
+    """A dataset whose every time is NaT has no usable span and must fail rather than return NaT."""
+    times = np.array(["NaT", "NaT"], dtype=libera_packets.DATETIME_USEC_DTYPE)
+    with pytest.raises(ValueError, match="test context"):
+        libera_packets.drop_implausible_telemetry_times(times, context="test context")
+
+
+def test_drop_implausible_telemetry_times_bounds_do_not_depend_on_wall_clock(monkeypatch):
+    """Both bounds come from fixed config dates so a re-run yields the same span."""
+    times = np.array(
+        ["2030-01-01T00:00:00", "2044-12-31T23:59:59"],
+        dtype=libera_packets.DATETIME_USEC_DTYPE,
+    )
+    monkeypatch.setenv("MAX_VALID_TELEMETRY_TIME", "2045-01-01T00:00:00")
+    assert libera_packets.drop_implausible_telemetry_times(times, context="test context").size == 2
+
+    monkeypatch.setenv("MAX_VALID_TELEMETRY_TIME", "2035-01-01T00:00:00")
+    filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
+    assert filtered.size == 1
+    assert filtered[0] == np.datetime64("2030-01-01T00:00:00", "us")

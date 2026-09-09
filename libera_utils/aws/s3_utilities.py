@@ -20,7 +20,12 @@ from libera_utils.aws.utils import (
     get_l2_team_role_session,
 )
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.filenaming import L0Filename, LiberaDataProductFilename, PathType
+from libera_utils.io.filenaming import (
+    L0Filename,
+    LiberaDataProductFilename,
+    LiberaGroundCcsdsFilename,
+    PathType,
+)
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.logutil import configure_task_logging
 
@@ -40,9 +45,11 @@ NEW_FILES_AVAILABLE_EVENT_DETAIL_TYPE = "NewFilesAvailableEventDetail"
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 300.0  # 5 minutes
 VERIFY_POLL_INTERVAL_SECONDS = 10.0
 
+ManualIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
 
-def _validate_filename_for_ingest(path: PathType) -> L0Filename | LiberaDataProductFilename:
-    """Validate a path as a Libera L0 or data product filename eligible for manual ingest.
+
+def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
+    """Validate a path as a Libera L0, ground CCSDS, or data product filename eligible for manual ingest.
 
     Manifest and any other filename types are rejected.
 
@@ -53,15 +60,17 @@ def _validate_filename_for_ingest(path: PathType) -> L0Filename | LiberaDataProd
 
     Returns
     -------
-    L0Filename or LiberaDataProductFilename
+    L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
         The parsed filename object.
     """
-    for filename_class in (L0Filename, LiberaDataProductFilename):
+    for filename_class in (L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename):
         try:
             return filename_class(path)
         except ValueError:
             continue
-    raise ValueError(f"File {path} is not a valid Libera L0 or data product filename and cannot be manually ingested.")
+    raise ValueError(
+        f"File {path} is not a valid Libera L0, ground CCSDS, or data product filename and cannot be manually ingested."
+    )
 
 
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
@@ -105,7 +114,7 @@ def manual_ingest_data_products(
     paths_to_files: list[Path],
     *,
     boto_session: boto3.Session,
-) -> list[L0Filename | LiberaDataProductFilename]:
+) -> list[ManualIngestFilename]:
     """Stage data product files to the Ingest Dropbox and emit a single NewFilesAvailable event.
 
     The SDC Data Ingester picks up the staged files and handles archiving them in the correct bucket as well as
@@ -114,14 +123,15 @@ def manual_ingest_data_products(
     Parameters
     ----------
     paths_to_files : list of Path
-        Local filesystem paths to the files to ingest. Each must be a validly named Libera L0 or data product file.
+        Local filesystem paths to the files to ingest. Each must be a validly named Libera L0, ground CCSDS, or
+        data product file.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler and passed in so that the
         same authenticated session is used throughout the workflow.
 
     Returns
     -------
-    list of L0Filename or LiberaDataProductFilename
+    list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
         The validated filename objects for the staged files (useful for subsequent verification).
     """
     # Validate every filename up front so we don't stage a partial set before discovering a bad name.
@@ -196,7 +206,7 @@ def _archive_object_exists(s3_client, bucket: str, key: str) -> bool:
 
 
 def verify_ingestion(
-    libera_filenames: list[L0Filename | LiberaDataProductFilename],
+    libera_filenames: list[ManualIngestFilename],
     *,
     boto_session: boto3.Session,
     timeout: float = DEFAULT_VERIFY_TIMEOUT_SECONDS,
@@ -207,9 +217,12 @@ def verify_ingestion(
     For each file, up to three read-only checks are polled until they pass:
 
     1. The file exists in its expected archive bucket (at its filename-derived archive prefix).
-    2. A Data Availability record exists for the data product/version/applicable-date (skipped for L0 PDS/CR files,
-       which the SDC does not write availability records for).
+    2. A Data Availability record exists for the data product/version/applicable-date (skipped for L0 PDS/CR and
+       ground CCSDS files, which the SDC does not write availability records for).
     3. A File Metadata record exists for the file basename.
+
+    A ground CCSDS capture passes on its base File Metadata row alone, so a successful
+    verification does not mean its packet time span was indexed into a searchable row.
 
     All required AWS resources are resolved once up front; finding zero or more than one of any resource raises
     immediately (it indicates a mismatch between Libera Utils and the deployed SDC). Checks are polled every
@@ -218,7 +231,7 @@ def verify_ingestion(
 
     Parameters
     ----------
-    libera_filenames : list of L0Filename or LiberaDataProductFilename
+    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
         The validated filenames staged for ingest (as returned by ``manual_ingest_data_products``).
     boto_session : boto3.Session
         Boto3 session used for all (read-only) AWS interactions.
@@ -255,12 +268,17 @@ def verify_ingestion(
             spec["applicable_date"] = libera_filename.applicable_date.isoformat()
             spec["data_product_id"] = str(libera_filename.data_product_id)
             spec["version"] = libera_filename.filename_parts.version
+        elif isinstance(libera_filename, LiberaGroundCcsdsFilename):
+            # A ground capture gets its base record plus a searchable record per applicable date its
+            # packets cover. A file whose packets yield no usable time span keeps only its base
+            # record, so the base record alone counts as ingested.
+            spec["min_metadata_count"] = 1
         else:
-            # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets both a base
-            # record and a product record (SK=applicable_date). We can't derive a PDS's applicable date here, so we
-            # verify via record count: one record for a CR, two for a PDS.
+            # L0: a CR (construction record) gets only its base metadata record (SK="#"); a PDS gets a base
+            # record plus a product record (SK=applicable_date) per applicable date it covers. We can't derive
+            # a PDS's applicable dates here, so we verify via record count.
             is_construction_record = libera_filename.data_product_id == DataProductIdentifier.l0_pds_cr
-            spec["expected_metadata_count"] = 1 if is_construction_record else 2
+            spec["min_metadata_count"] = 1 if is_construction_record else 2
         file_specs.append(spec)
 
     metadata_table = dynamodb.Table(
@@ -297,11 +315,11 @@ def verify_ingestion(
                     response = metadata_table.get_item(Key={"PK": spec["name"], "SK": spec["applicable_date"]})
                     passed = "Item" in response
                 else:
-                    # L0: the ingester writes a base record (SK="#") for every file plus a product record
-                    # (SK=applicable_date) for PDS files. We can't derive a PDS's applicable date here, so verify by
-                    # counting records under the unique basename PK: 1 for a CR, 2 for a PDS.
+                    # L0 and ground CCSDS: the ingester writes a base record (SK="#") for every file, plus a
+                    # product record (SK=applicable_date) per applicable date the file covers. A file's data
+                    # can span more than one day, so this count is a floor rather than an exact number.
                     response = metadata_table.query(KeyConditionExpression=Key("PK").eq(spec["name"]))
-                    passed = response.get("Count", 0) == spec["expected_metadata_count"]
+                    passed = response.get("Count", 0) >= spec["min_metadata_count"]
             else:  # availability
                 # The Data Availability table is keyed by PK=applicable_date, SK="<DataProductId>#<Version>".
                 memo_key = (spec["applicable_date"], spec["data_product_id"], spec["version"])

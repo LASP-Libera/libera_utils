@@ -64,6 +64,20 @@ LIBERA_L0_REGEX = re.compile(
     r"(?P<signal>.XFR)?$"
 )
 
+# Demuxed ground-test CCSDS names (no extension), one APID per file:
+# LIBERA_SDC_<apid>_ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
+LIBERA_GROUND_CCSDS_REGEX = re.compile(
+    r"^LIBERA_SDC_(?P<apid>[0-9]{1,4})"
+    r"_ccsds_(?P<year>[0-9]{4})"
+    r"_(?P<doy>00[1-9]|0[1-9][0-9]|[12][0-9]{2}|3[0-5][0-9]|36[0-6])"
+    r"_(?P<hour>[01][0-9]|2[0-3])"
+    r"_(?P<minute>[0-5][0-9])"
+    r"_(?P<second>[0-5][0-9])$"
+)
+
+# CCSDS primary header APID field is 11 bits.
+MAX_CCSDS_APID = 2047
+
 # Get all data levels for the regex
 DATA_LEVELS = "|".join([level.value for level in DataLevel])
 
@@ -131,6 +145,7 @@ class AbstractValidFilename(ABC):
         """Factory method to produce an AbstractValidFilename from a valid Libera file path (str or Path)"""
         for CandidateClass in (
             L0Filename,
+            LiberaGroundCcsdsFilename,
             LiberaDataProductFilename,
             ManifestFilename,
         ):
@@ -441,6 +456,155 @@ class L0Filename(AbstractDataProductFilename):
         d["file_number"] = int(d["file_number"])
         d["created_time"] = datetime.strptime(d["created_time"], NUMERIC_DOY_TS_FORMAT)
         return SimpleNamespace(**d)
+
+
+def _validate_ccsds_apid(apid: int) -> int:
+    """Return ``apid`` if it fits the 11-bit CCSDS APID field, else raise ``ValueError``."""
+    if not 0 <= apid <= MAX_CCSDS_APID:
+        raise ValueError(f"APID {apid} is outside the CCSDS range 0-{MAX_CCSDS_APID}")
+    return apid
+
+
+def _parse_ground_ccsds_bin_start(year: int, doy: int, hour: int, minute: int, second: int) -> datetime:
+    """Build the UTC bin start for a ground CCSDS file from its filename fields.
+
+    Raises
+    ------
+    ValueError
+        If the fields do not name a real instant. This includes DOY 366 in a common year,
+        which ``strptime`` rolls into 1 January of the following year rather than rejecting.
+    """
+    bin_start = datetime.strptime(f"{year:04d}{doy:03d}{hour:02d}{minute:02d}{second:02d}", "%Y%j%H%M%S")
+    if bin_start.year != year:
+        raise ValueError(f"Day of year {doy} does not exist in {year}")
+    return _ensure_utc_timezone(bin_start)
+
+
+class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
+    """Filename validation class for demuxed ground-test CCSDS files.
+
+    Canonical form: ``LIBERA_SDC_<apid>_ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>`` (no extension),
+    e.g. ``LIBERA_SDC_1057_ccsds_2026_191_14_00_00``. Each file holds packets for the single
+    APID named in the basename, with no record header before the CCSDS primary header.
+
+    The time fields are the start of the time bin the file was cut from, not the span of the
+    packets inside it: packet times can fall outside the bin. The archive prefix
+    ``GroundCCSDS/<apid>/<yyyy>/<mm>/<dd>/`` is an expansion of these fields and carries no
+    guarantee about packet or data times. Searchable times come from File Metadata at ingest.
+    """
+
+    _regex = LIBERA_GROUND_CCSDS_REGEX
+    _fmt = "LIBERA_SDC_{apid:d}_ccsds_{year:04d}_{doy:03d}_{hour:02d}_{minute:02d}_{second:02d}"
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting fields that do not form a real instant or a legal APID.
+
+        The base setter validates against the regex only, which cannot express leap years
+        and admits APIDs above the 11-bit CCSDS maximum.
+        """
+        AbstractValidFilename.path.fset(self, new_path)
+        self._parse_filename_parts()
+
+    @property
+    def data_product_id(self) -> DataProductIdentifier:
+        """Property that contains the DataProductIdentifier for this file type."""
+        return DataProductIdentifier.l0_ground_ccsds
+
+    @property
+    def apid(self) -> int:
+        """CCSDS APID encoded in the filename.
+
+        Not necessarily a defined ``LiberaApid`` member; ingest accepts any legal APID.
+        """
+        return self.filename_parts.apid
+
+    @property
+    def bin_start(self) -> datetime:
+        """UTC start of the time bin encoded in the filename."""
+        return self.filename_parts.bin_start
+
+    @property
+    def archive_prefix(self) -> str:
+        """L0 archive prefix from the filename's APID and bin start."""
+        start = self.bin_start
+        return f"GroundCCSDS/{self.apid:04d}/{start.year:04d}/{start.month:02d}/{start.day:02d}"
+
+    @classmethod
+    def from_filename_parts(
+        cls,  # noqa pylint: disable=arguments-differ
+        *,
+        apid: int,
+        year: int,
+        doy: int,
+        hour: int,
+        minute: int,
+        second: int,
+        basepath: str | Path | S3Path | None = None,
+    ):
+        """Create instance from filename parts.
+
+        Parameters
+        ----------
+        apid : int
+            CCSDS APID of the packets in the file (0-2047).
+        year : int
+            Four-digit UTC year of the bin start.
+        doy : int
+            Day of year (1-366).
+        hour, minute, second : int
+            Bin start time-of-day in UTC.
+        basepath : Optional[Union[str, Path, S3Path]]
+            Optional directory or S3 prefix prepended to the basename.
+
+        Returns
+        -------
+        LiberaGroundCcsdsFilename
+        """
+        return cls._from_filename_parts(
+            basepath=basepath,
+            apid=apid,
+            year=year,
+            doy=doy,
+            hour=hour,
+            minute=minute,
+            second=second,
+        )
+
+    @classmethod
+    def _format_filename_parts(
+        cls,
+        *,
+        apid: int,
+        year: int,
+        doy: int,
+        hour: int,
+        minute: int,
+        second: int,
+    ):
+        """Construct a basename from filename parts."""
+        _validate_ccsds_apid(apid)
+        _parse_ground_ccsds_bin_start(year, doy, hour, minute, second)
+        return cls._fmt.format(apid=apid, year=year, doy=doy, hour=hour, minute=minute, second=second)
+
+    def _parse_filename_parts(self):
+        """Parse the filename parts into objects from regex matched strings."""
+        d = self.regex_match(self.path)
+        apid = _validate_ccsds_apid(int(d["apid"]))
+        year = int(d["year"])
+        doy = int(d["doy"])
+        hour = int(d["hour"])
+        minute = int(d["minute"])
+        second = int(d["second"])
+        return SimpleNamespace(
+            apid=apid,
+            year=year,
+            doy=doy,
+            hour=hour,
+            minute=minute,
+            second=second,
+            bin_start=_parse_ground_ccsds_bin_start(year, doy, hour, minute, second),
+        )
 
 
 class LiberaDataProductFilename(AbstractDataProductFilename):

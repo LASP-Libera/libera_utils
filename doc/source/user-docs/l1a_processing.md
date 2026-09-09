@@ -35,10 +35,14 @@ L1A processing draws on three layers of configuration:
 By default, `SKIP_PACKET_HEADER_BYTES` is `0` in `config.json`. This is correct for flight and
 production data delivered through the SDC downlink pipeline.
 
-Ground testing data generated from hardware-in-the-loop systems (e.g. Hydra/FSW) prepends an extra
-**8-byte header** to each packet before the standard CCSDS primary header. To process this data, set
-`SKIP_PACKET_HEADER_BYTES` to `8`. This is a **global** setting that affects all packets in a
-processing run.
+Raw ground testing captures from hardware-in-the-loop systems (e.g. Hydra/FSW) prepend an extra
+**8-byte record header** to each packet before the standard CCSDS primary header. To process a raw
+capture directly, set `SKIP_PACKET_HEADER_BYTES` to `8`. This is a **global** setting that affects
+all packets in a processing run.
+
+Ground captures delivered to the SDC are demuxed beforehand (see
+[Demuxed ground CCSDS files](#demuxed-ground-ccsds-files)) with the record header already stripped,
+so they need the default `0` and none of this applies to them.
 
 Set it via environment variable before running:
 
@@ -52,8 +56,145 @@ In test code, override it with `monkeypatch`:
 monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
 ```
 
-The value is read once per call to `parse_packets_to_l1a_dataset()` and forwarded to Space Packet
-Parser as `skip_header_bytes`.
+The value is read once per call to `parse_packets_to_l1a_dataset()` (or overridden via its
+`skip_header_bytes=` argument) and forwarded to Space Packet Parser as `skip_header_bytes`.
+`extract_data_time_range` follows the same rule: explicit `skip_header_bytes=` if given,
+otherwise the config value. `scan_ground_ccsds_file` does not consult config at all — it defaults to
+`GROUND_CCSDS_SKIP_HEADER_BYTES` (`0`), which is what a demuxed file needs.
+
+### Demuxed ground CCSDS files
+
+Ground captures are demuxed outside the pipeline into **one file per APID**, with the 8-byte record
+header stripped. Basenames (no extension) match:
+
+```text
+LIBERA_SDC_<apid>_ccsds_<yyyy>_<doy>_<hh>_<mm>_<ss>
+```
+
+Example: `LIBERA_SDC_1057_ccsds_2026_191_14_00_00`. Use `LiberaGroundCcsdsFilename` /
+`AbstractValidFilename.from_file_path` to validate one and to read its APID and archive prefix:
+
+```python
+from libera_utils.io.filenaming import LiberaGroundCcsdsFilename
+
+fn = LiberaGroundCcsdsFilename("LIBERA_SDC_1057_ccsds_2026_191_14_00_00")
+fn.apid              # 1057
+fn.bin_start         # datetime(2026, 7, 10, 14, 0, tzinfo=UTC)
+fn.archive_prefix    # "GroundCCSDS/1057/2026/07/10"
+```
+
+The APID field accepts any value in the CCSDS 11-bit range (0-2047), including APIDs with no
+`LiberaApid` member, so an unmodelled APID can still be archived. The DPI is
+`DataProductIdentifier.l0_ground_ccsds` (`GROUND-CCSDS`) for every APID, distinct from EDOS PDS
+products. These names are accepted by the manual ingest CLI (`s3-utils put` /
+`manual_ingest_data_products`) so captures can be staged into the SDC Ingest Dropbox without
+CNM/ASDC delivery.
+
+The time fields are the **start of the time bin** the file was cut from, not the span of the packets
+inside it — packet times can fall outside the bin, and in practice do. The
+`GroundCCSDS/<apid>/<yyyy>/<mm>/<dd>/` prefix is just an expansion of those fields and carries no
+guarantee about the packet or data times within. Searchable times come from File Metadata at ingest,
+not from the archive path. During ground testing the two can differ by large gaps, since the simulated spacecraft
+clock runs at a mission-era epoch while the filename records wall-clock binning. Camera data times
+also legitimately precede packet times by hours, because WFOV images are downlinked well after they
+are taken.
+
+### Scanning a demuxed ground file
+
+`libera_utils.l1a.ground_ccsds.scan_ground_ccsds_file` returns the packet and science data time
+spans one file contributes to File Metadata. The APID comes from the basename unless passed
+explicitly:
+
+```python
+from libera_utils.l1a.ground_ccsds import scan_ground_ccsds_file
+
+span = scan_ground_ccsds_file("LIBERA_SDC_1036_ccsds_2026_191_14_00_00")
+span.apid                                        # LiberaApid.icie_rad_sample
+span.first_packet_time, span.last_packet_time
+span.first_data_time, span.last_data_time        # None unless data-time indexed
+span.degraded_reason                             # why data times are absent, else None
+```
+
+It returns `None`, logging the reason, when no packet-time span can be produced at all: the APID
+has no `LiberaApid` member, has no L1A packet configuration, the file holds nothing parseable for
+it, or every packet time is implausible. Several APIDs present in ground captures
+(`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`, `icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`)
+currently have no packet configuration, so they archive but yield no searchable times.
+
+A data-time failure is narrower: the packet-time span is still returned, with
+`first_data_time`/`last_data_time` left `None` and `degraded_reason` set. This is the expected
+outcome for a WFOV file whose `SOP` packet landed in a different bin.
+
+### Implausible timestamps
+
+Hardware-in-the-loop ground testing can emit a leading packet before the onboard clock has
+received its first time-sync command. Its day/second counters read near-zero, which decodes to a
+timestamp just after `CCSDS_EPOCH` (1958-01-01) — enough to stretch a `min()`/`max()` span across
+~68 years, and downstream to send the File Metadata applicable-date day-walk across the same
+range. A corrupted high-order bit in a day counter does the same at the other end.
+
+`scan_ground_ccsds_file` and `extract_data_time_range` both filter through
+`libera_utils.l1a.packets.drop_implausible_telemetry_times`, which drops `NaT` and anything
+outside `MIN_VALID_TELEMETRY_TIME`–`MAX_VALID_TELEMETRY_TIME` (config keys, defaults `2020-01-01`
+and `2045-01-01`). Both bounds are fixed dates so that a span written to File Metadata does not
+depend on when the extraction ran; the ceiling is far enough out to admit DITL captures running at
+a mission-era epoch.
+
+Filtering happens before any `min()`/`max()` is taken, and exclusions are logged at `WARNING`. If
+nothing survives for an APID, `scan_ground_ccsds_file` returns `None` and
+`extract_data_time_range` raises `DataTimeUndeterminedError`, rather than returning a bogus span.
+
+## Data-time extraction (ingest applicable dates)
+
+Camera and radiometer science times are **not** the same as CCSDS secondary header packet times. For File Metadata
+applicable-date indexing, use `libera_utils.l1a.data_time_extractors.extract_data_time_range`:
+
+- **Data-time indexed APIDs** (`DATA_TIME_INDEXED_APIDS`): `icie_wfov_sci`, `icie_rad_sample`,
+  `icie_rad_full`, `icie_cal_sample`, `icie_cal_full`, `icie_axis_sample`, `jpss_sc_pos`.
+- **Camera:** SOP packet FSW image timestamps (reuses `wfov_image_metadata` helpers).
+- **Radiometer / cal sample APIDs:** sample epoch + period from the L1A processing config —
+  without expanding all sample data fields into an L1A product.
+- **`icie_axis_sample`:** on the per-sample (`time_field_patterns`) path; every sample carries its
+  own timestamp rather than being derived from an epoch plus a fixed period.
+- **`jpss_sc_pos` (APID 11):** the extent of both of its sample groups (see below).
+- Raises `DataTimeUndeterminedError` when the span cannot be determined, and returns `None` for a
+  WFOV file with no in-window `SOP` packet.
+- `extract_data_time_range_from_dataset` takes an already-parsed packet dataset, so a caller that
+  has parsed the APID once (as `scan_ground_ccsds_file` does) need not re-read the file.
+- Demuxed ground CCSDS files need no header skip; the default `SKIP_PACKET_HEADER_BYTES` of `0` is correct.
+
+All other APIDs remain **packet-time indexed** (Construction Record first/last packet times).
+
+### What a data time span means
+
+A span is the **full extent of data present in the file**: the earliest data time to the latest,
+across every timeseries the file carries, even when those times come from different clocks. It is
+deliberately _not_ narrowed to the range where all of a file's timeseries are simultaneously
+available, because the span exists for ingest indexing. Completeness is the consumer's judgement:
+
+- **WFOV:** every in-window `SOP` contributes, including one whose image is truncated at the end of
+  the file. The span therefore does not match the L1A product's `CAMERA_TIME` range for a chunked
+  file, where `CAMERA_TIME` covers only images completing `SOP`-to-`EOP`.
+- **`jpss_sc_pos` (APID 11):** both sample groups contribute, so the span is not restricted to the
+  range covered by both.
+
+### JPSS SC position (APID 11): two sample-time clocks
+
+A JPSS SC position packet carries three timeseries: its own packet time, an ephemeris sample time
+(`ADAET1*`, the `ADGPS` sample group) and an attitude sample time (`ADAET2*`, the `ADCFA` group).
+The two sample times are applied independently by the spacecraft and do not coincide — on the
+`jpss1` test PDS they run 100 ms apart, so each group's span starts and ends at a different instant.
+
+The recorded extent runs from the earliest time either group reports to the latest, so on that
+file it starts on an ADCFA sample and ends on an ADGPS one. Disjoint groups are not an error: the
+span simply covers both and the gap between them. If one group is filtered out entirely by the
+plausibility window, the surviving group's times are the whole span; only an APID with no usable
+times in any group raises `DataTimeUndeterminedError`.
+
+A consumer that needs ephemeris and attitude together — geolocation does — must intersect the two
+sample-time ranges itself from the samples in the file. The span in File Metadata will not have
+done that for it, and a file whose span covers a given instant does not guarantee both timeseries
+cover it.
 
 ## L1A Packet Processing Configurations
 

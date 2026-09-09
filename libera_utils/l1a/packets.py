@@ -37,6 +37,71 @@ SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variab
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
 
+def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> np.ndarray:
+    """Filter out packet/sample times outside the plausible telemetry window.
+
+    The window is ``MIN_VALID_TELEMETRY_TIME`` to ``MAX_VALID_TELEMETRY_TIME`` from config. Both
+    are fixed dates, not offsets from now, so a span written to File Metadata does not depend on
+    when extraction ran; the ceiling admits simulated-clock captures running at a mission-era
+    epoch. A clock that has not yet received its first time-sync command reads out a near-zero
+    day/second counter, decoding to just after ``CCSDS_EPOCH`` (1958-01-01), and one such packet
+    stretches a ``min()``/``max()`` span across ~68 years.
+
+    A time exactly at the floor is dropped. ``NaT`` is dropped explicitly, since it compares false
+    against both bounds.
+
+    Parameters
+    ----------
+    times_us : np.ndarray
+        Array of ``datetime64[us]`` packet or sample times.
+    context : str
+        Description of what is being processed (APID/file), used in the warning log and in the
+        error raised if nothing remains.
+
+    Returns
+    -------
+    np.ndarray
+        ``times_us`` with any implausible entries removed.
+
+    Raises
+    ------
+    ValueError
+        If no times remain after filtering.
+    """
+    floor = np.datetime64(config.get("MIN_VALID_TELEMETRY_TIME"), "us")
+    ceiling = np.datetime64(config.get("MAX_VALID_TELEMETRY_TIME"), "us")
+
+    invalid = np.isnat(times_us)
+    below = times_us <= floor
+    above = times_us > ceiling
+    n_invalid = int(invalid.sum())
+    n_below = int(below.sum())
+    n_above = int(above.sum())
+    if n_invalid:
+        logger.warning("Excluded %d NaT time(s) for %s", n_invalid, context)
+    if n_below:
+        logger.warning(
+            "Excluded %d time(s) at or before sanity floor %s (likely clock not yet time-synced) for %s",
+            n_below,
+            floor,
+            context,
+        )
+    if n_above:
+        logger.warning(
+            "Excluded %d time(s) after sanity ceiling %s (likely corrupted time counter) for %s",
+            n_above,
+            ceiling,
+            context,
+        )
+
+    filtered = times_us[~(invalid | below | above)]
+    if filtered.size == 0:
+        raise ValueError(
+            f"No times for {context} fall between the sanity floor {floor} and ceiling {ceiling}; none remain."
+        )
+    return filtered
+
+
 def parse_packets_to_dataset(
     packet_files: list[PathLike | str], packet_definition: str | PathLike, apid: int, **generator_kwargs
 ) -> xr.Dataset:
@@ -87,7 +152,12 @@ def parse_packets_to_dataset(
 
 
 def parse_packets_to_l1a_dataset(
-    packet_files: list[PathLike | str], apid: int, ground_data: bool = False, verbose: bool = False
+    packet_files: list[PathLike | str],
+    apid: int,
+    *,
+    ground_data: bool = False,
+    verbose: bool = False,
+    skip_header_bytes: int | None = None,
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
 
@@ -107,6 +177,10 @@ def parse_packets_to_l1a_dataset(
         test data where duplicate timestamps with differing data may be expected. Default is False.
     verbose : bool, optional
         If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
+    skip_header_bytes : int | None, optional
+        Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
+        config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
+        carry a per-packet record header need ``8``).
 
     Returns
     -------
@@ -126,9 +200,8 @@ def parse_packets_to_l1a_dataset(
     _packet_files = [cast(filenaming.PathType, AnyPath(f)) for f in packet_files]
     packet_config = get_packet_config(LiberaApid(apid))
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
-    # Ground test data packets have extra 8 byte headers that need to be skipped
-    # When running ground test data, set SKIP_PACKET_HEADER_BYTES environment variable to 8
-    skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
+    if skip_header_bytes is None:
+        skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
     packet_ds = parse_packets_to_dataset(
         _packet_files, packet_definition_path, apid, skip_header_bytes=skip_header_bytes
     )
@@ -466,7 +539,7 @@ def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[
     # Calculate sample times
     if group.time_field_patterns:
         # Explicit per-sample timestamps
-        sample_times = _expand_sample_times(dataset, group.time_field_patterns, n_samples)
+        sample_times = expand_sample_times(dataset, group.time_field_patterns, n_samples)
     elif group.epoch_time_fields and group.sample_period:
         # Use epoch + period to calculate sample timestamps
         epoch_times_dt64 = multipart_to_dt64(dataset, **group.epoch_time_fields.multipart_kwargs)
@@ -497,7 +570,7 @@ def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[
     return field_arrays, sample_times
 
 
-def _expand_sample_times(dataset: xr.Dataset, time_fields: TimeFieldMapping, n_samples: int) -> np.ndarray:
+def expand_sample_times(dataset: xr.Dataset, time_fields: TimeFieldMapping, n_samples: int) -> np.ndarray:
     """Expand sample time fields into a flat array.
 
     Parameters

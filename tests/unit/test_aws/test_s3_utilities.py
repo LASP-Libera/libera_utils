@@ -72,6 +72,8 @@ class TestManualIngestPut:
                 "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
                 "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
             ],
+            # Demuxed ground CCSDS basename (single APID, no extension)
+            ["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"],
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
@@ -127,7 +129,7 @@ class TestManualIngestPut:
         Path.touch(tmp_path / bad_name)
 
         session, captured = make_event_capturing_session()
-        with pytest.raises(ValueError, match="not a valid Libera L0 or data product filename"):
+        with pytest.raises(ValueError, match="not a valid Libera L0, ground CCSDS, or data product filename"):
             s3_utilities.manual_ingest_data_products([tmp_path / good_name, tmp_path / bad_name], boto_session=session)
 
         # Nothing was staged and no event was emitted.
@@ -142,7 +144,7 @@ class TestManualIngestPut:
         filenaming.ManifestFilename(manifest_name)
 
         session = boto3.Session(profile_name="test-profile")
-        with pytest.raises(ValueError, match="not a valid Libera L0 or data product filename"):
+        with pytest.raises(ValueError, match="not a valid Libera L0, ground CCSDS, or data product filename"):
             s3_utilities.manual_ingest_data_products([AnyPath(manifest_name)], boto_session=session)
 
     def test_put_event_raises_on_failed_entry(self, make_sdc_event_bus):
@@ -190,6 +192,7 @@ class TestVerifyIngestion:
     DATA_PRODUCT_FILE = "LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"
     L0_PDS_FILE = "P1590011SOMESCIENCEAAA99030231459001.PDS"
     L0_CR_FILE = "P1590011SOMESCIENCEAAA99030231459000.PDS"
+    GROUND_CCSDS_FILE = "LIBERA_SDC_1040_ccsds_2025_318_13_53_06"
 
     @staticmethod
     def _seed_archive_object(session, libera_filename):
@@ -275,6 +278,54 @@ class TestVerifyIngestion:
 
         self._seed_archive_object(session, libera_filename)
         self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "#")
+
+        with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
+            s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
+
+    def test_verify_l0_pds_accepts_a_multi_day_span(self, make_test_archive_buckets, make_file_metadata_table):
+        """A PDS whose data time span crosses midnight gets a product record per day it covers.
+
+        The record count is a floor, so the extra day must not fail verification.
+        """
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.L0Filename(self.L0_PDS_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "#")
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "2027-01-01")
+        self._seed_metadata_record(session, make_file_metadata_table, self.L0_PDS_FILE, "2027-01-02")
+
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_ground_ccsds_requires_only_base_record(self, make_test_archive_buckets, make_file_metadata_table):
+        """A ground capture verifies on its base record alone; its searchable rows are not required."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.LiberaGroundCcsdsFilename(self.GROUND_CCSDS_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, self.GROUND_CCSDS_FILE, "#")
+
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_ground_ccsds_accepts_searchable_rows(self, make_test_archive_buckets, make_file_metadata_table):
+        """The searchable rows share the base row's PK=basename partition, so they add to the count."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.LiberaGroundCcsdsFilename(self.GROUND_CCSDS_FILE)
+
+        self._seed_archive_object(session, libera_filename)
+        self._seed_metadata_record(session, make_file_metadata_table, self.GROUND_CCSDS_FILE, "#")
+        self._seed_metadata_record(session, make_file_metadata_table, self.GROUND_CCSDS_FILE, "2028-02-15")
+
+        s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=30, poll_interval=0)
+
+    def test_verify_ground_ccsds_times_out_without_a_base_record(
+        self, make_test_archive_buckets, make_file_metadata_table
+    ):
+        """An archived ground capture with no File Metadata at all does not verify."""
+        session = boto3.Session(profile_name="test-profile")
+        libera_filename = filenaming.LiberaGroundCcsdsFilename(self.GROUND_CCSDS_FILE)
+
+        self._seed_archive_object(session, libera_filename)
 
         with pytest.raises(TimeoutError, match="Ingestion verification timed out"):
             s3_utilities.verify_ingestion([libera_filename], boto_session=session, timeout=0, poll_interval=0)
