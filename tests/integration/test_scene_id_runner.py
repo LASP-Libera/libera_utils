@@ -87,7 +87,7 @@ class TestCollectInputFiles:
         # purely by filename; a fixed placeholder keeps these selection cases readable.
         return Manifest(
             manifest_type=ManifestType.INPUT,
-            files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}", checksum="0") for name in filenames],
+            files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}") for name in filenames],
         )
 
     def test_product_mode_keeps_only_matching_product(self):
