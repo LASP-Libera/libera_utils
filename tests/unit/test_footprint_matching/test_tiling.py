@@ -16,6 +16,8 @@ grids, matching the pattern used in ``test_readers/test_base.py``.
 
 from __future__ import annotations
 
+import threading
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -361,3 +363,279 @@ class TestGatherFootprintTiles:
         assert len(tiles_by_source["_fake_tiling"]) == 2
         # Both footprints hit the same tile, so only one physical read occurred.
         assert reader.load_calls == 1
+
+
+# ---------------------------------------------------------------------------
+# Look-ahead prefetch
+# ---------------------------------------------------------------------------
+
+
+class _CountingPrefetchReader(GriddedDataReader):
+    """Reader that counts loads (thread-safely) and records the loading thread name.
+
+    Used by the prefetch tests to assert *which* thread performed each load and that a
+    tile is loaded exactly once. Loads are trivially fast; determinism comes from the
+    tests always calling ``shutdown(wait=True)`` before inspecting state.
+    """
+
+    READER_KEY = "_prefetch_reader"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 10.0
+    REQUIRED_MODE = OperationalMode.CAM
+    TILE_SIZE_DEG = 2.0
+    VARIABLES = (
+        VariableSpec(name="pf_var", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+    )
+
+    def __init__(self, file_path) -> None:
+        super().__init__(file_path)
+        self._lock = threading.Lock()
+        self.loaded_keys: list[tuple[float, float]] = []
+        self.load_threads: set[str] = set()
+        self.raise_on_load = False
+
+    def _load_spatial_region(self, bbox: BoundingBox):
+        with self._lock:
+            self.loaded_keys.append((round(bbox.lat_min, 3), round(bbox.lon_min, 3)))
+            self.load_threads.add(threading.current_thread().name)
+        if self.raise_on_load:
+            raise RuntimeError("simulated reader failure")
+        lats = np.array([bbox.lat_min + 0.5, bbox.lat_min + 1.5], dtype=np.float64)
+        lons = np.array([bbox.lon_min + 0.5, bbox.lon_min + 1.5], dtype=np.float64)
+        return np.ones((2, 2), dtype=np.float32), lats, lons
+
+    @property
+    def load_calls(self) -> int:
+        with self._lock:
+            return len(self.loaded_keys)
+
+
+def _prefetch_manager(tmp_path, lookahead: int, workers: int = 1) -> tuple[TileManager, _CountingPrefetchReader]:
+    reader = _CountingPrefetchReader(tmp_path / "pf.nc")
+    tm = TileManager(
+        {reader.READER_KEY: reader},
+        OperationalMode.CAM,
+        prefetch_lookahead=lookahead,
+        prefetch_workers=workers,
+    )
+    return tm, reader
+
+
+class _ConcurrencyMonitor:
+    """Tracks the peak number of loads running inside ``_load_spatial_region`` at once."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def enter(self) -> None:
+        with self._lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+
+    def leave(self) -> None:
+        with self._lock:
+            self.active -= 1
+
+
+class _ConcurrencySpyReader(GriddedDataReader):
+    """Reader whose loads record their peak concurrency in a shared monitor.
+
+    Every instance reports to the *same* monitor, so the recorded peak captures overlap
+    across different sources -- exactly what the global reader lock must prevent, since
+    the real reader backends (netCDF4 / h5py over libhdf5) segfault under concurrent
+    access. Each load sleeps briefly to widen the window so a genuine overlap is caught.
+    """
+
+    READER_KEY = "_concurrency_spy"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 10.0
+    REQUIRED_MODE = OperationalMode.CAM
+    TILE_SIZE_DEG = 2.0
+    VARIABLES = (
+        VariableSpec(name="spy_var", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+    )
+
+    def __init__(self, file_path, monitor: _ConcurrencyMonitor) -> None:
+        super().__init__(file_path)
+        self._monitor = monitor
+
+    def _load_spatial_region(self, bbox: BoundingBox):
+        self._monitor.enter()
+        try:
+            time.sleep(0.01)  # widen the window so any real concurrency would overlap here
+            lats = np.array([bbox.lat_min + 0.5, bbox.lat_min + 1.5], dtype=np.float64)
+            lons = np.array([bbox.lon_min + 0.5, bbox.lon_min + 1.5], dtype=np.float64)
+            return np.ones((2, 2), dtype=np.float32), lats, lons
+        finally:
+            self._monitor.leave()
+
+
+class TestPrefetch:
+    def test_enabled_by_default(self, tmp_path):
+        # Prefetch is on by default (lookahead 1) so reader I/O overlaps compute without
+        # the caller opting in; see TileManager / build_tile_manager docstrings.
+        reader = _reader(tmp_path)
+        tm = _manager(reader)
+        assert tm.prefetch_enabled is True
+        assert tm.prefetch_lookahead == 1
+
+    def test_explicit_disable_is_a_noop(self, tmp_path):
+        reader = _reader(tmp_path)
+        tm = TileManager({reader.READER_KEY: reader}, OperationalMode.CAM, prefetch_lookahead=0)
+        assert tm.prefetch_enabled is False
+        assert tm.prefetch_lookahead == 0
+        # prefetch is a no-op when disabled: nothing is loaded.
+        tm.prefetch([BoundingBox(0.2, 0.8, 0.2, 0.8)])
+        assert reader.load_calls == 0
+
+    def test_prefetch_populates_cache_from_background_thread(self, tmp_path):
+        tm, reader = _prefetch_manager(tmp_path, lookahead=2)
+        assert tm.prefetch_enabled is True
+        box = BoundingBox(0.2, 0.8, 0.2, 0.8)  # one tile
+        tm.prefetch([box])
+        tm.shutdown(wait=True)  # deterministic: all background loads have finished
+
+        # The tile was loaded once, on a background prefetch thread (not the main thread).
+        assert reader.load_calls == 1
+        assert reader.load_threads
+        assert all("prefetch" in name for name in reader.load_threads)
+        assert tm.get_cache_stats()["prefetched"] == 1
+
+        # A synchronous request for the same box is now a pure cache hit: no extra load.
+        tile = tm.get_data(reader.READER_KEY, box)
+        assert reader.load_calls == 1
+        assert tile.data.shape == (2, 2)
+        assert tm.get_cache_stats()["hits"] == 1
+
+    def test_prefetch_dedupes_repeated_and_cached_keys(self, tmp_path):
+        tm, reader = _prefetch_manager(tmp_path, lookahead=2)
+        box = BoundingBox(0.2, 0.8, 0.2, 0.8)
+        # Submit the same box twice before the worker drains: the second submit must be
+        # deduped (in-flight or cached), so the tile is loaded exactly once.
+        tm.prefetch([box])
+        tm.prefetch([box])
+        tm.shutdown(wait=True)
+        assert reader.load_calls == 1
+        assert tm.get_cache_stats()["prefetched"] == 1
+
+    def test_prefetch_result_matches_synchronous_load(self, tmp_path):
+        # A tile served from the prefetch cache is identical to one loaded synchronously.
+        box = BoundingBox(0.2, 0.8, 0.5, 2.5)  # spans two lon tiles
+        tm_pf, reader_pf = _prefetch_manager(tmp_path, lookahead=3)
+        tm_pf.prefetch([box])
+        tm_pf.shutdown(wait=True)
+        prefetched = tm_pf.get_data(reader_pf.READER_KEY, box)
+
+        sync_reader = _CountingPrefetchReader(tmp_path / "sync.nc")
+        tm_sync = TileManager({sync_reader.READER_KEY: sync_reader}, OperationalMode.CAM)
+        synchronous = tm_sync.get_data(sync_reader.READER_KEY, box)
+
+        np.testing.assert_array_equal(prefetched.data, synchronous.data)
+        np.testing.assert_array_equal(prefetched.lats, synchronous.lats)
+        np.testing.assert_array_equal(prefetched.lons, synchronous.lons)
+
+    def test_prefetch_reader_failure_is_swallowed(self, tmp_path):
+        tm, reader = _prefetch_manager(tmp_path, lookahead=2)
+        reader.raise_on_load = True
+        box = BoundingBox(0.2, 0.8, 0.2, 0.8)
+        # A failing prefetch must not crash the worker/pool; the tile is simply not
+        # cached, so a later synchronous get re-attempts and gets an empty (NaN) tile.
+        tm.prefetch([box])
+        tm.shutdown(wait=True)
+        reader.raise_on_load = False
+        tile = tm.get_data(reader.READER_KEY, box)  # sync path recovers
+        assert tile.data.shape == (2, 2)
+        assert not np.isnan(tile.data).all()  # reader now succeeds
+
+    def test_loads_never_overlap_across_sources(self, tmp_path):
+        # Regression guard for the segfault fix: the reader backends (netCDF4 / h5py
+        # over libhdf5) are not thread-safe, so the single global reader lock must
+        # serialize *every* load -- including loads of different sources dispatched to
+        # different prefetch workers. Three sources, a 3-worker pool, and boxes hitting
+        # all three: the peak observed in-load concurrency must stay 1. (With a
+        # per-source lock these would run three-wide and the peak would be 3.)
+        monitor = _ConcurrencyMonitor()
+        readers = {f"spy_{name}": _ConcurrencySpyReader(tmp_path / f"{name}.nc", monitor) for name in ("a", "b", "c")}
+        tm = TileManager(readers, OperationalMode.CAM, prefetch_lookahead=1, prefetch_workers=3)
+        try:
+            tm.prefetch([BoundingBox(0.2, 0.8, 0.2, 0.8)])  # one tile per source -> three queued loads
+            tm.shutdown(wait=True)  # deterministic: all background loads have finished
+        finally:
+            tm.shutdown()
+        assert monitor.peak == 1
+
+    def test_shutdown_is_idempotent(self, tmp_path):
+        tm, _ = _prefetch_manager(tmp_path, lookahead=1)
+        tm.shutdown()
+        tm.shutdown()  # second call is a harmless no-op
+        assert tm.prefetch_enabled is False
+
+    def test_context_manager_shuts_down(self, tmp_path):
+        reader = _CountingPrefetchReader(tmp_path / "ctx.nc")
+        with TileManager({reader.READER_KEY: reader}, OperationalMode.CAM, prefetch_lookahead=2) as tm:
+            assert tm.prefetch_enabled is True
+        assert tm.prefetch_enabled is False
+
+
+class TestMergeCache:
+    """Merged multi-tile results are reused (same object) for a repeated key-set."""
+
+    # A box spanning two 2° tiles in latitude (tiles start at -90°, so a boundary sits at
+    # 2°); lon stays within one tile -> exactly two covering tile keys -> a real merge.
+    _MULTI = BoundingBox(1.0, 3.0, 0.5, 0.5)
+
+    def test_repeated_multitile_box_returns_same_object(self, tmp_path):
+        reader = _reader(tmp_path)
+        mgr = _manager(reader)
+        assert len(mgr.resolve_tile_keys(reader.READER_KEY, self._MULTI)) == 2  # genuinely a merge
+
+        first = mgr.get_data(reader.READER_KEY, self._MULTI)
+        second = mgr.get_data(reader.READER_KEY, self._MULTI)
+        assert second is first  # served from the merge cache
+        assert mgr.get_cache_stats()["merge_hits"] == 1
+
+    def test_cached_merge_is_byte_identical_to_uncached(self, tmp_path):
+        cached = _manager(_reader(tmp_path))
+        uncached = TileManager({"_fake_tiling": _reader(tmp_path)}, OperationalMode.CAM, merge_cache_size=0)
+        c = cached.get_data("_fake_tiling", self._MULTI)
+        u0 = uncached.get_data("_fake_tiling", self._MULTI)
+        u1 = uncached.get_data("_fake_tiling", self._MULTI)
+        assert u1 is not u0  # cache disabled -> fresh object each call
+        assert uncached.get_cache_stats()["merge_hits"] == 0
+        # Same coordinates and data whether cached or not.
+        np.testing.assert_array_equal(c.lats, u0.lats)
+        np.testing.assert_array_equal(c.lons, u0.lons)
+        np.testing.assert_array_equal(np.asarray(c.data), np.asarray(u0.data))
+
+    def test_distinct_keysets_do_not_collide(self, tmp_path):
+        reader = _reader(tmp_path)
+        mgr = _manager(reader)
+        other = BoundingBox(5.0, 7.0, 0.5, 0.5)  # a different pair of tiles
+        a = mgr.get_data(reader.READER_KEY, self._MULTI)
+        b = mgr.get_data(reader.READER_KEY, other)
+        assert a is not b
+        assert not np.array_equal(a.lats, b.lats)
+
+    def test_failed_component_merge_is_not_cached(self, tmp_path):
+        # A merge that folded in a failed (empty) component must not be cached, so the
+        # region recovers once the reader works again.
+        reader = _reader(tmp_path)
+        mgr = _manager(reader)
+        reader.raise_on_load = True
+        first = mgr.get_data(reader.READER_KEY, self._MULTI)
+        assert first.data.size == 0  # partial-coverage empty tile
+        assert mgr.get_cache_stats()["merge_hits"] == 0  # not served/!stored from cache
+
+        reader.raise_on_load = False
+        recovered = mgr.get_data(reader.READER_KEY, self._MULTI)
+        assert recovered.data.size > 0  # recovered rather than serving a stale empty merge
+
+    def test_clear_cache_drops_merged_results(self, tmp_path):
+        reader = _reader(tmp_path)
+        mgr = _manager(reader)
+        first = mgr.get_data(reader.READER_KEY, self._MULTI)
+        mgr.clear_cache()
+        second = mgr.get_data(reader.READER_KEY, self._MULTI)
+        assert second is not first  # merge cache cleared alongside the tile cache

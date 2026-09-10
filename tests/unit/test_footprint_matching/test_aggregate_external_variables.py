@@ -174,6 +174,29 @@ class TestAggregateExternalVariables:
         with pytest.raises(ValueError, match="either a tile_manager or source_file_paths"):
             aggregate_external_variables(OperationalMode.CAM, _footprints())
 
+    def test_prefetch_produces_identical_results(self, tmp_path):
+        # Background tile prefetch is a pure cache warm-up: enabling it must not change
+        # any aggregated value (it only overlaps reader I/O with compute).
+        footprints = _footprints()
+        baseline = aggregate_external_variables(OperationalMode.CAM, footprints, _manager(tmp_path))
+
+        prefetch_manager = TileManager(
+            {
+                _FakeMeanReader.READER_KEY: _FakeMeanReader(tmp_path / "mean_pf.bin"),
+                _FakeCatReader.READER_KEY: _FakeCatReader(tmp_path / "cat_pf.bin"),
+            },
+            OperationalMode.CAM,
+            prefetch_lookahead=3,
+        )
+        try:
+            prefetched = aggregate_external_variables(OperationalMode.CAM, footprints, prefetch_manager)
+        finally:
+            prefetch_manager.shutdown()
+
+        assert set(prefetched) == set(baseline)
+        for key, expected in baseline.items():
+            np.testing.assert_array_equal(prefetched[key], expected)
+
     def test_runs_end_to_end_with_angular_psf_weigher(self, tmp_path):
         from libera_utils.footprint_matching.weighting import AngularPSFWeigher
 

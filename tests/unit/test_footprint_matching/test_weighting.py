@@ -82,6 +82,30 @@ class TestRadialWeigher:
     def test_conforms_to_interface(self):
         assert isinstance(RadialWeigher(), PixelWeigher)
 
+    def test_fast_path_matches_exact_geodesic(self, monkeypatch):
+        # For a normal box the spherical great-circle fast path must agree with the exact
+        # ellipsoidal Geod.inv distance to well within the Gaussian stand-in's tolerance.
+        lats = np.linspace(-0.1, 0.1, 7)
+        lons = np.linspace(19.9, 20.1, 8)
+        tile = _tile(lats, lons)
+        fast = RadialWeigher().weight_field(tile, 0.0, 20.0).weights
+        # Force the exact ellipsoidal path for the same tile by shrinking the fast-path
+        # span window so the box is treated as "large".
+        monkeypatch.setattr("libera_utils.footprint_matching.weighting._FAST_DISTANCE_MAX_SPAN_DEG", -1.0)
+        exact = RadialWeigher().weight_field(tile, 0.0, 20.0).weights
+        np.testing.assert_allclose(fast, exact, atol=1e-4)
+
+    def test_polar_tile_uses_exact_path(self, monkeypatch):
+        # A near-pole tile must already use the exact Geod path, so forcing it changes
+        # nothing (bit-identical), unlike a normal tile.
+        lats = np.linspace(86.0, 86.2, 6)
+        lons = np.linspace(10.0, 10.3, 6)
+        tile = _tile(lats, lons)
+        default = RadialWeigher().weight_field(tile, 86.1, 10.15).weights
+        monkeypatch.setattr("libera_utils.footprint_matching.weighting._FAST_DISTANCE_MAX_SPAN_DEG", -1.0)
+        forced_exact = RadialWeigher().weight_field(tile, 86.1, 10.15).weights
+        np.testing.assert_array_equal(default, forced_exact)
+
 
 class TestAngularPSFWeigher:
     """CERES-PSF weighting via the angular-frame projection."""
@@ -164,3 +188,72 @@ class TestAngularPSFWeigher:
         )
         assert wf.total_energy == 0.0
         assert wf.weights.size == 0
+
+    def test_cell_ecef_cache_matches_uncached(self):
+        # The per-tile ECEF cache is pure memoization: cache on must be bit-identical to off.
+        tile, _, _ = self._grid_tile()
+        kw = dict(
+            altitude_km=835.0,
+            viewing_zenith_deg=self.VZA,
+            subsatellite_lat_deg=self.S_LAT,
+            subsatellite_lon_deg=self.S_LON,
+            cone_angle_rate=-1.0,
+        )
+        cached = AngularPSFWeigher(cell_geometry_cache_size=8).weight_field(tile, self.B_LAT, self.B_LON, **kw)
+        uncached = AngularPSFWeigher(cell_geometry_cache_size=0).weight_field(tile, self.B_LAT, self.B_LON, **kw)
+        np.testing.assert_array_equal(cached.weights, uncached.weights)
+        assert cached.total_energy == uncached.total_energy
+
+    def test_repeated_tile_computes_ecef_once(self, monkeypatch):
+        # A weigher reused across consecutive footprints on the SAME tile object must compute
+        # the (frame-independent) cell ECEF exactly once, while each footprint's frame-dependent
+        # field is still computed correctly.
+        import libera_utils.footprint_matching.weighting as weighting_mod
+
+        calls = {"n": 0}
+        original = weighting_mod.surface_cell_ecef_km
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(weighting_mod, "surface_cell_ecef_km", counting)
+
+        weigher = AngularPSFWeigher(cell_geometry_cache_size=8)
+        tile, _, _ = self._grid_tile()
+        kw = dict(
+            altitude_km=835.0,
+            viewing_zenith_deg=self.VZA,
+            subsatellite_lat_deg=self.S_LAT,
+            subsatellite_lon_deg=self.S_LON,
+            cone_angle_rate=-1.0,
+        )
+        w0 = weigher.weight_field(tile, self.B_LAT, self.B_LON, **kw)
+        w1 = weigher.weight_field(tile, self.B_LAT + 0.05, self.B_LON, **kw)  # shifted frame
+
+        assert calls["n"] == 1  # ECEF computed once despite two weightings of the same tile
+        assert w0.total_energy > 0.0
+        # The frame differs (boresight moved), so the weight fields must differ.
+        assert not np.allclose(w0.weights, w1.weights)
+
+    def test_distinct_tiles_are_cached_separately(self, monkeypatch):
+        # Two different tile objects each get their own ECEF computed (cache keys on identity).
+        import libera_utils.footprint_matching.weighting as weighting_mod
+
+        calls = {"n": 0}
+        original = weighting_mod.surface_cell_ecef_km
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(weighting_mod, "surface_cell_ecef_km", counting)
+
+        weigher = AngularPSFWeigher(cell_geometry_cache_size=8)
+        tile_a, _, _ = self._grid_tile()
+        tile_b, _, _ = self._grid_tile()  # same coords, distinct object
+        kw = dict(subsatellite_lat_deg=self.S_LAT, subsatellite_lon_deg=self.S_LON, viewing_zenith_deg=self.VZA)
+        weigher.weight_field(tile_a, self.B_LAT, self.B_LON, **kw)
+        weigher.weight_field(tile_b, self.B_LAT, self.B_LON, **kw)
+        weigher.weight_field(tile_a, self.B_LAT, self.B_LON, **kw)  # tile_a again -> still cached
+        assert calls["n"] == 2  # one per distinct tile object, tile_a reused from cache

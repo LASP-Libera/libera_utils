@@ -74,7 +74,7 @@ if TYPE_CHECKING:
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
     NOMINAL_ALTITUDE_KM,
-    bounding_box_from_points,
+    bounding_box_from_points_batch,
 )
 from libera_utils.footprint_matching.psf import LIBERA_FOV_HALFANGLE_DEG
 from libera_utils.footprint_matching.types import BoundingBox
@@ -182,6 +182,37 @@ class PseudoFootprint:
     q_flags: CameraFootprintQualityFlag
 
 
+# A block reduced to everything a PseudoFootprint needs *except* the geographic box.
+# The box is deferred so every block's box can be assembled in one batched pyproj call
+# (see segment_l1b_camera / bounding_box_from_points_batch): the corner/pole geodesic
+# distances that bounding_box_from_points computes per block are the dominant camera-
+# segmentation cost, and pyproj evaluates them far faster over one big array than block
+# by block. ``corner_lats``/``corner_lons`` are the block's valid corner pixels padded
+# to four by repeating a valid corner -- duplicates leave the box min/max/span/pole-reach
+# unchanged, so padding is exact and lets every block share one fixed-width batch.
+_CORNERS_PER_BLOCK: int = 4
+
+
+@dataclass(frozen=True)
+class _BlockRecord:
+    """One segmented block minus its bounding box (assembled in a later batch)."""
+
+    time: np.datetime64
+    slice_x: slice
+    slice_y: slice
+    center_ix: int
+    center_iy: int
+    latitude: float
+    longitude: float
+    altitude: float
+    solar_zenith_angle: float
+    viewing_zenith_angle: float
+    relative_azimuth_angle: float
+    corner_lats: np.ndarray
+    corner_lons: np.ndarray
+    q_flags: CameraFootprintQualityFlag
+
+
 @lru_cache(maxsize=1)
 def _wgs84_geod() -> Geod:
     """WGS84 :class:`pyproj.Geod` for ellipsoidal surface distances (created once)."""
@@ -191,6 +222,16 @@ def _wgs84_geod() -> Geod:
 def _is_valid(value: float) -> bool:
     """Return True if a geolocation value is finite and not the L1B fill sentinel."""
     return math.isfinite(value) and value != L1B_FILL_VALUE
+
+
+def _valid_mask(array: np.ndarray) -> np.ndarray:
+    """Vectorized :func:`_is_valid` over a whole array (finite and not fill).
+
+    The elementwise equivalent of :func:`_is_valid`, used to build the per-image
+    validity grid in one pass instead of a Python-level ``np.vectorize`` loop.
+    """
+    array = np.asarray(array, dtype=float)
+    return np.isfinite(array) & (array != L1B_FILL_VALUE)
 
 
 def _estimate_ground_sampling_distance_km(lat2d: np.ndarray, lon2d: np.ndarray) -> float:
@@ -295,22 +336,20 @@ def _select_center_pixel(slice_x: slice, slice_y: slice, valid: np.ndarray) -> t
     if valid[cx, cy]:
         return cx, cy, False
 
-    # center pixel is fill: search the block for the valid pixel closest to the
-    # geometric center. The block is small (a few pixels on a side), so a direct
-    # scan is cheap and clearer than anything fancier.
-    best: tuple[int, int] | None = None
-    best_distance = math.inf
-    for ix in range(x0, x1 + 1):
-        for iy in range(y0, y1 + 1):
-            if not valid[ix, iy]:
-                continue
-            distance = max(abs(ix - cx), abs(iy - cy))
-            if distance < best_distance:
-                best, best_distance = (ix, iy), distance
-
-    if best is None:
+    # center pixel is fill: find the valid pixel in the block closest to the geometric
+    # center by Chebyshev (grid) distance. Vectorized over the block's valid pixels;
+    # np.nonzero yields them in row-major (ix asc, iy asc) order and np.argmin returns
+    # the first minimum, which reproduces the original nested-loop tie-break exactly
+    # (smallest ix, then smallest iy, among equidistant pixels).
+    sub_valid = valid[x0 : x1 + 1, y0 : y1 + 1]
+    local_ix, local_iy = np.nonzero(sub_valid)
+    if local_ix.size == 0:
         return None
-    return best[0], best[1], True
+    abs_ix = local_ix + x0
+    abs_iy = local_iy + y0
+    distance = np.maximum(np.abs(abs_ix - cx), np.abs(abs_iy - cy))
+    nearest = int(np.argmin(distance))
+    return int(abs_ix[nearest]), int(abs_iy[nearest]), True
 
 
 def _segment_image(
@@ -321,8 +360,8 @@ def _segment_image(
     sza2d: np.ndarray,
     vza2d: np.ndarray,
     raa2d: np.ndarray,
-) -> list[PseudoFootprint]:
-    """Segment a single camera image into pseudo-footprints.
+) -> list[_BlockRecord]:
+    """Segment a single camera image into per-block records (boxes assembled later).
 
     Parameters
     ----------
@@ -333,27 +372,30 @@ def _segment_image(
 
     Returns
     -------
-    list[PseudoFootprint]
-        One entry per non-empty pixel block (empty/all-fill blocks are dropped).
+    list[_BlockRecord]
+        One entry per non-empty pixel block (empty/all-fill blocks are dropped). The
+        geographic box is deferred to :func:`segment_l1b_camera`, which assembles every
+        block's box across the whole product in one batched pyproj call.
     """
     nx, ny = lat2d.shape
 
     # A pixel is usable only if BOTH its lat and lon are valid; either being fill
-    # means the pixel did not intersect the Earth.
-    valid = np.vectorize(_is_valid)(lat2d) & np.vectorize(_is_valid)(lon2d)
+    # means the pixel did not intersect the Earth. Vectorized over the whole image
+    # grid (see _valid_mask) rather than a per-pixel np.vectorize loop.
+    valid = _valid_mask(lat2d) & _valid_mask(lon2d)
 
     gsd_km = _estimate_ground_sampling_distance_km(lat2d, lon2d)
     block = _block_size_pixels(gsd_km)
 
-    footprints: list[PseudoFootprint] = []
+    records: list[_BlockRecord] = []
     for slice_x, slice_y in _iter_blocks(nx, ny, block):
-        footprint = _build_footprint(time, slice_x, slice_y, valid, lat2d, lon2d, alt2d, sza2d, vza2d, raa2d)
-        if footprint is not None:
-            footprints.append(footprint)
-    return footprints
+        record = _block_record(time, slice_x, slice_y, valid, lat2d, lon2d, alt2d, sza2d, vza2d, raa2d)
+        if record is not None:
+            records.append(record)
+    return records
 
 
-def _build_footprint(
+def _block_record(
     time: np.datetime64,
     slice_x: slice,
     slice_y: slice,
@@ -364,15 +406,17 @@ def _build_footprint(
     sza2d: np.ndarray,
     vza2d: np.ndarray,
     raa2d: np.ndarray,
-) -> PseudoFootprint | None:
-    """Build one pseudo-footprint from a pixel block, or ``None`` if it has no footprint.
+) -> _BlockRecord | None:
+    """Reduce a pixel block to a :class:`_BlockRecord`, or ``None`` if it has no footprint.
 
     Applies the off-Earth policy: all corners fill -> drop; some corners fill ->
-    partial-coverage flag; center pixel fill -> nearest-valid substitution flag.
+    partial-coverage flag; center pixel fill -> nearest-valid substitution flag. Does
+    no pyproj work -- the block's valid corner pixels are gathered (and padded to
+    :data:`_CORNERS_PER_BLOCK`) so the box is assembled later in one batch.
     """
     q_flags = CameraFootprintQualityFlag(0)
 
-    # --- Bounding box from the (valid) corner pixels only -------------------
+    # --- Valid corner pixels (the box's boundary points) --------------------
     corner_lats: list[float] = []
     corner_lons: list[float] = []
     n_corners = 0
@@ -399,28 +443,31 @@ def _build_footprint(
     if substituted:
         q_flags |= CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED
 
-    center_lat = float(lat2d[center_ix, center_iy])
-    center_lon = float(lon2d[center_ix, center_iy])
+    # Pad the valid corners to a fixed width by repeating the first valid corner. The
+    # box's lat/lon min/max, longitude span, and pole-reach are all order-independent
+    # reductions that duplicates cannot change, so this is exact and lets every block
+    # feed one fixed-width batched box assembly (bounding_box_from_points_batch).
+    corner_lats_arr = np.asarray(corner_lats, dtype=float)
+    corner_lons_arr = np.asarray(corner_lons, dtype=float)
+    if corner_lats_arr.size < _CORNERS_PER_BLOCK:
+        pad = _CORNERS_PER_BLOCK - corner_lats_arr.size
+        corner_lats_arr = np.concatenate([corner_lats_arr, np.full(pad, corner_lats_arr[0])])
+        corner_lons_arr = np.concatenate([corner_lons_arr, np.full(pad, corner_lons_arr[0])])
 
-    # The box assembler is shared with the radiometer path; passing the corners as
-    # the boundary points gives us identical pole/dateline handling. Camera corner
-    # boxes are never limb-truncated (the pixels are already on the surface), so
-    # truncated=False.
-    bbox = bounding_box_from_points(center_lat, center_lon, corner_lats, corner_lons, truncated=False)
-
-    return PseudoFootprint(
+    return _BlockRecord(
         time=time,
         slice_x=slice_x,
         slice_y=slice_y,
         center_ix=center_ix,
         center_iy=center_iy,
-        latitude=center_lat,
-        longitude=center_lon,
+        latitude=float(lat2d[center_ix, center_iy]),
+        longitude=float(lon2d[center_ix, center_iy]),
         altitude=float(alt2d[center_ix, center_iy]),
         solar_zenith_angle=float(sza2d[center_ix, center_iy]),
         viewing_zenith_angle=float(vza2d[center_ix, center_iy]),
         relative_azimuth_angle=float(raa2d[center_ix, center_iy]),
-        bbox=bbox,
+        corner_lats=corner_lats_arr,
+        corner_lons=corner_lons_arr,
         q_flags=q_flags,
     )
 
@@ -440,9 +487,12 @@ def segment_l1b_camera(dataset: xr.Dataset, *, log: logging.Logger | None = None
     for the camera timescale -- the time identifies the source image, not a unique
     footprint.
 
-    TODO[LIBSDC-794]: this scalar, per-block loop is written for clarity. To meet the
-    real-time latency budget it can be vectorised over the pixel grid (the corner and
-    center selections are all pure index math).
+    The per-block corner and center selections are pure index math; the one geodesic
+    cost -- the corner/pole distances that turn a block's corners into a
+    :class:`~libera_utils.footprint_matching.types.BoundingBox` -- is deferred and run
+    for *every* block of *every* image in a single batched pyproj call
+    (:func:`~libera_utils.footprint_matching.geometry.bounding_box_from_points_batch`)
+    rather than block by block.
 
     Parameters
     ----------
@@ -473,10 +523,44 @@ def segment_l1b_camera(dataset: xr.Dataset, *, log: logging.Logger | None = None
     n_images = times.shape[0]
     log.info("Segmenting %d camera image(s) into pseudo-footprints", n_images)
 
-    footprints: list[PseudoFootprint] = []
+    # Segment every image into boxless block records first (pure index/mask math), in
+    # (image, block) write order.
+    records: list[_BlockRecord] = []
     for t in range(n_images):
-        image_footprints = _segment_image(times[t], lat[t], lon[t], alt[t], sza[t], vza[t], raa[t])
-        footprints.extend(image_footprints)
+        records.extend(_segment_image(times[t], lat[t], lon[t], alt[t], sza[t], vza[t], raa[t]))
+
+    if not records:
+        log.info("Produced 0 pseudo-footprint(s) from %d image(s)", n_images)
+        return []
+
+    # Assemble every block's bounding box in one batched pyproj call. Camera corner
+    # boxes are never limb-truncated (the pixels are already on the surface), so
+    # truncated=False for all. The record order is preserved, so boxes align 1:1.
+    center_lats = np.fromiter((r.latitude for r in records), dtype=float, count=len(records))
+    center_lons = np.fromiter((r.longitude for r in records), dtype=float, count=len(records))
+    corner_lats = np.stack([r.corner_lats for r in records])
+    corner_lons = np.stack([r.corner_lons for r in records])
+    truncated = np.zeros(len(records), dtype=bool)
+    boxes = bounding_box_from_points_batch(center_lats, center_lons, corner_lats, corner_lons, truncated)
+
+    footprints = [
+        PseudoFootprint(
+            time=record.time,
+            slice_x=record.slice_x,
+            slice_y=record.slice_y,
+            center_ix=record.center_ix,
+            center_iy=record.center_iy,
+            latitude=record.latitude,
+            longitude=record.longitude,
+            altitude=record.altitude,
+            solar_zenith_angle=record.solar_zenith_angle,
+            viewing_zenith_angle=record.viewing_zenith_angle,
+            relative_azimuth_angle=record.relative_azimuth_angle,
+            bbox=bbox,
+            q_flags=record.q_flags,
+        )
+        for record, bbox in zip(records, boxes, strict=True)
+    ]
 
     log.info("Produced %d pseudo-footprint(s) from %d image(s)", len(footprints), n_images)
     return footprints
