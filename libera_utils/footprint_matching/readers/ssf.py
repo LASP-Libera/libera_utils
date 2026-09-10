@@ -328,7 +328,6 @@ _IMAGER_SSF_SOURCES: tuple[
     ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", (0.0, 8.0), _SCALAR_MEMBER),
     # aerosol_type_percentage is (Footprints, AeroTypePct=7). The seven type labels are
     # not recorded in the file; flattened to placeholder _type0.._type6 suffixes.
-    # TODO[LIBSDC-794]: replace with the real CERES aerosol-type names once confirmed.
     (
         "aerosol_type_percentage",
         "Assimilated_Aerosol_Properties",
