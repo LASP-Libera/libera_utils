@@ -228,15 +228,12 @@ class CLDPIXReader(GriddedDataReader):
             # Scale/offset auto-application is left enabled (set_auto_scale).
             ds.set_auto_mask(False)
 
-            # 2-D geolocation → flatten to point lists.
-            # ``Latitude`` is colatitude (0 = North Pole → 180 = South Pole), so
-            # it is range-checked against 0..180 and then converted to a true
-            # −90..90 latitude. Doing the range check *before* the conversion
-            # keeps fill/out-of-range pixels as NaN (NaN survives the
-            # subtraction), and doing the conversion at read time means every
-            # downstream consumer — the rasterizer, the tile bbox test, the
-            # notebook — sees ordinary latitudes. See the module docstring for
-            # the evidence that this field really is colatitude.
+            # 2-D geolocation → flatten to point lists. ``Latitude`` is colatitude
+            # (0 = North Pole → 180 = South Pole): range-check against 0..180 before
+            # converting to true −90..90 latitude so fill/out-of-range pixels stay NaN
+            # (NaN survives the subtraction), and convert at read time so every downstream
+            # consumer sees ordinary latitudes. See the module docstring for the evidence
+            # that this field really is colatitude.
             colatitudes = apply_fill_and_valid_range(
                 ds.variables[_LAT_VAR][:], fill_value=_FILL_FLOAT, valid_range=_COLATITUDE_VALID_RANGE
             ).ravel()

@@ -5,7 +5,7 @@
 attributes:
   ProductID: FMATCH-CAM
   algorithm_version: null
-  input_files: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
 
 coordinates:
   RADIOMETER_TIME:

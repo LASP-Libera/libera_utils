@@ -400,10 +400,10 @@ def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
     radiometer_time = radiometer_time[finite]
     passthrough = {name: values[finite] for name, values in passthrough.items()}
 
-    # Cast to the exact dtypes the FMATCH definition declares so conformance checking
-    # passes without an auto-cast. Every pass-through variable is float32 in the
-    # definition and the decoded time is datetime64[ns]; the casts are belt-and-braces
-    # over already-correct dtypes.
+    # This loader is the input boundary, so it is where the FMATCH dtypes are allocated:
+    # cast every pass-through variable to the float32 the definition declares (L1B may store
+    # them at wider precision) and the time coordinate to datetime64[ns]. Typing here means
+    # everything downstream inherits the right dtypes and conformance passes without an auto-cast.
     result: dict[str, np.ndarray] = {
         FMATCH_RADIOMETER_TIME_COORDINATE: radiometer_time.astype("datetime64[ns]"),
     }

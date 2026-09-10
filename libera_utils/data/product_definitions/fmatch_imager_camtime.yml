@@ -5,7 +5,7 @@
 attributes:
   ProductID: FMATCH-IMAGER-CAMTIME
   algorithm_version: null
-  input_files: null #
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
 
 coordinates:
   # 2-D (CAMERA_TIME, FOOTPRINT) grid: each pseudo-footprint (image subsection) is identified by its image time

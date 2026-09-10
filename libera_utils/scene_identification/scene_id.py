@@ -795,14 +795,12 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.RELATIVE_AZIMUTH_ANGLE: _FmatchColumn("relative_azimuth_angle", np.float32),
 }
 
-# Classification inputs common to both imager scene-ID products (FLASH and IMAGER). Note two of these
-# are *raw inputs* to existing derived-variable calculators rather than final classification columns, chosen so the
-# imager path reuses the validated calculators instead of duplicating them:
-#   * clear_area (from the CERES SSF clear coverage, already in percent) -> cloud_fraction is derived by
-#     identify_scenes as 100 - clear_area (calculate_cloud_fraction); and
-#   * surface_wind_u / surface_wind_v (from the ERA5 10 m wind components) -> surface_wind is derived as
-#     sqrt(u^2 + v^2) (calculate_surface_wind).
-# surface_type is likewise derived from igbp_surface_type. The three viewing angles are read straight through.
+# Classification inputs common to both imager scene-ID products (FLASH and IMAGER). Some are *raw inputs* to
+# existing derived-variable calculators rather than final columns, so the imager path reuses the validated
+# calculators instead of duplicating them:
+#   * clear_area (CERES SSF clear coverage, percent) -> cloud_fraction = 100 - clear_area (calculate_cloud_fraction);
+#   * surface_wind_u / surface_wind_v (ERA5 10 m wind) -> surface_wind = sqrt(u^2 + v^2) (calculate_surface_wind);
+#   * surface_type is derived from igbp_surface_type. The three viewing angles are read straight through.
 _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
     FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
     FootprintVariables.CLEAR_AREA: _FmatchColumn("ssf_clear_coverage", np.float32),

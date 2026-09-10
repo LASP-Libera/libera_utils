@@ -101,13 +101,11 @@ SOLAR_ZENITH_NAME: str = "Solar_Zenith_Surface"
 VIEWING_ZENITH_NAME: str = "Viewing_Zenith_Surface"
 RELATIVE_AZIMUTH_NAME: str = "Relative_Azimuth_Surface"
 
-# Target on-the-ground diameter of one pseudo-footprint, in km. We size the pixel
-# blocks so their ground extent approximates a real radiometer footprint. Rather
-# than hard-code a number, we derive it from the single sources of truth already in
-# the codebase: the radiometer FOV half-angle and the nominal orbit altitude. At
-# nadir a footprint's ground radius is altitude * tan(half-angle), so the diameter
-# is 2 * altitude * tan(half-angle) (~29 km for 1.0 deg at 835 km). Deriving it this
-# way means a change to the FOV or the nominal altitude propagates automatically.
+# Target on-the-ground diameter of one pseudo-footprint, in km, sized so a pixel block's
+# ground extent approximates a real radiometer footprint. Derived from existing sources of
+# truth (the radiometer FOV half-angle and nominal orbit altitude) rather than hard-coded, so
+# a change to either propagates automatically: at nadir diameter = 2 * altitude * tan(half-angle)
+# (~29 km for 1.0 deg at 835 km).
 # TODO[LIBSDC-794]: read the true footprint size from mission config once available.
 TARGET_FOOTPRINT_DIAMETER_KM: float = 2.0 * NOMINAL_ALTITUDE_KM * math.tan(math.radians(LIBERA_FOV_HALFANGLE_DEG))
 

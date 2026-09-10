@@ -37,20 +37,13 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Per-product reader membership
 # ---------------------------------------------------------------------------
-# One fully-enumerated reader set per shipped FMATCH product -- the single source of
-# truth for *which readers contribute to which product*. Readers do not self-gate
-# by mode; membership is declared here.
-#
-# The structure deliberately mirrors ``product.FMATCH_DEFINITION_FILENAMES``: a map
-# keyed by OperationalMode. ``get_readers_for_mode`` resolves ``mode`` through the
-# identical logic as ``load_fmatch_definition``, so the active reader set and the
-# loaded product definition can never drift.
-#
-# Dataset names repeat across products by design: each product's membership is spelled
-# out in full so it reads on its own, without composing shared sub-sets. Note that
-# FMATCH-IMAGER-CAMTIME omits ``era5_pressure`` -- the ERA5 pressure-level fields are a
-# radiometer-timescale quantity and are not carried on the camera-timescale product
-# (see ``fmatch_imager_camtime.yml``).
+# One fully-enumerated reader set per shipped FMATCH product -- the single source of truth
+# for which readers contribute to which product (readers do not self-gate by mode). Keyed by
+# OperationalMode like ``product.FMATCH_DEFINITION_FILENAMES``; ``get_readers_for_mode``
+# resolves ``mode`` with the same logic as ``load_fmatch_definition``, so the active reader
+# set and the loaded definition can never drift. Each set is spelled out in full (names
+# repeat by design) rather than composed. Note FMATCH-IMAGER-CAMTIME omits ``era5_pressure``:
+# the ERA5 pressure levels are a radiometer-timescale quantity (see fmatch_imager_camtime.yml).
 FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
     OperationalMode.CAM: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud"}),
     OperationalMode.CAM_CAMTIME: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud"}),

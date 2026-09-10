@@ -303,14 +303,6 @@ def spec_active_in_mode(spec: VariableSpec, mode: OperationalMode) -> bool:
     return spec.required_mode.rank <= mode.rank
 
 
-# Aggregation strategies that collapse a footprint's pixels to a *mean* value.
-# These are the only ones for which a within-footprint standard deviation is
-# meaningful: a std-dev quantifies the spread of values around their mean, so it
-# pairs with a mean-type aggregation. A std-dev of a categorical "mode" (most
-# common value) has no physical meaning, so ``weighted_mode`` variables are
-# deliberately excluded below. Note this is *stricter* than "n_categories is
-# None": some readers (e.g. SSF's encoded scene-type codes) carry no category
-# count yet are still mode-aggregated, and those must NOT get a std-dev companion.
 _MEAN_AGGREGATIONS: frozenset[str] = frozenset({"weighted_mean", "weighted_log_mean"})
 
 # Suffix appended to a continuous variable's name to form its std-dev companion.

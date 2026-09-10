@@ -61,13 +61,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Product-definition variable names that the camera-segmentation tool fills with
-# *real* per-footprint values (centre-pixel geolocation/geometry, the corner-derived
-# PSF bounding box, and the QA flags). Every other declared variable belongs to the
-# not-yet-implemented aggregation / derived-geometry engines (see
-# :func:`aggregate_external_variables` / :func:`compute_derived_viewing_geometry`)
-# and is written as a conformant placeholder for now. Kept as one set so the
-# assembly and its tests agree on exactly which variables are "real" this milestone.
+# Product-definition variable names that camera segmentation fills with real
+# per-footprint values (center-pixel geolocation/geometry, corner-derived PSF bounding
+# box, QA flags). Every other declared variable belongs to the not-yet-implemented
+# aggregation / derived-geometry engines (:func:`aggregate_external_variables` /
+# :func:`compute_derived_viewing_geometry`) and is a conformant placeholder for now.
+# Kept as one set so assembly and its tests agree on which variables are "real".
 _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
     {
         "latitude",
@@ -93,22 +92,7 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
 
 # Mapping of FMATCH product variable name -> L1B RAD-4CH variable name, for the
 # per-footprint quantities FMATCH copies straight out of L1B rather than computing.
-#
-# Viewing angles: the FMATCH solar/viewing zenith and relative azimuth map to the
-# L1B "_Surface" angles (geodetic angles at the Earth point), whose units (degrees)
-# and ranges line up with the FMATCH definition - in particular L1B
-# ``Relative_Azimuth_Surface`` spans [0, 360], matching relative_azimuth_angle's
-# valid_range. Note we do NOT pass through the derived ``sunglint_angle``; that is a
-# computed product variable (see compute_derived_viewing_geometry), not an L1B input.
-#
-# Every variable listed here is declared float32 in the product definition, which is
-# why the reader (``_runner.load_l1b_radiometer_inputs``) can cast them all to float32
-# generically. The L1B time coordinate is handled separately because it maps to the
-# product's time *coordinate* (RADIOMETER_TIME), not a data variable.
-#
-# This lives here, rather than in the runner that reads it, so the assembly path and
-# the runner share one source of truth without the runner (which imports this module)
-# creating a circular import.
+
 L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
     "latitude": "Latitude",
     "longitude": "Longitude",
@@ -118,13 +102,6 @@ L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
 }
 
 # The radiometer-timescale counterpart of _CAMTIME_SEGMENTATION_VARIABLES: the
-# product-definition variables filled with *real* values passed straight through
-# from the L1B Daily radiometer product, rather than computed by footprint
-# matching. These are the "(a) Geolocation inputs (from L1B Daily)" block of each
-# radiometer-timed fmatch_*.yml, and they are exactly the keys (other than the
-# RADIOMETER_TIME coordinate) that
-# ``_runner.load_l1b_radiometer_inputs`` returns. Kept as one set so the
-# assembly and its tests agree on which variables are "real" this milestone.
 _RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
 
 # Product definition YAML filename for each FMATCH operational mode. Every mode
@@ -469,7 +446,7 @@ def _finalize_product_dataset(
     algorithm_version : str, optional
         Value for the required dynamic ``algorithm_version`` global attribute.
     input_files : str, optional
-        Provenance string for the required dynamic ``input_files`` global attribute.
+        Provenance string for the required dynamic ``InputGranules`` global attribute.
 
     Returns
     -------
@@ -479,7 +456,7 @@ def _finalize_product_dataset(
     dataset = definition.create_product_dataset(data)
     dataset = definition.enforce_dataset_conformance(dataset)
     if input_files is not None:
-        dataset.attrs["input_files"] = input_files
+        dataset.attrs["InputGranules"] = input_files
     if algorithm_version is not None:
         dataset.attrs["algorithm_version"] = algorithm_version
     return dataset
@@ -533,7 +510,7 @@ def _assemble_camtime_dataset(
     algorithm_version : str, optional
         Value for the required dynamic ``algorithm_version`` global attribute.
     input_files : str, optional
-        Provenance string for the required dynamic ``input_files`` global attribute
+        Provenance string for the required dynamic ``InputGranules`` global attribute
         (typically the source L1B camera filename).
     cloud_fraction_camera : np.ndarray, optional
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
@@ -567,14 +544,11 @@ def _assemble_camtime_dataset(
     time_variable = fmatch_time_variable(mode)  # "CAMERA_TIME"
 
     # Recover the rectangular (CAMERA_TIME, FOOTPRINT) grid from the flat footprint list.
-    # Real segmentation is ragged -- each image is tiled into a *variable* number of
-    # subsections (off-Earth blocks are dropped and the block size is estimated per image) --
-    # but the product is defined on a rectangular 2-D grid. Group the footprints by image
-    # (unique, sorted CAMERA_TIME on the first axis; each image's subsections, in
-    # segmentation order, on the second). Images with fewer subsections than the widest image
-    # are padded along FOOTPRINT with each variable's fill value (NaN / declared _FillValue),
-    # so those padded cells carry no real data and downstream classification (which skips
-    # NaN inputs) leaves them unmatched.
+    # Segmentation is ragged (each image is tiled into a variable number of subsections), but
+    # the product grid is rectangular: group footprints by image (unique sorted CAMERA_TIME on
+    # axis 0; subsections in segmentation order on axis 1). Images narrower than the widest are
+    # padded along FOOTPRINT with each variable's fill value (NaN / declared _FillValue), so
+    # those cells carry no real data and NaN-skipping classification leaves them unmatched.
     unique_times = sorted({f.time for f in footprints})
     n_camera_times = len(unique_times)
     row_of_time = {time: row for row, time in enumerate(unique_times)}
@@ -730,7 +704,7 @@ def _assemble_radiometer_dataset(
     algorithm_version : str, optional
         Value for the required dynamic ``algorithm_version`` global attribute.
     input_files : str, optional
-        Provenance string for the required dynamic ``input_files`` global attribute
+        Provenance string for the required dynamic ``InputGranules`` global attribute
         (typically the source L1B radiometer filename).
     cloud_fraction_camera : np.ndarray, optional
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV), in the same
@@ -856,7 +830,7 @@ def _write_fmatch_product(
     algorithm_version : str, optional
         Value for the ``algorithm_version`` global attribute.
     input_files : str, optional
-        Provenance string for the ``input_files`` global attribute.
+        Provenance string for the ``InputGranules`` global attribute.
     cloud_fraction_camera : np.ndarray, optional
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
         CAM modes declare this variable.

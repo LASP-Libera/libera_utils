@@ -1,7 +1,7 @@
 ## Combined Dockerfile for all five Libera FMATCH algorithm images.
 ##
 ## One shared base stage (system deps + venv + poetry install), then one runtime target
-## and one test target per algorithm. Build a specific image by selecting its target:
+## per algorithm. Build a specific image by selecting its target:
 ##   docker build -f libera_utils/footprint_matching/Dockerfile --target fmatch-cam .
 ##
 ## The build context MUST be the repository root - the COPY instructions below use paths
@@ -9,7 +9,6 @@
 ##
 ## Runtime targets:  fmatch-imager  fmatch-imager-camtime  fmatch-imager-flash
 ##                   fmatch-cam     fmatch-cam-camtime
-## Test target:      fmatch-test (one shared suite covering the whole package).
 
 ARG BUILDPLATFORM=linux/amd64
 
@@ -84,23 +83,6 @@ RUN true
 # footprint_matching.camera_segmentation - which the runners import. Without the extra the container
 # would fail on startup with ModuleNotFoundError rather than at first ancillary read.
 RUN poetry install --only main --extras fmatch
-
-
-# fmatch-test
-# -----------
-# Test image. Adds dev dependencies and the test suite on top of fmatch-base, and runs the
-# (non-integration) unit tests with coverage. The suite exercises the whole libera_utils package and
-# is identical regardless of algorithm, so a single test target covers all of FMATCH.
-FROM fmatch-base AS fmatch-test
-
-# Install dev dependencies (not installed in the runtime images).
-RUN poetry install --extras fmatch
-
-# Copy tests over.
-COPY tests $LIBERA_UTILS_DIRECTORY/tests
-
-# Run the (non-integration) unit tests with coverage.
-ENTRYPOINT ["pytest", "-m", "not integration", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]
 
 
 # Per-algorithm runtime targets

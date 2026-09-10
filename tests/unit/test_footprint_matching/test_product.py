@@ -350,7 +350,7 @@ class TestFmatchConformance:
 
         dynamic_attrs = {
             "algorithm_version": "1.0.0",
-            "input_files": "dummy_l1b.nc",
+            "InputGranules": "dummy_l1b.nc",
         }
         dataset = definition.create_product_dataset(data, dynamic_product_attributes=dynamic_attrs)
         dataset = definition.enforce_dataset_conformance(dataset)

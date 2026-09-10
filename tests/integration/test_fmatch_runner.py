@@ -97,7 +97,7 @@ class TestRadiometerRunnerWorkflow:
 
         with xr.open_dataset(product_path) as product:
             assert product.sizes["RADIOMETER_TIME"] == 12
-            assert product.attrs["input_files"] == l1b_file.name
+            assert product.attrs["InputGranules"] == l1b_file.name
 
     def test_l1b_geolocation_reaches_the_product(self, tmp_path, dropbox, staged_ancillary):
         """The pass-through columns must survive the whole runner path, not just assembly."""

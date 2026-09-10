@@ -1,15 +1,13 @@
 ## Combined Dockerfile for all four Libera SCENE-ID algorithm images.
 ##
 ## One shared base stage (system deps + venv + poetry install), then one runtime target
-## and one test target per algorithm. Build a specific image by selecting its target:
+## per algorithm. Build a specific image by selecting its target:
 ##   docker build -f libera_utils/scene_identification/Dockerfile --target scene-id-cam .
 ##
 ## The build context MUST be the repository root - the COPY instructions below use paths
 ## relative to it (COPY libera_utils ..., COPY pyproject.toml ...).
 ##
 ## Runtime targets:  scene-id-imager  scene-id-imager-flash  scene-id-cam  scene-id-cam-camtime
-## Test target:      scene-id-test (one shared suite covering the whole package).
-
 ARG BUILDPLATFORM=linux/amd64
 
 # scene-id-base
@@ -60,23 +58,6 @@ RUN true
 
 # Install libera_utils and all its (non-dev) dependencies according to pyproject.toml.
 RUN poetry install --only main
-
-
-# scene-id-test
-# -------------
-# Test image. Adds dev dependencies and the test suite on top of scene-id-base, and runs the
-# (non-integration) unit tests with coverage. The suite exercises the whole libera_utils package and
-# is identical regardless of algorithm, so a single test target covers all of SCENE-ID.
-FROM scene-id-base AS scene-id-test
-
-# Install dev dependencies (not installed in the runtime images).
-RUN poetry install
-
-# Copy tests over.
-COPY tests $LIBERA_UTILS_DIRECTORY/tests
-
-# Run the (non-integration) unit tests with coverage.
-ENTRYPOINT ["pytest", "-m", "not integration", "--cov=libera_utils", "--cov-report=xml:coverage.xml", "--junit-xml=junit.xml"]
 
 
 # Per-algorithm runtime targets

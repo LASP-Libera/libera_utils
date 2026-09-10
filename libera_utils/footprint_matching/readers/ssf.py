@@ -226,20 +226,16 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
 # ---------------------------------------------------------------------------
 # Extended SSF field set carried by FMATCH-IMAGER only.
 # ---------------------------------------------------------------------------
-# These CERES SSF cloud-layer, aerosol, and surface-albedo fields are added to the
-# FMATCH-IMAGER product (the RBSP Climate-Quality radiometer product) *only* -- not
-# FMATCH-IMAGER-FLASH or FMATCH-IMAGER-CAMTIME, even though those also activate this
-# reader. That single-product scope cannot be expressed by the required_mode rank rule
-# (IMAGER-CAMTIME outranks IMAGER), so every generated field is pinned with
-# only_modes=(IMAGER,); see VariableSpec.only_modes / spec_active_in_mode.
+# These CERES SSF cloud-layer, aerosol, and surface-albedo fields go on FMATCH-IMAGER
+# *only* -- not IMAGER-FLASH or IMAGER-CAMTIME, which also activate this reader. The
+# required_mode rank rule can't express that (IMAGER-CAMTIME outranks IMAGER), so each
+# field is pinned with only_modes=(IMAGER,); see VariableSpec.only_modes / spec_active_in_mode.
 #
-# Some source fields carry a second axis of varying size -- LowerUpper (2) for the cloud
-# layers, AeroTypePct (7) for aerosol_type_percentage. FMATCH products are strictly 1-D
-# per footprint, so (like era5_pressure's per-level flattening) each second-axis index
-# becomes its own 1-D spec via a name suffix (_lower/_upper, _typeN). Genuinely 1-D
-# source fields (surface_albedo, toa_incoming_solar_radiation) are emitted as a single
-# spec via _SCALAR_MEMBER. Every field is continuous float32 and therefore also gains a
-# _standard_deviation companion in product_variable_specs().
+# FMATCH products are strictly 1-D per footprint, so multi-valued source fields are flattened
+# (like era5_pressure's per-level split): LowerUpper (2) -> _lower/_upper, AeroTypePct (7) ->
+# _typeN. Genuinely 1-D fields (surface_albedo, toa_incoming_solar_radiation) stay a single
+# spec via _SCALAR_MEMBER. All are continuous float32 and so also gain a _standard_deviation
+# companion in product_variable_specs().
 _IMAGER_ONLY: tuple[OperationalMode, ...] = (OperationalMode.IMAGER,)
 
 # Zero-axis members for a 1-D (Footprints,) source field: one output, no index.

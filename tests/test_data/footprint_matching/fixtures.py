@@ -1050,7 +1050,7 @@ def make_fmatch_product_fixture(
 
     dynamic_attrs = {
         "algorithm_version": "0.1.0",
-        "input_files": "SYNTHETIC EXAMPLE - no real input files were used",
+        "InputGranules": "SYNTHETIC EXAMPLE - no real input files were used",
     }
     written = write_libera_data_product(
         definition,

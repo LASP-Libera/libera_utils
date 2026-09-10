@@ -150,16 +150,12 @@ class VIIRSAODReader(GriddedDataReader):
             n_categories=_N_AEROSOL_TYPES,
         ),
     )
-    # A footprint typically spans several aerosol types. ``aerosol_type`` above is
-    # the single aggregated result; these three derived outputs report the ranked
-    # aerosol-type mix within the footprint — the first, second, and third most
-    # common types by PSF-weighted area. They are computed during PSF aggregation
-    # (from the same modal field as ``aerosol_type``), not read from a separate
-    # source field, so they live here rather than in VARIABLES. This mirrors the
-    # IGBP reader's ranked surface-type outputs. Distinct aggregation labels record
-    # the rank; the PSF aggregation engine does not implement them yet
-    # (declarations only, like every other FMATCH variable). The file's
-    # ``Aerosol_Type_Land_Ocean_Histogram`` is the intended future ranking source.
+    # A footprint spans several aerosol types. ``aerosol_type`` above is the single
+    # aggregated result; these three report the ranked mix (1st/2nd/3rd most common by
+    # PSF-weighted area), computed during PSF aggregation from the same modal field rather
+    # than read from a source field -- hence here rather than in VARIABLES, mirroring the
+    # IGBP reader's ranked surface types. Not yet implemented by the aggregation engine
+    # (declarations only). Future ranking source: ``Aerosol_Type_Land_Ocean_Histogram``.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="aerosol_type_primary",
