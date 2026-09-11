@@ -224,6 +224,7 @@ class TestDataProductIdentifier:
             # AUX Products — RBSP + VIIRS imager track
             "aux_fmatch_imager",
             "aux_fmatch_imager_camtime",
+            "aux_fmatch_imager_flash",
             "aux_scene_id_imager",
             "aux_scene_id_imager_camtime",
             "aux_adm_stats_imager",
@@ -393,6 +394,7 @@ class TestProcessingStepIdentifier:
             # AUX steps — RBSP + VIIRS imager track
             "aux_fmatch_imager",
             "aux_fmatch_imager_camtime",
+            "aux_fmatch_imager_flash",
             "aux_scene_id_imager",
             "aux_scene_id_imager_camtime",
             "aux_adm_stats_imager",
