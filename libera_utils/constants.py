@@ -326,6 +326,10 @@ class DataProductIdentifier(StrEnum):
         "FMATCH-IMAGER-CAMTIME",
         DataLevel.AUX,
     )  # Footprint matching using RBSP + VIIRS imager data for cloud properties on the camera timescale
+    aux_fmatch_imager_flash = (
+        "FMATCH-IMAGER-FLASH",
+        DataLevel.AUX,
+    )  # Footprint matching (flash) using RBSP + VIIRS imager data for cloud properties
     aux_scene_id_imager = (
         "SCENE-ID-IMAGER",
         DataLevel.AUX,
@@ -478,6 +482,7 @@ class ProcessingStepIdentifier(StrEnum):
     # AUX processing steps — RBSP + VIIRS imager track
     aux_fmatch_imager = ("aux-fmatch-imager", [DataProductIdentifier.aux_fmatch_imager])
     aux_fmatch_imager_camtime = ("aux-fmatch-imager-camtime", [DataProductIdentifier.aux_fmatch_imager_camtime])
+    aux_fmatch_imager_flash = ("aux-fmatch-imager-flash", [DataProductIdentifier.aux_fmatch_imager_flash])
     aux_scene_id_imager = ("aux-scene-id-imager", [DataProductIdentifier.aux_scene_id_imager])
     aux_scene_id_imager_camtime = ("aux-scene-id-imager-camtime", [DataProductIdentifier.aux_scene_id_imager_camtime])
     aux_adm_stats_imager = ("aux-adm-stats-imager", [DataProductIdentifier.aux_adm_stats_imager])
