@@ -36,9 +36,9 @@ def scene_id_cam_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS, run_algorithm
+    from libera_utils.scene_identification.cam.scene_id_cam import algorithm
 
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam"])
+    return algorithm(parsed_args)
 
 
 def scene_id_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
@@ -54,9 +54,9 @@ def scene_id_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS, run_algorithm
+    from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import algorithm
 
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam-camtime"])
+    return algorithm(parsed_args)
 
 
 def cloud_fraction_cam_cli_handler(parsed_args: argparse.Namespace):
