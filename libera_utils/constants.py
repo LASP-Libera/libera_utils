@@ -333,11 +333,15 @@ class DataProductIdentifier(StrEnum):
     aux_scene_id_imager = (
         "SCENE-ID-IMAGER",
         DataLevel.AUX,
-    )  # Scene IDs using RBSP + VIIRS imager data for cloud properties
+    )  # Scene IDs (incl. TRMM) from the FMATCH-IMAGER (RBSP + VIIRS imager cloud properties)
     aux_scene_id_imager_camtime = (
         "SCENE-ID-IMAGER-CAMTIME",
         DataLevel.AUX,
     )  # Scene IDs using RBSP + VIIRS imager data for cloud properties on the camera timescale
+    aux_scene_id_imager_flash = (
+        "SCENE-ID-IMAGER-FLASH",
+        DataLevel.AUX,
+    )  # Scene IDs (incl. partial TRMM) from FMATCH-IMAGER-FLASH
     aux_adm_stats_imager = (
         "ADM-STATS-IMAGER",
         DataLevel.AUX,
@@ -485,6 +489,7 @@ class ProcessingStepIdentifier(StrEnum):
     aux_fmatch_imager_flash = ("aux-fmatch-imager-flash", [DataProductIdentifier.aux_fmatch_imager_flash])
     aux_scene_id_imager = ("aux-scene-id-imager", [DataProductIdentifier.aux_scene_id_imager])
     aux_scene_id_imager_camtime = ("aux-scene-id-imager-camtime", [DataProductIdentifier.aux_scene_id_imager_camtime])
+    aux_scene_id_imager_flash = ("aux-scene-id-imager-flash", [DataProductIdentifier.aux_scene_id_imager_flash])
     aux_adm_stats_imager = ("aux-adm-stats-imager", [DataProductIdentifier.aux_adm_stats_imager])
     aux_adm_imager = ("aux-adm-imager", [DataProductIdentifier.aux_adm_imager])
 

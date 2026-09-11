@@ -13,21 +13,33 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
+from libera_utils.footprint_matching.product import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
-from libera_utils.scene_identification.cam.scene_id_cam import (
+from libera_utils.scene_identification.scene_id import standard_scene_definitions
+from libera_utils.scene_identification.scene_id_cam import (
     PRODUCT_DEFINITION_PATH,
+    collect_fmatch_cam_input_files,
     create_and_write_data_product_cam,
     run_scene_identification_cam,
 )
-from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import (
+from libera_utils.scene_identification.scene_id_cam_camtime import (
     create_and_write_data_product_cam_camtime,
 )
-from libera_utils.scene_identification.scene_id import standard_scene_definitions
-
-SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
+from libera_utils.scene_identification.scene_id_imager import (
+    PRODUCT_DEFINITION_PATH as IMAGER_PRODUCT_DEFINITION_PATH,
+)
+from libera_utils.scene_identification.scene_id_imager import (
+    create_and_write_data_product_imager,
+    run_scene_identification_imager,
+)
+from libera_utils.scene_identification.scene_id_imager_flash import (
+    create_and_write_data_product_imager_flash,
+    run_scene_identification_imager_flash,
+)
+from tests.test_data.footprint_matching.fixtures import make_fmatch_product_fixture
 
 
 def _libera_product_name(product_id: DataProductIdentifier) -> str:
@@ -43,9 +55,9 @@ def _libera_product_name(product_id: DataProductIdentifier) -> str:
 class TestSceneIdCamWrite:
     """The CAM runner must produce a conformant SCENE-ID-CAM product with only declared variables."""
 
-    def test_write_data_product_is_conformant(self, test_scene_id, tmp_path):
+    def test_write_data_product_is_conformant(self, tmp_path):
         """A full run + write succeeds under strict conformance and re-opens."""
-        input_path = test_scene_id / SSF_INPUT_NAME
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
         footprint_data = run_scene_identification_cam(input_path)
 
         # create_and_write_data_product_cam writes with strict=True; if the product definition and dataset are not
@@ -58,9 +70,9 @@ class TestSceneIdCamWrite:
         assert reopened.attrs["InputGranules"] == input_path.name
         assert reopened.attrs["algorithm_version"] == "0.1.0"
 
-    def test_written_product_has_no_undeclared_variables(self, test_scene_id, tmp_path):
-        """Intermediate FootprintData inputs must not leak into the written product."""
-        input_path = test_scene_id / SSF_INPUT_NAME
+    def test_written_product_has_no_undeclared_variables(self, tmp_path):
+        """Reader-sourced FMATCH inputs the classifier does not emit must not leak into the written product."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM)
         footprint_data = run_scene_identification_cam(input_path)
         output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
 
@@ -71,27 +83,39 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
         undeclared = [name for name in reopened.variables if name not in declared]
         assert undeclared == []
-        # And the intermediate scene-property inputs specifically must be gone.
-        for leaked in ("surface_wind_u", "surface_wind_v", "optical_depth_lower", "cloud_phase_lower"):
-            assert leaked not in reopened.variables
+
+
+SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
 
 class TestCollectInputFiles:
-    """collect_input_files selects the right manifest entries by product id."""
+    """collect_input_files keeps only the manifest entries whose Libera product id matches the runner's input."""
 
     # Manifest records must be absolute paths; the runner keys off the filename (basename) when parsing.
     _INPUT_DIR = "/dropbox/inputs"
 
     def _manifest(self, *filenames: str) -> Manifest:
-        # checksum is a required ManifestFileRecord field but irrelevant to collect_input_files, which selects
-        # purely by filename; a fixed placeholder keeps these selection cases readable.
+        # Distinct checksums so the manifest keeps every record (it de-duplicates on identical checksums).
         return Manifest(
             manifest_type=ManifestType.INPUT,
-            files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}") for name in filenames],
+            files=[
+                ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}", checksum=str(index))
+                for index, name in enumerate(filenames)
+            ],
         )
+
+    def test_cam_runner_keeps_only_fmatch_cam(self):
+        """The CAM runner keeps FMATCH-CAM files and skips other Libera products and non-Libera (CERES SSF) files."""
+        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam)
+        manifest = self._manifest(SSF_INPUT_NAME, wanted)
+
+        selected = collect_fmatch_cam_input_files(manifest)
+
+        assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
+        # Targets product-mode selection; asserts collect_input_files returns only the path matching the product id.
         from libera_utils.scene_identification._runner import collect_input_files
 
         wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
@@ -106,47 +130,84 @@ class TestCollectInputFiles:
 class TestToTimeProduct:
     """FootprintData.to_time_product prepares the dataset for writing on its time axis."""
 
-    def test_promotes_time_and_adds_quality_flag(self, test_scene_id):
-        """to_time_product promotes the named time variable to a coordinate and adds a Quality_Flag.
-
-        Runs the real CAM runner to get a populated FootprintData, converts it on RADIOMETER_TIME,
-        and asserts the time variable is now a coordinate and a Quality_Flag data variable was added.
-        """
-        footprint_data = run_scene_identification_cam(test_scene_id / SSF_INPUT_NAME)
+    def test_promotes_time_and_adds_quality_flag(self, tmp_path):
+        footprint_data = run_scene_identification_cam(make_fmatch_product_fixture(tmp_path, OperationalMode.CAM))
         product = footprint_data.to_time_product("RADIOMETER_TIME")
 
         assert "RADIOMETER_TIME" in product.coords
         assert "Quality_Flag" in product.data_vars
 
     def test_missing_time_variable_raises(self):
-        """to_time_product raises when the requested time variable is absent from the dataset.
-
-        Builds a FootprintData whose dataset has the RADIOMETER_TIME dimension but no RADIOMETER_TIME
-        variable, then asserts to_time_product raises ValueError naming the missing variable.
-        """
+        # Targets to_time_product's guard; asserts a missing time variable raises ValueError naming that variable.
         footprint_data = FootprintData(xr.Dataset({"cloud_fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
         with pytest.raises(ValueError, match="RADIOMETER_TIME"):
             footprint_data.to_time_product("RADIOMETER_TIME")
 
 
 class TestFmatchReaders:
-    """The operational FMATCH readers are not implemented yet."""
+    """The operational FMATCH readers ingest a FMATCH product into a classifiable FootprintData."""
 
-    def test_from_fmatch_cam_not_implemented(self, tmp_path):
-        """from_fmatch_cam is a not-yet-implemented stub: calling it raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            FootprintData.from_fmatch_cam(tmp_path / "fmatch.nc")
+    def test_from_fmatch_cam_reads_classification_inputs(self, tmp_path):
+        """from_fmatch_cam maps the FMATCH-CAM inputs onto the RADIOMETER_TIME classification variables."""
+        footprint_data = FootprintData.from_fmatch_cam(make_fmatch_product_fixture(tmp_path, OperationalMode.CAM))
+        dataset = footprint_data._data
 
-    def test_from_fmatch_cam_camtime_not_implemented(self, tmp_path):
-        """from_fmatch_cam_camtime is a not-yet-implemented stub: calling it raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            FootprintData.from_fmatch_cam_camtime(tmp_path / "fmatch.nc")
+        for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle", "RADIOMETER_TIME"):
+            assert required in dataset.variables
+
+    def test_from_fmatch_cam_camtime_reads_records_on_camera_grid(self, tmp_path):
+        """from_fmatch_cam_camtime reads FMATCH-CAM-CAMTIME onto the 2-D (CAMERA_TIME, FOOTPRINT) grid, carrying
+        CAMERA_TIME and the four camera_pixel bound coordinates through (but not the FMATCH-only center pixel)."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM_CAMTIME, n_footprints=6)
+        dataset = FootprintData.from_fmatch_cam_camtime(input_path)._data
+
+        # Records live on the 2-D grid; CAMERA_TIME is the 1-D image-acquisition axis (a plain variable pre-write).
+        assert dataset.sizes["CAMERA_TIME"] == 6
+        assert "FOOTPRINT" in dataset.sizes
+        assert dataset["CAMERA_TIME"].dims == ("CAMERA_TIME",)
+        # Classification inputs the pipeline consumes/derives from are present on the 2-D grid.
+        for required in ("igbp_surface_type", "cloud_fraction", "solar_zenith_angle"):
+            assert required in dataset.variables
+            assert dataset[required].dims == ("CAMERA_TIME", "FOOTPRINT")
+        # The four camera pixel-block bounds pass through as 2-D coordinates; the boresight center pixel does not.
+        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+            assert dataset[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+        assert "center_pixel_x" not in dataset.variables
+
+    def test_from_fmatch_imager_flash_injects_nan_cloud_phase(self, tmp_path):
+        """from_fmatch_imager_flash supplies the classification inputs and an all-NaN cloud_phase (no phase source)."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        dataset = FootprintData.from_fmatch_imager_flash(input_path)._data
+
+        # clear_area feeds the derived cloud_fraction; surface_wind_u/v feed the derived surface_wind; optical_depth
+        # is injected from the SSF cloud optical depth.
+        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "RADIOMETER_TIME"):
+            assert required in dataset.variables
+        # FMATCH-IMAGER-FLASH has no phase source, so cloud_phase is present-but-NaN.
+        assert "cloud_phase" in dataset.variables
+        assert bool(np.all(np.isnan(dataset["cloud_phase"].values)))
+
+    def test_from_fmatch_imager_maps_inputs(self, tmp_path):
+        """from_fmatch_imager maps the RBSP inputs, including a real (mapped) cloud_phase."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
+        dataset = FootprintData.from_fmatch_imager(input_path)._data
+
+        for required in ("igbp_surface_type", "clear_area", "surface_wind_u", "optical_depth", "cloud_phase"):
+            assert required in dataset.variables
+        # The fixture cycles CLDPIX phase codes 1/2, which map to the classifier's 1 (liquid) / 2 (ice).
+        assert set(np.unique(dataset["cloud_phase"].values).tolist()) <= {1.0, 2.0}
+
+    def test_from_fmatch_imager_rejects_file_without_rbsp_columns(self, tmp_path):
+        """A FMATCH-IMAGER-FLASH file lacks the RBSP CLDPIX variables, so the IMAGER reader raises clearly."""
+        flash_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        with pytest.raises(ValueError, match="missing required variable"):
+            FootprintData.from_fmatch_imager(flash_path)
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
     """Build a small CAM-CAMTIME FootprintData on the 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid.
 
-    Mirrors the raw inputs the (unimplemented) FMATCH-CAM-CAMTIME reader will supply: the scene-property inputs the
+    Mirrors the raw inputs the FMATCH-CAM-CAMTIME reader supplies: the scene-property inputs the
     pipeline derives ``surface_type``/``cloud_fraction`` from, the viewing angles, the boresight geolocation + PSF
     bbox passthroughs, and the four inclusive ``camera_pixel_{x,y}_{min,max}`` pixel-block bounds.
 
@@ -190,6 +251,7 @@ class TestSceneIdCamCamtimeWrite:
 
     def test_write_data_product_is_conformant_with_camera_pixel_bounds(self, tmp_path):
         """A full classify + strict write succeeds; data lands on the (CAMERA_TIME, FOOTPRINT) grid."""
+        # Targets the CAM-CAMTIME strict write; asserts data lands on the 2-D grid with int32 camera_pixel bounds.
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
 
@@ -220,6 +282,7 @@ class TestSceneIdCamCamtimeWrite:
 
     def test_write_drops_the_replaced_pixel_variables(self, tmp_path):
         """The retired center_pixel / start-stop / (min,max)-pair variables must not appear in the written product."""
+        # Targets the write's variable pruning; asserts retired center_pixel and start/stop pixel vars are absent.
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
         output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
@@ -238,3 +301,83 @@ class TestSceneIdCamCamtimeWrite:
         ):
             assert retired not in reopened.variables
         assert "CAMERA_PIXEL_BOUNDS" not in reopened.dims
+
+    def test_end_to_end_from_written_fmatch_file(self, tmp_path):
+        """End-to-end guard (replaces the retired demo generator): a written FMATCH-CAM-CAMTIME file read by the real
+        reader, classified, and written as a conformant SCENE-ID-CAM-CAMTIME product on the 2-D grid."""
+        fmatch_path = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM_CAMTIME, n_footprints=6)
+        footprint_data = FootprintData.from_fmatch_cam_camtime(fmatch_path)
+        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
+
+        output_file = create_and_write_data_product_cam_camtime(footprint_data, fmatch_path.name, tmp_path)
+
+        assert output_file.path.exists()
+        reopened = xr.open_dataset(output_file.path)
+        assert reopened.sizes["CAMERA_TIME"] == 6
+        assert reopened["CAMERA_TIME"].dims == ("CAMERA_TIME",)
+        for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
+            assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+        assert reopened["scene_id_erbe"].dims == ("CAMERA_TIME", "FOOTPRINT")
+        assert "scene_id_erbe" in reopened.variables
+        assert "center_pixel_x" not in reopened.variables
+
+
+class TestSceneIdImagerWrite:
+    """The IMAGER runner produces a conformant SCENE-ID-IMAGER product that includes the TRMM classification."""
+
+    def test_write_data_product_is_conformant_with_trmm(self, tmp_path):
+        """A full IMAGER run + write succeeds under strict conformance and reports scene_id_trmm as uint16."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
+        footprint_data = run_scene_identification_imager(input_path)
+
+        # create_and_write_data_product_imager writes with strict=True; reaching the assertions is the conformance
+        # guarantee for scene_id_imager.yml (including the uint16 scene_id_trmm).
+        output_file = create_and_write_data_product_imager(footprint_data, input_path.name, tmp_path)
+
+        assert output_file.path.exists()
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        assert reopened["scene_id_trmm"].dtype == np.uint16
+        for scene_id in ("scene_id_erbe", "scene_id_unfiltering", "scene_id_trmm"):
+            assert scene_id in reopened.variables
+
+    def test_written_product_has_no_undeclared_variables(self, tmp_path):
+        """Reader intermediates (clear_area, surface_wind_u/v) must not leak into the written product."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER)
+        footprint_data = run_scene_identification_imager(input_path)
+        output_file = create_and_write_data_product_imager(footprint_data, input_path.name, tmp_path)
+
+        definition = LiberaDataProductDefinition.from_yaml(IMAGER_PRODUCT_DEFINITION_PATH)
+        declared = set(definition.coordinates) | set(definition.variables)
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        undeclared = [name for name in reopened.variables if name not in declared]
+        assert undeclared == []
+
+
+class TestSceneIdImagerFlashWrite:
+    """The FLASH runner produces a conformant SCENE-ID-IMAGER-FLASH product with phase-limited TRMM."""
+
+    def test_write_data_product_is_conformant(self, tmp_path):
+        """A full flash run + write succeeds under strict conformance."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        footprint_data = run_scene_identification_imager_flash(input_path)
+
+        output_file = create_and_write_data_product_imager_flash(footprint_data, input_path.name, tmp_path)
+
+        assert output_file.path.exists()
+        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
+        assert "scene_id_trmm" in reopened.variables
+        # FLASH has no cloud-phase source, so cloud_phase is entirely fill/NaN.
+        cloud_phase = xr.open_dataset(output_file.path)["cloud_phase"].values
+        assert bool(np.all(np.isnan(cloud_phase)))
+
+    def test_flash_trmm_is_phase_limited(self, tmp_path):
+        """FLASH still classifies the clear/surface TRMM scenes (cloud_phase unbounded) but not phase-gated ones."""
+        input_path = make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER_FLASH)
+        footprint_data = run_scene_identification_imager_flash(input_path)
+        output_file = create_and_write_data_product_imager_flash(footprint_data, input_path.name, tmp_path)
+
+        trmm = xr.open_dataset(output_file.path, mask_and_scale=False)["scene_id_trmm"].values
+        # The near-clear footprint(s) match a clear/surface TRMM scene; nothing lands in a phase-gated cloudy scene.
+        assert trmm.max() > 0
+        # Every matched TRMM scene here is one of the low-ID clear/surface scenes (trmm.csv scenes 1-14).
+        assert set(np.unique(trmm).tolist()) <= set(range(0, 15))
