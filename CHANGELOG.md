@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - IGBP land cover (MCD12Q1), held as its uint8 sinusoidal tiles and geolocated per query, declaring `RESOLUTION_KM = 0.463`, the 463.3 m sinusoidal cell.
   - NSIDC NISE sea ice (AMSR-2 provenance), with the unused Extent codes (102, 105-251) and the coastline and suspect-ice quality codes (252, 253) missing (NaN) in every layer. Each hemisphere's HDF-EOS `StructMetadata.0` grid is checked against the 721 x 721 25 km EASE-Grid it is geolocated on (dimensions, corners and `GCTP_LAMAZ` projection), and a granule that differs raises `ValueError`.
 - `notebooks/02_readers_gridded.ipynb`, a demonstration of the gridded readers.
+- The swath ancillary readers, completing the nine-reader registry: CERES SSF (which also serves the RBSP FLASHFlux stream, with its extended cloud/aerosol/albedo fields pinned to FMATCH-IMAGER via `VariableSpec.only_modes`), CERES CLDPIX, and VIIRS cloud. The SSF and CLDPIX readers normalize each product's geolocation conventions (0..360 longitude, CLDPIX colatitude) and rasterize points onto the tile grid, so downstream consumers see the same `GridTile` as from the gridded readers.
+- `notebooks/03_readers_swath.ipynb`, a demonstration of the swath readers.
 - `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available, as on aarch64; the Docker image installs it.
 
 ### Changed
