@@ -4,8 +4,8 @@ Importing this package triggers the registration of all built-in reader
 subclasses via the ``__init_subclass__`` hook defined in
 :class:`~libera_utils.footprint_matching.readers.base.AncillaryReader`.
 After this import, :class:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry`
-lists the gridded readers: ``era5_pressure``, ``era5_surface``, ``igbp``, ``nise``,
-``viirs_aod``, ``viirs_brdf``.
+lists all readers: ``cldpix``, ``era5_pressure``, ``era5_surface``, ``igbp``,
+``nise``, ``ssf``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cloud``.
 
 Public API
 ----------
@@ -24,21 +24,27 @@ AncillaryReader : abstract class
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.base import AncillaryReader, StaticReader, SteppedGridReader
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
+from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.readers.era5_surface import ERA5SurfaceReader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.ssf import SSFReader
+from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
 
 __all__ = [
     "AncillaryReader",
+    "CLDPIXReader",
     "ERA5PressureLevelReader",
     "ERA5SurfaceReader",
     "IGBPReader",
     "NISEReader",
     "ReaderRegistry",
+    "SSFReader",
     "StaticReader",
     "SteppedGridReader",
     "VIIRSAODReader",
     "VIIRSBRDFReader",
+    "VIIRSCloudReader",
 ]
