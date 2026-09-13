@@ -558,6 +558,28 @@ ascending order must sort locally — in particular `numpy.searchsorted` on pack
 wrong answer without raising. The granule filename comes from the min and max of the time
 variable, not its endpoints.
 
+### Data quality counters
+
+Every L1A product carries the same quality global attributes, zeros included, so a quality
+question is a trend over granules rather than a search for exception reports:
+
+`QualityFlag` (`NOMINAL`/`DEGRADED`/`SUSPECT`), `PacketTimeInversionCount`,
+`PacketsOutOfTimeOrderCount`, `MaxPacketTimeInversionMicroseconds`, `DuplicatePacketTimeCount`,
+`DuplicateSampleTimeCount`, `DuplicateValueMismatchCount`, `MissingPacketCount`,
+`MaxSampleGapMicroseconds`, `SequenceResetCount`.
+
+Pass `quality_record=GranuleQualityRecord()` to `parse_packets_to_l1a_dataset` to also get the
+per-event evidence, which is too large for a global attribute.
+`GranuleQualityRecord.write_qa_report` writes it to the path
+`LiberaDataProductFilename.qa_report_filename` derives (`.qa.json` beside the product).
+
+`DuplicateValueMismatchCount` is the one to watch: it counts duplicate timestamps whose rows
+carried **different** data, so dropping one of each pair discarded a distinct measurement rather
+than redundancy. In DITL2 this is ~10,200 per affected RAD granule and zero on an unaffected
+one. Deduplication no longer raises on these in either ground or flight mode — identity, not the
+ground/flight distinction, is what makes a duplicate safe to drop, and raising does not recover
+the measurement. Pass `strict=True` to `_drop_duplicates` where a mismatch must block.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing

@@ -9,6 +9,7 @@ import xarray as xr
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.l1a.quality import QUALITY_GLOBAL_ATTRIBUTES
 
 logger = logging.getLogger(__name__)
 
@@ -1122,6 +1123,7 @@ class UMMGDatasetTransformer:
         """
         self.dataset_attrs = input_dataset.attrs
         self.science_variable_names = [var for var in input_dataset.data_vars]
+        self.dimension_sizes = dict(input_dataset.sizes)
 
         self.log_warnings = log_warnings
         self.warnings = []
@@ -1266,11 +1268,12 @@ class UMMGDatasetTransformer:
         """Extract measured parameters from dataset variables."""
         # how do you determine science vs metadata variables?
 
+        qa_stats = self._quality_stats()
         measured_parameters = []
         for var_name in self.science_variable_names:
             # QF may be in a different variable - will need to create a mapping in that
             # case
-            measured_parameters.append(MeasuredParameterType(ParameterName=var_name))
+            measured_parameters.append(MeasuredParameterType(ParameterName=var_name, QAStats=qa_stats))
 
         return measured_parameters if measured_parameters else None
 
@@ -1307,8 +1310,44 @@ class UMMGDatasetTransformer:
         return project
 
     def extract_additional_attributes(self) -> list[AdditionalAttributeType] | None:
-        """Extract additional attributes from dataset attributes."""
-        return None
+        """Expose the granule's L1A data-quality counters to CMR.
+
+        Only the counters the granule actually carries are emitted, so a product that does not
+        declare them produces nothing here rather than a row of zeros. Values are strings
+        because that is what UMM-G takes.
+
+        Returns
+        -------
+        list[AdditionalAttributeType] | None
+            One entry per quality attribute present, or None when the granule carries none.
+
+        Notes
+        -----
+        Every ``Name`` must also exist as an additional attribute on the parent CMR collection,
+        or the granule is rejected at ingest.
+        """
+        additional_attributes = [
+            AdditionalAttributeType(Name=name, Values=[str(self.dataset_attrs[name])])
+            for name in QUALITY_GLOBAL_ATTRIBUTES
+            if name in self.dataset_attrs
+        ]
+        return additional_attributes or None
+
+    def _quality_stats(self) -> QAStatsType | None:
+        """Granule-level QA statistics derived from the L1A quality counters.
+
+        ``QAPercentMissingData`` counts packets the sequence counter says never arrived, as a
+        percentage of what the granule should have held. Packets dropped as duplicates are not
+        missing data and are not counted here.
+        """
+        missing = self.dataset_attrs.get("MissingPacketCount")
+        if missing is None:
+            return None
+        received = int(self.dimension_sizes.get("PACKET", 0))
+        expected = received + int(missing)
+        if expected <= 0:
+            return None
+        return QAStatsType(QAPercentMissingData=100.0 * int(missing) / expected)
 
     def extract_input_granules(self) -> list[str] | None:
         """Extract input granules from dataset attributes."""
