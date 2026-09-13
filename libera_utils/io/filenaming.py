@@ -104,6 +104,16 @@ LIBERA_METADATA_PRODUCT_REGEX = re.compile(
     r"\.(?P<extension>cmr\.json)$"
 )
 
+LIBERA_QA_REPORT_REGEX = re.compile(
+    rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
+    rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
+    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
+    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
+    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
+    r"_(?P<revision>R[0-9]{11})"
+    r"\.(?P<extension>qa\.json)$"
+)
+
 MANIFEST_FILE_REGEX = re.compile(
     r"^LIBERA"
     r"_(?P<manifest_type>INPUT|OUTPUT)"
@@ -657,6 +667,39 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             )
 
         return ummg_filename
+
+    @property
+    def qa_report_filename(self) -> Path | S3Path:
+        """Property that returns the corresponding data-quality report filename for this product.
+
+        The name is derived, never stored, so nothing can dangle or drift out of sync: a
+        consumer holding the data filename can construct this one. The report itself is written
+        only when a quality counter is nonzero, so a clean granule costs nothing.
+
+        Returns
+        -------
+        : Path | S3Path
+           Same base filename with a ``.qa.json`` extension.
+
+        Raises
+        ------
+        ValueError
+            If the derived name is not a valid Libera QA report name, or does not share its
+            base name with the data file.
+        """
+        qa_filename = self.path.with_suffix(".qa.json")
+
+        if not LIBERA_QA_REPORT_REGEX.match(qa_filename.name):
+            raise ValueError(
+                f"Proposed path {qa_filename} failed validation against regex pattern {LIBERA_QA_REPORT_REGEX}"
+            )
+
+        if qa_filename.name.rsplit(".")[0] != self.path.name.rsplit(".")[0]:
+            raise ValueError(
+                f"Proposed path {qa_filename} does not match its data file path {self.path}. They must have the same name with different extensions"
+            )
+
+        return qa_filename
 
     @property
     def applicable_date(self) -> date:

@@ -2,6 +2,7 @@
 
 import logging
 import warnings
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from os import PathLike
 from typing import cast
@@ -27,6 +28,7 @@ from libera_utils.l1a.packet_ordering import (
     check_packet_acquisition_order,
     order_packet_files,
 )
+from libera_utils.l1a.quality import DuplicateEvidence, GranuleQualityRecord
 from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
@@ -162,6 +164,7 @@ def parse_packets_to_l1a_dataset(
     ground_data: bool = False,
     verbose: bool = False,
     skip_header_bytes: int | None = None,
+    quality_record: GranuleQualityRecord | None = None,
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
 
@@ -185,6 +188,10 @@ def parse_packets_to_l1a_dataset(
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
         carry a per-packet record header need ``8``).
+    quality_record : GranuleQualityRecord | None, optional
+        When given, it is filled in with this granule's quality counters and the per-event
+        evidence behind them. The counters also land on the returned Dataset as global
+        attributes; the evidence is too large for that and reaches a caller only this way.
 
     Returns
     -------
@@ -230,9 +237,18 @@ def parse_packets_to_l1a_dataset(
     packet_time_coordinate = packet_config.packet_time_coordinate
     packet_ds = packet_ds.assign_coords({packet_time_coordinate: (SDC_PACKET_DIMENSION, packet_times_us)})
 
+    quality = quality_record if quality_record is not None else GranuleQualityRecord()
+    quality.apid = int(apid)
+
     # Drop duplicates from the packet dataset before we process samples
     # This drops full duplicate packets based on identical packet timestamps
-    packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
+    packet_ds, packet_duplicates = _drop_duplicates(
+        packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose
+    )
+    quality.duplicate_packet_time_count = packet_duplicates.n_duplicates
+    quality.duplicate_value_mismatch_count += packet_duplicates.n_value_mismatches
+    quality.mismatched_variables.extend(packet_duplicates.mismatched_variables)
+    quality.duplicate_evidence.extend(packet_duplicates.evidence)
 
     # The packet axis is already in acquisition order: files were placed in time above and byte
     # order within a file is acquisition order. Do not sort it on packet time. The secondary
@@ -240,13 +256,20 @@ def parse_packets_to_l1a_dataset(
     # (LIBSDC-830), so a time sort permutes packets away from the order they were taken in,
     # which breaks the contiguous-run assumption WFOV image stitching depends on. The
     # "{sample_group}_packet_index" variables built below enumerate this axis positionally.
-    packet_ds, _ = check_packet_acquisition_order(
+    packet_ds, order_diagnostics = check_packet_acquisition_order(
         packet_ds,
         packet_time_coordinate,
         packet_dimension=SDC_PACKET_DIMENSION,
         ground_data=ground_data,
         verbose=verbose,
     )
+    quality.n_packets = order_diagnostics.n_packets
+    quality.packet_time_inversion_count = order_diagnostics.n_time_inversions
+    quality.packets_out_of_time_order_count = order_diagnostics.n_packets_displaced
+    quality.max_packet_time_inversion_microseconds = order_diagnostics.max_time_inversion_us
+    quality.missing_packet_count = order_diagnostics.n_missing_packets
+    quality.sequence_order_violation_count = order_diagnostics.n_order_violations
+    quality.sequence_reset_count = max(0, order_diagnostics.n_segments - 1)
     packet_times_us = packet_ds[packet_time_coordinate].values
 
     # Start building the dataset containing expanded sample fields
@@ -290,10 +313,21 @@ def parse_packets_to_l1a_dataset(
         # NOTE: This should never find duplicates in flight but in ground testing, FSW was generating
         # packets that had repeated sample timestamps due to an issue with Hydra simulating SC time pulses
         # incorrectly, causing a microsecond counter to roll over at 1E6 without incrementing the second counter.
-        sample_ds, _ = _drop_duplicates(sample_ds, sample_time_dimension, ground_data=ground_data, verbose=verbose)
+        sample_ds, sample_duplicates = _drop_duplicates(
+            sample_ds, sample_time_dimension, ground_data=ground_data, verbose=verbose
+        )
+        quality.duplicate_sample_time_count += sample_duplicates.n_duplicates
+        quality.duplicate_value_mismatch_count += sample_duplicates.n_value_mismatches
+        quality.mismatched_variables.extend(sample_duplicates.mismatched_variables)
+        quality.duplicate_evidence.extend(sample_duplicates.evidence)
 
         # Sort the data by the newly added dimension for the sample group
         sample_ds = sample_ds.sortby(sample_time_dimension)
+        sample_times_sorted = sample_ds[sample_time_dimension].values
+        quality.n_samples = max(quality.n_samples, int(sample_times_sorted.size))
+        if sample_times_sorted.size > 1:
+            gaps = np.diff(sample_times_sorted.astype(DATETIME_USEC_DTYPE).astype(np.int64))
+            quality.max_sample_gap_microseconds = max(quality.max_sample_gap_microseconds, int(gaps.max(initial=0)))
 
     # Drop expanded sample fields from packet_ds to reduce data duplication
     packet_ds = packet_ds.drop_vars(expanded_fields)
@@ -366,11 +400,45 @@ def parse_packets_to_l1a_dataset(
     # may differ from the order the caller passed.
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
+    # Written unconditionally, zeros included: every product definition declares these, and a
+    # trending query should not have to distinguish "clean" from "not reported".
+    quality.product_id = str(packet_ds.attrs.get("ProductID", ""))
+    packet_ds.attrs.update(quality.global_attributes())
 
     if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
         packet_ds = enhance_wfov_l1a_dataset(packet_ds)
 
     return packet_ds
+
+
+DEFAULT_DUPLICATE_EVIDENCE_LIMIT = 200
+
+
+@dataclass(frozen=True, slots=True)
+class DuplicateReport:
+    """What deduplicating one coordinate found and dropped.
+
+    Attributes
+    ----------
+    n_duplicates : int
+        Rows dropped, i.e. coordinate values beyond the first occurrence of each.
+    n_value_mismatches : int
+        Duplicated coordinate values whose rows did not agree across every data variable.
+        Dropping one of those rows discarded a distinct measurement, not redundancy, so this is
+        the number that decides whether a granule lost science.
+    mismatched_variables : tuple of str
+        Data variables that disagreed, in the order first seen.
+    evidence : tuple of DuplicateEvidence
+        Per-value detail for the mismatches, capped at the caller's evidence limit.
+    n_evidence_omitted : int
+        Mismatches beyond the cap, which have no evidence recorded.
+    """
+
+    n_duplicates: int = 0
+    n_value_mismatches: int = 0
+    mismatched_variables: tuple[str, ...] = ()
+    evidence: tuple[DuplicateEvidence, ...] = ()
+    n_evidence_omitted: int = 0
 
 
 def _validate_duplicate_values(
@@ -379,35 +447,52 @@ def _validate_duplicate_values(
     duplicates: np.ndarray,
     ground_data: bool = False,
     verbose: bool = False,
-) -> None:
-    """Validate that duplicate coordinate entries are identical across all data variables.
+    *,
+    strict: bool = False,
+    evidence_limit: int = DEFAULT_DUPLICATE_EVIDENCE_LIMIT,
+) -> DuplicateReport:
+    """Report whether duplicate coordinate entries are identical across all data variables.
 
     Only applies when the coordinate being deduplicated is itself a dimension coordinate
-    (i.e. coordinate_name == dim_name). For non-dimension coordinates,the underlying dimension indices are inherently
-    distinct so value-identity checks are not meaningful.
+    (i.e. coordinate_name == dim_name). For non-dimension coordinates, the underlying dimension
+    indices are inherently distinct so value-identity checks are not meaningful.
+
+    Identity, not the ground/flight distinction, is what decides whether a duplicate is safe to
+    drop: rows that agree are redundancy in either mode, and rows that disagree are a lost
+    measurement in either mode. So this counts and reports unconditionally, and ``strict``
+    alone decides whether a mismatch also stops the granule. It is off by default because
+    stopping does not recover the measurement, while a recorded count lets the granule through
+    and leaves the loss visible and trendable. Turn it on where a mismatch must block.
 
     Parameters
     ----------
     dataset : xr.Dataset
         The dataset containing the duplicates to validate.
     coordinate_name : str
-        The name of the coordinate being deduplicated (used in error messages).
+        The name of the coordinate being deduplicated (used in messages).
     duplicates : np.ndarray
         The coordinate values that appear more than once.
     ground_data : bool, optional
-        If True, non-identical duplicate rows are tolerated instead of raising ``ValueError`` (so
-        deduplication can proceed). Whether a ``UserWarning`` is emitted for each case is controlled
-        by ``verbose``. Default is False, which raises for any non-identical duplicates.
+        Recorded on the log record; does not change what is checked or reported.
     verbose : bool, optional
-        When ``ground_data`` is True, controls whether a warning is issued for each non-identical
-        duplicate. Default True so direct calls surface diagnostics; ``_drop_duplicates`` passes its
-        own ``verbose`` (default False) to limit noise during batch parsing.
+        Emit a ``UserWarning`` for each non-identical duplicate. Default False, since a real
+        granule can carry ~10,000 of them.
+    strict : bool, optional
+        Raise ``ValueError`` on the first non-identical duplicate instead of reporting it.
+        Default False.
+    evidence_limit : int, optional
+        Maximum number of mismatches to record values for.
+
+    Returns
+    -------
+    DuplicateReport
+        Mismatch counts and per-value evidence. ``n_duplicates`` is left at 0 here; the caller
+        fills it in.
 
     Raises
     ------
     ValueError
-        If values have differing data values across any variable (when
-        ``ground_data`` is False).
+        If any duplicate has differing values in any variable and ``strict`` is True.
     """
     # Non-dimension coordinates share a dimension with other variables but
     # don't index them directly — rows are inherently distinct, so
@@ -415,7 +500,7 @@ def _validate_duplicate_values(
     dim_name = dataset[coordinate_name].dims[0]
     coord_values = dataset[coordinate_name].values
     if coordinate_name != dim_name:
-        return
+        return DuplicateReport()
 
     # Build a boolean mask marking every row whose coord value appears in `duplicates`.
     dup_mask = np.isin(coord_values, duplicates)
@@ -432,62 +517,112 @@ def _validate_duplicate_values(
     unique_dup_vals, group_starts = np.unique(dup_coord_vals_sorted, return_index=True)
     group_ends = np.append(group_starts[1:], len(dup_coord_vals_sorted))
 
+    mismatched = np.zeros(unique_dup_vals.size, dtype=bool)
+    mismatched_variables: list[str] = []
+    evidence_by_group: dict[int, DuplicateEvidence] = {}
+
     for var_name, var in dup_slice.data_vars.items():
         data = var.values
+        variable_mismatched = False
 
-        for dup_val, start, end in zip(unique_dup_vals, group_starts, group_ends):
+        for group, (dup_val, start, end) in enumerate(zip(unique_dup_vals, group_starts, group_ends)):
             group_data = data[start:end]
             # Vectorized identity check: broadcast first row against all rows in the group.
-            if not np.all(group_data == group_data[0]):
-                pairs = list(zip(group_data, dup_coord_vals[start:end]))
-                if ground_data:
-                    if verbose:
-                        warnings.warn(
-                            f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
-                            f"has differing values in variable '{var_name}' at {pairs}. "
-                            f"Proceeding because ground_data=True."
-                        )
-                    continue
+            if np.all(group_data == group_data[0]):
+                continue
+            variable_mismatched = True
+            mismatched[group] = True
+            if strict:
+                pairs = list(zip(group_data, dup_coord_vals_sorted[start:end]))
                 raise ValueError(
                     f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
                     f"has differing values in variable '{var_name}' at {pairs}. "
                     f"Dropping this duplicate would result in data loss."
                 )
+            if verbose:
+                pairs = list(zip(group_data, dup_coord_vals_sorted[start:end]))
+                warnings.warn(
+                    f"Duplicate coordinate value '{dup_val}' in '{coordinate_name}' "
+                    f"has differing values in variable '{var_name}' at {pairs}."
+                )
+            if len(evidence_by_group) < evidence_limit or group in evidence_by_group:
+                row_indices = [int(i) for i in dup_indices_sorted[start:end]]
+                record = evidence_by_group.setdefault(
+                    group,
+                    DuplicateEvidence(
+                        coordinate=coordinate_name,
+                        timestamp=str(dup_val),
+                        multiplicity=int(end - start),
+                        row_indices=row_indices,
+                    ),
+                )
+                record.variables[var_name] = [_jsonable(v) for v in group_data]
+
+        if variable_mismatched:
+            mismatched_variables.append(str(var_name))
+
+    n_mismatches = int(mismatched.sum())
+    return DuplicateReport(
+        n_value_mismatches=n_mismatches,
+        mismatched_variables=tuple(mismatched_variables),
+        evidence=tuple(evidence_by_group[group] for group in sorted(evidence_by_group)),
+        n_evidence_omitted=max(0, n_mismatches - len(evidence_by_group)),
+    )
 
 
-def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: bool = False, verbose: bool = False):
-    """Detect and drop duplicate values based on a coordinate
+def _jsonable(value):
+    """Convert a numpy scalar to something ``json`` can write."""
+    return value.item() if isinstance(value, np.generic) else value
 
-    Runs a validation function which raises an error if duplicate
-    coordinate values in the dataset have differing data values, as only identical duplicates are safe to drop.
+
+def _drop_duplicates(
+    dataset: xr.Dataset,
+    coordinate_name: str,
+    ground_data: bool = False,
+    verbose: bool = False,
+    *,
+    strict: bool = False,
+    evidence_limit: int = DEFAULT_DUPLICATE_EVIDENCE_LIMIT,
+) -> tuple[xr.Dataset, DuplicateReport]:
+    """Drop rows beyond the first occurrence of each coordinate value, and report what was lost.
+
+    Rows are kept in their original order; deduplicating does not reorder the axis.
+
+    Duplicates whose rows agree are redundancy and cost nothing to drop. Duplicates whose rows
+    disagree are a real measurement discarded to make the timestamp unique, and the granule is
+    let through with that recorded rather than stopped, because stopping does not recover the
+    measurement. Pass ``strict=True`` where a mismatch must block instead.
 
     Parameters
     ----------
     dataset : xr.Dataset
-        The dataset to deduplicate
+        The dataset to deduplicate.
     coordinate_name : str
-        The name of the coordinate over which to search for duplicates.
-        Can be either a dimension coordinate or a non-dimension coordinate.
+        The name of the coordinate over which to search for duplicates. Can be either a
+        dimension coordinate or a non-dimension coordinate; value identity is only checkable
+        for the former.
     ground_data : bool, optional
-        If True, non-identical duplicates are allowed instead of raising ``ValueError``. Per-duplicate
-        ``UserWarning`` messages are emitted only when ``verbose`` is also True. Default is False.
+        Recorded on the log record; does not change what is dropped.
     verbose : bool, optional
-        If True and ``ground_data`` is True, emit a ``UserWarning`` for each non-identical duplicate
-        coordinate value. Default False so batch parsing stays quiet unless opted in.
+        Emit a ``UserWarning`` for each non-identical duplicate. Default False.
+    strict : bool, optional
+        Raise ``ValueError`` on a non-identical duplicate rather than reporting it.
+    evidence_limit : int, optional
+        Maximum number of mismatches to record values for.
 
     Returns
     -------
     dataset : xr.Dataset
-        Deduplicated dataset
-    n_duplicates : int
-        Number of duplicates detected and dropped
+        Deduplicated dataset.
+    report : DuplicateReport
+        What was dropped, and how much of it disagreed.
 
     Raises
     ------
     KeyError
         If the coordinate is not found in the dataset.
     ValueError
-        If the coordinate is not 1-dimensional, or if duplicate coordinate.
+        If the coordinate is not 1-dimensional, or a duplicate's rows differ while ``strict``.
     """
     # Validate coordinate exists
     if coordinate_name not in dataset.coords:
@@ -517,24 +652,55 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
     original_size = len(coord_values)
     n_duplicates = original_size - len(unique_indices_sorted)
 
-    if n_duplicates > 0:
-        duplicates = unique_values[counts > 1]
+    if n_duplicates == 0:
+        return dataset, DuplicateReport()
 
-        _validate_duplicate_values(dataset, coordinate_name, duplicates, ground_data, verbose)
-        # Select only the first occurrence of each unique coordinate value
-        dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
+    duplicates = unique_values[counts > 1]
+    report = _validate_duplicate_values(
+        dataset,
+        coordinate_name,
+        duplicates,
+        ground_data,
+        verbose,
+        strict=strict,
+        evidence_limit=evidence_limit,
+    )
+    report = replace(report, n_duplicates=n_duplicates)
 
-        warnings.warn(
-            f"Detected {n_duplicates} duplicate {coordinate_name} in dataset. Use verbose=True to see warnings for the duplicates."
+    # Select only the first occurrence of each unique coordinate value
+    dataset_deduped = dataset.isel({dim_name: unique_indices_sorted})
+
+    warnings.warn(
+        f"Detected {n_duplicates} duplicate {coordinate_name} in dataset, "
+        f"{report.n_value_mismatches} of which have differing data values. "
+        f"Use verbose=True to see warnings for the duplicates."
+    )
+    logger.warning(
+        {
+            "msg": "duplicate_coordinate_values_dropped",
+            "coordinate": coordinate_name,
+            "ground_data": ground_data,
+            "n_duplicates": n_duplicates,
+            "n_value_mismatches": report.n_value_mismatches,
+            "mismatched_variables": list(report.mismatched_variables),
+        }
+    )
+    if report.n_value_mismatches:
+        logger.error(
+            {
+                "msg": "duplicate_coordinate_values_differed",
+                "coordinate": coordinate_name,
+                "ground_data": ground_data,
+                "n_value_mismatches": report.n_value_mismatches,
+                "mismatched_variables": list(report.mismatched_variables),
+                "detail": (
+                    "Rows sharing a timestamp carried different data. Dropping one of each pair "
+                    "discarded a distinct measurement, not redundancy."
+                ),
+            }
         )
-        logger.warning(
-            f"Duplicate coordinates detected ({n_duplicates}) in {coordinate_name}: {duplicates}. Use verbose=True to see warnings for the duplicates."
-        )
-    else:
-        # No duplicates, return original dataset
-        dataset_deduped = dataset
 
-    return dataset_deduped, n_duplicates
+    return dataset_deduped, report
 
 
 def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[str, np.ndarray], np.ndarray]:

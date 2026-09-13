@@ -63,9 +63,10 @@ def test_drop_duplicates_no_duplicates():
         }
     )
 
-    result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time")
+    result_ds, report = libera_packets._drop_duplicates(ds, "time")
 
-    assert n_duplicates == 0
+    assert report.n_duplicates == 0
+    assert report.n_value_mismatches == 0
     assert len(result_ds["time"]) == 3
 
 
@@ -80,9 +81,10 @@ def test_drop_duplicates_with_duplicates():
     )
 
     with pytest.warns(UserWarning, match="Detected 1 duplicate time in dataset"):
-        result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time")
+        result_ds, report = libera_packets._drop_duplicates(ds, "time")
 
-    assert n_duplicates > 0
+    assert report.n_duplicates > 0
+    assert report.n_value_mismatches == 0
     # After deduplication, should have 3 unique time values
     assert len(result_ds["time"]) == 3
     assert 100 in result_ds["time"].values
@@ -91,17 +93,42 @@ def test_drop_duplicates_with_duplicates():
 
 
 def test_drop_duplicates_with_non_identical_duplicates():
-    """Test _drop_duplicates removes duplicate coordinates and warns"""
+    """A duplicate whose rows disagree is dropped and counted, not raised on.
+
+    Raising does not recover the discarded measurement; a recorded count does leave the loss
+    visible. Identity, not the ground/flight distinction, is what makes a duplicate safe to
+    drop, so this holds in both modes.
+    """
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 3, 4]),
             "SRC_SEQ_CTR": [100, 101, 102, 103],
-            "time": (["time"], [100, 200, 200, 300]),  # 200 appears twice
+            "time": (["time"], [100, 200, 200, 300]),  # 200 appears twice, with 2 and 3
+        }
+    )
+
+    for ground_data in (True, False):
+        with pytest.warns(UserWarning, match="1 of which have differing data values"):
+            result_ds, report = libera_packets._drop_duplicates(ds, "time", ground_data=ground_data)
+        assert report.n_duplicates == 1
+        assert report.n_value_mismatches == 1
+        assert report.mismatched_variables == ("data",)
+        assert list(result_ds["data"].values) == [1, 2, 4]
+        assert [evidence.variables["data"] for evidence in report.evidence] == [[2, 3]]
+
+
+def test_drop_duplicates_strict_raises_on_non_identical_duplicates():
+    """``strict`` is how a caller opts into blocking, and it is not tied to ground vs flight."""
+    ds = xr.Dataset(
+        {
+            "data": (["time"], [1, 2, 3, 4]),
+            "SRC_SEQ_CTR": [100, 101, 102, 103],
+            "time": (["time"], [100, 200, 200, 300]),
         }
     )
 
     with pytest.raises(ValueError, match="Dropping this duplicate would result in data loss"):
-        result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "time")
+        libera_packets._drop_duplicates(ds, "time", ground_data=True, strict=True)
 
 
 def test_drop_duplicates_non_dimension_coordinate():
@@ -110,10 +137,11 @@ def test_drop_duplicates_non_dimension_coordinate():
     # Add non-dimension coordinate bound to "PACKET" dimension with duplicates
     ds = ds.assign_coords({"packet_time": (["PACKET"], [1, 2, 5, 8, 8, 8])})
 
-    result_ds, n_duplicates = libera_packets._drop_duplicates(ds, "packet_time")
+    with pytest.warns(UserWarning, match="Detected 2 duplicate packet_time"):
+        result_ds, report = libera_packets._drop_duplicates(ds, "packet_time")
 
     # Should drop 2 duplicates (keep first occurrence of value 8)
-    assert n_duplicates == 2
+    assert report.n_duplicates == 2
     # Should have 4 unique values: [1, 2, 5, 8]
     assert len(result_ds["packet_time"]) == 4
     assert list(result_ds["packet_time"].values) == [1, 2, 5, 8]
@@ -157,7 +185,7 @@ def test_validate_duplicate_values_dimension_coordinate_identical_rows():
 
 
 def test_validate_duplicate_values_dimension_coordinate_differing_rows():
-    """Dimension coordinate duplicates with differing data values should raise ValueError."""
+    """Differing rows are reported, and raise only when the caller asks for strict."""
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 99, 3]),
@@ -171,8 +199,12 @@ def test_validate_duplicate_values_dimension_coordinate_differing_rows():
     _, counts = np.unique(coord_values, return_counts=True)
     duplicates = unique_values[counts > 1]
 
+    report = libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    assert report.n_value_mismatches == 1
+    assert report.mismatched_variables == ("data",)
+
     with pytest.raises(ValueError, match="200.*time.*data"):
-        libera_packets._validate_duplicate_values(ds, "time", duplicates)
+        libera_packets._validate_duplicate_values(ds, "time", duplicates, strict=True)
 
 
 def test_validate_duplicate_values_interleaved_identical_duplicates():
@@ -194,7 +226,7 @@ def test_validate_duplicate_values_interleaved_identical_duplicates():
 
 
 def test_validate_duplicate_values_interleaved_differing_duplicates():
-    """Interleaved duplicates with differing values should raise ValueError."""
+    """Interleaved duplicates with differing values are counted for every affected value."""
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 99, 2]),
@@ -207,8 +239,9 @@ def test_validate_duplicate_values_interleaved_differing_duplicates():
     unique_values, _, counts = np.unique(coord_values, return_index=True, return_counts=True)
     duplicates = unique_values[counts > 1]
 
-    with pytest.raises(ValueError, match="100"):
-        libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    report = libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    assert report.n_value_mismatches == 1
+    assert [evidence.timestamp for evidence in report.evidence] == ["100"]
 
 
 def test_validate_duplicate_values_multiple_duplicates_all_identical():
@@ -231,7 +264,7 @@ def test_validate_duplicate_values_multiple_duplicates_all_identical():
 
 
 def test_validate_duplicate_values_multiple_duplicates_one_differs():
-    """If any one duplicate group has differing values, a ValueError should be raised."""
+    """Only the duplicate group that actually differs is counted."""
     ds = xr.Dataset(
         {
             "data": (["time"], [1, 2, 2, 3, 99, 4]),
@@ -246,12 +279,13 @@ def test_validate_duplicate_values_multiple_duplicates_one_differs():
     duplicates = unique_values[counts > 1]
 
     # time=200 is fine (2,2), but time=300 differs (3 vs 99)
-    with pytest.raises(ValueError, match="300"):
-        libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    report = libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    assert report.n_value_mismatches == 1
+    assert [evidence.timestamp for evidence in report.evidence] == ["300"]
 
 
 def test_validate_duplicate_values_multiple_variables_one_differs():
-    """Validation should catch differing values in any variable, not just the first."""
+    """Validation catches differing values in any variable, not just the first."""
     ds = xr.Dataset(
         {
             "data_a": (["time"], [1, 2, 2]),
@@ -266,8 +300,9 @@ def test_validate_duplicate_values_multiple_variables_one_differs():
     _, counts = np.unique(coord_values, return_counts=True)
     duplicates = unique_values[counts > 1]
 
-    with pytest.raises(ValueError, match="data_b"):
-        libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    report = libera_packets._validate_duplicate_values(ds, "time", duplicates)
+    assert report.mismatched_variables == ("data_b",)
+    assert report.n_value_mismatches == 1
 
 
 def test_validate_duplicate_values_empty_duplicates():
