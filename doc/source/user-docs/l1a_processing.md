@@ -204,7 +204,9 @@ After decoding L1A, use `libera_utils.l1a.day_window.trim_l1a_to_day_window` to 
 cut. When `packet_index_var` is set and a `PACKET` dimension exists, trim also calls
 `sync_packet_dim_to_index` so orphan PACKET rows are dropped and indices are densified (dtype-safe).
 Use `assert_data_times_unique_monotonic` after packet dedupe to enforce unique, non-decreasing
-data times (`ground_data=True` warns instead of raising).
+data times (`ground_data=True` warns instead of raising). Pass `require_monotonic=False` for a
+packet-time axis: that axis is in acquisition order and packet time is not monotonic along it
+(see "Packet axis ordering" below). Sample and camera axes are sorted and keep the default.
 
 ## Day coverage gates (combine readiness)
 
@@ -232,8 +234,9 @@ Production daily L1A uses the **same** combine sequence for flight PDS and groun
 2. `parse_packets_to_l1a_dataset(..., ground_data=, skip_header_bytes=)` — flight defaults
    `ground_data=False` / header skip `0`; ground triggers use `ground_data=True` / `skip_header_bytes=8`.
 3. `trim_l1a_to_day_window` to the applicable UTC day ± buffer.
-4. `assert_data_times_unique_monotonic(..., ground_data=)` — with `ground_data=True`, duplicate or
-   non-monotonic data times **warn** instead of raising (same semantics as packet dedupe).
+4. `assert_data_times_unique_monotonic(..., ground_data=, require_monotonic=)` — with
+   `ground_data=True`, violations **warn** instead of raising. Pass `require_monotonic=False`
+   when the time variable is the packet time coordinate.
 
 There is no separate ground combiner. Offline concatenation of finished L1A NetCDFs is diagnostic
 only and is not part of the production path.
@@ -529,6 +532,31 @@ This varies by packet but there is some consistent behavior:
   a sample interval their sample blocks interleave and the index steps backwards at those
   positions. Consumers must use it as an element-wise mapping and must not assume that each
   packet's samples form one contiguous block.
+
+### Packet axis ordering
+
+The `PACKET` axis is in **acquisition order**: input files are placed in time by the median
+packet time of their first packets, and within a file the packets keep their byte order. It is
+**not** sorted by packet time, and packet time is not monotonic along it.
+
+Instrument packet time steps backward on a fraction of packets while `SRC_SEQ_CTR` advances by
+one — 1.4-1.8% of RAD packets, ~0.2% of WFOV, ~0.5% of NOM-HK in DITL2, by up to ~2 s
+(LIBSDC-830). Nothing is lost or duplicated at those steps; only the timestamp moves. Sorting on
+packet time therefore permutes packets away from the order they were taken in, which is why the
+sort was removed: WFOV image stitching requires each image's packets to occupy a contiguous run
+of PACKET rows, and on one real APID-1040 granule the sort yielded 321 images with 103,355
+packets discarded where acquisition order yields 669 images with 2,023 discarded.
+
+`parse_packets_to_l1a_dataset` cross-checks the axis against `SRC_SEQ_CTR` and logs one summary
+per granule (`packet_acquisition_order`), including `n_time_inversions` and
+`n_packets_displaced` — how many rows the old sort would have moved. A missing `SRC_SEQ_CTR`
+warns and trusts input order.
+
+**What this means for consumers.** `{group}_packet_index`, `CAMERA_PACKET_INDEX` and
+`PACKET_IMAGE_ID` still index the `PACKET` axis correctly. Anything that needs packet time in
+ascending order must sort locally — in particular `numpy.searchsorted` on packet times gives a
+wrong answer without raising. The granule filename comes from the min and max of the time
+variable, not its endpoints.
 
 ### WFOV camera science (APID 1040) image metadata
 

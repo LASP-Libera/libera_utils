@@ -153,8 +153,9 @@ def assert_data_times_unique_monotonic(
     *,
     ground_data: bool = False,
     verbose: bool = False,
+    require_monotonic: bool = True,
 ) -> None:
-    """Assert that ``time_coord`` values are unique and non-decreasing.
+    """Assert that ``time_coord`` values are unique, and optionally non-decreasing.
 
     Parameters
     ----------
@@ -166,11 +167,18 @@ def assert_data_times_unique_monotonic(
         If True, emit warnings instead of raising on violations.
     verbose : bool, optional
         If True with ``ground_data``, include sample offending values in warnings.
+    require_monotonic : bool, optional
+        Whether ``time_coord`` is expected to be non-decreasing. Pass False for a packet-time
+        axis: that axis is ordered by acquisition, and the instrument's packet time steps
+        backward on a small fraction of packets while ``SRC_SEQ_CTR`` marches on (LIBSDC-830),
+        so non-monotonicity there is expected telemetry rather than a product defect. Sample
+        and camera time axes are sorted, and keep the default. Uniqueness is checked either way.
 
     Raises
     ------
     DataTimeUniquenessError
-        If uniqueness or monotonicity is violated and ``ground_data`` is False.
+        If uniqueness is violated, or monotonicity is violated while ``require_monotonic`` is
+        True, and ``ground_data`` is False.
     """
     if time_coord not in dataset.coords and time_coord not in dataset.variables:
         raise KeyError(f"time_coord '{time_coord}' not found in dataset")
@@ -192,7 +200,7 @@ def assert_data_times_unique_monotonic(
             raise DataTimeUniquenessError(msg)
 
     # Monotonic non-decreasing (after uniqueness, equal adjacent are duplicates)
-    if times.size >= 2 and np.any(times[1:] < times[:-1]):
+    if require_monotonic and times.size >= 2 and np.any(times[1:] < times[:-1]):
         msg = f"Data times on '{time_coord}' are not monotonic non-decreasing"
         if ground_data:
             warnings.warn(msg, UserWarning, stacklevel=2)

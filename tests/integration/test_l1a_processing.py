@@ -16,6 +16,7 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a import packets
 from libera_utils.l1a.data_time_extractors import extract_data_time_range
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path, get_packet_config
+from libera_utils.l1a.packet_ordering import summarize_packet_order
 from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
@@ -166,7 +167,17 @@ def test_process_packets_to_l1a_product(
     packet_time_coord = l1a_processing_config.packet_time_coordinate
     assert packet_time_coord in dataset.coords, f"Missing coordinate: {packet_time_coord}"
     assert dataset[packet_time_coord].dims == ("PACKET",), f"{packet_time_coord} should have 'packet' dimension"
-    assert dataset == dataset.sortby(packet_time_coord)  # Should already be sorted
+    # The PACKET axis is in acquisition order, not packet-time order. SRC_SEQ_CTR must advance
+    # along it by 1, or by a forward gap that reads as lost packets (a flight PDS legitimately
+    # carries EDOS SSC gaps). Anything larger means the axis is not in acquisition order.
+    order = summarize_packet_order(dataset[packet_time_coord].values, dataset["SRC_SEQ_CTR"].values)
+    assert order.n_order_violations == 0, (
+        f"SRC_SEQ_CTR shows {order.n_order_violations} step(s) too large to be lost packets for "
+        f"APID {int(apid)}; the PACKET axis is not in corroborated acquisition order"
+    )
+    assert order.n_repeated_counters == 0, (
+        f"SRC_SEQ_CTR repeats for APID {int(apid)}, so two rows claim the same packet"
+    )
 
     n_packets_in_ds = dataset.sizes["PACKET"]
 

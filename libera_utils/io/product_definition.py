@@ -685,8 +685,11 @@ class LiberaDataProductDefinition(BaseModel):
             warnings.filterwarnings(
                 "ignore", category=UserWarning, message=r"Discarding nonzero nanoseconds in conversion"
             )
-            utc_start = pd.Timestamp(dataset[time_variable].values[0]).to_pydatetime()
-            utc_end = pd.Timestamp(dataset[time_variable].values[-1]).to_pydatetime()
+            # min/max, not first/last: a packet-time axis is ordered by acquisition, not by
+            # time, so its endpoints are not its extremes.
+            times = dataset[time_variable].values
+            utc_start = pd.Timestamp(times.min()).to_pydatetime()
+            utc_end = pd.Timestamp(times.max()).to_pydatetime()
 
         return LiberaDataProductFilename.from_filename_parts(
             product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
