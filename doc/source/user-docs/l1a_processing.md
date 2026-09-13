@@ -575,7 +575,9 @@ per-event evidence, which is too large for a global attribute.
 
 `DuplicateValueMismatchCount` is the one to watch: it counts duplicate timestamps whose rows
 carried **different** data, so dropping one of each pair discarded a distinct measurement rather
-than redundancy. In DITL2 this is ~10,200 per affected RAD granule and zero on an unaffected
+than redundancy. It is a lower bound: value identity is only checkable on a dimension
+coordinate, so duplicates on the packet time coordinate (a non-dimension coordinate on `PACKET`)
+are counted in `DuplicatePacketTimeCount` but never value-checked. In DITL2 this is ~10,200 per affected RAD granule and zero on an unaffected
 one. Deduplication no longer raises on these in either ground or flight mode — identity, not the
 ground/flight distinction, is what makes a duplicate safe to drop, and raising does not recover
 the measurement. Pass `strict=True` to `_drop_duplicates` where a mismatch must block.
