@@ -180,10 +180,12 @@ def parse_packets_to_l1a_dataset(
         The APID (Application Process Identifier) value for the packet type. Used to select the appropriate
         configuration for generating the L1A Dataset structure.
     ground_data : bool, optional
-        If True, non-identical duplicate timestamps will produce a warning instead of a ValueError. This is useful for ground
-        test data where duplicate timestamps with differing data may be expected. Default is False.
+        Ground-test mode. Recorded on the log records this emits; it does not change what is
+        dropped or reported. Default is False.
     verbose : bool, optional
-        If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
+        If True, a warning is issued for each non-identical duplicate coordinate value and the
+        ordering check emits per-occurrence detail. Default is False, since a real granule can
+        carry ~10,000 duplicates.
     skip_header_bytes : int | None, optional
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
