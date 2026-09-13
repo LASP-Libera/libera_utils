@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.13.0
+
+- FIX: `evaluate_day_coverage` merges spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s, a new keyword and exported default) instead of requiring exact abutment, and `DEFAULT_BUFFER_COVERAGE_FRAC` drops from 1.0 to 0.99. A file's span is recorded over sample timestamps, `[t_first, t_last]`, while coverage is about time occupied, so every file under-reported by one sample period and N concatenated files lost N periods; RAD additionally leaves ~10 ms of FPE dead time between packets on ~26% of packets. With a two-hour chunk always straddling midnight, a seam always landed inside the right buffer, and a complete contiguous day could not pass the gate. The tolerance and the fraction do different jobs and both stay: after the tolerance, a `right_frac` below 1.0 means a real outage rather than a representation artifact.
+
 ## 5.12.0
 
 - FEAT: Add `libera_utils.l1a.day_window` helpers to trim L1A datasets to midnight ± buffer and assert unique monotonic data times.

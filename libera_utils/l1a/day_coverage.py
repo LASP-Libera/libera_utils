@@ -9,7 +9,18 @@ from libera_utils.l1a.day_window import DEFAULT_DAY_BUFFER
 
 # Default fractions of each interval that must be covered by the union of L0 spans.
 DEFAULT_DAY_COVERAGE_FRAC = 0.9
-DEFAULT_BUFFER_COVERAGE_FRAC = 1.0
+DEFAULT_BUFFER_COVERAGE_FRAC = 0.99
+
+# Spacing at or below this is treated as continuous rather than as a gap. It absorbs two
+# effects that are not missing data. First, a file's span is recorded over sample *timestamps*,
+# ``[t_first, t_last]``, while coverage is about time occupied: a sample occupies
+# ``[t_k, t_k + sample_period)``, so every file under-reports by one period and N concatenated
+# files lose N periods. Second, the RAD FPE leaves ~10 ms of dead time between packets on ~26%
+# of packets, which appears as a 15 ms step between the last sample of one packet and the first
+# of the next. One second is 40x the largest intra-file sample gap measured in DITL2 (25 ms) and
+# four orders of magnitude below the smallest real dropout the gate should catch (a missing
+# 2-hour chunk).
+DEFAULT_SEAM_TOLERANCE = timedelta(seconds=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,15 +62,18 @@ def _clip_interval(
     return None
 
 
-def _merge_intervals(intervals: list[tuple[datetime, datetime]]) -> list[tuple[datetime, datetime]]:
-    """Merge overlapping/adjacent half-open intervals."""
+def _merge_intervals(
+    intervals: list[tuple[datetime, datetime]],
+    tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
+) -> list[tuple[datetime, datetime]]:
+    """Merge overlapping/adjacent half-open intervals, joining across gaps up to ``tolerance``."""
     if not intervals:
         return []
     ordered = sorted(intervals, key=lambda iv: iv[0])
     merged: list[tuple[datetime, datetime]] = [ordered[0]]
     for start, end in ordered[1:]:
         last_start, last_end = merged[-1]
-        if start <= last_end:
+        if start <= last_end + tolerance:
             merged[-1] = (last_start, max(last_end, end))
         else:
             merged.append((start, end))
@@ -70,6 +84,7 @@ def _coverage_fraction(
     intervals: list[tuple[datetime, datetime]],
     window_start: datetime,
     window_end: datetime,
+    tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
 ) -> float:
     """Fraction of [window_start, window_end) covered by the union of intervals."""
     window_seconds = (window_end - window_start).total_seconds()
@@ -80,7 +95,7 @@ def _coverage_fraction(
         piece = _clip_interval(start, end, window_start, window_end)
         if piece is not None:
             clipped.append(piece)
-    covered = sum((end - start).total_seconds() for start, end in _merge_intervals(clipped))
+    covered = sum((end - start).total_seconds() for start, end in _merge_intervals(clipped, tolerance))
     return min(1.0, covered / window_seconds)
 
 
@@ -104,6 +119,7 @@ def evaluate_day_coverage(
     buffer: timedelta = DEFAULT_DAY_BUFFER,
     day_coverage_frac: float = DEFAULT_DAY_COVERAGE_FRAC,
     buffer_coverage_frac: float = DEFAULT_BUFFER_COVERAGE_FRAC,
+    seam_tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
     require_any_day_overlap: bool = False,
 ) -> DayCoverageResult:
     """Evaluate L0 time-span coverage against day core and midnight buffers.
@@ -121,6 +137,9 @@ def evaluate_day_coverage(
         Ignored when ``require_any_day_overlap`` is True.
     buffer_coverage_frac : float, optional
         Minimum fraction of each buffer interval that must be covered.
+    seam_tolerance : timedelta, optional
+        Spacing between two spans that still counts as continuous. Default
+        ``DEFAULT_SEAM_TOLERANCE`` (1 s). Pass ``timedelta(0)`` to require exact abutment.
     require_any_day_overlap : bool, optional
         If True (sparse products such as WFOV), day core passes when any overlap with
         ``[D, D+1)`` exists, instead of requiring ``day_coverage_frac``.
@@ -137,9 +156,9 @@ def evaluate_day_coverage(
     normalized = [(s, e) for s, e in normalized if s < e]
 
     left, core, right = day_core_and_buffer_bounds(day, buffer)
-    left_frac = _coverage_fraction(normalized, *left)
-    day_frac = _coverage_fraction(normalized, *core)
-    right_frac = _coverage_fraction(normalized, *right)
+    left_frac = _coverage_fraction(normalized, *left, tolerance=seam_tolerance)
+    day_frac = _coverage_fraction(normalized, *core, tolerance=seam_tolerance)
+    right_frac = _coverage_fraction(normalized, *right, tolerance=seam_tolerance)
 
     left_ok = left_frac >= buffer_coverage_frac
     right_ok = right_frac >= buffer_coverage_frac

@@ -212,7 +212,14 @@ The L1A Preprocessor evaluates File Metadata time spans with
 `libera_utils.l1a.day_coverage.evaluate_day_coverage` before decoding:
 
 - **Left buffer** `[D − B, D)`, **day core** `[D, D+1)`, **right buffer** `[D+1, D+1 + B)`.
-- Dense APIDs require configurable coverage fractions (defaults: day 0.9, buffers 1.0).
+- Dense APIDs require configurable coverage fractions (defaults: day 0.9, buffers 0.99).
+- Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge as continuous. A file's span is
+  recorded over sample timestamps, `[t_first, t_last]`, while coverage is about time occupied:
+  sample k occupies `[t_k, t_k + period)`, so every file under-reports by one period. RAD also
+  leaves ~10 ms of FPE dead time between packets on ~26% of packets. Neither is missing data.
+  The tolerance and the buffer fraction do different jobs — after the tolerance, a `right_frac`
+  below 1.0 means a real outage rather than a representation artifact, which is what makes the
+  logged number diagnosable.
 - Sparse WFOV uses “any overlap” for day core (still requires both buffers).
 - File count (e.g. nominal ~14 two-hour chunks) is **not** the gate — only time coverage.
 - Incomplete days skip combine without error; ops can force via `ManualL1APreprocessingEventDetail`.
