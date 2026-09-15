@@ -948,13 +948,16 @@ def _slant_range_batch(
     matrix = np.stack([to_satellite, -subsatellite_normal], axis=2)  # (K, 3, 2)
     ata = np.einsum("kij,kil->kjl", matrix, matrix)  # (K, 2, 2)
     atb = np.einsum("kij,ki->kj", matrix, toward_subsat)  # (K, 2)
-    solution = np.linalg.solve(ata, atb)  # (K, 2)
+    # RHS is given a trailing axis so ``solve`` treats it as a stack of column vectors on both
+    # numpy 1.x and 2.x: numpy 2.0 no longer infers a stacked column vector from ``b.ndim ==
+    # a.ndim - 1`` (it reads a 2-D ``b`` as a single (M, K) matrix), so pass (K, 2, 1) explicitly.
+    solution = np.linalg.solve(ata, atb[..., None])[..., 0]  # (K, 2)
     # One step of iterative refinement recovers the accuracy the normal equations lose
     # relative to the scalar path's SVD lstsq when A is ill-conditioned (near-nadir, where
     # the boresight is nearly parallel to the subsatellite vertical). Cheap and keeps the
     # batch path bit-parity with the scalar box to well below tile granularity.
     residual = atb - np.einsum("kjl,kl->kj", ata, solution)
-    solution = solution + np.linalg.solve(ata, residual)
+    solution = solution + np.linalg.solve(ata, residual[..., None])[..., 0]
     return solution[:, 0]
 
 
