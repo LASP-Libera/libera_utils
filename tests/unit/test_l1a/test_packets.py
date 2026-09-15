@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+from space_packet_parser.xtce.definitions import XtcePacketDefinition
 
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a import packets as libera_packets
@@ -20,37 +21,154 @@ from libera_utils.l1a.l1a_packet_configs import (
 )
 
 
-@mock.patch("libera_utils.l1a.packets.create_dataset")
-def test_parse_packets_to_dataset_with_single_apid(mock_create_dataset):
-    """Test parse_packets_to_dataset returns correct dataset for specified APID"""
-    # Create mock dataset for APID 1048
+def _packet_dataset(apid: int, seq_start: int, n: int = 2) -> xr.Dataset:
+    """One file's worth of parsed packets, shaped like what ``create_dataset`` returns."""
     mock_df = pd.DataFrame(
         {
-            "PKT_APID": [1048, 1048],
-            "SRC_SEQ_CTR": [100, 101],
-            "DATA_FIELD": [1.1, 2.2],
+            "PKT_APID": [apid] * n,
+            "SRC_SEQ_CTR": list(range(seq_start, seq_start + n)),
+            "DATA_FIELD": [float(seq_start + i) for i in range(n)],
         }
     )
     mock_df.index.name = "PACKET"
-    mock_dataset = mock_df.to_xarray()
+    return mock_df.to_xarray()
 
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_with_single_apid(mock_create_dataset, mock_load_xtce):
+    """Test parse_packets_to_dataset returns correct dataset for specified APID"""
+    mock_dataset = _packet_dataset(1048, 100)
     mock_create_dataset.return_value = {1048: mock_dataset}
 
     result = libera_packets.parse_packets_to_dataset(packet_files=["fake.bin"], packet_definition="fake.xml", apid=1048)
 
     assert isinstance(result, type(mock_dataset))
     assert len(result["PKT_APID"]) == 2
+    mock_load_xtce.assert_called_once_with("fake.xml")
 
 
+@mock.patch("libera_utils.l1a.packets.load_xtce")
 @mock.patch("libera_utils.l1a.packets.create_dataset")
-def test_parse_packets_to_dataset_apid_not_found(mock_create_dataset):
+def test_parse_packets_to_dataset_apid_not_found(mock_create_dataset, mock_load_xtce):
     """Test parse_packets_to_dataset raises ValueError when APID not in dataset"""
-    mock_df = pd.DataFrame({"PKT_APID": [1048]})
-    mock_df.index.name = "PACKET"
-    mock_create_dataset.return_value = {1048: mock_df.to_xarray()}
+    mock_create_dataset.return_value = {1048: _packet_dataset(1048, 100, n=1)}
 
     with pytest.raises(ValueError, match="Expected only APID 9999 in parsed dataset"):
         libera_packets.parse_packets_to_dataset(packet_files=["fake.bin"], packet_definition="fake.xml", apid=9999)
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_parses_one_file_at_a_time(mock_create_dataset, mock_load_xtce):
+    """Each file is parsed on its own and the results concatenated in the order given.
+
+    Handing every file to ``create_dataset`` at once is what exhausted an 8 GiB container
+    (LIBSDC-830), so the per-file call pattern is the behavior under test, not an incidental
+    detail.
+    """
+    mock_create_dataset.side_effect = [
+        {1048: _packet_dataset(1048, 100)},
+        {1048: _packet_dataset(1048, 200)},
+        {1048: _packet_dataset(1048, 300)},
+    ]
+
+    result = libera_packets.parse_packets_to_dataset(
+        packet_files=["a.bin", "b.bin", "c.bin"], packet_definition="fake.xml", apid=1048
+    )
+
+    assert mock_create_dataset.call_count == 3
+    for call in mock_create_dataset.call_args_list:
+        assert len(call.kwargs["packet_files"]) == 1
+    assert result.sizes["PACKET"] == 6
+    np.testing.assert_array_equal(result["SRC_SEQ_CTR"].values, [100, 101, 200, 201, 300, 301])
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_loads_definition_once(mock_create_dataset, mock_load_xtce):
+    """The XTCE is parsed once for the whole file list, not once per file."""
+    mock_create_dataset.side_effect = [{1048: _packet_dataset(1048, 100)} for _ in range(4)]
+
+    libera_packets.parse_packets_to_dataset(
+        packet_files=["a.bin", "b.bin", "c.bin", "d.bin"], packet_definition="fake.xml", apid=1048
+    )
+
+    mock_load_xtce.assert_called_once_with("fake.xml")
+    definitions_used = {id(call.kwargs["xtce_packet_definition"]) for call in mock_create_dataset.call_args_list}
+    assert definitions_used == {id(mock_load_xtce.return_value)}
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_accepts_loaded_definition(mock_create_dataset, mock_load_xtce):
+    """An already loaded definition is used as-is rather than re-parsed."""
+    loaded = mock.MagicMock(spec=XtcePacketDefinition)
+    mock_create_dataset.return_value = {1048: _packet_dataset(1048, 100)}
+
+    libera_packets.parse_packets_to_dataset(packet_files=["a.bin"], packet_definition=loaded, apid=1048)
+
+    mock_load_xtce.assert_not_called()
+    assert mock_create_dataset.call_args.kwargs["xtce_packet_definition"] is loaded
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_skips_file_without_apid(mock_create_dataset, mock_load_xtce):
+    """A file holding no packets of the APID is excluded, not fatal."""
+    mock_create_dataset.side_effect = [
+        {1048: _packet_dataset(1048, 100)},
+        {},
+        {1048: _packet_dataset(1048, 300)},
+    ]
+
+    result = libera_packets.parse_packets_to_dataset(
+        packet_files=["a.bin", "empty.bin", "c.bin"], packet_definition="fake.xml", apid=1048
+    )
+
+    assert result.sizes["PACKET"] == 4
+    np.testing.assert_array_equal(result["SRC_SEQ_CTR"].values, [100, 101, 300, 301])
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_raises_when_no_file_has_apid(mock_create_dataset, mock_load_xtce):
+    """Every file coming back empty is an error, not an empty dataset."""
+    mock_create_dataset.side_effect = [{}, {}]
+
+    with pytest.raises(ValueError, match="No APID 1048 packets found in any of the 2 file"):
+        libera_packets.parse_packets_to_dataset(
+            packet_files=["a.bin", "b.bin"], packet_definition="fake.xml", apid=1048
+        )
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_raises_on_mismatched_variables(mock_create_dataset, mock_load_xtce):
+    """Files carrying different variable sets raise rather than concatenating to NaN fill."""
+    second = _packet_dataset(1048, 200).drop_vars("DATA_FIELD")
+    mock_create_dataset.side_effect = [{1048: _packet_dataset(1048, 100)}, {1048: second}]
+
+    with pytest.raises(ValueError, match="do not match the other files"):
+        libera_packets.parse_packets_to_dataset(
+            packet_files=["a.bin", "b.bin"], packet_definition="fake.xml", apid=1048
+        )
+
+
+@mock.patch("libera_utils.l1a.packets.load_xtce")
+@mock.patch("libera_utils.l1a.packets.create_dataset")
+def test_parse_packets_to_dataset_names_offending_file_after_a_skip(mock_create_dataset, mock_load_xtce):
+    """The mismatch error names the file it came from even when an earlier file was skipped."""
+    mock_create_dataset.side_effect = [
+        {1048: _packet_dataset(1048, 100)},
+        {},
+        {1048: _packet_dataset(1048, 300).drop_vars("DATA_FIELD")},
+    ]
+
+    with pytest.raises(ValueError, match=r"Variables parsed from c\.bin"):
+        libera_packets.parse_packets_to_dataset(
+            packet_files=["a.bin", "empty.bin", "c.bin"], packet_definition="fake.xml", apid=1048
+        )
 
 
 def test_drop_duplicates_no_duplicates():
