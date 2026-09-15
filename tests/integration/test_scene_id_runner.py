@@ -14,7 +14,7 @@ import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
+from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.cam.scene_id_cam import (
@@ -26,6 +26,8 @@ from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import (
     create_and_write_data_product_cam_camtime,
 )
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
+
+pytestmark = pytest.mark.integration
 
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
@@ -83,14 +85,12 @@ class TestCollectInputFiles:
     _INPUT_DIR = "/dropbox/inputs"
 
     def _manifest(self, *filenames: str) -> Manifest:
-        # checksum is a required ManifestFileRecord field but irrelevant to collect_input_files, which selects
-        # purely by filename; a fixed placeholder keeps these selection cases readable.
-        manifest = Manifest(
+        # collect_input_files selects purely by filename, so records need no real files;
+        # a placeholder checksum satisfies the required field (cf. test_manifest.py validation cases).
+        return Manifest(
             manifest_type=ManifestType.INPUT,
-            files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}") for name in filenames],
+            files=[{"filename": f"{self._INPUT_DIR}/{name}", "checksum": "fakesum"} for name in filenames],
         )
-        manifest.validate()
-        return manifest
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
