@@ -85,10 +85,12 @@ class TestCollectInputFiles:
     def _manifest(self, *filenames: str) -> Manifest:
         # checksum is a required ManifestFileRecord field but irrelevant to collect_input_files, which selects
         # purely by filename; a fixed placeholder keeps these selection cases readable.
-        return Manifest(
+        manifest = Manifest(
             manifest_type=ManifestType.INPUT,
             files=[ManifestFileRecord(filename=f"{self._INPUT_DIR}/{name}") for name in filenames],
         )
+        manifest.validate()
+        return manifest
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
