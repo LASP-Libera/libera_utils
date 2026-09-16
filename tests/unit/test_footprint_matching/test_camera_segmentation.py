@@ -350,10 +350,10 @@ class TestCamtimeAssembly:
         # Conformance: dtypes/dims/attributes all satisfy the product definition.
         assert definition.check_dataset_conformance(dataset, strict=False) == []
 
-        # Real, segmentation-derived columns match the footprints on the 2-D (CAMERA_TIME, FOOTPRINT) grid. The
-        # single-image fixture yields one CAMERA_TIME row, so the footprints fill that row along FOOTPRINT.
-        assert dataset["latitude"].dims == ("CAMERA_TIME", "FOOTPRINT")
-        assert dataset.sizes["FOOTPRINT"] == len(footprints)
+        # Real, segmentation-derived columns match the footprints on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. The
+        # single-image fixture yields one CAMERA_TIME row, so the footprints fill that row along PSEUDOFOOTPRINT.
+        assert dataset["latitude"].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
+        assert dataset.sizes["PSEUDOFOOTPRINT"] == len(footprints)
         np.testing.assert_allclose(dataset["latitude"].values.ravel(), [f.latitude for f in footprints], rtol=1e-4)
         np.testing.assert_allclose(dataset["viewing_zenith_angle"].values, 8.0, rtol=1e-4)
         # No ancillary data was staged, so q_flags carries only the segmentation flags
