@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from operator import itemgetter
 from pathlib import Path
 from unittest.mock import patch
 
@@ -98,16 +99,16 @@ class TestManualIngestPut:
         for name in file_names:
             assert S3Path(f"s3://{dropbox_bucket}/{name}").exists()
 
-        # 2. A single NewFilesAvailable event was emitted with the exact source and detail-type values.
+        # 2. Every emitted NewFilesAvailable event carries the exact source and detail-type values.
         entries = captured["entries"]
-        assert len(entries) == 1
-        entry = entries[0]
-        assert entry["Source"] == "manual-processing"
-        assert entry["DetailType"] == "NewFilesAvailableEventDetail"
-        assert entry["EventBusName"] == make_sdc_event_bus
+        assert entries
+        for entry in entries:
+            assert entry["Source"] == "manual-processing"
+            assert entry["DetailType"] == "NewFilesAvailableEventDetail"
+            assert entry["EventBusName"] == make_sdc_event_bus
 
-        # 3. The event detail lists every staged file with correct type, uri, name, and size.
-        detail = json.loads(entry["Detail"])
+        # 3. Across all events, every staged file is described exactly once with correct type, uri, name, and size.
+        emitted_files = [file for entry in entries for file in json.loads(entry["Detail"])["files"]]
         expected_files = [
             {
                 "type": "data",
@@ -117,7 +118,60 @@ class TestManualIngestPut:
             }
             for name in file_names
         ]
-        assert detail["files"] == expected_files
+        assert sorted(emitted_files, key=itemgetter("name")) == sorted(expected_files, key=itemgetter("name"))
+
+    def test_large_batch_is_split_across_multiple_events(
+        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """A batch larger than one ingester invocation can handle is split across several events."""
+        file_names = [
+            f"LIBERA_SDC_1040_ccsds_2025_318_{hour:02d}_00_00"
+            for hour in range(2 * s3_utilities.MAX_FILES_PER_INGEST_EVENT + 1)
+        ]
+        paths = []
+        for name in file_names:
+            file_path = tmp_path / name
+            file_path.write_bytes(b"x")
+            paths.append(file_path)
+
+        session, captured = make_event_capturing_session()
+        s3_utilities.manual_ingest_data_products(paths, boto_session=session)
+
+        entries = captured["entries"]
+        assert len(entries) == 3
+
+        chunks = [json.loads(entry["Detail"])["files"] for entry in entries]
+        # No event describes more files than one Data Ingester invocation can archive in its timeout.
+        assert all(len(chunk) <= s3_utilities.MAX_FILES_PER_INGEST_EVENT for chunk in chunks)
+        # Every file is described exactly once across the events.
+        emitted_names = [file["name"] for chunk in chunks for file in chunk]
+        assert sorted(emitted_names) == sorted(file_names)
+
+    def test_l0_files_are_never_split_across_events(
+        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session
+    ):
+        """L0 files stay in one event so the ingester can order a CR ahead of the PDS files that read it."""
+        # One construction record (file number 00) and more PDS files than fit in a normal chunk.
+        l0_names = [
+            f"P1590011SOMESCIENCEAAA9903023145900{number}.PDS"
+            for number in range(s3_utilities.MAX_FILES_PER_INGEST_EVENT + 2)
+        ]
+        other_names = ["LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"]
+        paths = []
+        for name in l0_names + other_names:
+            file_path = tmp_path / name
+            file_path.write_bytes(b"x")
+            paths.append(file_path)
+
+        session, captured = make_event_capturing_session()
+        s3_utilities.manual_ingest_data_products(paths, boto_session=session)
+
+        chunks = [json.loads(entry["Detail"])["files"] for entry in captured["entries"]]
+        l0_chunks = [chunk for chunk in chunks if any(file["name"].endswith(".PDS") for file in chunk)]
+        assert len(l0_chunks) == 1, "L0 files must be described by exactly one event"
+        assert sorted(file["name"] for file in l0_chunks[0]) == sorted(l0_names)
+        # The L0 event holds only L0 files, so the non-L0 product went out separately.
+        assert len(chunks) == 2
 
     def test_invalid_filename_in_batch_raises_before_staging(
         self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session

@@ -45,6 +45,12 @@ NEW_FILES_AVAILABLE_EVENT_DETAIL_TYPE = "NewFilesAvailableEventDetail"
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 300.0  # 5 minutes
 VERIFY_POLL_INTERVAL_SECONDS = 10.0
 
+# Maximum number of files described by a single NewFilesAvailable event. The Data Ingester archives a
+# record's files serially inside one 10 minute Lambda invocation, at a measured 38-47 s per ground CCSDS
+# capture, so a full day of two-hour captures in one event exceeds the timeout. Five leaves better than
+# half the budget as headroom for larger files.
+MAX_FILES_PER_INGEST_EVENT = 5
+
 ManualIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
 
 
@@ -76,8 +82,8 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     """CLI handler function for the ``s3-utils put`` subcommand.
 
-    Stages one or more Libera data product files into the SDC Ingest Dropbox bucket and emits a single
-    ``NewFilesAvailable`` event to the SDC event bus. The SDC Data Ingester service then archives the files and
+    Stages one or more Libera data product files into the SDC Ingest Dropbox bucket and emits one or more
+    ``NewFilesAvailable`` events to the SDC event bus. The SDC Data Ingester service then archives the files and
     creates the associated file metadata and data availability records. This is the manual analog of the automated
     ingest that happens for files produced by SDC processing steps.
     """
@@ -104,8 +110,9 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
         logger.info("Verified full ingestion of %d file(s).", len(libera_filenames))
     else:
         logger.info(
-            "Staged %d file(s) to the Ingest Dropbox and emitted a NewFilesAvailable event. The SDC Data Ingester "
-            "should now be running; it may take a few minutes for the files to appear in their archive bucket.",
+            "Staged %d file(s) to the Ingest Dropbox and emitted the NewFilesAvailable event(s). The SDC Data "
+            "Ingester should now be running; it may take a few minutes for the files to appear in their archive "
+            "bucket.",
             len(local_file_paths),
         )
 
@@ -115,10 +122,14 @@ def manual_ingest_data_products(
     *,
     boto_session: boto3.Session,
 ) -> list[ManualIngestFilename]:
-    """Stage data product files to the Ingest Dropbox and emit a single NewFilesAvailable event.
+    """Stage data product files to the Ingest Dropbox and emit NewFilesAvailable events for them.
 
     The SDC Data Ingester picks up the staged files and handles archiving them in the correct bucket as well as
     creating file metadata and data availability records.
+
+    Files are staged in full before any event is emitted, then described across as many events as
+    ``_chunk_files_for_ingest_events`` requires: the ingester handles one event per Lambda invocation and
+    archives that event's files serially against a 10 minute timeout.
 
     Parameters
     ----------
@@ -140,7 +151,7 @@ def manual_ingest_data_products(
     dropbox_bucket_name = find_bucket_in_account_by_partial_name(boto_session, INGEST_DROPBOX_BUCKET_PARTIAL_NAME)
     s3_client = boto_session.client("s3")
 
-    # Stage all files first. Only if every upload succeeds do we emit the single NewFilesAvailable event.
+    # Stage all files first. Only if every upload succeeds do we emit any NewFilesAvailable events.
     files = []
     for path, libera_filename in zip(paths_to_files, libera_filenames, strict=True):
         file_name = libera_filename.path.name
@@ -156,8 +167,45 @@ def manual_ingest_data_products(
             }
         )
 
-    put_new_files_available_event(files, boto_session=boto_session)
+    for chunk in _chunk_files_for_ingest_events(files, libera_filenames):
+        put_new_files_available_event(chunk, boto_session=boto_session)
     return libera_filenames
+
+
+def _chunk_files_for_ingest_events(
+    files: list[dict],
+    libera_filenames: list[ManualIngestFilename],
+) -> list[list[dict]]:
+    """Split file descriptors into per-event groups small enough for one Data Ingester invocation.
+
+    Chunks hold at most ``MAX_FILES_PER_INGEST_EVENT`` entries, except that all L0 files are kept
+    together in one chunk regardless of count: the ingester orders a construction record ahead of the
+    PDS files that read it back from the archive, and that ordering holds only within a single event.
+    Splitting an L0 data set across events would let concurrent invocations archive a PDS file before
+    its CR.
+
+    Parameters
+    ----------
+    files : list of dict
+        File descriptors in the same order as ``libera_filenames``.
+    libera_filenames : list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+        The parsed filenames corresponding to ``files``.
+
+    Returns
+    -------
+    list of list of dict
+        Chunks of file descriptors, one per NewFilesAvailable event. Every input descriptor appears in
+        exactly one chunk.
+    """
+    l0_files = [f for f, name in zip(files, libera_filenames, strict=True) if isinstance(name, L0Filename)]
+    other_files = [f for f, name in zip(files, libera_filenames, strict=True) if not isinstance(name, L0Filename)]
+
+    chunks = [
+        other_files[i : i + MAX_FILES_PER_INGEST_EVENT] for i in range(0, len(other_files), MAX_FILES_PER_INGEST_EVENT)
+    ]
+    if l0_files:
+        chunks.append(l0_files)
+    return chunks
 
 
 def put_new_files_available_event(files: list[dict], *, boto_session: boto3.Session) -> None:
