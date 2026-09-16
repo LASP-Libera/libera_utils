@@ -23,6 +23,42 @@ def print_version_info(*args):
     )
 
 
+def scene_id_cam_cli_handler(parsed_args: argparse.Namespace):
+    """Run the SCENE-ID-CAM (radiometer-timescale) algorithm from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+    """
+    from libera_utils.scene_identification.cam.scene_id_cam import algorithm
+
+    return algorithm(parsed_args)
+
+
+def scene_id_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
+    """Run the SCENE-ID-CAM-CAMTIME (camera-timescale) algorithm from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+    """
+    from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import algorithm
+
+    return algorithm(parsed_args)
+
+
 # pylint: disable=too-many-statements
 def parse_cli_args(cli_args: list):
     """Parse CLI arguments
@@ -67,6 +103,24 @@ def parse_cli_args(cli_args: list):
     azel_kernel_parser.set_defaults(func=kernel_maker.azel_kernel_cli_handler)
     azel_kernel_parser.add_argument("input_manifest", type=str, help="path to input manifest file")
     azel_kernel_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
+
+    # ========
+    # Scene ID
+    # ========
+    scene_id_parser = subparsers.add_parser("scene-id", help="run a Libera SCENE-ID algorithm from a manifest file")
+    scene_id_subparsers = scene_id_parser.add_subparsers(description="sub-commands for scene-id sub-command")
+
+    scene_id_cam_parser = scene_id_subparsers.add_parser(
+        "cam", help="run the SCENE-ID-CAM algorithm (radiometer timescale) from a manifest file"
+    )
+    scene_id_cam_parser.set_defaults(func=scene_id_cam_cli_handler)
+    scene_id_cam_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+
+    scene_id_cam_camtime_parser = scene_id_subparsers.add_parser(
+        "cam-camtime", help="run the SCENE-ID-CAM-CAMTIME algorithm (camera timescale) from a manifest file"
+    )
+    scene_id_cam_camtime_parser.set_defaults(func=scene_id_cam_camtime_cli_handler)
+    scene_id_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
     # AWS CLI TOOLS
