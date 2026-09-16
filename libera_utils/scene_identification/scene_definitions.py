@@ -320,7 +320,7 @@ class SceneDefinition:
         self._validate_footprint_data_columns_present(data)
 
         # Derive the mask shape from a classification variable, not data.sizes, so it matches the classification
-        # variables' own shape (1-D footprint axis for radiometer-timescale, 2-D (CAMERA_TIME, FOOTPRINT) for
+        # variables' own shape (1-D footprint axis for radiometer-timescale, 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) for
         # camera-timescale) and unrelated passthrough variables don't distort it.
         reference_variable = data[self.classification_variables[0]]
         dims = list(reference_variable.dims)

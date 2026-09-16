@@ -753,8 +753,8 @@ class TestAddPlaceholderQualityFlag:
         assert not np.any(flagged["Quality_Flag"].values)
 
     def test_two_dimensional_grid(self):
-        """A (CAMERA_TIME, FOOTPRINT) grid yields a 2-D all-zero uint32 flag of the same shape."""
-        grid_dims = ("CAMERA_TIME", "FOOTPRINT")
+        """A (CAMERA_TIME, PSEUDOFOOTPRINT) grid yields a 2-D all-zero uint32 flag of the same shape."""
+        grid_dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         product = xr.Dataset({"cloud_fraction": (grid_dims, np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32))})
 
         flagged = add_placeholder_quality_flag(product, dimensions=grid_dims)

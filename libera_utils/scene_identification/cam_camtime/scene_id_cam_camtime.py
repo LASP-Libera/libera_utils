@@ -1,9 +1,9 @@
 """Scene ID CAM-CAMTIME processing code for the Libera radiometer.
 
 This is the *camera*-timescale runner: it reads ``FMATCH-CAM-CAMTIME`` and writes ``SCENE-ID-CAM-CAMTIME``. The
-product is defined on a 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid: each value is identified by the combination of the time
+product is defined on a 2-D ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid: each value is identified by the combination of the time
 its image was taken (``CAMERA_TIME``, one unique entry per 2048x2048 image) and which spatial subsection of that image
-it is (``FOOTPRINT``, one entry per pseudo-footprint; subsections may overlap and do not tile the image). The
+it is (``PSEUDOFOOTPRINT``, one entry per pseudo-footprint; subsections may overlap and do not tile the image). The
 distinctive behavior of this product is that it additionally carries the FMATCH footprint *identifier* variables (the
 inclusive camera pixel-block bounds, PSF bounding box, and boresight geolocation) straight through from the input, so a
 classified scene can be traced back to the exact camera pixels and ground footprint it came from. That passthrough is
