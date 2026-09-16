@@ -298,7 +298,8 @@ def make_event_capturing_session(mock_s3_context_with_profile):
 
     This is useful for asserting on EventBridge events without relying on moto delivering them to a target. The
     returned factory hands back a ``(session, captured)`` tuple; after the code under test calls ``put_events``, the
-    ``captured`` dict will contain the ``entries`` that were passed.
+    ``captured`` dict will contain the ``entries`` that were passed. Entries accumulate across calls, so a caller
+    that splits its files over several events is captured in full; the key is absent if ``put_events`` never ran.
     """
 
     def _make_event_capturing_session(profile_name: str = "test-profile"):
@@ -312,7 +313,7 @@ def make_event_capturing_session(mock_s3_context_with_profile):
                 original_put_events = client.put_events
 
                 def put_events_spy(**put_kwargs):
-                    captured["entries"] = put_kwargs["Entries"]
+                    captured.setdefault("entries", []).extend(put_kwargs["Entries"])
                     return original_put_events(**put_kwargs)
 
                 client.put_events = put_events_spy
