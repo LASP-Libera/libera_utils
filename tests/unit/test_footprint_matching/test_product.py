@@ -187,7 +187,7 @@ class TestFmatchDefinitions:
         assert time_var in definition.coordinates
         assert definition.coordinates[time_var].dtype == "datetime64[ns]"
         # Both timescales use a 1-D dimension coordinate (name == dimension): RADIOMETER_TIME for the radiometer
-        # products, CAMERA_TIME for the camera-timescale products' 2-D (CAMERA_TIME, FOOTPRINT) grid.
+        # products, CAMERA_TIME for the camera-timescale products' 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
         assert definition.coordinates[time_var].dimensions == [time_var]
 
     @pytest.mark.parametrize("mode", ALL_MODES)
@@ -226,9 +226,9 @@ class TestFmatchDefinitions:
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_all_variables_use_mode_record_dimension(self, mode, definitions):
         # Radiometer modes hang variables on the 1-D RADIOMETER_TIME axis; camera-timescale modes hang every variable
-        # on the 2-D (CAMERA_TIME, FOOTPRINT) grid.
+        # on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
         time_var = fmatch_time_variable(mode)
-        expected_dims = ["CAMERA_TIME", "FOOTPRINT"] if time_var == "CAMERA_TIME" else [time_var]
+        expected_dims = ["CAMERA_TIME", "PSEUDOFOOTPRINT"] if time_var == "CAMERA_TIME" else [time_var]
         for name, var_def in definitions[mode].variables.items():
             assert var_def.dimensions == expected_dims, f"{mode.value}/{name} wrong dimension"
 
@@ -342,9 +342,9 @@ class TestFmatchConformance:
             dtype="datetime64[ns]",
         )
         # Sizes for every dimension a coordinate/variable may reference: the radiometer record axis (RADIOMETER_TIME)
-        # and the camera-timescale grid axes (CAMERA_TIME, FOOTPRINT). CAMERA_TIME must match the length of the times
+        # and the camera-timescale grid axes (CAMERA_TIME, PSEUDOFOOTPRINT). CAMERA_TIME must match the length of the times
         # array below (it is the 1-D camera-timescale dimension coordinate).
-        dimension_sizes = {"RADIOMETER_TIME": n_footprints, "CAMERA_TIME": n_footprints, "FOOTPRINT": n_footprints}
+        dimension_sizes = {"RADIOMETER_TIME": n_footprints, "CAMERA_TIME": n_footprints, "PSEUDOFOOTPRINT": n_footprints}
 
         def _zeros(var_def):
             return np.zeros(tuple(dimension_sizes[d] for d in var_def.dimensions), dtype=var_def.dtype)
@@ -478,7 +478,7 @@ class TestCamtimeAssembly:
         cam = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, footprints)
         imager = assemble_fmatch_dataset(OperationalMode.IMAGER_CAMTIME, footprints)
 
-        assert cam.sizes["FOOTPRINT"] == imager.sizes["FOOTPRINT"] == len(footprints)
+        assert cam.sizes["PSEUDOFOOTPRINT"] == imager.sizes["PSEUDOFOOTPRINT"] == len(footprints)
         # Every segmentation-derived column is declared by BOTH camtime products, so all come out
         # identical: same footprints, same code path.
         for name in _CAMTIME_SEGMENTATION_VARIABLES:
@@ -492,7 +492,7 @@ class TestCamtimeAssembly:
         """Both camera-timescale products carry the pixel-block provenance, filled with real segmentation values.
 
         The block's inclusive pixel extent is carried as the four camera_pixel_{x,y}_{min,max} COORDINATES on the 2-D
-        (CAMERA_TIME, FOOTPRINT) grid; the boresight pixel is carried as the center_pixel_x/y variables. The four
+        (CAMERA_TIME, PSEUDOFOOTPRINT) grid; the boresight pixel is carried as the center_pixel_x/y variables. The four
         retired *_start/_stop variables must be gone. All are computed by segmentation for every camera-timescale
         mode, so both products carry them as real values rather than placeholders.
         """
@@ -501,7 +501,7 @@ class TestCamtimeAssembly:
         dataset = assemble_fmatch_dataset(mode, footprints)
 
         # camera_pixel_{x,y}_{min,max} are four inclusive-bound COORDINATES on the 2-D grid. The single-image fixture
-        # yields one CAMERA_TIME row, so the footprints fill that row along FOOTPRINT (values raveled to compare).
+        # yields one CAMERA_TIME row, so the footprints fill that row along PSEUDOFOOTPRINT (values raveled to compare).
         expected_bounds = {
             "camera_pixel_x_min": [f.slice_x.start for f in footprints],
             "camera_pixel_x_max": [f.slice_x.stop - 1 for f in footprints],
@@ -511,7 +511,7 @@ class TestCamtimeAssembly:
         for name, values in expected_bounds.items():
             assert name in definition.coordinates, name
             assert name in dataset.coords, name
-            assert dataset[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+            assert dataset[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
             np.testing.assert_array_equal(dataset[name].values.ravel(), values)
 
         # The boresight (center) pixel stays as FMATCH-only data variables (not carried downstream to SCENE-ID).
@@ -528,23 +528,23 @@ class TestCamtimeAssembly:
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME])
     def test_footprint_is_a_zero_based_coordinate(self, mode, definitions):
-        """FOOTPRINT is a declared int32 coordinate: a 0-based index over the subsection axis, generated at write
+        """PSEUDOFOOTPRINT is a declared int32 coordinate: a 0-based index over the subsection axis, generated at write
         time. Matches SCENE-ID-CAM-CAMTIME so the shared axis is identical across producer and consumer.
         """
         definition = definitions[mode]
         dataset = assemble_fmatch_dataset(mode, _pseudo_footprints())
 
-        assert "FOOTPRINT" in definition.coordinates
-        assert "FOOTPRINT" in dataset.coords
-        assert dataset["FOOTPRINT"].dims == ("FOOTPRINT",)
-        assert dataset["FOOTPRINT"].dtype == np.int32
-        assert list(dataset["FOOTPRINT"].values) == list(range(dataset.sizes["FOOTPRINT"]))
+        assert "PSEUDOFOOTPRINT" in definition.coordinates
+        assert "PSEUDOFOOTPRINT" in dataset.coords
+        assert dataset["PSEUDOFOOTPRINT"].dims == ("PSEUDOFOOTPRINT",)
+        assert dataset["PSEUDOFOOTPRINT"].dtype == np.int32
+        assert list(dataset["PSEUDOFOOTPRINT"].values) == list(range(dataset.sizes["PSEUDOFOOTPRINT"]))
 
     def test_ragged_images_pad_short_rows_on_the_grid(self):
-        """Images with fewer subsections than the widest image pad along FOOTPRINT with fill values.
+        """Images with fewer subsections than the widest image pad along PSEUDOFOOTPRINT with fill values.
 
         Real segmentation yields a variable number of subsections per image, but the product is a rectangular
-        (CAMERA_TIME, FOOTPRINT) grid. A shorter image's trailing FOOTPRINT cells must be padded: float variables
+        (CAMERA_TIME, PSEUDOFOOTPRINT) grid. A shorter image's trailing PSEUDOFOOTPRINT cells must be padded: float variables
         take NaN and the integer pixel-bound coordinates take their 0 fill.
         """
         from libera_utils.footprint_matching.camera_segmentation import CameraFootprintQualityFlag, PseudoFootprint
@@ -573,7 +573,7 @@ class TestCamtimeAssembly:
         dataset = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, footprints)
 
         assert dataset.sizes["CAMERA_TIME"] == 2
-        assert dataset.sizes["FOOTPRINT"] == 2
+        assert dataset.sizes["PSEUDOFOOTPRINT"] == 2
         # Real cells carry the segmentation latitude; only the single padded cell is NaN.
         latitude = dataset["latitude"].values
         assert not np.isnan(latitude[[0, 0, 1], [0, 1, 0]]).any()
