@@ -169,12 +169,16 @@ def elevation_frame() -> tuple[pd.DataFrame, list[datetime]]:
     return frame, [timetags[0].to_pydatetime(), timetags[-1].to_pydatetime()]
 
 
-def _write_kernel(frame: pd.DataFrame, utc_range: list[datetime], identifier: str, output_dir: Path) -> Path:
+def write_kernel(frame: pd.DataFrame, utc_range: list[datetime], identifier: str, output_dir: Path) -> Path:
     """Drive the production ``create_kernel_from_l1a`` path for one kernel type.
 
     Only the L1A read is stubbed -- the CSV-derived frame stands in for what an L1A granule
     would yield. Everything downstream of that (encoder correction, mechanism quaternions,
     filenaming, the curryer ``make_kernel`` call) runs unmodified.
+
+    Public, like the frame builders above, so the drift guard in
+    ``tests/e2e/test_fixture_regeneration.py`` can regenerate into a temporary directory and
+    compare against the committed fixture.
     """
     from libera_utils import kernel_maker
 
@@ -222,7 +226,7 @@ def main() -> None:
 
     for identifier, builder in builders.items():
         frame, utc_range = builder()
-        written = _write_kernel(frame, utc_range, identifier, args.output_dir)
+        written = write_kernel(frame, utc_range, identifier, args.output_dir)
         size_mb = Path(str(written)).stat().st_size / 1e6
         print(f"{identifier:>10s}  {len(frame):>7d} samples  {size_mb:7.2f} MB  {Path(str(written)).name}")
 

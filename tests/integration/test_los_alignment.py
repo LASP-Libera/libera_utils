@@ -25,17 +25,9 @@ from libera_utils import kernel_maker
 from libera_utils.config import config
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
+from tests.helpers import rotation
 
 pytestmark = pytest.mark.integration
-
-
-def _rotation(axis, angle):
-    """Rotation matrix for ``angle`` radians about unit ``axis`` (Rodrigues)."""
-    axis = np.asarray(axis, dtype=float)
-    axis = axis / np.linalg.norm(axis)
-    cos, sin = np.cos(angle), np.sin(angle)
-    skew = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
-    return np.eye(3) * cos + np.outer(axis, axis) * (1 - cos) + skew * sin
 
 
 def _angle_between(a, b):
@@ -85,7 +77,7 @@ def test_los_alignment_vs_engineering(curryer_lsk, short_tmp_path, spice_test_da
         spice_los = np.array([sp.pxform("LIBERA_RAD_COORD", "LIBERA_BASE_COORD", e) @ boresight for e in et])
         # Independent recompute of the engineering rotateVectorAboutAxis process from the same measured vectors.
         rodrigues_los = np.array(
-            [_rotation(az_axis, az) @ _rotation(el_axis, el) @ el0_z for az, el in zip(corrected_az, corrected_el)]
+            [rotation(az_axis, az) @ rotation(el_axis, el) @ el0_z for az, el in zip(corrected_az, corrected_el)]
         )
 
     # The misalignment is a real, non-trivial effect: the engineering LOS is well off the nominal +Z boresight.

@@ -13,6 +13,11 @@ on:
 jobs:
   run-tests:
     uses: ./.github/workflows/_run-tests.yml
+    with:
+      # The same lane the PR ran. The e2e tests check our integration with the live NAIF server,
+      # which is not a property of the tag being released, and an outage there must not block a
+      # release. The daily build covers them.
+      lane: pr
 
   # Call the reusable build workflow to build PyPI artifacts
   build:
