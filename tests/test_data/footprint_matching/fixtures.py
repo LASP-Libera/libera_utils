@@ -1012,17 +1012,17 @@ def make_fmatch_product_fixture(
 
     data: dict[str, np.ndarray] = {time_variable: times}
 
-    # The camera-timescale products (CAM-CAMTIME, IMAGER-CAMTIME) are defined on a 2-D (CAMERA_TIME, FOOTPRINT) grid:
+    # The camera-timescale products (CAM-CAMTIME, IMAGER-CAMTIME) are defined on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid:
     # one unique CAMERA_TIME per image (n_footprints of them), each image segmented into a small fixed number of
-    # subsections along FOOTPRINT. The radiometer products are 1-D on RADIOMETER_TIME. Every non-time coordinate and
+    # subsections along PSEUDOFOOTPRINT. The radiometer products are 1-D on RADIOMETER_TIME. Every non-time coordinate and
     # variable is sized from these dimensions; the camtime camera_pixel_{x,y}_{min,max} provenance coordinates and all
-    # record variables hang on (CAMERA_TIME, FOOTPRINT).
+    # record variables hang on (CAMERA_TIME, PSEUDOFOOTPRINT).
     is_camera_timescale = mode in (OperationalMode.CAM_CAMTIME, OperationalMode.IMAGER_CAMTIME)
     n_footprints_per_image = 2 if is_camera_timescale else n_footprints
     dimension_sizes = {
         "RADIOMETER_TIME": n_footprints,
         "CAMERA_TIME": n_footprints,
-        "FOOTPRINT": n_footprints_per_image,
+        "PSEUDOFOOTPRINT": n_footprints_per_image,
     }
     for name, coord_def in definition.coordinates.items():
         if name == time_variable:
