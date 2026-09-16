@@ -108,7 +108,7 @@ Brief observation about failure patterns or likely root cause
   - SPICE kernel utilities: `tests/unit/test_libera_spice/` (test_spice_utils.py, test_kernel_manager.py)
   - Top-level: test_config.py, test_time.py, test_quality_flags.py, test_cli.py, test_logutil.py, test_kernel_maker.py, test_constants.py, test_scene_definitions.py, test_scene_id.py
 - **Integration tests**: `tests/integration/`
-  - test_tier0_geolocation.py, test_tier0_kernel.py, test_kernel_maker.py, test_kernel_manager.py, test_tier1_geolocation.py, test_l1a_processing.py, test_scene_id.py
+  - test_geolocation.py, test_geolocation_vs_ceres.py, test_ground_ccsds.py, test_kernel_generation.py, test_kernel_manager.py, test_l1a_processing.py, test_los_alignment.py, test_nom_hk_trim.py, test_scene_id.py
 
 ### Fixtures and Plugins
 
