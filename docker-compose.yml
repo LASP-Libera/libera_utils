@@ -6,6 +6,20 @@ services:
       context: .
       target: libera-utils
 
+  scene-id-cam:
+    platform: linux/amd64
+    image: libera-utils-scene-id-cam:latest
+    build:
+      context: .
+      target: libera-utils-scene-id-cam
+
+  scene-id-cam-camtime:
+    platform: linux/amd64
+    image: libera-utils-scene-id-cam-camtime:latest
+    build:
+      context: .
+      target: libera-utils-scene-id-cam-camtime
+
   # Tests against the default version of python in the Dockerfile
   tests:
     platform: linux/amd64

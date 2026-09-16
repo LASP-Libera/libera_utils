@@ -53,6 +53,34 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
     ("cli_args", "parsed"),
     [
         (
+            ["scene-id", "cam", "file.manifest"],
+            argparse.Namespace(
+                func=cli.scene_id_cam_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+        (
+            ["scene-id", "cam-camtime", "file.manifest"],
+            argparse.Namespace(
+                func=cli.scene_id_cam_camtime_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+    ],
+)
+def test_scene_id_parse_cli_args(cli_args, parsed):
+    """
+    Test that scene-id cli args are parsed properly
+    """
+    print(f"CLI ARGS \n{cli_args}\n")
+    print(f"Parsed args: {parsed} \n")
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
             ["step-function-trigger", "l1b-rad", "2030-01-01"],
             argparse.Namespace(
                 func=mp.step_function_trigger_cli_handler,
@@ -378,3 +406,28 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
 def test_wrong_libera_ids(cli_args):
     with pytest.raises(SystemExit):
         cli.parse_cli_args(cli_args)
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "runner_module"),
+    [
+        (["scene-id", "cam", "file.manifest"], "libera_utils.scene_identification.cam.scene_id_cam"),
+        (
+            ["scene-id", "cam-camtime", "file.manifest"],
+            "libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime",
+        ),
+    ],
+)
+def test_scene_id_cli_dispatch(cli_args, runner_module, monkeypatch):
+    """The scene-id subcommands dispatch to the matching runner's ``algorithm`` with the parsed args."""
+    import importlib
+
+    module = importlib.import_module(runner_module)
+    called_with = {}
+    monkeypatch.setattr(module, "algorithm", lambda parsed_args: called_with.setdefault("args", parsed_args))
+
+    args = cli.parse_cli_args(cli_args)
+    args.func(args)
+
+    assert called_with["args"] is args
+    assert called_with["args"].manifest == "file.manifest"

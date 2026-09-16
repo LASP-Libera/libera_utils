@@ -98,3 +98,17 @@ ENTRYPOINT ["libera-utils", "make-kernel", "jpss"]
 FROM libera-utils AS libera-utils-make-kernel-azel
 
 ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
+
+
+# CLI for the SCENE-ID-CAM algorithm (radiometer timescale) from a manifest file.
+# -------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-scene-id-cam
+
+ENTRYPOINT ["libera-utils", "scene-id", "cam"]
+
+
+# CLI for the SCENE-ID-CAM-CAMTIME algorithm (camera timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-scene-id-cam-camtime
+
+ENTRYPOINT ["libera-utils", "scene-id", "cam-camtime"]
