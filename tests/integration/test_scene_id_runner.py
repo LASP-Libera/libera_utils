@@ -146,18 +146,18 @@ class TestFmatchReaders:
 
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
-    """Build a small CAM-CAMTIME FootprintData on the 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid.
+    """Build a small CAM-CAMTIME FootprintData on the 2-D ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid.
 
     Mirrors the raw inputs the (unimplemented) FMATCH-CAM-CAMTIME reader will supply: the scene-property inputs the
     pipeline derives ``surface_type``/``cloud_fraction`` from, the viewing angles, the boresight geolocation + PSF
     bbox passthroughs, and the four inclusive ``camera_pixel_{x,y}_{min,max}`` pixel-block bounds.
 
-    The grid is two images (two distinct ``CAMERA_TIME`` values) each segmented into two subsections (``FOOTPRINT``
+    The grid is two images (two distinct ``CAMERA_TIME`` values) each segmented into two subsections (``PSEUDOFOOTPRINT``
     of size 2). The pixel blocks deliberately OVERLAP within an image (e.g. x = 0..2000 and 1000..2047) -- exactly
     the model the grid exists to represent. ``CAMERA_TIME`` is unique and sorted.
     """
-    grid_dims = ("CAMERA_TIME", "FOOTPRINT")
-    # Two images (unique, sorted CAMERA_TIME), each segmented into two subsections along FOOTPRINT.
+    grid_dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
+    # Two images (unique, sorted CAMERA_TIME), each segmented into two subsections along PSEUDOFOOTPRINT.
     camera_time = np.array(["2028-02-12T00:00:00", "2028-02-12T00:00:01"], dtype="datetime64[ns]")
     latitude = np.array([[10.0, -20.0], [45.0, -60.0]], dtype=np.float32)
     longitude = np.array([[100.0, -50.0], [170.0, -179.0]], dtype=np.float32)
@@ -188,10 +188,10 @@ def _synthetic_camtime_footprint_data() -> FootprintData:
 
 
 class TestSceneIdCamCamtimeWrite:
-    """The CAM-CAMTIME runner must write a conformant product on the 2-D (CAMERA_TIME, FOOTPRINT) grid."""
+    """The CAM-CAMTIME runner must write a conformant product on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
 
     def test_write_data_product_is_conformant_with_camera_pixel_bounds(self, tmp_path):
-        """A full classify + strict write succeeds; data lands on the (CAMERA_TIME, FOOTPRINT) grid."""
+        """A full classify + strict write succeeds; data lands on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
         footprint_data = _synthetic_camtime_footprint_data()
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
 
@@ -202,19 +202,19 @@ class TestSceneIdCamCamtimeWrite:
         reopened = xr.open_dataset(output_file.path)
         # Data lives on the 2-D grid; CAMERA_TIME is a unique, sorted 1-D dimension coordinate.
         assert "CAMERA_TIME" in reopened.sizes
-        assert "FOOTPRINT" in reopened.sizes
+        assert "PSEUDOFOOTPRINT" in reopened.sizes
         assert reopened["CAMERA_TIME"].dims == ("CAMERA_TIME",)
         assert not bool(reopened["CAMERA_TIME"].to_series().duplicated().any())
-        # FOOTPRINT is a coordinate: a 0-based int32 index generated over the FOOTPRINT dimension.
-        assert "FOOTPRINT" in reopened.coords
-        assert reopened["FOOTPRINT"].dims == ("FOOTPRINT",)
-        assert reopened["FOOTPRINT"].dtype == np.int32
-        assert list(reopened["FOOTPRINT"].values) == list(range(reopened.sizes["FOOTPRINT"]))
+        # PSEUDOFOOTPRINT is a coordinate: a 0-based int32 index generated over the PSEUDOFOOTPRINT dimension.
+        assert "PSEUDOFOOTPRINT" in reopened.coords
+        assert reopened["PSEUDOFOOTPRINT"].dims == ("PSEUDOFOOTPRINT",)
+        assert reopened["PSEUDOFOOTPRINT"].dtype == np.int32
+        assert list(reopened["PSEUDOFOOTPRINT"].values) == list(range(reopened.sizes["PSEUDOFOOTPRINT"]))
         for name in ("cloud_fraction", "scene_id_erbe", "Quality_Flag"):
-            assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+            assert reopened[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
             assert name in reopened.variables
-            assert reopened[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+            assert reopened[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
             assert reopened[name].dtype == np.int32
         # Inclusive (min, max): the max endpoint is never below the min, elementwise across the grid.
         assert bool(np.all(reopened["camera_pixel_x_max"].values >= reopened["camera_pixel_x_min"].values))

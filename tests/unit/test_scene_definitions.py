@@ -367,10 +367,10 @@ class TestPropertyBins:
 
 
 class TestIdentifyAndUpdateGrid:
-    """identify_and_update classifies elementwise over the (CAMERA_TIME, FOOTPRINT) grid of camtime products."""
+    """identify_and_update classifies elementwise over the (CAMERA_TIME, PSEUDOFOOTPRINT) grid of camtime products."""
 
     def test_two_dimensional_grid_classification(self, tmp_path):
-        """A 2-D (CAMERA_TIME, FOOTPRINT) classification variable yields 2-D scene IDs of the same shape.
+        """A 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) classification variable yields 2-D scene IDs of the same shape.
 
         The camtime product is defined on a 2-D grid, so the scene-id mask must match the classification variables'
         own shape (derived from a reference classification variable rather than from all dataset dims), and the
@@ -381,7 +381,7 @@ class TestIdentifyAndUpdateGrid:
         csv_file.write_text(csv_content)
         scene_definition = SceneDefinition(csv_file)
 
-        grid_dims = ("CAMERA_TIME", "FOOTPRINT")
+        grid_dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
         data = xr.Dataset(
             {
                 "cloud_fraction": (grid_dims, np.array([[10.0, 60.0], [90.0, 40.0]], dtype=np.float32)),
@@ -393,7 +393,7 @@ class TestIdentifyAndUpdateGrid:
         updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
 
         scene_ids = updated["scene_id_single"]
-        # Scene IDs stay 2-D on the (CAMERA_TIME, FOOTPRINT) grid, one per subsection.
+        # Scene IDs stay 2-D on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid, one per subsection.
         assert scene_ids.dims == grid_dims
         np.testing.assert_array_equal(scene_ids.values, np.array([[1, 2], [2, 1]], dtype=np.uint8))
         # The passthrough variable is carried through untouched.
