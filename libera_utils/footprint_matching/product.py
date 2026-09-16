@@ -865,12 +865,12 @@ def _merge_computed_variables(
         PSF weigher for the aggregation (defaults to the radial stand-in downstream).
     to_grid : callable, optional
         Scatter ``(values, dtype, fill_value) -> ndarray`` mapping a flat per-footprint column onto the 2-D
-        ``(CAMERA_TIME, FOOTPRINT)`` grid, supplied by the camera-timescale assembly. When ``None`` (the
+        ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid, supplied by the camera-timescale assembly. When ``None`` (the
         radiometer-timescale products) each computed column is stored 1-D as-is.
     """
 
     # The engine computes one value per footprint (flat). For the camera-timescale products the caller passes a
-    # ``to_grid`` scatter so each computed column lands on the 2-D (CAMERA_TIME, FOOTPRINT) grid (padded cells taking
+    # ``to_grid`` scatter so each computed column lands on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid (padded cells taking
     # the declared fill); the radiometer products keep the 1-D column as-is.
     def _place(name: str, values: np.ndarray) -> np.ndarray:
         dtype, fill_value = _fill_value_for(definition.variables[name])
@@ -1068,7 +1068,7 @@ def _placeholder_variable_array(variable_definition: Any, shape: int | tuple[int
         The product-definition entry for the variable.
     shape : int or tuple of int
         Shape of the placeholder array: the length of the 1-D record axis for the
-        radiometer-timescale products, or the ``(CAMERA_TIME, FOOTPRINT)`` grid shape
+        radiometer-timescale products, or the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid shape
         for the camera-timescale products.
 
     Returns
@@ -1101,7 +1101,7 @@ def _fill_placeholder_variables(
         The product definition naming every variable the file must contain.
     shape : int or tuple of int
         Shape each placeholder array is built at: the 1-D record-axis length for the
-        radiometer-timescale products, or the ``(CAMERA_TIME, FOOTPRINT)`` grid shape for
+        radiometer-timescale products, or the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid shape for
         the camera-timescale products.
     """
     for name, variable_definition in definition.variables.items():
@@ -1233,11 +1233,11 @@ def _assemble_camtime_dataset(
 
     time_variable = fmatch_time_variable(mode)  # "CAMERA_TIME"
 
-    # Recover the rectangular (CAMERA_TIME, FOOTPRINT) grid from the flat footprint list.
+    # Recover the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid from the flat footprint list.
     # Segmentation is ragged (each image is tiled into a variable number of subsections), but
     # the product grid is rectangular: group footprints by image (unique sorted CAMERA_TIME on
     # axis 0; subsections in segmentation order on axis 1). Images narrower than the widest are
-    # padded along FOOTPRINT with each variable's fill value (NaN / declared _FillValue), so
+    # padded along PSEUDOFOOTPRINT with each variable's fill value (NaN / declared _FillValue), so
     # those cells carry no real data and NaN-skipping classification leaves them unmatched.
     unique_times = sorted({f.time for f in footprints})
     n_camera_times = len(unique_times)
@@ -1254,7 +1254,7 @@ def _assemble_camtime_dataset(
     grid_shape = (n_camera_times, n_footprints_per_image)
 
     def to_grid(values: Sequence[Any], dtype: np.dtype, fill_value: Any) -> np.ndarray:
-        """Scatter one flat per-footprint column into the rectangular (CAMERA_TIME, FOOTPRINT) grid."""
+        """Scatter one flat per-footprint column into the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
         grid = np.full(grid_shape, fill_value, dtype=dtype)
         grid[rows, columns] = np.asarray(values, dtype=dtype)
         return grid
@@ -1280,12 +1280,12 @@ def _assemble_camtime_dataset(
     }
 
     # Grid coordinates: CAMERA_TIME is the 1-D image-acquisition axis (one unique, sorted entry per image);
-    # FOOTPRINT is the 0-based subsection index within each image, generated here. create_product_dataset routes
+    # PSEUDOFOOTPRINT is the 0-based subsection index within each image, generated here. create_product_dataset routes
     # both to .coords because the definition declares them under coordinates:.
-    footprint_dtype, _ = _fill_value_for(definition.coordinates["FOOTPRINT"])
+    footprint_dtype, _ = _fill_value_for(definition.coordinates["PSEUDOFOOTPRINT"])
     data: dict[str, np.ndarray] = {
         time_variable: np.array(unique_times, dtype="datetime64[ns]"),
-        "FOOTPRINT": np.arange(n_footprints_per_image, dtype=footprint_dtype),
+        "PSEUDOFOOTPRINT": np.arange(n_footprints_per_image, dtype=footprint_dtype),
     }
 
     # Camera pixel-block provenance as four separate inclusive-bound coordinates on the 2-D
@@ -1359,7 +1359,7 @@ def _merge_cloud_fraction_camera(
 
     For the radiometer-timescale products the values are stored on the 1-D record axis as
     given. For the camera-timescale products the caller passes ``to_grid`` so the flat
-    per-footprint values are scattered into the rectangular ``(CAMERA_TIME, FOOTPRINT)``
+    per-footprint values are scattered into the rectangular ``(CAMERA_TIME, PSEUDOFOOTPRINT)``
     grid (padded cells taking the declared fill).
     """
     if cloud_fraction_camera is None:
