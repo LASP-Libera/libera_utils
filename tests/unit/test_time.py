@@ -10,8 +10,17 @@ import pytest
 from libera_utils import time
 
 
-# TODO[LIBSDC-206]: Prevent these tests from retrieving their LSK from NAIF by
-#  providing a mocked metakernel and asserting that it gets furnished by checking numbers of calls
+@pytest.fixture(autouse=True)
+def _time_kernels(furnish_test_lsk, furnish_sclk):
+    """Furnish the checked-in LSK and JPSS SCLK for every test, since most conversions here use SPICE.
+
+    Without them, :func:`~libera_utils.libera_spice.spice_utils.ensure_spice` would fall back to
+    downloading the newest LSK from NAIF: a network call in a unit test, and an expected value that
+    depends on what NAIF published. With them it succeeds on its first attempt and never reaches
+    that fallback, which ``tests/unit/test_libera_spice/test_spice_utils.py`` covers directly.
+    """
+
+
 @pytest.mark.parametrize(
     ("et", "expected"),
     [

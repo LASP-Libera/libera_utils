@@ -2,6 +2,14 @@ name: Run Tests
 
 on:
   workflow_call:
+    inputs:
+      lane:
+        description: >
+          Which test lane to run. "pr" runs unit and integration tests only; "daily" additionally
+          runs the e2e tests, which contact the live NAIF server and so cannot gate a PR on an
+          outage. See doc/source/developer-docs/testing.md.
+        required: true
+        type: string
 
 jobs:
   test:
@@ -23,7 +31,12 @@ jobs:
 
       - name: Run tests
         run: |
-          poetry run pytest \
+          case "${{ inputs.lane }}" in
+            pr)    PYTEST_ARGS=(-m "not e2e") ;;
+            daily) PYTEST_ARGS=() ;;
+            *)     echo "::error::Unknown test lane '${{ inputs.lane }}'; expected 'pr' or 'daily'." && exit 1 ;;
+          esac
+          poetry run pytest "${PYTEST_ARGS[@]}" \
             --cov=libera_utils \
             --cov-report=html:htmlcov
 

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Tests are split into three lanes: `tests/unit`, `tests/integration` (`pytest.mark.integration`) and the new `tests/e2e` (`pytest.mark.e2e`). Pull requests run `-m "not e2e"`; the daily build runs everything. An autouse fixture fails any test outside the `e2e` lane that opens a network connection, which caught 28 tests silently downloading kernels from NAIF, 20 of them in `tests/unit/test_time.py`. A drift guard in the integration lane regenerates the frozen dynamic kernels in `tests/test_data/dynamic_kernels` and fails if their geometry no longer matches what the code produces. See `doc/source/developer-docs/testing.md`.
+
+### Removed
+
+- **BREAKING:** The NOAA-20 SPICE configuration (`libera_utils/data/spice/noaa20/`) is no longer shipped in the package. It has moved to `tests/test_data/noaa20_spice/`, where a README records what it covers. Nothing in the pipeline could select it: `LIBERA_KERNEL_DIR` defaults to the jpss4 family and no caller overrides it, and the NOAA-20 frame kernel declares none of the measured misalignments added in LIBSDC-806, so it cannot produce flight-representative geometry. It is retained as test data because it is the only kernel generation driven by real decoded spacecraft telemetry and the only geolocation validated against a third-party product (CERES). Not every file moved: `noaa20_sc.tle.spk.json`, which nothing referenced, the Az/El mechanism CK configs and the five static offset configs were dropped, and the static offset kernels are validated against the jpss4 configs the package ships. A downstream package that set `LIBERA_KERNEL_DIR` to this directory must now vendor the configuration itself.
+
 ## [5.11.1] - 2026-09-25
 
 ### Added

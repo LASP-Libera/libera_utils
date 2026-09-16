@@ -33,9 +33,9 @@ The time in a ground CCSDS filename generated at LASP is the time the file was w
 
 ### libera_utils/D-004 · The NOAA-20 SPICE configuration is test data, not shipped config
 
-_2026-09 · **pending LIBSDC-703**_
+_2026-09, PR #89_
 
-LIBSDC-703 moves it to `tests/test_data/noaa20_spice/`. Nothing in the pipeline could select
+It lives in `tests/test_data/noaa20_spice/`. Nothing in the pipeline could select
 it, and its frame kernel declares none of the measured misalignments, so it cannot produce
 flight-representative geometry. It is kept as test data because it is the only kernel
 generation driven by real decoded spacecraft telemetry and the only geolocation validated

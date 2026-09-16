@@ -9,6 +9,7 @@ import spiceypy as spice
 from curryer import spicetime
 
 from libera_utils.config import config
+from libera_utils.libera_spice import spice_utils
 
 
 @pytest.fixture
@@ -38,9 +39,21 @@ def curryer_lsk(test_lsk, monkeypatch):
 
 
 @pytest.fixture
-def noaa20_environment(monkeypatch):
-    # Set environment variables to point to the NOAA 20 older kernel definitions.
-    monkeypatch.setenv("LIBERA_KERNEL_DIR", "{LIBERA_UTILS_DATA_DIR}/spice/noaa20")
+def noaa20_environment(monkeypatch, test_data_path):
+    """Point the kernel configuration at the NOAA-20 family in ``tests/test_data/noaa20_spice``.
+
+    NOAA-20 is not a Libera spacecraft and is not a configuration production can select; it is
+    retained because it is the only kernel generation we can drive from *real* decoded spacecraft
+    telemetry and validate against a third-party geolocation product (CERES). It therefore lives in
+    test data rather than in the installed package.
+
+    Only the keys the family actually needs are overridden. ``LIBERA_KERNEL_STATIC_CONFIGS``,
+    ``LIBERA_KERNEL_AZ_CK_CONFIG`` and ``LIBERA_KERNEL_EL_CK_CONFIG`` still resolve under this
+    directory, which holds none of those configs -- the static offsets and mechanism CKs are
+    exercised against the shipped jpss4 set instead -- so do not call
+    ``KernelManager.load_static_kernels`` or generate mechanism CKs under this fixture.
+    """
+    monkeypatch.setenv("LIBERA_KERNEL_DIR", str(test_data_path / "noaa20_spice"))
     monkeypatch.setenv("LIBERA_KERNEL_CLOCK", "{LIBERA_KERNEL_DIR}/noaa20.fakeclock.sclk.tsc")
     monkeypatch.setenv("LIBERA_KERNEL_SC_SPK_CONFIG", "{LIBERA_KERNEL_DIR}/noaa20_sc.ephemeris.spk.json")
     monkeypatch.setenv("LIBERA_KERNEL_SC_CK_CONFIG", "{LIBERA_KERNEL_DIR}/noaa20_sc.attitude.ck.json")
@@ -210,3 +223,23 @@ def furnish_testing_kernels(
     """
     yield
     spice.kclear()
+
+
+@pytest.fixture
+def recorded_retry_backoff(monkeypatch):
+    """Record the retry backoff in :mod:`libera_utils.libera_spice.spice_utils` instead of sleeping.
+
+    Both NAIF retry loops wait a second between attempts. That delay is politeness toward the NAIF
+    server, not behaviour a test needs to sit through. Recording the calls keeps the loop's control flow intact -- the same number of
+    attempts against the same mocked responses -- and turns the backoff into something a test can
+    assert on rather than merely endure.
+
+    Returns
+    -------
+    list of float
+        The requested sleep durations, in call order. One entry per retry, so a loop that makes
+        ``n`` attempts before succeeding or giving up records ``n - 1`` entries.
+    """
+    slept: list[float] = []
+    monkeypatch.setattr(spice_utils.time, "sleep", slept.append)
+    return slept
