@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `select_packets` and `slice_l1a_dataset_to_time_window` keep each packet index variable's dtype when renumbering it, so a sliced WFOV SCI dataset, whose `CAMERA_PACKET_INDEX` is `int32`, can be written.
 - `LiberaDataProductDefinition.generate_data_product_filename` takes the start and end from the minimum and maximum of the time variable, not its first and last values.
+- `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping all L0 files in one event. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
 
 ## [5.11.5] - 2026-10-14
 
