@@ -122,7 +122,7 @@ def test_static_kernels_loading(
             assert filename in loaded_kernel_names
 
 
-def test_dynamic_kernels_loading(monkeypatch, spice_test_data_path, test_data_path):
+def test_dynamic_kernels_loading(monkeypatch, spice_test_data_path, test_data_path, isolated_kernel_cache):
     """
     Test loading dynamic kernels using the KernelManager.
     """
