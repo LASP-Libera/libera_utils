@@ -35,10 +35,10 @@ from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
 # ordering contract independently of the reader's internal constants.
 _EXPECTED_VARIABLES = (
     "sea_ice_concentration",
-    "no_ice_or_snow",
+    "snow_free_land",
     "permanent_ice",
-    "dry_snow_on_land",
-    "snow_ice_missing",
+    "snow_on_land",
+    "open_ocean",
 )
 
 
@@ -79,6 +79,11 @@ class TestNISEReaderClassAttributes:
     def test_reader_key(self):
         # Targets the reader registry key; asserts READER_KEY equals the expected "nise".
         assert NISEReader.READER_KEY == "nise"
+
+    def test_instrument_is_amsr2(self):
+        # Operationally the NISE_A2 (AMSR-2) product is ingested; provenance must
+        # read AMSR2, not the legacy SSMIS. Guards against a silent revert.
+        assert NISEReader.INSTRUMENT == "AMSR2"
 
     def test_resolution_km(self):
         # Targets the native NISE grid resolution; asserts RESOLUTION_KM equals 25.0 km.
@@ -162,10 +167,10 @@ class TestNISEReaderLayerMapping:
         stack = self._run(tmp_path, monkeypatch, self._filled(100))
         assert np.allclose(self._layer(stack, "sea_ice_concentration"), 1.0, atol=1e-5)
 
-    def test_code_0_is_no_ice_or_snow(self, tmp_path, monkeypatch):
-        # Targets Extent code 0 → no-ice/snow; asserts the no_ice_or_snow layer is 1.0 and sea ice is 0.
+    def test_code_0_is_snow_free_land(self, tmp_path, monkeypatch):
+        # Targets Extent code 0 → snow-free land; asserts the snow_free_land layer is 1.0 and sea ice is 0.
         stack = self._run(tmp_path, monkeypatch, self._filled(0))
-        assert np.all(self._layer(stack, "no_ice_or_snow") == 1.0)
+        assert np.all(self._layer(stack, "snow_free_land") == 1.0)
         assert np.all(self._layer(stack, "sea_ice_concentration") == 0.0)
 
     def test_code_101_is_permanent_ice(self, tmp_path, monkeypatch):
@@ -174,31 +179,31 @@ class TestNISEReaderLayerMapping:
         assert np.all(self._layer(stack, "permanent_ice") == 1.0)
         assert np.all(self._layer(stack, "sea_ice_concentration") == 0.0)
 
-    def test_code_103_is_dry_snow_on_land(self, tmp_path, monkeypatch):
-        # Code 103 is within the 103–110 dry-snow-on-land range; asserts dry_snow_on_land is 1.0 and sea ice 0.
+    def test_code_103_is_snow_on_land(self, tmp_path, monkeypatch):
+        # Code 103 (dry snow) is the lower bound of the 103–104 snow-on-land range.
         stack = self._run(tmp_path, monkeypatch, self._filled(103))
-        assert np.all(self._layer(stack, "dry_snow_on_land") == 1.0)
+        assert np.all(self._layer(stack, "snow_on_land") == 1.0)
         assert np.all(self._layer(stack, "sea_ice_concentration") == 0.0)
 
-    def test_code_110_is_dry_snow_on_land(self, tmp_path, monkeypatch):
-        # Upper bound of the dry-snow range is inclusive; asserts code 110 sets dry_snow_on_land to 1.0.
-        stack = self._run(tmp_path, monkeypatch, self._filled(110))
-        assert np.all(self._layer(stack, "dry_snow_on_land") == 1.0)
+    def test_code_104_is_snow_on_land(self, tmp_path, monkeypatch):
+        # Code 104 (wet snow) is the inclusive upper bound of the snow-on-land range.
+        stack = self._run(tmp_path, monkeypatch, self._filled(104))
+        assert np.all(self._layer(stack, "snow_on_land") == 1.0)
 
-    def test_code_255_is_missing(self, tmp_path, monkeypatch):
-        # Targets Extent code 255 → missing; asserts snow_ice_missing is 1.0 and sea ice is 0.
+    def test_code_255_is_open_ocean(self, tmp_path, monkeypatch):
+        # Targets Extent code 255 → ocean; asserts open_ocean is 1.0 and sea ice is 0.
         stack = self._run(tmp_path, monkeypatch, self._filled(255))
-        assert np.all(self._layer(stack, "snow_ice_missing") == 1.0)
+        assert np.all(self._layer(stack, "open_ocean") == 1.0)
         assert np.all(self._layer(stack, "sea_ice_concentration") == 0.0)
 
-    def test_code_102_belongs_to_no_layer(self, tmp_path, monkeypatch):
-        # Code 102 ("not used") must be 0.0 in every covered cell of every layer
-        # (covered cells exist because the pixels are geolocated; their values
-        # are all zero).
-        stack = self._run(tmp_path, monkeypatch, self._filled(102))
-        finite = stack[np.isfinite(stack)]
-        assert finite.size > 0
-        assert np.all(finite == 0.0)
+    def test_unused_and_quality_codes_belong_to_no_layer(self, tmp_path, monkeypatch):
+        # Codes with no surface class — 102/105 ("not used") and 252/253 (quality
+        # flags) — must be 0.0 in every covered cell of every layer.
+        for code in (102, 105, 252, 253):
+            stack = self._run(tmp_path, monkeypatch, self._filled(code))
+            finite = stack[np.isfinite(stack)]
+            assert finite.size > 0
+            assert np.all(finite == 0.0), f"code {code} leaked into a layer"
 
 
 class TestNISEReaderLatLonGrid:
@@ -330,23 +335,23 @@ class TestNISEExtentToCategoryMasks:
     def test_each_code_lands_in_expected_layer(self, tmp_path):
         reader = _make_reader(tmp_path)
         # One pixel per code group, laid out across a 2×3 grid:
-        #   60  -> sea ice 0.60      0   -> no_ice_or_snow
-        #   101 -> permanent ice     105 -> dry snow on land
-        #   255 -> missing           102 -> belongs to no layer
-        raw = np.array([[60, 0, 101], [105, 255, 102]], dtype=np.uint8)
+        #   60  -> sea ice 0.60      0   -> snow_free_land
+        #   101 -> permanent ice     103 -> snow on land (dry)
+        #   255 -> open ocean        102 -> belongs to no layer
+        raw = np.array([[60, 0, 101], [103, 255, 102]], dtype=np.uint8)
         masks = reader._extent_to_category_masks(raw)
 
         sea_ice = masks[_layer_index("sea_ice_concentration")]
-        no_ice = masks[_layer_index("no_ice_or_snow")]
+        snow_free = masks[_layer_index("snow_free_land")]
         perm = masks[_layer_index("permanent_ice")]
-        snow = masks[_layer_index("dry_snow_on_land")]
-        missing = masks[_layer_index("snow_ice_missing")]
+        snow = masks[_layer_index("snow_on_land")]
+        ocean = masks[_layer_index("open_ocean")]
 
         assert np.isclose(sea_ice[0, 0], 0.60, atol=1e-5)
-        assert no_ice[0, 1] == 1.0
+        assert snow_free[0, 1] == 1.0
         assert perm[0, 2] == 1.0
         assert snow[1, 0] == 1.0
-        assert missing[1, 1] == 1.0
+        assert ocean[1, 1] == 1.0
         # Code 102 pixel is zero in every layer.
         assert np.all(masks[:, 1, 2] == 0.0)
 
@@ -355,10 +360,10 @@ class TestNISEExtentToCategoryMasks:
         # at most one layer is 1.0 at any pixel (sea-ice excluded since it is a
         # fractional value, not a 0/1 indicator).
         reader = _make_reader(tmp_path)
-        raw = np.array([[0, 101, 105], [255, 102, 0]], dtype=np.uint8)
+        raw = np.array([[0, 101, 104], [255, 102, 0]], dtype=np.uint8)
         masks = reader._extent_to_category_masks(raw)
         indicator_layers = [
-            masks[_layer_index(n)] for n in ("no_ice_or_snow", "permanent_ice", "dry_snow_on_land", "snow_ice_missing")
+            masks[_layer_index(n)] for n in ("snow_free_land", "permanent_ice", "snow_on_land", "open_ocean")
         ]
         indicator_sum = np.sum(indicator_layers, axis=0)
         assert np.all(indicator_sum <= 1.0)
@@ -456,9 +461,25 @@ class TestNISEReaderBothHemispheres:
 
 
 # Real granule staged under the repo's external_data/ tree (untracked; present locally).
-_REAL_NISE = (
-    Path(__file__).resolve().parents[4] / "external_data" / "external_data" / "NSDIC" / "NISE_SSMISF18_20260111.HDFEOS"
-)
+# The operational product is NISE_A2 (AMSR-2); the legacy SSM/I-SSMIS granule is a
+# format-identical fallback. Both possible stage roots are searched so the test runs
+# wherever the granule happens to be staged.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_NISE_STAGE_ROOTS = (_REPO_ROOT / "external_data" / "NSDIC", _REPO_ROOT / "external_data" / "external_data" / "NSDIC")
+_NISE_GRANULE_NAMES = ("NISE_AMSR2_20260610.HDFEOS", "NISE_SSMISF18_20260111.HDFEOS")
+
+
+def _find_real_nise() -> Path:
+    """First staged NISE granule found (AMSR-2 preferred), or a non-existent sentinel."""
+    for name in _NISE_GRANULE_NAMES:
+        for root in _NISE_STAGE_ROOTS:
+            candidate = root / name
+            if candidate.exists():
+                return candidate
+    return _NISE_STAGE_ROOTS[0] / _NISE_GRANULE_NAMES[0]  # non-existent → class is skipped
+
+
+_REAL_NISE = _find_real_nise()
 
 
 def _pyhdf_available() -> bool:
