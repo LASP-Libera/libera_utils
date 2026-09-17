@@ -1160,6 +1160,151 @@ def _normalize_longitude(longitude_deg: float) -> float:
     return (longitude_deg + 180.0) % 360.0 - 180.0
 
 
+@dataclass(frozen=True)
+class CamtimeGrid:
+    """The rectangular ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid recovered from a flat pseudo-footprint list.
+
+    Segmentation is ragged - each image is tiled into a variable number of subsections - but the
+    camera-timescale product grid is rectangular. This holds the mapping from the flat, per-footprint
+    order onto that grid (``rows``/``columns``), plus the scatter that pads unfilled cells, so any
+    camera-timescale product (FMATCH-CAM-CAMTIME, CF-CAM-CAMTIME) built from the *same* segmentation
+    lays its columns out identically and the products align record-for-record.
+
+    Attributes
+    ----------
+    unique_times : list[numpy.datetime64]
+        The distinct image acquisition times, sorted; the ``CAMERA_TIME`` axis (grid rows).
+    rows, columns : numpy.ndarray
+        For each flat footprint, its ``(row, column)`` position in the grid: ``row`` is its image's
+        index in ``unique_times``, ``column`` its running position within that image.
+    grid_shape : tuple[int, int]
+        ``(n_camera_times, n_footprints_per_image)`` - the widest image sets the column count.
+    """
+
+    unique_times: list[np.datetime64]
+    rows: np.ndarray
+    columns: np.ndarray
+    grid_shape: tuple[int, int]
+
+    @property
+    def n_camera_times(self) -> int:
+        """Number of distinct camera images (grid rows)."""
+        return self.grid_shape[0]
+
+    @property
+    def n_footprints_per_image(self) -> int:
+        """Subsection count of the widest image (grid columns)."""
+        return self.grid_shape[1]
+
+    def to_grid(self, values: Sequence[Any], dtype: np.dtype, fill_value: Any) -> np.ndarray:
+        """Scatter one flat per-footprint column into the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
+        grid = np.full(self.grid_shape, fill_value, dtype=dtype)
+        grid[self.rows, self.columns] = np.asarray(values, dtype=dtype)
+        return grid
+
+
+def build_camtime_grid(footprints: Sequence[PseudoFootprint]) -> CamtimeGrid:
+    """Recover the rectangular ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid from a flat pseudo-footprint list.
+
+    Groups footprints by image (unique sorted ``CAMERA_TIME`` on axis 0; subsections in segmentation
+    order on axis 1). Images narrower than the widest are padded along ``PSEUDOFOOTPRINT`` by
+    :meth:`CamtimeGrid.to_grid`. Shared by FMATCH-CAM-CAMTIME assembly and the CF-CAM-CAMTIME
+    placeholder algorithm so both derive the identical grid from the same segmentation.
+
+    Parameters
+    ----------
+    footprints : Sequence[PseudoFootprint]
+        Camera pseudo-footprints in segmentation (write) order.
+
+    Returns
+    -------
+    CamtimeGrid
+        The grid layout and its scatter.
+
+    Raises
+    ------
+    ValueError
+        If ``footprints`` is empty (there would be no ``CAMERA_TIME`` axis to build).
+    """
+    footprints = list(footprints)
+    if not footprints:
+        raise ValueError("Cannot build a camera-timescale grid from zero pseudo-footprints.")
+    n_footprints = len(footprints)
+    unique_times = sorted({f.time for f in footprints})
+    n_camera_times = len(unique_times)
+    row_of_time = {time: row for row, time in enumerate(unique_times)}
+    rows = np.array([row_of_time[f.time] for f in footprints])
+    # Column = running position of each footprint within its own image (footprints arrive in
+    # segmentation order), so subsections fill their image row left-to-right.
+    columns = np.empty(n_footprints, dtype=int)
+    footprints_in_row = np.zeros(n_camera_times, dtype=int)
+    for flat_index, row in enumerate(rows):
+        columns[flat_index] = footprints_in_row[row]
+        footprints_in_row[row] += 1
+    n_footprints_per_image = int(footprints_in_row.max())
+    return CamtimeGrid(
+        unique_times=unique_times,
+        rows=rows,
+        columns=columns,
+        grid_shape=(n_camera_times, n_footprints_per_image),
+    )
+
+
+def build_camtime_provenance(
+    footprints: Sequence[PseudoFootprint],
+    grid: CamtimeGrid,
+    definition: LiberaDataProductDefinition,
+    *,
+    time_variable: str = "CAMERA_TIME",
+) -> dict[str, np.ndarray]:
+    """Build the camera-timescale record axis and pixel-block provenance columns.
+
+    Both FMATCH-CAM-CAMTIME and CF-CAM-CAMTIME carry the identical ``CAMERA_TIME`` / ``PSEUDOFOOTPRINT``
+    coordinates and the four inclusive ``camera_pixel_{x,y}_{min,max}`` coordinates, all derived
+    deterministically from the same segmentation. Centralising their construction here is what
+    guarantees the two products share an identical record axis and pixel provenance, so a reader can
+    treat their provenance columns interchangeably.
+
+    Parameters
+    ----------
+    footprints : Sequence[PseudoFootprint]
+        Camera pseudo-footprints in segmentation (write) order - the same list passed to
+        :func:`build_camtime_grid`.
+    grid : CamtimeGrid
+        The grid layout returned by :func:`build_camtime_grid` for ``footprints``.
+    definition : LiberaDataProductDefinition
+        The product definition declaring the ``PSEUDOFOOTPRINT`` and ``camera_pixel_*`` coordinates
+        (their declared dtypes/fills are honoured).
+    time_variable : str, optional
+        Name of the camera-time coordinate. Defaults to ``"CAMERA_TIME"``.
+
+    Returns
+    -------
+    dict[str, numpy.ndarray]
+        Mapping with the ``time_variable`` (1-D), ``PSEUDOFOOTPRINT`` (1-D), and the four
+        ``camera_pixel_{x,y}_{min,max}`` (2-D grid) coordinate arrays.
+    """
+    footprints = list(footprints)
+    footprint_dtype, _ = _fill_value_for(definition.coordinates["PSEUDOFOOTPRINT"])
+    data: dict[str, np.ndarray] = {
+        time_variable: np.array(grid.unique_times, dtype="datetime64[ns]"),
+        "PSEUDOFOOTPRINT": np.arange(grid.n_footprints_per_image, dtype=footprint_dtype),
+    }
+
+    # Camera pixel-block provenance as four separate inclusive-bound coordinates on the 2-D grid.
+    # slice_x/slice_y are half-open [start, stop), so the inclusive maximum is stop - 1.
+    pixel_columns: dict[str, list[int]] = {
+        "camera_pixel_x_min": [f.slice_x.start for f in footprints],
+        "camera_pixel_x_max": [f.slice_x.stop - 1 for f in footprints],
+        "camera_pixel_y_min": [f.slice_y.start for f in footprints],
+        "camera_pixel_y_max": [f.slice_y.stop - 1 for f in footprints],
+    }
+    for coordinate_name, values in pixel_columns.items():
+        dtype, fill_value = _fill_value_for(definition.coordinates[coordinate_name])
+        data[coordinate_name] = grid.to_grid(values, dtype, fill_value)
+    return data
+
+
 def _assemble_camtime_dataset(
     footprints: Sequence[PseudoFootprint],
     *,
@@ -1229,35 +1374,20 @@ def _assemble_camtime_dataset(
     footprints = list(footprints)
     if not footprints:
         raise ValueError(f"Cannot assemble a {mode.value} product from zero pseudo-footprints.")
-    n_footprints = len(footprints)
 
     time_variable = fmatch_time_variable(mode)  # "CAMERA_TIME"
 
     # Recover the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid from the flat footprint list.
-    # Segmentation is ragged (each image is tiled into a variable number of subsections), but
-    # the product grid is rectangular: group footprints by image (unique sorted CAMERA_TIME on
-    # axis 0; subsections in segmentation order on axis 1). Images narrower than the widest are
-    # padded along PSEUDOFOOTPRINT with each variable's fill value (NaN / declared _FillValue), so
-    # those cells carry no real data and NaN-skipping classification leaves them unmatched.
-    unique_times = sorted({f.time for f in footprints})
-    n_camera_times = len(unique_times)
-    row_of_time = {time: row for row, time in enumerate(unique_times)}
-    rows = np.array([row_of_time[f.time] for f in footprints])
-    # Column = running position of each footprint within its own image (footprints arrive in
-    # segmentation order), so subsections fill their image row left-to-right.
-    columns = np.empty(n_footprints, dtype=int)
-    footprints_in_row = np.zeros(n_camera_times, dtype=int)
-    for flat_index, row in enumerate(rows):
-        columns[flat_index] = footprints_in_row[row]
-        footprints_in_row[row] += 1
-    n_footprints_per_image = int(footprints_in_row.max())
-    grid_shape = (n_camera_times, n_footprints_per_image)
-
-    def to_grid(values: Sequence[Any], dtype: np.dtype, fill_value: Any) -> np.ndarray:
-        """Scatter one flat per-footprint column into the rectangular (CAMERA_TIME, PSEUDOFOOTPRINT) grid."""
-        grid = np.full(grid_shape, fill_value, dtype=dtype)
-        grid[rows, columns] = np.asarray(values, dtype=dtype)
-        return grid
+    # Segmentation is ragged (each image is tiled into a variable number of subsections), but the
+    # product grid is rectangular; images narrower than the widest are padded along PSEUDOFOOTPRINT
+    # with each variable's fill value (NaN / declared _FillValue), so those cells carry no real data
+    # and NaN-skipping classification leaves them unmatched. The grid recovery and its scatter live
+    # in build_camtime_grid, and the shared record axis + pixel provenance in build_camtime_provenance,
+    # so CF-CAM-CAMTIME builds the exact same grid from the same segmentation and the two products
+    # align record-for-record.
+    grid = build_camtime_grid(footprints)
+    grid_shape = grid.grid_shape
+    to_grid = grid.to_grid
 
     # The real, segmentation-derived columns. Longitudes of the PSF box are wrapped into
     # [-180, 180) to satisfy the product definition's valid range. center_pixel_x/y are the
@@ -1279,27 +1409,11 @@ def _assemble_camtime_dataset(
         "center_pixel_y": [f.center_iy for f in footprints],
     }
 
-    # Grid coordinates: CAMERA_TIME is the 1-D image-acquisition axis (one unique, sorted entry per image);
-    # PSEUDOFOOTPRINT is the 0-based subsection index within each image, generated here. create_product_dataset routes
-    # both to .coords because the definition declares them under coordinates:.
-    footprint_dtype, _ = _fill_value_for(definition.coordinates["PSEUDOFOOTPRINT"])
-    data: dict[str, np.ndarray] = {
-        time_variable: np.array(unique_times, dtype="datetime64[ns]"),
-        "PSEUDOFOOTPRINT": np.arange(n_footprints_per_image, dtype=footprint_dtype),
-    }
-
-    # Camera pixel-block provenance as four separate inclusive-bound coordinates on the 2-D
-    # grid. slice_x/slice_y are half-open [start, stop), so the inclusive maximum is stop - 1.
-    # Both camtime products declare these and pass them straight through to SCENE-ID-CAM-CAMTIME.
-    pixel_columns: dict[str, list[int]] = {
-        "camera_pixel_x_min": [f.slice_x.start for f in footprints],
-        "camera_pixel_x_max": [f.slice_x.stop - 1 for f in footprints],
-        "camera_pixel_y_min": [f.slice_y.start for f in footprints],
-        "camera_pixel_y_max": [f.slice_y.stop - 1 for f in footprints],
-    }
-    for coordinate_name, values in pixel_columns.items():
-        dtype, fill_value = _fill_value_for(definition.coordinates[coordinate_name])
-        data[coordinate_name] = to_grid(values, dtype, fill_value)
+    # Grid coordinates (CAMERA_TIME, PSEUDOFOOTPRINT) plus the four inclusive camera_pixel_{x,y}_{min,max}
+    # provenance coordinates on the 2-D grid. Shared with CF-CAM-CAMTIME via build_camtime_provenance so
+    # both products carry identical record-axis and pixel-block provenance; create_product_dataset routes
+    # them to .coords because the definition declares them under coordinates:.
+    data: dict[str, np.ndarray] = build_camtime_provenance(footprints, grid, definition, time_variable=time_variable)
 
     # Cast each real column to the exact dtype the definition declares and scatter it into the
     # grid. Only columns the definition actually declares are written; both camtime products

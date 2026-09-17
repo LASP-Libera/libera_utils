@@ -112,3 +112,17 @@ ENTRYPOINT ["libera-utils", "scene-id", "cam"]
 FROM libera-utils AS libera-utils-scene-id-cam-camtime
 
 ENTRYPOINT ["libera-utils", "scene-id", "cam-camtime"]
+
+
+# CLI for the CF-CAM algorithm (radiometer timescale) from a manifest file.
+# -------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-cloud-fraction-cam
+
+ENTRYPOINT ["libera-utils", "cloud-fraction", "cam"]
+
+
+# CLI for the CF-CAM-CAMTIME algorithm (camera timescale) from a manifest file.
+# -----------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-cloud-fraction-cam-camtime
+
+ENTRYPOINT ["libera-utils", "cloud-fraction", "cam-camtime"]
