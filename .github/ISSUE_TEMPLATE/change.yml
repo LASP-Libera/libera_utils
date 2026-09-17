@@ -1,0 +1,78 @@
+name: Change
+description: A change to the code that a person can check when it is done
+title: "[change] "
+labels: [change]
+body:
+  - type: input
+    id: jira
+    attributes:
+      label: Jira key
+      description: >
+        LIBSDC-NNNN if this work has a Jira ticket, which is the ticket of record for
+        planned work. Leave blank for work that starts here; the plan step will ask.
+    validations: { required: false }
+
+  - type: input
+    id: outcome
+    attributes:
+      label: Outcome
+      description: One sentence. What is true after this change that is not true now.
+    validations: { required: true }
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: >
+        Top-down. First, which function of this repository the problem stops or degrades;
+        then the specific failure, request, or science reason. Link the data or the source.
+    validations: { required: true }
+
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Acceptance criteria
+      description: >
+        Numbered, one to seven. Each one something a test or a person can check.
+        For an epic, each one is a child ticket.
+      placeholder: |
+        1. Given ..., when ..., then ...
+        2. ...
+    validations: { required: true }
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: >
+        What this change does not do, even if it is adjacent and tempting. Leave blank only
+        if nothing adjacent is tempting; the ratchet counts how often it is blank, which is
+        how the field earns or loses its place.
+    validations: { required: false }
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: >
+        Interfaces that must not change, performance bounds, dependencies not allowed,
+        rule IDs (R-) and decisions (D-) that apply, standards/context/ files that apply,
+        the epic this belongs to. Name the downstream repositories a change here reaches.
+    validations: { required: false }
+
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: >
+        What you do not know yet. The plan step answers what the code can answer and asks
+        you the rest.
+    validations: { required: false }
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      description: L means split before starting.
+      options: [S, M, L]
+    validations: { required: true }

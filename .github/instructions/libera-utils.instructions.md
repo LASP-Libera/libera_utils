@@ -112,6 +112,27 @@ generation, Libera file naming, and AWS pipeline integration.
     processing and is a subset of the instrument level source of truth of all ObsIDs which is owned
     by the engineering team and is available in internal team documentation
 
+## Review Standards
+
+The review standard lives in `standards/`, tool-neutral and read by people and agents alike.
+
+- `standards/rules.md` — what a reviewer checks here, capped at 14 rules, each with the
+  pull request that earned it. Cite the rule ID in a review comment.
+- `standards/review-contract.md` — severity, the seven-finding budget, and the do-not-flag
+  list. Never repeat a finding that `ruff`, `prettier`, `codespell`, `bandit` or a
+  pre-commit hook already makes.
+- `standards/README.md` — the measured counts that set every threshold, and what this
+  repository is optimising for.
+- `standards/decisions.md` and the shared corpus named in `standards/SHARED.md` — convention
+  decisions already settled. Check there before asking a convention question again.
+
+**This repository is public.** No internal Confluence or Jira URL and no internal document
+content in source, docstrings, tests, or `standards/`. Cite internal documents by name
+(R-014).
+
+Changes to `standards/` happen in one pull request a month, proposed by the ratchet with its
+evidence. Nothing agentic edits a standard.
+
 ## Restrictions for AI Agents
 
 The following actions require **explicit requests** or **explicit permission**, regardless of context.

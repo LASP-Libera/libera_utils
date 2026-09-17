@@ -85,3 +85,7 @@ pytest.ini
 .claude/settings.local.json
 **/*mcp.json
 reviews/*
+
+# Review loop working files #
+#############################
+.review/
