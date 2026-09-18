@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. "RADIOMETER_TIME" names both
 # the per-footprint dimension and the datetime coordinate written on it (a NetCDF / xarray dimension coordinate),
 # so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
-# libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition YAML.
+# libera_utils/scene_identification/scene_id_cam.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
 # The camera-timescale counterparts of the constants above. The camera-timescale scene-ID product (CAM-CAMTIME) is
@@ -38,13 +38,14 @@ RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 PSEUDOFOOTPRINT_DIMENSION = "PSEUDOFOOTPRINT"
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
-# Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
-# straight through -- the four inclusive camera pixel-block bounds (camera_pixel_{x,y}_{min,max}), the PSF bounding
-# box, and the boresight geolocation -- so a scene can be traced back to the exact camera pixels and ground footprint.
-# These are copied verbatim (each keeping its own 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid dimensions) by
-# from_fmatch_cam_camtime and are not consumed by the classification; they simply ride along to the written product.
-# The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
-_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
+# Identifier variables that the camera-timescale FMATCH products carry and the camera-timescale SCENE-ID products
+# (SCENE-ID-CAM-CAMTIME, SCENE-ID-IMAGER-CAMTIME) pass straight through -- the four inclusive camera pixel-block bounds
+# (camera_pixel_{x,y}_{min,max}), the PSF bounding box, and the boresight geolocation -- so a scene can be traced back
+# to the exact camera pixels and ground footprint. These are copied verbatim (each keeping its own 2-D
+# (CAMERA_TIME, PSEUDOFOOTPRINT) grid dimensions) by from_fmatch_cam_camtime / from_fmatch_imager_camtime and are not
+# consumed by the classification; they simply ride along to the written product. The FMATCH-only center_pixel_x/y
+# (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
+_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
     "latitude",
     "longitude",
     "altitude",
@@ -999,7 +1000,7 @@ class FootprintData:
             record_dimensions=(CAMERA_TIME_VARIABLE, PSEUDOFOOTPRINT_DIMENSION),
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_CAM_COLUMN_MAP,
-            passthrough_variables=_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES,
+            passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
             context="SCENE-ID-CAM-CAMTIME reader (FMATCH-CAM-CAMTIME)",
         )
         return cls(extracted_data)
@@ -1068,6 +1069,49 @@ class FootprintData:
             context=(
                 "SCENE-ID-IMAGER reader (FMATCH-IMAGER); the FMATCH file lacks the RBSP ssf/cldpix variables "
                 "required for scene identification"
+            ),
+        )
+        return cls(extracted_data)
+
+    @classmethod
+    def from_fmatch_imager_camtime(cls, fmatch_path: pathlib.Path) -> "FootprintData":
+        """Read a FMATCH-IMAGER-CAMTIME product into a FootprintData (camera timescale).
+
+        FMATCH-IMAGER-CAMTIME is the operational input to SCENE-ID-IMAGER-CAMTIME. It is the camera-timescale
+        counterpart of FMATCH-IMAGER: it carries the *same* classification inputs -- the CERES SSF clear coverage
+        (for cloud fraction), the RBSP CLDPIX cloud optical depth and particle phase (for the full TRMM
+        classification), the ERA5 winds (for surface wind), and the IGBP surface type -- but laid out on the 2-D
+        ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one ``CAMERA_TIME`` entry per 2048x2048 image and one
+        ``PSEUDOFOOTPRINT`` entry per image subsection). Like SCENE-ID-IMAGER, this supports ERBE, unfiltering, and
+        the full TRMM classification.
+
+        This reader is the union of :meth:`from_fmatch_imager` and :meth:`from_fmatch_cam_camtime`: it uses the
+        IMAGER column map (so the RBSP CLDPIX/SSF inputs and the mapped cloud phase are read) on the camera-timescale
+        record grid, and additionally carries the footprint *identifier* variables (the inclusive camera pixel-block
+        bounds ``camera_pixel_{x,y}_{min,max}``, the PSF bounding box, and the boresight geolocation) straight
+        through so a classified scene can be traced back to the exact camera pixels and ground footprint. As with
+        :meth:`from_fmatch_imager`, it raises a clear error if handed a file lacking the RBSP ssf/cldpix variables.
+
+        Parameters
+        ----------
+        fmatch_path : pathlib.Path
+            Path to a Libera FMATCH-IMAGER-CAMTIME NetCDF product file.
+
+        Returns
+        -------
+        FootprintData
+            Footprint data on the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one entry per image subsection), ready for
+            :meth:`identify_scenes`.
+        """
+        extracted_data = cls._extract_data_from_fmatch(
+            fmatch_path,
+            record_dimensions=(CAMERA_TIME_VARIABLE, PSEUDOFOOTPRINT_DIMENSION),
+            time_variable=CAMERA_TIME_VARIABLE,
+            column_map=_FMATCH_IMAGER_COLUMN_MAP,
+            passthrough_variables=_FMATCH_CAMTIME_PASSTHROUGH_VARIABLES,
+            context=(
+                "SCENE-ID-IMAGER-CAMTIME reader (FMATCH-IMAGER-CAMTIME); the FMATCH file lacks the RBSP ssf/cldpix "
+                "variables required for scene identification"
             ),
         )
         return cls(extracted_data)

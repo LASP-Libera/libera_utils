@@ -66,6 +66,13 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
                 manifest="file.manifest",
             ),
         ),
+        (
+            ["scene-id", "imager-camtime", "file.manifest"],
+            argparse.Namespace(
+                func=cli.scene_id_imager_camtime_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
     ],
 )
 def test_scene_id_parse_cli_args(cli_args, parsed):
@@ -411,10 +418,14 @@ def test_wrong_libera_ids(cli_args):
 @pytest.mark.parametrize(
     ("cli_args", "runner_module"),
     [
-        (["scene-id", "cam", "file.manifest"], "libera_utils.scene_identification.cam.scene_id_cam"),
+        (["scene-id", "cam", "file.manifest"], "libera_utils.scene_identification.scene_id_cam"),
         (
             ["scene-id", "cam-camtime", "file.manifest"],
-            "libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime",
+            "libera_utils.scene_identification.scene_id_cam_camtime",
+        ),
+        (
+            ["scene-id", "imager-camtime", "file.manifest"],
+            "libera_utils.scene_identification.scene_id_imager_camtime",
         ),
     ],
 )

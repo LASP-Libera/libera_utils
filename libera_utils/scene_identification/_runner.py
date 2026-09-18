@@ -1,9 +1,9 @@
-"""Shared manifest-driven runner logic for the SCENE-ID CAM product family.
+"""Shared manifest-driven runner logic for the SCENE-ID product family.
 
-The radiometer-timescale (``cam/scene_id_cam.py``) and camera-timescale (``cam_camtime/scene_id_cam_camtime.py``)
-runners are structurally identical: read an input manifest, keep the FMATCH input files of a particular product, run
-scene identification on each, write the resulting SCENE-ID product, and emit an output manifest. They differ only by a
-handful of parameters:
+The radiometer-timescale (``scene_id_cam.py``, ``scene_id_imager.py``, ``scene_id_imager_flash.py``) and
+camera-timescale (``scene_id_cam_camtime.py``, ``scene_id_imager_camtime.py``) runners are structurally identical:
+read an input manifest, keep the FMATCH input files of a particular product, run scene identification on each, write
+the resulting SCENE-ID product, and emit an output manifest. They differ only by a handful of parameters:
 
 * which FMATCH product id counts as an input (``FMATCH-CAM`` vs ``FMATCH-CAM-CAMTIME``),
 * which :class:`~libera_utils.scene_identification.FootprintData` factory reads it,

@@ -1,4 +1,4 @@
-## Combined Dockerfile for all four Libera SCENE-ID algorithm images.
+## Combined Dockerfile for all five Libera SCENE-ID algorithm images.
 ##
 ## One shared base stage (system deps + venv + poetry install), then one runtime target
 ## per algorithm. Build a specific image by selecting its target:
@@ -7,7 +7,8 @@
 ## The build context MUST be the repository root - the COPY instructions below use paths
 ## relative to it (COPY libera_utils ..., COPY pyproject.toml ...).
 ##
-## Runtime targets:  scene-id-imager  scene-id-imager-flash  scene-id-cam  scene-id-cam-camtime
+## Runtime targets:  scene-id-imager  scene-id-imager-flash  scene-id-imager-camtime  scene-id-cam
+##                   scene-id-cam-camtime
 ARG BUILDPLATFORM=linux/amd64
 
 # scene-id-base
@@ -64,14 +65,18 @@ RUN poetry install --only main
 # -----------------------------
 # Each target differs from scene-id-base only in its ENTRYPOINT: the manifest-driven runner for that
 # algorithm. Arguments passed to the container (i.e. the path to the input manifest) are forwarded to
-# the script. Each runner also reads the PROCESSING_PATH environment variable to determine where to
-# write outputs.
+# the runner. Each runner also reads the PROCESSING_PATH environment variable to determine where to
+# write outputs. Targets either invoke the runner module directly or, equivalently, go through the
+# installed ``libera-utils`` CLI (on PATH via the venv); both forward the manifest argument identically.
 
 FROM scene-id-base AS scene-id-imager
 ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_imager.py"]
 
 FROM scene-id-base AS scene-id-imager-flash
 ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_imager_flash.py"]
+
+FROM scene-id-base AS scene-id-imager-camtime
+ENTRYPOINT ["libera-utils", "scene-id", "imager-camtime"]
 
 FROM scene-id-base AS scene-id-cam
 ENTRYPOINT ["python", "/opt/libera/libera_utils/scene_identification/scene_id_cam.py"]
