@@ -17,26 +17,57 @@ import xarray as xr
 
 from libera_utils.cloud_fraction.cf_cam_camtime import algorithm as cf_cam_camtime_algorithm
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching._runner import ANCILLARY_PATH_ENV
-from libera_utils.footprint_matching.fmatch_cam import RUNNER_CONFIG as CAM_CONFIG
-from libera_utils.footprint_matching.fmatch_cam import algorithm as cam_algorithm
-from libera_utils.footprint_matching.fmatch_cam_camtime import RUNNER_CONFIG as CAM_CAMTIME_CONFIG
-from libera_utils.footprint_matching.fmatch_cam_camtime import algorithm as cam_camtime_algorithm
-from libera_utils.footprint_matching.fmatch_imager import main as imager_main
-from libera_utils.footprint_matching.fmatch_imager_camtime import (
-    RUNNER_CONFIG as IMAGER_CAMTIME_CONFIG,
+from libera_utils.footprint_matching.footprint_match_algorithm import (
+    ANCILLARY_PATH_ENV,
 )
-from libera_utils.footprint_matching.fmatch_imager_flash import RUNNER_CONFIG as IMAGER_FLASH_CONFIG
+from libera_utils.footprint_matching.footprint_match_algorithm import (
+    RUNNER_CONFIGS as FMATCH_RUNNER_CONFIGS,
+)
+from libera_utils.footprint_matching.footprint_match_algorithm import (
+    main as fmatch_main,
+)
+from libera_utils.footprint_matching.footprint_match_algorithm import (
+    run_algorithm as fmatch_run_algorithm,
+)
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
-from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS, run_scene_identification
+from libera_utils.scene_identification.scene_id_algorithm import (
+    RUNNER_CONFIGS as SCENE_ID_RUNNER_CONFIGS,
+)
+from libera_utils.scene_identification.scene_id_algorithm import (
+    run_scene_identification,
+)
 from tests.test_data.footprint_matching.fixtures import (
     make_fmatch_product_fixture,
     make_l1b_camera_fixture,
     make_l1b_radiometer_fixture,
 )
+
+# The FMATCH runners no longer expose per-module RUNNER_CONFIG/algorithm/main; they live in
+# footprint_match_algorithm's registry. Bind the per-mode configs and thin algorithm/main helpers here
+# so the test bodies below stay readable.
+CAM_CONFIG = FMATCH_RUNNER_CONFIGS["cam"]
+CAM_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS["cam-camtime"]
+IMAGER_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS["imager-camtime"]
+IMAGER_FLASH_CONFIG = FMATCH_RUNNER_CONFIGS["imager-flash"]
+
+
+def cam_algorithm(manifest_path):
+    """Run the FMATCH-CAM runner from a manifest."""
+    return fmatch_run_algorithm(manifest_path, CAM_CONFIG)
+
+
+def cam_camtime_algorithm(manifest_path):
+    """Run the FMATCH-CAM-CAMTIME runner from a manifest."""
+    return fmatch_run_algorithm(manifest_path, CAM_CAMTIME_CONFIG)
+
+
+def imager_main(cli_args=None):
+    """Run the FMATCH-IMAGER runner via the shared CLI ``main`` entrypoint."""
+    return fmatch_main(FMATCH_RUNNER_CONFIGS["imager"], cli_args)
+
 
 pytestmark = pytest.mark.integration
 
@@ -241,7 +272,7 @@ class TestManifestInputSelection:
         )
 
     def test_radiometer_runner_keeps_only_l1b_rad(self):
-        from libera_utils.footprint_matching._runner import select_manifest_files_by_product_id
+        from libera_utils.footprint_matching.footprint_match_algorithm import select_manifest_files_by_product_id
 
         wanted = _libera_product_name(DataProductIdentifier.l1b_rad)
         other = _libera_product_name(DataProductIdentifier.l1b_cam)
@@ -253,7 +284,7 @@ class TestManifestInputSelection:
 
     def test_camera_runner_keeps_only_its_cf_cam_camtime_input(self):
         """FMATCH-CAM-CAMTIME's primary input is the CF-CAM-CAMTIME product, not the raw L1B camera file."""
-        from libera_utils.footprint_matching._runner import select_manifest_files_by_product_id
+        from libera_utils.footprint_matching.footprint_match_algorithm import select_manifest_files_by_product_id
 
         wanted = _libera_product_name(DataProductIdentifier.l2_cf_cam_camtime)
         other = _libera_product_name(DataProductIdentifier.l1b_cam)
@@ -265,7 +296,7 @@ class TestManifestInputSelection:
 
     def test_cam_runner_also_selects_the_cloud_fraction_product(self):
         """FMATCH-CAM takes an optional CF-CAM input alongside its L1B input."""
-        from libera_utils.footprint_matching._runner import _collect_cloud_fraction_files
+        from libera_utils.footprint_matching.footprint_match_algorithm import _collect_cloud_fraction_files
 
         cloud_fraction = _libera_product_name(DataProductIdentifier.l2_cf_cam)
         manifest = self._manifest(_libera_product_name(DataProductIdentifier.l1b_rad), cloud_fraction)
@@ -276,7 +307,7 @@ class TestManifestInputSelection:
 
     def test_imager_runners_take_no_cloud_fraction_input(self):
         """The IMAGER products do not declare cloud_fraction_camera, so none is selected."""
-        from libera_utils.footprint_matching._runner import _collect_cloud_fraction_files
+        from libera_utils.footprint_matching.footprint_match_algorithm import _collect_cloud_fraction_files
 
         manifest = self._manifest(
             _libera_product_name(DataProductIdentifier.l1b_rad),
@@ -288,7 +319,7 @@ class TestManifestInputSelection:
 
     def test_fmatch_product_in_manifest_is_not_mistaken_for_an_input(self, tmp_path):
         """A FMATCH product staged alongside the inputs must not be re-ingested as one."""
-        from libera_utils.footprint_matching._runner import select_manifest_files_by_product_id
+        from libera_utils.footprint_matching.footprint_match_algorithm import select_manifest_files_by_product_id
 
         fmatch_product = make_fmatch_product_fixture(tmp_path, OperationalMode.CAM).name
         manifest = self._manifest(fmatch_product, _libera_product_name(DataProductIdentifier.l1b_rad))
@@ -389,7 +420,7 @@ class TestRunnerOutputNotYetConsumableBySceneId:
         output_manifest = Manifest.from_file(cam_algorithm(manifest_path))
         fmatch_product_path = output_manifest.files[0].filename
 
-        footprint_data = run_scene_identification(fmatch_product_path, RUNNER_CONFIGS["cam"])
+        footprint_data = run_scene_identification(fmatch_product_path, SCENE_ID_RUNNER_CONFIGS["cam"])
 
         scene_product = footprint_data.to_time_product("RADIOMETER_TIME")
         assert "Quality_Flag" in scene_product.data_vars
