@@ -128,6 +128,8 @@ document that the code implements.
 tier: check · status: graduated · since: 2026-09 · evidence: pre-commit, standing convention
 
 A deferred decision with no ticket is a deferred decision nobody will make.
+Do not flag: this rule at all. The hook owns it, and a marker in a file the hook excludes
+(`.pre-commit-config.yaml`) is deliberately out of scope.
 Check: `.pre-commit-config.yaml`, the `lasp/prevent-dangling-todos` hook, with its tags set
 to `LIBSDC,CURRYER` and its comment markers to the two it scans for. The reviewer does not
 check this; the hook does.

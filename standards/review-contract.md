@@ -34,7 +34,8 @@ not a list.
 ## Citation
 
 Every finding names a rule ID, `ticket/AC-n`, `ticket/scope`, `ticket/plan`, `term/T-nnn`,
-or `other`. An `other` finding carries a one-line summary suitable for clustering at the
+`test/rework`, `test/uncovered`, `test/failure-path`, `test/duplicate`,
+`helper/path::symbol`, or `other`. An `other` finding carries a one-line summary suitable for clustering at the
 ratchet. The finding key is `rule/path::symbol`.
 
 An omission from the PR body's "look at this" is a **must-fix**, above anything about the
@@ -42,7 +43,9 @@ code.
 
 ## Test scrutiny
 
-An edit to an existing test is a finding until justified: a widened tolerance, a weakened
+Three directions; the first is the classic, and the other two are what a green suite hides.
+
+**A test weakened** is a finding until justified: a widened tolerance, a weakened
 assertion, a removed `raises`, a new `skip` or `xfail`, a dropped `parametrize` case, or an
 expected value re-tuned to the new output. Two more, specific to this repository:
 
@@ -51,6 +54,34 @@ expected value re-tuned to the new output. Two more, specific to this repository
   downloading kernels from NAIF for months (D-009).
 - A golden value changed without the change being stated in the pull request body. A test
   asserts on its own step's product (D-010); a re-tuned golden value is a science claim.
+
+**A test added where one should have been reworked**, keyed `test/rework`. An agent asked
+to make a suite green adds; a person who knows the suite edits. A new test whose subject an
+existing module already covers belongs in that module, beside its siblings or as a
+`parametrize` case; a new test _file_ the plan did not name is a finding on its own. Judge
+on the subject, not the assertion (D-010): the same input feeding the same number is
+duplicate coverage only when the subject matches, and that is `test/duplicate`. Two repo
+specifics: a lane is decided by what a test depends on, so a new module must declare its
+lane with `pytestmark`, and shared setup belongs in `tests/plugins/` as a fixture rather
+than in a new helper module.
+
+**Coverage of what changed**, keyed `test/uncovered` and `test/failure-path`. Run
+`pytest -m "not e2e" --cov=libera_utils --cov-report=term-missing` and list every line the
+diff added or changed that no test executes, as `file:line`.
+Separately, every `raise` the diff adds needs a test asserting it: this repository's
+contract is that a defined input produces a defined product or the run stops, so an
+untested raise is an unenforced contract (R-002, R-004). Report the lines, never a
+percentage — a percentage produces tests written to the metric.
+
+## New surface
+
+Keyed `helper/path::symbol`. Every function, method or class the diff adds that the plan's
+signature list did not name is reported with its call sites, its length, and whether
+something in the module or a sibling already does it. One caller and under about ten lines
+is a candidate to inline; a duplicate of an existing function is a finding. Extraction is
+not invention: a helper pulled out of existing code with two or more call sites is the good
+case and is reported as such. A helper in `libera_utils/` whose only callers are in
+`tests/` is R-008, not this key.
 
 ## Do not flag
 

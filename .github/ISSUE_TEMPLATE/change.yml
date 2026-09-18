@@ -56,7 +56,8 @@ body:
       label: Constraints
       description: >
         Interfaces that must not change, performance bounds, dependencies not allowed,
-        rule IDs (R-) and decisions (D-) that apply, standards/context/ files that apply,
+        rule IDs (R-) and decisions (D-) that apply, shared standards/context/ entries
+        that apply (standards/SHARED.md says where they live),
         the epic this belongs to. Name the downstream repositories a change here reaches.
     validations: { required: false }
 

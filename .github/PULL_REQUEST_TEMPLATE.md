@@ -1,4 +1,6 @@
-Closes #NNN · Outcome: <the ticket's outcome line>
+Closes #NNN · LIBSDC-NNNN · Outcome: <the ticket's outcome line>
+
+<!-- LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too. -->
 
 ## In context
 
@@ -36,6 +38,8 @@ Authored: <agent-assisted | by hand>, opened by <handle>
 Gates: contract N · lint N · types N · tests N · reviewer rounds N · exit <clean|capped|flapping|halted|timed out> · wall clock N min
 Plan: <approved by handle | skimmed by handle | none (S ticket)>
 Refinement: N questions answered · N constraints added by hand · N terms flagged · plan <amended|not amended>
+Tests: N added · M reworked · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
+Helpers: N added (call sites each) · M extracted from existing code
 Rules checked: <R-ids>
 Declined: <R-id at path::symbol — one-sentence reason>
 Suggestions: <R-id at path::symbol — what was suggested>
