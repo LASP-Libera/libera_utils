@@ -1,0 +1,49 @@
+# =============================================================================
+# CF-CAM Data Product Definition
+# =============================================================================
+#
+# The radiometer-timescale Camera Cloud Fraction (CF-CAM) product, the non-camtime sibling of
+# CF-CAM-CAMTIME and the mirror of FMATCH-CAM. It is produced by the placeholder cloud-fraction
+# algorithm (libera_utils/cloud_fraction/) directly from an L1B Daily radiometer (RAD-4CH) file:
+# one record per RADIOMETER_TIME footprint, exactly the record axis FMATCH-CAM carries.
+#
+# It is the cloud-fraction input to FMATCH-CAM: FMATCH reads `cloud_fraction` here and re-emits it
+# as its `cloud_fraction_camera` variable, aligned 1:1 by RADIOMETER_TIME.
+#
+# NOTE: the cloud-fraction values are a PLACEHOLDER (random, in-range) pending the real Libera WFOV
+# cloud-fraction retrieval.
+
+attributes:
+  ProductID: CF-CAM
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+
+coordinates:
+  # RADIOMETER_TIME is the record axis: one entry per radiometer footprint, declared identically to
+  # FMATCH-CAM so CF-CAM and FMATCH-CAM share the exact same axis for a given date.
+  RADIOMETER_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Radiometer footprint observation time
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+variables:
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      # Carried in percent [0, 100]. FMATCH-CAM ingests this as-is into cloud_fraction_camera.
+      long_name: Total cloud fraction over the footprint (Libera WFOV, PLACEHOLDER)
+      units: percent
+      valid_range: [0.0, 100.0]
+  cloud_fraction_standard_deviation:
+    dtype: float32
+    dimensions: ["RADIOMETER_TIME"]
+    attributes:
+      long_name: Within-footprint standard deviation of cloud fraction (Libera WFOV, PLACEHOLDER)
+      units: percent
+      valid_range: [0.0, 100.0]
