@@ -1,12 +1,15 @@
 """Tests for kernels module"""
 
 import logging
+import shutil
 from pathlib import Path
 from unittest import mock
 
 import pytest
 import requests
 import responses
+import spiceypy as spice
+from spiceypy.utils.exceptions import SpiceyError
 
 from libera_utils.config import config
 from libera_utils.libera_spice import spice_utils
@@ -38,7 +41,7 @@ def test_find_most_recent_naif_kernel_earth_extended_pck(test_data_path):
 
 
 @responses.activate
-def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
+def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path, recorded_retry_backoff):
     """Test caching a kernel file from NAIF, mocking out the actual HTTP requests."""
     # Name of a file mentioned in the test naif page
     test_kernel_filename = "earth_000101_211220_210926.bpc"
@@ -81,6 +84,8 @@ def test_kernel_file_cache(spice_test_data_path, test_data_path, tmp_path):
         assert cache.is_cached() is False
         responses.replace(responses.GET, full_file_url, status=500)
         assert cache.kernel_path == spice_test_data_path / test_kernel_filename
+        # The fallback is only reached after the download retries are exhausted, not on first failure.
+        assert recorded_retry_backoff == [1, 1]
 
 
 def test_kernel_file_cache_s3(write_file_to_s3, test_jpss_spk, tmp_path):
@@ -228,7 +233,9 @@ def test_ls_kernel_coverage(furnish_test_jpss_ck, furnish_test_jpss_spk, furnish
     ],
 )
 @responses.activate(registry=responses.registries.OrderedRegistry)
-def test_find_most_recent_naif_kernel_timeout_loop(mock_responses, expectation, test_data_path, spice_test_data_path):
+def test_find_most_recent_naif_kernel_timeout_loop(
+    mock_responses, expectation, test_data_path, spice_test_data_path, recorded_retry_backoff
+):
     """Testing error handling for connectionHTTP, and timeout errors"""
     for mock_response in mock_responses:
         responses.add(mock_response)
@@ -243,6 +250,9 @@ def test_find_most_recent_naif_kernel_timeout_loop(mock_responses, expectation, 
             "https://fake-naif-page", "earth_[0-9]{6}_[0-9]{6}_[0-9]{6}.bpc"
         )
         assert success == expectation
+
+    # Every attempt but the last is followed by a one-second backoff.
+    assert recorded_retry_backoff == [1] * (len(mock_responses) - 1)
 
 
 @pytest.mark.parametrize(
@@ -302,7 +312,9 @@ def test_find_most_recent_naif_kernel_timeout_loop(mock_responses, expectation, 
     ],
 )
 @responses.activate(registry=responses.registries.OrderedRegistry)
-def test_download_failure(mock_responses, expectation, spice_test_data_path, test_data_path, tmp_path):
+def test_download_failure(
+    mock_responses, expectation, spice_test_data_path, test_data_path, tmp_path, recorded_retry_backoff
+):
     """Testing retry loop for downloading naif kernel"""
     for mock_response in mock_responses:
         responses.add(mock_response)
@@ -320,3 +332,89 @@ def test_download_failure(mock_responses, expectation, spice_test_data_path, tes
 
     for mock_response in mock_responses:
         assert mock_response.call_count == 1
+
+    # Every attempt but the last is followed by a one-second backoff.
+    assert recorded_retry_backoff == [1] * (len(mock_responses) - 1)
+
+
+def _write_metakernel(directory: Path, kernel_names: list[str]) -> Path:
+    """Write a SPICE metakernel naming ``kernel_names`` relative to the current working directory."""
+    listed = ",\n".join(f"                      '{name}'" for name in kernel_names)
+    metakernel = directory / "test_metakernel.tm"
+    metakernel.write_text(f"KPL/MK\n\n\\begindata\n\nKERNELS_TO_LOAD = (\n{listed}\n)\n\n\\begintext\n")
+    return metakernel
+
+
+# ``ensure_spice`` recovers from an unfurnished kernel pool in three ways depending on configuration.
+# Until LIBSDC-703 these branches were only reached incidentally, by the time-conversion tests in
+# tests/unit/test_time.py, which meant a unit test silently downloaded an LSK from NAIF on every run.
+# They are exercised here directly instead, with the transport mocked.
+def test_ensure_spice_furnishes_the_configured_metakernel(test_lsk, tmp_path, monkeypatch):
+    """With SPICE_METAKERNEL set, a failed first call is retried after furnishing that metakernel."""
+    shutil.copy(test_lsk, tmp_path / test_lsk.name)
+    metakernel = _write_metakernel(tmp_path, [test_lsk.name])
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SPICE_METAKERNEL", str(metakernel))
+
+    @spice_utils.ensure_spice
+    def convert_utc():
+        return spice.utc2et("2021-04-09T13:58:49.745289445")
+
+    assert convert_utc() == pytest.approx(671248798.9309382, abs=1e-6)
+    furnished = spice_utils.ls_kernels()
+    assert spice_utils.KernelFileRecord("META", str(metakernel)) in furnished
+    assert any(record.file_name.endswith(test_lsk.name) for record in furnished)
+
+
+@responses.activate
+def test_ensure_spice_downloads_an_lsk_when_only_time_kernels_are_needed(spice_test_data_path, tmp_path, monkeypatch):
+    """Without SPICE_METAKERNEL, a time-only function falls back to the newest LSK published by NAIF."""
+    monkeypatch.delenv("SPICE_METAKERNEL", raising=False)
+    lsk_name = "naif0012.tls"
+    responses.add(
+        responses.GET,
+        spice_utils.NAIF_LSK_INDEX_URL,
+        body=f'<a href="naif0011.tls">naif0011.tls</a><a href="{lsk_name}">{lsk_name}</a>',
+        status=200,
+        content_type="text/html",
+    )
+    responses.add(
+        responses.GET,
+        f"{spice_utils.NAIF_LSK_INDEX_URL}{lsk_name}",
+        body=(spice_test_data_path / lsk_name).read_bytes(),
+        status=200,
+        content_type="application/octet-stream",
+    )
+
+    @spice_utils.ensure_spice(time_kernels_only=True)
+    def convert_utc():
+        return spice.utc2et("2021-04-09T13:58:49.745289445")
+
+    with mock.patch(
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
+        new_callable=mock.PropertyMock,
+        return_value=tmp_path,
+    ):
+        assert convert_utc() == pytest.approx(671248798.9309382, abs=1e-6)
+
+    assert (tmp_path / lsk_name).exists()
+    # The SCLK is furnished alongside the LSK so clock-string conversions work on the same retry.
+    assert config.get("JPSS_SCLK") in [record.file_name for record in spice_utils.ls_kernels()]
+
+
+def test_ensure_spice_raises_without_a_metakernel(monkeypatch):
+    """Without SPICE_METAKERNEL and without time_kernels_only, there is nothing to fall back to."""
+    monkeypatch.delenv("SPICE_METAKERNEL", raising=False)
+
+    @spice_utils.ensure_spice
+    def convert_utc():
+        return spice.utc2et("2021-04-09T13:58:49.745289445")
+
+    with pytest.raises(SpiceyError, match="SPICE_METAKERNEL is not set"):
+        convert_utc()
+
+
+def test_ensure_spice_rejects_a_non_callable():
+    """The decorator reports a misuse rather than failing later at call time."""
+    with pytest.raises(ValueError, match="must be a callable object"):
+        spice_utils.ensure_spice("not a function")

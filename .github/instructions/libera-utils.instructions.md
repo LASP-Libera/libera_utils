@@ -41,13 +41,19 @@ generation, Libera file naming, and AWS pipeline integration.
 
 ## Testing
 
-- **Framework**: pytest. Unit tests in `tests/`; integration tests marked
-  `@pytest.mark.integration` and in `tests/integration/`.
-- **Run unit tests**: `pytest -m "not integration" tests/`
+- **Framework**: pytest, in three lanes. `tests/unit/` (unmarked), `tests/integration/`
+  (`pytestmark = pytest.mark.integration`), and `tests/e2e/` (`pytestmark = pytest.mark.e2e`).
+  PRs run `-m "not e2e"`; the daily build runs everything. Conventions for writing a test —
+  lane admission, step-scoped assertions, golden values — are in
+  `doc/source/developer-docs/testing.md`. Read it before adding or moving tests.
+- **Run unit tests**: `pytest -m "not integration and not e2e" tests/`
+- **Run what a PR runs**: `pytest -m "not e2e" tests/`
 - **Run with coverage**: `pytest --cov=libera_utils tests/`
-- **AWS/HTTP mocking**: Use `moto[s3]` and `responses` — never call real AWS endpoints in
-  unit tests.
-- **Fixtures**: Provided via plugins in `tests/plugins/`; prefer them over ad-hoc setup.
+- **No network outside `e2e`**: the autouse `block_outbound_network` fixture in `tests/conftest.py`
+  fails any other test that opens a socket to a remote host. Use `moto[s3]` and `responses` to mock
+  AWS and HTTP.
+- **Fixtures**: Provided via plugins in `tests/plugins/`; prefer them over ad-hoc setup. Non-fixture
+  test helpers live in `tests/helpers.py`.
 
 ## Key Patterns
 

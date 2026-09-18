@@ -3,35 +3,110 @@
 Testing is run with `pytest`. To run all tests, make sure the dev dependencies are installed and run:
 
 ```bash
-# Run all unit and integration tests
+# Run every lane, including the ones that contact NAIF
 pytest tests
 ```
 
 Pytest configuration is stored in `pyproject.toml` under `[tools.pytest.ini_options]`.
 
-Tests are stored in the `tests` directory and are divided into
-`integration` and `unit` tests. Unit tests check for expected behavior of small pieces of the
-package (e.g. a single function). Integration tests check for "larger" behavior across wider swaths of the package,
-testing that components function together cohesively. Integration test modules contain the pytest mark
-`pytestmark = pytest.mark.integration`. This allows you to selectively exclude running integration tests with
+## Test lanes
 
+Tests are stored in the `tests` directory and divided into three lanes. Which lane a test belongs
+in is decided by what it _depends on_, not by how important it is.
+
+| Lane        | Directory           | Marker                    | Runs     | Admission rule                                                                                                 |
+| ----------- | ------------------- | ------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| unit        | `tests/unit`        | none                      | every PR | Exercises one function or class. No network, no external process.                                              |
+| integration | `tests/integration` | `pytest.mark.integration` | every PR | Several components together, or a real subprocess such as `mkspk`/`msopck`. Everything it reads is checked in. |
+| e2e         | `tests/e2e`         | `pytest.mark.e2e`         | daily    | Needs a live external service, or is too slow to sit in front of a PR.                                         |
+
+```bash
+pytest -m "not integration and not e2e" tests   # unit only
+pytest -m "not e2e" tests                       # what a PR runs
+pytest -m e2e tests                             # what the daily build adds
 ```
-pytest -m "not integration" tests
-```
 
-Unit tests heavily utilize pytest parameterization in order to
-run a single test against many sets of inputs and outputs without duplicating code (see
-[parameterize]
-(https://docs.pytest.org/en/stable/example/parametrize.html#set-marks-or-test-id-for-individual-parametrized-test)).
+Markers are set per module with `pytestmark = pytest.mark.integration` (or `.e2e`) rather than per
+test, so a module belongs to exactly one lane.
 
-We also heavily utilize custom pytest [fixtures]
-(https://docs.pytest.org/en/stable/how-to/fixtures.html#requesting-fixtures),
-defined in `tests/plugins`. These plugins are made available to
-pytest in `conftest.py`, the main test configuration file for pytest.
+The PR and daily GitHub workflows both call `_run-tests.yml`, passing `lane: pr` or `lane: daily`.
+Nothing else distinguishes them: the daily build exists so that an outage at NAIF, or a dependency
+that drifted over a quiet week, does not block a pull request.
 
-In order to better ensure test independence, we use `pytest-randomly` to randomize the order of tests.
-The random seed used to set the order is printed at the beginning of a test run. You
-can re-run the tests with a specific random seed by running `pytest --randomly-seed=<seed>`.
+### The network guard
+
+Every test outside the `e2e` lane runs under `block_outbound_network` (an autouse fixture in
+`tests/conftest.py`), which raises if the test opens a socket to a remote host. Mocking layers such
+as `responses` and `moto` sit above the socket and are unaffected.
+
+This is enforced structurally because vigilance was not enough. A unit test that patched the method
+it was written about still reached the NAIF server through its _setup_ path -- `load_static_kernels`
+calls `load_naif_kernels` first -- and spent up to 34 seconds a run doing it, unnoticed for months.
+If the guard fires, either mock the transport or move the test into `tests/e2e` and mark it.
+
+## Writing a test here
+
+These are the conventions the kernel and geolocation tests were reorganised around
+(LIBSDC-703). They generalise to the rest of the package.
+
+### Test the step, not the aggregate
+
+Assert on the thing the code under test actually produces. A test whose subject is a _kernel_
+asserts on the kernel -- its coverage span, the rotation angle read back out, the quaternion
+convention. A test whose subject is a _frame definition_ asserts on pointing. Reaching for a
+downstream number because it is easy to obtain lets an error anywhere upstream of it pass.
+
+The corollary is that the same input feeding the same number is not necessarily duplicate
+coverage: what differs is the subject.
+
+### Precision at the step, tolerance at the end
+
+A step-level test should assert to the precision the step is actually capable of -- a round trip
+through an encoder correction closes to machine precision, so assert that, not `atol=1e-3`.
+Loose bounds belong only at the end-to-end level, where many small errors legitimately accumulate.
+
+This is not a style preference. The frozen kernel fixtures went stale for eight months while the
+end-to-end geolocation assertion kept passing, because a 1.28 km median footprint shift fits
+comfortably inside a tolerance wide enough to survive limb geometry. The three step-level
+assertions added alongside it fail immediately against the same stale kernels.
+
+### Golden values are scoped to the step they validate
+
+Where an external source has given us a known answer -- engineering line-of-sight vectors, a
+reference ground track, a CERES product -- use it against the single step that produces it, and
+say in the module docstring where it came from and what it establishes. A golden number checked
+several steps downstream of its source no longer tells you which step broke.
+
+Test modules descended from a formal internal validation carry a `Validation provenance` section
+naming it. Those assertions must not be weakened without re-running the validation.
+
+### Fixtures, and what they cost
+
+Prefer the custom [fixtures](https://docs.pytest.org/en/stable/how-to/fixtures.html#requesting-fixtures)
+in `tests/plugins` over ad-hoc setup; they are made available to pytest by `tests/conftest.py`.
+Geometry helpers that take arguments and return values, rather than participating in injection, live
+in `tests/helpers.py`.
+
+Generating SPICE kernels is expensive and generating them is usually not the subject of the test.
+`tests/test_data/dynamic_kernels` holds a frozen set standing in for the output of the SPICE
+processing step, which is also what production hands the L1B container. Rebuild it with
+`tests/fixture_generation/generate_dynamic_kernels.py`, whose module docstring documents the source
+data and the coverage window. Regenerating it changes the geometry downstream tests see, and
+`libera_rad` carries a copy of the same fixture set.
+
+### Parametrize repeats -- but check the parameter does something
+
+[Parametrization](https://docs.pytest.org/en/stable/example/parametrize.html) is the right way to run
+one test body over several kernel types or input shapes, rather than duplicating the body. Confirm
+the parameter actually changes the input: four AWS tests were parametrized over three path wrapper
+types that each stringified identically before use, costing 34 seconds a run for one test's worth of
+coverage.
+
+### Test order is randomized
+
+`pytest-randomly` randomizes test order so that hidden inter-test dependencies surface. The seed is
+printed at the start of a run; reproduce an ordering with `pytest --randomly-seed=<seed>`. A test
+that only passes in a particular order is a bug in the test, not in the plugin.
 
 ## Generating Coverage and Test Reports
 

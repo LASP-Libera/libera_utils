@@ -1,5 +1,11 @@
 # Version Changes
 
+## 5.12.0
+
+- BREAKING: The NOAA-20 SPICE configuration (`libera_utils/data/spice/noaa20/`) is no longer shipped in the package. It has moved to `tests/test_data/noaa20_spice/`, where a README records what it covers. Nothing in the pipeline could select it: `LIBERA_KERNEL_DIR` defaults to the jpss4 family and no caller overrides it, and the NOAA-20 frame kernel declares none of the measured misalignments added in LIBSDC-806, so it cannot produce flight-representative geometry. It is retained as test data because it is the only kernel generation driven by real decoded spacecraft telemetry and the only geolocation validated against a third-party product (CERES). A downstream package that set `LIBERA_KERNEL_DIR` to this directory must now vendor the configuration itself.
+- BREAKING: Dropped from that configuration at the same time: `noaa20_sc.tle.spk.json`, which nothing referenced; the Az/El mechanism CK configs; and the five static offset configs. The static offset kernels are now validated against the jpss4 configs the package actually ships.
+- MAINT: Tests are split into three lanes -- `tests/unit`, `tests/integration` (`pytest.mark.integration`) and the new `tests/e2e` (`pytest.mark.e2e`). Pull requests run `-m "not e2e"`; the daily build runs everything. An autouse fixture fails any test outside the `e2e` lane that opens a network connection, which caught 28 tests silently downloading kernels from NAIF, including every test in `tests/unit/test_time.py`. See `doc/source/developer-docs/testing.md`.
+
 ## 5.11.0
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for per-file science data-time spans without full L1A assembly, covering every `DATA_TIME_INDEXED_APIDS` member (WFOV SOP FSW image times; RAD/CAL/AXIS sample epoch+period or per-sample times). `extract_data_time_range` returns `None` for a WFOV file holding no `SOP` packet, which is expected when a large image's mem-dump is chunked across files or downlink passes.

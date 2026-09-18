@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.11.0"
+version = "5.12.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -104,7 +104,8 @@ sphinx = "*"
 
 [tool.pytest.ini_options]
 markers = [
-    "integration: mark a test as an integration test. Skip these tests with `pytest -m 'not integration' tests`"
+    "integration: mark a test as an integration test. Skip these tests with `pytest -m 'not integration' tests`",
+    "e2e: mark a test as belonging to the daily lane, for tests that need a live external service or are too slow for every push. Select with `pytest -m e2e tests`. The marker also lifts the outbound-network guard that every other test runs under."
 ]
 minversion = "6.0"
 xfail_strict = true
