@@ -12,7 +12,14 @@ Statuses: `provisional` · `established` · `graduated` · `retired`.
 
 A rule becomes `established` when the reviewer has cited it and a person has accepted the
 finding in two different pull requests. A `provisional` rule that has not done that by the
-second ratchet after admission is retired by default. Everything below is `provisional`
+second ratchet after admission is retired by default.
+
+**No rule leaves without its reasoning being kept.** When a rule graduates into a check,
+retires or is rewritten, the ratchet writes its biography — the text as it read, why it was
+admitted, every decline reason quoted, and what the replacement cannot catch — to
+`standards/archive/libera_utils/` in the shared corpus, in the same pull request. The entry
+here becomes a one-line stub pointing at it, so an ID is never reused and the reason is
+never lost. Everything below is `provisional`
 except R-010, which a pre-commit hook already enforces.
 
 v0 evidence points at the merged pull request whose review threads produced the rule.
