@@ -3,7 +3,7 @@
 Covers the assembly entry points (``assemble_fmatch_dataset`` / ``write_fmatch_product``) for both
 timescales, their failure paths, the integer fill, the derived sun glint angle, the coverage
 QA bits, and the small helpers whose edge cases decide a product value (longitude wrapping, the
-viewing zenith angle read).
+tile/weight shape check, the viewing zenith angle read).
 """
 
 from __future__ import annotations
@@ -23,15 +23,16 @@ from libera_utils.footprint_matching.product import (
     _footprint_geometry,
     _merge_coverage_qa,
     _normalize_longitude,
+    _tile_coverage,
     assemble_fmatch_dataset,
     compute_derived_viewing_geometry,
     load_fmatch_definition,
     write_fmatch_product,
 )
-from libera_utils.footprint_matching.types import BoundingBox, FmatchCoverageFlag, OperationalMode
-from libera_utils.footprint_matching.weighting import AngularPSFWeigher
+from libera_utils.footprint_matching.types import BoundingBox, FmatchCoverageFlag, GridTile, OperationalMode
+from libera_utils.footprint_matching.weighting import AngularPSFWeigher, WeightField
 from libera_utils.io.product_definition import LiberaVariableDefinition
-from tests.plugins.footprint_matching_fixtures import FakeFootprint
+from tests.unit.test_footprint_matching.fake_reader_fixtures import FakeFootprint, make_manager
 
 _PARTIAL = int(FmatchCoverageFlag.PARTIAL_COVERAGE)
 _INSUFFICIENT = int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
@@ -189,6 +190,20 @@ class TestNormalizeLongitude:
         assert (_normalize_longitude(lon_min), _normalize_longitude(lon_max)) == pytest.approx(expected)
 
 
+class TestTileCoverage:
+    def test_shape_mismatch_raises(self):
+        tile = GridTile(
+            data=np.ones((3, 3)),
+            lats=np.array([0.3, 0.5, 0.7]),
+            lons=np.array([0.3, 0.5, 0.7]),
+            bounds=BoundingBox(0.0, 1.0, 0.0, 1.0),
+            source="igbp",
+        )
+        weights = WeightField(weights=np.ones((2, 2)), total_energy=4.0, max_radius_km=10.0)
+        with pytest.raises(ValueError, match=r"\(2, 2\).*'igbp'.*\(3, 3\)"):
+            _tile_coverage(tile, weights)
+
+
 class TestFootprintGeometry:
     @pytest.mark.parametrize("viewing_zenith", [None, float("nan")])
     def test_missing_viewing_zenith_raises(self, viewing_zenith):
@@ -216,7 +231,7 @@ class TestMergeCoverageQa:
 
     @staticmethod
     def _footprint(*, truncated: bool = False, off_limb: bool = False) -> FakeFootprint:
-        bbox = None if off_limb else BoundingBox(0.2, 0.8, 0.2, 0.8, truncated=truncated)
+        bbox = BoundingBox(0.2, 0.8, 0.2, 0.8, truncated=truncated)
         return FakeFootprint(bbox, 0.5, 0.5, off_limb=off_limb)
 
     def test_coverage_bits(self):
@@ -265,28 +280,30 @@ class TestIntegerAggregatePlacement:
 
     @staticmethod
     def _aggregate_with_one_gap(monkeypatch):
-        def fake_aggregate(mode, footprints, sources=None, **kwargs):
+        def fake_aggregate(mode, footprints, tile_manager=None, **kwargs):
             values = np.full(len(footprints), 3.0)
             values[0] = np.nan
             return {"igbp_surface_type": values}, np.ones(len(footprints))
 
         monkeypatch.setattr(product, "aggregate_external_variables", fake_aggregate)
 
-    def test_radiometer_column(self, fake_sources, monkeypatch):
+    def test_radiometer_column(self, tmp_path, monkeypatch):
         self._aggregate_with_one_gap(monkeypatch)
-        dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), sources=fake_sources)
+        dataset = assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), tile_manager=make_manager(tmp_path))
         assert dataset["igbp_surface_type"].dtype == np.int16
         np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [-1, 3, 3])
 
-    def test_camtime_grid(self, fake_sources, monkeypatch):
+    def test_camtime_grid(self, tmp_path, monkeypatch):
         self._aggregate_with_one_gap(monkeypatch)
-        dataset = assemble_fmatch_dataset(OperationalMode.CAM_CAMTIME, _pseudo_footprints(), sources=fake_sources)
+        dataset = assemble_fmatch_dataset(
+            OperationalMode.CAM_CAMTIME, _pseudo_footprints(), tile_manager=make_manager(tmp_path)
+        )
         # The first footprint's gap and the padded cell both take -1.
         np.testing.assert_array_equal(dataset["igbp_surface_type"].values, [[-1, 3], [3, -1]])
 
 
 class TestRadiometerAggregation:
-    def test_defaults_to_angular_weigher(self, fake_sources, monkeypatch):
+    def test_defaults_to_angular_weigher(self, tmp_path, monkeypatch):
         calls = []
         original = AngularPSFWeigher.weight_field
 
@@ -295,20 +312,21 @@ class TestRadiometerAggregation:
             return original(self, *args, **kwargs)
 
         monkeypatch.setattr(AngularPSFWeigher, "weight_field", spy)
-        assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), sources=fake_sources)
+        assemble_fmatch_dataset(OperationalMode.CAM, _l1b_inputs(), tile_manager=make_manager(tmp_path))
         assert calls
         assert set(calls) == {AngularPSFWeigher}
 
 
 class TestWriteFmatchProduct:
-    def test_round_trip(self, tmp_path, fake_sources):
+    def test_round_trip(self, tmp_path):
+        manager = make_manager(tmp_path)
         filename = write_fmatch_product(
             OperationalMode.CAM,
             _l1b_inputs(),
             tmp_path,
             algorithm_version="1.0.0",
             input_files="x",
-            sources=fake_sources,
+            tile_manager=manager,
         )
         assert filename.data_product_id == DataProductIdentifier.aux_fmatch_cam
 
