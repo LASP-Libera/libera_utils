@@ -477,3 +477,58 @@ def test_cloud_fraction_cli_dispatch(cli_args, runner_module, monkeypatch):
 
     assert called_with["args"] is args
     assert called_with["args"].manifest == "file.manifest"
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["fmatch", "cam", "file.manifest"],
+            argparse.Namespace(func=cli.fmatch_cam_cli_handler, manifest="file.manifest"),
+        ),
+        (
+            ["fmatch", "cam-camtime", "file.manifest"],
+            argparse.Namespace(func=cli.fmatch_cam_camtime_cli_handler, manifest="file.manifest"),
+        ),
+        (
+            ["fmatch", "imager", "file.manifest"],
+            argparse.Namespace(func=cli.fmatch_imager_cli_handler, manifest="file.manifest"),
+        ),
+        (
+            ["fmatch", "imager-camtime", "file.manifest"],
+            argparse.Namespace(func=cli.fmatch_imager_camtime_cli_handler, manifest="file.manifest"),
+        ),
+        (
+            ["fmatch", "imager-flash", "file.manifest"],
+            argparse.Namespace(func=cli.fmatch_imager_flash_cli_handler, manifest="file.manifest"),
+        ),
+    ],
+)
+def test_fmatch_parse_cli_args(cli_args, parsed):
+    """Test that fmatch cli args are parsed properly."""
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "runner_module"),
+    [
+        (["fmatch", "cam", "file.manifest"], "libera_utils.footprint_matching.fmatch_cam"),
+        (["fmatch", "cam-camtime", "file.manifest"], "libera_utils.footprint_matching.fmatch_cam_camtime"),
+        (["fmatch", "imager", "file.manifest"], "libera_utils.footprint_matching.fmatch_imager"),
+        (["fmatch", "imager-camtime", "file.manifest"], "libera_utils.footprint_matching.fmatch_imager_camtime"),
+        (["fmatch", "imager-flash", "file.manifest"], "libera_utils.footprint_matching.fmatch_imager_flash"),
+    ],
+)
+def test_fmatch_cli_dispatch(cli_args, runner_module, monkeypatch):
+    """The fmatch subcommands dispatch to the matching runner's ``algorithm`` with the parsed args."""
+    import importlib
+
+    module = importlib.import_module(runner_module)
+    called_with = {}
+    monkeypatch.setattr(module, "algorithm", lambda parsed_args: called_with.setdefault("args", parsed_args))
+
+    args = cli.parse_cli_args(cli_args)
+    args.func(args)
+
+    assert called_with["args"] is args
+    assert called_with["args"].manifest == "file.manifest"
