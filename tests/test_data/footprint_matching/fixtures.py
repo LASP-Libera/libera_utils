@@ -1280,14 +1280,14 @@ def make_l1b_radiometer_fixture(
     """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
 
     Contains exactly the variables that
-    :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs` reads: the CF-encoded
+    :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs` reads: the CF-encoded
     ``radiometer_time`` coordinate, the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
     through verbatim, and the scan-reference geometry (subsatellite point, satellite radius and cone-angle rate) that feeds the
     ray-traced bounding box and angular PSF weigher. The values are physically plausible but arbitrary; only the
     variable names, dtypes and time encoding are the contract under test.
 
     The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
-    with :func:`libera_utils.footprint_matching._runner.select_manifest_files_by_product_id`.
+    with :func:`libera_utils.footprint_matching._runner_common.select_manifest_files_by_product_id`.
 
     Parameters
     ----------
