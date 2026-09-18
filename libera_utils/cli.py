@@ -77,6 +77,42 @@ def scene_id_imager_camtime_cli_handler(parsed_args: argparse.Namespace):
     return algorithm(parsed_args)
 
 
+def scene_id_imager_cli_handler(parsed_args: argparse.Namespace):
+    """Run the SCENE-ID-IMAGER (radiometer-timescale) algorithm from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+    """
+    from libera_utils.scene_identification.scene_id_imager import algorithm
+
+    return algorithm(parsed_args)
+
+
+def scene_id_imager_flash_cli_handler(parsed_args: argparse.Namespace):
+    """Run the SCENE-ID-IMAGER-FLASH (radiometer-timescale) algorithm from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+    """
+    from libera_utils.scene_identification.scene_id_imager_flash import algorithm
+
+    return algorithm(parsed_args)
+
+
 def cloud_fraction_cam_cli_handler(parsed_args: argparse.Namespace):
     """Run the CF-CAM (radiometer-timescale) Camera Cloud Fraction algorithm from an input manifest.
 
@@ -266,11 +302,23 @@ def parse_cli_args(cli_args: list):
     scene_id_cam_camtime_parser.set_defaults(func=scene_id_cam_camtime_cli_handler)
     scene_id_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
+    scene_id_imager_parser = scene_id_subparsers.add_parser(
+        "imager", help="run the SCENE-ID-IMAGER algorithm (radiometer timescale) from a manifest file"
+    )
+    scene_id_imager_parser.set_defaults(func=scene_id_imager_cli_handler)
+    scene_id_imager_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+
     scene_id_imager_camtime_parser = scene_id_subparsers.add_parser(
         "imager-camtime", help="run the SCENE-ID-IMAGER-CAMTIME algorithm (camera timescale) from a manifest file"
     )
     scene_id_imager_camtime_parser.set_defaults(func=scene_id_imager_camtime_cli_handler)
     scene_id_imager_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+
+    scene_id_imager_flash_parser = scene_id_subparsers.add_parser(
+        "imager-flash", help="run the SCENE-ID-IMAGER-FLASH algorithm (radiometer timescale) from a manifest file"
+    )
+    scene_id_imager_flash_parser.set_defaults(func=scene_id_imager_flash_cli_handler)
+    scene_id_imager_flash_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==================
     # CLOUD FRACTION CLI
