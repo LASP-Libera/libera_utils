@@ -1,6 +1,24 @@
 Closes #NNN · LIBSDC-NNNN · Outcome: <the ticket's outcome line>
 
-<!-- LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too. -->
+Loop-exit: clean
+
+<!--
+LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too.
+
+Loop-exit is one line and must be present. Exactly one of:
+    Loop-exit: clean | capped | flapping | timed out | halted
+written by loop-self-review, saying how the build loop ended. capped, flapping and timed out
+are not failures to hide: they say a bound was hit and a person should look. halted means an
+existing test was weakened rather than the code fixed, and it also goes on the line above
+everything else.
+
+If the loop did not run, replace that line with a reason and add the skip-loop label:
+    Skip-loop: <why>
+
+A pull request carrying neither line is one nobody can tell about, which is the whole point
+of the line. A CI check that enforces its presence is parked, not abandoned -- the format is
+fixed now so the check is a one-line grep later.
+-->
 
 ## In context
 

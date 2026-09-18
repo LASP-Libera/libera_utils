@@ -49,9 +49,9 @@ Three directions; the first is the classic, and the other two are what a green s
 assertion, a removed `raises`, a new `skip` or `xfail`, a dropped `parametrize` case, or an
 expected value re-tuned to the new output. Two more, specific to this repository:
 
-- A test moved from `tests/unit` or `tests/integration` into `tests/e2e` to get past the
-  network guard, rather than being mocked. The guard exists because 28 tests were silently
-  downloading kernels from NAIF for months (D-009).
+- A test relocated to escape a guard rather than mocked. The outbound-network guard exists
+  because 28 tests were silently downloading kernels from NAIF for months; the lanes and the
+  guard are described once in `standards/test-lanes.md` (D-009, provisional).
 - A golden value changed without the change being stated in the pull request body. A test
   asserts on its own step's product (D-010); a re-tuned golden value is a science claim.
 
@@ -60,14 +60,13 @@ to make a suite green adds; a person who knows the suite edits. A new test whose
 existing module already covers belongs in that module, beside its siblings or as a
 `parametrize` case; a new test _file_ the plan did not name is a finding on its own. Judge
 on the subject, not the assertion (D-010): the same input feeding the same number is
-duplicate coverage only when the subject matches, and that is `test/duplicate`. Two repo
-specifics: a lane is decided by what a test depends on, so a new module must declare its
-lane with `pytestmark`, and shared setup belongs in `tests/plugins/` as a fixture rather
-than in a new helper module.
+duplicate coverage only when the subject matches, and that is `test/duplicate`. One repo specific: shared setup belongs in `tests/plugins/` as a fixture rather than in a new
+helper module. **Judge shape, not location** — where a test lives is settled by
+`standards/test-lanes.md`, and a finding about the lane layout belongs there, not here.
 
-**Coverage of what changed**, keyed `test/uncovered` and `test/failure-path`. Run
-`pytest -m "not e2e" --cov=libera_utils --cov-report=term-missing` and list every line the
-diff added or changed that no test executes, as `file:line`.
+**Coverage of what changed**, keyed `test/uncovered` and `test/failure-path`. Run the
+coverage command named in `standards/test-lanes.md` and list every line the diff added or
+changed that no test executes, as `file:line`.
 Separately, every `raise` the diff adds needs a test asserting it: this repository's
 contract is that a defined input produces a defined product or the run stops, so an
 untested raise is an unenforced contract (R-002, R-004). Report the lines, never a

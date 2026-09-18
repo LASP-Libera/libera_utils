@@ -15,6 +15,8 @@ request to fix the corpus.
 | `decisions.md`       | Decisions local to this repository. Cross-repository ones are shared           |
 | `SHARED.md`          | Where the shared vocabulary, decisions and context live, and how to reach them |
 | `checks/`            | Rules that graduated into a tool, each naming the rule it replaced             |
+| `archive.md`         | One line per rule that has left `rules.md`, with where its reasoning lives     |
+| `test-lanes.md`      | Every lane marker, path and command the corpus depends on, in one place        |
 | `log/`               | One record per reviewed pull request, and one report per ratchet               |
 
 `.review/` is the agents' scratch directory and is gitignored.
@@ -32,8 +34,8 @@ requests, the Atlassian MCP server for Jira, and a local run for test timings.
 | Median threads that asked for a change               | **11**                           | Excluding acknowledgements, answered questions and praise                                                                                                     |
 | Distinct concerns raised more than once              | **17**                           | 14 admitted as rules, 3 held as candidates                                                                                                                    |
 | Share a linter could have caught                     | ~10%                             | 10 of ~105 sampled threads, 9 of them in one PR                                                                                                               |
-| Unit lane wall clock                                 | **27.6 s**                       | 1019 tests, `pytest -m "not integration and not e2e"`                                                                                                         |
-| PR lane wall clock                                   | **71.2 s**                       | 1091 tests, `pytest -m "not e2e"`                                                                                                                             |
+| Unit lane wall clock                                 | **27.6 s**                       | 1019 tests; commands in `standards/test-lanes.md`                                                                                                             |
+| PR lane wall clock                                   | **71.2 s**                       | 1091 tests; commands in `standards/test-lanes.md`                                                                                                             |
 | Where work originates                                | LIBSDC Jira, written by the team | 112 issues closed or updated in 180 days; ops opens a ticket when a flight procedure changes an ObsID name                                                    |
 | Repositories sharing this vocabulary                 | **6**                            | curryer, libera_utils, libera_rad, libera_cam, libera_analysis, CSDS                                                                                          |
 | What already states a convention                     | 8 files                          | `.github/instructions/*.instructions.md` (2), `copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md`, `doc/source/developer-docs/{testing,git,build_release}.md` |
@@ -81,7 +83,10 @@ scales off that number and none of them was inherited.
 configuration and a ruff select list. Phase 0 here was restructuring, not archaeology, which
 is why the rules could start at the cap rather than at ten.
 
-**5. What may leave the repository?** **This repository is public.** No internal Confluence
+**5. What may leave the repository?** **This repository is public**, and `standards/` does
+not ship: a `poetry build` on this branch puts only `libera_utils/` in the wheel, and only
+LICENSE, README, `pyproject.toml` and PKG-INFO beside it in the sdist. Confirmed 2026-09-18,
+so nothing here reaches a PyPI consumer. It is still readable by anyone with the repository. No internal Confluence
 or Jira URL and no internal document content goes into source, docstrings, tests, or
 anything under `standards/`. That is R-014, and it is why the shared corpus — which may
 carry internal links, because it is private — lives in `libera_llm_tooling` and is named
