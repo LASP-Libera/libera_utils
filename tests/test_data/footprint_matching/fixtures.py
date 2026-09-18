@@ -48,6 +48,7 @@ CERES CLDPIX (NetCDF4, imager-pixel swath):
     Example filename: CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc
 """
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -1268,3 +1269,109 @@ def make_cldpix_fixture(
         _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3))
 
     return out_path
+
+
+def make_l1b_radiometer_fixture(
+    directory: Path,
+    n_footprints: int = 8,
+    *,
+    n_invalid: int = 0,
+) -> Path:
+    """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
+
+    Contains exactly the variables that
+    :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs` reads: the CF-encoded
+    ``radiometer_time`` coordinate, the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
+    through verbatim, and the scan-reference geometry (subsatellite point, satellite radius and cone-angle rate) that feeds the
+    ray-traced bounding box and angular PSF weigher. The values are physically plausible but arbitrary; only the
+    variable names, dtypes and time encoding are the contract under test.
+
+    The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
+    with :func:`libera_utils.footprint_matching._runner.select_manifest_files_by_product_id`.
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the L1B file into (e.g. pytest ``tmp_path``).
+    n_footprints : int, optional
+        Total number of footprints written. Defaults to 8.
+    n_invalid : int, optional
+        How many leading footprints to fill with NaN geolocation, mimicking the real files' off-Earth samples. Those
+        rows are expected to be dropped by the reader, so ``n_footprints - n_invalid`` records should survive.
+        Defaults to 0.
+
+    Returns
+    -------
+    Path
+        Path to the written L1B RAD-4CH NetCDF file.
+    """
+    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
+    from libera_utils.footprint_matching._runner import L1B_TIME_VARIABLE  # noqa: PLC0415
+    from libera_utils.footprint_matching.product import (  # noqa: PLC0415
+        L1B_CONE_ANGLE_RATE_VARIABLE,
+        L1B_PASSTHROUGH_VARIABLES,
+        L1B_SCAN_REFERENCE_VARIABLES,
+    )
+    from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
+
+    base_time = np.datetime64("2026-06-11T00:00:00", "ns")
+    cadence = np.timedelta64(10_000_000, "ns")  # 100 Hz
+    times = base_time + np.arange(n_footprints, dtype="int64") * cadence
+
+    # Spread the footprints over a plausible range for each quantity so tests can tell the columns apart. The angles
+    # stay inside the product definition's valid ranges (SZA [0,180], VZA [0,90], RAA [0,360]). The subsatellite point
+    # sits a few degrees off the footprint boresight so the ray-traced box has a real scan azimuth to orient by.
+    ranges = {
+        "latitude": (-60.0, 60.0),
+        "longitude": (-170.0, 170.0),
+        # Surface height of the boresight point above the WGS84 ellipsoid, metres.
+        "altitude": (0.0, 4000.0),
+        "solar_zenith_angle": (10.0, 80.0),
+        "viewing_zenith_angle": (0.0, 45.0),
+        "relative_azimuth_angle": (0.0, 350.0),
+        "subsatellite_latitude": (-58.0, 62.0),
+        "subsatellite_longitude": (-168.0, 172.0),
+        # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
+        "satellite_radius_km": (7205.0, 7215.0),
+    }
+    data_vars = {}
+    # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
+    for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items():
+        low, high = ranges[fmatch_name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float32)
+        if n_invalid:
+            # NaN is how the real L1B marks samples whose boresight misses the Earth.
+            values[:n_invalid] = np.nan
+        data_vars[l1b_name] = ((L1B_TIME_VARIABLE,), values)
+    for fmatch_name, l1b_name in L1B_SCAN_REFERENCE_VARIABLES.items():
+        low, high = ranges[fmatch_name]
+        values = np.linspace(low, high, n_footprints, dtype=np.float64)
+        if n_invalid:
+            values[:n_invalid] = np.nan
+        data_vars[l1b_name] = ((L1B_TIME_VARIABLE,), values)
+    # Cone-angle rate sweeps through zero so both scanning and (near-)stationary samples are represented.
+    cone_rate = np.linspace(-60.0, 60.0, n_footprints, dtype=np.float64)
+    data_vars[L1B_CONE_ANGLE_RATE_VARIABLE] = ((L1B_TIME_VARIABLE,), cone_rate)
+
+    dataset = xr.Dataset(data_vars, coords={L1B_TIME_VARIABLE: times})
+    # Match the real product's CF time encoding so xarray decodes it back to datetime64[ns] on read.
+    dataset[L1B_TIME_VARIABLE].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l1b_rad,
+        version="V1-0-0",
+        utc_start=_as_utc_datetime(times[0]),
+        utc_end=_as_utc_datetime(times[-1]),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
+def _as_utc_datetime(value: np.datetime64) -> datetime:
+    """Convert a numpy datetime64 to a timezone-aware UTC datetime for Libera filename construction."""
+    return datetime.fromisoformat(str(np.datetime64(value, "us"))).replace(tzinfo=UTC)
