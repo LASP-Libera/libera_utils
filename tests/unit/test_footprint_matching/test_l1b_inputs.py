@@ -1,7 +1,7 @@
 """Unit tests for reading the L1B Daily inputs that FMATCH is built on.
 
 These cover the pass-through contract read by
-``libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs``: which variables are read,
+``libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs``: which variables are read,
 the dtypes they are cast to, and the dropping of footprints whose boresight had no valid Earth
 intersection.
 """

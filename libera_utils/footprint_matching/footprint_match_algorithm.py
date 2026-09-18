@@ -1,23 +1,32 @@
-"""Shared manifest-driven runner logic for the FMATCH product family.
+"""FMATCH algorithm runners for the Libera radiometer and WFOV camera.
 
-The five FMATCH runners (``cam/``, ``cam_camtime/``, ``imager_flash/``, ``imager/``,
-``imager_camtime/``) are structurally identical: read an input manifest, locate the
-staged ancillary granules, keep the L1B input files of a particular product, run
-footprint matching on each, write the resulting FMATCH product, and emit an output
-manifest. They differ only by a handful of parameters:
+This module is the single home for every FMATCH runner. The five runners (CAM, CAM-CAMTIME,
+IMAGER, IMAGER-CAMTIME, IMAGER-FLASH) are structurally identical: read an input manifest, locate the
+staged ancillary granules, keep the L1B input files of a particular product, run footprint matching
+on each, write the resulting FMATCH product, and emit an output manifest. They differ only by a
+handful of parameters:
 
 * which :class:`~libera_utils.footprint_matching.types.OperationalMode` they produce
   (which in turn drives the product definition, the time coordinate, and the active
   reader set),
-* which L1B product counts as their input (``RAD-4CH`` vs ``CAM``), and
-* whether they consume the optional Camera Cloud Fraction product.
+* which L1B (or CF-CAM-CAMTIME) product counts as their input (``RAD-4CH`` vs ``CAM`` vs the bundled
+  camera product),
+* whether they consume the optional Camera Cloud Fraction product, and
+* for camera-timescale modes, how their pseudo-footprints are loaded.
 
-Rather than duplicate the manifest/dropbox plumbing five times, that shared body lives
-here and is parameterized by a small :class:`FmatchRunnerConfig`. Each concrete runner
-is then a thin module that builds a config and forwards its ``main``/``algorithm`` to
-:func:`run_algorithm`. This mirrors
-``libera_utils/scene_identification/_runner.py`` deliberately, so the two algorithm
-families read the same way.
+Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
+:func:`run_algorithm` and is parameterized by a small :class:`FmatchRunnerConfig`. The concrete
+runners are just the five :data:`FmatchRunnerConfig` values collected in :data:`RUNNER_CONFIGS`,
+keyed by their CLI subcommand name (``"cam"``, ``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``,
+``"imager-flash"``). The ``libera-utils fmatch <sub>`` CLI handlers select a config from that registry
+and forward it to :func:`run_algorithm`; a new FMATCH variant is one config plus one registry entry,
+no new module. This mirrors ``libera_utils/scene_identification/scene_id_algorithm.py`` deliberately,
+so the two algorithm families read the same way.
+
+Algorithm-agnostic runner helpers shared with the Camera Cloud Fraction runners (manifest selection,
+L1B loading, local materialization, version stamping) still live in
+``libera_utils/footprint_matching/_runner_common.py`` so both algorithms can reuse them without a
+dependency cycle.
 
 Environment
 -----------
@@ -57,6 +66,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import xarray as xr
 from cloudpathlib import AnyPath, S3Path
 
 # Importing the readers subpackage is what populates ReaderRegistry: every concrete
@@ -64,15 +74,20 @@ from cloudpathlib import AnyPath, S3Path
 # which only happens once its module has been imported. Without this import the
 # registry would be empty and every mode would resolve to zero readers.
 import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching._runner_common import (
     _as_local_path,
     algorithm_version,
+    load_l1b_camera_dataset,
     load_l1b_radiometer_inputs,
     select_manifest_files_by_product_id,
 )
+from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
 from libera_utils.footprint_matching.product import (
+    camtime_real_cell_mask,
     fmatch_time_variable,
     is_camera_timescale_mode,
+    pseudofootprints_from_camtime_dataset,
     write_fmatch_product,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
@@ -85,7 +100,6 @@ from libera_utils.logutil import configure_task_logging
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from libera_utils.constants import DataProductIdentifier
     from libera_utils.footprint_matching.types import PseudoFootprint
 
     # A camera-timescale footprint loader turns one local input file into this mode's pseudo-footprints
@@ -129,11 +143,12 @@ class FmatchRunnerConfig:
         (FMATCH-CAM-CAMTIME's cloud fraction is bundled in ``input_product_id``) and the IMAGER modes.
     log_prefix : str
         Short label used in task-log filenames (e.g. ``fmatch_cam``).
+    description : str
+        Help text describing this runner, used as the CLI ``--help`` description.
     camera_footprint_loader : CameraFootprintLoader or None
         For camera-timescale modes, the callable that turns one local input file into
-        ``(pseudo-footprints, cloud_fraction_camera_or_None)``. Injected by each camera runner so the
-        shared runner does not import camera segmentation: FMATCH-CAM-CAMTIME supplies a loader that
-        reconstructs footprints from its CF-CAM-CAMTIME input, FMATCH-IMAGER-CAMTIME one that segments
+        ``(pseudo-footprints, cloud_fraction_camera_or_None)``. FMATCH-CAM-CAMTIME uses a loader that
+        reconstructs footprints from its CF-CAM-CAMTIME input; FMATCH-IMAGER-CAMTIME one that segments
         an L1B camera file. ``None`` (and unused) for radiometer-timescale modes.
     """
 
@@ -142,6 +157,7 @@ class FmatchRunnerConfig:
     input_product_id: DataProductIdentifier
     cloud_fraction_product_id: DataProductIdentifier | None
     log_prefix: str
+    description: str
     camera_footprint_loader: CameraFootprintLoader | None = None
 
     @property
@@ -153,6 +169,144 @@ class FmatchRunnerConfig:
     def time_variable(self) -> str:
         """Name of the per-footprint time coordinate in the written product."""
         return fmatch_time_variable(self.mode)
+
+
+# --- Camera-timescale footprint loaders ----------------------------------------------------------------------------
+#
+# Each camera-timescale config points its camera_footprint_loader at one of these. They turn a single local input
+# file into that mode's pseudo-footprints (and, for CAM-CAMTIME, the per-footprint Camera Cloud Fraction). The two
+# modes obtain their footprints differently, which is exactly what the loader abstraction captures.
+
+
+def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFootprint], np.ndarray | None]:
+    """Reconstruct pseudo-footprints and cloud fraction from a local CF-CAM-CAMTIME file.
+
+    The camera-timescale footprint loader for FMATCH-CAM-CAMTIME. No segmentation happens here -- the
+    footprints were produced once by the cloud-fraction algorithm and are simply rebuilt from the
+    product, and the cloud fraction is flattened with the identical real-cell mask so it aligns 1:1
+    with them.
+
+    Parameters
+    ----------
+    local_input_path : pathlib.Path
+        Local path to a CF-CAM-CAMTIME NetCDF file.
+
+    Returns
+    -------
+    tuple[list[PseudoFootprint], numpy.ndarray | None]
+        The reconstructed pseudo-footprints and their per-footprint ``cloud_fraction_camera`` values.
+    """
+    with xr.open_dataset(local_input_path) as cf_dataset:
+        cf_dataset = cf_dataset.load()
+    footprints = pseudofootprints_from_camtime_dataset(cf_dataset)
+    cloud_fraction_camera: np.ndarray | None = None
+    if "cloud_fraction" in cf_dataset:
+        # Boolean-mask indexing returns row-major order, matching the reconstruction order.
+        mask = camtime_real_cell_mask(cf_dataset)
+        cloud_fraction_camera = np.asarray(cf_dataset["cloud_fraction"].values, dtype=np.float32)[mask]
+    return footprints, cloud_fraction_camera
+
+
+def _load_imager_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFootprint], None]:
+    """Segment a local L1B Daily Camera file into pseudo-footprints.
+
+    The camera-timescale footprint loader for FMATCH-IMAGER-CAMTIME. IMAGER-CAMTIME carries no cloud
+    fraction, so it does not read CF-CAM-CAMTIME; it runs the same segmentation the cloud-fraction
+    algorithm uses (:func:`segment_l1b_camera`). The second tuple element is always ``None`` because
+    this mode emits no ``cloud_fraction_camera``.
+
+    Parameters
+    ----------
+    local_input_path : pathlib.Path
+        Local path to an L1B Daily Camera (``CAM``) NetCDF file.
+
+    Returns
+    -------
+    tuple[list[PseudoFootprint], None]
+        The segmented pseudo-footprints and ``None`` (no cloud fraction).
+    """
+    dataset = load_l1b_camera_dataset(local_input_path)
+    footprints = segment_l1b_camera(dataset, log=logger)
+    return footprints, None
+
+
+# --- Per-variant runner configs ------------------------------------------------------------------------------------
+#
+# Each config below is a complete FMATCH runner. The comment on each records the domain rationale for its parameter
+# choices (latency rank, active reader set, cloud-fraction source); the shared engine (run_algorithm and friends) is
+# otherwise identical across all five.
+
+# FMATCH-CAM (radiometer timescale): the lowest-latency (camera / near-real-time) product; runs continuously from
+# mission start. Input is the L1B RAD-4CH product; the optional cloud fraction comes from CF-CAM (also radiometer
+# timescale). No RBSP-sourced readers are active at its latency rank.
+CAM_CONFIG = FmatchRunnerConfig(
+    mode=OperationalMode.CAM,
+    output_product_id=DataProductIdentifier.aux_fmatch_cam,
+    input_product_id=DataProductIdentifier.l1b_rad,
+    cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam,
+    log_prefix="fmatch_cam",
+    description="Run the Libera FMATCH-CAM algorithm from an input manifest.",
+)
+
+# FMATCH-CAM-CAMTIME (camera timescale): the camera-timescale near-real-time product. Its input is CF-CAM-CAMTIME,
+# which already carries the segmentation-derived pseudo-footprints and the cloud fraction, so this runner does not
+# segment anything -- _load_cam_camtime_footprints reconstructs footprints and reads cloud fraction from that product.
+CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
+    mode=OperationalMode.CAM_CAMTIME,
+    output_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
+    input_product_id=DataProductIdentifier.l2_cf_cam_camtime,
+    cloud_fraction_product_id=None,  # bundled in input_product_id (CF-CAM-CAMTIME)
+    log_prefix="fmatch_cam_camtime",
+    description="Run the Libera FMATCH-CAM-CAMTIME algorithm from an input manifest.",
+    camera_footprint_loader=_load_cam_camtime_footprints,
+)
+
+# FMATCH-IMAGER (radiometer timescale): the RBSP Climate Quality product -- the highest latency rank of the
+# radiometer-timed modes and thus the largest active reader set (RBSP CLDPIX/SSF + ERA5 single/pressure + VIIRS).
+# It declares no cloud_fraction_camera (cloud info comes from the imager readers), so it takes no cloud-fraction input.
+IMAGER_CONFIG = FmatchRunnerConfig(
+    mode=OperationalMode.IMAGER,
+    output_product_id=DataProductIdentifier.aux_fmatch_imager,
+    input_product_id=DataProductIdentifier.l1b_rad,
+    cloud_fraction_product_id=None,
+    log_prefix="fmatch_imager",
+    description="Run the Libera FMATCH-IMAGER algorithm from an input manifest.",
+)
+
+# FMATCH-IMAGER-CAMTIME (camera timescale): the RBSP Climate Quality camera-timescale product; requires RBSP inputs so
+# it does not run during the first operational year. Unlike CAM-CAMTIME it produces its own footprints -- it carries no
+# cloud fraction, so there is no CF-CAM-CAMTIME to read -- via _load_imager_camtime_footprints (segment_l1b_camera).
+IMAGER_CAMTIME_CONFIG = FmatchRunnerConfig(
+    mode=OperationalMode.IMAGER_CAMTIME,
+    output_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
+    input_product_id=DataProductIdentifier.l1b_cam,
+    cloud_fraction_product_id=None,
+    log_prefix="fmatch_imager_camtime",
+    description="Run the Libera FMATCH-IMAGER-CAMTIME algorithm from an input manifest.",
+    camera_footprint_loader=_load_imager_camtime_footprints,
+)
+
+# FMATCH-IMAGER-FLASH (radiometer timescale): the RBSP Flash-latency product, between near-real-time CAM and
+# climate-quality IMAGER (more ancillary readers than CAM, but RBSP-dependent so no first-year running). Declares no
+# cloud_fraction_camera (cloud info from the imager readers), so it takes no cloud-fraction input.
+IMAGER_FLASH_CONFIG = FmatchRunnerConfig(
+    mode=OperationalMode.IMAGER_FLASH,
+    output_product_id=DataProductIdentifier.aux_fmatch_imager_flash,
+    input_product_id=DataProductIdentifier.l1b_rad,
+    cloud_fraction_product_id=None,
+    log_prefix="fmatch_imager_flash",
+    description="Run the Libera FMATCH-IMAGER-FLASH algorithm from an input manifest.",
+)
+
+# Registry of every FMATCH runner, keyed by its ``libera-utils fmatch <sub>`` CLI subcommand name. The CLI handlers
+# look a config up here and forward it to run_algorithm; adding a variant is one config plus one entry.
+RUNNER_CONFIGS: dict[str, FmatchRunnerConfig] = {
+    "cam": CAM_CONFIG,
+    "cam-camtime": CAM_CAMTIME_CONFIG,
+    "imager": IMAGER_CONFIG,
+    "imager-camtime": IMAGER_CAMTIME_CONFIG,
+    "imager-flash": IMAGER_FLASH_CONFIG,
+}
 
 
 def run_algorithm(
@@ -499,7 +653,7 @@ def _ancillary_source_file_paths(
 ) -> dict[str, Path] | None:
     """Reduce the resolved ancillary inventory to the one-file-per-reader map assembly needs.
 
-    :func:`~libera_utils.footprint_matching._runner.resolve_ancillary_inputs` returns
+    :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs` returns
     a *list* of staged granules per reader, but the readers (and
     :func:`~libera_utils.footprint_matching.tiling.build_tile_manager`) each take a
     single ``file_path``. This collapses the inventory to one local file per reader,
@@ -572,7 +726,7 @@ def create_and_write_data_product(
         timescale modes read real cloud fraction from ``input_file_path`` instead.)
     ancillary_inputs : dict[str, list[pathlib.Path | cloudpathlib.S3Path]], optional
         The staged ancillary inventory from
-        :func:`~libera_utils.footprint_matching._runner.resolve_ancillary_inputs`.
+        :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs`.
         When it resolves to one local granule per active reader, the external variables
         and coverage/QA columns are computed; otherwise those columns are placeholders
         (see :func:`_ancillary_source_file_paths`).
@@ -633,7 +787,7 @@ def create_and_write_data_product(
     return output_file_path
 
 
-def build_argument_parser(config: FmatchRunnerConfig, description: str) -> argparse.ArgumentParser:
+def build_argument_parser(config: FmatchRunnerConfig) -> argparse.ArgumentParser:
     """Build the CLI argument parser for a FMATCH runner.
 
     Every runner takes the input manifest positionally.
@@ -641,16 +795,14 @@ def build_argument_parser(config: FmatchRunnerConfig, description: str) -> argpa
     Parameters
     ----------
     config : FmatchRunnerConfig
-        Runner parameters supplying the L1B input product label for the help text.
-    description : str
-        Help text describing this runner.
+        Runner parameters supplying the help-text description and the L1B input product label.
 
     Returns
     -------
     argparse.ArgumentParser
         The configured parser.
     """
-    parser = argparse.ArgumentParser(description=description)
+    parser = argparse.ArgumentParser(description=config.description)
     parser.add_argument(
         "manifest",
         type=str,
@@ -659,15 +811,13 @@ def build_argument_parser(config: FmatchRunnerConfig, description: str) -> argpa
     return parser
 
 
-def main(config: FmatchRunnerConfig, description: str, cli_args: list[str] | None = None) -> Any:
+def main(config: FmatchRunnerConfig, cli_args: list[str] | None = None) -> Any:
     """Shared CLI entrypoint body for a FMATCH runner.
 
     Parameters
     ----------
     config : FmatchRunnerConfig
-        The runner's configuration.
-    description : str
-        Help text describing this runner.
+        The runner's configuration (including its CLI ``--help`` description).
     cli_args : list[str], optional
         Command-line arguments (primarily for testing). Defaults to ``sys.argv``.
 
@@ -676,6 +826,6 @@ def main(config: FmatchRunnerConfig, description: str, cli_args: list[str] | Non
     Path | S3Path
         Path to the written output manifest file.
     """
-    parser = build_argument_parser(config, description)
+    parser = build_argument_parser(config)
     args = parser.parse_args(cli_args)
     return run_algorithm(args, config)
