@@ -58,7 +58,6 @@ References
 
 from __future__ import annotations
 
-import enum
 import logging
 import math
 from dataclasses import dataclass
@@ -77,7 +76,10 @@ from libera_utils.footprint_matching.geometry import (
     bounding_box_from_points_batch,
 )
 from libera_utils.footprint_matching.psf import LIBERA_FOV_HALFANGLE_DEG
-from libera_utils.footprint_matching.types import BoundingBox
+from libera_utils.footprint_matching.types import (
+    CameraFootprintQualityFlag,
+    PseudoFootprint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,73 +115,6 @@ TARGET_FOOTPRINT_DIAMETER_KM: float = 2.0 * NOMINAL_ALTITUDE_KM * math.tan(math.
 # cannot be estimated (e.g. an image whose center pixels are all fill). Chosen so a
 # block is at least a handful of pixels; it only affects degenerate images.
 _FALLBACK_GSD_KM: float = 1.0
-
-
-class CameraFootprintQualityFlag(enum.IntFlag):
-    """Bitwise quality flags for a camera pseudo-footprint.
-
-    Stored in the FMATCH-CAM-CAMTIME ``q_flags`` variable. ``IntFlag`` lets the
-    flags be OR-combined and tested bitwise, and an empty (zero) value means "no
-    issues".
-
-    Attributes
-    ----------
-    PARTIAL_COVERAGE
-        At least one -- but not all -- corner pixels of the block were off-Earth
-        (fill), so the bounding box was shrunk to the valid corners and covers only
-        part of the nominal block.
-    CENTER_PIXEL_SUBSTITUTED
-        The geometric center pixel was off-Earth (fill), so the nearest valid pixel
-        in the block was substituted as the footprint boresight.
-    """
-
-    PARTIAL_COVERAGE = 0b0001
-    CENTER_PIXEL_SUBSTITUTED = 0b0010
-
-
-@dataclass(frozen=True)
-class PseudoFootprint:
-    """One camera pseudo-footprint: a pixel block reduced to a footprint record.
-
-    Attributes
-    ----------
-    time : np.datetime64
-        The ``CAMERA_TIME`` of the image this footprint came from. All footprints
-        segmented from the same image share this timestamp (see the module note on
-        ``CAMERA_TIME`` non-uniqueness).
-    slice_x, slice_y : slice
-        The block's extent in the ``CAMERA_PIXEL_COUNT_X`` / ``CAMERA_PIXEL_COUNT_Y``
-        pixel grid. Kept for provenance and for the (future) PSF-weighted
-        aggregation of the block's pixels.
-    center_ix, center_iy : int
-        Pixel indices of the footprint's center (the boresight stand-in), after any
-        nearest-valid-pixel substitution.
-    latitude, longitude : float
-        center-pixel geodetic latitude/longitude, degrees.
-    altitude : float
-        center-pixel altitude, metres (as stored in L1B).
-    solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : float
-        center-pixel viewing-geometry angles, degrees.
-    bbox : BoundingBox
-        Geographic box enclosing the block's valid corner pixels, with pole/dateline
-        handling from :func:`geometry.bounding_box_from_points`.
-    q_flags : CameraFootprintQualityFlag
-        Bitwise quality flags for this footprint (0 == clean).
-    """
-
-    time: np.datetime64
-    slice_x: slice
-    slice_y: slice
-    center_ix: int
-    center_iy: int
-    latitude: float
-    longitude: float
-    altitude: float
-    solar_zenith_angle: float
-    viewing_zenith_angle: float
-    relative_azimuth_angle: float
-    bbox: BoundingBox
-    q_flags: CameraFootprintQualityFlag
 
 
 # A block reduced to everything a PseudoFootprint needs *except* the geographic box.

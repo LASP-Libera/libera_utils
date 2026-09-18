@@ -1,0 +1,209 @@
+# =============================================================================
+# CF-CAM-CAMTIME Data Product Definition
+# =============================================================================
+#
+# The camera-timescale Camera Cloud Fraction (CF-CAM-CAMTIME) product. It is produced by the
+# placeholder cloud-fraction algorithm (libera_utils/cloud_fraction/) directly from an L1B Daily
+# Camera file: the same camera segmentation FMATCH uses turns the pixel grid into pseudo-footprints,
+# so this product shares the FMATCH-CAM-CAMTIME record axis and pixel provenance exactly.
+#
+# Segmentation happens ONCE, here in the cloud-fraction algorithm: this product therefore carries the
+# COMPLETE pseudo-footprint record -- not just cloud fraction but the full center-pixel geolocation,
+# viewing geometry, PSF bounding box and quality flags. FMATCH-CAM-CAMTIME consumes this product as its
+# sole camera input: it reconstructs each pseudo-footprint from these variables (rather than
+# re-segmenting the L1B camera image) and assembles its product from them. That is why the geometry
+# variables below are REAL (segmentation-derived), not placeholder -- only `cloud_fraction` and
+# `cloud_fraction_standard_deviation` are placeholder pending the real Libera WFOV retrieval.
+#
+# Because FMATCH reconstructs footprints from this product, the stored geometry must be lossless. Two
+# consequences differ from the FMATCH-CAM-CAMTIME *output* convention:
+#   * the PSF bounding-box longitudes (psf_bbox_lon_{min,max}) are stored RAW / un-normalized (they may
+#     exceed +/-180 for a dateline-crossing box); the box's wraps_dateline / is_polar / truncated flags
+#     are carried in psf_bbox_flags. FMATCH re-normalizes the longitudes when it writes its own output.
+#   * q_flags carries only the BASE camera-segmentation bits (CameraFootprintQualityFlag); FMATCH
+#     re-derives its coverage bits (LIMB_TRUNCATED etc.) from psf_bbox_flags/coverage at assembly time.
+# See doc/fmatch_cf_cam_camtime_field_audit.md for the field-completeness rationale.
+
+attributes:
+  ProductID: CF-CAM-CAMTIME
+  algorithm_version: null
+  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+
+coordinates:
+  # 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid, declared identically to FMATCH-CAM-CAMTIME: each
+  # pseudo-footprint (image subsection) is identified by its image time (CAMERA_TIME) and its
+  # subsection index within that image (PSEUDOFOOTPRINT). Both are coordinates; every data variable
+  # hangs on both dimensions.
+  #
+  # CAMERA_TIME is the SHARED image-acquisition axis (one 2048x2048 image = one entry, unique and sorted). For a given
+  # date, CF-CAM-CAMTIME and FMATCH-CAM-CAMTIME carry identical CAMERA_TIME values so records align 1:1.
+  # TODO[LIBSDC-847]: video mode emits sequential images sharing a timestamp, so CAMERA_TIME uniqueness will not hold
+  # there; revisit once video-mode handling is decided.
+  CAMERA_TIME:
+    dtype: datetime64[ns]
+    dimensions: ["CAMERA_TIME"]
+    attributes:
+      long_name: >-
+        Camera image acquisition time (UTC) referenced to the CCSDS Epoch (January 1, 1958); one entry per image.
+    encoding:
+      units: nanoseconds since 1958-01-01
+      calendar: standard
+      dtype: int64
+
+  # PSEUDOFOOTPRINT is the 0-based subsection index within a single image, generated at write time. Subsections may overlap
+  # in pixel space and do not tile the image.
+  PSEUDOFOOTPRINT:
+    dtype: int32
+    dimensions: ["PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: >-
+        Pseudo-footprint (image subsection) index within a camera image; paired with CAMERA_TIME it identifies each
+        subsection.
+
+  # Camera pixel-block provenance: each pseudo-footprint is an axis-aligned block of L1B Daily Camera pixels
+  # (CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y grid). The four inclusive bounds x_min..x_max (columns) and
+  # y_min..y_max (rows) trace it back to those pixels. Blocks may overlap. Declared identically to FMATCH-CAM-CAMTIME.
+  camera_pixel_x_min:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Inclusive minimum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
+  camera_pixel_x_max:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Inclusive maximum camera pixel-column index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_X
+  camera_pixel_y_min:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Inclusive minimum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
+  camera_pixel_y_max:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Inclusive maximum camera pixel-row index of the pseudo-footprint block along CAMERA_PIXEL_COUNT_Y
+
+variables:
+  cloud_fraction:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # Carried in percent [0, 100]. FMATCH-CAM-CAMTIME ingests this as-is into cloud_fraction_camera.
+      long_name: Total cloud fraction over the pseudo-footprint (Libera WFOV, PLACEHOLDER)
+      units: percent
+      valid_range: [0.0, 100.0]
+  cloud_fraction_standard_deviation:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Within-pseudo-footprint standard deviation of cloud fraction (Libera WFOV, PLACEHOLDER)
+      units: percent
+      valid_range: [0.0, 100.0]
+
+  # ---------------------------------------------------------------------------
+  # Pseudo-footprint geometry (REAL, segmentation-derived). Written here so FMATCH-CAM-CAMTIME
+  # can reconstruct each PseudoFootprint from this product instead of re-segmenting the L1B camera
+  # image. Names, dtypes and units match the identically-named FMATCH-CAM-CAMTIME output variables so
+  # the round-trip is lossless. (a) center-pixel geolocation + viewing geometry:
+  # ---------------------------------------------------------------------------
+  latitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Footprint boresight latitude
+      units: degrees_north
+  longitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Footprint boresight longitude
+      units: degrees_east
+  altitude:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # Center-pixel geolocated SURFACE height from the L1B Daily Camera `Altitude` field (terrain
+      # elevation above the WGS84 ellipsoid at the boresight) -- NOT the ~835 km spacecraft altitude.
+      long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
+      units: meters
+  solar_zenith_angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Solar zenith angle
+      units: degrees
+  viewing_zenith_angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Viewing zenith angle
+      units: degrees
+  relative_azimuth_angle:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Relative azimuth angle between Sun and sensor
+      units: degrees
+
+  # (b) Boresight (center) pixel indices -- the boresight stand-in after any nearest-valid substitution.
+  center_pixel_x:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_X
+  center_pixel_y:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Boresight (center) pixel index along CAMERA_PIXEL_COUNT_Y
+
+  # (c) PSF bounding box. Longitudes are RAW / un-normalized (may exceed +/-180 for a dateline-crossing
+  #     box) so FMATCH can rebuild the exact BoundingBox; its wraps_dateline/is_polar/truncated flags are
+  #     packed into psf_bbox_flags.
+  psf_bbox_lat_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Southern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lat_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Northern latitude bound of PSF bounding box
+      units: degrees_north
+  psf_bbox_lon_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Western longitude bound of PSF bounding box (raw, un-normalized)
+      units: degrees_east
+  psf_bbox_lon_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Eastern longitude bound of PSF bounding box (raw, un-normalized)
+      units: degrees_east
+  psf_bbox_flags:
+    # int32 bitfield capturing the three non-numeric BoundingBox flags so the box reconstructs exactly.
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: PSF bounding-box flags (bitwise)
+      #   1 = wraps_dateline  (box straddles the antimeridian; lon_max - lon_min > 180)
+      #   2 = is_polar        (boresight poleward of 85 deg)
+      #   4 = truncated       (box clipped at the Earth's limb -> partial coverage)
+      flag_masks: [1, 2, 4]
+      flag_meanings: "wraps_dateline is_polar truncated"
+
+  # (d) Camera-segmentation quality flags -- BASE bits only (FMATCH re-derives coverage bits itself).
+  q_flags:
+    dtype: int32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Camera-segmentation quality flags (bitwise)
+      #   1 = partial_coverage           (some -- not all -- block corners were off-Earth)
+      #   2 = center_pixel_substituted   (geometric center pixel off-Earth; nearest valid used)
+      flag_masks: [1, 2]
+      flag_meanings: "partial_coverage center_pixel_substituted"
