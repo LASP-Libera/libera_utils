@@ -431,3 +431,49 @@ def test_scene_id_cli_dispatch(cli_args, runner_module, monkeypatch):
 
     assert called_with["args"] is args
     assert called_with["args"].manifest == "file.manifest"
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["cloud-fraction", "cam", "file.manifest"],
+            argparse.Namespace(
+                func=cli.cloud_fraction_cam_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+        (
+            ["cloud-fraction", "cam-camtime", "file.manifest"],
+            argparse.Namespace(
+                func=cli.cloud_fraction_cam_camtime_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+    ],
+)
+def test_cloud_fraction_parse_cli_args(cli_args, parsed):
+    """Test that cloud-fraction cli args are parsed properly."""
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "runner_module"),
+    [
+        (["cloud-fraction", "cam", "file.manifest"], "libera_utils.cloud_fraction.cf_cam"),
+        (["cloud-fraction", "cam-camtime", "file.manifest"], "libera_utils.cloud_fraction.cf_cam_camtime"),
+    ],
+)
+def test_cloud_fraction_cli_dispatch(cli_args, runner_module, monkeypatch):
+    """The cloud-fraction subcommands dispatch to the matching runner's ``algorithm`` with the parsed args."""
+    import importlib
+
+    module = importlib.import_module(runner_module)
+    called_with = {}
+    monkeypatch.setattr(module, "algorithm", lambda parsed_args: called_with.setdefault("args", parsed_args))
+
+    args = cli.parse_cli_args(cli_args)
+    args.func(args)
+
+    assert called_with["args"] is args
+    assert called_with["args"].manifest == "file.manifest"
