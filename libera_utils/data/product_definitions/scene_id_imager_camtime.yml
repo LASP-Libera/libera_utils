@@ -1,10 +1,21 @@
-# Libera SCENE-ID-CAM-CAMTIME product definition.
+# Libera SCENE-ID-IMAGER-CAMTIME product definition.
+#
+# Camera-timescale counterpart of SCENE-ID-IMAGER. Fed by the FMATCH-IMAGER-CAMTIME product (see
+# FootprintData.from_fmatch_imager_camtime). Like SCENE-ID-IMAGER it runs the full TRMM classification in addition to
+# ERBE and unfiltering, because the FMATCH-IMAGER-CAMTIME carries the TRMM inputs: surface wind (from ERA5 winds),
+# cloud phase (from RBSP CLDPIX), and cloud optical depth (from RBSP CLDPIX). Unlike the radiometer-timescale
+# SCENE-ID-IMAGER, the product is defined on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid and additionally carries the
+# footprint identifier variables (boresight geolocation, PSF bounding box, and camera pixel-block bounds) straight
+# through from the FMATCH input, exactly like SCENE-ID-CAM-CAMTIME.
+
 attributes:
-  ProductID: SCENE-ID-CAM-CAMTIME
-  # These are populated at write time by the runner / write_libera_data_product (they must be present but their
-  # values vary per file).
+  ProductID: SCENE-ID-IMAGER-CAMTIME
+  # Populated at write time by the runner / write_libera_data_product (present but per-file), matching the other
+  # Libera product definitions.
   algorithm_version: null
-  InputGranules: null # TODO[LIBSDC-822]: Update once umm-g writer is implemented
+  # Provenance attribute set at write time by the shared SCENE-ID runner (create_and_write_data_product), matching
+  # the SCENE-ID-CAM products. TODO[LIBSDC-822]: Update once umm-g writer is implemented.
+  InputGranules: null
 
 coordinates:
   # The product is defined on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid: each classified subsection is identified by the
@@ -24,9 +35,9 @@ coordinates:
   #
   # CAMERA_TIME is the image acquisition-time axis: one 2048x2048 image = one camera time, and records are always
   # emitted in CAMERA_TIME order. It is a SHARED coordinate across the Libera camera-timescale products: for a given
-  # date, FMATCH-CAM-CAMTIME and SCENE-ID-CAM-CAMTIME carry the *identical* CAMERA_TIME values so records align 1:1.
-  # The values are absolute datetimes; the encoding re-expresses them as int64 "nanoseconds since 1958-01-01" (the
-  # CCSDS epoch used across Libera products).
+  # date, FMATCH-IMAGER-CAMTIME and SCENE-ID-IMAGER-CAMTIME carry the *identical* CAMERA_TIME values so records align
+  # 1:1. The values are absolute datetimes; the encoding re-expresses them as int64 "nanoseconds since 1958-01-01"
+  # (the CCSDS epoch used across Libera products).
   # TODO[LIBSDC-847]: CAMERA_TIME is currently assumed unique per image, but video mode produces sequential images
   # that share an identical timestamp, so uniqueness will not hold there. Video-mode handling is still TBD (the
   # current plan is a separate dimension for video images); revisit this axis once that is decided.
@@ -63,13 +74,11 @@ variables:
     attributes:
       long_name: Instrument viewing zenith angle at the footprint surface
       units: degrees
-  # Relative azimuth is referenced to the Sun: 0 degrees means the viewing azimuth is aligned with the Sun's
-  # azimuth (the Sun is the 0-degree reference).
   relative_azimuth_angle:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface (0 degrees = sun aligned)
+      long_name: Relative azimuth angle between the solar and viewing directions at the footprint surface
       units: degrees
 
   ##########################
@@ -84,8 +93,27 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: Total cloud fraction over the footprint (from the L2-CF-CAM data product, in percent)
+      long_name: Total cloud fraction over the footprint, 100 - clear_area (CERES SSF clear coverage)
       units: percent
+  surface_wind:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Surface wind speed magnitude, sqrt(u10^2 + v10^2) from the ERA5 10 m wind components
+      units: m/s
+  cloud_phase:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # 1 = liquid, 2 = ice, NaN = unknown/unavailable. Mapped from the RBSP CLDPIX cloud particle phase; a NaN
+      # leaves the footprint unmatched for any TRMM scene that bounds cloud_phase.
+      long_name: Dominant cloud phase (1 = liquid, 2 = ice)
+  optical_depth:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Cloud optical depth (RBSP CLDPIX cloud optical depth)
+      units: "1"
 
   ############
   # Scene IDs
@@ -100,6 +128,12 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Unfiltering scene classification ID (0 = unmatched, 1-11 = scene)
+  scene_id_trmm:
+    dtype: uint16
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      # uint16 (not uint8): the TRMM definition assigns scene IDs up to 650, which overflows a single byte.
+      long_name: TRMM scene classification ID (0 = unmatched, 1-650 = scene)
 
   ##############################
   # ERBE scene property-bin bounds
@@ -224,6 +258,103 @@ variables:
     attributes:
       long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched unfiltering scene
       units: degrees
+
+  ##############################
+  # TRMM scene property-bin bounds
+  ##############################
+  scene_bin_trmm_surface_type_min:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_type bin of the matched TRMM scene
+  scene_bin_trmm_surface_type_max:
+    dtype: uint8
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_type bin of the matched TRMM scene
+  scene_bin_trmm_surface_wind_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the surface_wind bin of the matched TRMM scene
+      units: m/s
+  scene_bin_trmm_surface_wind_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the surface_wind bin of the matched TRMM scene
+      units: m/s
+  scene_bin_trmm_cloud_fraction_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_fraction bin of the matched TRMM scene
+      units: percent
+  scene_bin_trmm_cloud_fraction_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_fraction bin of the matched TRMM scene
+      units: percent
+  scene_bin_trmm_cloud_phase_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the cloud_phase bin of the matched TRMM scene
+  scene_bin_trmm_cloud_phase_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the cloud_phase bin of the matched TRMM scene
+  scene_bin_trmm_optical_depth_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the optical_depth bin of the matched TRMM scene
+      units: "1"
+  scene_bin_trmm_optical_depth_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the optical_depth bin of the matched TRMM scene
+      units: "1"
+  scene_bin_trmm_solar_zenith_angle_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the solar_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_solar_zenith_angle_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the solar_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_viewing_zenith_angle_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the viewing_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_viewing_zenith_angle_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the viewing_zenith_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_relative_azimuth_angle_min:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Lower bound (inclusive) of the relative_azimuth_angle bin of the matched TRMM scene
+      units: degrees
+  scene_bin_trmm_relative_azimuth_angle_max:
+    dtype: float32
+    dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
+    attributes:
+      long_name: Upper bound (exclusive) of the relative_azimuth_angle bin of the matched TRMM scene
+      units: degrees
+
   Quality_Flag:
     dtype: uint32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -232,16 +363,16 @@ variables:
       value_meaning: TBD. Example file from PREFIRE has this information laid out per-bit using [b0], [b1], etc.
 
   # ===========================================================================================================
-  # Footprint identifiers (passed straight through from FMATCH-CAM-CAMTIME)
+  # Footprint identifiers (passed straight through from FMATCH-IMAGER-CAMTIME)
   # ===========================================================================================================
-  # These variables are NOT produced by scene identification; they are copied verbatim from the FMATCH-CAM-CAMTIME
+  # These variables are NOT produced by scene identification; they are copied verbatim from the FMATCH-IMAGER-CAMTIME
   # input so a consumer can trace each classified subsection back to its source. They are unique to the
-  # camera-timescale product (SCENE-ID-CAM has no equivalent). Definitions mirror fmatch_cam_camtime.yml exactly
+  # camera-timescale product (SCENE-ID-IMAGER has no equivalent). Definitions mirror fmatch_imager_camtime.yml exactly
   # (dtype + attributes) so the two products agree bit-for-bit, and all hang on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
 
   # --- Boresight geolocation -----------------------------------------------------------------------------------------
   # Center-pixel geolocation of the pseudo-footprint (the boresight stand-in). Passed through from the L1B Daily Camera
-  # geolocation via FMATCH-CAM-CAMTIME.
+  # geolocation via FMATCH-IMAGER-CAMTIME.
   latitude:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -265,7 +396,7 @@ variables:
 
   # --- PSF bounding box ----------------------------------------------------------------------------------------------
   # Geographic extent of the pseudo-footprint's point-spread-function bounding box, passed through from
-  # FMATCH-CAM-CAMTIME. Together these four bounds describe the ground footprint the scene was classified over.
+  # FMATCH-IMAGER-CAMTIME. Together these four bounds describe the ground footprint the scene was classified over.
   psf_bbox_lat_min:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -297,7 +428,7 @@ variables:
   # CAMERA_PIXEL_COUNT_X x CAMERA_PIXEL_COUNT_Y): x_min..x_max along the column axis and y_min..y_max along the row
   # axis, both endpoints inclusive. NOTE: this (x_min, x_max, y_min, y_max) representation assumes each footprint is a
   # square (an axis-aligned rectangular pixel block), so a single min/max pair per axis fully describes it.
-  # Subsections may overlap in pixel space. Passed through verbatim from FMATCH-CAM-CAMTIME.
+  # Subsections may overlap in pixel space. Passed through verbatim from FMATCH-IMAGER-CAMTIME.
   camera_pixel_x_min:
     dtype: int32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
