@@ -111,3 +111,39 @@ ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
 FROM libera-utils AS libera-utils-scene-id
 
 ENTRYPOINT ["libera-utils", "scene-id"]
+
+
+# CLI for the FMATCH-CAM algorithm (radiometer timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-cam
+
+ENTRYPOINT ["libera-utils", "fmatch", "cam"]
+
+
+# CLI for the FMATCH-CAM-CAMTIME algorithm (camera timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-cam-camtime
+
+ENTRYPOINT ["libera-utils", "fmatch", "cam-camtime"]
+
+
+# CLI for the FMATCH-IMAGER algorithm (radiometer timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-imager
+
+ENTRYPOINT ["libera-utils", "fmatch", "imager"]
+
+
+# CLI for the FMATCH-IMAGER-CAMTIME algorithm (camera timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-imager-camtime
+
+ENTRYPOINT ["libera-utils", "fmatch", "imager-camtime"]
+
+
+# CLI for the FMATCH-IMAGER-FLASH algorithm from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-imager-flash
+
+ENTRYPOINT ["libera-utils", "fmatch", "imager-flash"]
+
