@@ -197,7 +197,7 @@ def generate_placeholder_cloud_fraction_radiometer(
     radiometer_time : numpy.ndarray
         The 1-D ``RADIOMETER_TIME`` coordinate (datetime64) of an L1B RAD-4CH file, one entry per
         radiometer footprint, as returned under ``"RADIOMETER_TIME"`` by
-        :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`.
+        :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs`.
     rng : numpy.random.Generator, optional
         Random generator used to draw the placeholder values. Defaults to a generator seeded with
         :data:`_DEFAULT_RANDOM_SEED`.

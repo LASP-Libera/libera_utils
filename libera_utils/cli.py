@@ -108,9 +108,9 @@ def fmatch_cam_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.footprint_matching.fmatch_cam import algorithm
+    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
 
-    return algorithm(parsed_args)
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam"])
 
 
 def fmatch_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
@@ -126,9 +126,9 @@ def fmatch_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.footprint_matching.fmatch_cam_camtime import algorithm
+    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
 
-    return algorithm(parsed_args)
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam-camtime"])
 
 
 def fmatch_imager_cli_handler(parsed_args: argparse.Namespace):
@@ -144,9 +144,9 @@ def fmatch_imager_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.footprint_matching.fmatch_imager import algorithm
+    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
 
-    return algorithm(parsed_args)
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["imager"])
 
 
 def fmatch_imager_camtime_cli_handler(parsed_args: argparse.Namespace):
@@ -162,9 +162,9 @@ def fmatch_imager_camtime_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.footprint_matching.fmatch_imager_camtime import algorithm
+    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
 
-    return algorithm(parsed_args)
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["imager-camtime"])
 
 
 def fmatch_imager_flash_cli_handler(parsed_args: argparse.Namespace):
@@ -180,9 +180,9 @@ def fmatch_imager_flash_cli_handler(parsed_args: argparse.Namespace):
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
     """
-    from libera_utils.footprint_matching.fmatch_imager_flash import algorithm
+    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
 
-    return algorithm(parsed_args)
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["imager-flash"])
 
 
 # pylint: disable=too-many-statements

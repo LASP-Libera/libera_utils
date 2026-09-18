@@ -510,25 +510,29 @@ def test_fmatch_parse_cli_args(cli_args, parsed):
 
 
 @pytest.mark.parametrize(
-    ("cli_args", "runner_module"),
+    ("cli_args", "config_key"),
     [
-        (["fmatch", "cam", "file.manifest"], "libera_utils.footprint_matching.fmatch_cam"),
-        (["fmatch", "cam-camtime", "file.manifest"], "libera_utils.footprint_matching.fmatch_cam_camtime"),
-        (["fmatch", "imager", "file.manifest"], "libera_utils.footprint_matching.fmatch_imager"),
-        (["fmatch", "imager-camtime", "file.manifest"], "libera_utils.footprint_matching.fmatch_imager_camtime"),
-        (["fmatch", "imager-flash", "file.manifest"], "libera_utils.footprint_matching.fmatch_imager_flash"),
+        (["fmatch", "cam", "file.manifest"], "cam"),
+        (["fmatch", "cam-camtime", "file.manifest"], "cam-camtime"),
+        (["fmatch", "imager", "file.manifest"], "imager"),
+        (["fmatch", "imager-camtime", "file.manifest"], "imager-camtime"),
+        (["fmatch", "imager-flash", "file.manifest"], "imager-flash"),
     ],
 )
-def test_fmatch_cli_dispatch(cli_args, runner_module, monkeypatch):
-    """The fmatch subcommands dispatch to the matching runner's ``algorithm`` with the parsed args."""
-    import importlib
+def test_fmatch_cli_dispatch(cli_args, config_key, monkeypatch):
+    """Each fmatch subcommand dispatches to ``run_algorithm`` with the parsed args and its registry config."""
+    from libera_utils.footprint_matching import footprint_match_algorithm
 
-    module = importlib.import_module(runner_module)
     called_with = {}
-    monkeypatch.setattr(module, "algorithm", lambda parsed_args: called_with.setdefault("args", parsed_args))
+    monkeypatch.setattr(
+        footprint_match_algorithm,
+        "run_algorithm",
+        lambda parsed_args, config: called_with.update(args=parsed_args, config=config),
+    )
 
     args = cli.parse_cli_args(cli_args)
     args.func(args)
 
     assert called_with["args"] is args
     assert called_with["args"].manifest == "file.manifest"
+    assert called_with["config"] is footprint_match_algorithm.RUNNER_CONFIGS[config_key]
