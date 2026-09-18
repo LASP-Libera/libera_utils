@@ -15,6 +15,15 @@ WORKDIR $LIBERA_UTILS_DIRECTORY
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
+#
+# libhdf4-dev is required to build pyhdf from source (it has no manylinux wheel). pyhdf is a
+# main dependency used by the footprint_matching IGBP and NISE ancillary readers. Note we do NOT
+# install libgdal-dev: nothing in libera_utils links against GDAL (the only geospatial dependency
+# is pyproj, which ships a manylinux wheel with PROJ bundled), and libgdal-dev pulls in
+# libhdf4-alt-dev, which Conflicts with libhdf4-dev and would break this install.
+#
+# A missing native library surfaces only at import time, so verify a rebuilt image with:
+#   docker run --rm --entrypoint python <image> -c "import libera_utils.footprint_matching.readers"
 RUN apt-get update && \
     apt-get install -y \
     curl \
@@ -22,7 +31,7 @@ RUN apt-get update && \
     pkg-config \
     ca-certificates \
     libudunits2-dev \
-    libgdal-dev \
+    libhdf4-dev \
     libhdf5-dev \
     libnetcdf-dev \
     python3-dev \
@@ -112,3 +121,39 @@ ENTRYPOINT ["libera-utils", "scene-id", "cam"]
 FROM libera-utils AS libera-utils-scene-id-cam-camtime
 
 ENTRYPOINT ["libera-utils", "scene-id", "cam-camtime"]
+
+
+# CLI for the FMATCH-CAM algorithm (radiometer timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-cam
+
+ENTRYPOINT ["libera-utils", "fmatch", "cam"]
+
+
+# CLI for the FMATCH-CAM-CAMTIME algorithm (camera timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-cam-camtime
+
+ENTRYPOINT ["libera-utils", "fmatch", "cam-camtime"]
+
+
+# CLI for the FMATCH-IMAGER algorithm (radiometer timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-imager
+
+ENTRYPOINT ["libera-utils", "fmatch", "imager"]
+
+
+# CLI for the FMATCH-IMAGER-CAMTIME algorithm (camera timescale) from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-imager-camtime
+
+ENTRYPOINT ["libera-utils", "fmatch", "imager-camtime"]
+
+
+# CLI for the FMATCH-IMAGER-FLASH algorithm from a manifest file.
+# -----------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-fmatch-imager-flash
+
+ENTRYPOINT ["libera-utils", "fmatch", "imager-flash"]
+
