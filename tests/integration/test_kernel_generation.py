@@ -1,23 +1,42 @@
-"""Tier-0 kernel creation test case.
+"""SPICE kernel generation, from telemetry through to the production entry points.
 
-Goal: Give known Az/El angles from CERES and SC attitude and ephemeris, generate
-kernels with call to curryer to produce expected output kernels. Don't use a
-manifest file (in or out) because input isn't packets. Validate against CERES
-geolocation for precision tolerance.
+Test naming
+-----------
+Two concerns live here, told apart by what the test name names:
 
-Preparation:
-    - Since this test depends on non-Libera input data (JPSS-1 (NOAA-20) &
-    CERES), the data was pre-processed into easy to read / load files (CSVs)
-    - The spacecraft (NOAA-20) ephemeris and attitude telemetry were decoded
-    from raw packets using jpss1_geolocation_xtce_v1.xml and
-    J01_G011_LZ_2021-04-09T*_V01.DAT1 files
-        - For the unit test, a 2-minute chunk was extracted and saved to a CSV,
-        checked into the repo
-    - The azimuth and elevation angles were taken from the CERES public data
-    product: CER_BDS_NOAA20-FM6_Edition1_100111.20210409.hdf
-        - For the unit test, a 2-minute chunk was extracted and saved to a CSV,
-        checked into the repo
+``test_<kernel>_...``
+    What a generated kernel *contains* -- coverage spans, recovered rotation angles, quaternion
+    conventions. These descend from the internal validation described below.
+``test_<function>_...``
+    What a production entry point *does* -- ``create_kernel_from_packets``,
+    ``create_kernels_from_manifest``, ``create_kernel_from_l1a`` -- including local and S3 I/O
+    and manifest handling. These are plumbing tests and assert on outputs existing and being
+    named correctly, not on kernel contents.
 
+Validation provenance
+---------------------
+These are the tests that satisfied the **Tier-0 kernel creation** internal validation. The
+"Tier-0" label is historical and is being retired (LIBSDC-703); the tests remain the record of
+that validation and must not be weakened without re-running it.
+
+What it establishes: given known Az/El angles from CERES plus NOAA-20 spacecraft attitude and
+ephemeris, the curryer-backed kernel writers produce SPKs and CKs whose contents read back as the
+values that went in. No manifest is involved because the input is CSV, not packets.
+
+This is also the only coverage of kernel generation from *real decoded spacecraft telemetry*
+(``ADGPSPOS*``, ``ADCFAQ*``, and multipart ``ADAET1DAY/MS/US`` times via
+:func:`libera_utils.time.multipart_to_dt64`) and of the quaternion sign-flip convention in the
+spacecraft CK config. The JPSS-4 path uses simulated ephemeris and covers neither.
+
+Source data
+-----------
+Both inputs are non-Libera and were pre-processed into CSVs checked into the repo, each a
+2-minute extract:
+
+- Spacecraft ephemeris and attitude decoded from ``J01_G011_LZ_2021-04-09T*_V01.DAT1`` using
+  ``jpss1_geolocation_xtce_v1.xml``.
+- Azimuth and elevation angles from the CERES public product
+  ``CER_BDS_NOAA20-FM6_Edition1_100111.20210409.hdf``.
 """
 
 import shutil
@@ -30,11 +49,13 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 import xarray as xr
+from cloudpathlib import S3Path
 from curryer import meta, spicetime
 from curryer import spicierpy as sp
 
 from libera_utils import kernel_maker, time
 from libera_utils.config import config
+from libera_utils.io.manifest import Manifest
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
 
@@ -102,8 +123,10 @@ def noaa20_azel_data(test_data_path):
     return input_azel_data
 
 
-def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path, monkeypatch):
-    """Tier-0 test for creating static kernels"""
+def test_static_offset_kernels_span_the_mission_with_zero_offsets(
+    noaa20_environment, curryer_lsk, short_tmp_path, spice_test_data_path, monkeypatch
+):
+    """Each configured static offset kernel is written, spans the mission, and carries no offset."""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("mkspk")
 
@@ -112,17 +135,20 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
     km = KernelManager()
     km.load_static_kernels()
 
-    # Create the static kernels from the JSONs definitions.
+    # Create the static kernels from the JSON definitions. Counts are derived from the config
+    # rather than pinned: the set of structural elements changes with the frame layout (it went
+    # from four radiometer channels to one in LIBSDC-815), and a hardcoded count turns that into a
+    # spurious failure while proving nothing about the kernels themselves.
     fixed_kernel_configs = config.get("LIBERA_KERNEL_STATIC_CONFIGS")
-    assert len(fixed_kernel_configs) == 5
+    assert fixed_kernel_configs, "No static kernel configs are defined"
 
     generated_kernels = []
-    for kernel_config_file in config.get("LIBERA_KERNEL_STATIC_CONFIGS"):
+    for kernel_config_file in fixed_kernel_configs:
         assert Path(kernel_config_file).is_file(), kernel_config_file
         generated_kernels.append(spice_utils.make_kernel(kernel_config_file, short_tmp_path, input_data=None))
 
     found_kernels = sorted(short_tmp_path.glob("*"))
-    assert len(found_kernels) == 5
+    assert len(found_kernels) == len(fixed_kernel_configs)
 
     # Load meta kernel details.
     mkrn = meta.MetaKernel.from_json(
@@ -140,6 +166,11 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
         ("LIBERA_EL", "libera_el.fixed_offset.spk.bsp"),
         ("LIBERA_RAD", "libera_rad.fixed_offset.spk.bsp"),
     ]
+    configured_basenames = {Path(c).name.replace(".json", ".bsp") for c in fixed_kernel_configs}
+    assert {kernel_file for _, kernel_file in static_pairings} == configured_basenames, (
+        "static_pairings has drifted from LIBERA_KERNEL_STATIC_CONFIGS"
+    )
+
     for obj_key, kernel_file in static_pairings:
         span = sp.ext.kernel_coverage(short_tmp_path / kernel_file, mkrn.mappings[obj_key], to_fmt="iso")
         assert span == ("1980-01-06 00:00:00.000000", "2080-01-06 00:00:00.000000")
@@ -158,7 +189,7 @@ def test_make_static_kernels(noaa20_environment, curryer_lsk, short_tmp_path, sp
             assert (xyz.values == 0).all(), (from_obj, to_obj)
 
 
-def test_make_spacecraft_kernels(
+def test_spacecraft_kernels_round_trip_the_input_state(
     noaa20_environment,
     curryer_lsk,
     noaa20_spacecraft_data,
@@ -166,7 +197,7 @@ def test_make_spacecraft_kernels(
     spice_test_data_path,
     monkeypatch,
 ):
-    """Tier-0 test for creating spacecraft kernels"""
+    """The spacecraft SPK and CK read back the position, velocity and attitude that went in."""
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("mkspk")
     assert shutil.which("msopck")
@@ -235,14 +266,14 @@ def test_make_spacecraft_kernels(
         npt.assert_allclose(exp_data, rot_data)
 
 
-def test_make_spacecraft_azel_kernels(
+def test_mechanism_cks_rotate_about_the_measured_axes(
     curryer_lsk,
     noaa20_azel_data,
     short_tmp_path,
     spice_test_data_path,
     monkeypatch,
 ):
-    """Tier-0 test for creating pointing kernels"""
+    """Each mechanism CK encodes rotation about the measured axis by the telemetered angle."""
     # Builds the Az/El CKs about the measured axes read from the frame kernel.
     assert not sorted(short_tmp_path.glob("*"))
     assert shutil.which("msopck")
@@ -302,7 +333,7 @@ def test_make_spacecraft_azel_kernels(
             )
 
 
-def test_make_spacecraft_azel_kernels_apply_encoder_correction(
+def test_mechanism_cks_apply_the_encoder_correction(
     curryer_lsk,
     noaa20_azel_data,
     short_tmp_path,
@@ -365,3 +396,189 @@ def test_make_spacecraft_azel_kernels_apply_encoder_correction(
         el_mid = _angle_about(sp.pxform("LIBERA_EL_COORD", "LIBERA_AZ_COORD", mid_et), el_axis)
         lo, hi = sorted(kernel_maker.correct_elevation(raw_el[:2]))
         assert lo - 1e-5 <= el_mid <= hi + 1e-5
+
+
+# ---------------------------------------------------------------------------------------------
+# Production entry points: create_kernel_from_packets / create_kernels_from_manifest /
+# create_kernel_from_l1a. These assert that the right file lands in the right place under the
+# right name, local and on S3. Kernel *contents* are covered by the tests above.
+# ---------------------------------------------------------------------------------------------
+
+#: One case per kernel the packet path can produce. ``ground_test_header`` marks the ground-test
+#: CCSDS files, which carry an 8-byte prefix ahead of the CCSDS primary header.
+PACKET_KERNEL_CASES = [
+    pytest.param(
+        "test_jpss1_pds_file_1",
+        "JPSS-SPK",
+        "LIBERA_SPICE_JPSS-SPK_V3-14-159_20210409T000000_20210409T015959_R25056154513.bsp",
+        False,
+        id="jpss-spk",
+    ),
+    pytest.param(
+        "test_jpss1_pds_file_1",
+        "JPSS-CK",
+        "LIBERA_SPICE_JPSS-CK_V3-14-159_20210408T235959_20210409T015958_R25056154513.bc",
+        False,
+        id="jpss-ck",
+    ),
+    pytest.param(
+        "test_ccsds_2025_218_18_37_32",
+        "AZROT-CK",
+        "LIBERA_SPICE_AZROT-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc",
+        True,
+        id="az-ck",
+    ),
+    pytest.param(
+        "test_ccsds_2025_218_18_37_32",
+        "ELSCAN-CK",
+        "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250806T183730_20250806T184127_R25056154513.bc",
+        True,
+        id="el-ck",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("packet_fixture", "kernel_identifier", "expected_name", "ground_test_header"), PACKET_KERNEL_CASES
+)
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_create_kernel_from_packets_writes_the_expected_kernel(
+    mocked_get_current_version_str,
+    packet_fixture,
+    kernel_identifier,
+    expected_name,
+    ground_test_header,
+    request,
+    short_tmp_path,
+    curryer_lsk,
+    monkeypatch,
+    spice_test_data_path,
+):
+    """Each kernel type is built from its packet file and written under the expected name."""
+    packet_file = request.getfixturevalue(packet_fixture)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+    if ground_test_header:
+        monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+
+    with mock.patch(
+        "libera_utils.libera_spice.spice_utils.KernelFileCache.cache_dir",
+        new_callable=mock.PropertyMock,
+        return_value=short_tmp_path,
+    ):
+        kernel_maker.create_kernel_from_packets(
+            input_data_files=[str(packet_file)],
+            kernel_identifier=kernel_identifier,
+            output_dir=str(short_tmp_path),
+            overwrite=False,
+        )
+    assert (short_tmp_path / expected_name).exists()
+
+
+@pytest.mark.parametrize(
+    ("packet_fixture", "kernel_identifier", "expected_name", "ground_test_header"), PACKET_KERNEL_CASES
+)
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_create_kernel_from_packets_round_trips_through_s3(
+    mocked_get_current_version_str,
+    packet_fixture,
+    kernel_identifier,
+    expected_name,
+    ground_test_header,
+    request,
+    create_mock_bucket,
+    write_file_to_s3,
+    curryer_lsk,
+    monkeypatch,
+):
+    """The same path works with both the packet input and the kernel output living on S3."""
+    packet_file = request.getfixturevalue(packet_fixture)
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    if ground_test_header:
+        monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+
+    bucket = create_mock_bucket().name
+    packet_uri = f"s3://{bucket}/some_path/test_kernel/{packet_file.name}"
+    write_file_to_s3(packet_file, packet_uri)
+    output_directory = f"s3://{bucket}/some_path/kernel_output/"
+
+    kernel_maker.create_kernel_from_packets(
+        input_data_files=[packet_uri],
+        kernel_identifier=kernel_identifier,
+        output_dir=output_directory,
+        overwrite=False,
+    )
+    assert (S3Path(output_directory) / expected_name).exists()
+
+
+@pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_create_kernels_from_manifest_writes_jpss_kernels_and_a_manifest(
+    mocked_get_current_version_str, setup_jpss1_kernel_maker_environment_with_manifest, curryer_lsk
+):
+    """An input manifest with no requested time range yields both JPSS kernels and an output manifest."""
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    input_manifest_path, output_path = setup_jpss1_kernel_maker_environment_with_manifest
+
+    mani_out = kernel_maker.create_kernels_from_manifest(input_manifest_path, ["JPSS-CK", "JPSS-SPK"], output_path)
+
+    assert isinstance(mani_out, Manifest)
+    assert len(mani_out.files) == 2  # Two kernel types.
+    # Time ranges are real, derived from the input L1A packet data.
+    assert (output_path / "LIBERA_SPICE_JPSS-SPK_V3-14-159_20280505T041329_20280505T043128_R25056154513.bsp").exists()
+    assert (output_path / "LIBERA_SPICE_JPSS-CK_V3-14-159_20280505T041329_20280505T043128_R25056154513.bc").exists()
+    assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
+
+
+@pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_create_kernels_from_manifest_writes_mechanism_kernels_and_a_manifest(
+    mocked_get_current_version_str, setup_azel_kernel_maker_environment_with_manifest, curryer_lsk, monkeypatch
+):
+    """The same manifest path for the Az/El mechanism CKs."""
+    monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    input_manifest_path, output_path = setup_azel_kernel_maker_environment_with_manifest
+
+    mani_out = kernel_maker.create_kernels_from_manifest(input_manifest_path, ["AZROT-CK", "ELSCAN-CK"], output_path)
+
+    assert isinstance(mani_out, Manifest)
+    assert len(mani_out.files) == 2  # Two kernel types.
+    assert (output_path / "LIBERA_SPICE_AZROT-CK_V3-14-159_20250809T171756_20250809T171904_R25056154513.bc").exists()
+    assert (output_path / "LIBERA_SPICE_ELSCAN-CK_V3-14-159_20250809T171756_20250809T171904_R25056154513.bc").exists()
+    assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
+
+
+@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
+def test_create_kernel_from_l1a_furnishes_required_kernels(
+    mocked_get_current_version_str,
+    test_l1a_sc_pos_product_file,
+    short_tmp_path,
+    monkeypatch,
+    spice_test_data_path,
+):
+    """``create_kernel_from_l1a`` furnishes what curryer needs before calling out to it.
+
+    It builds a KernelManager, loads static and NAIF kernels, checks they are furnished, and only
+    then calls ``spice_utils.make_kernel``. If that sequence breaks, kernel creation fails for
+    want of an LSK rather than producing a wrong answer, so a written, non-trivial output file is
+    the signal here.
+    """
+    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    monkeypatch.setenv("GENERIC_KERNEL_DIR", str(spice_test_data_path))
+
+    output = kernel_maker.create_kernel_from_l1a(
+        l1a_data=test_l1a_sc_pos_product_file, kernel_identifier="JPSS-SPK", output_dir=short_tmp_path, overwrite=True
+    )
+
+    assert output.exists(), (
+        "Kernel file should exist. If this fails, kernel creation failed, "
+        "likely because KernelManager didn't furnish required kernels (e.g. LSK)."
+    )
+    assert output.suffix == ".bsp", "Output should be an SPK file"
+    assert output.stat().st_size > 1024, "Kernel file should be larger than 1KB"

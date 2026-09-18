@@ -1,17 +1,22 @@
-"""Tier-0 geolocation test case.
+"""Geolocation validated against the CERES public data product.
 
-Goal: Geolocation from Tier 0 SPICE and validate against CERES. Reusable
-code in libera_utils designed for reuse by L1bCam and L1bRad.
+Validation provenance
+---------------------
+This is the test that satisfied the **Tier-0 geolocation** internal validation. The "Tier-0"
+label is historical and is being retired (LIBSDC-703); the test remains the record of that
+validation and its tolerances must not be loosened without re-running it.
 
-Preparation:
-    - Depends on the SPICE kernels that were created during the tier-0 kernels
-    test. It does not recreate those results, instead it uses files that were
-    checked into the repo.
-    - The expected longitude and latitude values were taken from the CERES
-    public data product: CER_BDS_NOAA20-FM6_Edition1_100111.20210409.hdf
-        - For the unit test, a 2-minute chunk was extracted and saved to a CSV,
-        checked into the repo.
+What it establishes: geolocating from checked-in NOAA-20 kernels reproduces the lon/lat in the
+CERES public product to a pinned error distribution. CERES is the only geolocation reference
+available to this repo that is neither simulated nor derived from Libera's own geometry, which is
+why the NOAA-20 configuration is retained even as JPSS-4 becomes the operational one.
 
+Source data
+-----------
+Expected lon/lat are a 2-minute extract from
+``CER_BDS_NOAA20-FM6_Edition1_100111.20210409.hdf``, saved as CSV. The kernels are the checked-in
+outputs of the Tier-0 kernel creation tests rather than being regenerated here, so a failure
+points at geolocation rather than at kernel generation.
 """
 
 import numpy as np
@@ -28,13 +33,25 @@ from libera_utils.config import config
 pytestmark = pytest.mark.integration
 
 
+#: SPICE bodies the geolocation frame chain needs ephemeris for: the spacecraft, the three
+#: structural elements, the radiometer, and the WFOV camera. Asserted rather than a file count so
+#: that a kernel serving the wrong body -- or a leftover from a superseded frame layout -- fails
+#: here instead of silently standing in for the body it happens to share an ID with.
+EXPECTED_SPK_BODIES = {-143013, -143013001, -143013002, -143013003, -143013010, -143013011}
+
+
 @pytest.fixture
 def noaa20_kernels(test_data_path):
     """The NOAA-20 test kernels."""
     data_dir = test_data_path / "tier0_geo"
-    kernels = sorted(list(data_dir.glob("*.bsp")) + list(data_dir.glob("*.bc")))
-    assert len(kernels) == 12
-    return kernels
+    spk_files = sorted(data_dir.glob("*.bsp"))
+    ck_files = sorted(data_dir.glob("*.bc"))
+
+    provided_bodies = {int(body) for spk in spk_files for body in sp.spkobj(str(spk))}
+    assert provided_bodies == EXPECTED_SPK_BODIES, (
+        f"tier0_geo SPKs provide {sorted(provided_bodies)}, expected {sorted(EXPECTED_SPK_BODIES)}"
+    )
+    return spk_files + ck_files
 
 
 @pytest.fixture
@@ -45,10 +62,10 @@ def noaa20_expected(test_data_path):
     return input_data
 
 
-def test_geolocate_noaa20(
+def test_geolocate_noaa20_against_ceres(
     noaa20_environment, curryer_lsk, noaa20_kernels, noaa20_expected, spice_test_data_path, test_data_path
 ):
-    """Tier-0 test for geolocating points from kernels."""
+    """Geolocated lon/lat from the NOAA-20 kernels match the CERES product."""
     # Load meta kernel details.
     mkrn = meta.MetaKernel.from_json(
         config.get("LIBERA_KERNEL_META"),
@@ -60,16 +77,18 @@ def test_geolocate_noaa20(
     noaa20_expected = noaa20_expected.set_index("UGPS")
     ugps_times = noaa20_expected.index.values
 
-    # This validates the ellipsoid-intersection math against CERES under nominal Libera geometry; the
-    # measured frame misalignments are validated separately in test_los_alignment.py. Swap the
-    # production frame kernel for a frozen misalignment-free copy so the CERES comparison holds.
-    nominal_fk = test_data_path / "tier0_geo" / "libera_nominal.frames.fk.tf"
-    mission_kernels = [nominal_fk, *(k for k in mkrn.mission_kernels if "frames.fk" not in str(k))]
-
-    with sp.ext.load_kernel([mkrn.sds_kernels, mission_kernels, noaa20_kernels]):
+    # This validates the ellipsoid-intersection math against CERES under nominal Libera geometry.
+    # No frame-kernel substitution is needed: the NOAA-20 configuration selected by
+    # noaa20_environment carries no measured misalignments at all (its FK defines none), so it is
+    # already the nominal geometry this comparison requires. The measured misalignments are
+    # validated separately in test_los_alignment.py.
+    with sp.ext.load_kernel([mkrn.sds_kernels, mkrn.mission_kernels, noaa20_kernels]):
         # Geolocate to the ellipsoid.
-        ellips_lla_df, sc_xyz_df, ellips_qf_ds = spatial.instrument_intersect_ellipsoid(
-            ugps_times, sp.obj.Body("LIBERA_RAD", frame=True), geodetic=True, degrees=True
+        ellips_lla_df, sc_xyz_df, ellips_qf_ds = spatial.compute_ellipsoid_intersection(
+            ugps_times,
+            sp.obj.Body("LIBERA_RAD", frame=True),
+            give_geodetic_output=True,
+            give_lat_lon_in_degrees=True,
         )
 
         # Sanity checks.
