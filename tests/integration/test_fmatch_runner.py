@@ -31,7 +31,7 @@ from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
-from libera_utils.scene_identification.scene_id_cam import run_scene_identification_cam
+from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS, run_scene_identification
 from tests.test_data.footprint_matching.fixtures import (
     make_fmatch_product_fixture,
     make_l1b_camera_fixture,
@@ -378,7 +378,7 @@ class TestRunnerOutputNotYetConsumableBySceneId:
     def test_runner_written_product_is_consumable_by_scene_id(self, tmp_path, dropbox, staged_ancillary):
         """A runner-written FMATCH-CAM product should classify through SCENE-ID once aggregation exists.
 
-        Today ``run_scene_identification_cam`` raises ``ValueError`` in ``calculate_trmm_surface_type`` on the
+        Today ``run_scene_identification`` (CAM config) raises ``ValueError`` in ``calculate_trmm_surface_type`` on the
         placeholder ``igbp_surface_type=0``; when ``TODO[LIBSDC-785]`` fills real classification inputs this
         test xpasses and (strict xfail) fails, forcing the marker's removal.
         """
@@ -389,7 +389,7 @@ class TestRunnerOutputNotYetConsumableBySceneId:
         output_manifest = Manifest.from_file(cam_algorithm(manifest_path))
         fmatch_product_path = output_manifest.files[0].filename
 
-        footprint_data = run_scene_identification_cam(fmatch_product_path)
+        footprint_data = run_scene_identification(fmatch_product_path, RUNNER_CONFIGS["cam"])
 
         scene_product = footprint_data.to_time_product("RADIOMETER_TIME")
         assert "Quality_Flag" in scene_product.data_vars

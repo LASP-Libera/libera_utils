@@ -1,18 +1,23 @@
-"""Shared manifest-driven runner logic for the SCENE-ID product family.
+"""SCENE-ID algorithm runners for the Libera radiometer.
 
-The radiometer-timescale (``scene_id_cam.py``, ``scene_id_imager.py``, ``scene_id_imager_flash.py``) and
-camera-timescale (``scene_id_cam_camtime.py``, ``scene_id_imager_camtime.py``) runners are structurally identical:
-read an input manifest, keep the FMATCH input files of a particular product, run scene identification on each, write
+This module is the single home for every SCENE-ID runner. The radiometer-timescale
+(``SCENE-ID-CAM``, ``SCENE-ID-IMAGER``, ``SCENE-ID-IMAGER-FLASH``) and camera-timescale
+(``SCENE-ID-CAM-CAMTIME``, ``SCENE-ID-IMAGER-CAMTIME``) products are structurally identical: read an input
+manifest, keep the FMATCH input files of a particular product, run scene identification on each footprint, write
 the resulting SCENE-ID product, and emit an output manifest. They differ only by a handful of parameters:
 
-* which FMATCH product id counts as an input (``FMATCH-CAM`` vs ``FMATCH-CAM-CAMTIME``),
+* which FMATCH product id counts as an input (``FMATCH-CAM`` vs ``FMATCH-CAM-CAMTIME`` etc.),
 * which :class:`~libera_utils.scene_identification.FootprintData` factory reads it,
-* which product-definition YAML / time variable the output is written against, and
+* which product-definition YAML / time variable the output is written against,
+* which scene classifications are run, and
 * logging labels.
 
-Rather than duplicate the ~120 lines of manifest/dropbox plumbing in both runners, that shared body lives here and is
-parameterized by a small :class:`SceneIdRunnerConfig`. Each concrete runner is then a thin module that builds a config
-and forwards its ``main``/``algorithm`` to :func:`run_algorithm`.
+Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
+:func:`run_algorithm` and is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
+the five :data:`SceneIdRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed by their CLI subcommand
+name (``"cam"``, ``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``, ``"imager-flash"``). The
+``libera-utils scene-id <sub>`` CLI handlers select a config from that registry and forward it to
+:func:`run_algorithm`; a new SCENE-ID variant is one config plus one registry entry, no new module.
 """
 
 import argparse
@@ -38,6 +43,9 @@ from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 
 logger = logging.getLogger(__name__)
+
+# Directory holding the SCENE-ID product-definition YAMLs inside the installed libera_utils package.
+_PRODUCT_DEF_DIR = Path(__import__("libera_utils").__file__).parent / "data" / "product_definitions"
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,94 @@ class SceneIdRunnerConfig:
     log_prefix: str
 
 
+# --- Per-variant runner configs ------------------------------------------------------------------------------------
+#
+# Each config below is a complete SCENE-ID runner. The comment on each records the domain rationale for its parameter
+# choices; the shared engine (run_algorithm and friends) is otherwise identical across all five.
+
+# SCENE-ID-CAM (radiometer timescale): the lowest-latency (camera / near-real-time) product. Input is FMATCH-CAM
+# (one footprint per RADIOMETER_TIME carrying the Libera-camera-derived cloud fraction). Runs ERBE and unfiltering
+# (both keyed off surface_type and cloud_fraction) but not TRMM, whose classification variables are unavailable.
+CAM_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_cam,
+    output_product_id=DataProductIdentifier.aux_scene_id_cam,
+    reader=FootprintData.from_fmatch_cam,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_cam.yml",
+    time_variable="RADIOMETER_TIME",
+    scene_types=["erbe", "unfiltering"],
+    log_prefix="scene_id_cam",
+)
+
+# SCENE-ID-CAM-CAMTIME (camera timescale): reads FMATCH-CAM-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid.
+# Beyond the CAM classifications it carries the FMATCH footprint *identifier* variables (inclusive camera pixel-block
+# bounds, PSF bounding box, boresight geolocation) straight through from the input via from_fmatch_cam_camtime and
+# scene_id_cam_camtime.yml, so a classified scene traces back to the exact camera pixels and ground footprint.
+CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
+    output_product_id=DataProductIdentifier.aux_scene_id_cam_camtime,
+    reader=FootprintData.from_fmatch_cam_camtime,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_cam_camtime.yml",
+    time_variable="CAMERA_TIME",
+    scene_types=["erbe", "unfiltering"],
+    log_prefix="scene_id_cam_camtime",
+)
+
+# SCENE-ID-IMAGER (radiometer timescale): input is FMATCH-IMAGER (one footprint per RADIOMETER_TIME carrying the
+# CERES SSF clear coverage for cloud fraction, the RBSP CLDPIX cloud optical depth and particle phase for TRMM, the
+# ERA5 winds for surface wind, and the IGBP surface type). Because those extra TRMM inputs are present it runs the
+# full TRMM classification in addition to ERBE and unfiltering. from_fmatch_imager raises a clear error if handed a
+# file lacking the RBSP ssf/cldpix variables (e.g. a FMATCH-IMAGER-FLASH product).
+IMAGER_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_imager,
+    output_product_id=DataProductIdentifier.aux_scene_id_imager,
+    reader=FootprintData.from_fmatch_imager,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_imager.yml",
+    time_variable="RADIOMETER_TIME",
+    scene_types=["erbe", "unfiltering", "trmm"],
+    log_prefix="scene_id_imager",
+)
+
+# SCENE-ID-IMAGER-CAMTIME (camera timescale): the camera-timescale counterpart of SCENE-ID-IMAGER. Reads
+# FMATCH-IMAGER-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid; like SCENE-ID-IMAGER it runs full TRMM (the
+# input carries the RBSP CLDPIX optical depth/phase, ERA5 winds, CERES SSF clear coverage, and IGBP surface type) and,
+# like SCENE-ID-CAM-CAMTIME, passes the FMATCH footprint identifier variables straight through (from_fmatch_imager_
+# camtime + scene_id_imager_camtime.yml). from_fmatch_imager_camtime raises if the RBSP ssf/cldpix variables are absent.
+IMAGER_CAMTIME_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
+    output_product_id=DataProductIdentifier.aux_scene_id_imager_camtime,
+    reader=FootprintData.from_fmatch_imager_camtime,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_imager_camtime.yml",
+    time_variable="CAMERA_TIME",
+    scene_types=["erbe", "unfiltering", "trmm"],
+    log_prefix="scene_id_imager_camtime",
+)
+
+# SCENE-ID-IMAGER-FLASH (radiometer timescale, flash latency): input is FMATCH-IMAGER-FLASH (one footprint per
+# RADIOMETER_TIME carrying the CERES SSF clear coverage for cloud fraction, the CERES SSF cloud optical depth, the
+# ERA5 winds, and the IGBP surface type). TRMM is run for parity with SCENE-ID-IMAGER, but FLASH has NO cloud-phase
+# source, so from_fmatch_imager_flash injects an all-NaN cloud_phase: TRMM then matches only clear/surface scenes that
+# leave cloud_phase unbounded and leaves every phase-gated cloudy TRMM scene unmatched.
+IMAGER_FLASH_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_imager_flash,
+    output_product_id=DataProductIdentifier.aux_scene_id_imager_flash,
+    reader=FootprintData.from_fmatch_imager_flash,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_imager_flash.yml",
+    time_variable="RADIOMETER_TIME",
+    scene_types=["erbe", "unfiltering", "trmm"],
+    log_prefix="scene_id_imager_flash",
+)
+
+# Registry of every SCENE-ID runner, keyed by its ``libera-utils scene-id <sub>`` CLI subcommand name. The CLI
+# handlers look a config up here and forward it to run_algorithm; adding a variant is one config plus one entry.
+RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
+    "cam": CAM_CONFIG,
+    "cam-camtime": CAM_CAMTIME_CONFIG,
+    "imager": IMAGER_CONFIG,
+    "imager-camtime": IMAGER_CAMTIME_CONFIG,
+    "imager-flash": IMAGER_FLASH_CONFIG,
+}
+
+
 def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> Path | S3Path:
     """Run a SCENE-ID processing workflow from an input manifest.
 
@@ -82,7 +178,7 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     ----------
     manifest_path : Path | S3Path
         Path to the input manifest file listing the FMATCH input file(s). An ``argparse.Namespace`` (as produced by a
-        runner's ``main``) is also accepted for convenience when invoked as a CLI.
+        CLI handler) is also accepted for convenience when invoked as a CLI.
     config : SceneIdRunnerConfig
         The per-runner parameters (input/output product, reader, definition, time variable, scene types, log label).
 
@@ -149,7 +245,7 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
 
 
 def collect_input_files(input_manifest: Manifest, input_product_id: DataProductIdentifier) -> list[str]:
-    """Select the input files referenced by a manifest for this runner.
+    """Select the input files referenced by a manifest for a runner.
 
     Keeps exactly the manifest files whose Libera product id equals ``input_product_id`` (e.g. ``aux_fmatch_cam`` or
     ``aux_fmatch_cam_camtime``). Files with any other product id, and files whose names do not parse as a
@@ -216,7 +312,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
     with _as_local_path(fmatch_file_path) as local_fmatch_path:
         logger.info("Running scene identification on %s", local_fmatch_path)
         footprint_data = config.reader(local_fmatch_path)
-        # CAM runs the ERBE and unfiltering classifications (not the default full set, which also includes TRMM). With
+        # Run the configured classifications (e.g. CAM runs ERBE and unfiltering; IMAGER also runs TRMM). With
         # report_bin_bounds=True (the default), the property-bin bounds of each matched scene are also recorded. Both
         # scene IDs and their bin bounds are part of the SCENE-ID product definition.
         footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(config.scene_types))

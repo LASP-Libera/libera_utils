@@ -1,9 +1,9 @@
 """Integration tests for the SCENE-ID CAM-family runner and product write path.
 
 These exercise the manifest/dropbox plumbing in
-``libera_utils.scene_identification._runner`` and the concrete CAM runner, including the actual product write (which
-is not covered by the algorithm-level tests in ``test_scene_id.py``). The happy-path test in particular is the guard
-that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
+``libera_utils.scene_identification.scene_id_algorithm`` and its concrete runner configs, including the actual product
+write (which is not covered by the algorithm-level tests in ``test_scene_id.py``). The happy-path test in particular
+is the guard that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
 """
 
 from datetime import UTC, datetime
@@ -19,37 +19,77 @@ from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
-from libera_utils.scene_identification.scene_id_cam import (
-    PRODUCT_DEFINITION_PATH,
-    collect_fmatch_cam_input_files,
-    create_and_write_data_product_cam,
-    run_scene_identification_cam,
-)
-from libera_utils.scene_identification.scene_id_cam_camtime import (
-    create_and_write_data_product_cam_camtime,
-)
-from libera_utils.scene_identification.scene_id_imager import (
-    PRODUCT_DEFINITION_PATH as IMAGER_PRODUCT_DEFINITION_PATH,
-)
-from libera_utils.scene_identification.scene_id_imager import (
-    create_and_write_data_product_imager,
-    run_scene_identification_imager,
-)
-from libera_utils.scene_identification.scene_id_imager_camtime import (
-    PRODUCT_DEFINITION_PATH as IMAGER_CAMTIME_PRODUCT_DEFINITION_PATH,
-)
-from libera_utils.scene_identification.scene_id_imager_camtime import (
-    collect_fmatch_imager_camtime_input_files,
-    create_and_write_data_product_imager_camtime,
-    run_scene_identification_imager_camtime,
-)
-from libera_utils.scene_identification.scene_id_imager_flash import (
-    create_and_write_data_product_imager_flash,
-    run_scene_identification_imager_flash,
+from libera_utils.scene_identification.scene_id_algorithm import (
+    RUNNER_CONFIGS,
+    collect_input_files,
+    create_and_write_data_product,
+    run_scene_identification,
 )
 from tests.test_data.footprint_matching.fixtures import make_fmatch_product_fixture
 
 pytestmark = pytest.mark.integration
+
+# Product-definition paths for the variants exercised below, read straight from the runner registry.
+PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["cam"].product_definition_path
+IMAGER_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["imager"].product_definition_path
+IMAGER_CAMTIME_PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["imager-camtime"].product_definition_path
+
+
+# Thin per-variant helpers bind the generic runner functions to a registry config so the test bodies below stay
+# readable. They are the test-side stand-ins for the per-module wrappers that the runners used to expose.
+def run_scene_identification_cam(path):
+    """Run scene identification with the CAM config."""
+    return run_scene_identification(path, RUNNER_CONFIGS["cam"])
+
+
+def run_scene_identification_imager(path):
+    """Run scene identification with the IMAGER config."""
+    return run_scene_identification(path, RUNNER_CONFIGS["imager"])
+
+
+def run_scene_identification_imager_flash(path):
+    """Run scene identification with the IMAGER-FLASH config."""
+    return run_scene_identification(path, RUNNER_CONFIGS["imager-flash"])
+
+
+def run_scene_identification_imager_camtime(path):
+    """Run scene identification with the IMAGER-CAMTIME config."""
+    return run_scene_identification(path, RUNNER_CONFIGS["imager-camtime"])
+
+
+def create_and_write_data_product_cam(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-CAM product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["cam"])
+
+
+def create_and_write_data_product_cam_camtime(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-CAM-CAMTIME product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["cam-camtime"])
+
+
+def create_and_write_data_product_imager(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-IMAGER product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["imager"])
+
+
+def create_and_write_data_product_imager_flash(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-IMAGER-FLASH product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["imager-flash"])
+
+
+def create_and_write_data_product_imager_camtime(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-IMAGER-CAMTIME product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["imager-camtime"])
+
+
+def collect_fmatch_cam_input_files(manifest):
+    """Select the FMATCH-CAM input files from ``manifest``."""
+    return collect_input_files(manifest, RUNNER_CONFIGS["cam"].input_product_id)
+
+
+def collect_fmatch_imager_camtime_input_files(manifest):
+    """Select the FMATCH-IMAGER-CAMTIME input files from ``manifest``."""
+    return collect_input_files(manifest, RUNNER_CONFIGS["imager-camtime"].input_product_id)
 
 
 def _libera_product_name(product_id: DataProductIdentifier) -> str:
@@ -126,8 +166,6 @@ class TestCollectInputFiles:
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
         # Targets product-mode selection; asserts collect_input_files returns only the path matching the product id.
-        from libera_utils.scene_identification._runner import collect_input_files
-
         wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
         other = _libera_product_name(DataProductIdentifier.l1b_rad)
         manifest = self._manifest(wanted, other, SSF_INPUT_NAME)
