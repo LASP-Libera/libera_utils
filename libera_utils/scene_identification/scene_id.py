@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # mirror the upstream L1B_RAD product, so scene IDs align 1:1 with L1B footprints. "RADIOMETER_TIME" names both
 # the per-footprint dimension and the datetime coordinate written on it (a NetCDF / xarray dimension coordinate),
 # so one constant is used throughout scene-ID processing. This constant is shared with the product runner (see
-# libera_utils/scene_identification/cam/scene_id_cam.py) and the product-definition YAML.
+# libera_utils/scene_identification/scene_id_algorithm.py) and the product-definition YAML.
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
 # Name of the per-footprint data-quality bit-flag variable declared in the SCENE-ID product definitions
