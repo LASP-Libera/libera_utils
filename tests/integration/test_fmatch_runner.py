@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils.cloud_fraction.cf_cam_camtime import algorithm as cf_cam_camtime_algorithm
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching._runner import ANCILLARY_PATH_ENV
 from libera_utils.footprint_matching.fmatch_cam import RUNNER_CONFIG as CAM_CONFIG
@@ -36,6 +37,8 @@ from tests.test_data.footprint_matching.fixtures import (
     make_l1b_camera_fixture,
     make_l1b_radiometer_fixture,
 )
+
+pytestmark = pytest.mark.integration
 
 
 def _libera_product_name(product_id: DataProductIdentifier) -> str:
@@ -132,13 +135,26 @@ class TestRadiometerRunnerWorkflow:
 
 
 class TestCameraRunnerWorkflow:
-    """The FMATCH-CAM-CAMTIME runner segments L1B camera images into pseudo-footprints."""
+    """The FMATCH-CAM-CAMTIME runner ingests CF-CAM-CAMTIME (segmentation happens upstream in cloud fraction)."""
+
+    @staticmethod
+    def _cf_cam_camtime_input(inputs, **camera_kwargs) -> str:
+        """Produce a CF-CAM-CAMTIME product from a synthetic L1B camera file (the camera runner's real input).
+
+        Camera segmentation and cloud fraction are computed once upstream by the CF-CAM-CAMTIME runner;
+        FMATCH-CAM-CAMTIME consumes that product (which carries the pseudo-footprint record) rather than the raw
+        L1B camera file, so the integration path runs the CF runner first and feeds its output to FMATCH.
+        """
+        l1b_file = make_l1b_camera_fixture(inputs, **camera_kwargs)
+        cf_manifest_path = _write_input_manifest(inputs, l1b_file)
+        cf_output_manifest = Manifest.from_file(cf_cam_camtime_algorithm(cf_manifest_path))
+        return cf_output_manifest.files[0].filename
 
     def test_full_workflow_writes_product_and_output_manifest(self, tmp_path, dropbox, staged_ancillary):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        l1b_file = make_l1b_camera_fixture(inputs, n_images=2, n_pixels_x=4, n_pixels_y=4)
-        manifest_path = _write_input_manifest(inputs, l1b_file)
+        cf_product = self._cf_cam_camtime_input(inputs, n_images=2, n_pixels_x=4, n_pixels_y=4)
+        manifest_path = _write_input_manifest(inputs, cf_product)
 
         output_manifest = Manifest.from_file(cam_camtime_algorithm(manifest_path))
 
@@ -149,30 +165,30 @@ class TestCameraRunnerWorkflow:
         )
 
         with xr.open_dataset(product_path) as product:
-            # The product is a 2-D (CAMERA_TIME, FOOTPRINT) grid: one CAMERA_TIME per image (2 images), each image
+            # The product is a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid: one CAMERA_TIME per image (2 images), each image
             # segmented into 16 subsections at this coarse 4 x 4 fixture spacing.
             assert product.sizes["CAMERA_TIME"] == 2
-            assert product.sizes["FOOTPRINT"] == 16
+            assert product.sizes["PSEUDOFOOTPRINT"] == 16
             assert product["CAMERA_TIME"].dims == ("CAMERA_TIME",)
-            # FOOTPRINT is a real 0-based int32 coordinate on the written product (matches SCENE-ID-CAM-CAMTIME).
-            assert product["FOOTPRINT"].dims == ("FOOTPRINT",)
-            assert product["FOOTPRINT"].dtype == np.int32
-            assert list(product["FOOTPRINT"].values) == list(range(product.sizes["FOOTPRINT"]))
+            # PSEUDOFOOTPRINT is a real 0-based int32 coordinate on the written product (matches SCENE-ID-CAM-CAMTIME).
+            assert product["PSEUDOFOOTPRINT"].dims == ("PSEUDOFOOTPRINT",)
+            assert product["PSEUDOFOOTPRINT"].dtype == np.int32
+            assert list(product["PSEUDOFOOTPRINT"].values) == list(range(product.sizes["PSEUDOFOOTPRINT"]))
             # Pixel-block provenance is real, not placeholder: a scene can be traced to its pixels. The block extent
             # is the four camera_pixel_{x,y}_{min,max} coordinates; the boresight pixel stays as center_pixel_x.
             assert "center_pixel_x" in product.variables
             for name in ("camera_pixel_x_min", "camera_pixel_x_max", "camera_pixel_y_min", "camera_pixel_y_max"):
                 assert name in product.coords
-                assert product[name].dims == ("CAMERA_TIME", "FOOTPRINT")
+                assert product[name].dims == ("CAMERA_TIME", "PSEUDOFOOTPRINT")
 
-    def test_multiple_l1b_inputs_produce_multiple_products(self, tmp_path, dropbox, staged_ancillary):
-        """A manifest may stage more than one L1B file; each yields its own product."""
+    def test_multiple_inputs_produce_multiple_products(self, tmp_path, dropbox, staged_ancillary):
+        """A manifest may stage more than one CF-CAM-CAMTIME file; each yields its own product."""
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        first = make_l1b_camera_fixture(inputs, n_images=1, n_pixels_x=3, n_pixels_y=3)
-        second_dir = tmp_path / "inputs2"
-        second_dir.mkdir()
-        second = make_l1b_camera_fixture(second_dir, n_images=2, n_pixels_x=3, n_pixels_y=3)
+        first = self._cf_cam_camtime_input(inputs, n_images=1, n_pixels_x=3, n_pixels_y=3)
+        second_inputs = tmp_path / "inputs2"
+        second_inputs.mkdir()
+        second = self._cf_cam_camtime_input(second_inputs, n_images=2, n_pixels_x=3, n_pixels_y=3)
         manifest_path = _write_input_manifest(inputs, first, second)
 
         output_manifest = Manifest.from_file(cam_camtime_algorithm(manifest_path))
@@ -208,7 +224,7 @@ class TestImagerProduct:
 
 
 class TestManifestInputSelection:
-    """A runner must take only its own L1B product out of a mixed manifest."""
+    """A runner must take only its own primary input product out of a mixed manifest."""
 
     _INPUT_DIR = "/dropbox/inputs"
     # A staged ancillary granule: a real, non-Libera filename that must be ignored by manifest selection.
@@ -231,18 +247,19 @@ class TestManifestInputSelection:
         other = _libera_product_name(DataProductIdentifier.l1b_cam)
         manifest = self._manifest(wanted, other, self._ANCILLARY_NAME)
 
-        selected = select_manifest_files_by_product_id(manifest, CAM_CONFIG.l1b_input_product_id)
+        selected = select_manifest_files_by_product_id(manifest, CAM_CONFIG.input_product_id)
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
-    def test_camera_runner_keeps_only_l1b_cam(self):
+    def test_camera_runner_keeps_only_its_cf_cam_camtime_input(self):
+        """FMATCH-CAM-CAMTIME's primary input is the CF-CAM-CAMTIME product, not the raw L1B camera file."""
         from libera_utils.footprint_matching._runner import select_manifest_files_by_product_id
 
-        wanted = _libera_product_name(DataProductIdentifier.l1b_cam)
-        other = _libera_product_name(DataProductIdentifier.l1b_rad)
+        wanted = _libera_product_name(DataProductIdentifier.l2_cf_cam_camtime)
+        other = _libera_product_name(DataProductIdentifier.l1b_cam)
         manifest = self._manifest(other, wanted, self._ANCILLARY_NAME)
 
-        selected = select_manifest_files_by_product_id(manifest, CAM_CAMTIME_CONFIG.l1b_input_product_id)
+        selected = select_manifest_files_by_product_id(manifest, CAM_CAMTIME_CONFIG.input_product_id)
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
 
@@ -319,22 +336,25 @@ class TestRunnerConfiguration:
     """Each runner must be wired to the right mode and input product."""
 
     @pytest.mark.parametrize(
-        ("config", "mode", "l1b_product", "cloud_fraction_product"),
+        ("config", "mode", "input_product", "cloud_fraction_product"),
         [
+            # Radiometer-timescale modes take an L1B RAD-4CH primary input; CAM additionally merges an optional CF-CAM.
             (CAM_CONFIG, OperationalMode.CAM, DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_cam),
+            # CAM-CAMTIME's primary input is CF-CAM-CAMTIME (segmentation + cloud fraction bundled upstream), so it
+            # declares no separate cloud-fraction product.
             (
                 CAM_CAMTIME_CONFIG,
                 OperationalMode.CAM_CAMTIME,
-                DataProductIdentifier.l1b_cam,
                 DataProductIdentifier.l2_cf_cam_camtime,
+                None,
             ),
             (IMAGER_FLASH_CONFIG, OperationalMode.IMAGER_FLASH, DataProductIdentifier.l1b_rad, None),
             (IMAGER_CAMTIME_CONFIG, OperationalMode.IMAGER_CAMTIME, DataProductIdentifier.l1b_cam, None),
         ],
     )
-    def test_runner_config(self, config, mode, l1b_product, cloud_fraction_product):
+    def test_runner_config(self, config, mode, input_product, cloud_fraction_product):
         assert config.mode is mode
-        assert config.l1b_input_product_id is l1b_product
+        assert config.input_product_id is input_product
         assert config.cloud_fraction_product_id is cloud_fraction_product
 
 

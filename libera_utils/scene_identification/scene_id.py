@@ -31,17 +31,17 @@ logger = logging.getLogger(__name__)
 RADIOMETER_TIME_DIMENSION = "RADIOMETER_TIME"
 
 # The camera-timescale counterparts of the constants above. The camera-timescale scene-ID product (CAM-CAMTIME) is
-# written on a 2-D (CAMERA_TIME, FOOTPRINT) grid mirroring its FMATCH-CAM-CAMTIME input: CAMERA_TIME is the unique,
-# sorted image-acquisition axis (one 2048x2048 image = one entry) and FOOTPRINT is the 0-based subsection index within
+# written on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid mirroring its FMATCH-CAM-CAMTIME input: CAMERA_TIME is the unique,
+# sorted image-acquisition axis (one 2048x2048 image = one entry) and PSEUDOFOOTPRINT is the 0-based subsection index within
 # each image (subsections may overlap and do not tile the image). Both are dimension coordinates and every data
 # variable hangs on both.
-FOOTPRINT_DIMENSION = "FOOTPRINT"
+PSEUDOFOOTPRINT_DIMENSION = "PSEUDOFOOTPRINT"
 CAMERA_TIME_VARIABLE = "CAMERA_TIME"
 
 # Identifier variables that the camera-timescale FMATCH product carries and the SCENE-ID-CAM-CAMTIME product passes
 # straight through -- the four inclusive camera pixel-block bounds (camera_pixel_{x,y}_{min,max}), the PSF bounding
 # box, and the boresight geolocation -- so a scene can be traced back to the exact camera pixels and ground footprint.
-# These are copied verbatim (each keeping its own 2-D (CAMERA_TIME, FOOTPRINT) grid dimensions) by
+# These are copied verbatim (each keeping its own 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid dimensions) by
 # from_fmatch_cam_camtime and are not consumed by the classification; they simply ride along to the written product.
 # The FMATCH-only center_pixel_x/y (boresight pixel) is deliberately NOT listed: SCENE-ID does not carry it.
 _FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES: tuple[str, ...] = (
@@ -128,7 +128,7 @@ def add_placeholder_quality_flag(
     dimensions : str or sequence of str, optional
         Name(s) of the record grid dimension(s) to add the flag over. Defaults to ``RADIOMETER_TIME`` (the
         radiometer-timescale products, whose records are 1-D); the camera-timescale product passes the 2-D grid
-        ``("CAMERA_TIME", "FOOTPRINT")`` so the flag spans one entry per (image, subsection).
+        ``("CAMERA_TIME", "PSEUDOFOOTPRINT")`` so the flag spans one entry per (image, subsection).
 
     Returns
     -------
@@ -973,15 +973,15 @@ class FootprintData:
         """Read a FMATCH-CAM-CAMTIME product into a FootprintData (camera timescale).
 
         FMATCH-CAM-CAMTIME is the operational input to SCENE-ID-CAM-CAMTIME. It is defined on a 2-D
-        ``(CAMERA_TIME, FOOTPRINT)`` grid: one ``CAMERA_TIME`` entry per 2048x2048 image and one ``FOOTPRINT`` entry
+        ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid: one ``CAMERA_TIME`` entry per 2048x2048 image and one ``PSEUDOFOOTPRINT`` entry
         per image subsection (each a contiguous, possibly overlapping block of L1B WFOV camera pixels). It carries
         both the scene properties and the footprint *identifier* variables (the inclusive pixel-block bounds
         ``camera_pixel_x_min``/``camera_pixel_x_max``/``camera_pixel_y_min``/``camera_pixel_y_max``, PSF bounding
         box, boresight geolocation) that the camera-timescale product passes straight through.
 
         When implemented, the reader must also merge the CF-CAM-CAMTIME cloud-fraction input, which is defined on the
-        *same* ``(CAMERA_TIME, FOOTPRINT)`` grid so it aligns 1:1 with FMATCH; the two inputs must share identical
-        ``CAMERA_TIME`` and ``FOOTPRINT`` extents.
+        *same* ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid so it aligns 1:1 with FMATCH; the two inputs must share identical
+        ``CAMERA_TIME`` and ``PSEUDOFOOTPRINT`` extents.
 
         Parameters
         ----------
@@ -991,12 +991,12 @@ class FootprintData:
         Returns
         -------
         FootprintData
-            Footprint data on the ``(CAMERA_TIME, FOOTPRINT)`` grid (one entry per image subsection), ready for
+            Footprint data on the ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid (one entry per image subsection), ready for
             :meth:`identify_scenes`.
         """
         extracted_data = cls._extract_data_from_fmatch(
             fmatch_path,
-            record_dimensions=(CAMERA_TIME_VARIABLE, FOOTPRINT_DIMENSION),
+            record_dimensions=(CAMERA_TIME_VARIABLE, PSEUDOFOOTPRINT_DIMENSION),
             time_variable=CAMERA_TIME_VARIABLE,
             column_map=_FMATCH_CAM_COLUMN_MAP,
             passthrough_variables=_FMATCH_CAM_CAMTIME_PASSTHROUGH_VARIABLES,
@@ -1117,7 +1117,7 @@ class FootprintData:
 
         The radiometer-timescale FMATCH products (CAM, IMAGER-FLASH, IMAGER) carry a flat one-value-per-footprint
         (1-D ``RADIOMETER_TIME``) layout; the camera-timescale product (CAM-CAMTIME) carries a 2-D
-        ``(CAMERA_TIME, FOOTPRINT)`` grid. Each classification column is emitted on its FMATCH source variable's own
+        ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid. Each classification column is emitted on its FMATCH source variable's own
         dimensions, so both layouts flow through unchanged. This helper is driven by a declarative ``column_map``
         supplied by each concrete reader:
         it reads each mapped source variable, applies its dtype/scale/transform, and emits it under the standardized
@@ -1135,7 +1135,7 @@ class FootprintData:
             Path to a Libera FMATCH NetCDF product file.
         record_dimensions : tuple of str
             The record-grid dimensions of the product: ``("RADIOMETER_TIME",)`` for the radiometer-timescale readers,
-            or ``("CAMERA_TIME", "FOOTPRINT")`` for the camera-timescale reader. Classification columns are emitted on
+            or ``("CAMERA_TIME", "PSEUDOFOOTPRINT")`` for the camera-timescale reader. Classification columns are emitted on
             their own source dimensions (which match this grid); this tuple sizes the all-NaN ``nan_columns`` fill so
             it spans the full grid.
         time_variable : str
@@ -1187,7 +1187,7 @@ class FootprintData:
             elif column.scale != 1.0:
                 values = values * column.scale
             # Emit on the source variable's own dimensions so radiometer inputs stay 1-D (RADIOMETER_TIME) while
-            # camera-timescale inputs keep their 2-D (CAMERA_TIME, FOOTPRINT) grid. Cast last so the emitted column
+            # camera-timescale inputs keep their 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid. Cast last so the emitted column
             # always matches the dtype the SCENE-ID product definition declares (np.where in a transform can widen to
             # float64, and the scale multiply can promote dtype).
             data_variables[target] = (list(source_variable.dims), np.asarray(values).astype(column.dtype, copy=False))
@@ -1210,7 +1210,7 @@ class FootprintData:
         )
 
         # Copy each identifier variable verbatim, preserving its own dimensions so a multi-dimensional passthrough
-        # (the 2-D camera_pixel_{x,y}_{min,max} provenance coordinates on the (CAMERA_TIME, FOOTPRINT) grid) rides
+        # (the 2-D camera_pixel_{x,y}_{min,max} provenance coordinates on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid) rides
         # through unchanged, not just the 1-D per-record identifiers.
         for variable_name in passthrough_variables:
             source_variable = fmatch_dataset[variable_name]
@@ -1605,7 +1605,7 @@ class FootprintData:
         The radiometer-timescale scene-ID products (CAM/IMAGER/FLASH) contain exactly one footprint per observation
         time and are written on the same 1-D time dimension as their upstream product, so downstream consumers can
         align scene IDs to the upstream records positionally. The camera-timescale product (CAM-CAMTIME) is instead
-        written on a 2-D ``(CAMERA_TIME, FOOTPRINT)`` grid: one entry per image subsection. :class:`FootprintData`
+        written on a 2-D ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid: one entry per image subsection. :class:`FootprintData`
         already carries data on the correct dimensions, so this method only promotes the time variable to a
         coordinate so the result is ready to hand to :func:`libera_utils.io.netcdf.write_libera_data_product` with
         the matching ``time_variable``.
@@ -1641,7 +1641,7 @@ class FootprintData:
         # the time variable is a dimension coordinate), or CAMERA_TIME for the camera-timescale product.
         (time_dimension,) = product[time_variable].dims
         # The record grid is the set of dimensions the per-record data variables span: (RADIOMETER_TIME,) for the
-        # radiometer-timescale products, or (CAMERA_TIME, FOOTPRINT) for the camera-timescale product. Derive it
+        # radiometer-timescale products, or (CAMERA_TIME, PSEUDOFOOTPRINT) for the camera-timescale product. Derive it
         # from the widest data variable lying on the time dimension (rather than from the 1-D time coordinate alone)
         # so the placeholder Quality_Flag covers the full grid.
         record_variables = [product[name] for name in product.data_vars if time_dimension in product[name].dims]
