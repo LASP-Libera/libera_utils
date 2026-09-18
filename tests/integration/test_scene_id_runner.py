@@ -1,9 +1,9 @@
 """Integration tests for the SCENE-ID CAM-family runner and product write path.
 
 These exercise the manifest/dropbox plumbing in
-``libera_utils.scene_identification._runner`` and the concrete CAM runner, including the actual product write (which
-is not covered by the algorithm-level tests in ``test_scene_id.py``). The happy-path test in particular is the guard
-that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
+``libera_utils.scene_identification.scene_id_algorithm`` and its concrete runner configs, including the actual product
+write (which is not covered by the algorithm-level tests in ``test_scene_id.py``). The happy-path test in particular
+is the guard that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
 """
 
 from datetime import UTC, datetime
@@ -17,17 +17,36 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
-from libera_utils.scene_identification.cam.scene_id_cam import (
-    PRODUCT_DEFINITION_PATH,
-    create_and_write_data_product_cam,
-    run_scene_identification_cam,
-)
-from libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime import (
-    create_and_write_data_product_cam_camtime,
-)
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
+from libera_utils.scene_identification.scene_id_algorithm import (
+    RUNNER_CONFIGS,
+    collect_input_files,
+    create_and_write_data_product,
+    run_scene_identification,
+)
 
 pytestmark = pytest.mark.integration
+
+# Product-definition path for the CAM variant, read straight from the runner registry.
+PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["cam"].product_definition_path
+
+
+# Thin per-variant helpers bind the generic runner functions to a registry config so the test bodies below stay
+# readable. They are the test-side stand-ins for the per-module wrappers that the runners used to expose.
+def run_scene_identification_cam(path):
+    """Run scene identification with the CAM config."""
+    return run_scene_identification(path, RUNNER_CONFIGS["cam"])
+
+
+def create_and_write_data_product_cam(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-CAM product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["cam"])
+
+
+def create_and_write_data_product_cam_camtime(footprint_data, input_file_name, output_path):
+    """Write a SCENE-ID-CAM-CAMTIME product."""
+    return create_and_write_data_product(footprint_data, input_file_name, output_path, RUNNER_CONFIGS["cam-camtime"])
+
 
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
@@ -94,8 +113,6 @@ class TestCollectInputFiles:
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
-        from libera_utils.scene_identification._runner import collect_input_files
-
         wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
         other = _libera_product_name(DataProductIdentifier.l1b_rad)
         manifest = self._manifest(wanted, other, SSF_INPUT_NAME)
