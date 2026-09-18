@@ -409,25 +409,26 @@ def test_wrong_libera_ids(cli_args):
 
 
 @pytest.mark.parametrize(
-    ("cli_args", "runner_module"),
+    ("cli_args", "config_key"),
     [
-        (["scene-id", "cam", "file.manifest"], "libera_utils.scene_identification.cam.scene_id_cam"),
-        (
-            ["scene-id", "cam-camtime", "file.manifest"],
-            "libera_utils.scene_identification.cam_camtime.scene_id_cam_camtime",
-        ),
+        (["scene-id", "cam", "file.manifest"], "cam"),
+        (["scene-id", "cam-camtime", "file.manifest"], "cam-camtime"),
     ],
 )
-def test_scene_id_cli_dispatch(cli_args, runner_module, monkeypatch):
-    """The scene-id subcommands dispatch to the matching runner's ``algorithm`` with the parsed args."""
-    import importlib
+def test_scene_id_cli_dispatch(cli_args, config_key, monkeypatch):
+    """Each scene-id subcommand dispatches to ``run_algorithm`` with the parsed args and its registry config."""
+    from libera_utils.scene_identification import scene_id_algorithm
 
-    module = importlib.import_module(runner_module)
     called_with = {}
-    monkeypatch.setattr(module, "algorithm", lambda parsed_args: called_with.setdefault("args", parsed_args))
+    monkeypatch.setattr(
+        scene_id_algorithm,
+        "run_algorithm",
+        lambda parsed_args, config: called_with.update(args=parsed_args, config=config),
+    )
 
     args = cli.parse_cli_args(cli_args)
     args.func(args)
 
     assert called_with["args"] is args
     assert called_with["args"].manifest == "file.manifest"
+    assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[config_key]
