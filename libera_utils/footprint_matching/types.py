@@ -262,6 +262,80 @@ class GridTile:
         return int(self.data.nbytes + self.lats.nbytes + self.lons.nbytes)
 
 
+class CameraFootprintQualityFlag(enum.IntFlag):
+    """Bitwise quality flags for a camera pseudo-footprint.
+
+    Stored in the FMATCH-CAM-CAMTIME ``q_flags`` variable. ``IntFlag`` lets the
+    flags be OR-combined and tested bitwise, and an empty (zero) value means "no
+    issues".
+
+    Attributes
+    ----------
+    PARTIAL_COVERAGE
+        At least one -- but not all -- corner pixels of the block were off-Earth
+        (fill), so the bounding box was shrunk to the valid corners and covers only
+        part of the nominal block.
+    CENTER_PIXEL_SUBSTITUTED
+        The geometric center pixel was off-Earth (fill), so the nearest valid pixel
+        in the block was substituted as the footprint boresight.
+    """
+
+    PARTIAL_COVERAGE = 0b0001
+    CENTER_PIXEL_SUBSTITUTED = 0b0010
+
+
+@dataclass(frozen=True)
+class PseudoFootprint:
+    """One camera pseudo-footprint: a pixel block reduced to a footprint record.
+
+    Produced by
+    :func:`~libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`
+    and carried through the camera-timescale products. It lives here (rather than in
+    ``camera_segmentation``) so any layer -- the cloud-fraction algorithm that writes it
+    into CF-CAM-CAMTIME and the FMATCH runner that reads it back -- can reference the type
+    without importing the segmentation algorithm itself.
+
+    Attributes
+    ----------
+    time : np.datetime64
+        The ``CAMERA_TIME`` of the image this footprint came from. All footprints
+        segmented from the same image share this timestamp (see the module note on
+        ``CAMERA_TIME`` non-uniqueness).
+    slice_x, slice_y : slice
+        The block's extent in the ``CAMERA_PIXEL_COUNT_X`` / ``CAMERA_PIXEL_COUNT_Y``
+        pixel grid. Kept for provenance and for the (future) PSF-weighted
+        aggregation of the block's pixels.
+    center_ix, center_iy : int
+        Pixel indices of the footprint's center (the boresight stand-in), after any
+        nearest-valid-pixel substitution.
+    latitude, longitude : float
+        center-pixel geodetic latitude/longitude, degrees.
+    altitude : float
+        center-pixel altitude, metres (as stored in L1B).
+    solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : float
+        center-pixel viewing-geometry angles, degrees.
+    bbox : BoundingBox
+        Geographic box enclosing the block's valid corner pixels, with pole/dateline
+        handling from :func:`geometry.bounding_box_from_points`.
+    q_flags : CameraFootprintQualityFlag
+        Bitwise quality flags for this footprint (0 == clean).
+    """
+
+    time: np.datetime64
+    slice_x: slice
+    slice_y: slice
+    center_ix: int
+    center_iy: int
+    latitude: float
+    longitude: float
+    altitude: float
+    solar_zenith_angle: float
+    viewing_zenith_angle: float
+    relative_azimuth_angle: float
+    bbox: BoundingBox
+    q_flags: CameraFootprintQualityFlag
+
+
 @dataclass(frozen=True)
 class RadiometerFootprint:
     """One radiometer-timescale footprint, ready for external-variable aggregation.
