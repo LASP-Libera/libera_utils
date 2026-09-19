@@ -11,13 +11,14 @@ plan are read before the diff.**
 
 ## Paths
 
-| Path                  | Counts as                                                                                           |
-| --------------------- | --------------------------------------------------------------------------------------------------- |
-| `libera_utils/`       | Library code. Every rule applies                                                                    |
-| `libera_utils/cli.py` | Entry point. R-002 applies at the boundary; converting an exception to an exit code here is correct |
-| `libera_utils/data/`  | Shipped configuration and product definitions. R-005, R-006 and R-014 apply; the code rules do not  |
-| `tests/`              | Tests. R-009 applies. R-004 and R-008 do not. The test-scrutiny section below applies               |
-| `doc/`                | Documentation. R-005, R-009, R-012 and R-014 apply                                                  |
+| Path                                        | Counts as                                                                                           |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `libera_utils/`                             | Library code. Every rule applies                                                                    |
+| `libera_utils/cli.py`                       | Entry point. R-002 applies at the boundary; converting an exception to an exit code here is correct |
+| `libera_utils/data/`                        | Shipped configuration and product definitions. R-005, R-006 and R-014 apply; the code rules do not  |
+| `tests/`                                    | Tests. R-009 and R-014 apply. R-004 does not. The test-scrutiny section below applies               |
+| `doc/`                                      | Documentation. R-005, R-009, R-012 and R-014 apply                                                  |
+| `pyproject.toml`, `.pre-commit-config.yaml` | Build and tool configuration. R-011 and R-012 apply; no code rule does                              |
 
 ## Severity
 
@@ -79,14 +80,16 @@ signature list did not name is reported with its call sites, its length, and whe
 something in the module or a sibling already does it. One caller and under about ten lines
 is a candidate to inline; a duplicate of an existing function is a finding. Extraction is
 not invention: a helper pulled out of existing code with two or more call sites is the good
-case and is reported as such. A helper in `libera_utils/` whose only callers are in
-`tests/` is R-008, not this key.
+case and is reported as such. A helper in `libera_utils/` whose only callers are in `tests/` is not this key: R-008 covered
+it and retired, so it is `other` with a one-line summary, which is how the ratchet sees it
+recur and how the rule comes back if it does.
 
 ## Do not flag
 
 This repository already runs these, and a reviewer that repeats them trains people to skip
-the whole review. The evidence is direct: 9 of the 10 mechanical findings in the sampled
-window were line-length complaints on a repository that disables `E501` **on purpose**
+the whole review. The evidence is the "share a linter could have caught" row in
+`standards/README.md`: nine of those ten findings were line-length complaints on a repository
+that disables `E501` **on purpose**
 because `ruff format` owns wrapping.
 
 - Line length, wrapping, import order, trailing whitespace, line endings — `ruff format`,

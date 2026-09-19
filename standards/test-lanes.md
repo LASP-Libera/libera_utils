@@ -8,7 +8,10 @@ draft pull request and may still change. The durable source is the SDC testing a
 recorded in Confluence ("Verification and Peace of Mind Tests"), not that branch: the
 principle — a test's lane is decided by what it depends on, and a pull request must not be
 gated on an outage at an external service — outlives whatever the markers end up being
-called. If 703 lands with a different layout, edit this file and nothing else.
+called. If 703 lands with a different layout, this is the only file under `standards/` to edit.
+Outside `standards/` the same lane table appears in `doc/source/developer-docs/testing.md`
+and in `.github/instructions/libera-utils.instructions.md`, which are the repository's own
+documentation and move with 703 itself.
 
 ## What the lanes are
 

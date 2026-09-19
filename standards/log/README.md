@@ -38,5 +38,6 @@ rework_rounds:
 healthy case. A finding key that appears there repeatedly is the strongest graduation
 evidence the ratchet gets: gate 4 passed, a person still had to ask.
 
-Empty today. The three calibration runs described in `standards/README.md` are the first
-records this directory is expecting.
+Empty today. The two calibration runs described in `standards/README.md` — PR #73 and PR #49
+— are the first records this directory is expecting, and they are not records yet because
+nobody has tagged them.

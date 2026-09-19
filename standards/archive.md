@@ -1,6 +1,7 @@
 # Archive index
 
-One line per rule that has left `rules.md`. This file exists so a check is never orphaned:
+One line per rule whose reasoning has been archived — retired, expired, rewritten, or
+graduated into a check. This file exists so a check is never orphaned:
 someone who hits a failing check follows the ID here, and here to the reasoning.
 
 The full entries live in `libera_llm_tooling/standards/archive/libera_utils/`, and a copy is
@@ -8,8 +9,10 @@ published to Confluence for readers who do not read repositories. They are not i
 repository because this repository is public (R-014) and an archive entry says what went
 wrong, on which mission, and what the team decided about it.
 
-A rule keeps its entry in `rules.md` for one ratchet cycle after it leaves, then drops to a
-line here. IDs are never reused.
+A rule's entry in `rules.md` becomes a stub in the same pull request that archives it: a
+retired rule keeps its heading and a sentence saying where the reasoning went, a graduated
+rule keeps a `check`-tier pointer at the tool that now enforces it. The prose moves to the
+entry, not to this file, which holds one line. IDs are never reused.
 
 | ID    | The rule, in a clause                                | End state              | Became                                                     | Entry                           |
 | ----- | ---------------------------------------------------- | ---------------------- | ---------------------------------------------------------- | ------------------------------- |

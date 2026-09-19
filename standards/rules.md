@@ -10,6 +10,10 @@ Tiers: `prose` — the author is expected to know it and the reviewer does not c
 `reviewer` — the reviewer checks it. `check` — a tool checks it and the entry is a pointer.
 Statuses: `provisional` · `established` · `graduated` · `retired`.
 
+Where a rule restates a decision from the shared `decisions.md`, its evidence line names it.
+A rule and a decision on the same concern must not disagree about status: the decision is
+what the team settled, the rule is how a reviewer checks it, and the reviewer loads both.
+
 A rule becomes `established` when the reviewer has cited it and a person has accepted the
 finding in two different pull requests, **written by two different people**. A rule whose
 evidence is one author's pull requests, or comes only from AI-drafted review comments, stays
@@ -17,13 +21,15 @@ provisional however often it is cited: the citation count measures how often som
 up, and breadth measures whether it is the team's standard or one person's. A `provisional`
 rule that has become neither by the second ratchet after admission is retired by default.
 
-**No rule leaves without its reasoning being kept.** When a rule graduates into a check,
-retires or is rewritten, the ratchet writes its biography — the text as it read, why it was
+**No rule leaves without its reasoning being kept.** During v0 a harvest may retire as well
+as admit — R-008 did, at the second harvest, before any ratchet had run — and the biography
+requirement is identical either way; after v0 it is the ratchet's job alone. When a rule
+graduates into a check, retires or is rewritten, whoever does it writes its biography — the text as it read, why it was
 admitted, every decline reason quoted, and what the replacement cannot catch — to
 `standards/archive/libera_utils/` in the shared corpus, in the same pull request. The entry
 here becomes a one-line stub pointing at it, so an ID is never reused and the reason is
-never lost. Everything below is `provisional`
-except R-010, which a pre-commit hook already enforces.
+never lost. Every entry carries its own status line; read that rather than
+assuming.
 
 v0 evidence points at the merged pull request whose review threads produced the rule, and a
 rule resting on one author says so in its evidence line. From the first ratchet on, evidence
@@ -149,7 +155,7 @@ check this; the hook does.
 
 ### R-011 · A dependency pins to an immutable ref
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 · implements shared D-005
 
 A `@main` ref makes the build non-reproducible and lets an upstream merge break CI with no
 commit on this side. This is not hypothetical: a moving ref in `libera_rad` took main and
@@ -168,7 +174,7 @@ leaves a reader unable to tell which artifact they have.
 Do not flag: a pre-release suffix used deliberately for downstream testing, when the
 changelog heading carries it too.
 
-### R-013 · Parse or sort an input once, not once per consumer
+### R-013 · Parse or sort an input once, not once per consumer, and do not hold a large array twice
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0041, pr-0027
 
@@ -182,7 +188,7 @@ a copy that exists to avoid mutating a caller's array.
 
 ### R-014 · No internal URL or internal document content in this repository
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027 · implements shared D-004
 
 `libera_utils` is public and ships to PyPI. Cite an internal document by name — "the FSW
 user's guide", "the ICIE ObsID page" — say what it decides, and stop. No Confluence or Jira
@@ -194,7 +200,7 @@ public URL, such as NAIF or the CERES documentation.
 
 ### R-015 · A parameter documents one type, and the annotation narrows to what the code needs
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements shared D-011
 
 `str | Path`, `PathType` where only a local path works, and `list[str]` with a `None`
 default are all undefined contracts: the caller cannot tell what is accepted and the failure
@@ -219,7 +225,9 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
   pr-0041 (one ObsID on two instruments produced two writes of the same filename).
 - **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
 - **An error message names its audience and the next action.** The strongest-evidenced
-  candidate here, and the first to promote. Four people asked for it in three pull requests:
+  candidate here, and the first to promote. The concern is **already citable** as shared
+  `D-012`, which is established on the same three pull requests — the cap is holding a rule
+  slot, not the concern, so a reviewer cites the decision until a slot frees up. Four people asked for it in three pull requests:
   "make this error more directed at the L2 devs ... check you have the correct profile
   activated and if this error persists, contact the SDC" (pr-0028, with the replacement text
   dictated in full); "I'd prefer an error message telling them they need to provide a tag,

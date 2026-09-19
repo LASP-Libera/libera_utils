@@ -1,6 +1,6 @@
 Closes #NNN · LIBSDC-NNNN · Outcome: <the ticket's outcome line>
 
-Loop-exit: clean
+Loop-exit: <clean | capped | flapping | timed out | halted>
 
 <!--
 LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too.
