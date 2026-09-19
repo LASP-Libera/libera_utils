@@ -79,10 +79,10 @@ contract is that a defined input produces a defined product or the run stops, so
 untested raise is an unenforced contract (R-002, R-004). Report the lines, never a
 percentage — a percentage produces tests written to the metric.
 
-A `@pytest.fixture` is not a helper. It is injected by name rather than called, so a
-call-site count says nothing about it and one module using it is normal. Never raise
-`helper/...` on a symbol carrying a fixture decorator, or any decorator that registers rather
-than calls.
+A framework-invoked symbol is not a helper. A `@pytest.fixture` is injected by name and a
+pydantic `@field_validator` or `@model_validator` is called by the model, so a call-site count
+says nothing about either and "one caller" is the normal case. Never raise `helper/...` on a
+symbol carrying a decorator that registers rather than calls.
 
 ## New surface
 
