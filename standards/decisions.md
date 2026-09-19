@@ -47,3 +47,22 @@ flight-representative geometry. It is kept as test data because it is the only k
 generation driven by real decoded spacecraft telemetry and the only geolocation validated
 against a third-party product (CERES). A downstream package that pointed `LIBERA_KERNEL_DIR`
 at it must vendor the configuration itself.
+
+### libera_utils/D-005 · Writing a product overwrites an existing object at the same key
+
+_2026-09-19 · **provisional** · source: PR #66 review, adjudicated by mmaclay_
+
+`_write_dataset` stages a cloud destination locally and uploads with
+`force_overwrite_to_cloud=True`, which skips cloudpathlib's `OverwriteNewerCloudError` check.
+That is deliberate: reprocessing legitimately rewrites a granule at the same key, and a
+pipeline that halted because the object in the bucket was newer than the file it just produced
+would fail on its own success.
+
+It is written down because it reads as the opposite of this repository's posture everywhere
+else — a condition that would surprise a reader stops the run — and because a bare kwarg is not
+a decision anyone can reconstruct. The docstring says the new path is equivalent to what
+`CloudPath.open` did internally; on this one point it is not, and that is the exception this
+entry names.
+
+What would reverse it: a product whose key is not unique per reprocessing run, where a silent
+overwrite would destroy a granule someone still needs.

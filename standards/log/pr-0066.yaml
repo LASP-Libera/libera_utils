@@ -63,4 +63,10 @@ findings:
       verdict: accepted,
       note: "asserts on xarray, not on the library's write path (D-010)"
     }
-questions_unanswered: 3
+questions:
+  - q: scope of the chunksizes work
+    a: keep it in this PR, describe it in the body
+  - q: "951 vs 938 unit tests"
+    a: 938 is the reproducible number; correct the body
+  - q: is the S3 overwrite intended
+    a: yes; recorded as libera_utils/D-005

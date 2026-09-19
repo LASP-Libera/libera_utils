@@ -20,6 +20,17 @@ plan are read before the diff.**
 | `doc/`                                      | Documentation. R-005, R-009, R-012 and R-014 apply                                                  |
 | `pyproject.toml`, `.pre-commit-config.yaml` | Build and tool configuration. R-011 and R-012 apply; no code rule does                              |
 
+## Tagging
+
+Every finding gets a verdict, one at a time: `accept`, `decline: <one line>`, or `escalate`
+for a blocking finding; `take` or `note` for a suggestion; a one-line answer or `leave` for a
+question. A decline without its reason is not a decline — the reason is what tells the next
+ratchet whether the rule was wrong or the code was, and it is the only part of a record that
+cannot be reconstructed later.
+
+No bulk verdict. A reviewer who reads a list and says "all fine" has adjudicated nothing, and
+six accepts that mean one glance are worse than three that mean three.
+
 ## Severity
 
 | Tag        | Handling                                                                                                                                                                                           |
