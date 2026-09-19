@@ -59,7 +59,13 @@ expected value re-tuned to the new output. Two more, specific to this repository
 **A test added where one should have been reworked**, keyed `test/rework`. An agent asked
 to make a suite green adds; a person who knows the suite edits. A new test whose subject an
 existing module already covers belongs in that module, beside its siblings or as a
-`parametrize` case; a new test _file_ the plan did not name is a finding on its own. Judge
+`parametrize` case.
+
+Count deletions before calling it padding. The ratio is tests added against tests modified
+**plus tests deleted**: a rewrite that drops fifteen and adds nine is a consolidation, and
+against modified alone it scores as the opposite of what it is. The signal is a net rise with
+nothing deleted. Where the net count is flat or falling, a new test _file_ the plan did not
+name is an escalation for the person, not a finding to resolve before exit. Judge
 on the subject, not the assertion (D-010): the same input feeding the same number is
 duplicate coverage only when the subject matches, and that is `test/duplicate`. One repo specific: shared setup belongs in `tests/plugins/` as a fixture rather than in a new
 helper module. **Judge shape, not location** — where a test lives is settled by
@@ -72,6 +78,11 @@ Separately, every `raise` the diff adds needs a test asserting it: this reposito
 contract is that a defined input produces a defined product or the run stops, so an
 untested raise is an unenforced contract (R-002, R-004). Report the lines, never a
 percentage — a percentage produces tests written to the metric.
+
+A `@pytest.fixture` is not a helper. It is injected by name rather than called, so a
+call-site count says nothing about it and one module using it is normal. Never raise
+`helper/...` on a symbol carrying a fixture decorator, or any decorator that registers rather
+than calls.
 
 ## New surface
 
