@@ -1,5 +1,9 @@
 # libera_utils
 
+**When this file and an authoritative source disagree, the source wins** — `pyproject.toml`,
+`.pre-commit-config.yaml`, the workflows, `standards/rules.md` and the code itself. Open a
+pull request to fix this file rather than working from it.
+
 Tool-neutral entry point. Claude Code reads `CLAUDE.md`, Copilot reads
 `.github/copilot-instructions.md`, Gemini reads `GEMINI.md`; all three resolve to
 `.github/instructions/libera-utils.instructions.md`, which points back here for how a change

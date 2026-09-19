@@ -13,8 +13,9 @@ reviewer ran against, who adjudicated, the plan status, the refinement counts, t
 loop's gates and exit, every finding with its key, severity and verdict (with a reason for
 every decline), and the questions with their answers.
 
-Two more blocks, parsed from the PR body's gate 3b lines, so the ratchet can see whether
-changes are being reworked or padded:
+Four more fields, parsed from the PR body's "already checked" section. The first two come
+from the gate 3b lines and let the ratchet see whether changes are being reworked or padded;
+the last two say who wrote the change and how often review sent it back:
 
 ```yaml
 tests:
@@ -25,7 +26,17 @@ tests:
 helpers:
   added: 1 # each with its call-site count
   extracted: 2
+authored: agent-assisted # agent-assisted | by hand; plus the handle that opened it
+rework_rounds:
+  - round: 1
+    sent_back_by: R-004 # a rule id or a finding key
+    applied: 2
+    declined: 1 # each with the reason the writer gave
 ```
+
+`rework_rounds` is empty on a pull request that merged on its first review, which is the
+healthy case. A finding key that appears there repeatedly is the strongest graduation
+evidence the ratchet gets: gate 4 passed, a person still had to ask.
 
 Empty today. The three calibration runs described in `standards/README.md` are the first
 records this directory is expecting.
