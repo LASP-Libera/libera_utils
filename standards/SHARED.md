@@ -11,23 +11,25 @@ live in `libera_llm_tooling/standards/`:
 
 ## Reaching it
 
-Clone `libera_llm_tooling` somewhere stable, then add to `.claude/settings.local.json`
-(gitignored, personal):
+Two separate things, installed two different ways.
 
-```json
-{
-  "permissions": {
-    "additionalDirectories": [
-      "/absolute/path/to/libera_llm_tooling/standards",
-      "/absolute/path/to/libera_llm_tooling/.github/skills",
-      "/absolute/path/to/libera_llm_tooling/.github/agents"
-    ]
-  }
-}
+The **procedure** — the seven `loop-*` skills and the `loop-reviewer` agent — is a private
+Claude Code plugin. Once per machine, covering every repository you open:
+
+```bash
+claude plugin marketplace add LASP-Libera/libera_llm_tooling
+claude plugin install libera-loops@libera
 ```
 
-Copilot reads the same skills and agents from `.github/skills` and `.github/agents` in that
-repository.
+`claude plugin details libera-loops` should report seven skills and one agent. Adding the
+tooling repository to `permissions.additionalDirectories` does not install anything: that
+setting grants read access, and Claude Code discovers skills only from `~/.claude/skills`, a
+repository's own `.claude/skills`, and installed plugins.
+
+The **corpus** is a clone kept beside this repository, so that `libera_llm_tooling/standards/`
+is a sibling of `libera_utils/`. That convention is the whole configuration. The monthly
+ratchet writes to it on a branch, which is why it stays a clone rather than travelling inside
+the plugin.
 
 A skill that cannot find the shared corpus says so and continues without the vocabulary,
 rather than inventing terms. It does not fall back to a copy, because a copy is how two
