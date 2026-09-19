@@ -38,6 +38,9 @@ rework_rounds:
 healthy case. A finding key that appears there repeatedly is the strongest graduation
 evidence the ratchet gets: gate 4 passed, a person still had to ask.
 
-Empty today. The two calibration runs described in `standards/README.md` — PR #73 and PR #49
-— are the first records this directory is expecting, and they are not records yet because
-nobody has tagged them.
+Write each finding as a **YAML flow mapping**, one entry over one or two lines. Block style
+costs five lines a finding, and seven findings at the budget plus the header does not fit in
+fifty — `pr-0066.yaml` is block style rewritten as flow, 53 lines down to 30.
+
+`pr-0066.yaml` is the first record. The two calibration runs described in `standards/README.md`
+— PR #73 and PR #49 — are still not records, because nobody has tagged them.

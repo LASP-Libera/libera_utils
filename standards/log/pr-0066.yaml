@@ -1,0 +1,66 @@
+pr: 66
+ticket: none # reconstructed at review time: .review/ticket-pr-0066.md
+branch: fix/netcdf-write-path-picklable
+head: a71d5f3
+date: 2026-09-19
+standards_sha: ed6a959
+adjudicated_by: mmaclay
+plan: none # PR predates the loop
+inner: none # loop-self-review did not run; no "already checked" block to parse
+refinement: none
+authored: by hand
+rework_rounds: []
+tests: # gate 3b computed at review time, not parsed from the PR body
+  {
+    added: 6,
+    reworked: 0,
+    deleted: 1,
+    failure_path_assertions: 1,
+    uncovered_changed_lines: []
+  }
+helpers: # _write_dataset extraction; _check_chunksizes_rank is a validator, exempt
+  { added: 2, extracted: 1 }
+findings:
+  - {
+      key: R-012,
+      severity: must-fix,
+      at: "pyproject.toml:3",
+      verdict: accepted,
+      note: "branch 5.10.9 / changelog 5.10.8; main is 5.11.0 and already publishes a different 5.10.9"
+    }
+  - {
+      key: ticket/scope,
+      severity: must-fix,
+      at: "libera_utils/io/product_definition.py:167-191",
+      verdict: accepted,
+      note: "chunksizes commit is a second concern, unnamed in the PR body"
+    }
+  - {
+      key: R-002,
+      severity: should-fix,
+      at: "libera_utils/io/netcdf.py:153",
+      verdict: accepted,
+      note: "force_overwrite_to_cloud=True skips the check the docstring implies"
+    }
+  - {
+      key: other,
+      severity: should-fix,
+      at: "tests/unit/test_io/test_netcdf.py:734",
+      verdict: accepted,
+      note: "nothing reads an S3-written product back; an empty staged file passes"
+    }
+  - {
+      key: R-004,
+      severity: should-fix,
+      at: "libera_utils/io/product_definition.py:56",
+      verdict: accepted,
+      note: "encoding's chunksizes contract is invisible at the interface and in the user docs"
+    }
+  - {
+      key: other,
+      severity: should-fix,
+      at: "tests/unit/test_io/test_product_definition.py:889",
+      verdict: accepted,
+      note: "asserts on xarray, not on the library's write path (D-010)"
+    }
+questions_unanswered: 3
