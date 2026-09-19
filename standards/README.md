@@ -26,11 +26,20 @@ request to fix the corpus.
 Window 2026-06-15 to 2026-09-15 unless stated. Source: the GitHub MCP server for pull
 requests, the Atlassian MCP server for Jira, and a local run for test timings.
 
+The pull-request counts were **re-pulled by merge date on 2026-09-18** and confirmed. The
+first pass listed pull requests by last update, which makes any count a floor: a stale pull
+request someone touched last week displaces a merged one. Sorting the closed list on
+`merged_at` gives the same 21 non-dependabot merges and the same 4 dependabot merges in the
+window, so the dials below stand. Over the repository's whole life — 40 non-dependabot
+merges from 2026-03-06 to 2026-09-09 — the rate is 6.5 a month, close enough to the
+windowed 7 that the cap does not move.
+
 | Quantity                                             | Measured                         | How                                                                                                                                                           |
 | ---------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Merged PRs per month, excluding dependabot           | **7**                            | 21 merged to `main` in the 3-month window                                                                                                                     |
+| Merged PRs per month, excluding dependabot           | **7**                            | 21 merged to `main` in the 3-month window, listed by `merged_at`                                                                                              |
 | Merged PRs per month, including dependabot           | 8.3                              | 4 dependabot merges in the window                                                                                                                             |
 | Review threads per PR, on the 7 reviewed PRs sampled | 1, 6, 14, 15, 22, 23, 24         | `pull_request_read` / `get_review_comments` on #50, #58, #41, #37, #48, #43, #27                                                                              |
+| Authors in that sample                               | 2 of 5                           | `mmaclay` and `mwatwood-cu`; `medley56`, `c-poling` and `hcronk` also merge here. Too narrow — see Calibration                                                |
 | Median threads that asked for a change               | **11**                           | Excluding acknowledgements, answered questions and praise                                                                                                     |
 | Distinct concerns raised more than once              | **17**                           | 14 admitted as rules, 3 held as candidates                                                                                                                    |
 | Share a linter could have caught                     | ~10%                             | 10 of ~105 sampled threads, 9 of them in one PR                                                                                                               |
@@ -92,6 +101,26 @@ anything under `standards/`. That is R-014, and it is why the shared corpus — 
 carry internal links, because it is private — lives in `libera_llm_tooling` and is named
 from here rather than copied in. Decided before Phase 0, deliberately: retrofitting it
 would mean re-reading every file in the corpus.
+
+## Calibration, before anyone tags a finding
+
+Two live reviewer passes exist, on PR #73 (`mwatwood-cu`) and PR #49 (`mmaclay`), both merged
+2026-09-08, written out at `.review/calibration/`. Tagging findings against two September
+pull requests would calibrate the reviewer to a fortnight of one part of the repository.
+
+The set grows first, to:
+
+- **five or more merged pull requests**, with review threads that asked for changes;
+- **at least two authors other than whoever runs the pass** — `medley56`, `c-poling` and
+  `hcronk` all merge here and none of their pull requests has been sampled;
+- **at least one merged before the repository adopted AI assistance.** The instruction files
+  landed in PR #3, merged 2026-03-12, so anything merged before then is evidence that
+  predates an assistant's own suggestions.
+
+Every thread carries who wrote it and whether it was human or AI-drafted. AI-drafted threads
+stay in the record and out of the evidence: a rule built from them encodes what a model
+tends to say, not what this team asks for. `loop-harvest` draws the sample and marks the
+threads; `loop-ratchet` applies the filter and holds a single-author rule at provisional.
 
 ## What is not settled
 

@@ -7,7 +7,9 @@ file naming conventions, and AWS pipeline integration.
 
 Detailed coding rules, package layout, testing conventions, key patterns, and AI agent
 restrictions are defined in `.github/instructions/libera-utils.instructions.md`. Copilot
-applies that file automatically to all files in this repository.
+applies that file automatically to all files in this repository. `AGENTS.md` is the
+tool-neutral entry point above both: it maps this file, the instruction file and `standards/`
+to each other and describes how a change moves from ticket to merge.
 
 The review standard — the rules a reviewer checks, the contract it follows, and the
 do-not-flag list — is in `standards/`, starting at `standards/README.md`. It is tool-neutral

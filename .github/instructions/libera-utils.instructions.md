@@ -114,6 +114,10 @@ generation, Libera file naming, and AWS pipeline integration.
 
 ## Review Standards
 
+`AGENTS.md` is the tool-neutral entry point: it maps these instructions to the review
+standard and describes how a change moves from ticket to merge. Read it once; this file
+stays the detail.
+
 The review standard lives in `standards/`, tool-neutral and read by people and agents alike.
 
 - `standards/rules.md` — what a reviewer checks here, capped at 14 rules, each with the

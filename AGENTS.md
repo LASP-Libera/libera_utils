@@ -1,8 +1,10 @@
 # libera_utils
 
 Tool-neutral entry point. Claude Code reads `CLAUDE.md`, Copilot reads
-`.github/copilot-instructions.md`, Gemini reads `GEMINI.md`, and all three point here or at
-the same instruction file, so a convention is written once.
+`.github/copilot-instructions.md`, Gemini reads `GEMINI.md`; all three resolve to
+`.github/instructions/libera-utils.instructions.md`, which points back here for how a change
+moves from ticket to merge. A convention is written once, in `standards/`, and everything
+else points at it.
 
 ## Coding rules, testing, and agent restrictions
 

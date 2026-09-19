@@ -102,3 +102,28 @@ going through the steps above to create a new venv (you can name it differently)
 5. Set up `pre-commit` by running `pre-commit install`. This installs the standard git hooks that we use to prevent
    mistakes before they are committed. Configuration for pre-commit can be found in `.pre-commit-config.yaml`.
 6. Next, [go run the tests](testing.md).
+
+### Two things `poetry install` does not settle
+
+**`pillow-jpls` is declared but may not be installed.** It is in the dev group, and a
+`.venv` built before it was added does not gain it on a plain `poetry install` if the lock
+file was not refreshed. Check with `python -c "import pillow_jpls"`; if it fails, run
+`poetry lock && poetry install`.
+
+**`cfunits` cannot find `udunits2` on macOS.** `cfchecker` pulls in `cfunits`, which loads
+the UDUNITS-2 shared library at import and does not look in Homebrew's prefix:
+
+```
+FileNotFoundError: cfunits requires UNIDATA UDUNITS-2. Can't find the 'udunits2' library.
+```
+
+Install it with `brew install udunits` and point the loader at it:
+
+```bash
+export DYLD_LIBRARY_PATH=/opt/homebrew/opt/udunits/lib
+```
+
+Intel Macs use `/usr/local/opt/udunits/lib`. Linux and the CI image install
+`libudunits2-dev` from the package manager and need nothing further; the path is only a
+macOS problem because System Integrity Protection strips `DYLD_*` from child processes, so
+it has to be set in the shell that runs `pytest`.

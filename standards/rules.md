@@ -11,8 +11,11 @@ Tiers: `prose` — the author is expected to know it and the reviewer does not c
 Statuses: `provisional` · `established` · `graduated` · `retired`.
 
 A rule becomes `established` when the reviewer has cited it and a person has accepted the
-finding in two different pull requests. A `provisional` rule that has not done that by the
-second ratchet after admission is retired by default.
+finding in two different pull requests, **written by two different people**. A rule whose
+evidence is one author's pull requests, or comes only from AI-drafted review comments, stays
+provisional however often it is cited: the citation count measures how often something came
+up, and breadth measures whether it is the team's standard or one person's. A `provisional`
+rule that has become neither by the second ratchet after admission is retired by default.
 
 **No rule leaves without its reasoning being kept.** When a rule graduates into a check,
 retires or is rewritten, the ratchet writes its biography — the text as it read, why it was
@@ -22,8 +25,9 @@ here becomes a one-line stub pointing at it, so an ID is never reused and the re
 never lost. Everything below is `provisional`
 except R-010, which a pre-commit hook already enforces.
 
-v0 evidence points at the merged pull request whose review threads produced the rule.
-From the first ratchet on, evidence points at `log/pr-NNNN.yaml` records.
+v0 evidence points at the merged pull request whose review threads produced the rule, and a
+rule resting on one author says so in its evidence line. From the first ratchet on, evidence
+points at `log/pr-NNNN.yaml` records.
 
 ---
 
@@ -77,12 +81,15 @@ self-describing and that raises nothing.
 
 ### R-005 · A published quantity states its unit; a time states its epoch and frame
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0043
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027 · **one author, needs a second**
 
 `WFOV_FSW_COMMANDED_EXP_TIME_1/2` and the FPGA actual exposure times shipped with no `units`
 attribute, and the conversion to milliseconds is still unconfirmed with FSW. A number in a
 data product with no unit is not a measurement, and a consumer will guess. The same applies
-to a time with no epoch and a pointing angle with no frame.
+to a time with no epoch and a pointing angle with no frame. PR #43 was cited here and does
+not support it — its temperature comments are about ObsID naming coverage, not units — so
+this rests on one pull request by one author until the wider calibration sample gives it a
+second.
 Do not flag: dimensionless counters and flags; a field whose unit is stated once for a group
 in the product definition.
 
