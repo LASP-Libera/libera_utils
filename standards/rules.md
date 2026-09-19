@@ -46,7 +46,7 @@ not have, when the docstring says so.
 
 ### R-002 · A condition that invalidates the output raises; it does not warn or no-op
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0027, pr-0041
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0027, pr-0041, pr-0060, pr-0012
 
 A warning is not a failure. When an Az/El CK had no encoder columns in its L1A input, the
 code returned quietly and produced a kernel with nothing in it; it now raises. The rule is
@@ -70,7 +70,7 @@ when the message distinguishes them.
 
 ### R-004 · Every public symbol has a numpydoc docstring, including what it raises
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027, pr-0015
 
 Numpydoc on public symbols is a project standard and the `Raises` section is the half that
 gets left out. With fail-loud design the failure modes are part of the interface, so a
@@ -95,7 +95,7 @@ in the product definition.
 
 ### R-006 · One source of truth for a value; tabular data lives in a data file
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0041
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0027, pr-0041, pr-0015, pr-0002
 
 `PACKET_DATA_WIDTH` restated a width that the `|S972` dtype already carried, so the two
 could diverge silently. The ObsID registry started as a large literal inside a module and
@@ -115,19 +115,18 @@ of residue LLM-assisted drafting leaves behind, so it is worth a deliberate pass
 Do not flag: a public symbol kept for backwards compatibility with a deprecation note; code
 behind a feature flag that the changelog names.
 
-### R-008 · Test scaffolding does not ship in the package
+### R-008 · Test scaffolding does not ship in the package — **retired 2026-09-19**
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027
+tier: — · status: retired · reasoning: `standards/archive.md` → `archive/libera_utils/R-008.md`
 
-`wfov_image_metadata.py` carried a function whose docstring said it packed footer fields
-"for unit tests", whose only callers were in `tests/`, and which the pipeline never used —
-the L1A path only ever decodes a footer, never encodes one. An encoder in the shipped module
-is a public surface the team has to keep working. It belongs in a fixture.
-Do not flag: a documented round-trip helper the package genuinely exposes to its users.
+Retired at the second harvest to make room for R-015, which the wider sample evidences three
+times over against this rule's one. The concern is real and has not gone away; it is now
+carried by `packages = [{include = "libera_utils"}]` in `pyproject.toml`, which was verified
+by building the wheel.
 
 ### R-009 · Comments describe the code as it is, not how it got there
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0058
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030
 
 The most repeated request in the window, six times in one review: remove the ticket number,
 remove the historical title, remove the comment that says what this used to be. A test's
@@ -160,7 +159,7 @@ Do not flag: a pin in a local development extra that is never published.
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0037, pr-0027
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0048, pr-0037, pr-0027, pr-0022, pr-0032
 
 New public modules, a new filename class, a new enum member or a new keyword argument make
 a minor release, not a patch — downstream pins of the form `~=5.10.3` will take a patch
@@ -193,6 +192,20 @@ pointer. The background that needs a link lives in the private shared corpus.
 Do not flag: a LIBSDC ticket key on its own, which is an identifier rather than a link; a
 public URL, such as NAIF or the CERES documentation.
 
+### R-015 · A parameter documents one type, and the annotation narrows to what the code needs
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060
+
+`str | Path`, `PathType` where only a local path works, and `list[str]` with a `None`
+default are all undefined contracts: the caller cannot tell what is accepted and the failure
+arrives late and in the wrong words. PR #12 carries seven separate requests to take
+`LiberaDataProductFilename` rather than `str`, and to use `PathType` where an `S3Path` can
+reach. PR #28 settles how to fix the general case — "just change the typehint to only accept
+a local Path or str since that is what is actually required", chosen deliberately over
+rejecting cloud paths at runtime. **Narrow the annotation rather than widen the function.**
+Do not flag: a genuine union the product definition names; a constructor that documents a
+single coercion at the boundary and says so in its docstring.
+
 ---
 
 ## Candidates not admitted, because the cap binds
@@ -205,3 +218,20 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
 - **A registry whose values reach a filename has a uniqueness invariant test.** Evidence:
   pr-0041 (one ObsID on two instruments produced two writes of the same filename).
 - **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
+- **An error message names its audience and the next action.** The strongest-evidenced
+  candidate here, and the first to promote. Four people asked for it in three pull requests:
+  "make this error more directed at the L2 devs ... check you have the correct profile
+  activated and if this error persists, contact the SDC" (pr-0028, with the replacement text
+  dictated in full); "I'd prefer an error message telling them they need to provide a tag,
+  rather than defaulting to `latest`" (pr-0060, taken as a breaking change); "in the logs,
+  report which data vars don't match, especially SRC_SEQ_CTR" and "add to the warning
+  message ... likely a result of clock jamming" (pr-0015).
+- **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer
+  removed three of them in one pass — "yet another unnecessary helper function". Held below
+  the cap because gate 3b already computes call-site counts, so this is a check waiting for
+  a firing rate rather than a rule waiting for a reviewer.
+- **A valid range or an enumeration cites its source.** Evidence: pr-0004 ("what's the
+  reasoning for this valid range?", answered "extraneous - removing"), pr-0042
+  (`LAND_SURFACE_TYPE_BIN` declared 6 categories where the ADM algorithm has 5).
+- **A name is renamed when its contract widens.** Evidence: pr-0028
+  (`get_libera_utils_session` → `get_l2_team_role_session` once it took a `role_name`).

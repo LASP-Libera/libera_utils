@@ -39,7 +39,10 @@ windowed 7 that the cap does not move.
 | Merged PRs per month, excluding dependabot           | **7**                            | 21 merged to `main` in the 3-month window, listed by `merged_at`                                                                                              |
 | Merged PRs per month, including dependabot           | 8.3                              | 4 dependabot merges in the window                                                                                                                             |
 | Review threads per PR, on the 7 reviewed PRs sampled | 1, 6, 14, 15, 22, 23, 24         | `pull_request_read` / `get_review_comments` on #50, #58, #41, #37, #48, #43, #27                                                                              |
-| Authors in that sample                               | 2 of 5                           | `mmaclay` and `mwatwood-cu`; `medley56`, `c-poling` and `hcronk` also merge here. Too narrow — see Calibration                                                |
+| Authors in the first harvest's sample                | 2 of 7                           | `mmaclay` and `mwatwood-cu`. Widened to 7 by the second harvest — see How these rules were generated                                                          |
+| Pull requests harvested, both rounds                 | **17 of 40**                     | Non-dependabot merges, listed by `merged_at`                                                                                                                  |
+| Review threads read, both rounds                     | ~212                             | ~105 in the first harvest, 107 in the second                                                                                                                  |
+| Share of second-harvest threads written by a bot     | **35%**                          | 37 of 107, `copilot-pull-request-reviewer`. None used as rule evidence                                                                                        |
 | Median threads that asked for a change               | **11**                           | Excluding acknowledgements, answered questions and praise                                                                                                     |
 | Distinct concerns raised more than once              | **17**                           | 14 admitted as rules, 3 held as candidates                                                                                                                    |
 | Share a linter could have caught                     | ~10%                             | 10 of ~105 sampled threads, 9 of them in one PR                                                                                                               |
@@ -102,20 +105,86 @@ carry internal links, because it is private — lives in `libera_llm_tooling` an
 from here rather than copied in. Decided before Phase 0, deliberately: retrofitting it
 would mean re-reading every file in the corpus.
 
+## How these rules were generated
+
+Two harvests, both reading merged pull request review threads through the GitHub MCP server,
+read-only.
+
+|               | First harvest                     | Second harvest                                  |
+| ------------- | --------------------------------- | ----------------------------------------------- |
+| Date          | 2026-09-17                        | 2026-09-19                                      |
+| Pull requests | 7                                 | 10                                              |
+| Numbers       | #27, #37, #41, #43, #48, #50, #58 | #2, #4, #12, #15, #22, #28, #30, #32, #42, #60  |
+| Threads read  | ~105                              | 107                                             |
+| Human authors | 2                                 | 7                                               |
+| Window        | 2026-06 to 2026-09                | 2026-03 to 2026-09, the repository's whole life |
+
+Together that is **17 of the 40 non-dependabot pull requests ever merged here**, listed by
+`merged_at` rather than by last update. The review threads in them were written by
+`medley56`, `mwatwood-cu`, `mmaclay`, `c-poling`, `hcronk`, `maxineofficial` and `jgristey` —
+every person who has reviewed in this repository — and by `copilot-pull-request-reviewer`.
+
+Also read, for terminology and decisions rather than rules: the instruction files,
+`pyproject.toml`, `.pre-commit-config.yaml`, `doc/source/developer-docs/`, the product
+definition YAML in `libera_utils/data/`, and the Confluence pages and Jira epics named in
+`standards/context/`.
+
+### What the second harvest changed
+
+The first harvest read two people's pull requests and produced fourteen rules. The second
+read five more people and found that three of those rules were being asked for by people the
+first sample never saw — R-006, R-009 and R-012 now carry evidence from three and four pull
+requests each and are marked **established**. It also found one rule nobody but its original
+author had ever asked for, R-008, which retired to make room for **R-015**, the strongest
+single finding of either harvest: seven requests in one pull request, and three pull requests
+in total, to narrow a parameter's type rather than widen the function.
+
+Four more candidates sit below the cap with their evidence, ranked. The first to promote is
+"an error message names its audience and the next action", which four people asked for in
+three pull requests.
+
+### One third of the review comments were written by a bot
+
+`copilot-pull-request-reviewer` wrote **37 of the 107 threads** in the second harvest — 12 of
+18 in PR #2, 8 of 17 in PR #4, 6 of 12 in PR #30. It has been reviewing since the first pull
+request this repository ever merged: PR #1, merged 2026-03-06, has three review threads and
+all three are the bot's.
+
+That has two consequences and they pull in opposite directions.
+
+It means **there is no pre-AI baseline in this repository to sample.** The requirement to
+include a pull request predating assistant use cannot be met here, and pretending otherwise
+would be worse than admitting it.
+
+It also means the authorship marker is doing real work rather than guarding against a
+hypothetical. None of the 37 bot threads was used as rule evidence. Read in bulk they are a
+recognisable and narrow kind: docstrings disagreeing with signatures, stale references in
+docs, an APID in a comment that does not match the enum, two typos. Useful, mostly accepted,
+and almost entirely mechanical — which is an argument for a check, not for a rule. What the
+bot almost never produced is the kind of finding the humans produced constantly: this
+parameter should not accept that type, this error message is useless to the person who will
+read it, this helper has one caller.
+
+The team already marks its own AI use in-thread — "Reply drafted with AI assistance (Claude
+Code) and reviewed by me" — which is what makes the marker answerable at all (D-013).
+
 ## Calibration, before anyone tags a finding
 
 Two live reviewer passes exist, on PR #73 (`mwatwood-cu`) and PR #49 (`mmaclay`), both merged
 2026-09-08, written out at `.review/calibration/`. Tagging findings against two September
 pull requests would calibrate the reviewer to a fortnight of one part of the repository.
 
-The set grows first, to:
+The rule _harvest_ is now wide — 17 pull requests, seven authors, the repository's whole life,
+recorded above. The reviewer _calibration_ is not: that still means running the reviewer and
+having a person tag what it produced, and it has happened twice. The set grows first, to:
 
 - **five or more merged pull requests**, with review threads that asked for changes;
 - **at least two authors other than whoever runs the pass** — `medley56`, `c-poling` and
   `hcronk` all merge here and none of their pull requests has been sampled;
-- **at least one merged before the repository adopted AI assistance.** The instruction files
-  landed in PR #3, merged 2026-03-12, so anything merged before then is evidence that
-  predates an assistant's own suggestions.
+- **at least one merged before the repository adopted AI assistance — which does not exist
+  here.** `copilot-pull-request-reviewer` reviewed PR #1. There is no baseline to sample, so
+  the authorship marker carries the whole weight, and every rule's evidence line is human
+  threads only.
 
 Every thread carries who wrote it and whether it was human or AI-drafted. AI-drafted threads
 stay in the record and out of the evidence: a rule built from them encodes what a model

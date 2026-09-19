@@ -13,6 +13,7 @@ line here. IDs are never reused.
 
 | ID    | The rule, in a clause                                | End state              | Became                                                     | Entry                           |
 | ----- | ---------------------------------------------------- | ---------------------- | ---------------------------------------------------------- | ------------------------------- |
+| R-008 | Test scaffolding does not ship in the package        | retired 2026-09-19     | `pyproject.toml` `packages`                                | `archive/libera_utils/R-008.md` |
 | R-010 | Deferred work carries a LIBSDC or CURRYER ticket tag | graduated at admission | `lasp/prevent-dangling-todos` in `.pre-commit-config.yaml` | `archive/libera_utils/R-010.md` |
 
 ## The archive is a lookup, not a graveyard
