@@ -9,11 +9,12 @@ from pathlib import Path
 import pytest
 
 from libera_utils.constants import LiberaApid
-from libera_utils.l1a.day_coverage import evaluate_day_coverage
+from libera_utils.l1a.day_coverage import coverage_policy_for_apid, evaluate_day_coverage, measure_time_axis_coverage
 from libera_utils.l1a.day_window import assert_data_times_unique_monotonic, trim_l1a_to_day_window
 from libera_utils.l1a.ground_ccsds import GROUND_CCSDS_SKIP_HEADER_BYTES, scan_ground_ccsds_file
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.l1a.packets import parse_packets_to_l1a_dataset
+from libera_utils.l1a.wfov_image_metadata import CAMERA_TIME_COORD
 
 pytestmark = pytest.mark.integration
 
@@ -58,7 +59,7 @@ def test_ground_day_coverage_parse_trim(test_ground_day_ccsds_dir: Path) -> None
         assert span.apid == _APID
         intervals.append((span.first_packet_time, span.last_packet_time))
 
-    coverage = evaluate_day_coverage(intervals, day=_GROUND_DAY)
+    coverage = evaluate_day_coverage(intervals, day=_GROUND_DAY, policy=coverage_policy_for_apid(_APID))
     assert coverage.n_intervals == len(files)
     # Sparse short chunks do not meet dense day/buffer fraction gates.
     assert not coverage.is_complete
@@ -97,8 +98,46 @@ def test_contiguous_ditl2_day_gates_complete() -> None:
             continue
         intervals.append((span.first_data_time, span.last_data_time))
 
-    coverage = evaluate_day_coverage(intervals, day=_GROUND_DAY)
+    coverage = evaluate_day_coverage(intervals, day=_GROUND_DAY, policy=coverage_policy_for_apid(_DITL2_APID))
     assert coverage.left_frac == 1.0
     assert coverage.day_frac == 1.0
     assert coverage.right_frac == 1.0
     assert coverage.is_complete
+
+
+# WFOV ground captures whose CAMERA_TIME runs on a different clock than their packet time.
+_WFOV_ENV_VAR = "LIBERA_WFOV_DAY_DIR"
+_WFOV_DEFAULT_DIR = Path("/Users/mawa7160/dev/data/LIBERA/CCSDS/L1A_24Hr_testing/1040")
+
+
+def _wfov_dir() -> Path:
+    return Path(os.environ.get(_WFOV_ENV_VAR, _WFOV_DEFAULT_DIR))
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _wfov_dir().is_dir(), reason=f"WFOV captures not available; set ${_WFOV_ENV_VAR}")
+def test_wfov_packet_and_camera_axes_disagree():
+    """The two recorded coverage bases must be able to disagree, because on WFOV they do.
+
+    In these captures CAMERA_TIME lags PACKET_ICIE_TIME by hours and the lag grows, so a two-hour
+    granule of packets carries only about an hour of camera time. One coverage number would hide
+    which clock it described; this is why the granule records both.
+    """
+    granule = _wfov_dir() / "LIBERA_SDC_1040_ccsds_2026_193_04_00_00"
+    if not granule.is_file():
+        pytest.skip(f"{granule.name} not present")
+
+    apid = int(LiberaApid.icie_wfov_sci)
+    l1a_ds = parse_packets_to_l1a_dataset([str(granule)], apid, ground_data=True, skip_header_bytes=0)
+    packet_times = l1a_ds[get_packet_config(apid).packet_time_coordinate].values
+    camera_times = l1a_ds[CAMERA_TIME_COORD].values
+
+    packet_coverage = measure_time_axis_coverage(packet_times, day=_GROUND_DAY)
+    camera_coverage = measure_time_axis_coverage(camera_times, day=_GROUND_DAY)
+
+    assert packet_coverage.day_frac > camera_coverage.day_frac
+    # The camera clock is contiguous at its ~5 s cadence; it is offset, not gappy.
+    assert camera_coverage.median_cadence.total_seconds() == pytest.approx(5.0, abs=0.1)
+    packet_span = packet_times.max() - packet_times.min()
+    camera_span = camera_times.max() - camera_times.min()
+    assert camera_span < packet_span

@@ -29,7 +29,7 @@ from libera_utils.l1a.packet_ordering import (
     check_packet_acquisition_order,
     order_packet_files,
 )
-from libera_utils.l1a.quality import DuplicateEvidence, GranuleQualityRecord
+from libera_utils.l1a.quality import DuplicateEvidence, GranuleQualityRecord, coverage_global_attributes
 from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
@@ -454,6 +454,9 @@ def parse_packets_to_l1a_dataset(
     # trending query should not have to distinguish "clean" from "not reported".
     quality.product_id = str(packet_ds.attrs.get("ProductID", ""))
     packet_ds.attrs.update(quality.global_attributes())
+    # Placeholders until the day-combine path overwrites them; a product definition declares
+    # these, and conformance fails on a declared attribute the granule does not carry.
+    packet_ds.attrs.update(coverage_global_attributes())
 
     if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
         packet_ds = enhance_wfov_l1a_dataset(packet_ds)

@@ -28,6 +28,7 @@ from libera_utils.aws.utils import (
     find_dynamodb_table_in_account_by_partial_name,
     find_event_bus_in_account_by_partial_name,
     get_l2_team_role_session,
+    to_date,
 )
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.logutil import configure_task_logging
@@ -61,15 +62,6 @@ MAX_UNCONFIRMED_APPLICABLE_DATES = 3
 _REQUIRED_NODE_KEYS = frozenset({"description", "output-products", "input-products", "upstream-nodes"})
 _OPTIONAL_NODE_KEYS = frozenset({"algorithm-version"})
 _ALLOWED_NODE_KEYS = _REQUIRED_NODE_KEYS | _OPTIONAL_NODE_KEYS
-
-
-def _to_date(value: str | date | datetime) -> date:
-    """Normalize a date-like value (ISO string, datetime, or date) to a ``datetime.date``."""
-    if isinstance(value, str):
-        value = datetime.fromisoformat(value)
-    if isinstance(value, datetime):
-        value = value.date()
-    return value
 
 
 def _validate_dag_config(dag: dict) -> None:
@@ -283,7 +275,7 @@ def start_manual_processing(
     list[ULID]
         The job ids associated with the submitted jobs (empty if none were supplied or minted).
     """
-    normalized_dates = [_to_date(d) for d in applicable_dates]
+    normalized_dates = [to_date(d) for d in applicable_dates]
     normalized_steps = (
         [ProcessingStepIdentifier(step) for step in start_processing_step_ids]
         if start_processing_step_ids is not None
@@ -401,7 +393,7 @@ def step_function_trigger(
         else ProcessingStepIdentifier(algorithm_name)
     )
     job_ids = start_manual_processing(
-        [_to_date(applicable_day)],
+        [to_date(applicable_day)],
         boto_session=boto_session,
         start_processing_step_ids=[step],
         process_downstream=False,
