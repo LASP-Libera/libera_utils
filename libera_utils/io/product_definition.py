@@ -55,6 +55,20 @@ class LiberaVariableDefinition(BaseModel):
         A list of dimension names that the variable's data array references.
     encoding: dict
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
+        ``chunksizes`` is parsed from YAML as a list and stored as a tuple, because the h5netcdf
+        engine rejects a list and netcdf4 accepts either. Only the number of entries is checked.
+        The entries themselves are not: a float is truncated by the engine and a string becomes a
+        tuple of its characters.
+
+    Raises
+    ------
+    ValidationError
+        If ``dimensions`` names a dimension the standard dimension set does not define, if
+        ``dtype`` is not a recognized NumPy dtype, or if ``encoding['chunksizes']`` has a
+        different number of entries than ``dimensions``.
+    TypeError
+        If ``encoding['chunksizes']`` is not iterable. This escapes pydantic's error surface
+        rather than arriving as a ``ValidationError``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -66,7 +80,10 @@ class LiberaVariableDefinition(BaseModel):
     dimensions: list[str] = Field(default=list(), description="Dimensions of the variable's data array")
     encoding: dict = Field(
         default_factory=lambda: DEFAULT_ENCODING.copy(),
-        description="Encoding settings for the variable, determining how it is stored on disk",
+        description=(
+            "Encoding settings for the variable, determining how it is stored on disk. "
+            "chunksizes is stored as a tuple with one entry per dimension"
+        ),
     )
 
     @staticmethod
