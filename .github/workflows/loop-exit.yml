@@ -1,0 +1,73 @@
+name: Loop exit
+
+# Fails a pull request that carries neither a machine-readable Loop-exit line nor a
+# skip-loop label with a reason. Nothing else stops a pull request reaching a reviewer
+# without having been through the gate ladder, because the skills are triggered by hand.
+#
+# A pre-commit hook would be the wrong layer: gate 1 runs pre-commit on every fix commit
+# inside the loop, so it would fire before the ladder has finished.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  exit-line:
+    name: Body declares how the loop ended
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the exit line
+        env:
+          # Through the environment, never interpolated into the script: a pull request
+          # body is attacker-controlled text.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+
+          exit_line=$(printf '%s' "$PR_BODY" \
+            | grep -E '^Loop-exit: (clean|capped|flapping|timed out|blocked|halted)[[:space:]]*$' \
+            | head -1 || true)
+
+          if [ -n "$exit_line" ]; then
+            echo "$exit_line"
+            exit 0
+          fi
+
+          skip_reason=$(printf '%s' "$PR_BODY" \
+            | grep -E '^Skip-loop: .+' | head -1 || true)
+
+          case ",$LABELS," in
+            *,skip-loop,*) has_label=1 ;;
+            *) has_label=0 ;;
+          esac
+
+          if [ "$has_label" = "1" ] && [ -n "$skip_reason" ]; then
+            echo "$skip_reason"
+            exit 0
+          fi
+
+          echo "::error::This pull request says nothing about how the build loop ended."
+          echo
+          echo "Add one of these to the body, on its own line:"
+          echo
+          echo "    Loop-exit: clean | capped | flapping | timed out | blocked | halted"
+          echo
+          echo "written by loop-self-review. capped, flapping, timed out and blocked are not"
+          echo "failures to hide - they say a bound was hit and a person should look."
+          echo
+          echo "If the loop did not run, add the skip-loop label AND a reason line:"
+          echo
+          echo "    Skip-loop: <why>"
+          echo
+          if [ "$has_label" = "1" ] && [ -z "$skip_reason" ]; then
+            echo "The skip-loop label is set but the body carries no 'Skip-loop:' reason."
+          fi
+          exit 1
