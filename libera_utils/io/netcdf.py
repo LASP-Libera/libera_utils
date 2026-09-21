@@ -54,6 +54,11 @@ def write_libera_data_product(
     4. Generate the data product filename using the product definition and the specified time variable.
     5. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
+    A product already present at the generated path is replaced, on local disk and in S3
+    alike. Reprocessing rewrites a granule at the same key by design: a run that halted because
+    the object in the bucket was newer than the file it just produced would fail on its own
+    success.
+
     Parameters
     ----------
     data_product_definition : str | PathType | LiberaDataProductDefinition
@@ -77,6 +82,13 @@ def write_libera_data_product(
     -------
     : LiberaDataProductFilename
         Filename object containing the full path to the written NetCDF4 data product file.
+
+    Raises
+    ------
+    ValueError
+        If `dynamic_product_attributes` is passed alongside a Dataset, if `time_variable` does
+        not have a datetime64 dtype, or, when `strict` is True, if the Dataset does not conform
+        to the product definition.
     """
     logger.info("Writing Libera data product")
 
@@ -128,12 +140,17 @@ def write_libera_data_product(
 def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEngine) -> None:
     """Write a Dataset to `path`, always handing the NetCDF engine a real filesystem path
 
-    Cloud destinations are staged on local disk and uploaded. That is what `CloudPath.open`
-    already did internally, opening the cloudpathlib cache file and uploading it on close, but
-    doing it here keeps the engine's argument picklable. `xarray` wraps that argument in a
-    `CachingFileManager`, which pickles as its opener and arguments so each Dask worker can
-    reopen the file; an open file object has no path to reopen from, so the distributed
-    scheduler fails on it with `TypeError: cannot pickle '_io.BufferedRandom' object`.
+    The engine's argument must be picklable. `xarray` wraps it in a `CachingFileManager`,
+    which pickles as its opener and arguments so each Dask worker can reopen the file; an
+    open file object has no path to reopen from, so the distributed scheduler fails on it
+    with `TypeError: cannot pickle '_io.BufferedRandom' object`. A cloud destination is
+    therefore staged on local disk and uploaded rather than written through an open handle.
+
+    The upload replaces whatever is already at the key. `force_overwrite_to_cloud=True` is
+    required for that rather than optional: the argument's default compares the staged file's
+    modification time against the object's, and a temporary file carries a local clock with no
+    relationship to S3's, so a product could be refused for being older than the object it is
+    meant to replace. A concurrent replacement mid-write is correspondingly not detected.
 
     Parameters
     ----------
@@ -141,7 +158,7 @@ def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEn
         Dataset to write.
     path : PathType
         Destination path. A `CloudPath` is staged locally and uploaded; a `Path` is written
-        directly.
+        directly. An existing file or object at this path is replaced.
     engine : T_XarrayNetcdfEngine
         NetCDF engine to write with.
     """

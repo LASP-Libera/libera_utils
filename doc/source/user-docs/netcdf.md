@@ -38,6 +38,8 @@ variables:
       long_name: Filtered Radiance
       units: W/(m^2*sr*nm)
       valid_range: [0, 1000]
+    encoding:
+      chunksizes: [1024]
 ```
 
 The `LiberaDataProductDefinition` system ensures all Libera data products maintain consistent structure, metadata, and
@@ -65,6 +67,19 @@ The precedence for attribute assignment is: `required_product_attributes.yml` (g
 `product_definition_file.yml` (defined in product definition) < `dynamic_product_attributes` kwarg. For example,
 `ProductID` is required by the standard metadata file but it is dynamic (`null` valued). It could be defined with a
 value in a particular product definition yml file or it could be passed via kwarg to `write_libera_data_product`.
+
+### Chunking
+
+Give `encoding.chunksizes` one integer per entry in `dimensions`, in dimension order. A count
+that does not match raises when the definition is loaded rather than when a product is
+written, so a bad chunk shape fails before any data is processed.
+
+YAML parses the sequence as a list and the definition stores it as a tuple, because the
+h5netcdf engine rejects a list outright while netcdf4 accepts either; leaving it uncoerced
+would make a product definition behave differently depending on which engine is configured.
+Only the count is checked. The entries are not: a float is truncated by the engine, a string
+becomes a tuple of its characters, and a value that is not a sequence at all raises `TypeError`
+when the definition loads.
 
 ## Basic Usage
 
