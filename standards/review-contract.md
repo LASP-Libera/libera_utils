@@ -20,13 +20,19 @@ plan are read before the diff.**
 | `doc/`                                      | Documentation. R-005, R-009, R-012 and R-014 apply                                                  |
 | `pyproject.toml`, `.pre-commit-config.yaml` | Build and tool configuration. R-011 and R-012 apply; no code rule does                              |
 
-## Tagging
+## Answering a finding
 
-Every finding gets a verdict, one at a time: `accept`, `decline: <one line>`, or `escalate`
-for a blocking finding; `take` or `note` for a suggestion; a one-line answer or `leave` for a
-question. A decline without its reason is not a decline — the reason is what tells the next
-ratchet whether the rule was wrong or the code was, and it is the only part of a record that
-cannot be reconstructed later.
+Findings arrive as one comment on the pull request, each with an identifier. A verdict is one
+line in a reply, `<id> <verdict>`: `accept`, `decline: <reason>` or `escalate: <reason>` for a
+blocking finding; `take` or `note` for a suggestion; a one-line answer or `leave` for a
+question. Prose around the line is ignored, so argue in the same comment you answer in.
+
+A decline or an escalation without its reason is not recorded. The reason is what tells the
+next ratchet whether the rule was wrong or the code was, and it is the only part of a record
+that cannot be reconstructed later.
+
+A finding nobody answers stays unanswered and out of the record. Silence is not assent, and
+the review says which findings it is.
 
 No bulk verdict. A reviewer who reads a list and says "all fine" has adjudicated nothing, and
 six accepts that mean one glance are worse than three that mean three.
@@ -133,7 +139,24 @@ because `ruff format` owns wrapping.
 suggestions and open questions in it; `.review/comments.md`, the accepted findings drafted
 as review comments **for the person to post**.
 
+## What the agent may post
+
+One comment per review, and nothing else. It is an **issue comment** on the pull request —
+the findings block, headed as machine-written — posted with a token scoped to `issues: write`
+and nothing more. No `contents`, so the agent cannot push to the branch. No
+`pull_requests: write`, so it cannot open a review, approve, request changes, or apply a
+label. The scope is the enforcement; this section only explains it.
+
+A review, an approval and a label are a person's signature on someone else's work. A comment
+is a proposal anyone can read and argue with, which is what an agent's findings are.
+
+**Without a token the loop still works.** The skill writes the same body to
+`.review/comment.md` and stops; a person pastes it into the pull request. Same findings, same
+heading, same reply convention — only who presses the button changes. A repository that never
+issues a token runs the whole loop this way.
+
 ## Never
 
-Post a comment, review, label or approval to GitHub. Tag a finding itself. Merge. Edit
-anything under `standards/` except `log/`. Write a record the person has not tagged.
+Open a review, approve, request changes, apply a label, merge, or push. Post more than the
+one findings comment. Adjudicate a finding itself. Edit anything under `standards/` except
+`log/`. Write a record from replies that are not there.
