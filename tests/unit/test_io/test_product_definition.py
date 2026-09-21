@@ -886,11 +886,14 @@ class TestVariableChunksizesEncoding:
 
     @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])
     def test_declared_chunksizes_are_written_by_either_engine(self, engine, tmp_path):
-        """Before coercion this raised 'chunksize must be a tuple' on h5netcdf only."""
+        """A chunk shape declared in YAML survives to the file, through either engine.
+
+        The DataArray comes from the definition itself, so the assertion covers the encoding
+        this package applies rather than an encoding dict copied on by the test.
+        """
         h5py = pytest.importorskip("h5py")
         variable = self._definition([2, 128, 128])
-        data_array = xr.DataArray(np.zeros((4, 256, 256), dtype="float32"), dims=self._DIMS)
-        data_array.encoding.update(variable.encoding)
+        data_array = variable.create_variable_data_array(np.zeros((4, 256, 256), dtype="float32"), "X")
 
         output_path = tmp_path / f"{engine}.nc"
         xr.Dataset({"X": data_array}).to_netcdf(output_path, engine=engine)

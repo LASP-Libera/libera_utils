@@ -715,7 +715,7 @@ class TestNetcdfEngineConfig:
 
     @pytest.mark.parametrize("engine", ["netcdf4", "h5netcdf"])
     def test_write_libera_data_product_to_s3_with_either_engine(
-        self, engine, monkeypatch, test_product_definition, test_data_dict, create_mock_bucket
+        self, engine, monkeypatch, test_product_definition, test_data_dict, create_mock_bucket, tmp_path
     ):
         """Both engines write to S3, because the product is staged locally and uploaded"""
         monkeypatch.setenv("XARRAY_NETCDF_ENGINE", engine)
@@ -732,6 +732,13 @@ class TestNetcdfEngineConfig:
 
         uploaded = [obj.key for obj in mock_bucket.objects.all()]
         assert uploaded == [f"test-prefix/{result.path.name}"]
+
+        # The key alone passes for an empty or truncated staged file, so read the product back.
+        downloaded = tmp_path / result.path.name
+        mock_bucket.download_file(uploaded[0], str(downloaded))
+        with xr.open_dataset(downloaded) as ds:
+            assert "fil_rad" in ds
+            assert ds["fil_rad"].shape == test_data_dict["fil_rad"].shape
 
     @pytest.mark.parametrize("engine", ["netcdf4", "h5netcdf"])
     @pytest.mark.parametrize("to_s3", [False, True], ids=["local", "s3"])
