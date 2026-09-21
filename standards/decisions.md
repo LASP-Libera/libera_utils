@@ -52,17 +52,26 @@ at it must vendor the configuration itself.
 
 _2026-09-19 · **provisional** · source: PR #66 review, adjudicated by mmaclay_
 
-`_write_dataset` stages a cloud destination locally and uploads with
-`force_overwrite_to_cloud=True`, which skips cloudpathlib's `OverwriteNewerCloudError` check.
-That is deliberate: reprocessing legitimately rewrites a granule at the same key, and a
-pipeline that halted because the object in the bucket was newer than the file it just produced
-would fail on its own success.
+Reprocessing legitimately rewrites a granule at the same key, and a pipeline that halted
+because the object in the bucket was newer than the file it just produced would fail on its
+own success. So the write proceeds.
 
-It is written down because it reads as the opposite of this repository's posture everywhere
-else — a condition that would surprise a reader stops the run — and because a bare kwarg is not
-a decision anyone can reconstruct. The docstring says the new path is equivalent to what
-`CloudPath.open` did internally; on this one point it is not, and that is the exception this
-entry names.
+This is what the code did before PR #66, not something that PR decided. `CloudPath.open("w+b")`
+refreshed the cache from the existing object, recorded its mtime, and on close bumped the
+freshly written cache file to `original_mtime + 1` if it came out older — a step cloudpathlib
+takes so that a write through `open` always counts as newer than what it is replacing. The
+upload that followed then passed its `local newer than cloud` test by construction.
+`OverwriteNewerCloudError` could not fire on a sequential write.
+
+`force_overwrite_to_cloud=True` on the staged upload is therefore the faithful translation, not
+a loosening. A staged temporary file carries no relationship to the object's mtime, so leaving
+the argument at its default would compare a local clock against S3's and raise where the old
+path could not — a behavior change wearing the default's clothes.
+
+One check is genuinely gone: an object replaced by another writer between the open and the
+close used to raise. Nothing checks for that now. The window was the duration of one write, and
+nothing in the pipeline writes the same key from two processes, which is why this is recorded
+rather than treated as a regression.
 
 What would reverse it: a product whose key is not unique per reprocessing run, where a silent
 overwrite would destroy a granule someone still needs.

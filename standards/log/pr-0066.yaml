@@ -40,7 +40,7 @@ findings:
       severity: should-fix,
       at: "libera_utils/io/netcdf.py:153",
       verdict: accepted,
-      note: "force_overwrite_to_cloud=True skips the check the docstring implies"
+      note: "overwrite is unstated on the public function; CloudPath.open could not raise here either, so True preserves the old outcome"
     }
   - {
       key: other,
@@ -69,4 +69,4 @@ questions:
   - q: "951 vs 938 unit tests"
     a: 938 is the reproducible number; correct the body
   - q: is the S3 overwrite intended
-    a: yes; recorded as libera_utils/D-005
+    a: yes, and it predates this PR; recorded as libera_utils/D-005
