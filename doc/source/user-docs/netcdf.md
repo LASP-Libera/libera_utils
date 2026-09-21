@@ -77,9 +77,9 @@ written, so a bad chunk shape fails before any data is processed.
 YAML parses the sequence as a list and the definition stores it as a tuple, because the
 h5netcdf engine rejects a list outright while netcdf4 accepts either; leaving it uncoerced
 would make a product definition behave differently depending on which engine is configured.
-Only the count is checked. The entries are not: a float is truncated by the engine, a string
-becomes a tuple of its characters, and a value that is not a sequence at all raises `TypeError`
-when the definition loads.
+Only the count is checked. Beyond that, a float is truncated by the engine, a string becomes a
+tuple of its characters and fails at write, and a value that is not iterable at all raises
+`TypeError` when the definition loads. See `LiberaVariableDefinition` for the exact conditions.
 
 ## Basic Usage
 
