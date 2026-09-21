@@ -57,8 +57,8 @@ class LiberaVariableDefinition(BaseModel):
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
         ``chunksizes`` is parsed from YAML as a list and stored as a tuple, because the h5netcdf
         engine rejects a list and netcdf4 accepts either. Only the number of entries is checked.
-        The entries themselves are not: a float is truncated by the engine and a string becomes a
-        tuple of its characters.
+        The entries themselves are not: a float is truncated by the engine, and a string becomes
+        a tuple of its characters and then fails at write.
 
     Raises
     ------
