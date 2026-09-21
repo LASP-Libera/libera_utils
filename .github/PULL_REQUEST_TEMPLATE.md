@@ -1,16 +1,17 @@
 Closes #NNN · LIBSDC-NNNN · Outcome: <the ticket's outcome line>
 
-Loop-exit: <clean | capped | flapping | timed out | halted>
+Loop-exit: <clean | capped | flapping | timed out | blocked | halted>
 
 <!--
 LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too.
 
 Loop-exit is one line and must be present. Exactly one of:
-    Loop-exit: clean | capped | flapping | timed out | halted
+    Loop-exit: clean | capped | flapping | timed out | blocked | halted
 written by loop-self-review, saying how the build loop ended. capped, flapping and timed out
-are not failures to hide: they say a bound was hit and a person should look. halted means an
-existing test was weakened rather than the code fixed, and it also goes on the line above
-everything else.
+are not failures to hide: they say a bound was hit and a person should look. blocked means a
+gate could not run for a reason outside the change, such as a module that will not import or
+an absent system dependency; the line names it. halted means an existing test was weakened
+rather than the code fixed, and it also goes on the line above everything else.
 
 If the loop did not run, replace that line with a reason and add the skip-loop label:
     Skip-loop: <why>
@@ -53,7 +54,7 @@ Run: `<the one command>`
 <details><summary>Already checked</summary>
 
 Authored: <agent-assisted | by hand>, opened by <handle>
-Gates: contract N · lint N · types N · tests N · reviewer rounds N · exit <clean|capped|flapping|halted|timed out> · wall clock N min
+Gates: contract N · lint N · types N · tests N · reviewer rounds N · exit <clean|capped|flapping|blocked|halted|timed out> · wall clock N min
 Plan: <approved by handle | skimmed by handle | none (S ticket)>
 Refinement: N questions answered · N constraints added by hand · N terms flagged · plan <amended|not amended>
 Tests: N added · M reworked · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
