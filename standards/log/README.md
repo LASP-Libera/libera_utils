@@ -13,6 +13,10 @@ reviewer ran against, who adjudicated, the plan status, the refinement counts, t
 loop's gates and exit, every finding with its key, severity and verdict (with a reason for
 every decline), and the questions with their answers.
 
+A finding two reviewers answered differently carries `contested: true` alongside the verdict
+the author settled on, and both original lines. The ratchet counts those per rule: a rule
+people keep disagreeing about is usually one whose do-not-flag sentence is wrong.
+
 Four more fields, parsed from the PR body's "already checked" section. The first two come
 from the gate 3b lines and let the ratchet see whether changes are being reworked or padded;
 the last two say who wrote the change and how often review sent it back:

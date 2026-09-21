@@ -34,6 +34,13 @@ that cannot be reconstructed later.
 A finding nobody answers stays unanswered and out of the record. Silence is not assent, and
 the review says which findings it is.
 
+A finding gets one verdict. Anyone may trigger the review, but only the first run against a
+given head posts — the findings comment is keyed to the commit it reviewed, so a second run is
+a no-op and nobody has to coordinate. Several reviewers then answer in that one thread, which
+is the point of putting it there. Two of them disagreeing is an escalation the author settles
+in the thread; the record stores the settled verdict, `contested: true`, and both original
+lines.
+
 No bulk verdict. A reviewer who reads a list and says "all fine" has adjudicated nothing, and
 six accepts that mean one glance are worse than three that mean three.
 
