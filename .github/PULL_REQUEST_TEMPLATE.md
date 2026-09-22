@@ -55,7 +55,7 @@ Run: `<the one command>`
 
 Authored: <agent-assisted | by hand>, opened by <handle>
 Gates: contract N · lint N · types N · tests N · reviewer rounds N · exit <clean|capped|flapping|blocked|halted|timed out> · wall clock N min
-Plan: <approved by handle | skimmed by handle | none (S ticket)>
+Plan: <approved by handle | skimmed by handle | none (below the second-reader threshold)>
 Refinement: N questions answered · N constraints added by hand · N terms flagged · plan <amended|not amended>
 Tests: N added · M reworked · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
 Helpers: N added (call sites each) · M extracted from existing code

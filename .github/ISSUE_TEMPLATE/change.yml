@@ -71,9 +71,11 @@ body:
     validations: { required: false }
 
   - type: dropdown
-    id: size
+    id: complexity
     attributes:
-      label: Size
-      description: L means split before starting.
-      options: [S, M, L]
+      label: Complexity
+      description:
+        The Fibonacci estimate we already put on tickets. 8 or above means split before
+        starting; 5 or above gets group design time and a second reader on the plan.
+      options: ["1", "2", "3", "5", "8", "13"]
     validations: { required: true }
