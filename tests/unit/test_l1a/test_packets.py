@@ -1210,3 +1210,86 @@ def test_drop_implausible_telemetry_times_bounds_do_not_depend_on_wall_clock(mon
     filtered = libera_packets.drop_implausible_telemetry_times(times, context="test context")
     assert filtered.size == 1
     assert filtered[0] == np.datetime64("2030-01-01T00:00:00", "us")
+
+
+class TestPacketAxisAccumulator:
+    """Concatenation along the packet axis without holding every input at once."""
+
+    @staticmethod
+    def _dataset(values: list[str], numbers: list[int]) -> xr.Dataset:
+        return xr.Dataset(
+            {
+                "LABEL": (("PACKET",), np.array(values)),
+                "NUMBER": (("PACKET",), np.array(numbers, dtype=np.uint32)),
+            }
+        )
+
+    def test_matches_xr_concat(self):
+        parts = [self._dataset(["MOP", "SOP"], [1, 2]), self._dataset(["EOP"], [3])]
+        accumulator = libera_packets._PacketAxisAccumulator(parts[0], apid=1040, capacity=2)
+        for part in parts:
+            accumulator.append("f", part)
+        expected = xr.concat(parts, dim="PACKET", data_vars="all", coords="minimal")
+        xr.testing.assert_identical(accumulator.to_dataset(), expected)
+
+    def test_grows_past_the_initial_capacity(self):
+        # The capacity is estimated from the first file, so a later, larger file must not truncate.
+        first = self._dataset(["MOP"], [1])
+        accumulator = libera_packets._PacketAxisAccumulator(first, apid=1040, capacity=1)
+        accumulator.append("f", first)
+        accumulator.append("g", self._dataset(["SOP", "EOP", "MOP"], [2, 3, 4]))
+        assert accumulator.to_dataset().sizes["PACKET"] == 4
+        assert list(accumulator.to_dataset()["NUMBER"].values) == [1, 2, 3, 4]
+
+    def test_widens_a_string_column_instead_of_truncating_it(self):
+        # space_packet_parser sizes string columns to the widest label it actually saw, so a file
+        # containing SINGLE yields <U6 where the others yield <U3.
+        narrow = self._dataset(["MOP", "SOP"], [1, 2])
+        accumulator = libera_packets._PacketAxisAccumulator(narrow, apid=1040, capacity=4)
+        accumulator.append("f", narrow)
+        accumulator.append("g", self._dataset(["SINGLE"], [3]))
+        labels = accumulator.to_dataset()["LABEL"].values
+        assert list(labels) == ["MOP", "SOP", "SINGLE"]
+
+    def test_rejects_a_file_with_a_different_variable_set(self):
+        first = self._dataset(["MOP"], [1])
+        accumulator = libera_packets._PacketAxisAccumulator(first, apid=1040, capacity=2)
+        accumulator.append("f", first)
+        with pytest.raises(ValueError, match="do not match the other files"):
+            accumulator.append("g", xr.Dataset({"LABEL": (("PACKET",), np.array(["SOP"]))}))
+
+
+def _failing_worker(connection, packet_file, packet_definition_path, apid, generator_kwargs):
+    """Stand-in worker that reports a failure instead of parsing."""
+    connection.send((ValueError(f"bad file {packet_file}"), None))
+    connection.close()
+
+
+class TestParallelParsing:
+    """Worker-process parsing, which must agree with in-process parsing and surface failures."""
+
+    def test_rejects_a_loaded_definition(self):
+        # XtcePacketDefinition is not picklable, so it cannot reach a worker.
+        with pytest.raises(ValueError, match="not picklable"):
+            libera_packets.parse_packets_to_dataset(
+                ["a.bin", "b.bin"],
+                mock.MagicMock(spec=XtcePacketDefinition),
+                1040,
+                max_workers=2,
+            )
+
+    def test_single_file_never_starts_a_worker(self):
+        # n_workers clamps to the file count, so a one-file parse stays in process and keeps
+        # accepting a loaded definition.
+        with mock.patch.object(libera_packets, "_parse_one_file", return_value=_packet_dataset(1040, 0)) as parse_one:
+            libera_packets.parse_packets_to_dataset(
+                ["only.bin"], mock.MagicMock(spec=XtcePacketDefinition), 1040, max_workers=4
+            )
+        assert parse_one.call_count == 1
+
+    def test_worker_exception_reaches_the_caller(self):
+        with (
+            mock.patch.object(libera_packets, "_parse_file_in_subprocess", _failing_worker),
+            pytest.raises(ValueError, match="bad file"),
+        ):
+            libera_packets.parse_packets_to_dataset(["a.bin", "b.bin"], "fake.xml", 1040, max_workers=2)

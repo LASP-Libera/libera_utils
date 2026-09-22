@@ -383,6 +383,30 @@ def _is_valid_footer_from_blob(raw_blob: bytes) -> bool:
     return True
 
 
+def _flags_as_bytes(flags: np.ndarray) -> np.ndarray:
+    """Return per-packet mem-dump flags as ASCII bytes.
+
+    ``space_packet_parser`` yields XTCE enum labels as unicode (``<U``), while the stitcher
+    compares them against bytes literals. A unicode array matches none of those literals, so
+    every packet reads as a leading fragment and no image is ever completed.
+
+    Parameters
+    ----------
+    flags : numpy.ndarray
+        Per-packet mem-dump flags, in whatever string form the parser produced.
+
+    Returns
+    -------
+    numpy.ndarray
+        The same flags with a bytes (``|S``) dtype.
+    """
+    if flags.dtype.kind == "S":
+        return flags
+    if flags.dtype.kind == "U":
+        return np.char.encode(flags, "ascii", errors="ignore")
+    return np.array([bytes(str(flag), "ascii", errors="ignore") for flag in flags], dtype="S8")
+
+
 def _stitch_wfov_images(
     flags: np.ndarray,
     offsets: np.ndarray,
@@ -415,7 +439,8 @@ def _stitch_wfov_images(
     Parameters
     ----------
     flags : numpy.ndarray
-        Per-packet mem-dump flags (``SOP`` / ``MOP`` / ``EOP`` / …), typically ``|S8``.
+        Per-packet mem-dump flags (``SOP`` / ``MOP`` / ``EOP`` / …). Unicode or bytes; the
+        parser emits unicode and this is normalized to bytes on entry.
     offsets : numpy.ndarray
         Per-packet byte offsets within the reassembled image.
     lengths : numpy.ndarray
@@ -428,6 +453,10 @@ def _stitch_wfov_images(
     tuple[list[_StitchedImage], _StitchStats]
         Complete stitched images (already header/footer/payload parsed) and quality counters.
     """
+    # The comparisons below are all against bytes literals, so a unicode flag array would match
+    # none of them and silently yield zero images.
+    flags = _flags_as_bytes(flags)
+
     stats = _StitchStats()
     stitched_images: list[_StitchedImage] = []
     image_id = 0
