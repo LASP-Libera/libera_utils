@@ -17,25 +17,25 @@ what the team settled, the rule is how a reviewer checks it, and the reviewer lo
 A rule becomes `established` when the reviewer has cited it and a person has accepted the
 finding in two different pull requests, **written by two different people**. During v0 a
 harvest may establish a rule on review-thread evidence that clears the same bar — two pull
-requests by two different authors — and its evidence line points at those pull requests. A rule whose
-evidence is one author's pull requests, or comes only from AI-drafted review comments, stays
-provisional however often it is cited: the citation count measures how often something came
-up, and breadth measures whether it is the team's standard or one person's. A `provisional`
-rule that has become neither `established` nor `graduated` within the provisional expiry in
-`standards/README.md` is retired by default. The expiry counts merged pull requests with
-records, never ratchets or months: a month in which nothing merges is no evidence against a
-rule.
+requests by two different authors — and its evidence line points at those pull requests. A
+rule whose evidence is one author's pull requests, or comes only from AI-drafted review
+comments, stays provisional however often it is cited: the citation count measures how often
+something came up, and breadth measures whether it is the team's standard or one person's. A
+`provisional` rule that has become neither `established` nor `graduated` within the
+provisional expiry in `standards/README.md` is retired by default. The expiry counts merged
+pull requests with records, never ratchets or months: a month in which nothing merges is no
+evidence against a rule.
 
 **No rule leaves without its reasoning being kept.** During v0 a harvest may propose
 retirements as well as admissions — R-008's was proposed that way at the second harvest,
 before any ratchet had run, and a person made the call — and the biography requirement is
 identical either way; after v0 proposing them is the ratchet's job alone. When a rule
-graduates into a check, retires or is rewritten, whoever does it writes its biography — the text as it read, why it was
-admitted, every decline reason quoted, and what the replacement cannot catch — to
-`archive/libera_utils/` in the shared corpus, in a pull request there that merges before the
-one here. The entry here becomes a one-line stub pointing at it, so an ID is never reused and the reason is
-never lost. Every entry carries its own status line; read that rather than
-assuming.
+graduates into a check, retires or is rewritten, whoever does it writes its biography — the
+text as it read, why it was admitted, every decline reason quoted, and what the replacement
+cannot catch — to `archive/libera_utils/` in the shared corpus, in a pull request there that
+merges before the one here. The entry here becomes a one-line stub pointing at it, so an ID is
+never reused and the reason is never lost. Every entry carries its own status line; read that
+rather than assuming.
 
 v0 evidence points at the merged pull request whose review threads produced the rule. A
 rule resting on one author, or on one pull request and so below the new-rule cluster in
@@ -207,17 +207,18 @@ public URL, such as NAIF or the CERES documentation.
 
 ### R-015 · The annotation says what the code actually accepts
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements `libera_utils/D-007`
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements `libera_utils/D-007`
 
-`PathType` where only a local path works is an undefined contract: the caller cannot tell what is accepted and the failure arrives late
-and in the wrong words. PR #12 carries seven separate requests to take
-`LiberaDataProductFilename` rather than `str`, and to use `PathType` where an `S3Path` can
-reach. PR #28 settles how to fix the general case — "just change the typehint to only accept
-a local Path or str since that is what is actually required", chosen deliberately over
-rejecting cloud paths at runtime. **Narrow the annotation rather than widen the function.**
+`PathType` where only a local path works is an undefined contract: the caller cannot tell what
+is accepted and the failure arrives late and in the wrong words. PR #12 carries seven separate
+requests to take `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an
+`S3Path` can reach. PR #28 settles how to fix the general case — "just change the typehint to
+only accept a local Path or str since that is what is actually required", chosen deliberately
+over rejecting cloud paths at runtime. **Narrow the annotation rather than widen the
+function.**
 Do not flag: a union the code genuinely handles — `Path | str` is the fix pr-0028 agreed on,
-not a violation of this rule; a genuine union the product definition names; a constructor
-that documents a single coercion at the boundary and says so in its docstring.
+not a violation of this rule; a genuine union the product definition names; a constructor that
+documents a single coercion at the boundary and says so in its docstring.
 
 ---
 
@@ -233,8 +234,9 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
 - **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
 - **An error message says what went wrong and what to do next.** The strongest-evidenced
   candidate here, and the first to promote. The concern is **already citable** as
-  `libera_utils/D-008`, which is established on the same three pull requests — the cap is holding a rule
-  slot, not the concern, so a reviewer cites the decision until a slot frees up. Four people asked for it in three pull requests:
+  `libera_utils/D-008`, keyed `D-008@libera_utils` in a finding, which is established on the
+  same three pull requests — the cap is holding a rule slot, not the concern, so a reviewer
+  cites the decision until a slot frees up. Four people asked for it in three pull requests:
   "make this error more directed at the L2 devs ... check you have the correct profile
   activated and if this error persists, contact the SDC" (pr-0028, with the replacement text
   dictated in full); "I'd prefer an error message telling them they need to provide a tag,
@@ -243,8 +245,9 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
   message ... likely a result of clock jamming" (pr-0015).
 - **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer
   removed three of them in one pass — "yet another unnecessary helper function". Held below
-  the cap because gate 3b already computes call-site counts, so this is a check waiting for
-  a firing rate rather than a rule waiting for a reviewer.
+  the cap because the review contract's New surface section already reports call-site
+  counts, so this is a check waiting for a firing rate rather than a rule waiting for a
+  reviewer.
 - **A valid range or an enumeration cites its source.** Evidence: pr-0004 ("what's the
   reasoning for this valid range?", answered "extraneous - removing"), pr-0042
   (`LAND_SURFACE_TYPE_BIN` declared 6 categories where the ADM algorithm has 5).
