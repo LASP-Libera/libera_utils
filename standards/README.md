@@ -226,6 +226,10 @@ threads; `loop-ratchet` applies the filter and holds a single-author rule at pro
   that person moves on. Name two.
 - **The first ratchet slot.** A calendar trigger with no named person and no recurring slot
   is the failure mode this pattern is most prone to in practice.
+- **Where a review record is committed.** `loop-review` writes `standards/log/pr-NNNN.yaml`
+  and a person commits it: the merging reviewer on the pull request's branch before merge,
+  or the author on `main` after. Until this is settled, a record left uncommitted is caught
+  by the ratchet's missing-record count.
 - **Whether Copilot's automatic PR review is the suggestion tier or replaces the Phase 3
   reviewer.** Today both would run, holding two different standards, which is the drift this
   pattern exists to prevent. The evidence is the "share a linter could have

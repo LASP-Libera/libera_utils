@@ -68,8 +68,14 @@ not a list.
 
 Every finding names a rule ID, `ticket/AC-n`, `ticket/scope`, `ticket/plan`, `term/T-nnn`,
 `test/rework`, `test/uncovered`, `test/failure-path`, `test/duplicate`,
-`helper/path::symbol`, or `other`. An `other` finding carries a one-line summary suitable for clustering at the
-ratchet. The finding key is `rule/path::symbol`.
+`helper/path::symbol`, or `other`. An `other` finding carries a one-line summary suitable for
+clustering at the ratchet.
+
+The finding key is that citation, then `/`, the file path, `::` and the enclosing symbol:
+`R-012/pyproject.toml::version`, `test/uncovered/libera_utils/io/netcdf.py::write`. The
+symbol is the enclosing function or class, or in a non-code file the key or heading; `-`
+when there is none. A `helper/path::symbol` citation is already a full key. The comment and
+the record both carry the whole key, which is what deduplication matches on.
 
 An omission from the PR body's "look at this" is a **must-fix**, above anything about the
 code.
@@ -96,8 +102,9 @@ existing module already covers belongs in that module, beside its siblings or as
 Count deletions before calling it padding. The ratio is tests added against tests modified
 **plus tests deleted**: a rewrite that drops fifteen and adds nine is a consolidation, and
 against modified alone it scores as the opposite of what it is. The signal is a net rise with
-nothing deleted. Where the net count is flat or falling, a new test _file_ the plan did not
-name is an escalation for the person, not a finding to resolve before exit. Judge
+nothing deleted. A new test _file_ the plan did not name is a must-fix keyed `test/rework`
+when the net count rises; where it is flat or falling, files are being split or merged on
+purpose and it is an escalation for the person instead. Judge
 on the subject, not the assertion (D-010): the same input feeding the same number is
 duplicate coverage only when the subject matches, and that is `test/duplicate`. One repo specific: shared setup belongs in `tests/plugins/` as a fixture rather than in a new
 helper module. **Judge shape, not location** — where a test lives is settled by
@@ -143,10 +150,11 @@ because `ruff format` owns wrapping.
 - pytest style covered by `ruff` `PT`; syntax modernisation covered by `UP`.
 - YAML, JSON and markdown formatting — `prettier`. Spelling — `codespell`. An untagged
   deferred-work marker — the `prevent-dangling-todos` hook, which is R-010.
-- Defensive handling the rules forbid: a broad `except`, a silent coercion, a default
-  standing in for a required input, a fallback to a cached or differently calibrated
-  product. Ask for the raise instead (R-002).
 - Style preferences with no rule behind them.
+
+**Never suggest defensive handling** the rules forbid — a broad `except`, a silent coercion, a
+default standing in for a required input, a fallback to a cached or differently calibrated
+product. Where the code needs to handle a condition, ask for the raise (R-002).
 
 ## Output
 
@@ -154,7 +162,7 @@ because `ruff format` owns wrapping.
   machine wrote it and a machine will read the replies
 - the PR body's "already checked" section, with suggestions and open questions in it
 - `standards/log/pr-NNNN.yaml`, derived from the replies in that thread — never from
-  anything the reviewer decided on its own
+  anything the reviewer decided on its own — and committed by a person, never the agent
 
 ## What the agent may post
 

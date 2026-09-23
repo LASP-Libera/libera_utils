@@ -13,7 +13,14 @@ counting it would make every early ratchet open on a false alarm.
 A record holds: the PR and ticket, the branch, the date, the `standards/` git sha the
 reviewer ran against, who adjudicated, the plan status, the refinement counts, the inner
 loop's gates and exit, every finding with its key, severity and verdict (with a reason for
-every decline), and the questions with their answers.
+every decline), and the questions with their answers. A finding's `key` is the full finding
+key `review-contract.md` defines, such as `R-012/pyproject.toml::version`, and `at:` holds
+the line. `pr-0066.yaml` predates the full key and carries the citation alone.
+
+`loop-review` writes a record and never commits it; a person does. A commit that changes
+nothing outside this directory does not count as a new head, so committing a record does not
+trigger a delta review. Which branch a record is committed to is not yet settled
+(`standards/README.md`).
 
 A record built from a file rather than a pull request thread carries `tagged: in-file` and
 `reviewed_after_merge: true` — calibration and backfill, where the code had already shipped
@@ -31,7 +38,8 @@ the last two say who wrote the change and how often review sent it back:
 ```yaml
 tests:
   added: 2
-  reworked: 5
+  reworked: 5 # modified: the same test name on both sides of the diff
+  deleted: 1
   failure_path_assertions: 3
   uncovered_changed_lines: [] # file:line, empty is the healthy case
 helpers:

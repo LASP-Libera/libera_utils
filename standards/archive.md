@@ -9,7 +9,8 @@ published to Confluence for readers who do not read repositories. They are not i
 repository because this repository is public (R-014) and an archive entry says what went
 wrong, on which mission, and what the team decided about it.
 
-A rule's entry in `rules.md` becomes a stub in the same pull request that archives it: a
+A rule's entry in `rules.md` becomes a stub in the pull request that removes it, which
+merges after the archive entry's pull request in `libera_llm_tooling`: a
 retired rule keeps its heading and a sentence saying where the reasoning went, a graduated
 rule keeps a `check`-tier pointer at the tool that now enforces it. The prose moves to the
 entry, not to this file, which holds one line. IDs are never reused.

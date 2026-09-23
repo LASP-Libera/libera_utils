@@ -17,8 +17,8 @@ If the loop did not run, replace that line with a reason and add the skip-loop l
     Skip-loop: <why>
 
 A pull request carrying neither line is one nobody can tell about, which is the whole point
-of the line. A CI check that enforces its presence is parked, not abandoned -- the format is
-fixed now so the check is a one-line grep later.
+of the line. Where the repository runs the loop-exit check, it annotates a pull request that
+carries neither, and fails it once the check is set to blocking.
 -->
 
 ## In context
@@ -57,7 +57,7 @@ Authored: <agent-assisted | by hand>, opened by <handle>
 Gates: contract N · lint N · types N · tests N · reviewer rounds N · exit <clean|capped|flapping|blocked|halted|timed out> · wall clock N min
 Plan: <approved by handle | skimmed by handle | none (below the second-reader threshold)>
 Refinement: N questions answered · N constraints added by hand · N terms flagged · plan <amended|not amended>
-Tests: N added · M reworked · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
+Tests: N added · M reworked · D deleted · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
 Helpers: N added (call sites each) · M extracted from existing code
 Rules checked: <R-ids>
 Declined: <R-id at path::symbol — one-sentence reason>

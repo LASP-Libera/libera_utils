@@ -30,8 +30,8 @@ before any ratchet had run, and a person made the call — and the biography req
 identical either way; after v0 proposing them is the ratchet's job alone. When a rule
 graduates into a check, retires or is rewritten, whoever does it writes its biography — the text as it read, why it was
 admitted, every decline reason quoted, and what the replacement cannot catch — to
-`standards/archive/libera_utils/` in the shared corpus, in the same pull request. The entry
-here becomes a one-line stub pointing at it, so an ID is never reused and the reason is
+`archive/libera_utils/` in the shared corpus, in a pull request there that merges before the
+one here. The entry here becomes a one-line stub pointing at it, so an ID is never reused and the reason is
 never lost. Every entry carries its own status line; read that rather than
 assuming.
 
