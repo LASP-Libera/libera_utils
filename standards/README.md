@@ -112,6 +112,16 @@ carry internal links, because it is private — lives in `libera_llm_tooling` an
 from here rather than copied in. Decided before Phase 0, deliberately: retrofitting it
 would mean re-reading every file in the corpus.
 
+Numbers in the table above that a machine can re-derive are checked by
+`.github/scripts/check_measurements.py`, which runs on a pull request touching `standards/`
+or `tests/`. It re-collects each lane, checks `rules.md` against its own cap and each record
+against the record cap, and reports what no longer holds. Wall clock is deliberately not
+checked: it is machine-local, and the same lane has measured 102 s and 357 s on one machine.
+Remeasuring it stays a person's job at the ratchet.
+
+The rest of the table is a record of a past harvest rather than a live measurement, and does
+not change unless someone harvests again.
+
 ## How these rules were generated
 
 Two harvests, both reading merged pull request review threads through the GitHub MCP server,
