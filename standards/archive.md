@@ -18,6 +18,7 @@ entry, not to this file, which holds one line. IDs are never reused.
 | ----- | ---------------------------------------------------- | ---------------------- | ---------------------------------------------------------- | ------------------------------- |
 | R-008 | Test scaffolding does not ship in the package        | retired 2026-09-19     | `pyproject.toml` `packages`                                | `archive/libera_utils/R-008.md` |
 | R-010 | Deferred work carries a LIBSDC or CURRYER ticket tag | graduated at admission | `lasp/prevent-dangling-todos` in `.pre-commit-config.yaml` | `archive/libera_utils/R-010.md` |
+| R-015 | The annotation says what the code actually accepts   | rewritten 2026-09-22   | R-015, reworded in place                                   | `archive/libera_utils/R-015.md` |
 
 ## The archive is a lookup, not a graveyard
 

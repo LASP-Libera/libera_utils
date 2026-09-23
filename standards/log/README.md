@@ -6,7 +6,9 @@ per ratchet, `ratchet-YYYY-MM.md`.
 
 This directory is the ratchet's entire input, and the only mandatory artifact of a review.
 If records stop appearing, the next ratchet report says so on its first line, and a missing
-record count above a third of merged pull requests is itself a trigger.
+record count above a third of merged pull requests is itself a trigger. Only pull requests
+opened after `standards/` reached `main` count: one opened before had no loop to run, and
+counting it would make every early ratchet open on a false alarm.
 
 A record holds: the PR and ticket, the branch, the date, the `standards/` git sha the
 reviewer ran against, who adjudicated, the plan status, the refinement counts, the inner
@@ -35,16 +37,21 @@ tests:
 helpers:
   added: 1 # each with its call-site count
   extracted: 2
-authored: agent-assisted # agent-assisted | by hand; plus the handle that opened it
+authored: agent-assisted # agent-assisted | by hand
+author: mmaclay # the handle that opened the pull request
 rework_rounds:
   - round: 1
+    commits: a71d5f3..952f547 # the range the round covers
     sent_back_by: R-004 # a rule id or a finding key
     applied: 2
     declined: 1 # each with the reason the writer gave
 ```
 
 `rework_rounds` is empty on a pull request that merged on its first review, which is the
-healthy case. A finding key that appears there repeatedly is the strongest graduation
+healthy case. A record is updated, never duplicated, when the branch moves: the next
+`loop-review` run on a new head moves `head` to it, re-parses the gate and test fields from
+the PR body, and appends the round. A record whose `head` is behind the branch at merge is
+missing whatever happened after it. A finding key that appears there repeatedly is the strongest graduation
 evidence the ratchet gets: gate 4 passed, a person still had to ask.
 
 **The cap is 80 because prettier decides the shape, not the schema.** The first record was

@@ -9,6 +9,7 @@ plan: none # PR predates the loop
 inner: none # loop-self-review did not run; no "already checked" block to parse
 refinement: none
 authored: by hand
+author: mmaclay
 rework_rounds: []
 tests: # gate 3b computed at review time, not parsed from the PR body
   {

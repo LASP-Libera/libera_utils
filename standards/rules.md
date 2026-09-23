@@ -19,7 +19,10 @@ finding in two different pull requests, **written by two different people**. A r
 evidence is one author's pull requests, or comes only from AI-drafted review comments, stays
 provisional however often it is cited: the citation count measures how often something came
 up, and breadth measures whether it is the team's standard or one person's. A `provisional`
-rule that has become neither by the second ratchet after admission is retired by default.
+rule that has become neither `established` nor `graduated` within the provisional expiry in
+`standards/README.md` is retired by default. The expiry counts merged pull requests with
+records, never ratchets or months: a month in which nothing merges is no evidence against a
+rule.
 
 **No rule leaves without its reasoning being kept.** During v0 a harvest may propose
 retirements as well as admissions — R-008's was proposed that way at the second harvest,
