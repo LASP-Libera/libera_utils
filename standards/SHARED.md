@@ -13,16 +13,17 @@ live in `libera_llm_tooling/standards/`:
 
 Two separate things, installed two different ways.
 
-The **procedure** — the six `loop-*` skills and the `loop-reviewer` agent — is a private
-Claude Code plugin. Once per machine, covering every repository you open:
+The **procedure** — the six `loop-*` skills, the `loop-reviewer` agent and three hooks — is
+a private Claude Code plugin. Once per machine, covering every repository you open, from a
+clone of `libera_llm_tooling` beside this repository:
 
 ```bash
-claude plugin marketplace add LASP-Libera/libera_llm_tooling
-claude plugin install libera-loops@libera
+cd ../libera_llm_tooling
+./bootstrap.sh            # installs the plugin
+./bootstrap.sh --check    # expects 6 skills, 1 agent, 3 hooks, and checks this repository
 ```
 
-`claude plugin details libera-loops` should report six skills and one agent. Adding the
-tooling repository to `permissions.additionalDirectories` does not install anything: that
+Adding the tooling repository to `permissions.additionalDirectories` does not install anything: that
 setting grants read access, and Claude Code discovers skills only from `~/.claude/skills`, a
 repository's own `.claude/skills`, and installed plugins.
 

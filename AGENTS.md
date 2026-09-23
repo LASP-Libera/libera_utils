@@ -32,13 +32,13 @@ name (R-014).
 ## Working a change
 
 A ticket first, in the shape of `.github/ISSUE_TEMPLATE/change.yml` or the Jira description
-block: outcome, why, acceptance criteria, non-goals, constraints, open questions, size. Then
+block: outcome, why, acceptance criteria, non-goals, constraints, open questions, complexity. Then
 a plan, approved before code. Then the change, through the gates. Then a pull request body
 in the shape of `.github/PULL_REQUEST_TEMPLATE.md`, written for the person who will read it.
 
-The skills that run each step live in `libera_llm_tooling/.github/skills/` (`loop-plan`,
-`loop-self-review`, `loop-review`, `loop-ratchet` and three more); `standards/SHARED.md` says
-how to reach them. None of them posts, merges, or edits a standard. Everything an agent
+The skills that run each step — `loop-harvest`, `loop-situate`, `loop-plan`,
+`loop-self-review`, `loop-review` and `loop-ratchet` — are the `libera-loops` Claude Code
+plugin from `libera_llm_tooling`; `standards/SHARED.md` says how to install it. None of them posts, merges, or edits a standard. Everything an agent
 produces is a proposal.
 
 If you are an AI agent opening a pull request here, say so in the body's `Authored:` line.
