@@ -10,12 +10,14 @@ Tiers: `prose` — the author is expected to know it and the reviewer does not c
 `reviewer` — the reviewer checks it. `check` — a tool checks it and the entry is a pointer.
 Statuses: `provisional` · `established` · `graduated` · `retired`.
 
-Where a rule restates a decision from the shared `decisions.md`, its evidence line names it.
+Where a rule restates a decision, shared or local, its evidence line names it.
 A rule and a decision on the same concern must not disagree about status: the decision is
 what the team settled, the rule is how a reviewer checks it, and the reviewer loads both.
 
 A rule becomes `established` when the reviewer has cited it and a person has accepted the
-finding in two different pull requests, **written by two different people**. A rule whose
+finding in two different pull requests, **written by two different people**. During v0 a
+harvest may establish a rule on review-thread evidence that clears the same bar — two pull
+requests by two different authors — and its evidence line points at those pull requests. A rule whose
 evidence is one author's pull requests, or comes only from AI-drafted review comments, stays
 provisional however often it is cited: the citation count measures how often something came
 up, and breadth measures whether it is the team's standard or one person's. A `provisional`
@@ -35,15 +37,16 @@ one here. The entry here becomes a one-line stub pointing at it, so an ID is nev
 never lost. Every entry carries its own status line; read that rather than
 assuming.
 
-v0 evidence points at the merged pull request whose review threads produced the rule, and a
-rule resting on one author says so in its evidence line. From the first ratchet on, evidence
+v0 evidence points at the merged pull request whose review threads produced the rule. A
+rule resting on one author, or on one pull request and so below the new-rule cluster in
+`standards/README.md`, says so in its evidence line. From the first ratchet on, evidence
 points at `log/pr-NNNN.yaml` records.
 
 ---
 
 ### R-001 · Validate a name or identifier where it is constructed, not where it is first used
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
 
 A class that accepts an invalid value and raises later moves the failure away from the
 caller who could fix it. `LiberaGroundCcsdsFilename` accepted day-of-year 999 because the
@@ -68,7 +71,7 @@ docstring names it; a `logger.warning` beside a raise, for context.
 
 ### R-003 · One exception type per condition, and a predicate returns rather than raises
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
 
 `GroundCcsdsApidAbsentError` was raised for four unrelated conditions, only one of which was
 an absent APID, so callers could not tell an unparsable APID from a missing one and the name
@@ -84,8 +87,8 @@ tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr
 
 Numpydoc on public symbols is a project standard and the `Raises` section is the half that
 gets left out. With fail-loud design the failure modes are part of the interface, so a
-function that raises and does not say so has an undocumented contract. Parameters, units,
-frames and epochs belong here too.
+function that raises and does not say so has an undocumented contract. Parameters belong
+here too; units, frames and epochs are R-005.
 Do not flag: private helpers; a one-line docstring on a symbol whose signature is
 self-describing and that raises nothing.
 
@@ -120,10 +123,9 @@ duplicated in a test on purpose, so the test fails when the source changes.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0048
 
-Three instances in one pull request: a function whose only mention was a comment explaining
-why it was not used, a `try`/`except` whose result was discarded and whose branch was no
-longer reachable, and three counters that were incremented and never read. This is the kind
-of residue LLM-assisted drafting leaves behind, so it is worth a deliberate pass.
+Three instances across those pull requests: a function whose only mention was a comment
+explaining why it was not used, a `try`/`except` whose result was discarded and whose branch
+was no longer reachable, and three counters that were incremented and never read.
 Do not flag: a public symbol kept for backwards compatibility with a deprecation note; code
 behind a feature flag that the changelog names.
 
@@ -161,7 +163,7 @@ check this; the hook does.
 
 ### R-011 · A dependency pins to an immutable ref
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 · implements shared D-005
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 · implements shared D-005 · **one pull request, needs a second**
 
 A `@main` ref makes the build non-reproducible and lets an upstream merge break CI with no
 commit on this side. This is not hypothetical: a moving ref in `libera_rad` took main and
@@ -180,21 +182,20 @@ leaves a reader unable to tell which artifact they have.
 Do not flag: a pre-release suffix used deliberately for downstream testing, when the
 changelog heading carries it too.
 
-### R-013 · Parse or sort an input once, not once per consumer, and do not hold a large array twice
+### R-013 · Parse or sort an input once, not once per consumer
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0041, pr-0027
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0041
 
-Three shapes of the same mistake: a scan that re-read and re-parsed a whole packet file once
-per APID, twelve passes over a 2 MB fixture in the ingest path where real captures are far
-larger; a trim loop that re-sorted a full-day dataset and re-read a YAML definition on every
-one of ~35 runs; and a stitching path holding three copies of the image data live at once.
-Hoist the parse, the sort and the definition load out of the loop.
+A scan that re-read and re-parsed a whole packet file once per APID, twelve passes over a
+2 MB fixture in the ingest path where real captures are far larger; and a trim loop that
+re-sorted a full-day dataset and re-read a YAML definition on every one of ~35 runs. Hoist
+the parse, the sort and the definition load out of the loop.
 Do not flag: a repeated read of something small and mutable, where the reread is the point;
-a copy that exists to avoid mutating a caller's array.
+a loop that runs a fixed handful of times over a small input.
 
 ### R-014 · No internal URL or internal document content in this repository
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027 · implements shared D-004
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027 · implements `libera_utils/D-006`
 
 `libera_utils` is public and ships to PyPI. Cite an internal document by name — "the FSW
 user's guide", "the ICIE ObsID page" — say what it decides, and stop. No Confluence or Jira
@@ -206,10 +207,9 @@ public URL, such as NAIF or the CERES documentation.
 
 ### R-015 · The annotation says what the code actually accepts
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements shared D-011
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements `libera_utils/D-007`
 
-`PathType` where only a local path works, and `list[str]` with a `None` default, are
-undefined contracts: the caller cannot tell what is accepted and the failure arrives late
+`PathType` where only a local path works is an undefined contract: the caller cannot tell what is accepted and the failure arrives late
 and in the wrong words. PR #12 carries seven separate requests to take
 `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an `S3Path` can
 reach. PR #28 settles how to fix the general case — "just change the typehint to only accept
@@ -232,8 +232,8 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
   pr-0041 (one ObsID on two instruments produced two writes of the same filename).
 - **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
 - **An error message says what went wrong and what to do next.** The strongest-evidenced
-  candidate here, and the first to promote. The concern is **already citable** as shared
-  `D-012`, which is established on the same three pull requests — the cap is holding a rule
+  candidate here, and the first to promote. The concern is **already citable** as
+  `libera_utils/D-008`, which is established on the same three pull requests — the cap is holding a rule
   slot, not the concern, so a reviewer cites the decision until a slot frees up. Four people asked for it in three pull requests:
   "make this error more directed at the L2 devs ... check you have the correct profile
   activated and if this error persists, contact the SDC" (pr-0028, with the replacement text
@@ -248,5 +248,8 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
 - **A valid range or an enumeration cites its source.** Evidence: pr-0004 ("what's the
   reasoning for this valid range?", answered "extraneous - removing"), pr-0042
   (`LAND_SURFACE_TYPE_BIN` declared 6 categories where the ADM algorithm has 5).
+- **Do not hold a large array twice.** Evidence: pr-0027, a stitching path holding three
+  copies of the image data live at once on a full downlink. One pull request; it was part of
+  R-013 until that rule was trimmed to what two pull requests support.
 - **A name is renamed when its contract widens.** Evidence: pr-0028
   (`get_libera_utils_session` → `get_l2_team_role_session` once it took a `role_name`).

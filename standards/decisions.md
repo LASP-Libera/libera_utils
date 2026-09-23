@@ -75,3 +75,43 @@ rather than treated as a regression.
 
 What would reverse it: a product whose key is not unique per reprocessing run, where a silent
 overwrite would destroy a granule someone still needs.
+
+### libera_utils/D-006 · `libera_utils` is published, so internal documents are cited by name only
+
+_2026-08-05, PR libera_utils#41 review thread · shared D-004 until 2026-09-23_
+
+The package ships to PyPI. No internal Confluence or Jira URL, and no internal document
+content, goes into shipped source. Cite the document by name, say what it decides, and let
+the reader find it. This is also why links are not used as the pointer: Confluence links
+rot. The same posture applies to anything that would land under a public repository's
+`standards/`.
+
+### libera_utils/D-007 · Narrow the annotation rather than reject at runtime
+
+_2026-09 · **established** · source: libera_utils pr-0028, pr-0012, pr-0060 · shared D-011 until 2026-09-23_
+
+When a function accepts a type it cannot actually handle, the fix is the signature, not a
+guard. The reviewer on pr-0028 was offered a runtime rejection of cloud paths and chose the
+other way: "just change the typehint on `manual_ingest_data_products` to only accept a local
+`Path` or `str` since that is what is actually required." Widening a signature and then
+policing it inside moves the failure later and states the contract in two places that drift.
+The corollary from pr-0012 is that the narrow type is usually a domain type the repository
+already owns — `LiberaDataProductFilename` rather than `str`, `PathType` where an `S3Path`
+can genuinely reach.
+
+### libera_utils/D-008 · An error message says what went wrong and what to do next
+
+_2026-09 · **established** · source: libera_utils pr-0028, pr-0060, pr-0015 · shared D-012 until 2026-09-23; its earlier wording is archived in the shared corpus_
+
+The audience for a failure in this package is an algorithm developer outside the SDC, which
+is why a message naming only internals — an IAM role ARN, a boto exception — fails: it tells
+them nothing they can act on. That is the reason for the rule, not the rule itself. The rule
+is that the message states the condition and the next action.
+
+Naming the reader is sometimes the clearest way to do that, and pr-0028 dictated the
+replacement text in full: "Check that you are using the profile that logs in as the L2
+Developer base role. If this error persists, contact the SDC team." But it is not required,
+and the other two sources do not do it. pr-0060 asked for an error telling the caller they
+must supply a tag rather than defaulting to `latest`. pr-0015 asked that a warning say which
+variables disagreed, and what the condition usually means — clock jamming. Neither names a
+reader; both say what happened and what to do about it.
