@@ -150,9 +150,11 @@ because `ruff format` owns wrapping.
 
 ## Output
 
-`.review/findings.md` for the person to tag; the PR body's "already checked" section, with
-suggestions and open questions in it; `.review/comments.md`, the accepted findings drafted
-as review comments **for the person to post**.
+- one comment on the pull request, carrying every finding, headed so a reader knows a
+  machine wrote it and a machine will read the replies
+- the PR body's "already checked" section, with suggestions and open questions in it
+- `standards/log/pr-NNNN.yaml`, derived from the replies in that thread — never from
+  anything the reviewer decided on its own
 
 ## What the agent may post
 
