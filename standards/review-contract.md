@@ -41,6 +41,14 @@ is the point of putting it there. Two of them disagreeing is an escalation the a
 in the thread; the record stores the settled verdict, `contested: true`, and both original
 lines.
 
+**A merged pull request is tagged in a file, not a thread.** Calibration and backfill review
+code that already shipped, and reopening a merged pull request to comment on it would be
+noise. The findings go to `.review/calibration/pr-NNNN-findings.md` in the same shape, with
+the same closed vocabulary and the same requirement that a decline carry its reason; a person
+writes the verdicts into the file. The record marks it `tagged: in-file` and
+`reviewed_after_merge: true`, because a finding raised against shipped code never had the
+chance to change it — evidence that a rule fires, not that the team acted on it.
+
 No bulk verdict. A reviewer who reads a list and says "all fine" has adjudicated nothing, and
 six accepts that mean one glance are worse than three that mean three.
 

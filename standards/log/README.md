@@ -13,6 +13,11 @@ reviewer ran against, who adjudicated, the plan status, the refinement counts, t
 loop's gates and exit, every finding with its key, severity and verdict (with a reason for
 every decline), and the questions with their answers.
 
+A record built from a file rather than a pull request thread carries `tagged: in-file` and
+`reviewed_after_merge: true` — calibration and backfill, where the code had already shipped
+and no finding could have changed it. The ratchet counts those separately from findings a
+person acted on before merge.
+
 A finding two reviewers answered differently carries `contested: true` alongside the verdict
 the author settled on, and both original lines. The ratchet counts those per rule: a rule
 people keep disagreeing about is usually one whose do-not-flag sentence is wrong.
