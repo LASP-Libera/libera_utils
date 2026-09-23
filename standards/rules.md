@@ -21,9 +21,10 @@ provisional however often it is cited: the citation count measures how often som
 up, and breadth measures whether it is the team's standard or one person's. A `provisional`
 rule that has become neither by the second ratchet after admission is retired by default.
 
-**No rule leaves without its reasoning being kept.** During v0 a harvest may retire as well
-as admit — R-008 did, at the second harvest, before any ratchet had run — and the biography
-requirement is identical either way; after v0 it is the ratchet's job alone. When a rule
+**No rule leaves without its reasoning being kept.** During v0 a harvest may propose
+retirements as well as admissions — R-008's was proposed that way at the second harvest,
+before any ratchet had run, and a person made the call — and the biography requirement is
+identical either way; after v0 proposing them is the ratchet's job alone. When a rule
 graduates into a check, retires or is rewritten, whoever does it writes its biography — the text as it read, why it was
 admitted, every decline reason quoted, and what the replacement cannot catch — to
 `standards/archive/libera_utils/` in the shared corpus, in the same pull request. The entry
@@ -198,19 +199,20 @@ pointer. The background that needs a link lives in the private shared corpus.
 Do not flag: a LIBSDC ticket key on its own, which is an identifier rather than a link; a
 public URL, such as NAIF or the CERES documentation.
 
-### R-015 · A parameter documents one type, and the annotation narrows to what the code needs
+### R-015 · The annotation says what the code actually accepts
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements shared D-011
 
-`str | Path`, `PathType` where only a local path works, and `list[str]` with a `None`
-default are all undefined contracts: the caller cannot tell what is accepted and the failure
-arrives late and in the wrong words. PR #12 carries seven separate requests to take
+`PathType` where only a local path works, and `list[str]` with a `None` default, are
+undefined contracts: the caller cannot tell what is accepted and the failure arrives late
+and in the wrong words. PR #12 carries seven separate requests to take
 `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an `S3Path` can
 reach. PR #28 settles how to fix the general case — "just change the typehint to only accept
 a local Path or str since that is what is actually required", chosen deliberately over
 rejecting cloud paths at runtime. **Narrow the annotation rather than widen the function.**
-Do not flag: a genuine union the product definition names; a constructor that documents a
-single coercion at the boundary and says so in its docstring.
+Do not flag: a union the code genuinely handles — `Path | str` is the fix pr-0028 agreed on,
+not a violation of this rule; a genuine union the product definition names; a constructor
+that documents a single coercion at the boundary and says so in its docstring.
 
 ---
 
@@ -224,7 +226,7 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
 - **A registry whose values reach a filename has a uniqueness invariant test.** Evidence:
   pr-0041 (one ObsID on two instruments produced two writes of the same filename).
 - **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
-- **An error message names its audience and the next action.** The strongest-evidenced
+- **An error message says what went wrong and what to do next.** The strongest-evidenced
   candidate here, and the first to promote. The concern is **already citable** as shared
   `D-012`, which is established on the same three pull requests — the cap is holding a rule
   slot, not the concern, so a reviewer cites the decision until a slot frees up. Four people asked for it in three pull requests:

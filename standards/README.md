@@ -153,7 +153,7 @@ in total, to narrow a parameter's type rather than widen the function.
 
 Seven candidates sit below the cap with their evidence, ranked — three from the first
 harvest and four from the second. The first to promote is
-"an error message names its audience and the next action", which four people asked for in
+"an error message says what went wrong and what to do next", which four people asked for in
 three pull requests.
 
 ### One third of the review comments were written by a bot
