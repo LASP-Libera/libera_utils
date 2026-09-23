@@ -66,6 +66,9 @@ six accepts that mean one glance are worse than three that mean three.
 Budget: **7** must-fix and should-fix per run, ranked. Anything past 7 is a count per rule,
 not a list.
 
+The implementation reviewer grades findings `blocking` or `non-blocking`: a blocking finding
+is must-fix or should-fix by the same test as above, and a non-blocking one is a suggestion.
+
 ## Citation
 
 Every finding names a rule ID, a decision, `ticket/AC-n`, `ticket/scope`, `ticket/plan`,
@@ -168,20 +171,24 @@ product. Where the code needs to handle a condition, ask for the raise (R-002).
 
 ## Output
 
+What `pr-findings` produces; the "already checked" section of the PR body is written by the
+build, not by a reviewer:
+
 - one comment on the pull request, carrying every finding, headed so a reader knows a
   machine wrote it and a machine will read the replies
-- the PR body's "already checked" section, with suggestions and open questions in it
 - `standards/log/pr-NNNN.yaml`, written by `pr-record` from the replies in that thread —
   never from anything the reviewer decided on its own — and committed by a person, never the
   agent
 
 ## What the agent may post
 
-One comment per review, and nothing else. It is an **issue comment** on the pull request —
-the findings block, headed as machine-written — posted with a token scoped to `issues: write`
-and nothing more. No `contents`, so the agent cannot push to the branch. No
-`pull_requests: write`, so it cannot open a review, approve, request changes, or apply a
-label. The scope is the enforcement; this section only explains it.
+This section and Output govern `pr-findings`; the implementation reviewer posts nothing.
+
+One comment per review, and nothing else. It is an **issue comment** on the pull request,
+posted through the GitHub MCP server with the credentials of the person who runs
+`pr-findings`. It never pushes to the branch, opens a review, approves, requests changes or
+applies a label. The person's confirmation is the enforcement: nothing posts until they have
+read the comment as it will appear.
 
 A review, an approval and a label are a person's signature on someone else's work. A comment
 is a proposal anyone can read and argue with, which is what an agent's findings are.
@@ -189,7 +196,7 @@ is a proposal anyone can read and argue with, which is what an agent's findings 
 The person who runs `pr-findings` sees the comment before it posts and confirms it; their
 login goes in its attribution line.
 
-**Without a token the review still works.** The skill writes the same body to
+**Without write access the review still works.** The skill writes the same body to
 `.review/comment.md` and stops; a person pastes it into the pull request. Same findings, same
 heading, same reply convention — only who presses the button changes.
 

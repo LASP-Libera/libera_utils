@@ -60,6 +60,9 @@ Any agent that plans, builds or reviews a change here, including `implementation
   and does not raise anything on the contract's do-not-flag list.
 - Keys every finding the way the contract's Citation section says: the citation, `/`, the path,
   `::`, the enclosing symbol. At most seven must-fix and should-fix.
+- Stops the build and brings the person the latest report, rather than fixing on, when a fix
+  would weaken an existing test (a loosened tolerance or assertion, a removed `pytest.raises`,
+  a new skip or xfail, a dropped parametrize case) or a check cannot run at all.
 - At the end of a build, reports how the review loop ended, for the pull request body's
   `Build-exit:` line: SATISFIED is `clean`; five rounds without it is `capped`; the same
   finding surviving two fixes is `flapping`; a pre-existing failure or a check that cannot run

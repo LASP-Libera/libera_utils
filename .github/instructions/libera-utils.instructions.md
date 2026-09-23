@@ -134,6 +134,11 @@ The review standard lives in `standards/`, tool-neutral and read by people and a
 content in source, docstrings, tests, or `standards/`. Cite internal documents by name
 (R-014).
 
+**Pull request bodies.** Any agent that writes a pull request body here, `pr-create`
+included, follows `.github/PULL_REQUEST_TEMPLATE.md` over its own defaults: every section the
+template has, and the `Build-exit:` line naming how the build ended (or, for a change made by
+hand, the `no-build-gates` label with a reason). `AGENTS.md` says how the exit is chosen.
+
 Changes to `standards/` happen in one pull request a month, proposed by the ratchet with its
 evidence. Nothing agentic edits a standard.
 

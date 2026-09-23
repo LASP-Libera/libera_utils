@@ -11,7 +11,7 @@ opened after `standards/` reached `main` count: one opened before had no standar
 reviewed against, and counting it would make every early ratchet open on a false alarm.
 
 A record holds: the PR and ticket, the branch, the date, the `standards/` git sha the reviewer
-ran against, who adjudicated, the plan status, the refinement counts, the build's gate counts
+ran against, who adjudicated, the plan status, the build's gate counts, its tokens
 and `Build-exit`, every finding with its key, severity and verdict (with a reason for every
 decline), and the questions with their answers. A finding's `key` is the full finding key
 `review-contract.md` defines, such as `R-012/pyproject.toml::version`, and `at:` holds the
