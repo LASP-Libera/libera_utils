@@ -1,11 +1,12 @@
-name: Loop exit
+name: Build exit
 
-# Fails a pull request that carries neither a machine-readable Loop-exit line nor a
-# skip-loop label with a reason. Nothing else stops a pull request reaching a reviewer
-# without having been through the gate ladder, because the skills are triggered by hand.
+# Fails a pull request that carries neither a machine-readable Build-exit line nor a
+# no-build-gates label with a reason. Nothing else stops a pull request reaching a reviewer
+# without having been through the build's review loop, because the skills are triggered by
+# hand.
 #
-# A pre-commit hook would be the wrong layer: gate 1 runs pre-commit on every fix commit
-# inside the loop, so it would fire before the ladder has finished.
+# A pre-commit hook would be the wrong layer: pre-commit runs on every fix commit inside the
+# build, so it would fire before the build has finished.
 
 on:
   pull_request:
@@ -19,15 +20,15 @@ permissions:
   contents: read
 
 # Informational until the team says otherwise: the job annotates and passes. Flip the
-# repository variable LOOP_EXIT_MODE to "blocking" to make a missing line fail the PR.
+# repository variable BUILD_EXIT_MODE to "blocking" to make a missing line fail the PR.
 # A variable rather than an edit here, so switching it is a settings change and not a
 # pull request that itself has to satisfy the check.
 env:
-  MODE: ${{ vars.LOOP_EXIT_MODE || 'informational' }}
+  MODE: ${{ vars.BUILD_EXIT_MODE || 'informational' }}
 
 jobs:
   exit-line:
-    name: Body declares how the loop ended
+    name: Body declares how the build ended
     runs-on: ubuntu-latest
     steps:
       - name: Check the exit line
@@ -41,7 +42,7 @@ jobs:
           set -euo pipefail
 
           exit_line=$(printf '%s' "$PR_BODY" \
-            | grep -E '^Loop-exit: (clean|capped|flapping|timed out|blocked|halted)[[:space:]]*$' \
+            | grep -E '^Build-exit: (clean|capped|flapping|blocked|halted)[[:space:]]*$' \
             | head -1 || true)
 
           if [ -n "$exit_line" ]; then
@@ -50,10 +51,10 @@ jobs:
           fi
 
           skip_reason=$(printf '%s' "$PR_BODY" \
-            | grep -E '^Skip-loop: .+' | head -1 || true)
+            | grep -E '^No-build-gates: .+' | head -1 || true)
 
           case ",$LABELS," in
-            *,skip-loop,*) has_label=1 ;;
+            *,no-build-gates,*) has_label=1 ;;
             *) has_label=0 ;;
           esac
 
@@ -68,25 +69,26 @@ jobs:
             level=warning
           fi
 
-          echo "::${level}::This pull request says nothing about how the build loop ended."
+          echo "::${level}::This pull request says nothing about how the build ended."
           echo
           echo "Add one of these to the body, on its own line:"
           echo
-          echo "    Loop-exit: clean | capped | flapping | timed out | blocked | halted"
+          echo "    Build-exit: clean | capped | flapping | blocked | halted"
           echo
-          echo "written by loop-self-review. capped, flapping, timed out and blocked are not"
-          echo "failures to hide - they say a bound was hit and a person should look."
+          echo "from the implementation reviewer's last verdict. capped, flapping and blocked are"
+          echo "not failures to hide - they say a bound was hit and a person should look."
           echo
-          echo "If the loop did not run, add the skip-loop label AND a reason line:"
+          echo "If the change was not built through implement-change, add the no-build-gates label"
+          echo "AND a reason line:"
           echo
-          echo "    Skip-loop: <why>"
+          echo "    No-build-gates: <why>"
           echo
           if [ "$has_label" = "1" ] && [ -z "$skip_reason" ]; then
-            echo "The skip-loop label is set but the body carries no 'Skip-loop:' reason."
+            echo "The no-build-gates label is set but the body carries no 'No-build-gates:' reason."
           fi
 
           if [ "$MODE" = "blocking" ]; then
             exit 1
           fi
-          echo "LOOP_EXIT_MODE is '$MODE', so this is a note rather than a failure."
+          echo "BUILD_EXIT_MODE is '$MODE', so this is a note rather than a failure."
           exit 0

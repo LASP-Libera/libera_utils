@@ -17,7 +17,7 @@ finding produced it.
 
 The number of rules the reviewer holds should be flat or falling over a year while the
 number of checks grows. If two consecutive ratchet reports propose no graduations, the rules
-being written are not the mechanical kind, and the loop is delivering a second opinion
+being written are not the mechanical kind, and the workflow is delivering a second opinion
 rather than a smaller job.
 
 ## Graduated so far

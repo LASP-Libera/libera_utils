@@ -13,14 +13,16 @@ live in `libera_llm_tooling/standards/`:
 
 Two separate things, installed two different ways.
 
-The **procedure** — the six `loop-*` skills, the `loop-reviewer` agent and three hooks — is
-a private Claude Code plugin. Once per machine, covering every repository you open, from a
-clone of `libera_llm_tooling` beside this repository:
+The **procedure** is the private `libera-tools` Claude Code plugin: the skills and agents
+that plan, build and review, the standards skills (`draft-standard`, `ticket-context`,
+`pr-findings`, `pr-record`, `revise-standard`) and the build hooks. Once per machine,
+covering every repository you open, from a clone of `libera_llm_tooling` beside this
+repository:
 
 ```bash
 cd ../libera_llm_tooling
-./bootstrap.sh            # installs the plugin
-./bootstrap.sh --check    # expects 6 skills, 1 agent, 3 hooks, and checks this repository
+./bootstrap.sh            # installs libera-tools@libera
+./bootstrap.sh --check    # checks the install and this repository's setup
 ```
 
 Adding the tooling repository to `permissions.additionalDirectories` does not install anything: that
@@ -29,7 +31,7 @@ repository's own `.claude/skills`, and installed plugins.
 
 The **corpus** is a clone kept beside this repository, so that `libera_llm_tooling/standards/`
 is a sibling of `libera_utils/`. That convention is the whole configuration. The monthly
-ratchet writes to it on a branch, which is why it stays a clone rather than travelling inside
+revision writes to it on a branch, which is why it stays a clone rather than travelling inside
 the plugin.
 
 A skill that cannot find the shared corpus says so and continues without the vocabulary,

@@ -1,11 +1,13 @@
 # Review contract
 
-How a reviewer behaves in `libera_utils`. Read with `rules.md`, the shared
-`terminology.md` and `decisions.md`, and the local `decisions.md`.
+How a reviewer behaves in `libera_utils`: the implementation reviewer at the end of a build,
+which reads this file because `AGENTS.md` points at it, and the `github-pr-reviewer` agent
+when `pr-findings` runs it. Read with `rules.md`, the shared `terminology.md` and
+`decisions.md`, the local `decisions.md`, and `test-lanes.md`.
 
 ## What the reviewer loads
 
-Those four files on every run. A `context/` entry from the shared corpus only when the
+Those five files on every run. A `context/` entry from the shared corpus only when the
 ticket's constraints name it, or a file the diff touches names it. **The ticket and the
 plan are read before the diff.**
 
@@ -59,21 +61,25 @@ six accepts that mean one glance are worse than three that mean three.
 | must-fix   | Ranked, counted against the budget, tagged by a person. Before emitting one, read the **file** rather than the diff and quote the lines; a must-fix that cannot be anchored to lines is downgraded |
 | should-fix | Ranked, counted, tagged                                                                                                                                                                            |
 | suggestion | Below the fold, own cap of 7, recorded `taken` or `noted`, no reason needed                                                                                                                        |
-| question   | Its own list, outside the budget. Check `decisions.md` first: if a decision answers it, cite the decision instead of asking again                                                                  |
+| question   | Its own list, outside the budget. Check both `decisions.md` files first: if a decision answers it, cite the decision instead of asking again                                                       |
 
 Budget: **7** must-fix and should-fix per run, ranked. Anything past 7 is a count per rule,
 not a list.
 
 ## Citation
 
-Every finding names a rule ID, `ticket/AC-n`, `ticket/scope`, `ticket/plan`, `term/T-nnn`,
-`test/rework`, `test/uncovered`, `test/failure-path`, `test/duplicate`,
-`helper/path::symbol`, or `other`. An `other` finding carries a one-line summary suitable for
+Every finding names a rule ID, a decision, `ticket/AC-n`, `ticket/scope`, `ticket/plan`,
+`term/T-nnn`, `test/rework`, `test/uncovered`, `test/failure-path`, `test/duplicate`,
+`helper/path::symbol`, or `other`. A shared decision is cited `D-nnn`; one of this
+repository's own is cited `D-nnn@libera_utils`, such as `D-008@libera_utils`, because the
+citation must contain no `/`. An `other` finding carries a one-line summary suitable for
 clustering at the ratchet.
 
 The finding key is that citation, then `/`, the file path, `::` and the enclosing symbol:
-`R-012/pyproject.toml::version`, `test/uncovered/libera_utils/io/netcdf.py::write`. The
-symbol is the enclosing function or class, or in a non-code file the key or heading; `-`
+`R-012/pyproject.toml::version`, `D-008@libera_utils/libera_utils/cli.py::main`,
+`test/uncovered/libera_utils/io/netcdf.py::write`. The citation is everything before the
+first `/` that follows it; the two-part `test/` and `ticket/` citations are the only ones
+with a `/` of their own. The symbol is the enclosing function or class, or in a non-code file the key or heading; `-`
 when there is none. A `helper/path::symbol` citation is already a full key. The comment and
 the record both carry the whole key, which is what deduplication matches on.
 
@@ -90,24 +96,25 @@ expected value re-tuned to the new output. Two more, specific to this repository
 
 - A test relocated to escape a guard rather than mocked. The outbound-network guard exists
   because 28 tests were silently downloading kernels from NAIF for months; the lanes and the
-  guard are described once in `standards/test-lanes.md` (D-009, provisional).
+  guard are described once in `standards/test-lanes.md` (shared D-009, provisional).
 - A golden value changed without the change being stated in the pull request body. A test
-  asserts on its own step's product (D-010); a re-tuned golden value is a science claim.
+  asserts on its own step's product (shared D-010); a re-tuned golden value is a science claim.
 
 **A test added where one should have been reworked**, keyed `test/rework`. An agent asked
 to make a suite green adds; a person who knows the suite edits. A new test whose subject an
 existing module already covers belongs in that module, beside its siblings or as a
 `parametrize` case.
 
-Count deletions before calling it padding. The ratio is tests added against tests modified
-**plus tests deleted**: a rewrite that drops fifteen and adds nine is a consolidation, and
-against modified alone it scores as the opposite of what it is. The signal is a net rise with
-nothing deleted. A new test _file_ the plan did not name is a must-fix keyed `test/rework`
-when the net count rises; where it is flat or falling, files are being split or merged on
-purpose and it is an escalation for the person instead. Judge
-on the subject, not the assertion (D-010): the same input feeding the same number is
-duplicate coverage only when the subject matches, and that is `test/duplicate`. One repo specific: shared setup belongs in `tests/plugins/` as a fixture rather than in a new
-helper module. **Judge shape, not location** — where a test lives is settled by
+Count deletions before calling it padding. Count test functions added, modified (the same
+name on both sides of the diff) and deleted, and compare added against modified **plus
+deleted**: a rewrite that drops fifteen and adds nine is a consolidation, and against
+modified alone it scores as the opposite of what it is. When added is the larger, the change
+grew the suite, and a new test _file_ the plan did not name is a must-fix keyed
+`test/rework`. When added is not the larger, files are being split or merged on purpose, and
+an unplanned file is an escalation for the person instead. Judge on the subject, not the
+assertion (shared D-010): the same input feeding the same number is duplicate coverage only
+when the subject matches, and that is `test/duplicate`. One repository specific: shared
+setup belongs in `tests/plugins/` as a fixture rather than in a new helper module. **Judge shape, not location** — where a test lives is settled by
 `standards/test-lanes.md`, and a finding about the lane layout belongs there, not here.
 
 **Coverage of what changed**, keyed `test/uncovered` and `test/failure-path`. Run the
@@ -121,7 +128,10 @@ percentage — a percentage produces tests written to the metric.
 A framework-invoked symbol is not a helper. A `@pytest.fixture` is injected by name and a
 pydantic `@field_validator` or `@model_validator` is called by the model, so a call-site count
 says nothing about either and "one caller" is the normal case. Never raise `helper/...` on a
-symbol carrying a decorator that registers rather than calls.
+symbol carrying a decorator that registers rather than calls: `@pytest.fixture`,
+`@field_validator`, `@model_validator`, `@contextmanager` used as a fixture,
+`@functools.singledispatch` registrations, and framework hooks generally. At most 7 test
+findings and 7 helper findings; anything past that is a count.
 
 ## New surface
 
@@ -130,8 +140,8 @@ signature list did not name is reported with its call sites, its length, and whe
 something in the module or a sibling already does it. One caller and under about ten lines
 is a candidate to inline; a duplicate of an existing function is a finding. Extraction is
 not invention: a helper pulled out of existing code with two or more call sites is the good
-case and is reported as such. A helper in `libera_utils/` whose only callers are in `tests/` is not this key: R-008 covered
-it and retired, so it is `other` with a one-line summary, which is how the ratchet sees it
+case and is reported as such. A helper in `libera_utils/` whose only callers are in
+`tests/` is not this key: R-008 covered it and retired, so it is `other` with a one-line summary, which is how the ratchet sees it
 recur and how the rule comes back if it does.
 
 ## Do not flag
@@ -161,8 +171,9 @@ product. Where the code needs to handle a condition, ask for the raise (R-002).
 - one comment on the pull request, carrying every finding, headed so a reader knows a
   machine wrote it and a machine will read the replies
 - the PR body's "already checked" section, with suggestions and open questions in it
-- `standards/log/pr-NNNN.yaml`, derived from the replies in that thread — never from
-  anything the reviewer decided on its own — and committed by a person, never the agent
+- `standards/log/pr-NNNN.yaml`, written by `pr-record` from the replies in that thread —
+  never from anything the reviewer decided on its own — and committed by a person, never the
+  agent
 
 ## What the agent may post
 
@@ -175,10 +186,12 @@ label. The scope is the enforcement; this section only explains it.
 A review, an approval and a label are a person's signature on someone else's work. A comment
 is a proposal anyone can read and argue with, which is what an agent's findings are.
 
-**Without a token the loop still works.** The skill writes the same body to
+The person who runs `pr-findings` sees the comment before it posts and confirms it; their
+login goes in its attribution line.
+
+**Without a token the review still works.** The skill writes the same body to
 `.review/comment.md` and stops; a person pastes it into the pull request. Same findings, same
-heading, same reply convention — only who presses the button changes. A repository that never
-issues a token runs the whole loop this way.
+heading, same reply convention — only who presses the button changes.
 
 ## Never
 

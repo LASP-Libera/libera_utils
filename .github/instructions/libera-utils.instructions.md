@@ -139,8 +139,8 @@ evidence. Nothing agentic edits a standard.
 
 The shared corpus is a clone of `libera_llm_tooling` kept beside this repository, so
 `../libera_llm_tooling/standards/` holds `terminology.md`, `decisions.md` and `context/`.
-The `loop-*` skills that read it install as the private `libera-loops` plugin; `standards/SHARED.md`
-has both commands. If the clone is not there, say so rather than inventing a term.
+The skills that read it install as the private `libera-tools` plugin; `standards/SHARED.md`
+has the commands. If the clone is not there, say so rather than inventing a term.
 
 ## Restrictions for AI Agents
 

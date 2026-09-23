@@ -6,9 +6,9 @@ number in it. Written 2026-09-17. Re-measure at the tuning pass, not from memory
 **When this corpus and an authoritative source disagree, the source wins.** Open a pull
 request to fix the corpus.
 
-The phases this file refers to — 0 set up the standard, 1 define the work, 2 build inside the
-gates, 3 review and merge, 4 the monthly ratchet — are the review-loop pattern's, described in
-`libera_llm_tooling` and summarised in `AGENTS.md` under "Working a change".
+The phases this file refers to — 0 set up the standard, 1 define the work, 2 build and verify,
+3 review and merge, 4 the monthly ratchet — are the standards workflow's, described in
+`libera_llm_tooling`'s README and summarised in `AGENTS.md` under "Working a change".
 
 ## What is here
 
@@ -63,21 +63,21 @@ of review comments, it is how long a pull request sits between them.
 
 ## Derived settings
 
-| Dial                  | Value                                                                                                   | Derivation                                                                                                                                                                                                                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rule cap              | **14 rules, 300 lines**                                                                                 | 2 × 7 merged PRs a month, floor 12, ceiling 40                                                                                                                                                                                                                                                                                |
-| New-rule cluster      | **2 occurrences across 2 PRs**                                                                          | A quarter of the monthly count, floor 2                                                                                                                                                                                                                                                                                       |
-| Provisional expiry    | **20 merged PRs with records** ≈ 3 months                                                               | Volume, never the calendar. Counted from the rule's admission; a merged PR with no record is no evidence either way and does not count                                                                                                                                                                                        |
-| Decline-rate trigger  | Over 1/3 across 3 or more firings                                                                       | Default; nothing measured yet                                                                                                                                                                                                                                                                                                 |
-| Never-fired trigger   | 6 months                                                                                                | Default; long enough that a release-only rule survives                                                                                                                                                                                                                                                                        |
-| Ratchet cadence       | **Monthly, or 10 merged PRs**                                                                           | At 7 a month the calendar fires first; the count catches a busy month                                                                                                                                                                                                                                                         |
-| Finding budget        | **7 must-fix and should-fix, 7 suggestions**                                                            | 2 × median 11 exceeds the ceiling, so the ceiling binds                                                                                                                                                                                                                                                                       |
-| Reviewer rounds       | **3**                                                                                                   | Held at 3, but the reason it was set there no longer holds: the PR lane takes 5 min 57 s on `main`, not 71 s, so three rounds can cost ~18 minutes of suite time alone. The first ratchet decides whether the rounds or the budget moves                                                                                      |
-| Loop wall-clock exit  | **60 minutes**, provisional                                                                             | A first guess from one run: PR #66, three reviewer rounds, took about 45 minutes, and three PR-lane runs alone take about 18 at 357 s each. It replaced 25 minutes, which was set when the lane looked like 71 s and would have ended every real run `timed out`. The first ratchet with recorded exits sets it from evidence |
-| Gate 0 (contract)     | **On**                                                                                                  | Other repositories import this one                                                                                                                                                                                                                                                                                            |
-| Split before starting | **Complexity 8 or above**                                                                               | The Fibonacci estimate the ticket already carries. A first cut, mapped from the S/M/L it replaces, and expected to move once a few tickets are behind us                                                                                                                                                                      |
-| Group ticket session  | **Complexity 5 or above**, and every epic                                                               | Below that a ticket is well enough defined that group design time costs more than it returns; its author runs `loop-situate` and `loop-plan` alone and posts the plan for async approval                                                                                                                                      |
-| Plan approval         | A second reader at **complexity 5 or above**, and for any public-signature change whatever the estimate | Downstream consumers                                                                                                                                                                                                                                                                                                          |
+| Dial                  | Value                                                                                                   | Derivation                                                                                                                                                                                                                                                             |
+| --------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule cap              | **14 rules, 300 lines**                                                                                 | 2 × 7 merged PRs a month, floor 12, ceiling 40                                                                                                                                                                                                                         |
+| New-rule cluster      | **2 occurrences across 2 PRs**                                                                          | A quarter of the monthly count, floor 2                                                                                                                                                                                                                                |
+| Provisional expiry    | **20 merged PRs with records** ≈ 3 months                                                               | Volume, never the calendar. Counted from the rule's admission; a merged PR with no record is no evidence either way and does not count                                                                                                                                 |
+| Decline-rate trigger  | Over 1/3 across 3 or more firings                                                                       | Default; nothing measured yet                                                                                                                                                                                                                                          |
+| Never-fired trigger   | 6 months                                                                                                | Default; long enough that a release-only rule survives                                                                                                                                                                                                                 |
+| Ratchet cadence       | **Monthly, or 10 merged PRs**                                                                           | At 7 a month the calendar fires first; the count catches a busy month                                                                                                                                                                                                  |
+| Finding budget        | **7 must-fix and should-fix, 7 suggestions**                                                            | 2 × median 11 exceeds the ceiling, so the ceiling binds                                                                                                                                                                                                                |
+| Reviewer rounds       | **5**, upstream's                                                                                       | The implementation reviewer's own cap in `implement-change`, with a stop when one finding survives two fixes. Not a local dial: changing it is an upstream change. The PR lane takes 5 min 57 s on `main`, so five rounds can cost half an hour of suite time          |
+| Wall clock            | Measured, not enforced                                                                                  | The build hooks record it in the PR body's "already checked". The one recorded run, PR #66, took about 45 minutes; budgets of 25 and then 60 minutes were tried and dropped, because a wall-clock exit ends a converging run for a reason that is not about the change |
+| Contract tests first  | **On**                                                                                                  | Other repositories import this one; `AGENTS.md` asks for the accept, return and raise tests before the implementation when a public signature changes                                                                                                                  |
+| Split before starting | **Complexity 8 or above**                                                                               | The Fibonacci estimate the ticket already carries. A first cut, mapped from the S/M/L it replaces, and expected to move once a few tickets are behind us                                                                                                               |
+| Group ticket session  | **Complexity 5 or above**, and every epic                                                               | Below that a ticket is well enough defined that group design time costs more than it returns; its author runs `ticket-context` and `implement-change` alone and posts the plan for async approval                                                                      |
+| Plan approval         | A second reader at **complexity 5 or above**, and for any public-signature change whatever the estimate | Downstream consumers                                                                                                                                                                                                                                                   |
 
 ## The five questions
 
@@ -85,15 +85,15 @@ of review comments, it is how long a pull request sits between them.
 are higher, and a pull request that sits for six weeks is re-reviewed from scratch every
 time someone returns to it. Phases 0, 1 and 3 are in scope now: the corpus, the ticket, and
 a PR body that says where to look. Phase 2 comes next, because a change that arrives already
-through the gates is one that does not bounce. Phase 4 starts when the log has ten records.
+verified is one that does not bounce. Phase 4 starts when the log has ten records.
 
 **2. Who reads this code, and who depends on it?** It is a shared library. `libera_rad`,
 `libera_cam`, `libera_analysis` and CSDS import it, and it is published on PyPI for L2
 algorithm developers outside the team. That makes it the shared-library archetype: the
-contract is the product, a silent contract break is the expensive failure, gate 0 is on, and
+contract is the product, a silent contract break is the expensive failure, contract tests come first, and
 `terminology.md` is the highest-value file in the corpus. Ripple matters more than
 duplication — a ticket here forces tickets in the consuming repositories, which is why
-`loop-situate` looks outside this repository.
+`ticket-context` looks outside this repository.
 
 **3. How many pull requests a month merge with a review?** Seven. Every threshold above
 scales off that number and none of them was inherited.
@@ -159,7 +159,9 @@ three by two, R-012 five pull requests by
 three authors. All three are marked **established**. It also found one rule nobody but its original
 author had ever asked for, R-008, which retired to make room for **R-015**, the strongest
 single finding of either harvest: seven requests in one pull request, and three pull requests
-in total, to narrow a parameter's type rather than widen the function.
+in total, to narrow a parameter's type rather than widen the function. R-015 clears the same
+bar on authors — pr-0012 by `hcronk`, pr-0028 and pr-0060 by `medley56` — and is established,
+matching `libera_utils/D-007`, which rests on the same three.
 
 Seven candidates sit below the cap with their evidence, ranked — three from the first
 harvest and four from the second. The first to promote is
@@ -217,8 +219,8 @@ having a person tag what it produced, and it has happened twice. The set grows f
 
 Every thread carries who wrote it and whether it was human or AI-drafted. AI-drafted threads
 stay in the record and out of the evidence: a rule built from them encodes what a model
-tends to say, not what this team asks for. `loop-harvest` draws the sample and marks the
-threads; `loop-ratchet` applies the filter and holds a single-author rule at provisional.
+tends to say, not what this team asks for. `draft-standard` draws the sample and marks the
+threads; `revise-standard` applies the filter and holds a single-author rule at provisional.
 
 ## What is not settled
 
@@ -226,7 +228,7 @@ threads; `loop-ratchet` applies the filter and holds a single-author rule at pro
   that person moves on. Name two.
 - **The first ratchet slot.** A calendar trigger with no named person and no recurring slot
   is the failure mode this pattern is most prone to in practice.
-- **Where a review record is committed.** `loop-review` writes `standards/log/pr-NNNN.yaml`
+- **Where a review record is committed.** `pr-record` writes `standards/log/pr-NNNN.yaml`
   and a person commits it: the merging reviewer on the pull request's branch before merge,
   or the author on `main` after. Until this is settled, a record left uncommitted is caught
   by the ratchet's missing-record count.

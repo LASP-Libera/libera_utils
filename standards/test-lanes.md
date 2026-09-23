@@ -27,12 +27,12 @@ Markers are set per module with `pytestmark`, so a module belongs to exactly one
 
 ## The commands the corpus names
 
-| Purpose                                | Command                                                            |
-| -------------------------------------- | ------------------------------------------------------------------ |
-| What a pull request runs, and gate 3   | `pytest -m "not e2e" tests/`                                       |
-| Unit only                              | `pytest -m "not integration and not e2e" tests/`                   |
-| What the daily build adds              | `pytest -m e2e tests/`                                             |
-| Coverage of changed files, for gate 3b | `pytest -m "not e2e" --cov=libera_utils --cov-report=term-missing` |
+| Purpose                             | Command                                                            |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| What a pull request and a build run | `pytest -m "not e2e" tests/`                                       |
+| Unit only                           | `pytest -m "not integration and not e2e" tests/`                   |
+| What the daily build adds           | `pytest -m e2e tests/`                                             |
+| Coverage of changed files           | `pytest -m "not e2e" --cov=libera_utils --cov-report=term-missing` |
 
 These are written for the layout the repository is moving to, and they are correct on both
 sides of 703 — which is why the corpus can name them now. An unregistered marker in a `-m`
@@ -55,11 +55,11 @@ told the author nothing about their change.
 
 ## Who reads this file
 
-`standards/review-contract.md` (the coverage command and the guard), the `loop-self-review`
-gate ladder (gate 3 and gate 3b), and `standards/README.md` (the measured wall clock). None of
-them hard-codes a marker or a path; they name this file.
+`standards/review-contract.md` (the coverage command and the guard), the implementation
+reviewer at the end of a build (through `AGENTS.md`), and `standards/README.md` (the measured
+wall clock). None of them hard-codes a marker or a path; they name this file.
 
-**Gate 3b judges the shape of a test, not its location.** Whether a new test belongs beside its
+**Test scrutiny judges the shape of a test, not its location.** Whether a new test belongs beside its
 siblings rather than in a new module, whether a changed line has a test, and whether a new
 `raise` is asserted are all independent of how the lanes are arranged. Only the commands above
 depend on the layout, and only the daily one depends on 703.

@@ -1,23 +1,27 @@
 Closes #NNN · LIBSDC-NNNN · Outcome: <the ticket's outcome line>
 
-Loop-exit: <clean | capped | flapping | timed out | blocked | halted>
+Build-exit: <clean | capped | flapping | blocked | halted>
 
 <!--
 LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too.
 
-Loop-exit is one line and must be present. Exactly one of:
-    Loop-exit: clean | capped | flapping | timed out | blocked | halted
-written by loop-self-review, saying how the build loop ended. capped, flapping and timed out
-are not failures to hide: they say a bound was hit and a person should look. blocked means a
-gate could not run for a reason outside the change, such as a module that will not import or
-an absent system dependency; the line names it. halted means an existing test was weakened
-rather than the code fixed, and it also goes on the line above everything else.
+Build-exit is one line and must be present. Exactly one of:
+    Build-exit: clean | capped | flapping | blocked | halted
+saying how the build's review loop ended, from the implementation reviewer's last verdict in
+implement-change. clean: SATISFIED. capped: five review rounds without SATISFIED. flapping: the
+same finding survived two fixes. blocked: a check could not run for a reason outside the
+change, such as a pre-existing failure, a module that will not import or an absent system
+dependency; the line names it. halted: the build stopped for a person, because an existing
+test was weakened rather than the code fixed or a finding would change the agreed plan; say
+which on the line above everything else. capped, flapping and blocked are not failures to
+hide: they say a bound was hit and a person should look.
 
-If the loop did not run, replace that line with a reason and add the skip-loop label:
-    Skip-loop: <why>
+If the change was not built through implement-change, replace that line with a reason and add
+the no-build-gates label:
+    No-build-gates: <why>
 
 A pull request carrying neither line is one nobody can tell about, which is the whole point
-of the line. Where the repository runs the loop-exit check, it annotates a pull request that
+of the line. Where the repository runs the build-exit check, it annotates a pull request that
 carries neither, and fails it once the check is set to blocking.
 -->
 
@@ -54,8 +58,8 @@ Run: `<the one command>`
 <details><summary>Already checked</summary>
 
 Authored: <agent-assisted | by hand>, opened by <handle>
-Gates: contract N · lint N · types N · tests N · reviewer rounds N · exit <clean|capped|flapping|blocked|halted|timed out> · wall clock N min
-Plan: <approved by handle | skimmed by handle | none (below the second-reader threshold)>
+Gates: lint N · types N · tests N · reviewer rounds N · wall clock N min
+Plan: <approved by handle | skimmed by handle | none (below the plan-approval threshold)>
 Refinement: N questions answered · N constraints added by hand · N terms flagged · plan <amended|not amended>
 Tests: N added · M reworked · D deleted · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
 Helpers: N added (call sites each) · M extracted from existing code

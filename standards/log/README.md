@@ -1,23 +1,23 @@
 # Log
 
 One record per reviewed pull request, `pr-NNNN.yaml`, at most 140 lines, written by the
-`loop-review` skill from the tags a person gave its findings — not typed by hand. One report
-per ratchet, `ratchet-YYYY-MM.md`.
+`pr-record` skill from the verdicts people gave the `pr-findings` comment — not typed by hand.
+One report per ratchet, `ratchet-YYYY-MM.md`.
 
-This directory is the ratchet's entire input, and the only mandatory artifact of a review.
-If records stop appearing, the next ratchet report says so on its first line, and a missing
+This directory is the ratchet's entire input, and the only mandatory artifact of a review. If
+records stop appearing, the next ratchet report says so on its first line, and a missing
 record count above a third of merged pull requests is itself a trigger. Only pull requests
-opened after `standards/` reached `main` count: one opened before had no loop to run, and
-counting it would make every early ratchet open on a false alarm.
+opened after `standards/` reached `main` count: one opened before had no standard to be
+reviewed against, and counting it would make every early ratchet open on a false alarm.
 
-A record holds: the PR and ticket, the branch, the date, the `standards/` git sha the
-reviewer ran against, who adjudicated, the plan status, the refinement counts, the inner
-loop's gates and exit, every finding with its key, severity and verdict (with a reason for
-every decline), and the questions with their answers. A finding's `key` is the full finding
-key `review-contract.md` defines, such as `R-012/pyproject.toml::version`, and `at:` holds
-the line. `pr-0066.yaml` predates the full key and carries the citation alone.
+A record holds: the PR and ticket, the branch, the date, the `standards/` git sha the reviewer
+ran against, who adjudicated, the plan status, the refinement counts, the build's gate counts
+and `Build-exit`, every finding with its key, severity and verdict (with a reason for every
+decline), and the questions with their answers. A finding's `key` is the full finding key
+`review-contract.md` defines, such as `R-012/pyproject.toml::version`, and `at:` holds the
+line. `pr-0066.yaml` predates the full key and carries the citation alone.
 
-`loop-review` writes a record and never commits it; a person does. A commit that changes
+`pr-record` writes a record and never commits it; a person does. A commit that changes
 nothing outside this directory does not count as a new head, so committing a record does not
 trigger a delta review. Which branch a record is committed to is not yet settled
 (`standards/README.md`).
@@ -32,7 +32,8 @@ the author settled on, and both original lines. The ratchet counts those per rul
 people keep disagreeing about is usually one whose do-not-flag sentence is wrong.
 
 Four more fields, parsed from the PR body's "already checked" section. The first two come
-from the gate 3b lines and let the ratchet see whether changes are being reworked or padded;
+from the `Tests:` and `Helpers:` lines and let the ratchet see whether changes are being
+reworked or padded;
 the last two say who wrote the change and how often review sent it back:
 
 ```yaml
@@ -57,10 +58,11 @@ rework_rounds:
 
 `rework_rounds` is empty on a pull request that merged on its first review, which is the
 healthy case. A record is updated, never duplicated, when the branch moves: the next
-`loop-review` run on a new head moves `head` to it, re-parses the gate and test fields from
-the PR body, and appends the round. A record whose `head` is behind the branch at merge is
-missing whatever happened after it. A finding key that appears there repeatedly is the strongest graduation
-evidence the ratchet gets: gate 4 passed, a person still had to ask.
+`pr-record` run after a delta review moves `head` to the new commit, re-parses the gate and
+test fields from the PR body, and appends the round. A record whose `head` is behind the
+branch at merge is missing whatever happened after it. A finding key that appears there
+repeatedly is the strongest graduation evidence the ratchet gets: the build's reviewer passed,
+a person still had to ask.
 
 **The cap is 140 because prettier decides the shape, not the schema.** The first record was
 written at 53 lines of block YAML against an original cap of 50, rewritten as flow mappings to
