@@ -93,9 +93,11 @@ self-describing and that raises nothing.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027 · **one author, needs a second**
 
-`WFOV_FSW_COMMANDED_EXP_TIME_1/2` and the FPGA actual exposure times shipped with no `units`
-attribute, and the conversion to milliseconds is still unconfirmed with FSW. A number in a
-data product with no unit is not a measurement, and a consumer will guess. The same applies
+In PR #27 the commanded exposure times (`WFOV_FSW_HEADER_COMMANDED_EXP_TIME_1/2`) and the FPGA
+integration-time registers (`WFOV_IMAGE_HEADER_ACTUAL_EXP_TIME_1/2`) went up for review with no
+`units` attribute. They merged as `milliseconds` and `raw counts` — the registers stay in counts
+because the conversion to milliseconds is unconfirmed with FSW. A number in a data product with
+no unit is not a measurement, and a consumer will guess. The same applies
 to a time with no epoch and a pointing angle with no frame. PR #43 was cited here and does
 not support it — its temperature comments are about ObsID naming coverage, not units — so
 this rests on one pull request by one author until the wider calibration sample gives it a
