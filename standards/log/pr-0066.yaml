@@ -1,25 +1,30 @@
 pr: 66
 ticket: none # reconstructed at review time: .review/ticket-pr-0066.md
 branch: fix/netcdf-write-path-picklable
-head: a71d5f3
+head: 952f547 # first reviewed at a71d5f3, tagged in-file
 date: 2026-09-19
 standards_sha: ed6a959
 adjudicated_by: mmaclay
 plan: none # PR predates the loop
-inner: none # loop-self-review did not run; no "already checked" block to parse
+inner: "contract 0 · lint 6 · types 0 · tests 3 · reviewer rounds 3 · exit capped · wall clock 45 min"
 refinement: none
-authored: by hand
+authored: agent-assisted # the rework round; the PR was opened by hand
 author: mmaclay
-rework_rounds: []
-tests: # gate 3b computed at review time, not parsed from the PR body
+rework_rounds:
+  - round: 1
+    commits: a71d5f3..952f547
+    sent_back_by: [ticket/scope, R-002, other, R-004, other]
+    applied: 5
+    escalated: 1 # R-012: the version needs a rebase onto main
+tests: # parsed from the PR body at 952f547
   {
     added: 6,
-    reworked: 0,
+    reworked: 2,
     deleted: 1,
     failure_path_assertions: 1,
     uncovered_changed_lines: []
   }
-helpers: # _write_dataset extraction; _check_chunksizes_rank is a validator, exempt
+helpers: # computed at review time; the body's 0/0 counts the rework round only
   { added: 2, extracted: 1 }
 findings:
   - {

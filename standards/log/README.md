@@ -1,6 +1,6 @@
 # Log
 
-One record per reviewed pull request, `pr-NNNN.yaml`, at most 80 lines, written by the
+One record per reviewed pull request, `pr-NNNN.yaml`, at most 140 lines, written by the
 `loop-review` skill from the tags a person gave its findings — not typed by hand. One report
 per ratchet, `ratchet-YYYY-MM.md`.
 
@@ -54,13 +54,18 @@ the PR body, and appends the round. A record whose `head` is behind the branch a
 missing whatever happened after it. A finding key that appears there repeatedly is the strongest graduation
 evidence the ratchet gets: gate 4 passed, a person still had to ask.
 
-**The cap is 80 because prettier decides the shape, not the schema.** The first record was
+**The cap is 140 because prettier decides the shape, not the schema.** The first record was
 written at 53 lines of block YAML against an original cap of 50, rewritten as flow mappings to
-fit at 30, and the `prettier` pre-commit hook expanded it straight back to block at 66. A
-finding costs five lines and the budget is seven, so the header plus a full budget is about 75.
-Fighting the formatter to reach 50 would mean excluding this directory from a hook the whole
-repository runs, which is a worse trade than a bigger number. If a record is nearing 80 the
-finding budget is the thing that bound, not the line count.
+fit at 30, and the `prettier` pre-commit hook expanded it straight back to block at 66. Fighting the
+formatter would mean excluding this directory from a hook the whole repository runs, which is
+a worse trade than a bigger number.
+
+A finding costs seven lines once prettier has formatted it. The header, a rework round and the
+questions take about 35, and a pull request that goes through a delta review carries a second
+budget of seven findings on top of the first, so 35 + 14 × 7 is 133. The cap was 80 until
+`pr-0066.yaml` reached 78 after its first delta, with the delta's findings not yet answered.
+A record nearing 140 has been through more than one delta, which is worth the ratchet's
+attention in itself.
 
 `pr-0066.yaml` is the first record. The two calibration runs described in `standards/README.md`
 — PR #73 and PR #49 — are still not records, because nobody has tagged them.
