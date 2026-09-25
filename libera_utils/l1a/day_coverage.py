@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 
+import numpy as np
+
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.day_window import DEFAULT_DAY_BUFFER
 
@@ -276,4 +278,91 @@ def evaluate_day_coverage(
         day_ok=day_ok,
         right_ok=right_ok,
         n_intervals=len(normalized),
+    )
+
+
+# A spacing this many times the axis's own median spacing is treated as a real gap rather than
+# jitter. The axis calibrates the threshold itself, so one number covers a 1 Hz housekeeping APID
+# and a 5 s camera cadence alike.
+DEFAULT_GAP_FACTOR = 5.0
+
+
+@dataclass(frozen=True, slots=True)
+class TimeAxisCoverage:
+    """What a granule's own time axis says about its occupancy of a day and its buffers."""
+
+    day_frac: float
+    left_frac: float
+    right_frac: float
+    median_cadence: timedelta
+    max_gap: timedelta
+    n_times: int
+
+
+def measure_time_axis_coverage(
+    times: np.ndarray,
+    *,
+    day: date,
+    buffer: timedelta = DEFAULT_DAY_BUFFER,
+    gap_factor: float = DEFAULT_GAP_FACTOR,
+    seam_tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
+) -> TimeAxisCoverage:
+    """Measure how much of a day a granule's time axis actually occupies.
+
+    This is a measurement, not a gate. :func:`evaluate_day_coverage` works from whole-file L0
+    spans and so cannot see a gap *inside* a file; this works from the samples themselves.
+
+    Samples count as continuous until their spacing exceeds ``gap_factor`` times the axis's
+    median spacing (never less than ``seam_tolerance``), and the last sample of each run is
+    credited with one median cadence of occupancy.
+
+    Parameters
+    ----------
+    times : numpy.ndarray
+        Datetime64 (or datetime-like) values from one science time axis. Need not be sorted.
+    day : date
+        Applicable UTC calendar day.
+    buffer : timedelta, optional
+        Midnight buffer on each side (default 10 minutes).
+    gap_factor : float, optional
+        Multiple of the median spacing above which a spacing is a gap. Default 5.
+    seam_tolerance : timedelta, optional
+        Floor on the gap threshold, so a near-zero median cadence cannot make every spacing a gap.
+
+    Returns
+    -------
+    TimeAxisCoverage
+        Fractions for the day core and both buffers, plus the axis's median cadence and largest
+        gap. An empty axis returns all zeros.
+    """
+    values = np.asarray(times).astype("datetime64[us]").ravel()
+    values = values[~np.isnat(values)]
+    values.sort()
+    if values.size == 0:
+        return TimeAxisCoverage(0.0, 0.0, 0.0, timedelta(0), timedelta(0), 0)
+
+    if values.size == 1:
+        cadence_us = int(seam_tolerance.total_seconds() * 1e6)
+        max_gap_us = 0
+        run_bounds = [(values[0], values[0])]
+    else:
+        spacings_us = np.diff(values).astype("int64")
+        cadence_us = int(np.median(spacings_us))
+        max_gap_us = int(spacings_us.max())
+        threshold_us = max(cadence_us * gap_factor, seam_tolerance.total_seconds() * 1e6)
+        # Split at real gaps; each remaining run is one continuously occupied interval.
+        break_positions = np.flatnonzero(spacings_us > threshold_us) + 1
+        run_bounds = [(run[0], run[-1]) for run in np.split(values, break_positions) if run.size]
+
+    occupancy = timedelta(microseconds=max(cadence_us, 1))
+    intervals = [(first.astype(datetime), last.astype(datetime) + occupancy) for first, last in run_bounds]
+
+    left, core, right = day_core_and_buffer_bounds(day, buffer)
+    return TimeAxisCoverage(
+        day_frac=_coverage_fraction(intervals, *core, tolerance=timedelta(0)),
+        left_frac=_coverage_fraction(intervals, *left, tolerance=timedelta(0)),
+        right_frac=_coverage_fraction(intervals, *right, tolerance=timedelta(0)),
+        median_cadence=timedelta(microseconds=cadence_us),
+        max_gap=timedelta(microseconds=max_gap_us),
+        n_times=int(values.size),
     )

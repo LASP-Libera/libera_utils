@@ -238,6 +238,18 @@ The L1A Preprocessor evaluates File Metadata time spans with
 - File count (e.g. nominal ~14 two-hour chunks) is **not** the gate — only time coverage.
 - Incomplete days skip combine without error.
 
+## Measuring a granule's time-axis coverage
+
+`evaluate_day_coverage` works from whole-file L0 spans, so a gap inside a file is invisible to
+it. `libera_utils.l1a.day_coverage.measure_time_axis_coverage(times, day=)` measures occupancy
+from a granule's own samples and returns a `TimeAxisCoverage` (`day_frac`, `left_frac`,
+`right_frac`, `median_cadence`, `max_gap`, `n_times`). It is a measurement, not a gate.
+
+Samples count as continuous until their spacing exceeds `gap_factor` times the axis's median
+spacing (`DEFAULT_GAP_FACTOR`, 5), with `seam_tolerance` as a floor on that threshold. The last
+sample of each run is credited with one median cadence of occupancy. `times` need not be sorted,
+`NaT` values are ignored, and an empty axis returns all zeros.
+
 ## Shared day assembly (flight and ground)
 
 Production daily L1A uses the **same** combine sequence for flight PDS and ground CCSDS:
