@@ -1,5 +1,10 @@
 # Version Changes
 
+## 5.12.0
+
+- FEAT: Add `libera_utils.l1a.day_window` helpers to trim L1A datasets to midnight ± buffer and assert unique monotonic data times.
+- FEAT: `trim_l1a_to_day_window` syncs the `PACKET` dimension to remaining packet-index values via `sync_packet_dim_to_index` after science-dim selection (drops orphan packets; densifies indices with source dtype).
+
 ## 5.11.0
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for per-file science data-time spans without full L1A assembly, covering every `DATA_TIME_INDEXED_APIDS` member (WFOV SOP FSW image times; RAD/CAL/AXIS sample epoch+period or per-sample times). `extract_data_time_range` returns `None` for a WFOV file holding no `SOP` packet, which is expected when a large image's mem-dump is chunked across files or downlink passes.
