@@ -39,6 +39,10 @@ Then a plan, approved before code. Then the change, verified by a review loop. T
 request body in the shape of `.github/PULL_REQUEST_TEMPLATE.md`, written for the person who
 will read it.
 
+Commit subjects on `main` read `LIBSDC-NNN: <subject>` where there is a ticket, as its history
+shows; `doc/source/developer-docs/git.md` sets no stricter standard. A pull request is
+squash-merged, which adds the `(#NN)` suffix, so a branch does not need squashing by hand.
+
 The skills come from the `libera-tools` Claude Code plugin in `libera_llm_tooling`;
 `standards/SHARED.md` says how to install it. `ticket-draft` writes and places the ticket,
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
