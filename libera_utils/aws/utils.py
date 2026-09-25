@@ -2,6 +2,7 @@
 
 import logging
 import re
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import boto3
@@ -23,6 +24,15 @@ LIBERA_UTILS_ROLE_NAME = f"{L2_DEVELOPER_ROLE_PATH}/LiberaUtils"
 # Partial name used to uniquely identify the SDC central EventBridge bus by regex search (see find_*_by_partial_name).
 # Both the manual ingest (s3-utils put) and manual processing flows emit events to this single bus.
 SDC_EVENT_BUS_PARTIAL_NAME = "LiberaSDCEventBus"
+
+
+def to_date(value: str | date | datetime) -> date:
+    """Normalize a date-like value (ISO string, datetime, or date) to a ``datetime.date``."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if isinstance(value, datetime):
+        value = value.date()
+    return value
 
 
 def get_l2_team_role_session(

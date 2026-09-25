@@ -6,6 +6,7 @@
 - FEAT: `trim_l1a_to_day_window` syncs the `PACKET` dimension to remaining packet-index values via `sync_packet_dim_to_index` after science-dim selection (drops orphan packets; densifies indices with source dtype).
 - FEAT: Add `libera_utils.l1a.day_coverage.evaluate_day_coverage` for L1A combine completeness gates over the day core and the left/right midnight buffers. `APID_COVERAGE_POLICIES` gives every `LiberaApid` a `DayCoveragePolicy`: `CONTINUOUS` gates on coverage fractions, `EVENT_DRIVEN` on any presence in the buffered window. Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge, because a file's span runs from its first to its last sample timestamp and under-reports its occupancy by one sample period.
 - FEAT: Add `libera_utils.l1a.day_coverage.measure_time_axis_coverage`, which measures day and buffer occupancy from a granule's own time axis, splitting runs at spacings above `DEFAULT_GAP_FACTOR` (5) times the median cadence. Unlike `evaluate_day_coverage`, it sees gaps inside a file.
+- FEAT: Add the `force-l1a-combine` CLI (`libera_utils.aws.l1a_combine.force_l1a_combine`), which emits a `ManualL1APreprocessing` event asking the L1A Preprocessor to combine an APID for one or more applicable dates, skipping the coverage gates unless `--no-force` is given. `_to_date` in `manual_processing` moves to `libera_utils.aws.utils.to_date`.
 - DOCS: Document shared flight/ground daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → uniqueness assert).
 
 ## 5.11.0

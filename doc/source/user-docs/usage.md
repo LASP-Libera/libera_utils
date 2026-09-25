@@ -10,7 +10,7 @@ This is the top level command that contains all the nested sub-commands.
 
 ```shell
 usage: libera-utils [-h] [--version]
-                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils} ...
+                    {make-kernel,ecr-upload,step-function-trigger,manual-processing,force-l1a-combine,register-algorithm-image,s3-utils} ...
 
 Libera SDC utilities CLI
 
@@ -21,13 +21,14 @@ options:
 subcommands:
   sub-commands for libera-utils CLI
 
-  {make-kernel,ecr-upload,step-function-trigger,manual-processing,register-algorithm-image,s3-utils}
+  {make-kernel,ecr-upload,step-function-trigger,manual-processing,force-l1a-combine,register-algorithm-image,s3-utils}
     make-kernel         generate SPICE kernels from a manifest file
     ecr-upload          Upload a docker image to the ECR repository for a specific algorithm and register its
                         version(s)
     step-function-trigger
                         Manually trigger a single processing step for one applicable date
     manual-processing   Manually run a custom processing DAG (or the default DAG) for one or more applicable dates
+    force-l1a-combine   Request L1A 24-hour combining for an APID and one or more applicable dates
     register-algorithm-image
                         Emit a NewAlgorithmImage event for an already-uploaded ECR image so the SDC Registrar
                         creates its versioned Batch job definition
@@ -255,6 +256,46 @@ options:
   --wait-time WAIT_TIME
                         Maximum verification wait in seconds. Default is 60.
   --profile PROFILE     AWS profile name to use. If not set, the default profile is used.
+```
+
+### Sub-Command `force-l1a-combine`
+
+Emits one `ManualL1APreprocessing` event to the SDC event bus. The L1A Preprocessor then runs one
+day combine per applicable date for the given APID. By default the combine skips the coverage
+gates, for a day whose L0 will never be complete; `--no-force` re-evaluates the gates instead,
+which retries a day without waiting for new L0. The L0 files must already be ingested. More than
+3 applicable dates prompts for confirmation.
+
+```shell
+usage: libera-utils force-l1a-combine [-h]
+                                      --apid {11,1000,1002,1013,1017,1019,1026,1035,1036,1037,1038,1040,1043,1044,1048,1049,1051,1057,1059,1060}
+                                      [--start START] [--end END] [--no-force] [--ground-data]
+                                      [--reason REASON] [--profile PROFILE]
+                                      [applicable_date ...]
+
+positional arguments:
+  applicable_date       One or more applicable dates to combine. Format: YYYY-MM-DD. Mutually
+                        exclusive with --start/--end.
+
+options:
+  -h, --help            show this help message and exit
+  --apid {11,1000,1002,1013,1017,1019,1026,1035,1036,1037,1038,1040,1043,1044,1048,1049,1051,1057,1059,1060}
+                        APID to assemble into day products.
+  --start START         First applicable date of an inclusive range (YYYY-MM-DD). Requires --end.
+  --end END             Last applicable date of an inclusive range (YYYY-MM-DD). Requires --start.
+  --no-force            Re-evaluate the coverage gates instead of skipping them. Combines only the
+                        days that now pass, without waiting for new L0 to arrive.
+  --ground-data         Assemble from ground CCSDS captures rather than flight PDS files.
+  --reason REASON       Reason for the request, carried on the event for ops and audit logging.
+  --profile PROFILE     AWS profile name to use for the session. If not set, the default profile
+                        is used.
+```
+
+```shell
+# Combine two partial days of RAD samples regardless of coverage:
+libera-utils force-l1a-combine --apid 1036 2026-07-12 2026-07-13 --reason "campaign ended mid-day"
+# Re-run the gates for a week of ground NOM-HK captures:
+libera-utils force-l1a-combine --apid 1057 --start 2026-07-06 --end 2026-07-12 --no-force --ground-data
 ```
 
 ### Sub-Command `s3-utils`
