@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `libera_utils.l1a.day_window` helpers to trim L1A datasets to midnight ± buffer and assert unique monotonic data times.
+- `trim_l1a_to_day_window` syncs the `PACKET` dimension to remaining packet-index values via `sync_packet_dim_to_index` after science-dim selection (drops orphan packets; densifies indices with source dtype).
+
 ## [5.11.5] - 2026-10-14
 
 ### Added

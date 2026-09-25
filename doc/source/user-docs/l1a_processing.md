@@ -196,6 +196,16 @@ sample-time ranges itself from the samples in the file. The span in File Metadat
 done that for it, and a file whose span covers a given instant does not guarantee both timeseries
 cover it.
 
+## Day-window trim and uniqueness
+
+After decoding L1A, use `libera_utils.l1a.day_window.trim_l1a_to_day_window` to keep data in
+`[day 00:00 UTC − buffer, day+1 00:00 UTC + buffer)` (default buffer 10 minutes). Set
+`keep_whole_groups=True` with a `packet_index_var` so radiometer packets are not split across the
+cut. When `packet_index_var` is set and a `PACKET` dimension exists, trim also calls
+`sync_packet_dim_to_index` so orphan PACKET rows are dropped and indices are densified (dtype-safe).
+Use `assert_data_times_unique_monotonic` after packet dedupe to enforce unique, non-decreasing
+data times (`ground_data=True` warns instead of raising).
+
 ## L1A Packet Processing Configurations
 
 Per-APID processing configurations are defined in `l1a_processing_configs.yml` (path resolved from
