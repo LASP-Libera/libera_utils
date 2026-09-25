@@ -57,7 +57,6 @@ Run: `<the one command>`
 
 <details><summary>Already checked</summary>
 
-Authored: <agent-assisted | by hand>, opened by <handle>
 Gates: lint N · types N · tests N · reviewer rounds N · wall clock N min
 Tokens since the build started: N in · N out · N cached
 Plan: <approved by handle | skimmed by handle | none (below the plan-approval threshold)>

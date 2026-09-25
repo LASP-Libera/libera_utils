@@ -77,4 +77,6 @@ Any agent that plans, builds or reviews a change here, including `implementation
   counts into the body. A body written by hand follows the template the same way, and opens in
   the order of the shared `templates/brief.md`.
 
-If you are an AI agent opening a pull request here, say so in the body's `Authored:` line.
+If you are an AI agent working here, declare it where shared D-013 says: the `Co-Authored-By`
+trailer on commits, the generated-with line on a pull request body, and the attribution line
+on comments and replies. Nowhere else.

@@ -35,12 +35,12 @@ A finding two reviewers answered differently carries `contested: true` alongside
 the author settled on, and both original lines. The ratchet counts those per rule: a rule
 people keep disagreeing about is usually one whose do-not-flag sentence is wrong.
 
-Three more fields, parsed from the PR body's "already checked" section, say who wrote the
-change and how often review sent it back. `pr-0066.yaml` also carries `tests:` and `helpers:`
-counts, from a build step that no longer runs; nothing reads them.
+Two more fields say who opened the pull request and how often review sent it back.
+`pr-0066.yaml` also carries `tests:` and `helpers:` counts, from a build step that no longer
+runs, and an `authored:` line from a PR-body field since removed (D-013 lists where AI
+involvement is declared instead); nothing reads them.
 
 ```yaml
-authored: agent-assisted # agent-assisted | by hand
 author: mmaclay # the handle that opened the pull request
 rework_rounds:
   - round: 1
