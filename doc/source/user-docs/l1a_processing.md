@@ -121,6 +121,13 @@ it, or every packet time is implausible. Several APIDs present in ground capture
 (`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`, `icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`)
 currently have no packet configuration, so they archive but yield no searchable times.
 
+A fault in the environment rather than in the file propagates instead of returning `None`:
+`OSError` (including a full disk, since reading an S3 object caches it locally first),
+`MemoryError`, and botocore `BotoCoreError`/`ClientError`. These are
+`libera_utils.l1a.ground_ccsds.ENVIRONMENT_ERRORS`. A `None` return therefore always means the
+file itself cannot yield a span, and the caller decides whether an environment fault is worth a
+retry.
+
 A data-time failure is narrower: the packet-time span is still returned, with
 `first_data_time`/`last_data_time` left `None` and `degraded_reason` set. This is the expected
 outcome for a WFOV file whose `SOP` packet landed in a different bin.

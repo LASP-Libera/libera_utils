@@ -1,11 +1,13 @@
 """Unit tests for demuxed ground-test CCSDS scanning."""
 
+import errno
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 import xarray as xr
+from botocore.exceptions import ClientError
 
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.data_time_extractors import DataTimeUndeterminedError
@@ -137,3 +139,27 @@ def test_scan_returns_none_on_parse_failure(tmp_path: Path, caplog):
     with caplog.at_level(logging.WARNING):
         assert scan_ground_ccsds_file(f) is None
     assert "Failed to parse packets" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OSError(errno.ENOSPC, "No space left on device"),
+        MemoryError(),
+        ClientError({"Error": {"Code": "SlowDown", "Message": "slow down"}}, "GetObject"),
+    ],
+    ids=["enospc", "memory", "s3"],
+)
+def test_scan_propagates_environment_errors(tmp_path: Path, monkeypatch, error):
+    """A fault outside the file's contents is raised, not reported as an unreadable file."""
+    from libera_utils.l1a import ground_ccsds as mod
+
+    def _raise(*_a, **_k):
+        raise error
+
+    monkeypatch.setattr(mod, "parse_packets_to_dataset", _raise)
+    f = tmp_path / "LIBERA_SDC_1036_ccsds_2025_318_13_00_00"
+    f.write_bytes(b"")
+
+    with pytest.raises(type(error)):
+        scan_ground_ccsds_file(f)
