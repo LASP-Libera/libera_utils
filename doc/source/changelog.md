@@ -5,6 +5,7 @@
 - FEAT: Add `libera_utils.l1a.day_window` helpers to trim L1A datasets to midnight ± buffer and assert unique monotonic data times.
 - FEAT: `trim_l1a_to_day_window` syncs the `PACKET` dimension to remaining packet-index values via `sync_packet_dim_to_index` after science-dim selection (drops orphan packets; densifies indices with source dtype).
 - FEAT: Add `libera_utils.l1a.day_coverage.evaluate_day_coverage` for L1A combine completeness gates over the day core and the left/right midnight buffers. `APID_COVERAGE_POLICIES` gives every `LiberaApid` a `DayCoveragePolicy`: `CONTINUOUS` gates on coverage fractions, `EVENT_DRIVEN` on any presence in the buffered window. Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge, because a file's span runs from its first to its last sample timestamp and under-reports its occupancy by one sample period.
+- FEAT: Add `libera_utils.l1a.day_coverage.measure_time_axis_coverage`, which measures day and buffer occupancy from a granule's own time axis, splitting runs at spacings above `DEFAULT_GAP_FACTOR` (5) times the median cadence. Unlike `evaluate_day_coverage`, it sees gaps inside a file.
 - DOCS: Document shared flight/ground daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → uniqueness assert).
 
 ## 5.11.0
