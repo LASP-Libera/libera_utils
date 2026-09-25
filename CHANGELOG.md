@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `libera_utils.l1a.l1a_packet_configs.configured_apids()`, the APIDs with a packet configuration.
 - Add the `force-l1a-combine` CLI (`libera_utils.aws.l1a_combine.force_l1a_combine`), which emits a `ManualL1APreprocessing` event asking the L1A Preprocessor to combine an APID for one or more applicable dates, skipping the coverage gates unless `--no-force` is given. It accepts only APIDs with a packet configuration. `_to_date` in `manual_processing` moves to `libera_utils.aws.utils.to_date`.
 - Add `libera_utils.l1a.packet_ordering.check_packet_order(ds, packet_time_coordinate)`, which logs how `SRC_SEQ_CTR` and packet time step along the `PACKET` axis: runs, missing packets and packet-time inversions. Where packet time steps backward along the counter order it emits a `UserWarning` with the count, the largest step and the first one's counters and times; where the counter repeats or steps backward within a run it logs a warning. It raises `ValueError` only when `SRC_SEQ_CTR` or the packet time variable is missing.
+- `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset` take `max_workers` (default 1) to parse files concurrently in worker processes, keeping the packet axis in the order given. A worker that dies without reporting raises `RuntimeError` with its exit code.
 
 ### Changed
 
