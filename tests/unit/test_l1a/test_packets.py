@@ -1,5 +1,6 @@
 """Tests for libera_utils.l1a.packets module for L1A processing"""
 
+import warnings
 from datetime import timedelta
 from unittest import mock
 
@@ -306,6 +307,107 @@ def test_validate_duplicate_values_ground_data_warns_for_each_differing_value():
     messages = [str(w.message) for w in warning_list]
     assert any("200" in m for m in messages)
     assert any("300" in m for m in messages)
+
+
+def _counter_dataset(counters: list[int]) -> xr.Dataset:
+    """Packet dataset with the given SRC_SEQ_CTR sequence and packet times one second apart."""
+    times = np.datetime64("2025-01-01T00:00:00", "us") + np.arange(len(counters)) * np.timedelta64(1, "s")
+    ds = xr.Dataset({"SRC_SEQ_CTR": (["PACKET"], np.array(counters, dtype=np.uint16))})
+    return ds.assign_coords({"PACKET_ICIE_TIME": (["PACKET"], times)})
+
+
+MISMATCH_MESSAGE = "SRC_SEQ_CTR order mismatches"
+WINDOW = libera_packets.SRC_SEQ_CTR_REORDER_WINDOW
+
+
+@pytest.mark.parametrize(
+    ("counters", "expected"),
+    [
+        pytest.param([100, 102, 101, 103], (1, 2), id="swapped-pair"),
+        pytest.param([16382, 16383, 0, 1], (0, 0), id="wrap"),
+        pytest.param([16379, 16380, 2, 3], (0, 1), id="wrap-with-dropped-packets"),
+        pytest.param([100, 101, 150], (0, 1), id="forward-gap"),
+        pytest.param([100, 101, 101 - (WINDOW + 1)], (0, 1), id="backward-step-outside-window-is-gap"),
+        pytest.param([100, 101, 101 - WINDOW], (1, 0), id="backward-step-at-window-edge"),
+        pytest.param([100, 101, 101], (0, 1), id="repeated-counter-is-gap"),
+        pytest.param([100, 101, 102], (0, 0), id="contiguous"),
+        pytest.param([100], (0, 0), id="single-packet"),
+    ],
+)
+def test_report_src_seq_ctr_order_classifies_steps(counters, expected):
+    """Each step is counted as normal, a mismatch within the window, or a forward gap."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = libera_packets._report_src_seq_ctr_order(_counter_dataset(counters), "PACKET_ICIE_TIME")
+
+    assert result == expected
+
+
+def test_report_src_seq_ctr_order_swap_reports_mismatch_detail(caplog):
+    """A swapped pair warns once and logs its position, both packet times and both counter values."""
+    ds = _counter_dataset([100, 102, 101, 103])
+
+    with caplog.at_level("WARNING"), pytest.warns(UserWarning, match=f"Detected 1 {MISMATCH_MESSAGE}"):
+        libera_packets._report_src_seq_ctr_order(ds, "PACKET_ICIE_TIME")
+
+    detail = [r.getMessage() for r in caplog.records if "order mismatch at packet" in r.getMessage()]
+    assert detail == [
+        "SRC_SEQ_CTR order mismatch at packet 2: PACKET_ICIE_TIME "
+        "2025-01-01T00:00:01.000000 -> 2025-01-01T00:00:02.000000, SRC_SEQ_CTR 102 -> 101"
+    ]
+    assert any("Detected 2 forward gaps" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("counters", [[100, 101, 102, 103], [16382, 16383, 0, 1], [100]])
+def test_report_src_seq_ctr_order_clean_input_is_silent(counters, caplog):
+    """Contiguous input, including a wrap, produces no warning and no log line."""
+    with caplog.at_level("DEBUG"), warnings.catch_warnings():
+        warnings.simplefilter("error")
+        libera_packets._report_src_seq_ctr_order(_counter_dataset(counters), "PACKET_ICIE_TIME")
+
+    assert caplog.records == []
+
+
+def test_report_src_seq_ctr_order_gap_logs_without_warning(caplog):
+    """A forward gap is logged with its count and raises no UserWarning."""
+    with caplog.at_level("WARNING"), warnings.catch_warnings():
+        warnings.simplefilter("error")
+        libera_packets._report_src_seq_ctr_order(_counter_dataset([100, 101, 150]), "PACKET_ICIE_TIME")
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "Detected 1 forward gaps in SRC_SEQ_CTR in packets sorted by PACKET_ICIE_TIME. "
+        "This usually means packets are missing from the input."
+    ]
+
+
+@pytest.mark.parametrize(
+    ("ground_data", "verbose", "expect_detail"),
+    [
+        pytest.param(False, False, True, id="flight"),
+        pytest.param(True, False, False, id="ground-summary-only"),
+        pytest.param(True, True, True, id="ground-verbose"),
+    ],
+)
+def test_report_src_seq_ctr_order_ground_data_limits_detail(ground_data, verbose, expect_detail, caplog):
+    """ground_data keeps the summary and drops per-mismatch lines unless verbose is also set."""
+    ds = _counter_dataset([100, 102, 101, 103, 105, 104])
+
+    with caplog.at_level("WARNING"), pytest.warns(UserWarning, match=MISMATCH_MESSAGE) as record:
+        libera_packets._report_src_seq_ctr_order(ds, "PACKET_ICIE_TIME", ground_data=ground_data, verbose=verbose)
+
+    assert len([w for w in record if MISMATCH_MESSAGE in str(w.message)]) == 1
+    messages = [r.getMessage() for r in caplog.records]
+    assert len([m for m in messages if f"Detected 2 {MISMATCH_MESSAGE}" in m]) == 1
+    detail = [m for m in messages if "order mismatch at packet" in m]
+    assert len(detail) == (2 if expect_detail else 0)
+
+
+def test_report_src_seq_ctr_order_missing_counter_raises():
+    """A dataset without SRC_SEQ_CTR raises KeyError."""
+    ds = _counter_dataset([100, 101]).drop_vars("SRC_SEQ_CTR")
+
+    with pytest.raises(KeyError, match="SRC_SEQ_CTR"):
+        libera_packets._report_src_seq_ctr_order(ds, "PACKET_ICIE_TIME")
 
 
 @mock.patch("libera_utils.l1a.packets.multipart_to_dt64")
@@ -866,6 +968,7 @@ def test_parse_packets_to_l1a_dataset_basic(
         {
             "PKT_DAY": (["PACKET"], [1000, 1001]),
             "PKT_MS": (["PACKET"], [0, 1000]),
+            "SRC_SEQ_CTR": (["PACKET"], [100, 101]),
             "SAMPLE_DAY": (["PACKET"], [1000, 1001]),
             "SAMPLE_MS": (["PACKET"], [500, 1500]),
             "SAMPLE_DATA": (["PACKET"], [1.5, 2.5]),
@@ -944,6 +1047,7 @@ def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
         {
             "PKT_DAY": (["PACKET"], [1000]),
             "PKT_MS": (["PACKET"], [0]),
+            "SRC_SEQ_CTR": (["PACKET"], [100]),
             "SAMPLE_DAY": (["PACKET"], [1000]),
             "SAMPLE_MS": (["PACKET"], [500]),
             "SAMPLE_DATA": (["PACKET"], [1.5]),
@@ -963,6 +1067,80 @@ def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
 
     assert mock_parse_packets.call_args.kwargs["skip_header_bytes"] == 8
     assert mock_config_get.call_args_list == [(("LIBERA_PACKET_DEFINITION",),)]
+
+
+@pytest.fixture
+def mismatched_packet_parse():
+    """Patch parse_packets_to_l1a_dataset inputs with packets whose SRC_SEQ_CTR disagrees with packet time.
+
+    Packets arrive out of packet-time order. Sorted by PKT_MS they carry SRC_SEQ_CTR 100, 102, 101, 103: one
+    mismatch. OTHER_FIELD and SAMPLE_DATA both carry the packet's identity. Packet and sample times go through the
+    real multipart_to_dt64.
+    """
+    config = PacketConfiguration(
+        packet_apid=LiberaApid.icie_nom_hk,
+        packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
+        sample_groups=[
+            SampleGroup(
+                name="TEST_SAMPLE",
+                sample_count=1,
+                data_field_patterns=["SAMPLE_DATA"],
+                time_field_patterns=TimeFieldMapping(day_field="SAMPLE_DAY", ms_field="SAMPLE_MS"),
+                time_source=SampleTimeSource.ICIE,
+            )
+        ],
+    )
+    pkt_ms = np.array([2000, 0, 3000, 1000])
+    packet_ds = xr.Dataset(
+        {
+            "PKT_DAY": (["PACKET"], np.full(4, 24472)),
+            "PKT_MS": (["PACKET"], pkt_ms),
+            "SRC_SEQ_CTR": (["PACKET"], np.array([101, 100, 103, 102], dtype=np.uint16)),
+            "SAMPLE_DAY": (["PACKET"], np.full(4, 24472)),
+            "SAMPLE_MS": (["PACKET"], pkt_ms + 500),
+            "SAMPLE_DATA": (["PACKET"], [30, 10, 40, 20]),
+            "OTHER_FIELD": (["PACKET"], [30, 10, 40, 20]),
+        }
+    )
+    with (
+        mock.patch("libera_utils.config.config.get", side_effect={"LIBERA_PACKET_DEFINITION": "fake.xml"}.get),
+        mock.patch("libera_utils.l1a.packets.get_packet_config", return_value=config),
+        mock.patch(
+            "libera_utils.l1a.packets.parse_packets_to_dataset",
+            side_effect=lambda *args, **kwargs: packet_ds.copy(deep=True),
+        ),
+    ):
+        yield
+
+
+def _parse_mismatched_packets():
+    return libera_packets.parse_packets_to_l1a_dataset(
+        packet_files=["fake.bin"], apid=LiberaApid.icie_nom_hk.value, skip_header_bytes=0
+    )
+
+
+def test_parse_packets_to_l1a_dataset_src_seq_ctr_mismatch_leaves_product_unchanged(mismatched_packet_parse):
+    """A counter/time mismatch is reported and the dataset matches a parse with the report patched out."""
+    with pytest.warns(UserWarning, match=f"Detected 1 {MISMATCH_MESSAGE}"):
+        reported = _parse_mismatched_packets()
+    with mock.patch.object(libera_packets, "_report_src_seq_ctr_order") as mock_report:
+        unreported = _parse_mismatched_packets()
+
+    mock_report.assert_called_once()
+    # assert_equal rather than assert_identical: the date_created attribute differs between the two parses
+    xr.testing.assert_equal(reported, unreported)
+    assert reported.sizes["PACKET"] == 4
+    np.testing.assert_array_equal(reported["SRC_SEQ_CTR"].values, [100, 102, 101, 103])
+
+
+def test_parse_packets_to_l1a_dataset_packet_index_under_src_seq_ctr_mismatch(mismatched_packet_parse):
+    """Each sample's packet_index points at its originating packet when SRC_SEQ_CTR disagrees with packet time."""
+    with pytest.warns(UserWarning, match=MISMATCH_MESSAGE):
+        result = _parse_mismatched_packets()
+
+    packet_index = result["TEST_SAMPLE_packet_index"].values
+    np.testing.assert_array_equal(result["OTHER_FIELD"].values[packet_index], result["SAMPLE_DATA"].values)
+    np.testing.assert_array_equal(result["OTHER_FIELD"].values, [10, 20, 30, 40])
 
 
 def test_drop_implausible_telemetry_times_removes_pre_floor_entries(caplog):

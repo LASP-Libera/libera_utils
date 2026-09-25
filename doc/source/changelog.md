@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.11.2
+
+- FEAT: `parse_packets_to_l1a_dataset` reports `SRC_SEQ_CTR` steps that disagree with the packet-time order it sorts by. A backward step of at most `SRC_SEQ_CTR_REORDER_WINDOW` (32, interim until FSW confirms the maximum per-APID reordering depth) is a mismatch, reported with a `UserWarning` and a `logger.warning` count, then one `logger.warning` per mismatch with its position, both packet times and both counters (only with `verbose=True` when `ground_data=True`). Any other step except `+1` is a forward gap, logged as a count. A single swapped pair reads as one mismatch and two gaps. Packet order, values and `{sample_group}_packet_index` are unchanged.
+
 ## 5.11.0
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for per-file science data-time spans without full L1A assembly, covering every `DATA_TIME_INDEXED_APIDS` member (WFOV SOP FSW image times; RAD/CAL/AXIS sample epoch+period or per-sample times). `extract_data_time_range` returns `None` for a WFOV file holding no `SOP` packet, which is expected when a large image's mem-dump is chunked across files or downlink passes.
