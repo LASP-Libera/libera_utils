@@ -58,7 +58,7 @@ Run: `<the one command>`
 <details><summary>Already checked</summary>
 
 Gates: lint N · types N · tests N · reviewer rounds N · wall clock N min
-Tokens since the build started: N in · N out · N cached
+Tokens since the build started: N in · N out · N cached, main session plus N subagents
 Plan: <approved by handle | skimmed by handle | none (below the plan-approval threshold)>
 Rules checked: <R-ids>
 Declined: <R-id at path::symbol — one-sentence reason>
