@@ -4,11 +4,10 @@
 `.pre-commit-config.yaml`, the workflows, `standards/review-rules.md` and the code itself. Open a
 pull request to fix this file rather than working from it.
 
-Tool-neutral entry point. Claude Code reads `CLAUDE.md`, Copilot reads
-`.github/copilot-instructions.md`, Gemini reads `GEMINI.md`; all three resolve to
-`.github/instructions/libera-utils.instructions.md`, which points back here for how a change
-moves from ticket to merge. A convention is written once, in `standards/`, and everything
-else points at it.
+Tool-neutral entry point. Claude Code reads `CLAUDE.md` and Gemini reads `GEMINI.md`, and both
+import this file and `.github/instructions/libera-utils.instructions.md`; Copilot reads
+`.github/copilot-instructions.md` and applies the instruction file. A convention is written
+once and everything else points at it.
 
 ## Coding rules, testing, and agent restrictions
 
