@@ -11,7 +11,9 @@ applies that file automatically to all files in this repository. `AGENTS.md` is 
 tool-neutral entry point above both: it maps this file, the instruction file and `standards/`
 to each other and describes how a change moves from ticket to merge.
 
-The review standard — the rules a reviewer checks, the contract it follows, and the
-do-not-flag list — is in `standards/`, starting at `standards/README.md`. It is tool-neutral
-on purpose: Copilot, Claude and a person reading the repository for the first time all read
-the same `standards/rules.md`, so a rule cannot drift between tools.
+The review standard is tool-neutral on purpose: Copilot, Claude and a person reading the
+repository for the first time all read the same rules, so a rule cannot drift between tools.
+Each rule's wording is in the Review Rules section of
+`.github/instructions/libera-utils.instructions.md`, which this file already applies. Its tier,
+status, evidence and do-not-flag sentence are in `standards/review-rules.md`, and the contract
+a reviewer follows is `standards/review-contract.md`, starting at `standards/README.md`.

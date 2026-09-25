@@ -1,7 +1,7 @@
 # libera_utils
 
 **When this file and an authoritative source disagree, the source wins** — `pyproject.toml`,
-`.pre-commit-config.yaml`, the workflows, `standards/rules.md` and the code itself. Open a
+`.pre-commit-config.yaml`, the workflows, `standards/review-rules.md` and the code itself. Open a
 pull request to fix this file rather than working from it.
 
 Tool-neutral entry point. Claude Code reads `CLAUDE.md`, Copilot reads
@@ -20,7 +20,9 @@ else points at it.
 
 - `standards/README.md` — the measurements that set every threshold, and the five tuning
   answers. Read this first; it says what this repository is optimising for.
-- `standards/rules.md` — the rules, capped at 14, each with its evidence
+- `standards/review-rules.md` — the ledger of the rules, capped at 14: tier, status, evidence
+  and do-not-flag for each. The wording of each rule is in the Review Rules section of
+  `.github/instructions/libera-utils.instructions.md`
 - `standards/review-contract.md` — how a reviewer behaves, and what it must not flag
 - `standards/decisions.md` — convention decisions already made here
 - `standards/SHARED.md` — where the shared vocabulary, decisions and context live
@@ -50,7 +52,9 @@ nothing is posted without a person's yes. Everything an agent produces is a prop
 Any agent that plans, builds or reviews a change here, including `implementation-planner`,
 `implementation-plan-reviewer`, `implementation-reviewer` and `github-pr-reviewer`:
 
-- Loads `standards/rules.md`, `standards/review-contract.md`, `standards/decisions.md`, the
+- Loads `standards/review-rules.md`, the Review Rules section of
+  `.github/instructions/libera-utils.instructions.md`, `standards/review-contract.md`,
+  `standards/decisions.md`, the
   shared decisions and terminology named in `standards/SHARED.md`, and `standards/test-lanes.md`
   before judging anything. The test and coverage commands come from `test-lanes.md`, never a
   guess.

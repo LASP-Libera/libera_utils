@@ -21,7 +21,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "standards" / "README.md"
-RULES = ROOT / "standards" / "rules.md"
+RULES = ROOT / "standards" / "review-rules.md"
+INSTRUCTIONS = ROOT / ".github" / "instructions" / "libera-utils.instructions.md"
 LOG = ROOT / "standards" / "log"
 
 
@@ -73,7 +74,13 @@ def check_rule_cap(readme: str) -> Result:
     max_rules, max_lines = int(cap.group(1)), int(cap.group(2))
     body = RULES.read_text()
     live = len([m for m in re.findall(r"^### (R-\d+) · (.+)$", body, re.M) if "retired" not in m[1].lower()])
-    lines = len(body.splitlines())
+    wording = re.search(r"^## Review Rules$.*?(?=^## |\Z)", INSTRUCTIONS.read_text(), re.M | re.S)
+    if not wording:
+        return Result("rule cap", False, f"{INSTRUCTIONS.name} has no Review Rules section")
+    # Counted as the one file the rules used to be: each linked rule's second title and its
+    # link line, each with a blank line, are structure the split added, not rule text.
+    linked = len(re.findall(r"^Wording: \[", body, re.M))
+    lines = len(body.splitlines()) + len(wording.group(0).splitlines()) - 4 * linked
     problems = []
     if live > max_rules:
         problems.append(f"{live} live rules over a cap of {max_rules}")

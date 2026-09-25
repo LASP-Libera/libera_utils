@@ -12,16 +12,16 @@ The phases this file refers to — 0 set up the standard, 1 define the work, 2 b
 
 ## What is here
 
-| File                 | Holds                                                                          |
-| -------------------- | ------------------------------------------------------------------------------ |
-| `rules.md`           | The rules a reviewer checks, capped at 14                                      |
-| `review-contract.md` | How the reviewer behaves: severity, budget, what not to flag                   |
-| `decisions.md`       | Decisions local to this repository. Cross-repository ones are shared           |
-| `SHARED.md`          | Where the shared vocabulary, decisions and context live, and how to reach them |
-| `checks/`            | Rules that graduated into a tool, each naming the rule it replaced             |
-| `archive.md`         | One line per rule that has left `rules.md`, with where its reasoning lives     |
-| `test-lanes.md`      | Every lane marker, path and command the corpus depends on, in one place        |
-| `log/`               | One record per reviewed pull request, and one report per ratchet               |
+| File                 | Holds                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| `review-rules.md`    | The ledger of the rules a reviewer checks, capped at 14; the wording is in the instruction file |
+| `review-contract.md` | How the reviewer behaves: severity, budget, what not to flag                                    |
+| `decisions.md`       | Decisions local to this repository. Cross-repository ones are shared                            |
+| `SHARED.md`          | Where the shared vocabulary, decisions and context live, and how to reach them                  |
+| `checks/`            | Rules that graduated into a tool, each naming the rule it replaced                              |
+| `archive.md`         | One line per rule that has left the ledger, with where its reasoning lives                      |
+| `test-lanes.md`      | Every lane marker, path and command the corpus depends on, in one place                         |
+| `log/`               | One record per reviewed pull request, and one report per ratchet                                |
 
 `.review/` is the agents' scratch directory and is gitignored.
 
@@ -52,7 +52,7 @@ windowed 7 that the cap does not move.
 | Distinct concerns raised more than once              | **21**                           | 14 admitted as rules, 7 held as candidates below the cap                                                                                                      |
 | Share a linter could have caught                     | ~10%                             | 10 of the first harvest's ~105 threads. 9 of the 10 were line-length complaints in a single PR, from an automated reviewer, on a repo that disables `E501`    |
 | Unit lane wall clock                                 | **70.7 s**                       | 1001 tests, measured on `main` 2026-09-22; commands in `standards/test-lanes.md`                                                                              |
-| PR lane wall clock                                   | **357 s** (5 min 57 s)           | 1071 tests, same run. Machine-local and load-sensitive: the same lane measured 102 s on the LIBSDC-703 base, which freezes the kernel fixtures                |
+| PR lane wall clock                                   | **446 s** (7 min 26 s)           | 1095 tests, same run, on 2026-09-25. Machine-local and load-sensitive: the same lane measured 102 s on the LIBSDC-703 base, which freezes the kernel fixtures |
 | Where work originates                                | LIBSDC Jira, written by the team | 112 issues closed or updated in 180 days; ops opens a ticket when a flight procedure changes an ObsID name                                                    |
 | Repositories sharing this vocabulary                 | **6**                            | curryer, libera_utils, libera_rad, libera_cam, libera_analysis, CSDS                                                                                          |
 | What already states a convention                     | 8 files                          | `.github/instructions/*.instructions.md` (2), `copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md`, `doc/source/developer-docs/{testing,git,build_release}.md` |
@@ -114,7 +114,8 @@ would mean re-reading every file in the corpus.
 
 Numbers in the table above that a machine can re-derive are checked by
 `.github/scripts/check_measurements.py`, which runs on a pull request touching `standards/`
-or `tests/`. It re-collects each lane, checks `rules.md` against its own cap and each record
+or `tests/`. It re-collects each lane, checks the rules (the ledger and the wording in the instruction
+file) against their cap and each record
 against the record cap, and reports what no longer holds. Wall clock is deliberately not
 checked: it is machine-local, and the same lane has measured 102 s and 357 s on one machine.
 Remeasuring it stays a person's job at the ratchet.

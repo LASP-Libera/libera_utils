@@ -120,8 +120,8 @@ stays the detail.
 
 The review standard lives in `standards/`, tool-neutral and read by people and agents alike.
 
-- `standards/rules.md` — what a reviewer checks here, capped at 14 rules, each with the
-  pull request that earned it. Cite the rule ID in a review comment.
+- `standards/review-rules.md` — the ledger for the rules below: each rule's tier, status,
+  evidence and do-not-flag sentence, capped at 14 rules. Cite the rule ID in a review comment.
 - `standards/review-contract.md` — severity, the seven-finding budget, and the do-not-flag
   list. Never repeat a finding that `ruff`, `prettier`, `codespell`, `bandit` or a
   pre-commit hook already makes.
@@ -146,6 +146,115 @@ The shared corpus is a clone of `libera_llm_tooling` kept beside this repository
 `../libera_llm_tooling/standards/` holds `terminology.md`, `decisions.md` and `context/`.
 The skills that read it install as the private `libera-tools` plugin; `standards/SHARED.md`
 has the commands. If the clone is not there, say so rather than inventing a term.
+
+## Review Rules
+
+What a reviewer checks here, beyond what the tools check, and what anyone writing code here
+is expected to follow. This section is the only copy of each rule's wording; its tier, status,
+evidence and do-not-flag sentence are in `standards/review-rules.md`.
+
+### R-001 · Validate a name or identifier where it is constructed, not where it is first used
+
+A class that accepts an invalid value and raises later moves the failure away from the
+caller who could fix it. `LiberaGroundCcsdsFilename` accepted day-of-year 999 because the
+setter only ran the regex, and the `strptime` round trip that would have caught it did not
+run until `archive_prefix` was computed at staging — after ingest had accepted the file.
+Validate in the constructor or the setter, and make the regex reject what the parser cannot
+parse.
+
+### R-002 · A condition that invalidates the output raises; it does not warn or no-op
+
+A warning is not a failure. When an Az/El CK had no encoder columns in its L1A input, the
+code returned quietly and produced a kernel with nothing in it; it now raises. The rule is
+the repository's fail-loud posture in review form: a defined input produces a defined
+product, or the run stops, because a crash gets noticed and a silently wrong number gets
+published.
+
+### R-003 · One exception type per condition, and a predicate returns rather than raises
+
+`GroundCcsdsApidAbsentError` was raised for four unrelated conditions, only one of which was
+an absent APID, so callers could not tell an unparsable APID from a missing one and the name
+misled on three of the four. Separately, `is_data_time_indexed_apid()` raised `ValueError`
+on an unknown APID, which a question of the form "is this X" should answer with `False`.
+Either give each condition its own type, or return the no-answer value the caller can act on.
+
+### R-004 · Every public symbol has a numpydoc docstring, including what it raises
+
+Numpydoc on public symbols is a project standard and the `Raises` section is the half that
+gets left out. With fail-loud design the failure modes are part of the interface, so a
+function that raises and does not say so has an undocumented contract. Parameters belong
+here too; units, frames and epochs are R-005.
+
+### R-005 · A published quantity states its unit; a time states its epoch and frame
+
+In PR #27 the commanded exposure times (`WFOV_FSW_HEADER_COMMANDED_EXP_TIME_1/2`) and the FPGA
+integration-time registers (`WFOV_IMAGE_HEADER_ACTUAL_EXP_TIME_1/2`) went up for review with no
+`units` attribute. They merged as `milliseconds` and `raw counts` — the registers stay in counts
+because the conversion to milliseconds is unconfirmed with FSW. A number in a data product with
+no unit is not a measurement, and a consumer will guess. The same applies
+to a time with no epoch and a pointing angle with no frame. PR #43 was cited here and does
+not support it — its temperature comments are about ObsID naming coverage, not units — so
+this rests on one pull request by one author until the wider calibration sample gives it a
+second.
+
+### R-006 · One source of truth for a value; tabular data lives in a data file
+
+`PACKET_DATA_WIDTH` restated a width that the `|S972` dtype already carried, so the two
+could diverge silently. The ObsID registry started as a large literal inside a module and
+became `data/obsid_registry.csv`, read and validated at import, because a table in code
+cannot be validated as data and a table in a comment cannot be used at all.
+
+### R-007 · Delete dead code rather than leaving it unreferenced
+
+Three instances across those pull requests: a function whose only mention was a comment
+explaining why it was not used, a `try`/`except` whose result was discarded and whose branch
+was no longer reachable, and three counters that were incremented and never read.
+
+### R-009 · Comments describe the code as it is, not how it got there
+
+The most repeated request in the window, six times in one review: remove the ticket number,
+remove the historical title, remove the comment that says what this used to be. A test's
+subject is the behaviour, not the ticket that asked for it. Ticket references are for
+forward-looking work, which is what R-010 covers.
+
+### R-011 · A dependency pins to an immutable ref
+
+A `@main` ref makes the build non-reproducible and lets an upstream merge break CI with no
+commit on this side. This is not hypothetical: a moving ref in `libera_rad` took main and
+three pull requests red overnight. Pin to the commit or the tagged release, with a comment
+saying why it is pinned and what unpins it. A direct-URL dependency also blocks publishing.
+
+### R-012 · The version bump matches the change, and the changelog heading matches it
+
+New public modules, a new filename class, a new enum member or a new keyword argument make
+a minor release, not a patch — downstream pins of the form `~=5.10.3` will take a patch
+silently. And a changelog headed `5.8.5` above a `pyproject.toml` that says `5.8.5rc1`
+leaves a reader unable to tell which artifact they have.
+
+### R-013 · Parse or sort an input once, not once per consumer
+
+A scan that re-read and re-parsed a whole packet file once per APID, twelve passes over a
+2 MB fixture in the ingest path where real captures are far larger; and a trim loop that
+re-sorted a full-day dataset and re-read a YAML definition on every one of ~35 runs. Hoist
+the parse, the sort and the definition load out of the loop.
+
+### R-014 · No internal URL or internal document content in this repository
+
+`libera_utils` is public and ships to PyPI. Cite an internal document by name — "the FSW
+user's guide", "the ICIE ObsID page" — say what it decides, and stop. No Confluence or Jira
+URL, no pasted internal content, in source, docstrings, tests or anything under
+`standards/`. Links rot as well as leak, so naming the document is also the more durable
+pointer. The background that needs a link lives in the private shared corpus.
+
+### R-015 · The annotation says what the code actually accepts
+
+`PathType` where only a local path works is an undefined contract: the caller cannot tell what
+is accepted and the failure arrives late and in the wrong words. PR #12 carries seven separate
+requests to take `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an
+`S3Path` can reach. PR #28 settles how to fix the general case — "just change the typehint to
+only accept a local Path or str since that is what is actually required", chosen deliberately
+over rejecting cloud paths at runtime. **Narrow the annotation rather than widen the
+function.**
 
 ## Restrictions for AI Agents
 

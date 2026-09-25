@@ -2,12 +2,13 @@
 
 How a reviewer behaves in `libera_utils`: the implementation reviewer at the end of a build,
 which reads this file because `AGENTS.md` points at it, and the `github-pr-reviewer` agent
-when `pr-findings` runs it. Read with `rules.md`, the shared `terminology.md` and
+when `pr-findings` runs it. Read with `review-rules.md` and the rule wording it links to in
+`.github/instructions/libera-utils.instructions.md`, the shared `terminology.md` and
 `decisions.md`, the local `decisions.md`, and `test-lanes.md`.
 
 ## What the reviewer loads
 
-Those five files on every run. A `context/` entry from the shared corpus only when the
+Those six files on every run. A `context/` entry from the shared corpus only when the
 ticket's constraints name it, or a file the diff touches names it. **The ticket and the
 plan are read before the diff.**
 

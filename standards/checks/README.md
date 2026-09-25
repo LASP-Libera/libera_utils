@@ -1,7 +1,8 @@
 # Checks
 
 Rules that graduated out of the reviewer and into a tool. Each entry names the rule it
-replaced, so the rule's prose can be deleted from `rules.md` and the history stays legible.
+replaced, so the rule's wording can be deleted from the instruction file and the history stays
+legible.
 
 A rule graduates when a check catches every accepted instance in the evidence window with no
 false positive on `main`. The ratchet drafts the check; an ordinary pull request lands it;
@@ -19,6 +20,12 @@ The number of rules the reviewer holds should be flat or falling over a year whi
 number of checks grows. If two consecutive ratchet reports propose no graduations, the rules
 being written are not the mechanical kind, and the workflow is delivering a second opinion
 rather than a smaller job.
+
+**A `check`-tier rule lives in the tool's configuration plus the shared archive**, not in the
+instruction file: the configuration is the rule, the archive entry holds its reasoning, and
+its entry in `review-rules.md` is a pointer so the reviewer knows the ground is covered. The
+other tiers: `prose` is the instruction file only, and `reviewer` is the instruction file plus
+a ledger entry.
 
 ## Graduated so far
 

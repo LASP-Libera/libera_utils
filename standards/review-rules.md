@@ -1,13 +1,22 @@
-# Rules
+# Review rules
 
-What a reviewer checks in this repository, beyond what the tools already check. Each rule
-carries a tier, a status, the month it was admitted, and the evidence that earned it.
+The ledger of what a reviewer checks in this repository, beyond what the tools already check.
+Each entry carries a rule's tier, status, the month it was admitted, the evidence that earned
+it and its do-not-flag sentence. **The wording of each rule is not here**: it lives once, under
+its ID, in `.github/instructions/libera-utils.instructions.md`, which Claude Code loads through
+`CLAUDE.md` and Copilot loads on its own, so the people and agents writing code read the same
+rule the reviewer checks. Each entry links to its section there.
 
-**Cap: 14 rules or 300 lines.** The cap is twice the measured monthly reviewed-PR count
+**Cap: 14 rules or 300 lines**, the lines counted across this file and the wording together,
+each rule's title once and its link line not at all. The cap is twice the measured monthly reviewed-PR count
 (`standards/README.md`). At the cap, a rule is admitted only by retiring one.
 
-Tiers: `prose` — the author is expected to know it and the reviewer does not check it.
-`reviewer` — the reviewer checks it. `check` — a tool checks it and the entry is a pointer.
+Tiers say where a rule lives. `prose` — the instruction file only: the author is expected to
+know it, the reviewer does not check it, and it has no entry here. `reviewer` — the
+instruction file plus an entry here, which the reviewer checks against. `check` — the tool's
+configuration plus the shared archive: a tool enforces it, its reasoning is in
+`archive/libera_utils/`, and its entry here is a pointer so the reviewer knows the ground is
+covered.
 Statuses: `provisional` · `established` · `graduated` · `retired`.
 
 Where a rule restates a decision, shared or local, its evidence line names it.
@@ -48,12 +57,8 @@ points at `log/pr-NNNN.yaml` records.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
 
-A class that accepts an invalid value and raises later moves the failure away from the
-caller who could fix it. `LiberaGroundCcsdsFilename` accepted day-of-year 999 because the
-setter only ran the regex, and the `strptime` round trip that would have caught it did not
-run until `archive_prefix` was computed at staging — after ingest had accepted the file.
-Validate in the constructor or the setter, and make the regex reject what the parser cannot
-parse.
+Wording: [R-001 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-001--validate-a-name-or-identifier-where-it-is-constructed-not-where-it-is-first-used)
+
 Do not flag: a validator deliberately deferred because it needs data the constructor does
 not have, when the docstring says so.
 
@@ -61,11 +66,8 @@ not have, when the docstring says so.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0027, pr-0041, pr-0060, pr-0012
 
-A warning is not a failure. When an Az/El CK had no encoder columns in its L1A input, the
-code returned quietly and produced a kernel with nothing in it; it now raises. The rule is
-the repository's fail-loud posture in review form: a defined input produces a defined
-product, or the run stops, because a crash gets noticed and a silently wrong number gets
-published.
+Wording: [R-002 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-002--a-condition-that-invalidates-the-output-raises-it-does-not-warn-or-no-op)
+
 Do not flag: a genuinely optional input whose absence has a defined meaning, when the
 docstring names it; a `logger.warning` beside a raise, for context.
 
@@ -73,11 +75,8 @@ docstring names it; a `logger.warning` beside a raise, for context.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
 
-`GroundCcsdsApidAbsentError` was raised for four unrelated conditions, only one of which was
-an absent APID, so callers could not tell an unparsable APID from a missing one and the name
-misled on three of the four. Separately, `is_data_time_indexed_apid()` raised `ValueError`
-on an unknown APID, which a question of the form "is this X" should answer with `False`.
-Either give each condition its own type, or return the no-answer value the caller can act on.
+Wording: [R-003 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-003--one-exception-type-per-condition-and-a-predicate-returns-rather-than-raises)
+
 Do not flag: one exception type covering conditions a caller genuinely handles identically,
 when the message distinguishes them.
 
@@ -85,10 +84,8 @@ when the message distinguishes them.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027, pr-0015
 
-Numpydoc on public symbols is a project standard and the `Raises` section is the half that
-gets left out. With fail-loud design the failure modes are part of the interface, so a
-function that raises and does not say so has an undocumented contract. Parameters belong
-here too; units, frames and epochs are R-005.
+Wording: [R-004 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-004--every-public-symbol-has-a-numpydoc-docstring-including-what-it-raises)
+
 Do not flag: private helpers; a one-line docstring on a symbol whose signature is
 self-describing and that raises nothing.
 
@@ -96,15 +93,8 @@ self-describing and that raises nothing.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027 · **one author, needs a second**
 
-In PR #27 the commanded exposure times (`WFOV_FSW_HEADER_COMMANDED_EXP_TIME_1/2`) and the FPGA
-integration-time registers (`WFOV_IMAGE_HEADER_ACTUAL_EXP_TIME_1/2`) went up for review with no
-`units` attribute. They merged as `milliseconds` and `raw counts` — the registers stay in counts
-because the conversion to milliseconds is unconfirmed with FSW. A number in a data product with
-no unit is not a measurement, and a consumer will guess. The same applies
-to a time with no epoch and a pointing angle with no frame. PR #43 was cited here and does
-not support it — its temperature comments are about ObsID naming coverage, not units — so
-this rests on one pull request by one author until the wider calibration sample gives it a
-second.
+Wording: [R-005 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-005--a-published-quantity-states-its-unit-a-time-states-its-epoch-and-frame)
+
 Do not flag: dimensionless counters and flags; a field whose unit is stated once for a group
 in the product definition.
 
@@ -112,10 +102,8 @@ in the product definition.
 
 tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0027, pr-0041, pr-0015, pr-0002
 
-`PACKET_DATA_WIDTH` restated a width that the `|S972` dtype already carried, so the two
-could diverge silently. The ObsID registry started as a large literal inside a module and
-became `data/obsid_registry.csv`, read and validated at import, because a table in code
-cannot be validated as data and a table in a comment cannot be used at all.
+Wording: [R-006 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-006--one-source-of-truth-for-a-value-tabular-data-lives-in-a-data-file)
+
 Do not flag: a named constant that gives a meaning to a literal used in one place; a value
 duplicated in a test on purpose, so the test fails when the source changes.
 
@@ -123,9 +111,8 @@ duplicated in a test on purpose, so the test fails when the source changes.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0048
 
-Three instances across those pull requests: a function whose only mention was a comment
-explaining why it was not used, a `try`/`except` whose result was discarded and whose branch
-was no longer reachable, and three counters that were incremented and never read.
+Wording: [R-007 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-007--delete-dead-code-rather-than-leaving-it-unreferenced)
+
 Do not flag: a public symbol kept for backwards compatibility with a deprecation note; code
 behind a feature flag that the changelog names.
 
@@ -142,10 +129,8 @@ by building the wheel.
 
 tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030
 
-The most repeated request in the window, six times in one review: remove the ticket number,
-remove the historical title, remove the comment that says what this used to be. A test's
-subject is the behaviour, not the ticket that asked for it. Ticket references are for
-forward-looking work, which is what R-010 covers.
+Wording: [R-009 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-009--comments-describe-the-code-as-it-is-not-how-it-got-there)
+
 Do not flag: a tagged deferred-work marker such as `TODO[LIBSDC-1234]`, which is
 forward-looking; a comment citing an external
 document that the code implements.
@@ -154,7 +139,8 @@ document that the code implements.
 
 tier: check · status: graduated · since: 2026-09 · evidence: pre-commit, standing convention
 
-A deferred decision with no ticket is a deferred decision nobody will make.
+Reasoning: shared `archive/libera_utils/R-010.md`
+
 Do not flag: this rule at all. The hook owns it, and a marker in a file the hook excludes
 (`.pre-commit-config.yaml`) is deliberately out of scope.
 Check: `.pre-commit-config.yaml`, the `lasp/prevent-dangling-todos` hook, with its tags set
@@ -165,20 +151,16 @@ check this; the hook does.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 · implements shared D-005 · **one pull request, needs a second**
 
-A `@main` ref makes the build non-reproducible and lets an upstream merge break CI with no
-commit on this side. This is not hypothetical: a moving ref in `libera_rad` took main and
-three pull requests red overnight. Pin to the commit or the tagged release, with a comment
-saying why it is pinned and what unpins it. A direct-URL dependency also blocks publishing.
+Wording: [R-011 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-011--a-dependency-pins-to-an-immutable-ref)
+
 Do not flag: a pin in a local development extra that is never published.
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
 tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0048, pr-0037, pr-0027, pr-0022, pr-0032
 
-New public modules, a new filename class, a new enum member or a new keyword argument make
-a minor release, not a patch — downstream pins of the form `~=5.10.3` will take a patch
-silently. And a changelog headed `5.8.5` above a `pyproject.toml` that says `5.8.5rc1`
-leaves a reader unable to tell which artifact they have.
+Wording: [R-012 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-012--the-version-bump-matches-the-change-and-the-changelog-heading-matches-it)
+
 Do not flag: a pre-release suffix used deliberately for downstream testing, when the
 changelog heading carries it too.
 
@@ -186,10 +168,8 @@ changelog heading carries it too.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0041
 
-A scan that re-read and re-parsed a whole packet file once per APID, twelve passes over a
-2 MB fixture in the ingest path where real captures are far larger; and a trim loop that
-re-sorted a full-day dataset and re-read a YAML definition on every one of ~35 runs. Hoist
-the parse, the sort and the definition load out of the loop.
+Wording: [R-013 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-013--parse-or-sort-an-input-once-not-once-per-consumer)
+
 Do not flag: a repeated read of something small and mutable, where the reread is the point;
 a loop that runs a fixed handful of times over a small input.
 
@@ -197,11 +177,8 @@ a loop that runs a fixed handful of times over a small input.
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027 · implements `libera_utils/D-006`
 
-`libera_utils` is public and ships to PyPI. Cite an internal document by name — "the FSW
-user's guide", "the ICIE ObsID page" — say what it decides, and stop. No Confluence or Jira
-URL, no pasted internal content, in source, docstrings, tests or anything under
-`standards/`. Links rot as well as leak, so naming the document is also the more durable
-pointer. The background that needs a link lives in the private shared corpus.
+Wording: [R-014 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-014--no-internal-url-or-internal-document-content-in-this-repository)
+
 Do not flag: a LIBSDC ticket key on its own, which is an identifier rather than a link; a
 public URL, such as NAIF or the CERES documentation.
 
@@ -209,13 +186,8 @@ public URL, such as NAIF or the CERES documentation.
 
 tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements `libera_utils/D-007`
 
-`PathType` where only a local path works is an undefined contract: the caller cannot tell what
-is accepted and the failure arrives late and in the wrong words. PR #12 carries seven separate
-requests to take `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an
-`S3Path` can reach. PR #28 settles how to fix the general case — "just change the typehint to
-only accept a local Path or str since that is what is actually required", chosen deliberately
-over rejecting cloud paths at runtime. **Narrow the annotation rather than widen the
-function.**
+Wording: [R-015 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-015--the-annotation-says-what-the-code-actually-accepts)
+
 Do not flag: a union the code genuinely handles — `Path | str` is the fix pr-0028 agreed on,
 not a violation of this rule; a genuine union the product definition names; a constructor that
 documents a single coercion at the boundary and says so in its docstring.
