@@ -3,6 +3,16 @@ attributes:
   algorithm_version: null
   date_created: null
   input_files: null
+  QualityFlag: null
+  PacketTimeInversionCount: null
+  PacketsOutOfTimeOrderCount: null
+  MaxPacketTimeInversionMicroseconds: null
+  DuplicatePacketTimeCount: null
+  DuplicateSampleTimeCount: null
+  DuplicateValueMismatchCount: null
+  MissingPacketCount: null
+  MaxSampleGapMicroseconds: null
+  SequenceResetCount: null
   PacketCountNotUsedInImages: null
   ErrorFlaggedImageCount: null
   FooterMismatchCount: null

@@ -28,6 +28,7 @@ from libera_utils.l1a.packet_ordering import (
     check_packet_acquisition_order,
     order_packet_files,
 )
+from libera_utils.l1a.quality import GranuleQualityRecord
 from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
@@ -233,9 +234,16 @@ def parse_packets_to_l1a_dataset(
     packet_time_coordinate = packet_config.packet_time_coordinate
     packet_ds = packet_ds.assign_coords({packet_time_coordinate: (SDC_PACKET_DIMENSION, packet_times_us)})
 
+    quality = GranuleQualityRecord(apid=int(apid))
+
     # Drop duplicates from the packet dataset before we process samples
     # This drops full duplicate packets based on identical packet timestamps
-    packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
+    packet_ds, packet_duplicates = _drop_duplicates(
+        packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose
+    )
+    quality.duplicate_packet_time_count = packet_duplicates.n_duplicates
+    quality.duplicate_value_mismatch_count += packet_duplicates.n_value_mismatches
+    quality.mismatched_variables.extend(packet_duplicates.mismatched_variables)
 
     # The packet axis is already in acquisition order: files were placed in time above and byte
     # order within a file is acquisition order. Do not sort it on packet time. The secondary
@@ -243,13 +251,20 @@ def parse_packets_to_l1a_dataset(
     # (LIBSDC-830), so a time sort permutes packets away from the order they were taken in,
     # which breaks the contiguous-run assumption WFOV image stitching depends on. The
     # "{sample_group}_packet_index" variables built below enumerate this axis positionally.
-    packet_ds, _ = check_packet_acquisition_order(
+    packet_ds, order_diagnostics = check_packet_acquisition_order(
         packet_ds,
         packet_time_coordinate,
         packet_dimension=SDC_PACKET_DIMENSION,
         ground_data=ground_data,
         verbose=verbose,
     )
+    quality.n_packets = order_diagnostics.n_packets
+    quality.packet_time_inversion_count = order_diagnostics.n_time_inversions
+    quality.packets_out_of_time_order_count = order_diagnostics.n_packets_displaced
+    quality.max_packet_time_inversion_microseconds = order_diagnostics.max_time_inversion_us
+    quality.missing_packet_count = order_diagnostics.n_missing_packets
+    quality.sequence_order_violation_count = order_diagnostics.n_order_violations
+    quality.sequence_reset_count = max(0, order_diagnostics.n_segments - 1)
     packet_times_us = packet_ds[packet_time_coordinate].values
 
     # Start building the dataset containing expanded sample fields
@@ -293,10 +308,20 @@ def parse_packets_to_l1a_dataset(
         # NOTE: This should never find duplicates in flight but in ground testing, FSW was generating
         # packets that had repeated sample timestamps due to an issue with Hydra simulating SC time pulses
         # incorrectly, causing a microsecond counter to roll over at 1E6 without incrementing the second counter.
-        sample_ds, _ = _drop_duplicates(sample_ds, sample_time_dimension, ground_data=ground_data, verbose=verbose)
+        sample_ds, sample_duplicates = _drop_duplicates(
+            sample_ds, sample_time_dimension, ground_data=ground_data, verbose=verbose
+        )
+        quality.duplicate_sample_time_count += sample_duplicates.n_duplicates
+        quality.duplicate_value_mismatch_count += sample_duplicates.n_value_mismatches
+        quality.mismatched_variables.extend(sample_duplicates.mismatched_variables)
 
         # Sort the data by the newly added dimension for the sample group
         sample_ds = sample_ds.sortby(sample_time_dimension)
+        sample_times_sorted = sample_ds[sample_time_dimension].values
+        quality.n_samples = max(quality.n_samples, int(sample_times_sorted.size))
+        if sample_times_sorted.size > 1:
+            gaps = np.diff(sample_times_sorted.astype(DATETIME_USEC_DTYPE).astype(np.int64))
+            quality.max_sample_gap_microseconds = max(quality.max_sample_gap_microseconds, int(gaps.max(initial=0)))
 
     # Drop expanded sample fields from packet_ds to reduce data duplication
     packet_ds = packet_ds.drop_vars(expanded_fields)
@@ -369,6 +394,10 @@ def parse_packets_to_l1a_dataset(
     # may differ from the order the caller passed.
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
+    # Written unconditionally, zeros included: every product definition declares these, and a
+    # trending query should not have to distinguish "clean" from "not reported".
+    quality.product_id = str(packet_ds.attrs.get("ProductID", ""))
+    packet_ds.attrs.update(quality.global_attributes())
 
     if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
         packet_ds = enhance_wfov_l1a_dataset(packet_ds)
