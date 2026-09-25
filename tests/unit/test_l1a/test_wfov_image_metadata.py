@@ -136,7 +136,8 @@ def _encode_fpga_block(
 def _make_wfov_packet_dataset(
     rows: list[tuple[str, int, int, bytes]],
 ) -> xr.Dataset:
-    flags = np.array([row[0] for row in rows], dtype="S8")
+    # Unicode, as space_packet_parser emits XTCE enum labels; the stitcher normalizes on entry.
+    flags = np.array([row[0] for row in rows], dtype="<U8")
     offsets = np.array([row[1] for row in rows], dtype=np.uint32)
     lengths = np.array([row[2] for row in rows], dtype=np.uint32)
     data = np.array([row[3] for row in rows], dtype="S972")
@@ -445,6 +446,31 @@ class TestStitchWfovImages:
         assert stats.n_error_flagged_images == 1
         assert stats.n_footer_mismatches == 1
         assert stats.n_header_parse_errors == 0
+
+
+class TestFlagDtypeHandling:
+    def test_unicode_and_bytes_flags_stitch_identically(self):
+        # space_packet_parser emits enum labels as unicode. Comparing those against the bytes
+        # literals in the state machine matches nothing, which yields zero images and no counter
+        # that says why.
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        unicode_flags = ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values
+        assert unicode_flags.dtype.kind == "U"
+
+        args = (ds["ICIE__MEM_DUMP_OFFSET_WFOV"].values, ds["ICIE__MEM_DUMP_LENGTH_WFOV"].values, _packet_rows(ds))
+        from_unicode, unicode_stats = _stitch_wfov_images(unicode_flags, *args)
+        from_bytes, bytes_stats = _stitch_wfov_images(unicode_flags.astype("S8"), *args)
+
+        assert len(from_unicode) == 1
+        assert len(from_bytes) == len(from_unicode)
+        assert unicode_stats == bytes_stats
+
+    def test_unicode_flags_reach_complete_images_through_enhance(self):
+        blob = _build_complete_image_blob(b"\x01")
+        ds = _make_wfov_packet_dataset(_complete_rows(blob))
+        assert ds["ICIE__MEM_DUMP_FLAGS_WFOV"].values.dtype.kind == "U"
+        assert enhance_wfov_l1a_dataset(ds).sizes["CAMERA_TIME"] == 1
 
 
 class TestEnhanceWfovL1aDataset:
