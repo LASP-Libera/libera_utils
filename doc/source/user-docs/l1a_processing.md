@@ -236,7 +236,8 @@ The L1A Preprocessor evaluates File Metadata time spans with
   After the tolerance, a buffer fraction below 1.0 means a real outage rather than a
   representation artifact. Pass `seam_tolerance=timedelta(0)` to require exact abutment.
 - File count (e.g. nominal ~14 two-hour chunks) is **not** the gate — only time coverage.
-- Incomplete days skip combine without error.
+- Incomplete days skip combine without error. `libera-utils force-l1a-combine` (see
+  [Basic Usage](usage.md)) combines a day anyway, or re-runs the gates for it with `--no-force`.
 
 ## Measuring a granule's time-axis coverage
 
