@@ -74,8 +74,9 @@ is must-fix or should-fix by the same test as above, and a non-blocking one is a
 ## Citation
 
 Every finding names a rule ID, a decision, `ticket/AC-n`, `ticket/scope`, `ticket/plan`,
-`term/T-nnn`, `test/rework`, `test/uncovered`, `test/failure-path`, `test/duplicate`,
-`helper/path::symbol`, or `other`. A shared decision is cited `D-nnn`; one of this
+`term/T-nnn`, a `test/` key from `test-suite-review` (`test/loosened`, `test/failure-path`,
+`test/uncovered`, `test/mock`, `test/rework`, `test/duplicate`, `test/placement`,
+`test/lane`), `helper/path::symbol`, or `other`. A shared decision is cited `D-nnn`; one of this
 repository's own is cited `D-nnn@libera_utils`, such as `D-008@libera_utils`, because the
 citation must contain no `/`. An `other` finding carries a one-line summary suitable for
 clustering at the ratchet.
@@ -93,42 +94,26 @@ code.
 
 ## Test scrutiny
 
-Three directions; the first is the classic, and the other two are what a green suite hides.
+Tests are judged by the `test-suite-review` skill in the `libera-tools` plugin: loosening,
+failure paths, changed lines no test runs, mocking away the change, factoring (extend before
+adding, parametrize, existing fixtures) and lanes. The reviewer applies it whenever the diff
+touches tests, and its keys are the `test/` citations above. What follows is what it cannot
+know without this repository.
 
-**A test weakened** is a finding until justified: a widened tolerance, a weakened
-assertion, a removed `raises`, a new `skip` or `xfail`, a dropped `parametrize` case, or an
-expected value re-tuned to the new output. Two more, specific to this repository:
-
-- A test relocated to escape a guard rather than mocked. The outbound-network guard exists
-  because 28 tests were silently downloading kernels from NAIF for months; the lanes and the
-  guard are described once in `standards/test-lanes.md` (shared D-009, provisional).
-- A golden value changed without the change being stated in the pull request body. A test
-  asserts on its own step's product (shared D-010); a re-tuned golden value is a science claim.
-
-**A test added where one should have been reworked**, keyed `test/rework`. An agent asked
-to make a suite green adds; a person who knows the suite edits. A new test whose subject an
-existing module already covers belongs in that module, beside its siblings or as a
-`parametrize` case.
-
-Count deletions before calling it padding. Count test functions added, modified (the same
-name on both sides of the diff) and deleted, and compare added against modified **plus
-deleted**: a rewrite that drops fifteen and adds nine is a consolidation, and against
-modified alone it scores as the opposite of what it is. When added is the larger, the change
-grew the suite, and a new test _file_ the plan did not name is a must-fix keyed
-`test/rework`. When added is not the larger, files are being split or merged on purpose, and
-an unplanned file is an escalation for the person instead. Judge on the subject, not the
-assertion (shared D-010): the same input feeding the same number is duplicate coverage only
-when the subject matches, and that is `test/duplicate`. One repository specific: shared
-setup belongs in `tests/plugins/` as a fixture rather than in a new helper module. **Judge shape, not location** — where a test lives is settled by
-`standards/test-lanes.md`, and a finding about the lane layout belongs there, not here.
-
-**Coverage of what changed**, keyed `test/uncovered` and `test/failure-path`. Run the
-coverage command named in `standards/test-lanes.md` and list every line the diff added or
-changed that no test executes, as `file:line`.
-Separately, every `raise` the diff adds needs a test asserting it: this repository's
-contract is that a defined input produces a defined product or the run stops, so an
-untested raise is an unenforced contract (R-002, R-004). Report the lines, never a
-percentage — a percentage produces tests written to the metric.
+- **Lanes and commands** are in `standards/test-lanes.md`, including the coverage command
+  `test/uncovered` uses. A fast unit test may call several levels deep rather than mock them.
+- **Mocking** is `moto` for AWS and `responses` for HTTP. Fixtures live in `tests/plugins/`;
+  non-fixture helpers in `tests/helpers.py`. New shared setup becomes a fixture there, not a
+  new helper module.
+- **A test relocated to escape the network guard** rather than mocked is `test/loosened`. The
+  guard exists because 28 tests were silently downloading kernels from NAIF for months (shared
+  D-009, provisional).
+- **A golden value changed without the change being stated in the pull request body** is a
+  must-fix `test/loosened`. A test asserts on its own step's product (shared D-010); a
+  re-tuned golden value is a science claim.
+- **Every `raise` the diff adds needs a test asserting it**, `test/failure-path`: a defined
+  input produces a defined product or the run stops, so an untested raise is an unenforced
+  contract (R-002, R-004).
 
 A framework-invoked symbol is not a helper. A `@pytest.fixture` is injected by name and a
 pydantic `@field_validator` or `@model_validator` is called by the model, so a call-site count

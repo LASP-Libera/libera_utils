@@ -17,11 +17,11 @@ only file under `standards/` to edit.
 
 ## What the lanes are
 
-| Lane        | Directory           | Marker                    | Runs     | Admits                                                                      | Today                        |
-| ----------- | ------------------- | ------------------------- | -------- | --------------------------------------------------------------------------- | ---------------------------- |
-| unit        | `tests/unit`        | none                      | every PR | One function or class. No network, no external process                      | exists                       |
-| integration | `tests/integration` | `pytest.mark.integration` | every PR | Several components, or a real subprocess. Everything it reads is checked in | exists, marked, not split on |
-| e2e         | `tests/e2e`         | `pytest.mark.e2e`         | daily    | Needs a live external service, or is too slow to sit in front of a PR       | arrives with LIBSDC-703      |
+| Lane        | Directory           | Marker                    | Runs     | Admits                                                                                                                              | Today                        |
+| ----------- | ------------------- | ------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| unit        | `tests/unit`        | none                      | every PR | Nothing outside the checked-in test data: no network, no external process, fast. May call several levels deep rather than mock them | exists                       |
+| integration | `tests/integration` | `pytest.mark.integration` | every PR | An external interface or infrastructure, such as a real subprocess. Everything it reads is checked in                               | exists, marked, not split on |
+| e2e         | `tests/e2e`         | `pytest.mark.e2e`         | daily    | Needs a live external service, or is too slow to sit in front of a PR                                                               | arrives with LIBSDC-703      |
 
 Markers are set per module with `pytestmark`, so a module belongs to exactly one lane.
 
@@ -55,9 +55,9 @@ told the author nothing about their change.
 
 ## Who reads this file
 
-`standards/review-contract.md` (the coverage command and the guard), the implementation
-reviewer at the end of a build (through `AGENTS.md`), and `standards/README.md` (the measured
-wall clock). None of them hard-codes a marker or a path; they name this file.
+`standards/review-contract.md` (the coverage command and the guard), the plugin's
+`test-suite-review` skill (the lanes and commands), the implementation reviewer at the end of a
+build (through `AGENTS.md`), and `standards/README.md` (the measured wall clock). None of them hard-codes a marker or a path; they name this file.
 
 **Test scrutiny judges the shape of a test, not its location.** Whether a new test belongs beside its
 siblings rather than in a new module, whether a changed line has a test, and whether a new
