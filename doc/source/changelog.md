@@ -1,5 +1,9 @@
 # Version Changes
 
+## 5.11.1
+
+- FEAT: Add docker-compose entries for spice kernel making.
+
 ## 5.11.0
 
 - FEAT: Add `libera_utils.l1a.data_time_extractors` for per-file science data-time spans without full L1A assembly, covering every `DATA_TIME_INDEXED_APIDS` member (WFOV SOP FSW image times; RAD/CAL/AXIS sample epoch+period or per-sample times). `extract_data_time_range` returns `None` for a WFOV file holding no `SOP` packet, which is expected when a large image's mem-dump is chunked across files or downlink passes.

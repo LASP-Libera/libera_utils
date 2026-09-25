@@ -6,6 +6,20 @@ services:
       context: .
       target: libera-utils
 
+  make-kernel-jpss:
+    platform: linux/amd64
+    image: libera-utils-make-kernel-jpss:latest
+    build:
+      context: .
+      target: libera-utils-make-kernel-jpss
+
+  make-kernel-azel:
+    platform: linux/amd64
+    image: libera-utils-make-kernel-azel:latest
+    build:
+      context: .
+      target: libera-utils-make-kernel-azel
+
   # Tests against the default version of python in the Dockerfile
   tests:
     platform: linux/amd64
