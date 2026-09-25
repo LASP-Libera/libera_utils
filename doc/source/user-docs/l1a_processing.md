@@ -206,6 +206,52 @@ cut. When `packet_index_var` is set and a `PACKET` dimension exists, trim also c
 Use `assert_data_times_unique_monotonic` after packet dedupe to enforce unique, non-decreasing
 data times (`ground_data=True` warns instead of raising).
 
+## Day coverage gates (combine readiness)
+
+The L1A Preprocessor evaluates File Metadata time spans with
+`libera_utils.l1a.day_coverage.evaluate_day_coverage` before decoding:
+
+- **Left buffer** `[D − B, D)`, **day core** `[D, D+1)`, **right buffer** `[D+1, D+1 + B)`.
+- Each APID's rule is its `DayCoveragePolicy` in `APID_COVERAGE_POLICIES`, looked up with
+  `coverage_policy_for_apid`. Every `LiberaApid` must have an entry; importing
+  `libera_utils.l1a.day_coverage` raises `ValueError` otherwise.
+- A `CONTINUOUS` policy requires a minimum covered fraction of the day core and of each buffer.
+  An `EVENT_DRIVEN` policy passes all three gates as soon as any span overlaps the buffered
+  window, since an APID that only runs during an event rarely has data at both midnights.
+
+  | APID                                  | Mode           | Day  | Buffers |
+  | ------------------------------------- | -------------- | ---- | ------- |
+  | `jpss_sc_pos`, `icie_nom_hk`          | `CONTINUOUS`   | 0.99 | 0.99    |
+  | `icie_rad_sample`, `icie_axis_sample` | `CONTINUOUS`   | 0.90 | 0.95    |
+  | `icie_wfov_sci`                       | `CONTINUOUS`   | 0.60 | 0.60    |
+  | all others                            | `EVENT_DRIVEN` | —    | —       |
+
+  These thresholds are initial values, to be refined against the coverage recorded on
+  production granules.
+
+- Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge as continuous. A file's span is
+  recorded over sample timestamps, `[t_first, t_last]`, while coverage is about time occupied:
+  sample k occupies `[t_k, t_k + period)`, so every file under-reports by one period. RAD also
+  leaves ~10 ms of FPE dead time between packets on ~26% of packets. Neither is missing data.
+  After the tolerance, a buffer fraction below 1.0 means a real outage rather than a
+  representation artifact. Pass `seam_tolerance=timedelta(0)` to require exact abutment.
+- File count (e.g. nominal ~14 two-hour chunks) is **not** the gate — only time coverage.
+- Incomplete days skip combine without error.
+
+## Shared day assembly (flight and ground)
+
+Production daily L1A uses the **same** combine sequence for flight PDS and ground CCSDS:
+
+1. `evaluate_day_coverage` on File Metadata effective time spans (skip incomplete days unless forced).
+2. `parse_packets_to_l1a_dataset(..., ground_data=, skip_header_bytes=)` — flight defaults
+   `ground_data=False` / header skip `0`; ground triggers use `ground_data=True` / `skip_header_bytes=8`.
+3. `trim_l1a_to_day_window` to the applicable UTC day ± buffer.
+4. `assert_data_times_unique_monotonic(..., ground_data=)` — with `ground_data=True`, duplicate or
+   non-monotonic data times **warn** instead of raising (same semantics as packet dedupe).
+
+There is no separate ground combiner. Offline concatenation of finished L1A NetCDFs is diagnostic
+only and is not part of the production path.
+
 ## L1A Packet Processing Configurations
 
 Per-APID processing configurations are defined in `l1a_processing_configs.yml` (path resolved from
