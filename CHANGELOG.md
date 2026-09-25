@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LiberaDataProductDefinition.generate_data_product_filename` takes the min and max of the time variable rather than its first and last values, so a granule's stamped range cannot invert or shift when the axis is not time-ordered.
 - `nom_hk_trim` checks acquisition order rather than packet-time order. It raised on any non-monotonic `PACKET_ICIE_TIME`, which one day of NOM-HK trips ~1330 times. It now raises only on a sequence-counter step too large to be lost packets, which is what would actually make its positional run slices meaningless.
 - `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping all L0 files in one event. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
+- `scan_ground_ccsds_file` raises `OSError`, `MemoryError`, `BotoCoreError` and `ClientError` (`ENVIRONMENT_ERRORS`) instead of returning `None`, which it keeps for a file that cannot yield a span. A full disk or an S3 throttle no longer reports a readable file as permanently unparsable.
 
 ## [5.11.3] - 2026-10-09
 
