@@ -596,6 +596,21 @@ ascending order must sort locally — in particular `numpy.searchsorted` on pack
 wrong answer without raising. The granule filename comes from the min and max of the time
 variable, not its endpoints.
 
+### Duplicate timestamps
+
+`parse_packets_to_l1a_dataset` keeps the first row of each duplicated packet time and each
+duplicated sample time, in both ground and flight mode. Rows that agree are redundancy. Rows
+that disagree are a distinct measurement discarded to make the timestamp unique; the granule is
+still produced, and each such coordinate logs a `duplicate_coordinate_values_differed` error
+naming the variables that disagreed. In DITL2, every colliding RAD sample timestamp disagreed on
+channels 1 and 3, ~10,200 per affected granule.
+
+Value identity is only checkable on a dimension coordinate, so duplicates on the packet time
+coordinate (a non-dimension coordinate on `PACKET`) are dropped but never value-checked.
+`_drop_duplicates` and `_validate_duplicate_values` return a `DuplicateReport`
+(`n_duplicates`, `n_value_mismatches`, `mismatched_variables`); pass `strict=True` where a
+mismatch must raise `ValueError` instead.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing

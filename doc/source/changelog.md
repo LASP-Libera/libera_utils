@@ -12,6 +12,7 @@
 - FIX: `LiberaDataProductDefinition.generate_data_product_filename` takes the min and max of the time variable rather than its first and last values, so a granule's stamped range cannot invert or shift when the axis is not time-ordered.
 - FIX: `nom_hk_trim` checks acquisition order rather than packet-time order. It raised on any non-monotonic `PACKET_ICIE_TIME`, which one day of NOM-HK trips ~1330 times. It now raises only on a sequence-counter step too large to be lost packets, which is what would actually make its positional run slices meaningless.
 - FEAT: `assert_data_times_unique_monotonic` takes `require_monotonic`. Pass False for a packet-time axis; sample and camera axes are still sorted and keep the default.
+- BREAKING: A duplicate timestamp whose rows carry different data is dropped and logged (`duplicate_coordinate_values_differed`) rather than raising, in both ground and flight mode; `_drop_duplicates` and `_validate_duplicate_values` take `strict=True` to restore raising, and return a `DuplicateReport` instead of a bare count. Identity, not the ground/flight distinction, is what makes a duplicate safe to drop, and raising does not recover the discarded measurement. `parse_packets_to_l1a_dataset`'s `ground_data` no longer changes what is dropped.
 - DOCS: Document shared flight/ground daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → uniqueness assert).
 
 ## 5.11.0
