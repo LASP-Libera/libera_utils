@@ -18,6 +18,7 @@
 - FIX: `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping all L0 files in one event. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
 - FIX: `scan_ground_ccsds_file` raises `OSError`, `MemoryError`, `BotoCoreError` and `ClientError` (`ENVIRONMENT_ERRORS`) instead of returning `None`, which it keeps for a file that cannot yield a span. A full disk or an S3 throttle no longer reports a readable file as permanently unparsable.
 - FIX: `parse_packets_to_dataset` parses files one at a time onto a preallocated packet axis instead of passing them to `create_dataset` together, which cost ~800 MiB per two-hour NOM-HK file and ran a full day out of memory. It accepts a loaded `XtcePacketDefinition`, skips a file with no packets of the APID, and raises `ValueError` when files parse to different variable sets.
+- FEAT: `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset` take `max_workers` (default 1) to parse files concurrently in worker processes, keeping the packet axis in the order given. A worker that dies without reporting raises `RuntimeError` with its exit code.
 - DOCS: Document shared flight/ground daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → uniqueness assert).
 
 ## 5.11.0
