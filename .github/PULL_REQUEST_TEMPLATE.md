@@ -61,8 +61,6 @@ Authored: <agent-assisted | by hand>, opened by <handle>
 Gates: lint N · types N · tests N · reviewer rounds N · wall clock N min
 Tokens since the build started: N in · N out · N cached
 Plan: <approved by handle | skimmed by handle | none (below the plan-approval threshold)>
-Tests: N added · M reworked · D deleted · K failure-path assertions · uncovered changed lines: <none | file:line, ...>
-Helpers: N added (call sites each) · M extracted from existing code
 Rules checked: <R-ids>
 Declined: <R-id at path::symbol — one-sentence reason>
 Suggestions: <R-id at path::symbol — what was suggested>

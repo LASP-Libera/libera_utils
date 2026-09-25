@@ -228,7 +228,7 @@ threads; `revise-standard` applies the filter and holds a single-author rule at 
   that person moves on. Name two.
 - **The first ratchet slot.** A calendar trigger with no named person and no recurring slot
   is the failure mode this pattern is most prone to in practice.
-- **Where a review record is committed.** `pr-record` writes `standards/log/pr-NNNN.yaml`
+- **Where a review record is committed.** `pr-findings` writes `standards/log/pr-NNNN.yaml`
   and a person commits it: the merging reviewer on the pull request's branch before merge,
   or the author on `main` after. Until this is settled, a record left uncommitted is caught
   by the ratchet's missing-record count.

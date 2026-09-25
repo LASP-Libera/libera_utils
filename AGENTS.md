@@ -40,7 +40,7 @@ will read it.
 The skills come from the `libera-tools` Claude Code plugin in `libera_llm_tooling`;
 `standards/SHARED.md` says how to install it. `ticket-context` places the ticket,
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
-`pr-findings` reviews it against this standard, `pr-record` writes the record from the replies,
+`pr-findings` reviews it against this standard and, once people reply, writes the record,
 and `revise-standard` runs the monthly revision. None of them merges or edits a standard, and
 nothing is posted without a person's yes. Everything an agent produces is a proposal.
 
@@ -64,12 +64,10 @@ Any agent that plans, builds or reviews a change here, including `implementation
   would weaken an existing test (a loosened tolerance or assertion, a removed `pytest.raises`,
   a new skip or xfail, a dropped parametrize case), a fix would change the agreed plan, a
   pre-existing failure blocks a check, or a check cannot run at all.
-- At the end of a build, reports how the review loop ended, for the pull request body's
-  `Build-exit:` line: SATISFIED is `clean`; five rounds without it is `capped`; the same
-  finding surviving two fixes is `flapping`; a pre-existing failure or a check that cannot run
-  is `blocked`; a weakened test, or a finding that would change the agreed plan, is `halted`.
-- Fills the body's "already checked" section, taking the counts from
-  `.review/build/already-checked.md` where the build hooks wrote it, and writes the opening in
+- Leaves the `Build-exit:` line and the "already checked" section to the plugin:
+  `implement-change` records how the build ended in `.review/build/outcome.md`, mapped as
+  `.github/PULL_REQUEST_TEMPLATE.md` defines, and `pr-create` copies it and the build hooks'
+  counts into the body. A body written by hand follows the template the same way, and opens in
   the order of the shared `templates/brief.md`.
 
 If you are an AI agent opening a pull request here, say so in the body's `Authored:` line.

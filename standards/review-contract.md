@@ -176,7 +176,7 @@ build, not by a reviewer:
 
 - one comment on the pull request, carrying every finding, headed so a reader knows a
   machine wrote it and a machine will read the replies
-- `standards/log/pr-NNNN.yaml`, written by `pr-record` from the replies in that thread —
+- `standards/log/pr-NNNN.yaml`, written by `pr-findings` from the replies in that thread —
   never from anything the reviewer decided on its own — and committed by a person, never the
   agent
 

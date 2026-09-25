@@ -1,7 +1,7 @@
 # Log
 
 One record per reviewed pull request, `pr-NNNN.yaml`, at most 140 lines, written by the
-`pr-record` skill from the verdicts people gave the `pr-findings` comment — not typed by hand.
+`pr-findings` skill from the verdicts people gave its comment — not typed by hand.
 One report per ratchet, `ratchet-YYYY-MM.md`.
 
 This directory is the ratchet's entire input, and the only mandatory artifact of a review. If
@@ -17,7 +17,7 @@ decline), and the questions with their answers. A finding's `key` is the full fi
 `review-contract.md` defines, such as `R-012/pyproject.toml::version`, and `at:` holds the
 line. `pr-0066.yaml` predates the full key and carries the citation alone.
 
-`pr-record` writes a record and never commits it; a person does. A commit that changes
+`pr-findings` writes a record and never commits it; a person does. A commit that changes
 nothing outside this directory does not count as a new head, so committing a record does not
 trigger a delta review. Which branch a record is committed to is not yet settled
 (`standards/README.md`).
@@ -31,21 +31,11 @@ A finding two reviewers answered differently carries `contested: true` alongside
 the author settled on, and both original lines. The ratchet counts those per rule: a rule
 people keep disagreeing about is usually one whose do-not-flag sentence is wrong.
 
-Four more fields, parsed from the PR body's "already checked" section. The first two come
-from the `Tests:` and `Helpers:` lines and let the ratchet see whether changes are being
-reworked or padded;
-the last two say who wrote the change and how often review sent it back:
+Three more fields, parsed from the PR body's "already checked" section, say who wrote the
+change and how often review sent it back. `pr-0066.yaml` also carries `tests:` and `helpers:`
+counts, from a build step that no longer runs; nothing reads them.
 
 ```yaml
-tests:
-  added: 2
-  reworked: 5 # modified: the same test name on both sides of the diff
-  deleted: 1
-  failure_path_assertions: 3
-  uncovered_changed_lines: [] # file:line, empty is the healthy case
-helpers:
-  added: 1 # each with its call-site count
-  extracted: 2
 authored: agent-assisted # agent-assisted | by hand
 author: mmaclay # the handle that opened the pull request
 rework_rounds:
@@ -58,8 +48,8 @@ rework_rounds:
 
 `rework_rounds` is empty on a pull request that merged on its first review, which is the
 healthy case. A record is updated, never duplicated, when the branch moves: the next
-`pr-record` run after a delta review moves `head` to the new commit, re-parses the gate and
-test fields from the PR body, and appends the round. A record whose `head` is behind the
+`pr-findings` run after a delta review moves `head` to the new commit, re-parses the gate
+fields from the PR body, and appends the round. A record whose `head` is behind the
 branch at merge is missing whatever happened after it. A finding key that appears there
 repeatedly is the strongest graduation evidence the ratchet gets: the build's reviewer passed,
 a person still had to ask.
