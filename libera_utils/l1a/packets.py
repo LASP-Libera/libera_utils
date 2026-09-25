@@ -11,8 +11,8 @@ import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath
 from space_packet_parser import load_xtce
-from space_packet_parser.generators.ccsds import CCSDSPacketBytes
 from space_packet_parser.xarr import create_dataset
+from space_packet_parser.xtce.definitions import XtcePacketDefinition
 
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
@@ -108,19 +108,140 @@ def drop_implausible_telemetry_times(times_us: np.ndarray, *, context: str) -> n
     return filtered
 
 
+class _PacketAxisAccumulator:
+    """Concatenate packet datasets along the packet axis by filling preallocated arrays.
+
+    ``xr.concat`` allocates its result while every input is still referenced, so peak memory is
+    roughly 2.9 times the concatenated size (measured on a day of APID 1040). Copying each
+    dataset into a buffer and releasing it immediately holds the buffer plus one input instead.
+
+    Buffers start at ``capacity`` packets and grow geometrically, so a file carrying more packets
+    than the estimate costs one reallocation rather than a failure. A variable whose dtype is
+    wider in a later file (``space_packet_parser`` sizes string columns to the widest label it
+    actually saw, so a file containing ``SINGLE`` yields ``<U6`` where others yield ``<U3``)
+    widens the buffer, matching what ``xr.concat`` would have promoted it to.
+    """
+
+    def __init__(self, template: xr.Dataset, apid: int, capacity: int):
+        self._apid = apid
+        self._dims = {name: var.dims for name, var in template.data_vars.items()}
+        self._buffers = {
+            name: np.empty((capacity, *var.shape[1:]), dtype=var.dtype) for name, var in template.data_vars.items()
+        }
+        self._n = 0
+
+    @property
+    def capacity(self) -> int:
+        """Packets the buffers can hold before they must grow."""
+        return len(next(iter(self._buffers.values())))
+
+    def _reallocate(self, capacity: int, dtypes: dict[str, np.dtype]) -> None:
+        # One variable at a time: the transient is a single column, not a second full copy.
+        for name, buffer in self._buffers.items():
+            grown = np.empty((capacity, *buffer.shape[1:]), dtype=dtypes[name])
+            grown[: self._n] = buffer[: self._n]
+            self._buffers[name] = grown
+
+    def append(self, packet_file: PathLike | str, file_ds: xr.Dataset) -> None:
+        """Copy one parsed file onto the end of the packet axis.
+
+        Raises
+        ------
+        ValueError
+            If ``file_ds`` does not carry exactly the variables the accumulator was built with.
+            Concatenating datasets whose variable sets differ fills the missing side with NaN,
+            which would silently manufacture data; the XTCE is flat per APID, so a mismatch means
+            a file is not what it claims to be.
+        """
+        if set(file_ds.data_vars) != set(self._buffers):
+            raise ValueError(
+                f"Variables parsed from {packet_file} for APID {self._apid} do not match the other files: "
+                f"missing {sorted(set(self._buffers) - set(file_ds.data_vars))}, "
+                f"unexpected {sorted(set(file_ds.data_vars) - set(self._buffers))}."
+            )
+
+        n = file_ds.sizes[SDC_PACKET_DIMENSION]
+        promoted = {name: np.promote_types(buffer.dtype, file_ds[name].dtype) for name, buffer in self._buffers.items()}
+        needs_widening = any(promoted[name] != buffer.dtype for name, buffer in self._buffers.items())
+        if self._n + n > self.capacity or needs_widening:
+            self._reallocate(max(self._n + n, self.capacity * 2), promoted)
+
+        for name, buffer in self._buffers.items():
+            buffer[self._n : self._n + n] = file_ds[name].values
+        self._n += n
+
+    def to_dataset(self) -> xr.Dataset:
+        """Build the concatenated Dataset.
+
+        The returned arrays are views onto the buffers, so unused capacity stays allocated rather
+        than being copied out; the estimate is sized from the first file, which keeps that slack
+        to a few percent for same-cadence granules.
+        """
+        return xr.Dataset({name: (self._dims[name], buffer[: self._n]) for name, buffer in self._buffers.items()})
+
+
+def _parse_one_file(
+    packet_file: PathLike | str,
+    packet_definition: XtcePacketDefinition,
+    apid: int,
+    generator_kwargs: dict,
+) -> xr.Dataset | None:
+    """Parse a single file to a packet Dataset, or None when it holds no packet of ``apid``.
+
+    Raises
+    ------
+    ValueError
+        If the file yields any APID other than ``apid``.
+    """
+    dataset_dict = create_dataset(
+        packet_files=[AnyPath(packet_file)],
+        xtce_packet_definition=packet_definition,
+        generator_kwargs=generator_kwargs,
+        packet_filter=lambda packet_bytes: packet_bytes.apid == apid,
+    )
+    if not dataset_dict:
+        return None
+    if set(dataset_dict.keys()) != {apid}:
+        raise ValueError(
+            f"Expected only APID {apid} in parsed dataset, but found APIDs: {list(dataset_dict.keys())}. "
+            f"This probably means the packet filter function is not working."
+        )
+    file_ds = dataset_dict[apid]
+    # Swap standard SPP "packet" dimension to uppercase "PACKET" to align with config naming
+    if SPP_PACKET_DIMENSION in file_ds.dims:
+        file_ds = file_ds.swap_dims({SPP_PACKET_DIMENSION: SDC_PACKET_DIMENSION})
+    return file_ds
+
+
 def parse_packets_to_dataset(
-    packet_files: list[PathLike | str], packet_definition: str | PathLike, apid: int, **generator_kwargs
+    packet_files: list[PathLike | str],
+    packet_definition: str | PathLike | XtcePacketDefinition,
+    apid: int,
+    **generator_kwargs,
 ) -> xr.Dataset:
     """Parse packets from files into an xarray Dataset using specified packet definition.
 
     This function does not make any changes to the packet data other than filtering by a single APID.
 
+    Files are parsed one at a time and concatenated, rather than handed to
+    ``create_dataset`` together. ``create_dataset`` retains a Python object per parsed field
+    until it converts the whole batch to numpy, which costs roughly 800 MiB per two-hour
+    NOM-HK file; a full day of files in one batch exhausts an 8 GiB container partway through.
+    Parsing per file bounds that at one file's worth.
+
+    Parsed files are copied onto a preallocated packet axis and released one at a time, rather
+    than held and handed to ``xr.concat``, which allocates its result while every input is still
+    referenced.
+
+    A file holding no packets of ``apid`` is skipped with a warning.
+
     Parameters
     ----------
     packet_files : list[PathLike | str]
         List of filepaths to packet files.
-    packet_definition : str | PathLike
-        Path to the XTCE packet definition file.
+    packet_definition : str | PathLike | XtcePacketDefinition
+        Path to the XTCE packet definition file, or an already loaded definition. Pass a loaded
+        definition to avoid re-parsing the XTCE once per file.
     apid : int
         Application Process Identifier to filter for.
     **generator_kwargs
@@ -129,32 +250,57 @@ def parse_packets_to_dataset(
     Returns
     -------
     xr.Dataset
-        xarray Dataset containing parsed packet data.
+        xarray Dataset containing parsed packet data, with files concatenated in the order
+        given.
+
+    Raises
+    ------
+    ValueError
+        If no file holds any packet of ``apid``, if a file yields an APID other than ``apid``,
+        or if the files do not all carry the same set of variables.
     """
     logger.info("Parsing packets (APID %d) from %d file(s)", apid, len(packet_files))
 
-    def _packet_filter(packet_bytes: CCSDSPacketBytes) -> bool:
-        return packet_bytes.apid == apid
-
-    # Parse packets using space_packet_parser
-    dataset_dict = create_dataset(
-        packet_files=[AnyPath(f) for f in packet_files],
-        xtce_packet_definition=packet_definition,
-        generator_kwargs=generator_kwargs,
-        packet_filter=_packet_filter,
+    if not isinstance(packet_definition, XtcePacketDefinition):
+        packet_definition = load_xtce(packet_definition)
+    parsed_files = (
+        (packet_file, _parse_one_file(packet_file, packet_definition, apid, generator_kwargs))
+        for packet_file in packet_files
     )
 
-    if set(dataset_dict.keys()) != {apid}:
-        raise ValueError(
-            f"Expected only APID {apid} in parsed dataset, but found APIDs: {list(dataset_dict.keys())}. "
-            f"This probably means the packet filter function is not working."
-        )
+    # The first contributing file is held whole until a second one arrives: a single-file parse
+    # then returns it untouched, with no buffer allocated and nothing copied.
+    first: tuple[PathLike | str, xr.Dataset] | None = None
+    accumulator: _PacketAxisAccumulator | None = None
 
-    # Swap standard SPP "packet" dimension to uppercase "PACKET" to align with config naming
-    if SPP_PACKET_DIMENSION in dataset_dict[apid].dims:
-        dataset_dict[apid] = dataset_dict[apid].swap_dims({SPP_PACKET_DIMENSION: SDC_PACKET_DIMENSION})
+    for packet_file, file_ds in parsed_files:
+        if file_ds is None:
+            logger.warning("No APID %d packets in %s; excluded from the parsed dataset.", apid, packet_file)
+            continue
 
-    return dataset_dict[apid]
+        if first is None and accumulator is None:
+            first = (packet_file, file_ds)
+            continue
+
+        if accumulator is None:
+            first_file, first_ds = first
+            accumulator = _PacketAxisAccumulator(
+                first_ds, apid, capacity=first_ds.sizes[SDC_PACKET_DIMENSION] * len(packet_files)
+            )
+            accumulator.append(first_file, first_ds)
+            # Release the first file before the next one is copied in, so the peak is the buffer
+            # plus a single file rather than the buffer plus every file parsed so far.
+            first = None
+            del first_ds
+
+        accumulator.append(packet_file, file_ds)
+        del file_ds
+
+    if accumulator is not None:
+        return accumulator.to_dataset()
+    if first is not None:
+        return first[1]
+    raise ValueError(f"No APID {apid} packets found in any of the {len(packet_files)} file(s) given.")
 
 
 def parse_packets_to_l1a_dataset(
@@ -210,21 +356,28 @@ def parse_packets_to_l1a_dataset(
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
     if skip_header_bytes is None:
         skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
+    # A single file is parsed from the path, which loads the XTCE exactly once anyway. Several
+    # files share one loaded definition, so ordering and parsing do not each re-read the XML.
+    packet_definition: str | PathLike | XtcePacketDefinition = packet_definition_path
     if len(_packet_files) > 1:
+        packet_definition = load_xtce(packet_definition_path)
         # Byte order within a file is acquisition order, but file order is whatever the caller
         # supplied, so the files have to be placed in time before their packets are concatenated.
         _packet_files = cast(
             list[filenaming.PathType],
             order_packet_files(
                 _packet_files,
-                load_xtce(packet_definition_path),
+                packet_definition,
                 apid,
                 skip_header_bytes=skip_header_bytes,
                 multipart_kwargs=packet_config.packet_time_fields.multipart_kwargs,
             ),
         )
     packet_ds = parse_packets_to_dataset(
-        _packet_files, packet_definition_path, apid, skip_header_bytes=skip_header_bytes
+        _packet_files,
+        packet_definition,
+        apid,
+        skip_header_bytes=skip_header_bytes,
     )
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)
     packet_times_us = packet_times_dt64.values.astype(DATETIME_USEC_DTYPE)

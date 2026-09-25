@@ -553,6 +553,24 @@ icie_nom_hk:
   packet_time_source: "ICIE"
 ```
 
+## Parsing many files
+
+`parse_packets_to_dataset` hands `create_dataset` one file at a time. `create_dataset` keeps a
+Python object per parsed field until it converts the batch to numpy, about 800 MiB per two-hour
+NOM-HK file, so passing a day of files in one batch exhausts an 8 GiB container. Each parsed file
+is copied onto a preallocated packet axis and released before the next one is parsed. `xr.concat`
+would instead peak at about 2.9× its output, because it allocates the result while every input is
+still referenced. The packet axis keeps the order of the files given.
+
+- `packet_definition` may be an XTCE path or a loaded `XtcePacketDefinition`.
+  `parse_packets_to_l1a_dataset` loads the XTCE once for a multi-file call and reuses it for file
+  ordering and parsing.
+- A file with no packets of the APID is skipped with a warning. `ValueError` is raised when no
+  file has any, or when files parse to different sets of variables (concatenating them would
+  fill the gaps with NaN).
+- A string column that is wider in a later file (a file containing `SINGLE` parses to `<U6`
+  where the others give `<U3`) is widened rather than truncated.
+
 ## L1A Product Structure
 
 This varies by packet but there is some consistent behavior:

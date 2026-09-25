@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `nom_hk_trim` checks acquisition order rather than packet-time order. It raised on any non-monotonic `PACKET_ICIE_TIME`, which one day of NOM-HK trips ~1330 times. It now raises only on a sequence-counter step too large to be lost packets, which is what would actually make its positional run slices meaningless.
 - `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping all L0 files in one event. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
 - `scan_ground_ccsds_file` raises `OSError`, `MemoryError`, `BotoCoreError` and `ClientError` (`ENVIRONMENT_ERRORS`) instead of returning `None`, which it keeps for a file that cannot yield a span. A full disk or an S3 throttle no longer reports a readable file as permanently unparsable.
+- `parse_packets_to_dataset` parses files one at a time onto a preallocated packet axis instead of passing them to `create_dataset` together, which cost ~800 MiB per two-hour NOM-HK file and ran a full day out of memory. It accepts a loaded `XtcePacketDefinition`, skips a file with no packets of the APID, and raises `ValueError` when files parse to different variable sets.
 
 ## [5.11.3] - 2026-10-09
 
