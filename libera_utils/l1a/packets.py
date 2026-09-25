@@ -9,6 +9,7 @@ from typing import cast
 import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath
+from space_packet_parser import load_xtce
 from space_packet_parser.generators.ccsds import CCSDSPacketBytes
 from space_packet_parser.xarr import create_dataset
 
@@ -22,6 +23,10 @@ from libera_utils.l1a.l1a_packet_configs import (
     TimeFieldMapping,
     get_packet_config,
 )
+from libera_utils.l1a.packet_ordering import (
+    check_packet_acquisition_order,
+    order_packet_files,
+)
 from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
@@ -32,7 +37,6 @@ logger = logging.getLogger(__name__)
 # This is a constant and is not expected to change in SPP
 SDC_PACKET_DIMENSION = "PACKET"
 SPP_PACKET_DIMENSION = "packet"  # The original dimension name from SPP before we swap it to uppercase
-SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variable in the dataset
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
@@ -202,6 +206,19 @@ def parse_packets_to_l1a_dataset(
     packet_definition_path = str(config.get(packet_config.packet_definition_config_key))
     if skip_header_bytes is None:
         skip_header_bytes = config.get("SKIP_PACKET_HEADER_BYTES")
+    if len(_packet_files) > 1:
+        # Byte order within a file is acquisition order, but file order is whatever the caller
+        # supplied, so the files have to be placed in time before their packets are concatenated.
+        _packet_files = cast(
+            list[filenaming.PathType],
+            order_packet_files(
+                _packet_files,
+                load_xtce(packet_definition_path),
+                apid,
+                skip_header_bytes=skip_header_bytes,
+                multipart_kwargs=packet_config.packet_time_fields.multipart_kwargs,
+            ),
+        )
     packet_ds = parse_packets_to_dataset(
         _packet_files, packet_definition_path, apid, skip_header_bytes=skip_header_bytes
     )
@@ -217,11 +234,19 @@ def parse_packets_to_l1a_dataset(
     # This drops full duplicate packets based on identical packet timestamps
     packet_ds, _ = _drop_duplicates(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
 
-    # Sort the packet axis into its final order before samples are expanded; the
+    # The packet axis is already in acquisition order: files were placed in time above and byte
+    # order within a file is acquisition order. Do not sort it on packet time. The secondary
+    # header time steps backward on ~0.2-1.4% of packets while SRC_SEQ_CTR marches on
+    # (LIBSDC-830), so a time sort permutes packets away from the order they were taken in,
+    # which breaks the contiguous-run assumption WFOV image stitching depends on. The
     # "{sample_group}_packet_index" variables built below enumerate this axis positionally.
-    # TODO[LIBSDC-830]: cross-check packet ordering against SRC_SEQ_CTR rather than relying on
-    # packet time alone, and reconcile packet_index with that ordering.
-    packet_ds = packet_ds.sortby(packet_time_coordinate)
+    packet_ds, _ = check_packet_acquisition_order(
+        packet_ds,
+        packet_time_coordinate,
+        packet_dimension=SDC_PACKET_DIMENSION,
+        ground_data=ground_data,
+        verbose=verbose,
+    )
     packet_times_us = packet_ds[packet_time_coordinate].values
 
     # Start building the dataset containing expanded sample fields
@@ -337,6 +362,8 @@ def parse_packets_to_l1a_dataset(
         "algorithm_version": version(),
         "date_created": datetime.now(tz=UTC).isoformat(),
     }
+    # Recorded in acquisition order, which is the order the packets were concatenated in and so
+    # may differ from the order the caller passed.
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)
 
