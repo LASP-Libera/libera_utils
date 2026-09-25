@@ -467,16 +467,16 @@ def push_image_to_ecr(
     processing_step_id : Union[str, ProcessingStepIdentifier]
         Processing step ID string or object used to determine ECR repository name.
         L0 processing step IDs are not supported as they have no associated ECR.
-    ecr_image_tags : Optional[List[str]], default None
+    ecr_image_tags : list[str] | None, optional
         Tags to apply to the pushed image in ECR (e.g., ["1.3.4", "latest"]).
-        If None, defaults to ["latest"].
+        If None (the default), defaults to ["latest"].
     region_name : str, optional
         AWS region containing the target ECR registry. If None (the default), the region is taken from the
         session's AWS configuration (profile / AWS_REGION), so it is not hard-coded.
-    ignore_docker_config : bool, default False
-        If True, creates a temporary Docker config to prevent using stored credentials
-    max_retries : int, default 3
-        Maximum number of retry attempts for failed push operations
+    ignore_docker_config : bool, optional
+        If True, creates a temporary Docker config to prevent using stored credentials. Defaults to False.
+    max_retries : int, optional
+        Maximum number of retry attempts for failed push operations. Defaults to 3.
     boto_session : boto3.Session, optional
         Boto3 session used for ECR operations (already role-assumed if needed). If None, a default session is created
         (so callers that don't need role assumption, e.g. libera_cdk integration tests, can omit it).

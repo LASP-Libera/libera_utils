@@ -138,4 +138,4 @@ class _ConfigurationCache:
 
 
 config = _ConfigurationCache()
-"""Singleton (one per process) accessor for :meth:`libera_utils.config._ConfigurationCache`"""
+"""Singleton (one per process) accessor for ``_ConfigurationCache``"""

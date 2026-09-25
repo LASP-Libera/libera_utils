@@ -212,7 +212,7 @@
 
 - FEAT: Add enforcement of valid versioning in Filename classes
 
-# 5.4.4
+## 5.4.4
 
 - FEAT: Allow passing dynamic product level attributes to data product writer
 

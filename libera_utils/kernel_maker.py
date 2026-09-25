@@ -479,6 +479,7 @@ def create_jpss_kernel_dataframe_from_csv(
     -------
     tuple[pd.DataFrame, tuple[datetime, datetime]]
         A tuple containing:
+
         - DataFrame with ET time columns (ADGPS_JPSS_ET and ADCFA_JPSS_ET)
           and position/velocity data fields
         - UTC time range tuple (start, end) for the data

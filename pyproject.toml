@@ -96,11 +96,17 @@ snakeviz = "*"  # Visualization for time profiling
 
 [tool.poetry.group.docgen.dependencies]
 # These are listed as a group rather than an extra because no end user will need them
-# The specs are totally open because no user will need them
-myst-parser = "*"  # Parses markdown for sphinx
-numpydoc = "*"  # Parses Numpy style docstrings
-pydata-sphinx-theme = "*"
-sphinx = "*"
+# The specs are otherwise open because no user will need them
+# The whole group is marked >=3.12 to go with the Sphinx floor below: everything here pulls in
+# Sphinx, so leaving the rest unmarked would just make Poetry resolve 9.0.4 for a 3.11 interpreter.
+# Docs are only ever built on the RTD builder, which .readthedocs.yaml keeps at 3.13.
+myst-parser = { version = "*", python = ">=3.12,<4" }  # Parses markdown for sphinx
+numpydoc = { version = "*", python = ">=3.12,<4" }  # Parses Numpy style docstrings
+pydata-sphinx-theme = { version = "*", python = ">=3.12,<4" }
+# A floor, not a pin. Sphinx 9.0.4, the newest release that supports Python 3.11, renders pydantic
+# Annotated[...] metadata and the stdlib int.from_bytes/to_bytes docstrings our IntEnums inherit as
+# warnings, and the RTD build sets fail_on_warning.
+sphinx = { version = ">=9.1", python = ">=3.12,<4" }
 
 [tool.pytest.ini_options]
 markers = [

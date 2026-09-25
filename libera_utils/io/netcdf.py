@@ -56,7 +56,7 @@ def write_libera_data_product(
     ----------
     data_product_definition : str | PathType | LiberaDataProductDefinition
         Path to the data product definition against which to verify conformance
-    data : dict[str, NDarray] | xr.Dataset
+    data : dict[str, np.ndarray] | xr.Dataset
         Data mapping variable names to numpy data arrays or a fully formed L1A xarray Dataset.
     output_path : str | PathType
         Base path (directory or S3 prefix) at which to write the product file

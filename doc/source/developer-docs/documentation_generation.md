@@ -38,7 +38,7 @@ If you have need to translate between rst and markdown, use [`pandoc`](https://p
 ## Building HTML Documentation Locally
 
 This should all be done while in the virtual environment that is configured for this project.
-See the [dev environment setup documentation](dev-environment-setup.md) for poetry instructions.
+See the [dev environment setup documentation](dev_environment_setup.md) for poetry instructions.
 
 1. Run `poetry update --with docgen`
    - This ensures that the poetry install is up-to-date, including the "docgen" dependency group.
