@@ -2,6 +2,7 @@
 
 from datetime import UTC, date, datetime, timedelta
 
+import numpy as np
 import pytest
 
 from libera_utils.constants import LiberaApid
@@ -12,6 +13,7 @@ from libera_utils.l1a.day_coverage import (
     DayCoveragePolicy,
     coverage_policy_for_apid,
     evaluate_day_coverage,
+    measure_time_axis_coverage,
 )
 
 # Stands in for the continuous APIDs in the tests below that are about the coverage arithmetic
@@ -298,3 +300,50 @@ def test_policy_lookup_accepts_int_and_rejects_unknown():
 def test_malformed_policies_rejected(kwargs):
     with pytest.raises(ValueError, match="policy|must be in"):
         DayCoveragePolicy(**kwargs)
+
+
+def _axis(start: str, stop: str, step_s: int) -> np.ndarray:
+    return np.arange(
+        np.datetime64(start, "us"),
+        np.datetime64(stop, "us"),
+        np.timedelta64(step_s * 1_000_000, "us"),
+    )
+
+
+def test_measure_full_day_axis():
+    coverage = measure_time_axis_coverage(_axis("2026-07-12T00:00:00", "2026-07-13T00:00:00", 5), day=date(2026, 7, 12))
+    assert coverage.day_frac == 1.0
+    assert coverage.median_cadence == timedelta(seconds=5)
+    assert coverage.max_gap == timedelta(seconds=5)
+    assert coverage.n_times == 17280
+
+
+def test_measure_sees_a_gap_inside_the_axis():
+    """The whole point of measuring the axis: a gap a file-span gate cannot see."""
+    axis = _axis("2026-07-12T00:00:00", "2026-07-13T00:00:00", 5)
+    without_two_hours = np.concatenate([axis[:1440], axis[2880:]])
+    coverage = measure_time_axis_coverage(without_two_hours, day=date(2026, 7, 12))
+    assert coverage.day_frac == pytest.approx(1 - 2 / 24, abs=1e-4)
+    # The spacing across the hole is the two missing hours plus the one cadence that bridges it.
+    assert coverage.max_gap == timedelta(hours=2, seconds=5)
+    # The same data as whole-file spans reads as a covered day, because the gap is inside a file.
+    spans = [(axis[0].astype(datetime), axis[-1].astype(datetime))]
+    assert evaluate_day_coverage(spans, day=date(2026, 7, 12), policy=DENSE).day_frac == pytest.approx(1.0, abs=1e-4)
+
+
+def test_measure_wfov_cadence_is_not_read_as_gaps():
+    """A 5 s camera cadence is the signal, not a dropout; only the outlier gap counts."""
+    axis = _axis("2026-07-12T01:43:30", "2026-07-12T03:05:19", 5)
+    with_outage = np.concatenate([axis[:300], axis[300:] + np.timedelta64(120, "s")])
+    coverage = measure_time_axis_coverage(with_outage, day=date(2026, 7, 12))
+    assert coverage.median_cadence == timedelta(seconds=5)
+    assert coverage.max_gap == timedelta(seconds=125)
+    # Only the single outage is lost, not every inter-sample space.
+    occupied = timedelta(seconds=5) * coverage.n_times
+    assert coverage.day_frac == pytest.approx(occupied.total_seconds() / 86400, abs=1e-4)
+
+
+def test_measure_empty_axis():
+    coverage = measure_time_axis_coverage(np.array([], dtype="datetime64[us]"), day=date(2026, 7, 12))
+    assert coverage.day_frac == 0.0
+    assert coverage.n_times == 0
