@@ -611,6 +611,29 @@ coordinate (a non-dimension coordinate on `PACKET`) are dropped but never value-
 (`n_duplicates`, `n_value_mismatches`, `mismatched_variables`); pass `strict=True` where a
 mismatch must raise `ValueError` instead.
 
+### Data quality counters
+
+Every L1A product carries the same quality global attributes, zeros included, so a quality
+question is a trend over granules rather than a search for exception reports:
+
+`QualityFlag` (`NOMINAL`/`DEGRADED`/`SUSPECT`), `PacketTimeInversionCount`,
+`PacketsOutOfTimeOrderCount`, `MaxPacketTimeInversionMicroseconds`, `DuplicatePacketTimeCount`,
+`DuplicateSampleTimeCount`, `DuplicateValueMismatchCount`, `MissingPacketCount`,
+`MaxSampleGapMicroseconds`, `SequenceResetCount`.
+
+The names are `libera_utils.l1a.quality.QUALITY_GLOBAL_ATTRIBUTES`, and every L1A product
+definition declares them. `QualityFlag` is the worst level any counter reaches under
+`QualityThresholds`, where counts are taken as fractions of the granule's own packet or sample
+count. A single `DuplicateValueMismatchCount` makes a granule `DEGRADED`, and an acquisition
+order that `SRC_SEQ_CTR` does not corroborate makes it `SUSPECT`. The time-inversion thresholds
+sit well above the measured DITL2 rates, so a routine granule stays `NOMINAL`.
+
+`DuplicateValueMismatchCount` is the one to watch: it counts duplicate timestamps whose rows
+carried **different** data, so dropping one of each pair discarded a distinct measurement rather
+than redundancy (see "Duplicate timestamps" above). It is a lower bound, since duplicates on the
+packet time coordinate are counted in `DuplicatePacketTimeCount` but never value-checked. In
+DITL2 this is ~10,200 per affected RAD granule and zero on an unaffected one.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing
