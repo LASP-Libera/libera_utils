@@ -31,14 +31,15 @@ name (R-014).
 
 ## Working a change
 
-A ticket first, in the shape of `.github/ISSUE_TEMPLATE/change.yml` or the Jira description
-block: outcome, why, acceptance criteria, non-goals, constraints, open questions, complexity.
+A ticket first, in the team's format, as `.github/ISSUE_TEMPLATE/change.yml` or a LIBSDC
+description: context, driving requirements, technical requirements, acceptance criteria, out of
+scope, considerations.
 Then a plan, approved before code. Then the change, verified by a review loop. Then a pull
 request body in the shape of `.github/PULL_REQUEST_TEMPLATE.md`, written for the person who
 will read it.
 
 The skills come from the `libera-tools` Claude Code plugin in `libera_llm_tooling`;
-`standards/SHARED.md` says how to install it. `ticket-context` places the ticket,
+`standards/SHARED.md` says how to install it. `ticket-draft` writes and places the ticket,
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
 `pr-findings` reviews it against this standard and, once people reply, writes the record,
 and `revise-standard` runs the monthly revision. None of them merges or edits a standard, and

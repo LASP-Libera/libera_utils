@@ -1,4 +1,4 @@
-Closes #NNN · LIBSDC-NNNN · Outcome: <the ticket's outcome line>
+Closes #NNN · LIBSDC-NNNN · Driving requirement: <the ticket's, in one line>
 
 Build-exit: <clean | capped | flapping | blocked | halted>
 

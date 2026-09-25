@@ -14,7 +14,7 @@ live in `libera_llm_tooling/standards/`:
 Two separate things, installed two different ways.
 
 The **procedure** is the private `libera-tools` Claude Code plugin: the skills and agents
-that plan, build and review, the standards skills (`draft-standard`, `ticket-context`,
+that plan, build and review, the standards skills (`draft-standard`, `ticket-draft`,
 `pr-findings`, `revise-standard`) and the build hooks. Once per machine,
 covering every repository you open, from a clone of `libera_llm_tooling` beside this
 repository:

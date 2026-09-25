@@ -12,21 +12,32 @@ body:
         planned work. Leave blank for work that starts here; the plan step will ask.
     validations: { required: false }
 
-  - type: input
-    id: outcome
-    attributes:
-      label: Outcome
-      description: One sentence. What is true after this change that is not true now.
-    validations: { required: true }
-
   - type: textarea
-    id: why
+    id: context
     attributes:
-      label: Why
+      label: Context
       description: >
         Top-down. First, which function of this repository the problem stops or degrades;
         then the specific failure, request, or science reason. Link the data or the source.
     validations: { required: true }
+
+  - type: textarea
+    id: driving
+    attributes:
+      label: Driving requirements
+      description: >
+        What the work must accomplish: the point of the ticket, in a couple of sentences or
+        bullets.
+    validations: { required: true }
+
+  - type: textarea
+    id: technical
+    attributes:
+      label: Technical requirements
+      description: >
+        Lower-level requirements. Optional up front; they can be settled during estimation.
+        Requirements, not an implementation plan.
+    validations: { required: false }
 
   - type: textarea
     id: criteria
@@ -41,41 +52,22 @@ body:
     validations: { required: true }
 
   - type: textarea
-    id: non_goals
+    id: out_of_scope
     attributes:
-      label: Non-goals
+      label: Out of scope
       description: >
         What this change does not do, even if it is adjacent and tempting. Leave blank only
-        if nothing adjacent is tempting; the ratchet counts how often it is blank, which is
-        how the field earns or loses its place.
+        if nothing adjacent is tempting; the monthly revision counts how often it is blank,
+        which is how the field earns or loses its place.
     validations: { required: false }
 
   - type: textarea
-    id: constraints
+    id: considerations
     attributes:
-      label: Constraints
+      label: Considerations
       description: >
-        Interfaces that must not change, performance bounds, dependencies not allowed,
-        rule IDs (R-) and decisions (D-) that apply, shared standards/context/ entries
-        that apply (standards/SHARED.md says where they live),
-        the epic this belongs to. Name the downstream repositories a change here reaches.
+        Areas of code the work is likely to touch and potential gotchas; interfaces that must
+        not change; rule IDs (R-) and decisions (D-) that apply, and shared standards/context/
+        entries (standards/SHARED.md says where they live); the epic; the downstream
+        repositories a change here reaches; open questions.
     validations: { required: false }
-
-  - type: textarea
-    id: questions
-    attributes:
-      label: Open questions
-      description: >
-        What you do not know yet. The plan step answers what the code can answer and asks
-        you the rest.
-    validations: { required: false }
-
-  - type: dropdown
-    id: complexity
-    attributes:
-      label: Complexity
-      description:
-        The Fibonacci estimate we already put on tickets. 8 or above means split before
-        starting; 5 or above gets group design time and a second reader on the plan.
-      options: ["1", "2", "3", "5", "8", "13"]
-    validations: { required: true }
