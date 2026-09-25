@@ -81,7 +81,7 @@ def assert_data_times_unique_monotonic(
     *,
     ground_data: bool = False,
 ) -> None:
-    """Assert that ``time_coord`` values are unique and non-decreasing.
+    """Assert that ``time_coord`` values are unique, and optionally non-decreasing.
 
     Parameters
     ----------

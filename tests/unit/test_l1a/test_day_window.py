@@ -1,5 +1,6 @@
 """Unit tests for L1A day-window trim and uniqueness checks."""
 
+import warnings
 from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
@@ -227,3 +228,23 @@ def test_uniqueness_ground_data_warns_on_out_of_order():
     ds = _packet_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
     with pytest.warns(UserWarning, match="monotonic"):
         assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME", ground_data=True)
+
+
+def test_out_of_order_allowed_without_require_monotonic():
+    ds = _packet_dataset(
+        [
+            datetime(2028, 2, 15, 2, 0, tzinfo=UTC),
+            datetime(2028, 2, 15, 1, 0, tzinfo=UTC),
+        ]
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME", require_monotonic=False)
+        assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME", ground_data=True, require_monotonic=False)
+
+
+def test_duplicate_still_raises_without_require_monotonic():
+    t = datetime(2028, 2, 15, 1, 0, tzinfo=UTC)
+    ds = _packet_dataset([t, datetime(2028, 2, 15, 0, 0, tzinfo=UTC), t])
+    with pytest.raises(DataTimeUniquenessError, match="not unique"):
+        assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME", require_monotonic=False)

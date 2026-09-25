@@ -25,6 +25,7 @@ from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
+from libera_utils.l1a.packet_ordering import check_packet_acquisition_order
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
 from libera_utils.obsids import TRIM_FAMILIES, NomHkObsidSource, ObsIdSpec, iter_trim_eligible
 from libera_utils.version import version as libera_utils_version
@@ -65,13 +66,18 @@ def get_trimmed_nom_hk_product_definition(
     return base.model_copy(update={"attributes": updated_attrs})
 
 
-def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
-    """Verify the ``PACKET`` axis is in non-decreasing packet-time order.
+def _check_packet_acquisition_order(nom_hk: xr.Dataset) -> None:
+    """Verify the ``PACKET`` axis is in acquisition order, cross-checked against ``SRC_SEQ_CTR``.
 
-    Decoded L1A products are written packet-time sorted, so this is a guard, not a fixup; the
-    positional run indices from :func:`find_obsid_runs` are only meaningful against a
-    time-ordered packet axis. If ``PACKET_ICIE_TIME`` is absent the check is skipped with a
-    warning and the packet axis is trusted as-is.
+    What :func:`find_obsid_runs` needs is that positional run slices are meaningful, which
+    acquisition order gives and packet-time order does not: NOM-HK packet times step backward on
+    ~0.5% of packets while the sequence counter marches on (LIBSDC-830), so a time-sorted axis
+    interleaves packets from different ObsID runs. A run of decoded L1A therefore reports
+    inversions as a matter of course, and they are logged rather than raised.
+
+    An axis whose sequence-counter steps cannot be explained as lost packets is a different
+    matter: run slices cut from it would not correspond to contiguous acquisition, so that
+    raises. If ``PACKET_ICIE_TIME`` is absent the check is skipped with a warning.
 
     Parameters
     ----------
@@ -81,20 +87,22 @@ def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
     Raises
     ------
     ValueError
-        If ``PACKET_ICIE_TIME`` is present but not monotonically non-decreasing.
+        If the sequence counter shows steps too large to be lost packets.
     """
     if DEFAULT_TIME_VARIABLE not in nom_hk:
         logger.warning(
-            "NOM-HK Dataset has no %s variable; skipping the packet-time ordering check. ObsID run "
+            "NOM-HK Dataset has no %s variable; skipping the packet ordering check. ObsID run "
             "slices will be trusted as-is.",
             DEFAULT_TIME_VARIABLE,
         )
         return
-    times = nom_hk[DEFAULT_TIME_VARIABLE].values
-    if times.size and np.any(np.diff(times) < np.timedelta64(0, "ns")):
+    _, diagnostics = check_packet_acquisition_order(nom_hk, DEFAULT_TIME_VARIABLE, packet_dimension=PACKET_DIM)
+    if diagnostics.n_order_violations:
         raise ValueError(
-            f"NOM-HK Dataset is not sorted by {DEFAULT_TIME_VARIABLE}. Decoded L1A products are "
-            f"written in packet-time order; re-decode the source product."
+            f"NOM-HK Dataset has {diagnostics.n_order_violations} sequence-counter step(s) too "
+            f"large to be lost packets, so its PACKET axis is not in corroborated acquisition "
+            f"order. ObsID run slices cut from it would not correspond to contiguous acquisition; "
+            f"re-decode the source product."
         )
 
 
@@ -129,13 +137,13 @@ def find_obsid_runs(
     Raises
     ------
     ValueError
-        If ``nom_hk`` has no ``PACKET`` dimension, or if its ``PACKET_ICIE_TIME`` variable is
-        present but not in non-decreasing order (see :func:`_check_packet_time_sorted`).
+        If ``nom_hk`` has no ``PACKET`` dimension, or if its packet axis is not in corroborated
+        acquisition order (see :func:`_check_packet_acquisition_order`).
     """
     if PACKET_DIM not in nom_hk.dims:
         raise ValueError(f"NOM-HK Dataset is missing required dimension {PACKET_DIM!r}")
 
-    _check_packet_time_sorted(nom_hk)
+    _check_packet_acquisition_order(nom_hk)
 
     runs: list[tuple[ObsIdSpec, slice]] = []
     for spec in iter_trim_eligible(source):
