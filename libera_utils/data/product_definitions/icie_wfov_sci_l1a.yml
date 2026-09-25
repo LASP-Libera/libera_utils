@@ -13,6 +13,13 @@ attributes:
   MissingPacketCount: null
   MaxSampleGapMicroseconds: null
   SequenceResetCount: null
+  CoverageMode: null
+  CoverageGateForced: null
+  L0DayCoverageFraction: null
+  L0LeftBufferCoverageFraction: null
+  L0RightBufferCoverageFraction: null
+  PacketTimeDayCoverageFraction: null
+  DataTimeDayCoverageFraction: null
   PacketCountNotUsedInImages: null
   ErrorFlaggedImageCount: null
   FooterMismatchCount: null

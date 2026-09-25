@@ -634,6 +634,25 @@ than redundancy (see "Duplicate timestamps" above). It is a lower bound, since d
 packet time coordinate are counted in `DuplicatePacketTimeCount` but never value-checked. In
 DITL2 this is ~10,200 per affected RAD granule and zero on an unaffected one.
 
+### Day coverage attributes
+
+Every L1A product also carries the coverage of its applicable day
+(`libera_utils.l1a.quality.COVERAGE_GLOBAL_ATTRIBUTES`), kept apart from the quality counters so
+that either set can be exported to CMR on its own:
+
+| Attribute                                                      | Meaning                                                                                                      |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `CoverageMode`                                                 | `continuous` or `event_driven` from the APID's `DayCoveragePolicy`; `not_gated` outside the day-combine path |
+| `CoverageGateForced`                                           | `1` when an operator request skipped the gates                                                               |
+| `L0DayCoverageFraction`, `L0Left/RightBufferCoverageFraction`  | The fractions the gate was evaluated on, from whole-file L0 spans                                            |
+| `PacketTimeDayCoverageFraction`, `DataTimeDayCoverageFraction` | `measure_time_axis_coverage` over the granule's packet and science data time axes                            |
+
+`parse_packets_to_l1a_dataset` writes `not_gated`, `0` and `NaN` placeholders, since conformance
+fails on a declared attribute the granule does not carry. The day-combine path overwrites them
+with `coverage_global_attributes(gate, forced=, packet_time_coverage=, data_time_coverage=)`.
+The L0 and measured fractions can disagree widely: whole-file spans cannot see a gap inside a
+file, and an APID's data time can run on a different clock than its packet time.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing
