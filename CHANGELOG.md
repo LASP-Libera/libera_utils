@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `parse_packets_to_l1a_dataset` drops duplicate packets by `SRC_SEQ_CTR` instead of by packet time, so a distinct packet that shares a packet time with another is kept. Packets that share a packet time but not a counter are no longer treated as duplicates. Packets that share a counter but differ raise `ValueError` unless `ground_data=True`, which keeps the first. The duplicate warning reads "Detected N duplicate SRC_SEQ_CTR packets".
 - **BREAKING:** `nom_hk_trim.find_obsid_runs` raises `ValueError` for a NOM-HK dataset without `PACKET_ICIE_TIME` or `SRC_SEQ_CTR`, instead of skipping its ordering check. A NOM-HK product written in packet-time order by 5.11.3 or earlier logs a warning; decode its L0 files again.
 - `parse_packets_to_dataset` accepts a loaded `XtcePacketDefinition` as well as a path.
+- `parse_packets_to_dataset` parses files one at a time onto a preallocated packet axis instead of passing them to `create_dataset` together, which cost ~800 MiB per two-hour NOM-HK file and ran a full day out of memory. It skips a file with no packets of the APID, and raises `ValueError` when files parse to different variable sets.
 - `manual-processing` and `step-function-trigger` take the UTC calendar date of a timezone-aware date or datetime.
 - Document daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → `check_data_times` → `measure_time_axis_coverage`).
 
