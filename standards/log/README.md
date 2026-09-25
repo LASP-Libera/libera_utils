@@ -1,7 +1,7 @@
 # Log
 
 One record per reviewed pull request, `pr-NNNN.yaml`, at most 140 lines, written by the
-`pr-findings` skill from the verdicts people gave its comment — not typed by hand.
+`pr-findings` skill from the verdicts people gave in its review threads — not typed by hand.
 One report per ratchet, `ratchet-YYYY-MM.md`.
 
 This directory is the ratchet's entire input, and the only mandatory artifact of a review. If
@@ -13,9 +13,13 @@ reviewed against, and counting it would make every early ratchet open on a false
 A record holds: the PR and ticket, the branch, the date, the `standards/` git sha the reviewer
 ran against, who adjudicated, the plan status, the build's gate counts, its tokens
 and `Build-exit`, every finding with its key, severity and verdict (with a reason for every
-decline), and the questions with their answers. A finding's `key` is the full finding key
-`review-contract.md` defines, such as `R-012/pyproject.toml::version`, and `at:` holds the
-line. `pr-0066.yaml` predates the full key and carries the citation alone.
+disagreement), and the questions with their answers. A finding's `key` is the full finding
+key `review-contract.md` defines, such as `R-012/pyproject.toml::version`, `at:` holds the
+line, and `thread:` the review thread id the verdict was read from. `verdict:` is `agree`,
+`disagree` or `discuss`, the three words people answer with, with `reason:` on every
+must-fix or should-fix `disagree`. The monthly revision counts `disagree` as a decline and
+`discuss` as an escalation. `pr-0066.yaml` predates the review threads: it carries the
+citation alone, no `thread:`, and the older `accepted` for agree.
 
 `pr-findings` writes a record and never commits it; a person does. A commit that changes
 nothing outside this directory does not count as a new head, so committing a record does not

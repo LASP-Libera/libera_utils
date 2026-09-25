@@ -24,29 +24,31 @@ plan are read before the diff.**
 
 ## Answering a finding
 
-Findings arrive as one comment on the pull request, each with an identifier. A verdict is one
-line in a reply, `<id> <verdict>`: `accept`, `decline: <reason>` or `escalate: <reason>` for a
-blocking finding; `take` or `note` for a suggestion; a one-line answer or `leave` for a
-question. Prose around the line is ignored, so argue in the same comment you answer in.
+Findings arrive as one review on the pull request, each finding its own thread. A verdict is
+the first line of a reply under that thread, starting with **Agree**, **Disagree** and a
+reason, or **Discuss**; anything after that line is free, so argue in the same reply you answer
+in. For a suggestion, Agree means taken; a question takes any answer. The verdict that counts
+is the first one from a person, bots excluded, and that includes whoever ran `pr-findings`:
+the findings are the agent's, not theirs.
 
-A decline or an escalation without its reason is not recorded. The reason is what tells the
+A must-fix or should-fix disagreement without its reason is not recorded. The reason is what tells the
 next ratchet whether the rule was wrong or the code was, and it is the only part of a record
-that cannot be reconstructed later.
-
-A finding nobody answers stays unanswered and out of the record. Silence is not assent, and
-the review says which findings it is.
+that cannot be reconstructed later. A finding
+nobody answers stays unanswered and out of the record; silence is not assent, a resolved
+thread is not a verdict, and the review says which findings it is. `Discuss` holds the
+finding open until a later Agree or Disagree in the same thread.
 
 A finding gets one verdict. Anyone may trigger the review, but only the first run against a
-given head posts — the findings comment is keyed to the commit it reviewed, so a second run is
-a no-op and nobody has to coordinate. Several reviewers then answer in that one thread, which
-is the point of putting it there. Two of them disagreeing is an escalation the author settles
-in the thread; the record stores the settled verdict, `contested: true`, and both original
-lines.
+given head posts — the review is keyed to the commit it reviewed, so a second run posts no
+findings and nobody has to coordinate. Several reviewers then answer in the same threads,
+which is the point of putting them there. A second person answering differently makes the
+finding contested; the author settles it in the thread, and the record stores the settled
+verdict, `contested: true`, and both original lines.
 
 **A merged pull request is tagged in a file, not a thread.** Calibration and backfill review
 code that already shipped, and reopening a merged pull request to comment on it would be
 noise. The findings go to `.review/calibration/pr-NNNN-findings.md` in the same shape, with
-the same closed vocabulary and the same requirement that a decline carry its reason; a person
+the same three words and the same requirement that a disagreement carry its reason; a person
 writes the verdicts into the file. The record marks it `tagged: in-file` and
 `reviewed_after_merge: true`, because a finding raised against shipped code never had the
 chance to change it — evidence that a rule fires, not that the team acted on it.
@@ -60,7 +62,7 @@ six accepts that mean one glance are worse than three that mean three.
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | must-fix   | Ranked, counted against the budget, tagged by a person. Before emitting one, read the **file** rather than the diff and quote the lines; a must-fix that cannot be anchored to lines is downgraded |
 | should-fix | Ranked, counted, tagged                                                                                                                                                                            |
-| suggestion | Below the fold, own cap of 7, recorded `taken` or `noted`, no reason needed                                                                                                                        |
+| suggestion | Below the fold, own cap of 7, answered Agree (taken) or Disagree, no reason needed                                                                                                                 |
 | question   | Its own list, outside the budget. Check both `decisions.md` files first: if a decision answers it, cite the decision instead of asking again                                                       |
 
 Budget: **7** must-fix and should-fix per run, ranked. Anything past 7 is a count per rule,
@@ -174,9 +176,9 @@ product. Where the code needs to handle a condition, ask for the raise (R-002).
 What `pr-findings` produces; the "already checked" section of the PR body is written by the
 build, not by a reviewer:
 
-- one comment on the pull request, carrying every finding, headed so a reader knows a
-  machine wrote it and a machine will read the replies
-- `standards/log/pr-NNNN.yaml`, written by `pr-findings` from the replies in that thread —
+- one `COMMENT` review on the pull request, a thread per finding, headed so a reader knows
+  a machine wrote it and a machine will read the replies
+- `standards/log/pr-NNNN.yaml`, written by `pr-findings` from the replies in those threads —
   never from anything the reviewer decided on its own — and committed by a person, never the
   agent
 
@@ -184,24 +186,26 @@ build, not by a reviewer:
 
 This section and Output govern `pr-findings`; the implementation reviewer posts nothing.
 
-One comment per review, and nothing else. It is an **issue comment** on the pull request,
-posted through the GitHub MCP server with the credentials of the person who runs
-`pr-findings`. It never pushes to the branch, opens a review, approves, requests changes or
-applies a label. The person's confirmation is the enforcement: nothing posts until they have
-read the comment as it will appear.
+One review per head, of type **COMMENT**, with one inline comment per finding, and replies
+under those threads that the person running `pr-findings` chose and confirmed. It is posted
+through the GitHub MCP server with that person's credentials. It never pushes to the branch,
+approves, requests changes, resolves a thread or applies a label. The person's confirmation is
+the enforcement: nothing posts until they have read it as it will appear.
 
-A review, an approval and a label are a person's signature on someone else's work. A comment
-is a proposal anyone can read and argue with, which is what an agent's findings are.
+A `COMMENT` review is the one kind that neither approves nor blocks: a proposal anyone can
+read and answer next to the code it is about, which is what an agent's findings are. An
+approval, a request for changes and a label are a person's signature on someone else's work.
 
-The person who runs `pr-findings` sees the comment before it posts and confirms it; their
-login goes in its attribution line.
+The person who runs `pr-findings` sees the review before it posts and confirms it; their login
+goes in each attribution line.
 
-**Without write access the review still works.** The skill writes the same body to
-`.review/comment.md` and stops; a person pastes it into the pull request. Same findings, same
-heading, same reply convention — only who presses the button changes.
+**Without write access the review still works.** The skill writes the review to
+`.review/review.md`, each comment with its path and line, and stops; a person posts it. Same
+findings, same summary, same way of answering — only who presses the button changes.
 
 ## Never
 
-Open a review, approve, request changes, apply a label, merge, or push. Post more than the
-one findings comment. Adjudicate a finding itself. Edit anything under `standards/` except
-`log/`. Write a record from replies that are not there.
+Approve, request changes, resolve a thread, apply a label, merge, or push. Post more than one
+findings review per head, or a reply the person did not choose. Adjudicate a finding itself.
+Edit anything under `standards/` except `log/`. Write a record from replies that are not
+there.
