@@ -137,20 +137,16 @@ recur and how the rule comes back if it does.
 
 ## Do not flag
 
-This repository already runs these, and a reviewer that repeats them trains people to skip
-the whole review. The evidence is the "share a linter could have caught" row in
+This repository already runs its linters and hooks, and a reviewer that repeats them trains
+people to skip the whole review. The evidence is the "share a linter could have caught" row in
 `standards/README.md`: nine of those ten findings were line-length complaints on a repository
-that disables `E501` **on purpose**
-because `ruff format` owns wrapping.
+whose ruff configuration leaves line length to the formatter on purpose.
 
-- Line length, wrapping, import order, trailing whitespace, line endings — `ruff format`,
-  `ruff check` (`E`, `W`, `F`, `I`) and the pre-commit hooks own these. `E501` and `F541`
-  are ignored deliberately.
-- Security patterns covered by `ruff` `S` (flake8-bandit) and `bandit`; `S` is disabled in
-  `tests/` on purpose.
-- pytest style covered by `ruff` `PT`; syntax modernisation covered by `UP`.
-- YAML, JSON and markdown formatting — `prettier`. Spelling — `codespell`. An untagged
-  deferred-work marker — the `prevent-dangling-todos` hook, which is R-010.
+- **Nothing a configured tool checks.** The configuration is the list, read where it lives
+  rather than from a copy: `[tool.ruff]` in `pyproject.toml` for what `ruff check` selects,
+  ignores and exempts per path, and `ruff format`; `.pre-commit-config.yaml` for the hooks,
+  including `prevent-dangling-todos` (R-010). A check the configuration turns off on purpose
+  is not the reviewer's to enforce either.
 - Style preferences with no rule behind them.
 
 **Never suggest defensive handling** the rules forbid — a broad `except`, a silent coercion, a

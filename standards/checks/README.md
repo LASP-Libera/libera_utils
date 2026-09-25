@@ -35,9 +35,7 @@ a ledger entry.
 
 ## Already checked by tools, and therefore never rules
 
-Kept here so the do-not-flag list in `review-contract.md` has a source: `ruff` select
-`E`, `W`, `F`, `I`, `S`, `PT`, `UP` with `E501` and `F541` ignored and `S` off in tests;
-`ruff format` at line length 120; `prettier` for yaml, json and markdown; `codespell`;
-`check-added-large-files`, `detect-aws-credentials`, `detect-private-key`,
-`mixed-line-ending`, `trailing-whitespace`, `check-yaml`, `check-json`, `no-commit-to-branch`
-for `main` and `dev`; `bandit` for NPR7150.2C.
+The tools' own configuration is the list: `pyproject.toml` (`[tool.ruff]`) and
+`.pre-commit-config.yaml`. It is not copied here or into `review-contract.md`, whose
+do-not-flag section points at the same files, so enabling or disabling a check never leaves a
+stale copy for the reviewer to follow.
