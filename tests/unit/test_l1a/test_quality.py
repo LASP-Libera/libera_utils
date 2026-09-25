@@ -1,16 +1,27 @@
 """Unit tests for the per-granule L1A quality record and its flag rollup."""
 
+import math
+from datetime import date, timedelta
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
 from libera_utils.config import config
+from libera_utils.l1a.day_coverage import (
+    CoverageMode,
+    DayCoverageResult,
+    measure_time_axis_coverage,
+)
 from libera_utils.l1a.quality import (
+    COVERAGE_GLOBAL_ATTRIBUTES,
+    COVERAGE_MODE_NOT_GATED,
     QUALITY_GLOBAL_ATTRIBUTES,
     GranuleQualityRecord,
     QualityFlag,
     QualityThresholds,
+    coverage_global_attributes,
 )
 
 
@@ -120,8 +131,59 @@ class TestGlobalAttributes:
         """
         definitions_dir = Path(str(config.get("LIBERA_PRODUCT_DEFINITIONS_PATH")))
         definition = yaml.safe_load((definitions_dir / definition_name).read_text())
-        missing = [name for name in QUALITY_GLOBAL_ATTRIBUTES if name not in definition["attributes"]]
+        declared = QUALITY_GLOBAL_ATTRIBUTES + COVERAGE_GLOBAL_ATTRIBUTES
+        missing = [name for name in declared if name not in definition["attributes"]]
         assert not missing, f"{definition_name} does not declare {missing}"
+
+
+class TestCoverageGlobalAttributes:
+    def test_ungated_granule_records_placeholders(self):
+        attributes = coverage_global_attributes()
+        assert set(attributes) == set(COVERAGE_GLOBAL_ATTRIBUTES)
+        assert attributes["CoverageMode"] == COVERAGE_MODE_NOT_GATED
+        assert attributes["CoverageGateForced"] == 0
+        fractions = [name for name in COVERAGE_GLOBAL_ATTRIBUTES if name.endswith("Fraction")]
+        assert all(math.isnan(attributes[name]) for name in fractions)
+
+    def test_gate_and_measured_coverage_are_recorded(self):
+        gate = DayCoverageResult(
+            mode=CoverageMode.CONTINUOUS,
+            left_frac=1.0,
+            day_frac=0.95,
+            right_frac=0.5,
+            left_ok=True,
+            day_ok=True,
+            right_ok=False,
+            n_intervals=14,
+        )
+        day = date(2026, 7, 12)
+        packet_times = np.arange(
+            np.datetime64("2026-07-12T00:00:00", "us"),
+            np.datetime64("2026-07-12T12:00:00", "us"),
+            np.timedelta64(1, "s"),
+        )
+        packet_coverage = measure_time_axis_coverage(packet_times, day=day, buffer=timedelta(minutes=10))
+
+        attributes = coverage_global_attributes(
+            gate, forced=True, packet_time_coverage=packet_coverage, data_time_coverage=None
+        )
+
+        assert attributes["CoverageMode"] == "continuous"
+        assert attributes["CoverageGateForced"] == 1
+        assert attributes["L0DayCoverageFraction"] == 0.95
+        assert attributes["L0LeftBufferCoverageFraction"] == 1.0
+        assert attributes["L0RightBufferCoverageFraction"] == 0.5
+        assert attributes["PacketTimeDayCoverageFraction"] == pytest.approx(0.5)
+        assert math.isnan(attributes["DataTimeDayCoverageFraction"])
+
+    def test_parsed_granule_carries_the_placeholders(self, test_ccsds_2025_218_18_37_32):
+        from libera_utils.l1a.packets import parse_packets_to_l1a_dataset
+
+        dataset = parse_packets_to_l1a_dataset(
+            [str(test_ccsds_2025_218_18_37_32)], 1057, ground_data=True, skip_header_bytes=8
+        )
+        assert dataset.attrs["CoverageMode"] == COVERAGE_MODE_NOT_GATED
+        assert dataset.attrs["CoverageGateForced"] == 0
 
 
 class TestConformanceOfAParsedGranule:

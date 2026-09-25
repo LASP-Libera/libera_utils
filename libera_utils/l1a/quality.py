@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from libera_utils.l1a.day_coverage import DayCoverageResult, TimeAxisCoverage
+
 
 class QualityFlag(StrEnum):
     """Rollup of a granule's quality counters, for an operator dashboard to watch."""
@@ -63,6 +65,79 @@ QUALITY_GLOBAL_ATTRIBUTES = (
     "MaxSampleGapMicroseconds",
     "SequenceResetCount",
 )
+
+
+# Coverage of the applicable day, written on every L1A product alongside the quality attributes.
+# Kept apart from QUALITY_GLOBAL_ATTRIBUTES so each set can be exported to CMR additional
+# attributes on its own: CMR rejects a granule carrying a name its parent collection does not
+# declare.
+COVERAGE_GLOBAL_ATTRIBUTES = (
+    "CoverageMode",
+    "CoverageGateForced",
+    "L0DayCoverageFraction",
+    "L0LeftBufferCoverageFraction",
+    "L0RightBufferCoverageFraction",
+    "PacketTimeDayCoverageFraction",
+    "DataTimeDayCoverageFraction",
+)
+
+# Written where an axis was not available to measure, so the attribute is still present.
+COVERAGE_NOT_MEASURED = float("nan")
+
+# ``CoverageMode`` on a granule that did not come from the day-combine path at all: a chunk
+# parsed directly, or anything written before the day gates ran.
+COVERAGE_MODE_NOT_GATED = "not_gated"
+
+
+def coverage_global_attributes(
+    gate: DayCoverageResult | None = None,
+    *,
+    forced: bool = False,
+    packet_time_coverage: TimeAxisCoverage | None = None,
+    data_time_coverage: TimeAxisCoverage | None = None,
+) -> dict[str, Any]:
+    """Return the NetCDF coverage attributes for a granule.
+
+    The gate fractions and the measured ones answer different questions and can disagree by a
+    lot. ``L0*`` comes from whole-file L0 spans, which cannot see a gap inside a file; the
+    measured fractions come from the granule's own axes. For an APID whose data time runs on a
+    different clock than its packet time, the two axes disagree as well, which is why both are
+    recorded.
+
+    Parameters
+    ----------
+    gate : DayCoverageResult | None, optional
+        Result the combine decision was made on. ``None`` (the default) records a granule that
+        did not come from the day-combine path, so every product carries the attributes its
+        definition declares whoever wrote it.
+    forced : bool, optional
+        True when the gates were skipped by an operator request.
+    packet_time_coverage : TimeAxisCoverage | None, optional
+        Measured from the granule's packet time axis. ``None`` records "not measured".
+    data_time_coverage : TimeAxisCoverage | None, optional
+        Measured from the granule's science data time axis, when it has one distinct from
+        packet time. ``None`` records "not measured".
+
+    Returns
+    -------
+    dict
+        Every name in :data:`COVERAGE_GLOBAL_ATTRIBUTES`.
+    """
+    attributes = {
+        "CoverageMode": COVERAGE_MODE_NOT_GATED if gate is None else str(gate.mode),
+        "CoverageGateForced": int(forced),
+        "L0DayCoverageFraction": COVERAGE_NOT_MEASURED if gate is None else float(gate.day_frac),
+        "L0LeftBufferCoverageFraction": COVERAGE_NOT_MEASURED if gate is None else float(gate.left_frac),
+        "L0RightBufferCoverageFraction": COVERAGE_NOT_MEASURED if gate is None else float(gate.right_frac),
+        "PacketTimeDayCoverageFraction": (
+            COVERAGE_NOT_MEASURED if packet_time_coverage is None else float(packet_time_coverage.day_frac)
+        ),
+        "DataTimeDayCoverageFraction": (
+            COVERAGE_NOT_MEASURED if data_time_coverage is None else float(data_time_coverage.day_frac)
+        ),
+    }
+    assert set(attributes) == set(COVERAGE_GLOBAL_ATTRIBUTES)  # noqa: S101 - guards the YAML contract
+    return attributes
 
 
 @dataclass
