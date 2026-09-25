@@ -1,7 +1,9 @@
 """Module for reading packet data using Space Packet Parser"""
 
 import logging
+import multiprocessing as mp
 import warnings
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from os import PathLike
@@ -213,10 +215,84 @@ def _parse_one_file(
     return file_ds
 
 
+def _parse_file_in_subprocess(
+    connection,
+    packet_file: str,
+    packet_definition_path: str,
+    apid: int,
+    generator_kwargs: dict,
+) -> None:
+    """Worker entry point: parse one file and send the Dataset, or the exception, to the parent.
+
+    Takes the XTCE path rather than a loaded definition because ``XtcePacketDefinition`` is not
+    picklable, so it cannot cross a ``spawn`` or ``forkserver`` process boundary. Loading it here
+    costs ~0.2 s against a parse of tens of seconds.
+    """
+    try:
+        definition = load_xtce(packet_definition_path)
+        connection.send((None, _parse_one_file(packet_file, definition, apid, generator_kwargs)))
+    except Exception as exc:  # noqa: BLE001 - re-raised in the parent, which owns the traceback
+        connection.send((exc, None))
+    finally:
+        connection.close()
+
+
+def _iter_parsed_files_concurrently(
+    packet_files: list[PathLike | str],
+    packet_definition_path: str,
+    apid: int,
+    max_workers: int,
+    generator_kwargs: dict,
+) -> Iterator[tuple[PathLike | str, xr.Dataset | None]]:
+    """Parse files in worker processes, yielding results in the order given.
+
+    Parsing is CPU-bound single-threaded Python, so a container sized for several vCPUs leaves
+    all but one idle. Files are independent, so they parse concurrently; the packet axis is still
+    assembled in the caller's order because acquisition order is what the downstream image
+    stitching and sample-expansion depend on.
+
+    Workers run ``max_workers`` at a time. Each holds its own parsed file until the parent reads
+    it, so peak memory is the accumulated axis plus roughly ``max_workers`` files, which is what
+    bounds a useful worker count rather than the available cores.
+    """
+    context = mp.get_context()
+    for start in range(0, len(packet_files), max_workers):
+        workers = []
+        for packet_file in packet_files[start : start + max_workers]:
+            receive, send = context.Pipe(duplex=False)
+            process = context.Process(
+                target=_parse_file_in_subprocess,
+                args=(send, str(packet_file), packet_definition_path, apid, generator_kwargs),
+            )
+            process.start()
+            send.close()  # the parent must drop its copy or the pipe never reports EOF
+            workers.append((packet_file, process, receive))
+
+        for packet_file, process, receive in workers:
+            try:
+                error, file_ds = receive.recv()
+            except EOFError:
+                process.join()
+                raise RuntimeError(
+                    f"Worker parsing {packet_file} for APID {apid} exited without a result "
+                    f"(exit code {process.exitcode}). A negative code is a signal, of which -9 is the "
+                    f"container running out of memory; a positive code means the worker died before it "
+                    f"could report, and its traceback is on stderr."
+                ) from None
+            finally:
+                receive.close()
+            process.join()
+            if error is not None:
+                raise error
+            yield packet_file, file_ds
+
+
 def parse_packets_to_dataset(
     packet_files: list[PathLike | str],
     packet_definition: str | PathLike | XtcePacketDefinition,
     apid: int,
+    *,
+    max_workers: int = 1,
     **generator_kwargs,
 ) -> xr.Dataset:
     """Parse packets from files into an xarray Dataset using specified packet definition.
@@ -241,9 +317,15 @@ def parse_packets_to_dataset(
         List of filepaths to packet files.
     packet_definition : str | PathLike | XtcePacketDefinition
         Path to the XTCE packet definition file, or an already loaded definition. Pass a loaded
-        definition to avoid re-parsing the XTCE once per file.
+        definition to avoid re-parsing the XTCE once per file. ``max_workers`` above 1 requires
+        a path, since a loaded definition cannot cross a process boundary.
     apid : int
         Application Process Identifier to filter for.
+    max_workers : int, optional
+        Files to parse concurrently, in worker processes. Default 1 (in-process). Parsing is
+        CPU-bound single-threaded Python, so concurrency is the only way to use a container
+        sized for more than one vCPU; peak memory rises by roughly one parsed file per worker,
+        which is the practical limit rather than the core count.
     **generator_kwargs
         Additional keyword arguments passed to the packet generator.
 
@@ -257,16 +339,28 @@ def parse_packets_to_dataset(
     ------
     ValueError
         If no file holds any packet of ``apid``, if a file yields an APID other than ``apid``,
-        or if the files do not all carry the same set of variables.
+        if the files do not all carry the same set of variables, or if ``max_workers`` above 1
+        is combined with an already-loaded packet definition.
     """
-    logger.info("Parsing packets (APID %d) from %d file(s)", apid, len(packet_files))
+    n_workers = max(1, min(max_workers, len(packet_files)))
+    logger.info("Parsing packets (APID %d) from %d file(s) with %d worker(s)", apid, len(packet_files), n_workers)
 
-    if not isinstance(packet_definition, XtcePacketDefinition):
-        packet_definition = load_xtce(packet_definition)
-    parsed_files = (
-        (packet_file, _parse_one_file(packet_file, packet_definition, apid, generator_kwargs))
-        for packet_file in packet_files
-    )
+    if n_workers > 1:
+        if isinstance(packet_definition, XtcePacketDefinition):
+            raise ValueError(
+                "max_workers above 1 requires the XTCE path rather than a loaded definition: "
+                "XtcePacketDefinition is not picklable, so it cannot be sent to a worker process."
+            )
+        parsed_files = _iter_parsed_files_concurrently(
+            packet_files, str(packet_definition), apid, n_workers, generator_kwargs
+        )
+    else:
+        if not isinstance(packet_definition, XtcePacketDefinition):
+            packet_definition = load_xtce(packet_definition)
+        parsed_files = (
+            (packet_file, _parse_one_file(packet_file, packet_definition, apid, generator_kwargs))
+            for packet_file in packet_files
+        )
 
     # The first contributing file is held whole until a second one arrives: a single-file parse
     # then returns it untouched, with no buffer allocated and nothing copied.
@@ -310,6 +404,7 @@ def parse_packets_to_l1a_dataset(
     ground_data: bool = False,
     verbose: bool = False,
     skip_header_bytes: int | None = None,
+    max_workers: int = 1,
 ) -> xr.Dataset:
     """Parse packets to L1A dataset with configurable sample expansion.
 
@@ -335,6 +430,9 @@ def parse_packets_to_l1a_dataset(
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
         carry a per-packet record header need ``8``).
+    max_workers : int, optional
+        Files to parse concurrently, in worker processes. Default 1 (in-process). See
+        ``parse_packets_to_dataset``; peak memory rises by roughly one parsed file per worker.
 
     Returns
     -------
@@ -373,10 +471,13 @@ def parse_packets_to_l1a_dataset(
                 multipart_kwargs=packet_config.packet_time_fields.multipart_kwargs,
             ),
         )
+    # Ordering needs the loaded definition; workers need the path, since a loaded definition
+    # cannot be sent to another process.
     packet_ds = parse_packets_to_dataset(
         _packet_files,
-        packet_definition,
+        packet_definition_path if max_workers > 1 else packet_definition,
         apid,
+        max_workers=max_workers,
         skip_header_bytes=skip_header_bytes,
     )
     packet_times_dt64 = multipart_to_dt64(packet_ds, **packet_config.packet_time_fields.multipart_kwargs)

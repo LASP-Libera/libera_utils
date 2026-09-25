@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `assert_data_times_unique_monotonic` takes `require_monotonic`. Pass False for a packet-time axis; sample and camera axes are still sorted and keep the default.
 - Add `libera_utils.l1a.quality`: a `GranuleQualityRecord` of per-granule counters and a `NOMINAL`/`DEGRADED`/`SUSPECT` rollup with tunable `QualityThresholds`. `parse_packets_to_l1a_dataset` writes the counters (`QUALITY_GLOBAL_ATTRIBUTES`) as global attributes on every L1A product, zeros included, and all twelve L1A product definitions declare them. `DuplicateValueMismatchCount` is the number that matters for duplicates: in DITL2 it is ~10,200 per affected RAD granule, and zero on an unaffected one.
 - Every L1A product carries day coverage global attributes (`COVERAGE_GLOBAL_ATTRIBUTES`: `CoverageMode`, `CoverageGateForced`, the L0 gate fractions and the measured packet- and data-time day fractions), declared in all twelve L1A product definitions. `parse_packets_to_l1a_dataset` writes `not_gated`/`NaN` placeholders; `coverage_global_attributes` builds the values the day-combine path writes.
+- `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset` take `max_workers` (default 1) to parse files concurrently in worker processes, keeping the packet axis in the order given. A worker that dies without reporting raises `RuntimeError` with its exit code.
 
 ### Changed
 

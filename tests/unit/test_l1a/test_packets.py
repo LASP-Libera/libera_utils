@@ -1258,3 +1258,39 @@ class TestPacketAxisAccumulator:
         accumulator.append("f", first)
         with pytest.raises(ValueError, match="do not match the other files"):
             accumulator.append("g", xr.Dataset({"LABEL": (("PACKET",), np.array(["SOP"]))}))
+
+
+def _failing_worker(connection, packet_file, packet_definition_path, apid, generator_kwargs):
+    """Stand-in worker that reports a failure instead of parsing."""
+    connection.send((ValueError(f"bad file {packet_file}"), None))
+    connection.close()
+
+
+class TestParallelParsing:
+    """Worker-process parsing, which must agree with in-process parsing and surface failures."""
+
+    def test_rejects_a_loaded_definition(self):
+        # XtcePacketDefinition is not picklable, so it cannot reach a worker.
+        with pytest.raises(ValueError, match="not picklable"):
+            libera_packets.parse_packets_to_dataset(
+                ["a.bin", "b.bin"],
+                mock.MagicMock(spec=XtcePacketDefinition),
+                1040,
+                max_workers=2,
+            )
+
+    def test_single_file_never_starts_a_worker(self):
+        # n_workers clamps to the file count, so a one-file parse stays in process and keeps
+        # accepting a loaded definition.
+        with mock.patch.object(libera_packets, "_parse_one_file", return_value=_packet_dataset(1040, 0)) as parse_one:
+            libera_packets.parse_packets_to_dataset(
+                ["only.bin"], mock.MagicMock(spec=XtcePacketDefinition), 1040, max_workers=4
+            )
+        assert parse_one.call_count == 1
+
+    def test_worker_exception_reaches_the_caller(self):
+        with (
+            mock.patch.object(libera_packets, "_parse_file_in_subprocess", _failing_worker),
+            pytest.raises(ValueError, match="bad file"),
+        ):
+            libera_packets.parse_packets_to_dataset(["a.bin", "b.bin"], "fake.xml", 1040, max_workers=2)

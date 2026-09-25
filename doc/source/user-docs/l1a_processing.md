@@ -571,6 +571,19 @@ still referenced. The packet axis keeps the order of the files given.
 - A string column that is wider in a later file (a file containing `SINGLE` parses to `<U6`
   where the others give `<U3`) is widened rather than truncated.
 
+`max_workers` (on both `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset`, default 1)
+parses files concurrently in worker processes, `max_workers` at a time. Parsing is single-threaded
+Python, so this is the only way to use more than one vCPU. Results are appended in the order given,
+so the packet axis is the same as for an in-process parse.
+
+- Peak memory is the accumulated axis plus about one parsed file per worker. Memory, not core
+  count, limits a useful worker count.
+- Workers load the XTCE from its path, because a loaded `XtcePacketDefinition` cannot be pickled.
+  `parse_packets_to_dataset` raises `ValueError` for `max_workers > 1` with a loaded definition.
+  A single file is always parsed in process.
+- An exception in a worker is re-raised in the caller. A worker that exits without reporting
+  raises `RuntimeError` with its exit code; `-9` means the container ran out of memory.
+
 ## L1A Product Structure
 
 This varies by packet but there is some consistent behavior:
