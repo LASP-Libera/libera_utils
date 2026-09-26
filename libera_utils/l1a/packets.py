@@ -198,6 +198,13 @@ def parse_packets_to_l1a_dataset(
         - Separate arrays for each sample group with optional multi-field expansion
         - All time coordinates properly set as dimensions
 
+    Raises
+    ------
+    KeyError
+        If the parsed packets have no ``SRC_SEQ_CTR`` variable.
+    ValueError
+        If ``ground_data`` is False and packets with the same packet time have different values.
+
     Notes
     -----
     The packet axis is sorted by packet time. Steps in ``SRC_SEQ_CTR`` along that order that disagree with it are
