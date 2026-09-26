@@ -1,0 +1,52 @@
+pr: 96
+ticket: LIBSDC-830
+branch: LIBSDC-830-src-seq-ctr-order-report
+head: 80fbeb7
+date: 2026-09-25
+standards_sha: 25130f9
+adjudicated_by: mmaclay
+plan: approved by mmaclay
+inner:
+  gates: "lint 3 · types 0 · tests 8 · reviewer rounds 1 · wall clock 38 min"
+  tokens: "532763 in · 36555 out · 8351915 cached, main session plus 4 subagents"
+  exit: clean
+author: mmaclay
+rework_rounds: []
+findings:
+  - key: term/T-010/libera_utils/l1a/packets.py::_report_src_seq_ctr_order
+    severity: should-fix
+    at: "libera_utils/l1a/packets.py:576"
+    thread: PRRT_kwDORdqWxM6mMCY7
+    verdict: agree
+  - key: R-012/pyproject.toml::version
+    severity: should-fix
+    at: "pyproject.toml:3"
+    thread: PRRT_kwDORdqWxM6mMCaU
+    verdict: disagree
+    reason: "the PR's scope is learning when and how often the packet-time shuffle happens; the team standard for a small PR is a patch bump, and 5.11.2 is kept because another PR is expected to take 5.11.1 first"
+  - key: D-008@libera_utils/libera_utils/l1a/packets.py::_report_src_seq_ctr_order
+    severity: suggestion
+    at: "libera_utils/l1a/packets.py:592"
+    thread: PRRT_kwDORdqWxM6mMCcc
+    verdict: agree
+  - key: ticket/AC-2/tests/unit/test_l1a/test_packets.py::test_report_src_seq_ctr_order_classifies_steps
+    severity: suggestion
+    at: "tests/unit/test_l1a/test_packets.py:328"
+    thread: PRRT_kwDORdqWxM6mMCdm
+    verdict: discuss
+  - key: ticket/AC-5/libera_utils/l1a/packets.py::parse_packets_to_l1a_dataset
+    severity: suggestion
+    at: "libera_utils/l1a/packets.py:237"
+    thread: PRRT_kwDORdqWxM6mMCfP
+    verdict: agree
+  - key: R-004/libera_utils/l1a/packets.py::parse_packets_to_l1a_dataset
+    severity: suggestion
+    at: "libera_utils/l1a/packets.py:203"
+    thread: PRRT_kwDORdqWxM6mMCg5
+    verdict: agree
+questions:
+  - q: does the ICIE reset SRC_SEQ_CTR on reboot or mode change?
+    key: other/libera_utils/l1a/packets.py::_report_src_seq_ctr_order
+    at: "libera_utils/l1a/packets.py:568"
+    thread: PRRT_kwDORdqWxM6mMCig
+    a: "Discuss. I don't know the answer to this, we should ask."
