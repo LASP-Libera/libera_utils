@@ -1,6 +1,6 @@
 name: Measurements
 
-# The corpus states numbers and reasons from them - a test count, a rule cap, a record cap.
+# The corpus states numbers and reasons from them - a test count and a rule cap.
 # They go stale silently, and a threshold derived from a stale number is worse than none,
 # because it looks measured. The stated unit-lane count was wrong by 18 tests and the PR
 # lane by a factor of five before anyone noticed.

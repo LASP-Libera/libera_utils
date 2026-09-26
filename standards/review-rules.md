@@ -49,7 +49,7 @@ rather than assuming.
 v0 evidence points at the merged pull request whose review threads produced the rule. A
 rule resting on one author, or on one pull request and so below the new-rule cluster in
 `standards/README.md`, says so in its evidence line. From the first ratchet on, evidence
-points at `log/pr-NNNN.yaml` records.
+points at the review records in `libera_llm_tooling/standards/libera_utils/log/`.
 
 ---
 

@@ -9,6 +9,11 @@ live in `libera_llm_tooling/standards/`:
 | `decisions.md`   | Decisions that constrain more than one repository: ObsID ownership, dependency pinning, the upstream-first rule                                                                                   |
 | `context/`       | Confluence pages, Jira epics and PR threads. **It may carry internal links because that repository is private. This one is public (R-014), so it names context entries rather than copying them** |
 
+**The review records** live there too, in `standards/libera_utils/log/`: one `pr-NNNN.yaml`
+per reviewed pull request and one report per monthly revision. `pr-findings` writes a record
+there and a person commits it in `libera_llm_tooling`, so no record sits in this repository's
+pull requests.
+
 ## Reaching it
 
 Two separate things, installed two different ways.

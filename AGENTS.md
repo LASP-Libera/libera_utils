@@ -45,7 +45,8 @@ squash-merged, which adds the `(#NN)` suffix, so a branch does not need squashin
 The skills come from the `libera-tools` Claude Code plugin in `libera_llm_tooling`;
 `standards/SHARED.md` says how to install it. `ticket-draft` writes and places the ticket,
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
-`pr-findings` reviews it against this standard and, once people reply, writes the record,
+`pr-findings` reviews it against this standard and, once people reply, writes the record
+(into `libera_llm_tooling/standards/libera_utils/log/`, never this repository),
 and `revise-standard` runs the monthly revision. None of them merges or edits a standard, and
 nothing is posted without a person's yes. Everything an agent produces is a proposal.
 

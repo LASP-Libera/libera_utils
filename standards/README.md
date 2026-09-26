@@ -21,9 +21,13 @@ The phases this file refers to — 0 set up the standard, 1 define the work, 2 b
 | `checks/`            | Rules that graduated into a tool, each naming the rule it replaced                              |
 | `archive.md`         | One line per rule that has left the ledger, with where its reasoning lives                      |
 | `test-lanes.md`      | Every lane marker, path and command the corpus depends on, in one place                         |
-| `log/`               | One record per reviewed pull request, and one report per ratchet                                |
 
 `.review/` is the agents' scratch directory and is gitignored.
+
+The review records, one per reviewed pull request, and the monthly revision reports are not
+here. They live in `libera_llm_tooling/standards/libera_utils/log/`, the shared clone beside this
+repository, so a record never sits in a pull request's diff and committing one never touches a
+code branch. `SHARED.md` says how to reach it.
 
 ## Measured, 2026-09-17
 
@@ -115,8 +119,8 @@ would mean re-reading every file in the corpus.
 Numbers in the table above that a machine can re-derive are checked by
 `.github/scripts/check_measurements.py`, which runs on a pull request touching `standards/`
 or `tests/`. It re-collects each lane, checks the rules (the ledger and the wording in the instruction
-file) against their cap and each record
-against the record cap, and reports what no longer holds. Wall clock is deliberately not
+file) against their cap, and reports what no longer holds. The record cap lives with the
+records, in the shared clone. Wall clock is deliberately not
 checked: it is machine-local, and the same lane has measured 102 s and 357 s on one machine.
 Remeasuring it stays a person's job at the ratchet.
 
@@ -229,10 +233,6 @@ threads; `revise-standard` applies the filter and holds a single-author rule at 
   that person moves on. Name two.
 - **The first ratchet slot.** A calendar trigger with no named person and no recurring slot
   is the failure mode this pattern is most prone to in practice.
-- **Where a review record is committed.** `pr-findings` writes `standards/log/pr-NNNN.yaml`
-  and a person commits it: the merging reviewer on the pull request's branch before merge,
-  or the author on `main` after. Until this is settled, a record left uncommitted is caught
-  by the ratchet's missing-record count.
 - **Whether Copilot's automatic PR review is the suggestion tier or replaces the Phase 3
   reviewer.** Today both would run, holding two different standards, which is the drift this
   pattern exists to prevent. The evidence is the "share a linter could have

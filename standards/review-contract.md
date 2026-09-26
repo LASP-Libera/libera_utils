@@ -160,9 +160,9 @@ build, not by a reviewer:
 
 - one `COMMENT` review on the pull request, a thread per finding, headed so a reader knows
   a machine wrote it and a machine will read the replies
-- `standards/log/pr-NNNN.yaml`, written by `pr-findings` from the replies in those threads —
-  never from anything the reviewer decided on its own — and committed by a person, never the
-  agent
+- `pr-NNNN.yaml` in `libera_llm_tooling/standards/libera_utils/log/`, written by `pr-findings`
+  from the replies in those threads — never from anything the reviewer decided on its own — and
+  committed there by a person, never the agent
 
 ## What the agent may post
 
@@ -189,5 +189,5 @@ findings, same summary, same way of answering — only who presses the button ch
 
 Approve, request changes, resolve a thread, apply a label, merge, or push. Post more than one
 findings review per head, or a reply the person did not choose. Adjudicate a finding itself.
-Edit anything under `standards/` except `log/`. Write a record from replies that are not
+Edit anything under `standards/`. Write a record from replies that are not
 there.

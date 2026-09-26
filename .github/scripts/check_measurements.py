@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check the claims in standards/ that a machine can still verify.
 
-The corpus states numbers and then reasons from them: a test count, a rule cap, a record
-cap. Those go stale silently, and a threshold derived from a stale number is worse than no
+The corpus states numbers and then reasons from them: a test count and a rule cap.
+Those go stale silently, and a threshold derived from a stale number is worse than no
 threshold, because it looks measured. This re-derives them and reports what no longer holds.
 
 Deliberately not checked: wall clock. `standards/README.md` records it as machine-local and
@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "standards" / "README.md"
 RULES = ROOT / "standards" / "review-rules.md"
 INSTRUCTIONS = ROOT / ".github" / "instructions" / "libera-utils.instructions.md"
-LOG = ROOT / "standards" / "log"
 
 
 class Result:
@@ -91,23 +90,6 @@ def check_rule_cap(readme: str) -> Result:
     return Result("rule cap", True, f"{live}/{max_rules} rules, {lines}/{max_lines} lines")
 
 
-def check_record_cap() -> Result:
-    readme = (LOG / "README.md").read_text()
-    cap = re.search(r"(\d+)[- ]line", readme)
-    if not cap:
-        return Result("record cap", False, "standards/log/README.md no longer states a cap")
-    limit = int(cap.group(1))
-    over = [
-        f"{p.name} is {len(p.read_text().splitlines())} lines"
-        for p in sorted(LOG.glob("pr-*.yaml"))
-        if len(p.read_text().splitlines()) > limit
-    ]
-    if over:
-        return Result("record cap", False, f"cap {limit}: " + ", ".join(over))
-    n = len(list(LOG.glob("pr-*.yaml")))
-    return Result("record cap", True, f"{n} record(s), all within {limit} lines")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--strict", action="store_true", help="treat an unverifiable check as a failure")
@@ -118,7 +100,6 @@ def main() -> int:
         check_lane("unit lane count", r"\| (\d[\d,]*) tests, measured on", ["tests/unit/"], readme),
         check_lane("PR lane count", r"\| (\d[\d,]*) tests, same run", ["-m", "not e2e", "tests/"], readme),
         check_rule_cap(readme),
-        check_record_cap(),
     ]
 
     failed = skipped = 0
