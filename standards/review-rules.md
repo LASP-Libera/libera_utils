@@ -1,0 +1,230 @@
+# Review rules
+
+The ledger of what a reviewer checks in this repository, beyond what the tools already check.
+Each entry carries a rule's tier, status, the month it was admitted, the evidence that earned
+it and its do-not-flag sentence. **The wording of each rule is not here**: it lives once, under
+its ID, in `.github/instructions/libera-utils.instructions.md`, which Claude Code loads through
+`CLAUDE.md` and Copilot loads on its own, so the people and agents writing code read the same
+rule the reviewer checks. Each entry links to its section there.
+
+**Cap: 14 rules or 300 lines**, the lines counted across this file and the wording together,
+each rule's title once and its link line not at all. The cap is twice the measured monthly reviewed-PR count
+(`standards/README.md`). At the cap, a rule is admitted only by retiring one.
+
+Tiers say where a rule lives. `prose` — the instruction file only: the author is expected to
+know it, the reviewer does not check it, and it has no entry here. `reviewer` — the
+instruction file plus an entry here, which the reviewer checks against. `check` — the tool's
+configuration plus the shared archive: a tool enforces it, its reasoning is in
+`archive/libera_utils/`, and its entry here is a pointer so the reviewer knows the ground is
+covered.
+Statuses: `provisional` · `established` · `graduated` · `retired`.
+
+Where a rule restates a decision, shared or local, its evidence line names it.
+A rule and a decision on the same concern must not disagree about status: the decision is
+what the team settled, the rule is how a reviewer checks it, and the reviewer loads both.
+
+A rule becomes `established` when the reviewer has cited it and a person has accepted the
+finding in two different pull requests, **written by two different people**. During v0 a
+harvest may establish a rule on review-thread evidence that clears the same bar — two pull
+requests by two different authors — and its evidence line points at those pull requests. A
+rule whose evidence is one author's pull requests, or comes only from AI-drafted review
+comments, stays provisional however often it is cited: the citation count measures how often
+something came up, and breadth measures whether it is the team's standard or one person's. A
+`provisional` rule that has become neither `established` nor `graduated` within the
+provisional expiry in `standards/README.md` is retired by default. The expiry counts merged
+pull requests with records, never ratchets or months: a month in which nothing merges is no
+evidence against a rule.
+
+**No rule leaves without its reasoning being kept.** During v0 a harvest may propose
+retirements as well as admissions — R-008's was proposed that way at the second harvest,
+before any ratchet had run, and a person made the call — and the biography requirement is
+identical either way; after v0 proposing them is the ratchet's job alone. When a rule
+graduates into a check, retires or is rewritten, whoever does it writes its biography — the
+text as it read, why it was admitted, every decline reason quoted, and what the replacement
+cannot catch — to `archive/libera_utils/` in the shared corpus, in a pull request there that
+merges before the one here. The entry here becomes a one-line stub pointing at it, so an ID is
+never reused and the reason is never lost. Every entry carries its own status line; read that
+rather than assuming.
+
+v0 evidence points at the merged pull request whose review threads produced the rule. A
+rule resting on one author, or on one pull request and so below the new-rule cluster in
+`standards/README.md`, says so in its evidence line. From the first ratchet on, evidence
+points at the review records in `libera_llm_tooling/standards/libera_utils/log/`.
+
+---
+
+### R-001 · Validate a name or identifier where it is constructed, not where it is first used
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
+
+Wording: [R-001 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-001--validate-a-name-or-identifier-where-it-is-constructed-not-where-it-is-first-used)
+
+Do not flag: a validator deliberately deferred because it needs data the constructor does
+not have, when the docstring says so.
+
+### R-002 · A condition that invalidates the output raises; it does not warn or no-op
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0027, pr-0041, pr-0060, pr-0012
+
+Wording: [R-002 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-002--a-condition-that-invalidates-the-output-raises-it-does-not-warn-or-no-op)
+
+Do not flag: a genuinely optional input whose absence has a defined meaning, when the
+docstring names it; a `logger.warning` beside a raise, for context.
+
+### R-003 · One exception type per condition, and a predicate returns rather than raises
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
+
+Wording: [R-003 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-003--one-exception-type-per-condition-and-a-predicate-returns-rather-than-raises)
+
+Do not flag: one exception type covering conditions a caller genuinely handles identically,
+when the message distinguishes them.
+
+### R-004 · Every public symbol has a numpydoc docstring, including what it raises
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027, pr-0015
+
+Wording: [R-004 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-004--every-public-symbol-has-a-numpydoc-docstring-including-what-it-raises)
+
+Do not flag: private helpers; a one-line docstring on a symbol whose signature is
+self-describing and that raises nothing.
+
+### R-005 · A published quantity states its unit; a time states its epoch and frame
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027 · **one author, needs a second**
+
+Wording: [R-005 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-005--a-published-quantity-states-its-unit-a-time-states-its-epoch-and-frame)
+
+Do not flag: dimensionless counters and flags; a field whose unit is stated once for a group
+in the product definition.
+
+### R-006 · One source of truth for a value; tabular data lives in a data file
+
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0027, pr-0041, pr-0015, pr-0002
+
+Wording: [R-006 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-006--one-source-of-truth-for-a-value-tabular-data-lives-in-a-data-file)
+
+Do not flag: a named constant that gives a meaning to a literal used in one place; a value
+duplicated in a test on purpose, so the test fails when the source changes.
+
+### R-007 · Delete dead code rather than leaving it unreferenced
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0048
+
+Wording: [R-007 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-007--delete-dead-code-rather-than-leaving-it-unreferenced)
+
+Do not flag: a public symbol kept for backwards compatibility with a deprecation note; code
+behind a feature flag that the changelog names.
+
+### R-008 · Test scaffolding does not ship in the package — **retired 2026-09-19**
+
+tier: — · status: retired · reasoning: `standards/archive.md` → `archive/libera_utils/R-008.md`
+
+Retired at the second harvest to make room for R-015, which the wider sample evidences three
+times over against this rule's one. The concern is real and has not gone away; it is now
+carried by `packages = [{include = "libera_utils"}]` in `pyproject.toml`, which was verified
+by building the wheel.
+
+### R-009 · Comments describe the code as it is, not how it got there
+
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030
+
+Wording: [R-009 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-009--comments-describe-the-code-as-it-is-not-how-it-got-there)
+
+Do not flag: a tagged deferred-work marker such as `TODO[LIBSDC-1234]`, which is
+forward-looking; a comment citing an external
+document that the code implements.
+
+### R-010 · Deferred work carries a LIBSDC or CURRYER ticket tag
+
+tier: check · status: graduated · since: 2026-09 · evidence: pre-commit, standing convention
+
+Reasoning: shared `archive/libera_utils/R-010.md`
+
+Do not flag: this rule at all. The hook owns it, and a marker in a file the hook excludes
+(`.pre-commit-config.yaml`) is deliberately out of scope.
+Check: `.pre-commit-config.yaml`, the `lasp/prevent-dangling-todos` hook, with its tags set
+to `LIBSDC,CURRYER` and its comment markers to the two it scans for. The reviewer does not
+check this; the hook does.
+
+### R-011 · A dependency pins to an immutable ref
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 · implements shared D-005 · **one pull request, needs a second**
+
+Wording: [R-011 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-011--a-dependency-pins-to-an-immutable-ref)
+
+Do not flag: a pin in a local development extra that is never published.
+
+### R-012 · The version bump matches the change, and the changelog heading matches it
+
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0048, pr-0037, pr-0027, pr-0022, pr-0032
+
+Wording: [R-012 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-012--the-version-bump-matches-the-change-and-the-changelog-heading-matches-it)
+
+Do not flag: a pre-release suffix used deliberately for downstream testing, when the
+changelog heading carries it too.
+
+### R-013 · Parse or sort an input once, not once per consumer
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0041
+
+Wording: [R-013 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-013--parse-or-sort-an-input-once-not-once-per-consumer)
+
+Do not flag: a repeated read of something small and mutable, where the reread is the point;
+a loop that runs a fixed handful of times over a small input.
+
+### R-014 · No internal URL or internal document content in this repository
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0041, pr-0027 · implements `libera_utils/D-006`
+
+Wording: [R-014 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-014--no-internal-url-or-internal-document-content-in-this-repository)
+
+Do not flag: a LIBSDC ticket key on its own, which is an identifier rather than a link; a
+public URL, such as NAIF or the CERES documentation.
+
+### R-015 · The annotation says what the code actually accepts
+
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements `libera_utils/D-007`
+
+Wording: [R-015 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-015--the-annotation-says-what-the-code-actually-accepts)
+
+Do not flag: a union the code genuinely handles — `Path | str` is the fix pr-0028 agreed on,
+not a violation of this rule; a genuine union the product definition names; a constructor that
+documents a single coercion at the boundary and says so in its docstring.
+
+---
+
+## Candidates not admitted, because the cap binds
+
+Kept here with their evidence so the ratchet can promote one when a rule retires.
+
+- **Private symbols do not cross module boundaries.** A second consumer outside the defining
+  module makes a symbol public in fact; rename and document it, or wrap it. Evidence:
+  pr-0048 (`_expand_sample_times`, `_extract_wfov_header_metadata_from_blob`).
+- **A registry whose values reach a filename has a uniqueness invariant test.** Evidence:
+  pr-0041 (one ObsID on two instruments produced two writes of the same filename).
+- **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
+- **An error message says what went wrong and what to do next.** The strongest-evidenced
+  candidate here, and the first to promote. The concern is **already citable** as
+  `libera_utils/D-008`, keyed `D-008@libera_utils` in a finding, which is established on the
+  same three pull requests — the cap is holding a rule slot, not the concern, so a reviewer
+  cites the decision until a slot frees up. Four people asked for it in three pull requests:
+  "make this error more directed at the L2 devs ... check you have the correct profile
+  activated and if this error persists, contact the SDC" (pr-0028, with the replacement text
+  dictated in full); "I'd prefer an error message telling them they need to provide a tag,
+  rather than defaulting to `latest`" (pr-0060, taken as a breaking change); "in the logs,
+  report which data vars don't match, especially SRC_SEQ_CTR" and "add to the warning
+  message ... likely a result of clock jamming" (pr-0015).
+- **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer
+  removed three of them in one pass — "yet another unnecessary helper function". Held below
+  the cap because the review contract's New surface section already reports call-site
+  counts, so this is a check waiting for a firing rate rather than a rule waiting for a
+  reviewer.
+- **A valid range or an enumeration cites its source.** Evidence: pr-0004 ("what's the
+  reasoning for this valid range?", answered "extraneous - removing"), pr-0042
+  (`LAND_SURFACE_TYPE_BIN` declared 6 categories where the ADM algorithm has 5).
+- **Do not hold a large array twice.** Evidence: pr-0027, a stitching path holding three
+  copies of the image data live at once on a full downlink. One pull request; it was part of
+  R-013 until that rule was trimmed to what two pull requests support.
+- **A name is renamed when its contract widens.** Evidence: pr-0028
+  (`get_libera_utils_session` → `get_l2_team_role_session` once it took a `role_name`).

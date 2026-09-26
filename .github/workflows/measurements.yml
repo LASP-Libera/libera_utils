@@ -1,0 +1,49 @@
+name: Measurements
+
+# The corpus states numbers and reasons from them - a test count and a rule cap.
+# They go stale silently, and a threshold derived from a stale number is worse than none,
+# because it looks measured. The stated unit-lane count was wrong by 18 tests and the PR
+# lane by a factor of five before anyone noticed.
+#
+# Informational, like the exit-line check: set the repository variable MEASUREMENTS_MODE to
+# "blocking" once the numbers have been true for a while.
+
+on:
+  pull_request:
+    paths:
+      - "standards/**"
+      - "tests/**"
+      - ".github/scripts/check_measurements.py"
+      - ".github/workflows/measurements.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  measurements:
+    name: Stated numbers still measure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-env
+        with:
+          python-version: "3.11"
+
+      - name: Check the stated measurements
+        run: |
+          set -o pipefail
+          if poetry run python .github/scripts/check_measurements.py; then
+            exit 0
+          fi
+          if [ "${{ vars.MEASUREMENTS_MODE }}" = "blocking" ]; then
+            echo "::error::A stated measurement in standards/ no longer holds."
+            exit 1
+          fi
+          echo "::warning::A stated measurement in standards/ no longer holds. MEASUREMENTS_MODE is not 'blocking', so this is a note."
+          exit 0
