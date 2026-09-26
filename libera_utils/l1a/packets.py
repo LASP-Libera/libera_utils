@@ -589,7 +589,11 @@ def _report_src_seq_ctr_order(
     if n_gaps > 0:
         logger.warning(
             f"Detected {n_gaps} forward gaps in {SRC_SEQ_CTR_DIMENSION} in packets sorted by {coordinate_name}. "
-            f"This usually means packets are missing from the input."
+            f"A forward gap is any step other than +1 (mod {SRC_SEQ_CTR_MODULUS}) that is not a backward step of at "
+            f"most {SRC_SEQ_CTR_REORDER_WINDOW}: it counts dropped packets, repeated counters, backward steps "
+            f"deeper than {SRC_SEQ_CTR_REORDER_WINDOW}, and the two steps either side of each order mismatch. The "
+            f"window of {SRC_SEQ_CTR_REORDER_WINDOW} is interim, not a confirmed FSW reorder depth, so compare "
+            f"this count with the order mismatch count before reading it as dropped packets."
         )
 
     return n_mismatches, n_gaps

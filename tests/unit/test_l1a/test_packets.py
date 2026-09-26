@@ -376,7 +376,10 @@ def test_report_src_seq_ctr_order_gap_logs_without_warning(caplog):
 
     assert [r.getMessage() for r in caplog.records] == [
         "Detected 1 forward gaps in SRC_SEQ_CTR in packets sorted by PACKET_ICIE_TIME. "
-        "This usually means packets are missing from the input."
+        "A forward gap is any step other than +1 (mod 16384) that is not a backward step of at most 32: it counts "
+        "dropped packets, repeated counters, backward steps deeper than 32, and the two steps either side of each "
+        "order mismatch. The window of 32 is interim, not a confirmed FSW reorder depth, so compare this count with "
+        "the order mismatch count before reading it as dropped packets."
     ]
 
 
