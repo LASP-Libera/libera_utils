@@ -572,9 +572,10 @@ def _report_src_seq_ctr_order(
     if n_mismatches > 0:
         message = (
             f"Detected {n_mismatches} {SRC_SEQ_CTR_DIMENSION} order mismatches in packets sorted by "
-            f"{coordinate_name}: the counter steps backward by at most {SRC_SEQ_CTR_REORDER_WINDOW}. This usually "
-            f"means a packet time jumped or packets were delivered out of order. Packets are kept in "
-            f"{coordinate_name} order."
+            f"{coordinate_name}: the counter steps backward by at most {SRC_SEQ_CTR_REORDER_WINDOW}. "
+            f"{coordinate_name} is when the ICIE built each packet, so ground delivery order cannot cause this: "
+            f"either the ICIE packet clock jumped or {SRC_SEQ_CTR_DIMENSION} was assigned out of build order "
+            f"onboard. Packets are kept in {coordinate_name} order."
         )
         warnings.warn(message)
         logger.warning(message)
