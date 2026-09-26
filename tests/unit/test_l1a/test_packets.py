@@ -1116,9 +1116,9 @@ def mismatched_packet_parse():
         yield
 
 
-def _parse_mismatched_packets():
+def _parse_mismatched_packets(**kwargs):
     return libera_packets.parse_packets_to_l1a_dataset(
-        packet_files=["fake.bin"], apid=LiberaApid.icie_nom_hk.value, skip_header_bytes=0
+        packet_files=["fake.bin"], apid=LiberaApid.icie_nom_hk.value, skip_header_bytes=0, **kwargs
     )
 
 
@@ -1144,6 +1144,17 @@ def test_parse_packets_to_l1a_dataset_packet_index_under_src_seq_ctr_mismatch(mi
     packet_index = result["TEST_SAMPLE_packet_index"].values
     np.testing.assert_array_equal(result["OTHER_FIELD"].values[packet_index], result["SAMPLE_DATA"].values)
     np.testing.assert_array_equal(result["OTHER_FIELD"].values, [10, 20, 30, 40])
+
+
+@pytest.mark.parametrize(("verbose", "n_detail"), [(False, 0), (True, 1)])
+def test_parse_packets_to_l1a_dataset_passes_ground_data_and_verbose_to_order_report(
+    mismatched_packet_parse, caplog, verbose, n_detail
+):
+    """ground_data and verbose reach the SRC_SEQ_CTR order report from the parse entry point."""
+    with caplog.at_level("WARNING"), pytest.warns(UserWarning, match=MISMATCH_MESSAGE):
+        _parse_mismatched_packets(ground_data=True, verbose=verbose)
+
+    assert sum("order mismatch at packet" in r.getMessage() for r in caplog.records) == n_detail
 
 
 def test_drop_implausible_telemetry_times_removes_pre_floor_entries(caplog):
