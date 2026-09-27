@@ -90,8 +90,9 @@ from libera_utils.footprint_matching.product import (
     pseudofootprints_from_camtime_dataset,
     write_fmatch_product,
 )
-from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.registry import ReaderRegistry, reader_key_for_auxiliary_product
 from libera_utils.footprint_matching.types import OperationalMode
+from libera_utils.io.auxiliary_filenaming import try_parse_auxiliary_filename
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest
 from libera_utils.io.smart_open import is_s3
@@ -351,15 +352,17 @@ def run_algorithm(
 
     # Step 2: Locate the staged ancillary granules for this mode.
     #
-    # These are resolved, inventoried in the log, and (when the tree collapses to one
+    # These are resolved, inventoried in the log, and (when the inventory collapses to one
     # local granule per active reader; see _ancillary_source_file_paths) threaded into
     # product assembly, where the PSF aggregation engine computes the external variables
-    # and coverage/QA columns from them. Logging the inventory first lets an operator
-    # confirm staging is correct from the task log. Resolution is non-strict: an absent
-    # or incomplete tree degrades those columns to placeholders rather than failing the
-    # product (TODO[LIBSDC-785]: enforce strict availability once staging is guaranteed).
+    # and coverage/QA columns from them. The granules are identified straight from the input
+    # manifest by parsing their filenames when it stages them; otherwise resolution falls back to
+    # the FMATCH_ANCILLARY_PATH directory tree. Logging the inventory first lets an operator
+    # confirm staging is correct from the task log. Resolution is non-strict: absent or incomplete
+    # inputs degrade those columns to placeholders rather than failing the product
+    # (TODO[LIBSDC-785]: enforce strict availability once staging is guaranteed).
     logger.info("Step 2: Locating staged ancillary inputs")
-    ancillary_inputs = resolve_ancillary_inputs(config.mode)
+    ancillary_inputs = resolve_ancillary_inputs(config.mode, manifest=input_manifest)
     log_ancillary_inventory(ancillary_inputs)
 
     # Step 3: Collect the L1B input file(s) from the manifest.
@@ -430,10 +433,66 @@ def _collect_cloud_fraction_files(input_manifest: Manifest, config: FmatchRunner
     return paths
 
 
+def select_auxiliary_files(manifest: Manifest, mode: OperationalMode) -> dict[str, list[Path | S3Path]]:
+    """Group a manifest's external auxiliary granules by the FMATCH reader that consumes each.
+
+    The counterpart to :func:`resolve_ancillary_inputs`'s directory-tree scan, for the production
+    reality where a runner receives one flat manifest listing every staged file. It walks the
+    manifest, parses each record's filename with
+    :func:`~libera_utils.io.auxiliary_filenaming.try_parse_auxiliary_filename`, and keeps those
+    whose product maps (via
+    :func:`~libera_utils.footprint_matching.readers.registry.reader_key_for_auxiliary_product`) to a
+    reader active for ``mode``. Records that are not recognized auxiliary products -- the L1B input,
+    a cloud-fraction product, unrelated files -- are skipped, in the same spirit as
+    :func:`~libera_utils.footprint_matching._runner_common.select_manifest_files_by_product_id`.
+
+    Parameters
+    ----------
+    manifest : Manifest
+        The input manifest to inspect.
+    mode : OperationalMode
+        The FMATCH operational mode being run; selects the active reader set.
+
+    Returns
+    -------
+    dict[str, list[pathlib.Path | cloudpathlib.S3Path]]
+        One entry per reader active for ``mode`` (so the shape matches
+        :func:`resolve_ancillary_inputs`), each a list of the manifest granules routed to that
+        reader, sorted by name for deterministic processing. Active readers the manifest stages
+        nothing for map to an empty list.
+    """
+    active_reader_keys = set(ReaderRegistry.get_readers_for_mode(mode))
+    grouped: dict[str, list[Path | S3Path]] = {key: [] for key in sorted(active_reader_keys)}
+    for file_record in manifest.files:
+        filename = file_record.filename
+        parsed = try_parse_auxiliary_filename(filename)
+        if parsed is None:
+            # Not a recognized auxiliary granule (an L1B/cloud-fraction/Libera file, or unrelated).
+            continue
+        reader_key = reader_key_for_auxiliary_product(parsed.product_id)
+        if reader_key not in active_reader_keys:
+            logger.info(
+                "Skipping auxiliary granule for reader '%s' not active in %s (%s): %s",
+                reader_key,
+                mode.value,
+                parsed.product_id.value,
+                filename,
+            )
+            continue
+        logger.info(
+            "Recording auxiliary granule for reader '%s' (%s): %s", reader_key, parsed.product_id.value, filename
+        )
+        grouped[reader_key].append(AnyPath(filename))
+    for files in grouped.values():
+        files.sort(key=str)
+    return grouped
+
+
 def resolve_ancillary_inputs(
     mode: OperationalMode,
     root: str | Path | S3Path | None = None,
     *,
+    manifest: Manifest | None = None,
     strict: bool = False,
 ) -> dict[str, list[Path | S3Path]]:
     """Map each reader active for ``mode`` to its staged granule files.
@@ -444,8 +503,14 @@ def resolve_ancillary_inputs(
     have third-party filenames, so they cannot be selected out of a manifest the way
     :func:`select_manifest_files_by_product_id` selects L1B inputs.
 
-    The pipeline stages ancillary granules into a directory tree with **one
-    subdirectory per reader, named by the reader's registry key**::
+    Two staging conventions are supported, in priority order:
+
+    1. **Flat manifest (preferred).** When ``manifest`` is given and it references at least one
+       recognized auxiliary granule, those granules are grouped by reader with
+       :func:`select_auxiliary_files` and returned directly -- the granules are identified by
+       *parsing their filenames*, so no pre-sorted directory tree is needed.
+    2. **Directory tree (fallback).** Otherwise the granules are located in a tree with **one
+       subdirectory per reader, named by the reader's registry key**::
 
         $FMATCH_ANCILLARY_PATH/
             era5/           ERA5 single-level granules
@@ -471,8 +536,13 @@ def resolve_ancillary_inputs(
     mode : OperationalMode
         The FMATCH operational mode being run.
     root : str | pathlib.Path | cloudpathlib.S3Path, optional
-        Root of the staged ancillary tree. Defaults to the ``FMATCH_ANCILLARY_PATH``
+        Root of the staged ancillary tree (fallback path). Defaults to the ``FMATCH_ANCILLARY_PATH``
         environment variable.
+    manifest : Manifest, optional
+        The input manifest. When it references any recognized auxiliary granule, the manifest is the
+        authority and the directory tree is not consulted (see :func:`select_auxiliary_files`). When
+        it references none (or is omitted), resolution falls back to the directory tree so
+        local/dev runs and current deployments keep working unchanged.
     strict : bool, optional
         How to treat missing inputs. When False (the default) a missing root, a
         missing reader subdirectory, or an empty one is logged as a warning and
@@ -501,6 +571,23 @@ def resolve_ancillary_inputs(
         subdirectory is empty, and ``strict``.
     """
     active_readers = ReaderRegistry.get_readers_for_mode(mode)
+
+    # Prefer the flat manifest when it actually stages auxiliary granules; otherwise fall back to
+    # the directory tree so current deployments (which stage via FMATCH_ANCILLARY_PATH) are
+    # unaffected.
+    if manifest is not None:
+        from_manifest = select_auxiliary_files(manifest, mode)
+        if any(from_manifest.values()):
+            logger.info(
+                "Resolved auxiliary inputs from the manifest (%d of %d active reader(s) staged).",
+                sum(1 for files in from_manifest.values() if files),
+                len(active_readers),
+            )
+            return from_manifest
+        logger.info(
+            "Manifest references no recognized auxiliary granules; falling back to the %s directory tree.",
+            ANCILLARY_PATH_ENV,
+        )
 
     ancillary_root = _resolve_ancillary_root(root, mode=mode, strict=strict)
     if ancillary_root is None:

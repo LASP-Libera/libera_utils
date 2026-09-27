@@ -164,6 +164,44 @@ class TestRadiometerRunnerWorkflow:
         with xr.open_dataset(output_manifest.files[0].filename) as product:
             assert product.sizes["RADIOMETER_TIME"] == 6
 
+    def test_auxiliary_granules_staged_in_the_manifest_reach_provenance(self, tmp_path, dropbox, monkeypatch):
+        """Auxiliary granules named in a flat manifest (no directory tree) drive the run.
+
+        This exercises the manifest-driven path end-to-end: no FMATCH_ANCILLARY_PATH tree is
+        staged, and one auxiliary granule per active CAM reader is listed in the manifest alongside
+        the L1B input. Every auxiliary granule must be identified by filename and recorded in the
+        product's provenance.
+        """
+        monkeypatch.delenv(ANCILLARY_PATH_ENV, raising=False)
+        inputs = tmp_path / "inputs"
+        inputs.mkdir()
+        l1b_file = make_l1b_radiometer_fixture(inputs, n_footprints=8)
+
+        # One recognizable auxiliary granule per reader active in CAM mode (era5, igbp, nise,
+        # viirs_brdf, viirs_cloud), flat in the inputs directory -- not in a per-reader tree.
+        auxiliary_names = [
+            "ERA5-SINGLE-LEVEL_20251120.nc",
+            "MCD12Q1.A2025001.h21v07.061.2025205222320.hdf",
+            "NISE_AMSR2_20251120.HDFEOS",
+            "VJ143C1.A2025324.002.2025330161054.h5",
+            "CLDPROP_D3_VIIRS_NOAA20.A2025324.011.2025330000710.nc",
+        ]
+        auxiliary_files = []
+        for name in auxiliary_names:
+            granule = inputs / name
+            granule.write_text(f"not really a granule: {name}")  # unique content -> distinct checksum
+            auxiliary_files.append(granule)
+
+        manifest_path = _write_input_manifest(inputs, l1b_file, *auxiliary_files)
+
+        output_manifest = Manifest.from_file(cam_algorithm(manifest_path))
+
+        with xr.open_dataset(output_manifest.files[0].filename) as product:
+            recorded_inputs = product.attrs["InputGranules"].split(",")
+            assert l1b_file.name in recorded_inputs
+            for name in auxiliary_names:
+                assert name in recorded_inputs
+
 
 class TestCameraRunnerWorkflow:
     """The FMATCH-CAM-CAMTIME runner ingests CF-CAM-CAMTIME (segmentation happens upstream in cloud fraction)."""
