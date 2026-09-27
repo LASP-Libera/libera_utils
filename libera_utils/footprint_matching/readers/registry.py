@@ -24,9 +24,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# OperationalMode is imported at runtime (not just for type checking): it keys the
-# per-product reader-set map below. types.py is dependency-free, so this cannot
-# create an import cycle.
+# Both imported at runtime (not just for type checking): OperationalMode keys the per-product
+# reader-set map and DataProductIdentifier keys the auxiliary-product map below. types.py is
+# dependency-free and constants.py only pulls in aws.constants, so neither creates an import cycle.
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.types import OperationalMode
 
 if TYPE_CHECKING:
@@ -55,6 +56,74 @@ FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
         {"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "viirs_aod", "cldpix", "ssf"}
     ),
 }
+
+
+# ---------------------------------------------------------------------------
+# Auxiliary product -> reader mapping
+# ---------------------------------------------------------------------------
+# Maps each external auxiliary DataProductIdentifier (the ``auxiliary_*`` members) to the
+# ReaderRegistry key of the reader that consumes it. This lives here -- in the footprint matching
+# module -- rather than on the enum in constants.py because reader membership is a
+# footprint-matching concern; constants.py must stay free of that coupling. A single reader may
+# consume more than one product (VIIRS BRDF params and albedo are both read by ``viirs_brdf``),
+# so the mapping is product -> reader (many-to-one). Every reader named in FMATCH_MODE_READERS
+# must appear here and vice versa; the consistency guard lives in the registry tests.
+AUXILIARY_PRODUCT_READERS: dict[DataProductIdentifier, str] = {
+    DataProductIdentifier.auxiliary_igbp_mcd12q1: "igbp",
+    DataProductIdentifier.auxiliary_nise: "nise",
+    DataProductIdentifier.auxiliary_viirs_brdf: "viirs_brdf",
+    DataProductIdentifier.auxiliary_viirs_brdf_albedo: "viirs_brdf",
+    DataProductIdentifier.auxiliary_viirs_cloud: "viirs_cloud",
+    DataProductIdentifier.auxiliary_viirs_aod: "viirs_aod",
+    DataProductIdentifier.auxiliary_ceres_ssf: "ssf",
+    DataProductIdentifier.auxiliary_ceres_cldpix: "cldpix",
+    DataProductIdentifier.auxiliary_era5_single_level: "era5",
+    DataProductIdentifier.auxiliary_era5_pressure_level: "era5_pressure",
+}
+
+
+def reader_key_for_auxiliary_product(product_id: DataProductIdentifier) -> str:
+    """Return the reader key that consumes a given auxiliary product.
+
+    Parameters
+    ----------
+    product_id : DataProductIdentifier
+        One of the ``auxiliary_*`` members.
+
+    Returns
+    -------
+    str
+        The ReaderRegistry key of the reader that consumes ``product_id``.
+
+    Raises
+    ------
+    KeyError
+        If ``product_id`` is not a mapped auxiliary product (e.g. a Libera-produced product).
+    """
+    if product_id not in AUXILIARY_PRODUCT_READERS:
+        raise KeyError(
+            f"{product_id!r} is not an auxiliary input product. "
+            f"Auxiliary products: {sorted(p.name for p in AUXILIARY_PRODUCT_READERS)}"
+        )
+    return AUXILIARY_PRODUCT_READERS[product_id]
+
+
+def auxiliary_products_for_reader(reader_key: str) -> tuple[DataProductIdentifier, ...]:
+    """Return the auxiliary products consumed by a given reader key.
+
+    Parameters
+    ----------
+    reader_key : str
+        A ReaderRegistry key (e.g. ``"igbp"``, ``"viirs_brdf"``).
+
+    Returns
+    -------
+    tuple[DataProductIdentifier, ...]
+        Every auxiliary product mapped to ``reader_key``, in mapping order. A reader may own more
+        than one (``viirs_brdf`` reads both VJ143C1 params and VJ143C3 albedo). Empty if no product
+        names this reader key.
+    """
+    return tuple(product_id for product_id, key in AUXILIARY_PRODUCT_READERS.items() if key == reader_key)
 
 
 class ReaderRegistry:

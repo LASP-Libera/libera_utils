@@ -351,6 +351,30 @@ class DataProductIdentifier(StrEnum):
         DataLevel.AUX,
     )  # TRMM-like + ERBE-like ADMs using RBSP + VIIRS imager data for cloud properties
 
+    # External Auxiliary Products
+    # ========================================================
+    auxiliary_igbp_mcd12q1 = ("MCD12Q1", DataLevel.AUX)
+    # NSIDC Near-real-time Ice and Snow Extent (SSM/I-SSMIS v5 and AMSR-2 v1)
+    auxiliary_nise = ("NISE", DataLevel.AUX)
+    # VIIRS/NOAA-20 BRDF/Albedo model parameters (VJ143C1, collection 002)
+    auxiliary_viirs_brdf = ("VJ143C1", DataLevel.AUX)
+    # VIIRS/NOAA-20 BRDF/Albedo derived albedo (VJ143C3) -- same reader; recognized but not yet
+    # read by VIIRSBRDFReader (only VJ143C1 is consumed). TODO[LIBSDC-803]: confirm C3 usage.
+    auxiliary_viirs_brdf_albedo = ("VJ143C3", DataLevel.AUX)
+    # VIIRS/NOAA-20 daily L3 cloud properties (CLDPROP_D3, collection 011)
+    auxiliary_viirs_cloud = ("CLDPROP_D3_VIIRS", DataLevel.AUX)
+    # VIIRS/NOAA-20 Deep Blue daily L3 aerosol (AERDB_D3, collection 002)
+    auxiliary_viirs_aod = ("AERDB_D3_VIIRS", DataLevel.AUX)
+    # CERES Single Scanner Footprint TOA/Surface fluxes (RBSP CER_SSF)
+    auxiliary_ceres_ssf = ("CER_SSF", DataLevel.AUX)
+    # CERES Cloud Pixel imager-resolution cloud retrievals (RBSP CER_CLDPIX)
+    auxiliary_ceres_cldpix = ("CER_CLDPIX", DataLevel.AUX)
+    # ECMWF ERA5 single-level reanalysis (Copernicus CDS). Libera-assigned canonical id: raw CDS
+    # granules have no stable filename, so they are renamed to this at staging.
+    auxiliary_era5_single_level = ("ERA5-SINGLE-LEVEL", DataLevel.AUX)
+    # ECMWF ERA5 pressure-level reanalysis (Copernicus CDS).
+    auxiliary_era5_pressure_level = ("ERA5-PRESSURE-LEVEL", DataLevel.AUX)
+
     @property
     def product_name(self) -> str:
         """Get the name formatted for AWS resources for this data product

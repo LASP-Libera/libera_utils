@@ -257,6 +257,17 @@ class TestDataProductIdentifier:
             "aux_scene_id_imager_flash",
             "aux_adm_stats_imager",
             "aux_adm_imager",
+            # External Auxiliary Products consumed by footprint matching
+            "auxiliary_igbp_mcd12q1",
+            "auxiliary_nise",
+            "auxiliary_viirs_brdf",
+            "auxiliary_viirs_brdf_albedo",
+            "auxiliary_viirs_cloud",
+            "auxiliary_viirs_aod",
+            "auxiliary_ceres_ssf",
+            "auxiliary_ceres_cldpix",
+            "auxiliary_era5_single_level",
+            "auxiliary_era5_pressure_level",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
@@ -334,6 +345,37 @@ class TestDataProductIdentifier:
             assert issubclass(w[0].category, DeprecationWarning)
             assert "Use DataProductIdentifier.level.archive_bucket_name instead" in str(w[0].message)
             assert isinstance(bucket_name, str)
+
+
+class TestAuxiliaryDataProductIdentifiers:
+    """Tests for the external auxiliary (``auxiliary_*``) members of DataProductIdentifier.
+
+    The mapping from these products to the FMATCH reader that consumes each lives in the footprint
+    matching module (``footprint_matching.readers.registry``), so those assertions are in
+    ``tests/unit/test_footprint_matching/test_readers/test_registry.py``, not here.
+    """
+
+    # The auxiliary members and their expected string values -- the single source for the
+    # assertions below.
+    EXPECTED = {
+        DataProductIdentifier.auxiliary_igbp_mcd12q1: "MCD12Q1",
+        DataProductIdentifier.auxiliary_nise: "NISE",
+        DataProductIdentifier.auxiliary_viirs_brdf: "VJ143C1",
+        DataProductIdentifier.auxiliary_viirs_brdf_albedo: "VJ143C3",
+        DataProductIdentifier.auxiliary_viirs_cloud: "CLDPROP_D3_VIIRS",
+        DataProductIdentifier.auxiliary_viirs_aod: "AERDB_D3_VIIRS",
+        DataProductIdentifier.auxiliary_ceres_ssf: "CER_SSF",
+        DataProductIdentifier.auxiliary_ceres_cldpix: "CER_CLDPIX",
+        DataProductIdentifier.auxiliary_era5_single_level: "ERA5-SINGLE-LEVEL",
+        DataProductIdentifier.auxiliary_era5_pressure_level: "ERA5-PRESSURE-LEVEL",
+    }
+
+    def test_metadata(self):
+        """Auxiliary products have the expected uppercase value and AUX data level."""
+        for product, value in self.EXPECTED.items():
+            assert product.value == value
+            assert product.value == product.value.upper()
+            assert product.data_level is DataLevel.AUX
 
 
 class TestProcessingStepIdentifier:

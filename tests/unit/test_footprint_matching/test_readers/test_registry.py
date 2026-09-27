@@ -15,6 +15,7 @@ import pytest
 # Importing the readers subpackage triggers __init_subclass__ registration
 # for all built-in readers.
 import libera_utils.footprint_matching.readers  # noqa: F401
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
@@ -23,8 +24,11 @@ from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLe
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
 from libera_utils.footprint_matching.readers.registry import (
+    AUXILIARY_PRODUCT_READERS,
     FMATCH_MODE_READERS,
     ReaderRegistry,
+    auxiliary_products_for_reader,
+    reader_key_for_auxiliary_product,
 )
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
@@ -205,6 +209,53 @@ class TestReaderMembershipSets:
             readers = ReaderRegistry.get_readers_for_mode(mode)
             assert readers, f"{mode.value} resolved to an empty reader set"
             assert set(readers) <= registered
+
+
+class TestAuxiliaryProductReaders:
+    """The auxiliary product -> reader mapping is the bridge from a parsed granule to its reader."""
+
+    def test_every_mapped_reader_key_is_registered(self):
+        # Targets referential integrity of AUXILIARY_PRODUCT_READERS; asserts every reader key it
+        # names is actually registered.
+        registered = set(ReaderRegistry.list_readers())
+        mapped = set(AUXILIARY_PRODUCT_READERS.values())
+        assert mapped <= registered, f"Auxiliary mapping names unregistered reader(s): {mapped - registered}"
+
+    def test_every_fmatch_reader_has_an_auxiliary_product(self):
+        # Consistency guard: every reader that feeds a FMATCH product must have at least one
+        # auxiliary product mapped to it, so a run's active reader set can always be sourced.
+        fmatch_reader_keys = set().union(*FMATCH_MODE_READERS.values())
+        mapped = set(AUXILIARY_PRODUCT_READERS.values())
+        assert fmatch_reader_keys <= mapped, f"FMATCH readers with no auxiliary product: {fmatch_reader_keys - mapped}"
+
+    def test_all_mapped_products_are_aux_auxiliary_members(self):
+        # Targets that only the auxiliary_* AUX members are mapped; asserts each key is an AUX
+        # DataProductIdentifier whose member name starts with "auxiliary_".
+        for product_id in AUXILIARY_PRODUCT_READERS:
+            assert isinstance(product_id, DataProductIdentifier)
+            assert product_id.name.startswith("auxiliary_")
+
+    def test_reader_key_for_auxiliary_product(self):
+        # Targets the forward lookup; asserts a representative product maps to its reader key.
+        assert reader_key_for_auxiliary_product(DataProductIdentifier.auxiliary_igbp_mcd12q1) == "igbp"
+        assert reader_key_for_auxiliary_product(DataProductIdentifier.auxiliary_ceres_ssf) == "ssf"
+
+    def test_reader_key_for_non_auxiliary_product_raises(self):
+        # Targets error handling; asserts a Libera-produced product raises KeyError.
+        with pytest.raises(KeyError, match="not an auxiliary input product"):
+            reader_key_for_auxiliary_product(DataProductIdentifier.l1b_rad)
+
+    def test_auxiliary_products_for_reader_groups_shared_reader(self):
+        # viirs_brdf reads both VJ143C1 params and VJ143C3 albedo; asserts both come back in order.
+        assert auxiliary_products_for_reader("viirs_brdf") == (
+            DataProductIdentifier.auxiliary_viirs_brdf,
+            DataProductIdentifier.auxiliary_viirs_brdf_albedo,
+        )
+
+    def test_auxiliary_products_for_reader_single_and_unknown(self):
+        # Targets single-owner and unknown-key cases; asserts a one-tuple and an empty tuple respectively.
+        assert auxiliary_products_for_reader("igbp") == (DataProductIdentifier.auxiliary_igbp_mcd12q1,)
+        assert auxiliary_products_for_reader("does_not_exist") == ()
 
 
 class TestReadersPublicApi:
