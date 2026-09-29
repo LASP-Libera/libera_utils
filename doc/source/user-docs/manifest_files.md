@@ -59,12 +59,14 @@ locations. `out_path` may be a directory or S3 prefix, or the full path of the f
 ```python
 m = Manifest.for_input(files=["/data/LIBERA_L1A_..."], configuration={"start_time": "..."})
 
-m.write("/processing/")                                                 # /processing/LIBERA_INPUT_MANIFEST_<ULID>.json
-m.write("s3://bucket/prefix", filename=m.filename.path.name)             # explicit bare filename
-m.write("/elsewhere/LIBERA_INPUT_MANIFEST_01H2GK8J6XM93VKQP4CQFM1TAN.json")  # full path
+m.write("/processing/")  # /processing/LIBERA_INPUT_MANIFEST_<ULID>.json
+m.write("s3://bucket/prefix", filename=m.filename.path.name)  # explicit bare filename
+m.write(f"/elsewhere/{m.filename.path.name}")  # full path
 ```
 
-When no filename can be taken from the arguments or the object, a filename with a fresh ULID is generated.
+When no filename can be taken from the arguments or the object, a filename with a fresh ULID is generated. Writing a
+manifest that already has a filename to a path carrying a different ULID logs a warning, because the written file
+will no longer trace back to the manifest's ULID.
 
 ## File-backed manifests: `save()` and `copy()`
 
