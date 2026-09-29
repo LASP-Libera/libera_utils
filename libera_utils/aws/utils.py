@@ -2,7 +2,7 @@
 
 import logging
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING
 
 import boto3
@@ -25,12 +25,34 @@ LIBERA_UTILS_ROLE_NAME = f"{L2_DEVELOPER_ROLE_PATH}/LiberaUtils"
 # Both the manual ingest (s3-utils put) and manual processing flows emit events to this single bus.
 SDC_EVENT_BUS_PARTIAL_NAME = "LiberaSDCEventBus"
 
+# Number of applicable dates above which a CLI asks the user to confirm before submitting.
+MAX_UNCONFIRMED_APPLICABLE_DATES = 3
+
 
 def to_date(value: str | date | datetime) -> date:
-    """Normalize a date-like value (ISO string, datetime, or date) to a ``datetime.date``."""
+    """Normalize a date-like value to its UTC calendar date.
+
+    Parameters
+    ----------
+    value : str, date, or datetime
+        An ISO 8601 date or datetime string, a ``datetime``, or a ``date``. A timezone-aware
+        datetime is converted to UTC first; a naive one is taken as UTC.
+
+    Returns
+    -------
+    date
+        The UTC calendar date.
+
+    Raises
+    ------
+    ValueError
+        If ``value`` is a string that is not ISO 8601.
+    """
     if isinstance(value, str):
         value = datetime.fromisoformat(value)
     if isinstance(value, datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC)
         value = value.date()
     return value
 

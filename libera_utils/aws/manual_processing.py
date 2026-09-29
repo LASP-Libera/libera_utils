@@ -24,6 +24,7 @@ from cloudpathlib import AnyPath
 from ulid import ULID
 
 from libera_utils.aws.utils import (
+    MAX_UNCONFIRMED_APPLICABLE_DATES,
     SDC_EVENT_BUS_PARTIAL_NAME,
     find_dynamodb_table_in_account_by_partial_name,
     find_event_bus_in_account_by_partial_name,
@@ -54,9 +55,6 @@ VERIFY_POLL_INTERVAL_SECONDS = 5
 _RUNNING_NODE_STATUSES = frozenset({"RUNNING", "SUCCEEDED"})
 # Final node statuses that mean a start node did not run (or failed). Reported as warnings, not errors.
 _FINAL_NON_RUNNING_NODE_STATUSES = frozenset({"NOTRUN", "FAILED"})
-
-# Number of applicable dates above which the manual-processing CLI asks the user to confirm before submitting.
-MAX_UNCONFIRMED_APPLICABLE_DATES = 3
 
 # Kebab-case keys allowed on a custom DAG node. The SDC model rejects snake_case, so we do too (early validation).
 _REQUIRED_NODE_KEYS = frozenset({"description", "output-products", "input-products", "upstream-nodes"})

@@ -9,7 +9,7 @@ from enum import StrEnum
 import numpy as np
 
 from libera_utils.constants import LiberaApid
-from libera_utils.l1a.day_window import DEFAULT_DAY_BUFFER
+from libera_utils.l1a.day_window import day_core_and_buffer_bounds, day_window_bounds
 
 # Spacing at or below this is treated as continuous rather than as a gap. It absorbs two
 # effects that are not missing data. First, a file's span is recorded over sample *timestamps*,
@@ -119,7 +119,7 @@ def coverage_policy_for_apid(apid: LiberaApid | int) -> DayCoveragePolicy:
     Raises
     ------
     KeyError
-        If ``apid`` is not a ``LiberaApid``, or has no registered policy.
+        If ``apid`` is not a ``LiberaApid`` member.
     """
     try:
         return APID_COVERAGE_POLICIES[LiberaApid(apid)]
@@ -138,7 +138,6 @@ class DayCoverageResult:
     left_ok: bool
     day_ok: bool
     right_ok: bool
-    n_intervals: int
 
     @property
     def is_complete(self) -> bool:
@@ -169,7 +168,7 @@ def _clip_interval(
 
 def _merge_intervals(
     intervals: list[tuple[datetime, datetime]],
-    tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
+    tolerance: timedelta,
 ) -> list[tuple[datetime, datetime]]:
     """Merge overlapping/adjacent half-open intervals, joining across gaps up to ``tolerance``."""
     if not intervals:
@@ -189,7 +188,7 @@ def _coverage_fraction(
     intervals: list[tuple[datetime, datetime]],
     window_start: datetime,
     window_end: datetime,
-    tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
+    tolerance: timedelta,
 ) -> float:
     """Fraction of [window_start, window_end) covered by the union of intervals."""
     window_seconds = (window_end - window_start).total_seconds()
@@ -204,28 +203,28 @@ def _coverage_fraction(
     return min(1.0, covered / window_seconds)
 
 
-def day_core_and_buffer_bounds(
-    day: date,
-    buffer: timedelta = DEFAULT_DAY_BUFFER,
-) -> tuple[tuple[datetime, datetime], tuple[datetime, datetime], tuple[datetime, datetime]]:
-    """Return (left_buffer, day_core, right_buffer) as naive-UTC half-open intervals."""
-    day_start = datetime.combine(day, datetime.min.time())
-    day_end = datetime.combine(day + timedelta(days=1), datetime.min.time())
-    left = (day_start - buffer, day_start)
-    core = (day_start, day_end)
-    right = (day_end, day_end + buffer)
-    return left, core, right
+def overlaps_day_window(start: datetime, end: datetime, *, day: date) -> bool:
+    """Return True if the closed span ``[start, end]`` touches the closed day window of ``day``.
+
+    The window is :func:`~libera_utils.l1a.day_window.day_window_bounds`, the same one
+    :func:`~libera_utils.l1a.day_window.trim_l1a_to_day_window` keeps. Endpoints may be aware or
+    naive UTC.
+    """
+    window_start, window_end = day_window_bounds(day)
+    return _as_naive_utc(start) <= window_end and _as_naive_utc(end) >= window_start
 
 
 def evaluate_day_coverage(
-    intervals: list[tuple[datetime, datetime]],
+    intervals: list[tuple[datetime | None, datetime | None]],
     *,
     day: date,
     policy: DayCoveragePolicy,
-    buffer: timedelta = DEFAULT_DAY_BUFFER,
     seam_tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
 ) -> DayCoverageResult:
     """Evaluate L0 time-span coverage against day core and midnight buffers.
+
+    Pairs with a ``None`` endpoint and inverted pairs (``start > end``) are ignored. A
+    zero-length span counts toward presence but adds nothing to the fractions.
 
     Parameters
     ----------
@@ -235,8 +234,6 @@ def evaluate_day_coverage(
         Applicable UTC calendar day.
     policy : DayCoveragePolicy
         Completeness rule for the APID being combined, from :func:`coverage_policy_for_apid`.
-    buffer : timedelta, optional
-        Midnight buffer on each side (default 10 minutes).
     seam_tolerance : timedelta, optional
         Spacing between two spans that still counts as continuous. Default
         ``DEFAULT_SEAM_TOLERANCE`` (1 s). Pass ``timedelta(0)`` to require exact abutment.
@@ -244,25 +241,26 @@ def evaluate_day_coverage(
     Returns
     -------
     DayCoverageResult
-        Fractions and boolean gates for left buffer, day core, and right buffer.
+        Fractions and boolean gates for left buffer, day core, and right buffer. Under
+        ``EVENT_DRIVEN`` all three ``*_ok`` equal presence: whether any span overlaps the day
+        window (:func:`overlaps_day_window`).
     """
-    normalized = [
+    spans = [
         (_as_naive_utc(start), _as_naive_utc(end)) for start, end in intervals if start is not None and end is not None
     ]
-    # Drop inverted/empty intervals
-    normalized = [(s, e) for s, e in normalized if s < e]
+    spans = [(s, e) for s, e in spans if s <= e]
+    nonempty = [(s, e) for s, e in spans if s < e]
 
-    left, core, right = day_core_and_buffer_bounds(day, buffer)
-    left_frac = _coverage_fraction(normalized, *left, tolerance=seam_tolerance)
-    day_frac = _coverage_fraction(normalized, *core, tolerance=seam_tolerance)
-    right_frac = _coverage_fraction(normalized, *right, tolerance=seam_tolerance)
+    left, core, right = day_core_and_buffer_bounds(day)
+    left_frac = _coverage_fraction(nonempty, *left, tolerance=seam_tolerance)
+    day_frac = _coverage_fraction(nonempty, *core, tolerance=seam_tolerance)
+    right_frac = _coverage_fraction(nonempty, *right, tolerance=seam_tolerance)
 
     if policy.mode is CoverageMode.EVENT_DRIVEN:
         # Presence anywhere in the buffered window is the whole test. Gating the buffers on a
         # fraction as well would make an event-driven day unreachable: an APID that is only on
         # for an event almost never has data at both midnights.
-        window_start, window_end = left[0], right[1]
-        present = any(start < window_end and end > window_start for start, end in normalized)
+        present = any(overlaps_day_window(start, end, day=day) for start, end in spans)
         left_ok = day_ok = right_ok = present
     else:
         left_ok = left_frac >= policy.buffer_coverage_frac
@@ -277,7 +275,6 @@ def evaluate_day_coverage(
         left_ok=left_ok,
         day_ok=day_ok,
         right_ok=right_ok,
-        n_intervals=len(normalized),
     )
 
 
@@ -303,18 +300,15 @@ def measure_time_axis_coverage(
     times: np.ndarray,
     *,
     day: date,
-    buffer: timedelta = DEFAULT_DAY_BUFFER,
-    gap_factor: float = DEFAULT_GAP_FACTOR,
-    seam_tolerance: timedelta = DEFAULT_SEAM_TOLERANCE,
 ) -> TimeAxisCoverage:
     """Measure how much of a day a granule's time axis actually occupies.
 
     This is a measurement, not a gate. :func:`evaluate_day_coverage` works from whole-file L0
     spans and so cannot see a gap *inside* a file; this works from the samples themselves.
 
-    Samples count as continuous until their spacing exceeds ``gap_factor`` times the axis's
-    median spacing (never less than ``seam_tolerance``), and the last sample of each run is
-    credited with one median cadence of occupancy.
+    Samples count as continuous until their spacing exceeds ``DEFAULT_GAP_FACTOR`` times the
+    axis's median spacing (never less than ``DEFAULT_SEAM_TOLERANCE``), and the last sample of
+    each run is credited with one median cadence of occupancy.
 
     Parameters
     ----------
@@ -322,18 +316,13 @@ def measure_time_axis_coverage(
         Datetime64 (or datetime-like) values from one science time axis. Need not be sorted.
     day : date
         Applicable UTC calendar day.
-    buffer : timedelta, optional
-        Midnight buffer on each side (default 10 minutes).
-    gap_factor : float, optional
-        Multiple of the median spacing above which a spacing is a gap. Default 5.
-    seam_tolerance : timedelta, optional
-        Floor on the gap threshold, so a near-zero median cadence cannot make every spacing a gap.
 
     Returns
     -------
     TimeAxisCoverage
         Fractions for the day core and both buffers, plus the axis's median cadence and largest
-        gap. An empty axis returns all zeros.
+        gap. ``NaT`` values are ignored. An empty axis returns all zeros. A single sample has
+        ``median_cadence`` equal to ``DEFAULT_SEAM_TOLERANCE`` and occupies that long.
     """
     values = np.asarray(times).astype("datetime64[us]").ravel()
     values = values[~np.isnat(values)]
@@ -342,22 +331,22 @@ def measure_time_axis_coverage(
         return TimeAxisCoverage(0.0, 0.0, 0.0, timedelta(0), timedelta(0), 0)
 
     if values.size == 1:
-        cadence_us = int(seam_tolerance.total_seconds() * 1e6)
+        cadence_us = int(DEFAULT_SEAM_TOLERANCE.total_seconds() * 1e6)
         max_gap_us = 0
         run_bounds = [(values[0], values[0])]
     else:
         spacings_us = np.diff(values).astype("int64")
         cadence_us = int(np.median(spacings_us))
         max_gap_us = int(spacings_us.max())
-        threshold_us = max(cadence_us * gap_factor, seam_tolerance.total_seconds() * 1e6)
+        threshold_us = max(cadence_us * DEFAULT_GAP_FACTOR, DEFAULT_SEAM_TOLERANCE.total_seconds() * 1e6)
         # Split at real gaps; each remaining run is one continuously occupied interval.
         break_positions = np.flatnonzero(spacings_us > threshold_us) + 1
-        run_bounds = [(run[0], run[-1]) for run in np.split(values, break_positions) if run.size]
+        run_bounds = [(run[0], run[-1]) for run in np.split(values, break_positions)]
 
     occupancy = timedelta(microseconds=max(cadence_us, 1))
     intervals = [(first.astype(datetime), last.astype(datetime) + occupancy) for first, last in run_bounds]
 
-    left, core, right = day_core_and_buffer_bounds(day, buffer)
+    left, core, right = day_core_and_buffer_bounds(day)
     return TimeAxisCoverage(
         day_frac=_coverage_fraction(intervals, *core, tolerance=timedelta(0)),
         left_frac=_coverage_fraction(intervals, *left, tolerance=timedelta(0)),

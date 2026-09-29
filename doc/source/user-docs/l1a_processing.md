@@ -198,26 +198,44 @@ cover it.
 
 ## Day-window trim and uniqueness
 
-After decoding L1A, use `libera_utils.l1a.day_window.trim_l1a_to_day_window` to keep data in
-`[day 00:00 UTC − buffer, day+1 00:00 UTC + buffer)` (default buffer 10 minutes). Set
-`keep_whole_groups=True` with a `packet_index_var` so radiometer packets are not split across the
-cut. When `packet_index_var` is set and a `PACKET` dimension exists, trim also calls
-`sync_packet_dim_to_index` so orphan PACKET rows are dropped and indices are densified (dtype-safe).
-Use `assert_data_times_unique_monotonic` after packet dedupe to enforce unique, non-decreasing
-data times (`ground_data=True` warns instead of raising).
+After decoding L1A, `libera_utils.l1a.day_window.trim_l1a_to_day_window(ds, day=, packet_time_var=)`
+keeps the packets in the closed window `[D − B, D + 1 + B]`, where `B` is `DAY_BUFFER` (10
+minutes) and `day_window_bounds(day)` returns the two ends as naive-UTC datetimes. It calls
+`packet_slicing.slice_l1a_dataset_to_time_window`, so:
+
+- A product with sample axes is selected on the union of all of them (both `ADGPS` and `ADCFA`
+  for `jpss_sc_pos`); one without is selected on `packet_time_var`, which should be the APID's
+  `get_packet_config(apid).packet_time_coordinate`.
+- Whole packets survive, and every `*_packet_index` and `CAMERA_PACKET_INDEX` is renumbered
+  against the trimmed `PACKET` axis.
+- A WFOV image in the window keeps all its packets, SOP through EOP. Packets in no image
+  (`PACKET_IMAGE_ID == -1`) are selected on packet time.
+
+```python
+from libera_utils.l1a.day_window import assert_data_times_unique_monotonic, trim_l1a_to_day_window
+from libera_utils.l1a.l1a_packet_configs import get_packet_config
+
+config = get_packet_config(apid)
+day_ds = trim_l1a_to_day_window(ds, day=applicable_date, packet_time_var=config.packet_time_coordinate)
+assert_data_times_unique_monotonic(day_ds, config.packet_time_coordinate, ground_data=ground_data)
+```
+
+`assert_data_times_unique_monotonic` enforces unique, non-decreasing data times after packet
+dedupe and lists up to 10 duplicated values. With `ground_data=True` it warns instead of raising.
 
 ## Day coverage gates (combine readiness)
 
 The L1A Preprocessor evaluates File Metadata time spans with
 `libera_utils.l1a.day_coverage.evaluate_day_coverage` before decoding:
 
-- **Left buffer** `[D − B, D)`, **day core** `[D, D+1)`, **right buffer** `[D+1, D+1 + B)`.
+- **Left buffer** `[D − B, D]`, **day core** `[D, D+1]`, **right buffer** `[D+1, D+1 + B]`.
 - Each APID's rule is its `DayCoveragePolicy` in `APID_COVERAGE_POLICIES`, looked up with
   `coverage_policy_for_apid`. Every `LiberaApid` must have an entry; importing
   `libera_utils.l1a.day_coverage` raises `ValueError` otherwise.
 - A `CONTINUOUS` policy requires a minimum covered fraction of the day core and of each buffer.
   An `EVENT_DRIVEN` policy passes all three gates as soon as any span overlaps the buffered
-  window, since an APID that only runs during an event rarely has data at both midnights.
+  window (`overlaps_day_window`, closed at both ends like the trim; a zero-length span counts),
+  since an APID that only runs during an event rarely has data at both midnights.
 
   | APID                                  | Mode           | Day  | Buffers |
   | ------------------------------------- | -------------- | ---- | ------- |
@@ -226,8 +244,7 @@ The L1A Preprocessor evaluates File Metadata time spans with
   | `icie_wfov_sci`                       | `CONTINUOUS`   | 0.60 | 0.60    |
   | all others                            | `EVENT_DRIVEN` | —    | —       |
 
-  These thresholds are initial values, to be refined against the coverage recorded on
-  production granules.
+  Thresholds are provisional.
 
 - Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge as continuous. A file's span is
   recorded over sample timestamps, `[t_first, t_last]`, while coverage is about time occupied:
@@ -246,8 +263,8 @@ it. `libera_utils.l1a.day_coverage.measure_time_axis_coverage(times, day=)` meas
 from a granule's own samples and returns a `TimeAxisCoverage` (`day_frac`, `left_frac`,
 `right_frac`, `median_cadence`, `max_gap`, `n_times`). It is a measurement, not a gate.
 
-Samples count as continuous until their spacing exceeds `gap_factor` times the axis's median
-spacing (`DEFAULT_GAP_FACTOR`, 5), with `seam_tolerance` as a floor on that threshold. The last
+Samples count as continuous until their spacing exceeds `DEFAULT_GAP_FACTOR` (5) times the axis's
+median spacing, with `DEFAULT_SEAM_TOLERANCE` as a floor on that threshold. The last
 sample of each run is credited with one median cadence of occupancy. `times` need not be sorted,
 `NaT` values are ignored, and an empty axis returns all zeros.
 
@@ -256,14 +273,11 @@ sample of each run is credited with one median cadence of occupancy. `times` nee
 Production daily L1A uses the **same** combine sequence for flight PDS and ground CCSDS:
 
 1. `evaluate_day_coverage` on File Metadata effective time spans (skip incomplete days unless forced).
-2. `parse_packets_to_l1a_dataset(..., ground_data=, skip_header_bytes=)` — flight defaults
-   `ground_data=False` / header skip `0`; ground triggers use `ground_data=True` / `skip_header_bytes=8`.
-3. `trim_l1a_to_day_window` to the applicable UTC day ± buffer.
+2. `parse_packets_to_l1a_dataset(..., ground_data=)` — flight uses `ground_data=False`, ground
+   uses `ground_data=True`; both use the default header skip of `0`.
+3. `trim_l1a_to_day_window` to the applicable UTC day ± `DAY_BUFFER`.
 4. `assert_data_times_unique_monotonic(..., ground_data=)` — with `ground_data=True`, duplicate or
    non-monotonic data times **warn** instead of raising (same semantics as packet dedupe).
-
-There is no separate ground combiner. Offline concatenation of finished L1A NetCDFs is diagnostic
-only and is not part of the production path.
 
 ## L1A Packet Processing Configurations
 

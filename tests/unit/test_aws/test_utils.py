@@ -1,5 +1,6 @@
 """Tests for AWS utils functions"""
 
+from datetime import UTC, date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -214,3 +215,24 @@ class TestSessionRegion:
         session = boto3.Session(region_name=None)
         with pytest.raises(ValueError, match="No AWS region is configured"):
             utils._session_region(session)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-07-12", date(2026, 7, 12)),
+        ("2026-07-12T23:30:00", date(2026, 7, 12)),
+        ("2026-07-12T20:00:00-05:00", date(2026, 7, 13)),
+        (datetime(2026, 7, 12, 4), date(2026, 7, 12)),
+        (datetime(2026, 7, 12, 4, tzinfo=UTC), date(2026, 7, 12)),
+        (datetime(2026, 7, 13, 1, tzinfo=timezone(timedelta(hours=5))), date(2026, 7, 12)),
+        (date(2026, 7, 12), date(2026, 7, 12)),
+    ],
+)
+def test_to_date(value, expected):
+    assert utils.to_date(value) == expected
+
+
+def test_to_date_rejects_non_iso_string():
+    with pytest.raises(ValueError, match="Invalid isoformat"):
+        utils.to_date("07/12/2026")
