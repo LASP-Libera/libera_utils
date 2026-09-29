@@ -142,9 +142,6 @@ entry, not to this section, which holds one line. IDs are never reused.
 | R-008 | Test scaffolding does not ship in the package        | retired 2026-09-19               | `pyproject.toml` `packages`                                | `archive/libera_utils/R-008.md` |
 | R-010 | Deferred work carries a LIBSDC or CURRYER ticket tag | graduated at admission           | `lasp/prevent-dangling-todos` in `.pre-commit-config.yaml` | `archive/libera_utils/R-010.md` |
 | R-012 | The version bump matches the change                  | graduated 2026-09-29             | `.github/workflows/version-check.yml`                      | `archive/libera_utils/R-012.md` |
-| R-004 | Every public symbol has a numpydoc docstring         | rewritten 2026-09-23             | R-004, its units sentence left to R-005                    | `archive/libera_utils/R-004.md` |
-| R-007 | Delete dead code rather than leaving it unreferenced | rewritten 2026-09-23             | R-007, an unevidenced sentence removed                     | `archive/libera_utils/R-007.md` |
-| R-013 | Parse or sort an input once, not once per consumer   | rewritten 2026-09-23             | R-013, its memory concern moved to the candidates          | `archive/libera_utils/R-013.md` |
 | R-015 | The annotation says what the code actually accepts   | rewritten 2026-09-22, 2026-09-23 | R-015, reworded in place                                   | `archive/libera_utils/R-015.md` |
 
 ### The archive is a lookup, not a graveyard
