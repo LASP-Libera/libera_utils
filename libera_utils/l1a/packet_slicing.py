@@ -19,6 +19,11 @@ where two adjacent packets' sample clocks skew by less than a sample interval th
 interleave, and ``{sample_group}_packet_index`` steps backwards at those few positions. The index
 is applied element-wise throughout, so an interleaved run is sliced correctly and logged.
 
+WFOV SCI (APID 1040) carries a ``CAMERA_TIME`` axis with one row per stitched image. Each row
+records its SOP packet in ``CAMERA_PACKET_INDEX`` and owns every packet whose ``PACKET_IMAGE_ID``
+matches that SOP's, SOP through EOP. ``CAMERA_PACKET_INDEX`` is renumbered like a
+``*_packet_index`` variable; ``PACKET_IMAGE_ID`` values are kept as they are.
+
 :func:`slice_l1a_dataset_to_time_window` selects on sample time where sample axes exist and on
 the packet time coordinate otherwise. Whole packets survive either way, so a selected packet
 contributes samples on both sides of the window boundary.
@@ -33,6 +38,7 @@ import xarray as xr
 
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
+from libera_utils.l1a.wfov_image_metadata import CAMERA_PACKET_INDEX_VAR, CAMERA_TIME_COORD, PACKET_IMAGE_ID_VAR
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +53,9 @@ def find_sample_dims(dataset: xr.Dataset) -> set[str]:
 
     A sample axis is any dimension other than ``PACKET`` that either carries its own
     ``datetime64`` dimension coordinate (e.g. ``RAD_FULL_FPE_TIME``) or owns a
-    ``*_packet_index`` variable. The second rule also catches sample coordinates in Datasets
-    opened with ``decode_times=False``, where the coordinate is a plain integer array.
+    ``*_packet_index`` variable (or, for ``CAMERA_TIME``, ``CAMERA_PACKET_INDEX``). The second
+    rule also catches sample coordinates in Datasets opened with ``decode_times=False``, where the
+    coordinate is a plain integer array.
 
     Array-index dimensions such as ``ARRAY_128`` are excluded by both rules.
 
@@ -71,12 +78,8 @@ def find_sample_dims(dataset: xr.Dataset) -> set[str]:
         if coord is not None and np.issubdtype(coord.dtype, np.datetime64):
             sample_dims.add(dim_name)
 
-    # TODO[LIBSDC-567]: WFOV SCI (APID 1040) carries a datetime64 CAMERA_TIME axis whose index
-    # variable is CAMERA_PACKET_INDEX, which does not match PACKET_INDEX_SUFFIX, so slicing that
-    # product falls through to positional arithmetic and raises. Handle CAMERA_TIME when the
-    # camera calibration products are built.
     for name, variable in dataset.variables.items():
-        if not str(name).endswith(PACKET_INDEX_SUFFIX):
+        if not _is_packet_index_var(str(name)):
             continue
         if len(variable.dims) == 1 and str(variable.dims[0]) != PACKET_DIM:
             sample_dims.add(str(variable.dims[0]))
@@ -84,12 +87,40 @@ def find_sample_dims(dataset: xr.Dataset) -> set[str]:
     return sample_dims
 
 
+def _is_packet_index_var(name: str) -> bool:
+    return name.endswith(PACKET_INDEX_SUFFIX) or name == CAMERA_PACKET_INDEX_VAR
+
+
 def _packet_index_var_name(dataset: xr.Dataset, sample_dim: str) -> str | None:
-    """Return the ``*_packet_index`` variable owned by ``sample_dim``, if any."""
+    """Return the packet index variable owned by ``sample_dim``, if any."""
     for name, variable in dataset.variables.items():
-        if str(name).endswith(PACKET_INDEX_SUFFIX) and variable.dims == (sample_dim,):
+        if _is_packet_index_var(str(name)) and variable.dims == (sample_dim,):
             return str(name)
     return None
+
+
+def _camera_image_packet_mask(dataset: xr.Dataset, image_rows: np.ndarray) -> np.ndarray:
+    """Return a ``PACKET`` mask of every packet belonging to the ``CAMERA_TIME`` rows in ``image_rows``.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Decoded WFOV SCI Dataset carrying ``CAMERA_PACKET_INDEX`` and ``PACKET_IMAGE_ID``.
+    image_rows : np.ndarray
+        Boolean mask over ``CAMERA_TIME``.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean mask over ``PACKET``. Without ``PACKET_IMAGE_ID``, only each image's SOP packet is set.
+    """
+    sop_packets = sample_to_packet_index(dataset, CAMERA_TIME_COORD)[image_rows]
+    packet_mask = np.zeros(dataset.sizes[PACKET_DIM], dtype=bool)
+    packet_mask[sop_packets] = True
+    if PACKET_IMAGE_ID_VAR in dataset:
+        packet_image_id = dataset[PACKET_IMAGE_ID_VAR].values
+        packet_mask |= np.isin(packet_image_id, packet_image_id[sop_packets])
+    return packet_mask
 
 
 def _configured_sample_count(dataset: xr.Dataset, sample_dim: str) -> int | None:
@@ -179,7 +210,8 @@ def sample_to_packet_index(dataset: xr.Dataset, sample_dim: str) -> np.ndarray:
     """Map every row of ``sample_dim`` to its originating row of ``PACKET``.
 
     Prefers the stored ``{sample_group}_packet_index`` variable, which stays correct when
-    duplicate samples have been dropped. Falls back to positional arithmetic
+    duplicate samples have been dropped. For ``CAMERA_TIME`` this is ``CAMERA_PACKET_INDEX``, each
+    image's SOP packet. Falls back to positional arithmetic
     (``sample i -> packet i // samples_per_packet``) only when no index variable is present.
 
     The mapping is not necessarily monotonically non-decreasing: sample axes are sorted by
@@ -236,8 +268,10 @@ def select_packets(dataset: xr.Dataset, keep_packets: slice | np.ndarray) -> xr.
     """Subset a decoded L1A Dataset along ``PACKET``, carrying its sample axes along.
 
     Every sample of a selected packet is kept and every sample of an unselected packet is
-    dropped, so whole packets survive. Each ``*_packet_index`` variable is renumbered from 0
-    against the surviving packet axis.
+    dropped, so whole packets survive. Each ``*_packet_index`` variable, and
+    ``CAMERA_PACKET_INDEX``, is renumbered from 0 against the surviving packet axis. A
+    ``CAMERA_TIME`` row survives when its SOP packet does; keeping an image's other packets is the
+    caller's job, as :func:`slice_l1a_dataset_to_time_window` does.
 
     Packet order is preserved; an unordered integer indexer is sorted rather than applied as a
     reordering.
@@ -310,6 +344,10 @@ def slice_l1a_dataset_to_time_window(
     kept. When the Dataset has no sample axes (e.g. PEC-SW-STAT), the window is applied to
     *packet_time_var* instead.
 
+    On ``CAMERA_TIME``, an image in the window keeps all of its packets, SOP through EOP. An image
+    with a ``NaT`` camera time is placed by its SOP packet's *packet_time_var*, and a packet in no
+    image (``PACKET_IMAGE_ID == -1``) is selected on *packet_time_var*.
+
     Whole packets always survive, so a selected packet contributes all of its samples even where
     some of them fall outside the window.
 
@@ -322,7 +360,8 @@ def slice_l1a_dataset_to_time_window(
     t1 : np.datetime64
         Window end time (inclusive).
     packet_time_var : str
-        Packet-level time coordinate, used only for Datasets with no sample axes.
+        Packet-level time coordinate, used for Datasets with no sample axes and for WFOV packets
+        not placed by a camera time.
 
     Returns
     -------
@@ -353,12 +392,33 @@ def slice_l1a_dataset_to_time_window(
 
     keep_mask = np.zeros(n_packets, dtype=bool)
     for sample_dim in sample_dims:
+        if sample_dim == CAMERA_TIME_COORD:
+            keep_mask |= _camera_time_packet_mask(dataset, t0, t1, packet_time_var)
+            continue
         sample_times = dataset[sample_dim].values
         in_window = (sample_times >= t0) & (sample_times <= t1)
         keep_mask[np.unique(sample_to_packet_index(dataset, sample_dim)[in_window])] = True
 
     _log_selection(dataset, keep_mask, t0, t1, packet_time_var, criterion="sample time")
     return select_packets(dataset, keep_mask)
+
+
+def _camera_time_packet_mask(
+    dataset: xr.Dataset, t0: np.datetime64, t1: np.datetime64, packet_time_var: str
+) -> np.ndarray:
+    """Select WFOV packets for ``[t0, t1]``: whole images on camera time, the rest on packet time."""
+    image_times = dataset[CAMERA_TIME_COORD].values
+    has_packet_time = packet_time_var in dataset
+    if has_packet_time:
+        packet_times = dataset[packet_time_var].values
+    if has_packet_time and np.issubdtype(image_times.dtype, np.datetime64):
+        sop_packets = sample_to_packet_index(dataset, CAMERA_TIME_COORD)
+        image_times = np.where(np.isnat(image_times), packet_times[sop_packets], image_times)
+    keep_mask = _camera_image_packet_mask(dataset, (image_times >= t0) & (image_times <= t1))
+    if has_packet_time and PACKET_IMAGE_ID_VAR in dataset:
+        unowned = dataset[PACKET_IMAGE_ID_VAR].values == -1
+        keep_mask |= unowned & (packet_times >= t0) & (packet_times <= t1)
+    return keep_mask
 
 
 def _log_selection(

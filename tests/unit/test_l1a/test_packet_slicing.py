@@ -88,6 +88,86 @@ def _packet_only_product(n_packets: int = 5, *, start: str = "2028-02-13T02:00:0
     )
 
 
+def _wfov_product() -> xr.Dataset:
+    """Build a WFOV SCI-shaped Dataset: three 3-packet images with one unowned packet between images 0 and 1.
+
+    Packets are 1 s apart from 02:00:00. Camera times are 10 s after each image's SOP packet time.
+    """
+    packet_image_id = np.array([0, 0, 0, -1, 1, 1, 1, 2, 2, 2], dtype=np.int32)
+    sop_index = np.array([0, 4, 7], dtype=np.int32)
+    packet_times = np.datetime64("2028-02-13T02:00:00", "us") + np.arange(10) * np.timedelta64(1, "s")
+    return xr.Dataset(
+        {
+            "PKT_APID": ("PACKET", np.full(10, 1040, dtype=np.uint16)),
+            "SRC_SEQ_CTR": ("PACKET", np.arange(10, dtype=np.uint16)),
+            "PACKET_IMAGE_ID": ("PACKET", packet_image_id),
+            "CAMERA_PACKET_INDEX": ("CAMERA_TIME", sop_index, {"long_name": "SOP packet"}),
+            "WFOV_COMPRESSED_IMAGE": (("CAMERA_TIME", "BLOB_BYTE"), np.zeros((3, 4), dtype=np.uint8)),
+        },
+        coords={
+            "PACKET_ICIE_TIME": ("PACKET", packet_times),
+            "CAMERA_TIME": ("CAMERA_TIME", packet_times[sop_index] + np.timedelta64(10, "s")),
+            "BLOB_BYTE": ("BLOB_BYTE", np.arange(4)),
+        },
+    )
+
+
+class TestWfovCameraTime:
+    """CAMERA_TIME rows own their SOP..EOP packet range via PACKET_IMAGE_ID."""
+
+    def test_camera_time_is_a_sample_dim_and_blob_byte_is_not(self):
+        assert find_sample_dims(_wfov_product()) == {"CAMERA_TIME"}
+
+    def test_camera_time_found_via_camera_packet_index_when_times_are_not_decoded(self):
+        ds = _wfov_product()
+        ds = ds.assign_coords(CAMERA_TIME=("CAMERA_TIME", ds["CAMERA_TIME"].values.astype(np.int64)))
+        assert find_sample_dims(ds) == {"CAMERA_TIME"}
+
+    def test_sample_to_packet_index_is_the_sop(self):
+        np.testing.assert_array_equal(sample_to_packet_index(_wfov_product(), "CAMERA_TIME"), [0, 4, 7])
+
+    def test_select_packets_renumbers_camera_packet_index(self):
+        out = select_packets(_wfov_product(), np.arange(4, 10))
+        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0, 3])
+        assert out["CAMERA_PACKET_INDEX"].attrs == {"long_name": "SOP packet"}
+        np.testing.assert_array_equal(out["PACKET_IMAGE_ID"].values, [1, 1, 1, 2, 2, 2])
+
+    def test_image_in_window_keeps_all_its_packets(self):
+        """Image 1's camera time (02:00:14) is in the window; its later packets' times are not."""
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:14"), np.datetime64("2028-02-13T02:00:15")
+        )
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [4, 5, 6])
+        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0])
+        assert out.sizes["CAMERA_TIME"] == 1
+
+    def test_image_out_of_window_drops_all_its_packets(self):
+        """Packets 4-6 have packet times in the window, but image 1's camera time does not."""
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:04"), np.datetime64("2028-02-13T02:00:06")
+        )
+        assert out.sizes["PACKET"] == 0
+        assert out.sizes["CAMERA_TIME"] == 0
+
+    def test_unowned_packet_selected_on_packet_time(self):
+        out = slice_l1a_dataset_to_time_window(
+            _wfov_product(), np.datetime64("2028-02-13T02:00:03"), np.datetime64("2028-02-13T02:00:03")
+        )
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [3])
+        assert out.sizes["CAMERA_TIME"] == 0
+
+    def test_nat_camera_time_is_placed_by_its_sop_packet_time(self):
+        ds = _wfov_product()
+        camera_times = ds["CAMERA_TIME"].values.copy()
+        camera_times[2] = np.datetime64("NaT", "us")
+        ds = ds.assign_coords(CAMERA_TIME=("CAMERA_TIME", camera_times))
+        out = slice_l1a_dataset_to_time_window(
+            ds, np.datetime64("2028-02-13T02:00:07"), np.datetime64("2028-02-13T02:00:07")
+        )
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [7, 8, 9])
+        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0])
+
+
 class TestFindSampleDims:
     """Sample-axis identification."""
 
