@@ -127,3 +127,8 @@ Intel Macs use `/usr/local/opt/udunits/lib`. Linux and the CI image install
 `libudunits2-dev` from the package manager and need nothing further; the path is only a
 macOS problem because System Integrity Protection strips `DYLD_*` from child processes, so
 it has to be set in the shell that runs `pytest`.
+
+Claude Code sessions in this repository get the export from the `SessionStart` hook in
+`.claude/settings.json`, which sets it for the first of the two directories that exists. Claude
+Code asks each person once whether to trust the repository's hooks, and the hook runs only after
+that.

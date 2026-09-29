@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "for d in /opt/homebrew/opt/udunits/lib /usr/local/opt/udunits/lib; do if [ -d \"$d\" ] && [ -n \"${CLAUDE_ENV_FILE:-}\" ]; then printf 'export DYLD_LIBRARY_PATH=%s${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}\\n' \"$d\" >>\"$CLAUDE_ENV_FILE\"; break; fi; done; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
