@@ -5,6 +5,7 @@ import json
 from datetime import date, datetime
 from unittest.mock import patch
 
+import boto3
 import pytest
 
 from libera_utils.aws import l1a_combine
@@ -100,56 +101,78 @@ class TestForceL1ACombine:
             l1a_combine.force_l1a_combine(1057, [], boto_session=session)
         assert "entries" not in captured
 
+    def test_raises_on_failed_entry(self, make_sdc_event_bus):
+        """A failed event entry from put_events surfaces as a RuntimeError."""
+        session = boto3.Session(profile_name="test-profile")
+        real_client = session.client
 
+        def failing_put_client(service_name, *args, **kwargs):
+            client = real_client(service_name, *args, **kwargs)
+            if service_name == "events":
+                client.put_events = lambda **kwargs: {"FailedEntryCount": 1, "Entries": [{"ErrorCode": "Boom"}]}
+            return client
+
+        session.client = failing_put_client
+
+        with pytest.raises(RuntimeError, match="Failed to put ManualL1APreprocessing event"):
+            l1a_combine.force_l1a_combine(1057, ["2026-07-12"], boto_session=session)
+
+
+@patch("libera_utils.aws.l1a_combine.force_l1a_combine")
+@patch("libera_utils.aws.l1a_combine.get_l2_team_role_session")
 class TestCliHandler:
-    @pytest.fixture(autouse=True)
-    def _session(self, make_sdc_event_bus, make_event_capturing_session):
-        session, captured = make_event_capturing_session()
-        self.captured = captured
-        with patch.object(l1a_combine, "get_l2_team_role_session", return_value=session):
-            yield
-
-    def test_positional_dates(self):
-        l1a_combine.force_l1a_combine_cli_handler(_cli_args(applicable_dates=["2026-07-12"]))
-        _, detail = _detail_from_capture(self.captured)
-        assert detail["applicable_dates"] == ["2026-07-12"]
-
-    def test_start_end_expands_to_every_day(self):
-        l1a_combine.force_l1a_combine_cli_handler(_cli_args(start="2026-07-01", end="2026-07-03"))
-        _, detail = _detail_from_capture(self.captured)
-        assert detail["applicable_dates"] == ["2026-07-01", "2026-07-02", "2026-07-03"]
-
-    def test_both_date_forms_rejected(self):
-        with pytest.raises(ValueError, match="not both"):
-            l1a_combine.force_l1a_combine_cli_handler(
-                _cli_args(applicable_dates=["2026-07-12"], start="2026-07-01", end="2026-07-03")
+    def test_builds_session_and_forwards_every_flag(self, mock_get_session, mock_combine):
+        l1a_combine.force_l1a_combine_cli_handler(
+            _cli_args(
+                apid=1035,
+                applicable_dates=["2026-07-12"],
+                force=False,
+                ground_data=True,
+                reason="LIBSDC-1 DITL2 backfill",
+                profile="ops-profile",
             )
-        assert "entries" not in self.captured
+        )
+        mock_get_session.assert_called_once_with(profile_name="ops-profile")
+        mock_combine.assert_called_once_with(
+            1035,
+            [date(2026, 7, 12)],
+            boto_session=mock_get_session.return_value,
+            force=False,
+            ground_data=True,
+            reason="LIBSDC-1 DITL2 backfill",
+        )
 
-    def test_half_a_range_rejected(self):
-        with pytest.raises(ValueError, match="must be given together"):
-            l1a_combine.force_l1a_combine_cli_handler(_cli_args(start="2026-07-01"))
-        assert "entries" not in self.captured
+    def test_start_end_expands_to_every_day(self, mock_get_session, mock_combine):
+        l1a_combine.force_l1a_combine_cli_handler(_cli_args(start="2026-07-01", end="2026-07-03"))
+        assert mock_combine.call_args.args[1] == [date(2026, 7, 1), date(2026, 7, 2), date(2026, 7, 3)]
 
-    def test_no_dates_rejected(self):
-        with pytest.raises(ValueError, match="No applicable dates"):
-            l1a_combine.force_l1a_combine_cli_handler(_cli_args())
-        assert "entries" not in self.captured
+    @pytest.mark.parametrize(
+        ("overrides", "match"),
+        [
+            ({"applicable_dates": ["2026-07-12"], "start": "2026-07-01", "end": "2026-07-03"}, "not both"),
+            ({"start": "2026-07-01"}, "must be given together"),
+            ({}, "No applicable dates"),
+        ],
+    )
+    def test_bad_date_arguments_rejected(self, mock_get_session, mock_combine, overrides, match):
+        with pytest.raises(ValueError, match=match):
+            l1a_combine.force_l1a_combine_cli_handler(_cli_args(**overrides))
+        mock_combine.assert_not_called()
 
-    def test_large_span_requires_confirmation(self):
+    def test_large_span_requires_confirmation(self, mock_get_session, mock_combine):
         with patch("builtins.input", return_value="n") as prompt:
             l1a_combine.force_l1a_combine_cli_handler(_cli_args(start="2026-07-01", end="2026-07-31"))
         prompt.assert_called_once()
-        assert "entries" not in self.captured
+        mock_get_session.assert_not_called()
+        mock_combine.assert_not_called()
 
-    def test_large_span_proceeds_once_confirmed(self):
-        with patch("builtins.input", return_value="yes"):
+    @pytest.mark.parametrize("answer", ["y", "Yes", " YES "])
+    def test_large_span_proceeds_once_confirmed(self, mock_get_session, mock_combine, answer):
+        with patch("builtins.input", return_value=answer):
             l1a_combine.force_l1a_combine_cli_handler(_cli_args(start="2026-07-01", end="2026-07-31"))
-        _, detail = _detail_from_capture(self.captured)
-        assert len(detail["applicable_dates"]) == 31
+        assert len(mock_combine.call_args.args[1]) == 31
 
-    def test_small_span_is_not_prompted(self):
+    def test_small_span_is_not_prompted(self, mock_get_session, mock_combine):
         with patch("builtins.input", side_effect=AssertionError("should not prompt")):
             l1a_combine.force_l1a_combine_cli_handler(_cli_args(start="2026-07-01", end="2026-07-03"))
-        _, detail = _detail_from_capture(self.captured)
-        assert len(detail["applicable_dates"]) == 3
+        mock_combine.assert_called_once()

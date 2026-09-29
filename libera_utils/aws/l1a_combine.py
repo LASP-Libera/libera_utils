@@ -1,10 +1,8 @@
 """Operator-triggered L1A day assembly.
 
 The L1A Preprocessor normally combines a day on its own, once the L0 files covering that day
-meet the APID's coverage policy (see :mod:`libera_utils.l1a.day_coverage`). Some days never
-reach that bar: a campaign that only ran for part of a day, a downlink that was lost, a ground
-capture set that was always going to be partial. This module emits the event that combines such
-a day anyway.
+meet the APID's coverage policy (see :mod:`libera_utils.l1a.day_coverage`). This module emits
+the event that combines a day that never meets it, such as a partial campaign or ground capture.
 
 It emits a single ``ManualL1APreprocessing`` event to the SDC central EventBridge bus (the
 ``LiberaSDCEventBus``); the L1A Preprocessor consumes it and runs one combine per applicable
@@ -20,6 +18,7 @@ from datetime import UTC, date, datetime, timedelta
 import boto3
 
 from libera_utils.aws.utils import (
+    MAX_UNCONFIRMED_APPLICABLE_DATES,
     SDC_EVENT_BUS_PARTIAL_NAME,
     find_event_bus_in_account_by_partial_name,
     get_l2_team_role_session,
@@ -34,9 +33,6 @@ logger = logging.getLogger(__name__)
 # EventBridge rule expects. If they don't match, the event is not routed and nothing happens.
 MANUAL_L1A_EVENT_SOURCE = "manual-l1a-preprocessing"
 MANUAL_L1A_EVENT_DETAIL_TYPE = "ManualL1APreprocessingEventDetail"
-
-# Number of applicable dates above which the CLI asks the user to confirm before submitting.
-MAX_UNCONFIRMED_APPLICABLE_DATES = 3
 
 
 def dates_in_range(start: str | date | datetime, end: str | date | datetime) -> list[date]:
@@ -101,7 +97,9 @@ def force_l1a_combine(
     Raises
     ------
     ValueError
-        If ``apid`` is not a ``LiberaApid`` member, or no applicable dates were given.
+        If ``apid`` is not a ``LiberaApid`` member, no applicable dates were given, a date string
+        is not ISO 8601, or the account does not hold exactly one event bus matching
+        ``LiberaSDCEventBus``.
     RuntimeError
         If EventBridge rejects the event.
     """
@@ -159,7 +157,10 @@ def force_l1a_combine_cli_handler(parsed_args: argparse.Namespace) -> None:
     Raises
     ------
     ValueError
-        If neither or both date forms were supplied.
+        If neither or both date forms were supplied, only one of ``--start``/``--end`` was
+        given, ``--end`` precedes ``--start``, or :func:`force_l1a_combine` raises it.
+    RuntimeError
+        If EventBridge rejects the event.
     """
     now = datetime.now(UTC)
     configure_task_logging(
