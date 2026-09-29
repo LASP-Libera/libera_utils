@@ -24,7 +24,7 @@ once and everything else points at it.
   `.github/instructions/libera-utils.instructions.md`
 - `standards/review-contract.md` — how a reviewer behaves, and what it must not flag
 - `standards/decisions.md` — convention decisions already made here
-- `standards/SHARED.md` — where the shared vocabulary, decisions and context live
+- `standards/README.md`, "Shared tier" — where the shared vocabulary, decisions and context live
 
 **This repository is public.** No internal Confluence or Jira URL and no internal document
 content goes into source, docstrings, tests or `standards/`. Cite an internal document by
@@ -43,7 +43,7 @@ shows; `doc/source/developer-docs/git.md` sets no stricter standard. A pull requ
 squash-merged, which adds the `(#NN)` suffix, so a branch does not need squashing by hand.
 
 The skills come from the `libera-tools` Claude Code plugin in `libera_llm_tooling`;
-`standards/SHARED.md` says how to install it. `ticket-draft` writes and places the ticket,
+`standards/README.md` says how to install it, under "Shared tier". `ticket-draft` writes and places the ticket,
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
 `pr-findings` reviews it against this standard and, once people reply, writes the record
 (into `libera_llm_tooling/standards/libera_utils/log/`, never this repository),
@@ -63,7 +63,7 @@ Any agent that plans, builds or reviews a change here, including `implementation
 - Loads `standards/review-rules.md`, the Review Rules section of
   `.github/instructions/libera-utils.instructions.md`, `standards/review-contract.md`,
   `standards/decisions.md`, the
-  shared decisions and terminology named in `standards/SHARED.md`, and `standards/test-lanes.md`
+  shared decisions and terminology named in `standards/README.md` ("Shared tier"), and `standards/test-lanes.md`
   before judging anything. The test and coverage commands come from `test-lanes.md`, never a
   guess.
 - When a change adds or alters a public signature, plans and writes what it accepts, returns

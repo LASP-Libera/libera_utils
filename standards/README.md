@@ -17,9 +17,6 @@ The phases this file refers to — 0 set up the standard, 1 define the work, 2 b
 | `review-rules.md`    | The ledger of the rules a reviewer checks, capped at 14; the wording is in the instruction file |
 | `review-contract.md` | How the reviewer behaves: severity, budget, what not to flag                                    |
 | `decisions.md`       | Decisions local to this repository. Cross-repository ones are shared                            |
-| `SHARED.md`          | Where the shared vocabulary, decisions and context live, and how to reach them                  |
-| `checks/`            | Rules that graduated into a tool, each naming the rule it replaced                              |
-| `archive.md`         | One line per rule that has left the ledger, with where its reasoning lives                      |
 | `test-lanes.md`      | Every lane marker, path and command the corpus depends on, in one place                         |
 
 `.review/` is the agents' scratch directory and is gitignored.
@@ -27,7 +24,145 @@ The phases this file refers to — 0 set up the standard, 1 define the work, 2 b
 The review records, one per reviewed pull request, and the monthly revision reports are not
 here. They live in `libera_llm_tooling/standards/libera_utils/log/`, the shared clone beside this
 repository, so a record never sits in a pull request's diff and committing one never touches a
-code branch. `SHARED.md` says how to reach it.
+code branch. "Shared tier" below says how to reach it.
+
+## Shared tier
+
+Three of this corpus's files are not here. They are the same in every Libera repository and
+live in `libera_llm_tooling/standards/`:
+
+| File             | Why it is shared                                                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminology.md` | One vocabulary across curryer, utils, rad, cam, analysis and CSDS. A term corrected once should reach every repository at once                                                                    |
+| `decisions.md`   | Decisions that constrain more than one repository: ObsID ownership, dependency pinning, the upstream-first rule                                                                                   |
+| `context/`       | Confluence pages, Jira epics and PR threads. **It may carry internal links because that repository is private. This one is public (R-014), so it names context entries rather than copying them** |
+
+**The review records** live there too, in `standards/libera_utils/log/`: one `pr-NNNN.yaml`
+per reviewed pull request and one report per monthly revision. `pr-findings` writes a record
+there and a person commits it in `libera_llm_tooling`, so no record sits in this repository's
+pull requests.
+
+### Reaching it
+
+Two separate things, installed two different ways.
+
+The **procedure** is the private `libera-tools` Claude Code plugin: the skills and agents
+that plan, build and review, the standards skills (`draft-standard`, `ticket-draft`,
+`pr-findings`, `revise-standard`) and the build hooks. Once per machine,
+covering every repository you open, from a clone of `libera_llm_tooling` beside this
+repository:
+
+```bash
+cd ../libera_llm_tooling
+./bootstrap.sh            # installs libera-tools@libera
+./bootstrap.sh --check    # checks the install and this repository's setup
+```
+
+Adding the tooling repository to `permissions.additionalDirectories` does not install anything: that
+setting grants read access, and Claude Code discovers skills only from `~/.claude/skills`, a
+repository's own `.claude/skills`, and installed plugins.
+
+The **corpus** is a clone kept beside this repository, so that `libera_llm_tooling/standards/`
+is a sibling of `libera_utils/`. That convention is the whole configuration. The monthly
+revision writes to it on a branch, which is why it stays a clone rather than travelling inside
+the plugin.
+
+A skill that cannot find the shared corpus says so and continues without the vocabulary,
+rather than inventing terms. It does not fall back to a copy, because a copy is how two
+repositories end up disagreeing about what a footprint is.
+
+### Why not a submodule
+
+A submodule pins the vocabulary to a commit per repository, which is exactly the wrong
+property for a vocabulary: a corrected term should reach every repository at once, the way
+the procedure does. The cost is that a checkout without `libera_llm_tooling` beside it has
+no shared tier, which the skills report rather than work around.
+
+## Graduated
+
+Rules that graduated out of the reviewer and into a tool. Each entry names the rule it
+replaced, so the rule's wording can be deleted from the instruction file and the history stays
+legible.
+
+A rule graduates when a check catches every accepted instance in the evidence window with no
+false positive on `main`. The ratchet drafts the check; an ordinary pull request lands it;
+the same ratchet marks the rule `graduated` and writes its reasoning to the archive.
+
+**Every check carries a header** naming the rule ID it replaced, the archive entry that
+holds the reasoning, and one sentence on what it catches. That is the pointer at the point
+of use, and it is all that may go into this repository — the reasoning itself lives in the
+private shared corpus, because R-014 keeps internal discussion out of a public repository.
+The pointer goes in the check's configuration, never in a test or in source: R-009 keeps
+history out of comments, and a regression test's name says what it guards rather than which
+finding produced it.
+
+The number of rules the reviewer holds should be flat or falling over a year while the
+number of checks grows. If two consecutive ratchet reports propose no graduations, the rules
+being written are not the mechanical kind, and the workflow is delivering a second opinion
+rather than a smaller job.
+
+**A `check`-tier rule lives in the tool's configuration plus the shared archive**, not in the
+instruction file: the configuration is the rule, the archive entry holds its reasoning, and
+its entry in `review-rules.md` is a pointer so the reviewer knows the ground is covered. The
+other tiers: `prose` is the instruction file only, and `reviewer` is the instruction file plus
+a ledger entry.
+
+| Rule                                        | Check                                                                       | Where                                                                   |
+| ------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| R-010 · Deferred work carries a ticket tag  | `lasp/prevent-dangling-todos`, tags `LIBSDC,CURRYER`                        | `.pre-commit-config.yaml` · archive `libera_utils/R-010.md`             |
+| R-012 · The version bump matches the change | `check_version.py`: heading equals version; a bump is above the highest tag | `.github/workflows/version-check.yml` · archive `libera_utils/R-012.md` |
+
+### Already checked by tools, and therefore never rules
+
+The tools' own configuration is the list: `pyproject.toml` (`[tool.ruff]`) and
+`.pre-commit-config.yaml`. It is not copied here or into `review-contract.md`, whose
+do-not-flag section points at the same files, so enabling or disabling a check never leaves a
+stale copy for the reviewer to follow.
+
+## Archived
+
+One line per rule whose reasoning has been archived — retired, expired, rewritten, or
+graduated into a check. This section exists so a check is never orphaned:
+someone who hits a failing check follows the ID here, and here to the reasoning.
+
+The full entries live in `libera_llm_tooling/standards/archive/libera_utils/`, and a copy is
+published to Confluence for readers who do not read repositories. They are not in this
+repository because this repository is public (R-014) and an archive entry says what went
+wrong, on which mission, and what the team decided about it.
+
+A rule's entry in `review-rules.md` becomes a stub, and its wording leaves the instruction
+file, in the pull request that removes it, which
+merges after the archive entry's pull request in `libera_llm_tooling`: a
+retired rule keeps its heading and a sentence saying where the reasoning went, a graduated
+rule keeps a `check`-tier pointer at the tool that now enforces it. The prose moves to the
+entry, not to this section, which holds one line. IDs are never reused.
+
+| ID    | The rule, in a clause                                | End state                        | Became                                                     | Entry                           |
+| ----- | ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------------- | ------------------------------- |
+| R-008 | Test scaffolding does not ship in the package        | retired 2026-09-19               | `pyproject.toml` `packages`                                | `archive/libera_utils/R-008.md` |
+| R-010 | Deferred work carries a LIBSDC or CURRYER ticket tag | graduated at admission           | `lasp/prevent-dangling-todos` in `.pre-commit-config.yaml` | `archive/libera_utils/R-010.md` |
+| R-012 | The version bump matches the change                  | graduated 2026-09-29             | `.github/workflows/version-check.yml`                      | `archive/libera_utils/R-012.md` |
+| R-004 | Every public symbol has a numpydoc docstring         | rewritten 2026-09-23             | R-004, its units sentence left to R-005                    | `archive/libera_utils/R-004.md` |
+| R-007 | Delete dead code rather than leaving it unreferenced | rewritten 2026-09-23             | R-007, an unevidenced sentence removed                     | `archive/libera_utils/R-007.md` |
+| R-013 | Parse or sort an input once, not once per consumer   | rewritten 2026-09-23             | R-013, its memory concern moved to the candidates          | `archive/libera_utils/R-013.md` |
+| R-015 | The annotation says what the code actually accepts   | rewritten 2026-09-22, 2026-09-23 | R-015, reworded in place                                   | `archive/libera_utils/R-015.md` |
+
+### The archive is a lookup, not a graveyard
+
+This is what makes the entries worth writing. Before admitting a new rule from a finding
+cluster, the ratchet searches this index for the same concern. Three outcomes, all useful:
+
+- **It graduated.** The concern is already enforced mechanically, so what the team is seeing
+  is a gap in the check, not a missing rule. Fix the check.
+- **It was retired for a low accept rate.** The team tried this and disagreed with it more
+  often than not. Admitting it again unchanged repeats an experiment whose result is written
+  down; if something has changed, the new rule's evidence line has to say what.
+- **It expired unfired.** Cheap to admit again, but the entry says how long it sat idle last
+  time — which is the argument for making it a check straight away rather than a reviewer
+  rule.
+
+Without this, a small team re-litigates the same three conventions every eighteen months,
+usually once the person who remembered the reasoning has moved to another mission.
 
 ## Measured, 2026-09-17
 

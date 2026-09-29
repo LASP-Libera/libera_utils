@@ -127,7 +127,7 @@ The review standard lives in `standards/`, tool-neutral and read by people and a
   pre-commit hook already makes.
 - `standards/README.md` — the measured counts that set every threshold, and what this
   repository is optimising for.
-- `standards/decisions.md` and the shared corpus named in `standards/SHARED.md` — convention
+- `standards/decisions.md` and the shared corpus named in `standards/README.md` ("Shared tier") — convention
   decisions already settled. Check there before asking a convention question again.
 
 **This repository is public.** No internal Confluence or Jira URL and no internal document
@@ -144,8 +144,8 @@ evidence. Nothing agentic edits a standard.
 
 The shared corpus is a clone of `libera_llm_tooling` kept beside this repository, so
 `../libera_llm_tooling/standards/` holds `terminology.md`, `decisions.md` and `context/`.
-The skills that read it install as the private `libera-tools` plugin; `standards/SHARED.md`
-has the commands. If the clone is not there, say so rather than inventing a term.
+The skills that read it install as the private `libera-tools` plugin; `standards/README.md`
+has the commands, under "Shared tier". If the clone is not there, say so rather than inventing a term.
 
 ## Review Rules
 

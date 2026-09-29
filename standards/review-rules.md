@@ -119,7 +119,7 @@ behind a feature flag that the changelog names.
 
 ### R-008 · Test scaffolding does not ship in the package — **retired 2026-09-19**
 
-tier: — · status: retired · reasoning: `standards/archive.md` → `archive/libera_utils/R-008.md`
+tier: — · status: retired · reasoning: `standards/README.md` "Archived" → `archive/libera_utils/R-008.md`
 
 Retired at the second harvest to make room for R-015, which the wider sample evidences three
 times over against this rule's one. The concern is real and has not gone away; it is now

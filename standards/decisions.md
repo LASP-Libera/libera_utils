@@ -1,7 +1,7 @@
 # Decisions · libera_utils
 
 Decisions that constrain this repository only. Cross-repository decisions are in the shared
-corpus (`SHARED.md`), numbered in the same `D-` space. Cite a local one as
+corpus (`README.md`, "Shared tier"), numbered in the same `D-` space. Cite a local one as
 `libera_utils/D-NNN` in prose and as `D-NNN@libera_utils` in a finding key, whose citation
 must contain no `/` (`review-contract.md`, Citation).
 
