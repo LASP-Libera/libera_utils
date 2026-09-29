@@ -121,7 +121,7 @@ class Manifest(BaseModel):
             )
             return data
 
-        filename_ulid = get_ulid_code(filename)
+        filename_ulid = cls.transform_filename(filename).filename_parts.ulid_code
         if filename_ulid != ulid_code:
             raise ValueError(
                 f"ulid_code {ulid_code} disagrees with the ULID {filename_ulid} in filename {filename}. "
@@ -361,7 +361,7 @@ class Manifest(BaseModel):
     ) -> "Manifest":
         """Create Output manifest from input manifest file path, adds input files to output manifest configuration
 
-        .. deprecated::
+        .. deprecated:: 5.12.0
             Use :meth:`Manifest.for_output_from_input` instead. This method is a thin alias and will be removed.
 
         Parameters
@@ -572,6 +572,11 @@ class Manifest(BaseModel):
             the ``out_path`` and ``filename`` arguments conflict.
         """
         target = self._resolve_write_path(out_path, filename)
+        if self.filename is not None and target.filename_parts.ulid_code != self.ulid_code:
+            logger.warning(
+                f"Writing manifest with ULID {self.ulid_code} to {target.path}, whose filename carries ULID "
+                f"{target.filename_parts.ulid_code}. The written file will not trace back to this manifest's ULID."
+            )
         with smart_open(target.path, "x") as manifest_file:
             manifest_file.write(self._dump_for_path(target))
         return target.path

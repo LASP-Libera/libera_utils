@@ -16,6 +16,10 @@ from libera_utils.io.filenaming import ManifestFilename
 from libera_utils.io.manifest import Manifest, ManifestError, ManifestFileRecord
 from libera_utils.io.smart_open import smart_open
 
+VALID_ULID = "01GDHWG4R0W8KXWY0KRDD6BZTT"
+INPUT_NAME = f"LIBERA_INPUT_MANIFEST_{VALID_ULID}.json"
+OUTPUT_NAME = f"LIBERA_OUTPUT_MANIFEST_{VALID_ULID}.json"
+
 
 def test_manifest_from_file(test_jpss_manifest):
     """Test factory method for creating a manifest object from a filepath"""
@@ -23,6 +27,63 @@ def test_manifest_from_file(test_jpss_manifest):
     assert m.manifest_type == ManifestType.INPUT
     assert isinstance(m.files, list)
     assert isinstance(m.configuration, dict)
+
+
+def test_manifest_from_file_s3(test_jpss_manifest, write_file_to_s3):
+    """Test loading a file from S3"""
+    file_key = "s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
+    s3_path = write_file_to_s3(test_jpss_manifest, file_key)
+    m = Manifest.from_file(s3_path)
+    assert m.manifest_type == ManifestType.INPUT
+    assert isinstance(m.files, list)
+    assert isinstance(m.configuration, dict)
+
+
+def test_from_file_is_file_backed_and_ignores_stored_filename(tmp_path, caplog):
+    """from_file tracks its source and takes filename/ULID from the path, not the JSON contents"""
+    path = tmp_path / INPUT_NAME
+    path.write_text(
+        json.dumps(
+            {
+                "manifest_type": "INPUT",
+                "files": [],
+                "configuration": {},
+                "filename": "/stale/location/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTU.json",
+                "ulid_code": "01GDHWG4R0W8KXWY0KRDD6BZTU",
+            }
+        )
+    )
+    with caplog.at_level("WARNING"):
+        m = Manifest.from_file(path)
+    assert m.is_file_backed
+    assert m.source_path == path
+    assert m.filename.path == path
+    assert m.ulid_code == ULID.from_str(VALID_ULID)
+    assert any("Using the filename ULID" in r.message for r in caplog.records)
+    # Programmatic manifests are not file-backed
+    assert not Manifest(manifest_type=ManifestType.INPUT).is_file_backed
+    assert Manifest(manifest_type=ManifestType.INPUT).source_path is None
+
+
+def test_from_file_lenient_on_invalid_filename(tmp_path, test_jpss_manifest, caplog):
+    """A badly named manifest file is read with a warning; it has no filename/ULID and cannot be saved"""
+    bad_path = tmp_path / "just_a_manifest.json"
+    bad_path.write_text(test_jpss_manifest.read_text())
+    with caplog.at_level("WARNING"):
+        m = Manifest.from_file(bad_path)
+    assert any("does not have a valid manifest filename" in r.message for r in caplog.records)
+    assert m.manifest_type == ManifestType.INPUT
+    assert len(m.files) == 2
+    assert m.filename is None
+    assert m.ulid_code is None
+    assert m.is_file_backed
+    with pytest.raises(ManifestError, match="not a valid manifest filename"):
+        m.save()
+    with pytest.raises(ManifestError, match="has no ULID"):
+        Manifest.for_output_from_input(m)
+    # Explicit construction with an invalid filename remains a hard error
+    with pytest.raises(ValidationError):
+        Manifest(manifest_type=ManifestType.INPUT, filename="just_a_manifest.json")
 
 
 def test_manifest_constructor_with_file_list(test_txt, test_jpss1_cr_1):
@@ -109,53 +170,6 @@ def test_manifest_add_desired_time_range(test_jpss_manifest):
     assert "end_time" in m.configuration.keys()
 
 
-def test_manifest_from_file_s3(test_jpss_manifest, write_file_to_s3):
-    """Test loading a file from S3"""
-    file_key = "s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
-    s3_path = write_file_to_s3(test_jpss_manifest, file_key)
-    m = Manifest.from_file(s3_path)
-    assert m.manifest_type == ManifestType.INPUT
-    assert isinstance(m.files, list)
-    assert isinstance(m.configuration, dict)
-
-
-def test_manifest_write(tmp_path):
-    """Test writing a manifest file from an object"""
-    m = Manifest(
-        manifest_type=ManifestType.INPUT,
-    )
-    m.write(tmp_path, "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")
-    with open(tmp_path / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json") as f:
-        manifest_dict = json.load(f)
-        for element in ("manifest_type", "files", "configuration"):
-            assert element in manifest_dict
-
-
-def test_manifest_generate_filename():
-    """Test generating a filename for a manifest file"""
-    m = Manifest(manifest_type=ManifestType.INPUT)
-    assert m._generate_filename().filename_parts.ulid_code is not None
-    m.manifest_type = ManifestType.OUTPUT
-    assert m._generate_filename().filename_parts.ulid_code is not None
-    assert m.files == []
-    assert m.configuration == {}
-
-
-def test_manifest_write_s3(create_mock_bucket):
-    """Test writing a manifest file from an object"""
-    bucket = create_mock_bucket()
-    m = Manifest(
-        manifest_type=ManifestType.INPUT,
-    )
-    outpath = S3Path(f"s3://{bucket.name}")
-    filename = "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
-    m.write(outpath, filename)
-    with smart_open(outpath / filename) as f:
-        manifest_dict = json.load(f)
-        for element in ("manifest_type", "files", "configuration"):
-            assert element in manifest_dict
-
-
 def test_validate_checksums(test_jpss_manifest, caplog):
     """Test the method that validates checksums in a manifest file"""
     # We test by referencing the manifest file itself, so we're only dependent on one test file
@@ -171,50 +185,6 @@ def test_validate_checksums(test_jpss_manifest, caplog):
         checksum = md5(fh.read()).hexdigest()
     m.files = [ManifestFileRecord(filename=str(test_jpss_manifest.absolute()), checksum=checksum)]
     m.validate_checksums()
-
-
-@pytest.mark.parametrize(
-    "input_manifest",
-    [
-        (S3Path("s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")),
-        (
-            Path(sys.modules[__name__.split(".")[0]].__file__).parent
-            / "test_data"
-            / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
-        ),
-        (
-            Manifest.from_file(
-                filepath=Path(sys.modules[__name__.split(".")[0]].__file__).parent
-                / "test_data"
-                / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
-            )
-        ),
-        (S3Path("s3://l0-ingest-dropbox/processing//LIBERA_OUTPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")),
-    ],
-)
-def test_output_manifest_from_input_manifest(input_manifest, test_jpss_manifest, write_file_to_s3):
-    """Test method that creates output manifest from input manifest filename or object"""
-    if isinstance(input_manifest, S3Path):
-        s3_path = write_file_to_s3(test_jpss_manifest, str(input_manifest))
-        input_manifest_object = Manifest.from_file(filepath=s3_path)
-
-    elif isinstance(input_manifest, Path):
-        input_manifest_object = Manifest.from_file(filepath=input_manifest)
-
-    elif isinstance(input_manifest, Manifest):
-        input_manifest_object = input_manifest
-
-    else:
-        raise NotImplementedError(f"Unexpected type for input_manifest: {type(input_manifest)}")
-
-    output_manifest = Manifest.output_manifest_from_input_manifest(input_manifest=input_manifest_object)
-    input_time = input_manifest_object.ulid_code.datetime
-    output_time = output_manifest.ulid_code.datetime
-
-    assert input_manifest_object.manifest_type == ManifestType.INPUT
-    assert output_manifest.manifest_type == ManifestType.OUTPUT
-    assert input_time == output_time
-    assert len(output_manifest.configuration) != 0
 
 
 @pytest.mark.parametrize(
@@ -258,12 +228,12 @@ def test_manifest_validation_success(man_path, man_files, man_type, man_config):
     _ = Manifest(manifest_type=man_type, files=man_files, configuration=man_config, filename=man_path)
 
 
-# ----------------------------------------------------------------------------------------------------------------
-# LIBSDC-653: ULID handling, write path handling, lenient read / strict write, file-state tracking, factories
-# ----------------------------------------------------------------------------------------------------------------
-VALID_ULID = "01GDHWG4R0W8KXWY0KRDD6BZTT"
-INPUT_NAME = f"LIBERA_INPUT_MANIFEST_{VALID_ULID}.json"
-OUTPUT_NAME = f"LIBERA_OUTPUT_MANIFEST_{VALID_ULID}.json"
+def test_manifest_type_mismatch_warns_on_construction(caplog):
+    """A filename labelled INPUT on an OUTPUT manifest is tolerated in memory with a warning"""
+    with caplog.at_level("WARNING"):
+        m = Manifest(manifest_type=ManifestType.OUTPUT, filename=INPUT_NAME)
+    assert m.manifest_type == ManifestType.OUTPUT
+    assert any("named as a INPUT manifest" in r.message for r in caplog.records)
 
 
 def test_ulid_code_derived_from_filename():
@@ -294,6 +264,16 @@ def test_ulid_code_input_must_agree_with_filename():
         Manifest(manifest_type=ManifestType.INPUT, ulid_code=ULID(), filename=INPUT_NAME)
 
 
+def test_ulid_code_input_rejects_non_manifest_filename():
+    """ulid_code with a filename that is not a manifest filename is a validation error"""
+    with pytest.raises(ValidationError):
+        Manifest(
+            manifest_type=ManifestType.INPUT,
+            ulid_code=VALID_ULID,
+            filename="/x/LIBERA_L1A_SC-POS-DECODED_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+        )
+
+
 def test_ulid_code_serialized_and_filename_none_serializes_as_null():
     """ulid_code appears in the dump; a missing filename is null, not the string 'None'"""
     dumped = json.loads(Manifest(manifest_type=ManifestType.INPUT, filename=INPUT_NAME).model_dump_json())
@@ -304,12 +284,41 @@ def test_ulid_code_serialized_and_filename_none_serializes_as_null():
     assert dumped["filename"] is None
 
 
-def test_manifest_type_mismatch_warns_on_construction(caplog):
-    """A filename labelled INPUT on an OUTPUT manifest is tolerated in memory with a warning"""
-    with caplog.at_level("WARNING"):
-        m = Manifest(manifest_type=ManifestType.OUTPUT, filename=INPUT_NAME)
-    assert m.manifest_type == ManifestType.OUTPUT
-    assert any("named as a INPUT manifest" in r.message for r in caplog.records)
+def test_manifest_write(tmp_path):
+    """Test writing a manifest file from an object"""
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+    )
+    m.write(tmp_path, "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")
+    with open(tmp_path / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json") as f:
+        manifest_dict = json.load(f)
+        for element in ("manifest_type", "files", "configuration"):
+            assert element in manifest_dict
+
+
+def test_manifest_write_s3(create_mock_bucket):
+    """Test writing a manifest file from an object"""
+    bucket = create_mock_bucket()
+    m = Manifest(
+        manifest_type=ManifestType.INPUT,
+    )
+    outpath = S3Path(f"s3://{bucket.name}")
+    filename = "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
+    m.write(outpath, filename)
+    with smart_open(outpath / filename) as f:
+        manifest_dict = json.load(f)
+        for element in ("manifest_type", "files", "configuration"):
+            assert element in manifest_dict
+
+
+def test_manifest_generate_filename():
+    """Test generating a filename for a manifest file"""
+    m = Manifest(manifest_type=ManifestType.INPUT)
+    assert m._generate_filename().filename_parts.ulid_code is not None
+    m.manifest_type = ManifestType.OUTPUT
+    assert m._generate_filename().filename_parts.ulid_code is not None
+    assert m.files == []
+    assert m.configuration == {}
 
 
 def test_write_multiple_times_no_side_effects(tmp_path):
@@ -329,7 +338,7 @@ def test_write_multiple_times_no_side_effects(tmp_path):
 
 
 def test_write_multiple_times_s3(create_mock_bucket):
-    """Writing twice to S3 from one manifest works (previously raised TypeError on the second call)"""
+    """Writing twice to S3 from one manifest works"""
     bucket = create_mock_bucket()
     m = Manifest(manifest_type=ManifestType.INPUT, filename=INPUT_NAME)
     p1 = m.write(S3Path(f"s3://{bucket.name}/one"))
@@ -414,51 +423,31 @@ def test_write_does_not_overwrite(tmp_path):
         m.write(tmp_path)
 
 
-def test_from_file_is_file_backed_and_ignores_stored_filename(tmp_path, caplog):
-    """from_file tracks its source and takes filename/ULID from the path, not the JSON contents"""
-    path = tmp_path / INPUT_NAME
-    path.write_text(
-        json.dumps(
-            {
-                "manifest_type": "INPUT",
-                "files": [],
-                "configuration": {},
-                "filename": "/stale/location/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTU.json",
-                "ulid_code": "01GDHWG4R0W8KXWY0KRDD6BZTU",
-            }
-        )
-    )
+def test_write_warns_on_ulid_mismatch(tmp_path, caplog):
+    """Writing a named manifest to a path with a different ULID is allowed but flagged"""
+    m = Manifest(manifest_type=ManifestType.INPUT, filename=INPUT_NAME)
+    other_name = f"LIBERA_INPUT_MANIFEST_{ULID()}.json"
     with caplog.at_level("WARNING"):
-        m = Manifest.from_file(path)
-    assert m.is_file_backed
-    assert m.source_path == path
-    assert m.filename.path == path
-    assert m.ulid_code == ULID.from_str(VALID_ULID)
-    assert any("Using the filename ULID" in r.message for r in caplog.records)
-    # Programmatic manifests are not file-backed
-    assert not Manifest(manifest_type=ManifestType.INPUT).is_file_backed
-    assert Manifest(manifest_type=ManifestType.INPUT).source_path is None
+        written = m.write(tmp_path / other_name)
+    assert written == tmp_path / other_name
+    assert any("will not trace back" in r.message for r in caplog.records)
+    caplog.clear()
+    (tmp_path / "sub").mkdir()
+    with caplog.at_level("WARNING"):
+        m.write(tmp_path / "sub" / INPUT_NAME)
+    assert not any("will not trace back" in r.message for r in caplog.records)
 
 
-def test_from_file_lenient_on_invalid_filename(tmp_path, test_jpss_manifest, caplog):
-    """A badly named manifest file is read with a warning; it has no filename/ULID and cannot be saved"""
-    bad_path = tmp_path / "just_a_manifest.json"
-    bad_path.write_text(test_jpss_manifest.read_text())
-    with caplog.at_level("WARNING"):
-        m = Manifest.from_file(bad_path)
-    assert any("does not have a valid manifest filename" in r.message for r in caplog.records)
-    assert m.manifest_type == ManifestType.INPUT
-    assert len(m.files) == 2
-    assert m.filename is None
-    assert m.ulid_code is None
-    assert m.is_file_backed
-    with pytest.raises(ManifestError, match="not a valid manifest filename"):
-        m.save()
-    with pytest.raises(ManifestError, match="has no ULID"):
-        Manifest.for_output_from_input(m)
-    # Explicit construction with an invalid filename remains a hard error
-    with pytest.raises(ValidationError):
-        Manifest(manifest_type=ManifestType.INPUT, filename="just_a_manifest.json")
+def test_written_manifest_round_trips(tmp_path, test_txt):
+    """A manifest written with write() reads back equal in content"""
+    m = Manifest.for_input(files=[test_txt], configuration={"n": 1})
+    path = m.write(tmp_path)
+    reread = Manifest.from_file(path)
+    assert reread.manifest_type == m.manifest_type
+    assert reread.files == m.files
+    assert reread.configuration == m.configuration
+    assert reread.ulid_code == m.ulid_code
+    assert reread.filename.path == path
 
 
 def test_save_writes_back_to_source(tmp_path):
@@ -540,28 +529,44 @@ def test_for_input_write_uses_assigned_ulid(tmp_path):
     assert written == tmp_path / f"LIBERA_INPUT_MANIFEST_{m.ulid_code}.json"
 
 
-def test_for_output_from_input_object(test_jpss_manifest):
-    """for_output_from_input preserves the ULID and records the input files for lineage"""
-    input_manifest = Manifest.from_file(test_jpss_manifest)
-    out = Manifest.for_output_from_input(input_manifest, configuration={"extra": 1})
-    assert out.manifest_type == ManifestType.OUTPUT
-    assert out.ulid_code == input_manifest.ulid_code
-    assert str(out.filename) == f"LIBERA_OUTPUT_MANIFEST_{input_manifest.ulid_code}.json"
-    assert out.configuration["input_manifest_files"] == input_manifest.files
-    assert out.configuration["extra"] == 1
-    assert out.files == []
-    assert not out.is_file_backed
+@pytest.mark.parametrize(
+    "input_manifest",
+    [
+        (S3Path("s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")),
+        (
+            Path(sys.modules[__name__.split(".")[0]].__file__).parent
+            / "test_data"
+            / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
+        ),
+        (
+            Manifest.from_file(
+                filepath=Path(sys.modules[__name__.split(".")[0]].__file__).parent
+                / "test_data"
+                / "LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"
+            )
+        ),
+        (S3Path("s3://l0-ingest-dropbox/processing//LIBERA_OUTPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")),
+        ("s3://test-manifest-from-file-s3-bucket/LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json"),
+    ],
+)
+def test_for_output_from_input(input_manifest, test_jpss_manifest, test_txt, write_file_to_s3):
+    """for_output_from_input accepts a path, S3 path, str, or Manifest; preserves the ULID and records lineage"""
+    if isinstance(input_manifest, (S3Path, str)):
+        write_file_to_s3(test_jpss_manifest, str(input_manifest))
+    input_manifest_object = (
+        input_manifest if isinstance(input_manifest, Manifest) else Manifest.from_file(input_manifest)
+    )
 
+    output_manifest = Manifest.for_output_from_input(input_manifest, files=[test_txt], configuration={"extra": 1})
 
-def test_for_output_from_input_path_and_files(test_jpss_manifest, test_txt, write_file_to_s3):
-    """for_output_from_input accepts local and S3 paths and an initial file list"""
-    out = Manifest.for_output_from_input(test_jpss_manifest, files=[test_txt])
-    assert out.ulid_code == ULID.from_str(VALID_ULID)
-    assert [Path(f.filename) for f in out.files] == [test_txt]
-
-    s3_path = write_file_to_s3(test_jpss_manifest, f"s3://for-output-from-input-bucket/{INPUT_NAME}")
-    out_s3 = Manifest.for_output_from_input(str(s3_path))
-    assert out_s3.ulid_code == ULID.from_str(VALID_ULID)
+    assert input_manifest_object.manifest_type == ManifestType.INPUT
+    assert output_manifest.manifest_type == ManifestType.OUTPUT
+    assert output_manifest.ulid_code == ULID.from_str(VALID_ULID)
+    assert str(output_manifest.filename) == OUTPUT_NAME
+    assert output_manifest.configuration["input_manifest_files"] == input_manifest_object.files
+    assert output_manifest.configuration["extra"] == 1
+    assert [Path(f.filename) for f in output_manifest.files] == [test_txt]
+    assert not output_manifest.is_file_backed
 
 
 def test_for_output_from_input_requires_ulid():
@@ -587,15 +592,3 @@ def test_output_manifest_from_input_manifest_deprecated(test_jpss_manifest):
     assert out.manifest_type == ManifestType.OUTPUT
     assert out.ulid_code == input_manifest.ulid_code
     assert out.configuration["input_manifest_files"] == input_manifest.files
-
-
-def test_written_manifest_round_trips(tmp_path, test_txt):
-    """A manifest written with write() reads back equal in content"""
-    m = Manifest.for_input(files=[test_txt], configuration={"n": 1})
-    path = m.write(tmp_path)
-    reread = Manifest.from_file(path)
-    assert reread.manifest_type == m.manifest_type
-    assert reread.files == m.files
-    assert reread.configuration == m.configuration
-    assert reread.ulid_code == m.ulid_code
-    assert reread.filename.path == path
