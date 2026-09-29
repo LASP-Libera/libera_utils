@@ -226,10 +226,10 @@ saying why it is pinned and what unpins it. A direct-URL dependency also blocks 
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
-New public modules, a new filename class, a new enum member or a new keyword argument make
-a minor release, not a patch — downstream pins of the form `~=5.10.3` will take a patch
-silently. And a changelog headed `5.8.5` above a `pyproject.toml` that says `5.8.5rc1`
-leaves a reader unable to tell which artifact they have.
+`prose` tier: `version-check.yml` checks that the changelog heading equals the version and
+that a bump is above the latest tag. What it cannot judge is the size of the bump. New public
+modules, a new filename class, a new enum member or a new keyword argument make a minor
+release, not a patch: downstream pins of the form `~=5.10.3` take a patch silently.
 
 ### R-013 · Parse or sort an input once, not once per consumer
 
@@ -255,6 +255,16 @@ requests to take `LiberaDataProductFilename` rather than `str`, and to use `Path
 only accept a local Path or str since that is what is actually required", chosen deliberately
 over rejecting cloud paths at runtime. **Narrow the annotation rather than widen the
 function.**
+
+### R-016 · An error message says what went wrong and what to do next
+
+The reader of a failure in this package is often an algorithm developer outside the SDC, and a
+message naming only internals, an IAM role ARN or a boto exception, gives them nothing to act
+on. State the condition and the next action. pr-0028 dictated the replacement text in full:
+"Check that you are using the profile that logs in as the L2 Developer base role. If this
+error persists, contact the SDC team." pr-0060 asked for an error telling the caller to provide
+a tag rather than defaulting to `latest`; pr-0015 asked the log to name which data variables
+did not match.
 
 ## Restrictions for AI Agents
 

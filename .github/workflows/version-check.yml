@@ -1,0 +1,63 @@
+name: Version check
+
+# R-012 as a check: the first changelog heading equals the pyproject.toml version, and, when
+# the pull request changes pyproject.toml, that version is above the highest tag. The
+# reasoning is in the shared corpus at archive/libera_utils/R-012.md. Whether a change is minor
+# or patch is not checked; the instruction file states that rule for the author.
+#
+# The tag comparison runs only on a bump because a dependency update can leave the version
+# alone, and a stacked branch can sit below the newest tag.
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Informational until the team says otherwise: the job annotates and passes. Flip the
+# repository variable VERSION_CHECK_MODE to "blocking" to make a mismatch fail the PR.
+env:
+  MODE: ${{ vars.VERSION_CHECK_MODE || 'informational' }}
+
+jobs:
+  version:
+    name: Version, changelog and tags agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Every tag and the base branch, for the tag comparison and the changed-file list.
+          fetch-depth: 0
+
+      - name: Check the version
+        env:
+          MODE: ${{ env.MODE }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -uo pipefail
+
+          flag=""
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qx 'pyproject.toml'; then
+            flag="--bumped"
+          fi
+
+          if python3 .github/scripts/check_version.py $flag; then
+            exit 0
+          fi
+
+          if [ "$MODE" = "blocking" ]; then
+            level=error
+          else
+            level=warning
+          fi
+          echo "::${level}::The version, the changelog heading and the tags disagree; the lines above name both values. Reasoning: libera_llm_tooling standards/archive/libera_utils/R-012.md"
+
+          if [ "$MODE" = "blocking" ]; then
+            exit 1
+          fi
+          echo "VERSION_CHECK_MODE is '$MODE', so this is a note rather than a failure."
+          exit 0

@@ -29,9 +29,10 @@ a ledger entry.
 
 ## Graduated so far
 
-| Rule                                       | Check                                                | Where                                                       |
-| ------------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------- |
-| R-010 · Deferred work carries a ticket tag | `lasp/prevent-dangling-todos`, tags `LIBSDC,CURRYER` | `.pre-commit-config.yaml` · archive `libera_utils/R-010.md` |
+| Rule                                        | Check                                                                       | Where                                                                   |
+| ------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| R-010 · Deferred work carries a ticket tag  | `lasp/prevent-dangling-todos`, tags `LIBSDC,CURRYER`                        | `.pre-commit-config.yaml` · archive `libera_utils/R-010.md`             |
+| R-012 · The version bump matches the change | `check_version.py`: heading equals version; a bump is above the highest tag | `.github/workflows/version-check.yml` · archive `libera_utils/R-012.md` |
 
 ## Already checked by tools, and therefore never rules
 

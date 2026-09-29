@@ -72,14 +72,22 @@ def check_rule_cap(readme: str) -> Result:
         return Result("rule cap", False, "standards/README.md no longer states the rule cap")
     max_rules, max_lines = int(cap.group(1)), int(cap.group(2))
     body = RULES.read_text()
-    live = len([m for m in re.findall(r"^### (R-\d+) · (.+)$", body, re.M) if "retired" not in m[1].lower()])
+    entries = re.findall(r"^### (R-\d+) · ([^\n]+)\n(.*?)(?=^### |^## |\Z)", body, re.M | re.S)
+    # A check-tier rule is outside the cap: a tool enforces it and the reviewer holds a pointer.
+    checked = [e for e in entries if re.search(r"^tier: check\b", e[2], re.M)]
+    live = len([e for e in entries if "retired" not in e[1].lower() and e not in checked])
     wording = re.search(r"^## Review Rules$.*?(?=^## |\Z)", INSTRUCTIONS.read_text(), re.M | re.S)
     if not wording:
         return Result("rule cap", False, f"{INSTRUCTIONS.name} has no Review Rules section")
     # Counted as the one file the rules used to be: each linked rule's second title and its
     # link line, each with a blank line, are structure the split added, not rule text.
     linked = len(re.findall(r"^Wording: \[", body, re.M))
-    lines = len(body.splitlines()) + len(wording.group(0).splitlines()) - 4 * linked
+    lines = (
+        len(body.splitlines())
+        + len(wording.group(0).splitlines())
+        - 4 * linked
+        - sum(len(f"{e[1]}\n{e[2]}".splitlines()) for e in checked)
+    )
     problems = []
     if live > max_rules:
         problems.append(f"{live} live rules over a cap of {max_rules}")

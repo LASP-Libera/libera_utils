@@ -8,7 +8,8 @@ its ID, in `.github/instructions/libera-utils.instructions.md`, which Claude Cod
 rule the reviewer checks. Each entry links to its section there.
 
 **Cap: 14 rules or 300 lines**, the lines counted across this file and the wording together,
-each rule's title once and its link line not at all. The cap is twice the measured monthly reviewed-PR count
+each rule's title once and its link line not at all. A `check`-tier rule is outside the cap:
+a tool enforces it, and the reviewer holds only its pointer. The cap is twice the measured monthly reviewed-PR count
 (`standards/README.md`). At the cap, a rule is admitted only by retiring one.
 
 Tiers say where a rule lives. `prose` — the instruction file only: the author is expected to
@@ -157,12 +158,16 @@ Do not flag: a pin in a local development extra that is never published.
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0048, pr-0037, pr-0027, pr-0022, pr-0032
+tier: check · status: graduated · since: 2026-09 · evidence: pr-0048, pr-0037, pr-0027, pr-0022, pr-0032
 
-Wording: [R-012 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-012--the-version-bump-matches-the-change-and-the-changelog-heading-matches-it)
+Reasoning: shared `archive/libera_utils/R-012.md`
 
-Do not flag: a pre-release suffix used deliberately for downstream testing, when the
-changelog heading carries it too.
+Do not flag: this rule at all; the workflow owns the two equalities, and whether a change is
+minor or patch is the author's call, stated in the instruction file.
+Check: `.github/workflows/version-check.yml`, running `.github/scripts/check_version.py`: the
+first changelog heading equals the `pyproject.toml` version, and on a pull request that
+changes `pyproject.toml` the version is above the highest tag. The reviewer does not check
+this; the workflow does.
 
 ### R-013 · Parse or sort an input once, not once per consumer
 
@@ -194,6 +199,15 @@ documents a single coercion at the boundary and says so in its docstring.
 
 ---
 
+### R-016 · An error message says what went wrong and what to do next
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0028, pr-0060, pr-0015 · implements `libera_utils/D-008`
+
+Wording: [R-016 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-016--an-error-message-says-what-went-wrong-and-what-to-do-next)
+
+Do not flag: a message whose condition and next action are already in the exception type's
+name.
+
 ## Candidates not admitted, because the cap binds
 
 Kept here with their evidence so the ratchet can promote one when a rule retires.
@@ -204,17 +218,6 @@ Kept here with their evidence so the ratchet can promote one when a rule retires
 - **A registry whose values reach a filename has a uniqueness invariant test.** Evidence:
   pr-0041 (one ObsID on two instruments produced two writes of the same filename).
 - **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
-- **An error message says what went wrong and what to do next.** The strongest-evidenced
-  candidate here, and the first to promote. The concern is **already citable** as
-  `libera_utils/D-008`, keyed `D-008@libera_utils` in a finding, which is established on the
-  same three pull requests — the cap is holding a rule slot, not the concern, so a reviewer
-  cites the decision until a slot frees up. Four people asked for it in three pull requests:
-  "make this error more directed at the L2 devs ... check you have the correct profile
-  activated and if this error persists, contact the SDC" (pr-0028, with the replacement text
-  dictated in full); "I'd prefer an error message telling them they need to provide a tag,
-  rather than defaulting to `latest`" (pr-0060, taken as a breaking change); "in the logs,
-  report which data vars don't match, especially SRC_SEQ_CTR" and "add to the warning
-  message ... likely a result of clock jamming" (pr-0015).
 - **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer
   removed three of them in one pass — "yet another unnecessary helper function". Held below
   the cap because the review contract's New surface section already reports call-site
