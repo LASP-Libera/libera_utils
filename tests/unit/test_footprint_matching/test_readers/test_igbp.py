@@ -93,7 +93,7 @@ class TestIGBPReaderLoadTile:
         bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
         data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
 
-        # Rasterized cell centres are constructed inside the bbox by definition.
+        # Rasterized cell centers are constructed inside the bbox by definition.
         assert np.all(lats_sub >= 0.5)
         assert np.all(lats_sub <= 2.5)
         assert np.all(lons_sub >= 10.5)
@@ -112,7 +112,7 @@ class TestIGBPReaderLoadTile:
         data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
 
         # Like the swath readers, an uncovered tile is an all-NaN grid (not a
-        # zero-size array): the cell-centre coordinate axes still exist.
+        # zero-size array): the cell-center coordinate axes still exist.
         assert np.all(np.isnan(data_sub))
         assert lats_sub.size > 0
         assert lons_sub.size > 0

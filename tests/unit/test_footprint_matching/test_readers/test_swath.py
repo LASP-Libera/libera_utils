@@ -86,7 +86,7 @@ class TestRasterizePointsToGrid:
 
     def test_output_grid_shape_and_coords(self):
         # Targets the rasterizer's output layout; asserts the (n_agg, n_lat, n_lon) shape, float32
-        # dtype, and cell-centre lat/lon axes derived from the bbox and cell size.
+        # dtype, and cell-center lat/lon axes derived from the bbox and cell size.
         lats = np.array([0.5, 1.5])
         lons = np.array([0.5, 1.5])
         vals = np.array([[1.0, 2.0]])
