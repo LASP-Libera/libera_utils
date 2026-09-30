@@ -280,7 +280,7 @@ class RadiometerFootprint:
     ``Subsatellite_Longitude`` / ``Cone_Angle_Rate`` fields - the footprint carries a
     true ray-traced bounding box (:func:`compute_footprint_bounding_box`) and the
     angular weigher orients the PSF along the real scan plane. When they are ``None``
-    (e.g. a minimal caller-built dict), the box degrades to the boresight-centred
+    (e.g. a minimal caller-built dict), the box degrades to the boresight-centered
     approximation and the angular weigher falls back to a nadir frame.
 
     Attributes

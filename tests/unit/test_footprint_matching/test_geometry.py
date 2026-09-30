@@ -249,12 +249,12 @@ class TestAltitudeRecoveryPath:
 class TestBoundingBoxFromPoints:
     """The box assembler was extracted to a public helper shared with the camera path.
 
-    These tests pin its behaviour directly (the radiometer entry point above still
+    These tests pin its behavior directly (the radiometer entry point above still
     exercises it end-to-end, guarding the extraction).
     """
 
     def test_simple_box_from_corner_points(self):
-        # Four corner points -> the enclosing lat/lon rectangle, centred anchor irrelevant.
+        # Four corner points -> the enclosing lat/lon rectangle, centered anchor irrelevant.
         box = geo.bounding_box_from_points(10.0, 20.0, [9.0, 11.0, 9.0, 11.0], [19.0, 19.0, 21.0, 21.0])
         assert (box.lat_min, box.lat_max, box.lon_min, box.lon_max) == (9.0, 11.0, 19.0, 21.0)
         assert not box.wraps_dateline
@@ -350,9 +350,9 @@ class TestPsfGroundRadius:
 
 
 class TestBoundingBoxFromBoresight:
-    """The boresight-centred box is a symmetric superset needing no subsatellite point."""
+    """The boresight-centered box is a symmetric superset needing no subsatellite point."""
 
-    def test_box_encloses_and_is_centred_on_the_boresight(self):
+    def test_box_encloses_and_is_centered_on_the_boresight(self):
         box = bounding_box_from_boresight(12.0, -45.0, 10.0)
         assert box.lat_min < 12.0 < box.lat_max
         assert box.lon_min < -45.0 < box.lon_max

@@ -30,7 +30,7 @@ ellipsoid. The intersection points, converted back to geodetic latitude/longitud
 give the box. Because the model is the true ellipsoid:
 
   * flattening (equatorial 6378.137 km vs polar 6356.752 km) is exact, and
-  * geodetic latitude is honoured exactly -- the local vertical at each point is the
+  * geodetic latitude is honored exactly -- the local vertical at each point is the
     ellipsoid normal, not the geocentric radial direction.
 
 Off-limb handling falls out of the ray-trace: rays that miss the ellipsoid are off
@@ -208,7 +208,7 @@ def _ellipsoid_normal(lat_deg: float, lon_deg: float) -> np.ndarray:
     """Outward unit normal (local geodetic zenith) at a surface point.
 
     This is the geodetic vertical, ``(cos lat cos lon, cos lat sin lon, sin lat)`` --
-    *not* the geocentric radial direction. Honouring this difference is the whole
+    *not* the geocentric radial direction. Honoring this difference is the whole
     point of using the ellipsoid rather than a sphere.
     """
     lat, lon = math.radians(lat_deg), math.radians(lon_deg)
@@ -539,7 +539,7 @@ def psf_ground_radius_km(
     the optical FOV half-angle so the radius is never smaller than the field of view.
 
     This is the single home for the angular-extent -> ground-radius projection, shared
-    by the boresight-centred bounding box (:func:`bounding_box_from_boresight`) and the
+    by the boresight-centered bounding box (:func:`bounding_box_from_boresight`) and the
     per-cell PSF weighers
     (:mod:`libera_utils.footprint_matching.weighting`), so the two never drift.
 
@@ -577,7 +577,7 @@ def bounding_box_from_boresight(
     fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
     n_samples: int = _N_PERIMETER_SAMPLES,
 ) -> BoundingBox:
-    """Boresight-centred bounding box from the PSF ground radius (no subsatellite point).
+    """Boresight-centered bounding box from the PSF ground radius (no subsatellite point).
 
     A lighter-weight companion to :func:`compute_footprint_bounding_box` for footprints
     that carry only a boresight and a viewing zenith angle. Rather than ray-tracing the
@@ -586,7 +586,7 @@ def bounding_box_from_boresight(
     (:func:`psf_ground_radius_km`) around the boresight and boxes those points with the
     same pole/dateline handling as :func:`bounding_box_from_points`.
 
-    Because the box is centred on the boresight and symmetric, it is always a safe
+    Because the box is centered on the boresight and symmetric, it is always a safe
     superset of the true (elongated, asymmetric) footprint for the purpose of deciding
     which ancillary tiles to load -- exactly what the bounding box is for. It is never
     limb-truncated (the circle is drawn on the surface, not ray-traced), so
@@ -618,7 +618,7 @@ def bounding_box_from_boresight(
     Returns
     -------
     BoundingBox
-        Geographic box enclosing the boresight-centred PSF ground circle.
+        Geographic box enclosing the boresight-centered PSF ground circle.
     """
     altitude = altitude_km if (altitude_km is not None and altitude_km > 0.0) else NOMINAL_ALTITUDE_KM
     # Apply the same outward safety margin the ray-traced box uses, so this box is an
@@ -694,7 +694,7 @@ def compute_footprint_bounding_box(
         box is never smaller than the optical field of view. Defaults to
         :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
     on_limb : {"flag", "raise"}, optional
-        Behaviour when a box *corner* ray runs off the Earth limb at a severe angle
+        Behavior when a box *corner* ray runs off the Earth limb at a severe angle
         while the boresight is still on Earth. ``"flag"`` (default) truncates those
         rays at the horizon and marks the box ``BoundingBox.truncated = True`` so the
         orchestrator can record partial coverage; ``"raise"`` raises
@@ -791,7 +791,7 @@ def compute_footprint_bounding_box(
 # Phase 1). The scalar path above is retained as the readable parity reference; the
 # batch path is validated against it cell-for-cell in the unit tests. Only the
 # on_limb="flag" semantics are implemented here (corner misses truncate); the "raise"
-# behaviour stays on the scalar entry point.
+# behavior stays on the scalar entry point.
 
 
 def _pyproj_seq(array: np.ndarray) -> list[float] | np.ndarray:
@@ -1123,7 +1123,7 @@ def bounding_box_from_points_batch(
     geod = _wgs84_geod()
     n, s = lats.shape
 
-    # Pole-enclosure reach: geodesic distance from each centre to every perimeter point.
+    # Pole-enclosure reach: geodesic distance from each center to every perimeter point.
     center_lat_rep = np.repeat(center_lat_deg, s)
     center_lon_rep = np.repeat(center_lon_deg, s)
     _, _, reach = geod.inv(
@@ -1503,7 +1503,7 @@ def project_to_angular(
         # built as a cross product with the boresight), and both are unit vectors.
         n_hat = np.cross(c_hat, b_hat)
 
-    # Geodetic -> ECEF (km) for every cell centre. Uses the closed-form surface transform
+    # Geodetic -> ECEF (km) for every cell center. Uses the closed-form surface transform
     # (cells sit on the ellipsoid) rather than pyproj: the pyproj per-call overhead would
     # otherwise dominate the weighting path. This depends only on the cell coordinates, not
     # the frame, so an already-computed value (shared across footprints on the same tile) is
