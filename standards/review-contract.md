@@ -115,8 +115,9 @@ pydantic `@field_validator` or `@model_validator` is called by the model, so a c
 says nothing about either and "one caller" is the normal case. Never raise `helper/...` on a
 symbol carrying a decorator that registers rather than calls: `@pytest.fixture`,
 `@field_validator`, `@model_validator`, `@contextmanager` used as a fixture,
-`@functools.singledispatch` registrations, and framework hooks generally. At most 7 test
-findings and 7 helper findings; anything past that is a count.
+`@functools.singledispatch` registrations, and framework hooks generally. A test or helper
+finding is posted by the finding criteria like any other; suggestions among them count toward
+the contract's seven.
 
 ## New surface
 
