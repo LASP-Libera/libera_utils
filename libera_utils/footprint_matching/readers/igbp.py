@@ -147,7 +147,7 @@ class IGBPReader(GriddedDataReader):
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_pixels,)`` float64 pixel-centre coordinates derived from the
+            ``(n_pixels,)`` float64 pixel-center coordinates derived from the
             sinusoidal projection metadata, and ``values`` is float64 shape
             ``(1, n_pixels)`` holding the IGBP class code per pixel. Fill pixels
             (original value 255) and any code outside the valid IGBP domain
@@ -191,7 +191,7 @@ class IGBPReader(GriddedDataReader):
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(data, lats, lons)`` where ``data`` is float32 shape
             ``(n_lat, n_lon)`` (single-variable contract), ``lats``/``lons`` are
-            1-D float64 cell-centre coordinate arrays, and cells with no pixels
+            1-D float64 cell-center coordinate arrays, and cells with no pixels
             are ``NaN``.
 
         Notes
@@ -203,7 +203,7 @@ class IGBPReader(GriddedDataReader):
         lats, lons, values = self._load_points
 
         # rasterize_points_to_grid always returns (n_var, n_lat, n_lon). IGBP is
-        # single-variable, so squeeze axis 0 to honour the 2-D output contract
+        # single-variable, so squeeze axis 0 to honor the 2-D output contract
         # that single-variable grid readers use.
         data, lats_out, lons_out = rasterize_points_to_grid(
             point_lats=lats,

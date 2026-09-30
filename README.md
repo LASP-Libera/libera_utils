@@ -18,14 +18,6 @@ Please contact the Libera SDC Team at LASP for access to the Developer Guide.
 pip install libera-utils
 ```
 
-To use the footprint-matching gridded ancillary-data readers
-(`libera_utils.footprint_matching.readers`), install the optional `fmatch` extra, which pulls
-in the geospatial / HDF stack (`pyproj`, `pyhdf`, `h5py`):
-
-```bash
-pip install 'libera_utils[fmatch]'
-```
-
 Note: `pyhdf` needs the HDF4 C library at build time when no prebuilt wheel is available for your
 interpreter. On Debian/Ubuntu: `sudo apt-get install libhdf4-dev`; with conda:
 `conda install -c conda-forge pyhdf`.

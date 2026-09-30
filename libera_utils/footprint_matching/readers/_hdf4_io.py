@@ -135,7 +135,7 @@ def read_modis_sinusoidal_hdf4(
     MODIS gridded products (e.g., MCD12Q1) do not store latitude/longitude as
     SDS arrays. Instead, the tile geometry is encoded in the HDF-EOS
     ``StructMetadata.0`` attribute as upper-left/lower-right corners in
-    sinusoidal-projection metres. This function parses those corners, derives
+    sinusoidal-projection meters. This function parses those corners, derives
     pixel-center coordinates, and converts them to geographic degrees.
 
     Parameters
@@ -154,8 +154,8 @@ def read_modis_sinusoidal_hdf4(
         ``(data, lats, lons)`` where:
 
         - ``data`` is float32, shape ``(nrows, ncols)``.
-        - ``lats`` is float64, shape ``(nrows, ncols)`` — pixel-centre latitudes.
-        - ``lons`` is float64, shape ``(nrows, ncols)`` — pixel-centre longitudes.
+        - ``lats`` is float64, shape ``(nrows, ncols)`` — pixel-center latitudes.
+        - ``lons`` is float64, shape ``(nrows, ncols)`` — pixel-center longitudes.
 
     Raises
     ------
@@ -205,7 +205,7 @@ def read_modis_sinusoidal_hdf4(
     r_match = re.search(r"ProjParams\s*=\s*\(\s*([^,)]+)", struct_meta)
     sphere_radius: float = float(r_match.group(1)) if r_match and float(r_match.group(1)) > 0 else 6371007.181
 
-    # --- pixel-center coordinates in sinusoidal metres ---
+    # --- pixel-center coordinates in sinusoidal meters ---
     xs = x_ul + (np.arange(xdim) + 0.5) * ((x_lr - x_ul) / xdim)  # (xdim,)
     ys = y_ul + (np.arange(ydim) + 0.5) * ((y_lr - y_ul) / ydim)  # (ydim,)
 
