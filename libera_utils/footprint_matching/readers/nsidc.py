@@ -276,35 +276,35 @@ class NISEReader(GriddedDataReader):
         VariableSpec(
             name="sea_ice_concentration",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="snow_free_land",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="permanent_ice",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="snow_on_land",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="open_ocean",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
