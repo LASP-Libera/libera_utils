@@ -51,15 +51,17 @@ six accepts that mean one glance are worse than three that mean three.
 
 ## Severity
 
-| Tag        | Handling                                                                                                                                                                                           |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| must-fix   | Ranked, counted against the budget, tagged by a person. Before emitting one, read the **file** rather than the diff and quote the lines; a must-fix that cannot be anchored to lines is downgraded |
-| should-fix | Ranked, counted, tagged                                                                                                                                                                            |
-| suggestion | Below the fold, own cap of 7, answered Agree (taken) or Disagree, no reason needed                                                                                                                 |
-| question   | Its own list, outside the budget. Check both `decisions.md` files first: if a decision answers it, cite the decision instead of asking again                                                       |
+| Tag        | Handling                                                                                                                                                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| must-fix   | Ranked, posted whenever it meets the finding criteria, tagged by a person. Before emitting one, read the **file** rather than the diff and quote the lines; a must-fix that cannot be anchored to lines is downgraded |
+| should-fix | Ranked, posted by the same criteria, tagged                                                                                                                                                                           |
+| suggestion | Below the fold, own cap of 7, answered Agree (taken) or Disagree, no reason needed                                                                                                                                    |
+| question   | Its own list, always posted. Check both `decisions.md` files first: if a decision answers it, cite the decision instead of asking again                                                                               |
 
-Budget: **7** must-fix and should-fix per run, ranked. Anything past 7 is a count per rule,
-not a list.
+Finding criteria: a must-fix or should-fix is posted whenever it is keyed as Citation says and
+carries a Proposed line, however many there are; at most **7** suggestions, ranked; questions
+always. A nit is the build's to catch, not this review's. The review's summary line reports the
+counts by severity, as `pr-findings` writes it.
 
 The implementation reviewer grades findings `blocking` or `non-blocking`: a blocking finding
 is must-fix or should-fix by the same test as above, and a non-blocking one is a suggestion.

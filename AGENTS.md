@@ -19,8 +19,8 @@ once and everything else points at it.
 
 - `standards/README.md` — the measurements that set every threshold, and the five tuning
   answers. Read this first; it says what this repository is optimizing for.
-- `standards/review-rules.md` — the ledger of the rules, capped at 14: tier, status, evidence
-  and do-not-flag for each. The wording of each rule is in the Review Rules section of
+- `standards/review-rules.md` — the ledger of the rules, within a 300-line budget: tier,
+  status, evidence and do-not-flag for each. The wording of each rule is in the Review Rules section of
   `.github/instructions/libera-utils.instructions.md`
 - `standards/review-contract.md` — how a reviewer behaves, and what it must not flag
 - `standards/decisions.md` — convention decisions already made here
@@ -72,7 +72,8 @@ Any agent that plans, builds or reviews a change here, including `implementation
 - Holds the change to the rules and to the contract's Test scrutiny and New surface sections,
   and does not raise anything on the contract's do-not-flag list.
 - Keys every finding the way the contract's Citation section says: the citation, `/`, the path,
-  `::`, the enclosing symbol. At most seven must-fix and should-fix.
+  `::`, the enclosing symbol. Raises every must-fix and should-fix that meets the contract's
+  finding criteria, and at most seven suggestions.
 - Stops the build and brings the person the latest report, rather than fixing on, when a fix
   would weaken an existing test (a loosened tolerance or assertion, a removed `pytest.raises`,
   a new skip or xfail, a dropped parametrize case), a fix would change the agreed plan, a

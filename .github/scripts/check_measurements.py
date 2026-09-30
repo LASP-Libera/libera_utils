@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check the claims in standards/ that a machine can still verify.
 
-The corpus states numbers and then reasons from them: a test count and a rule cap.
+The corpus states numbers and then reasons from them: a test count and a rule line budget.
 Those go stale silently, and a threshold derived from a stale number is worse than no
 threshold, because it looks measured. This re-derives them and reports what no longer holds.
 
@@ -66,19 +66,19 @@ def check_lane(label: str, pattern: str, pytest_args: list[str], readme: str) ->
     return Result(label, True, f"{got}")
 
 
-def check_rule_cap(readme: str) -> Result:
-    cap = re.search(r"\*\*(\d+) rules, (\d+) lines\*\*", readme)
-    if not cap:
-        return Result("rule cap", False, "standards/README.md no longer states the rule cap")
-    max_rules, max_lines = int(cap.group(1)), int(cap.group(2))
+def check_rule_budget(readme: str) -> Result:
+    budget = re.search(r"^\| Rule budget\s*\| \*\*(\d+) lines\*\*", readme, re.M)
+    if not budget:
+        return Result("rule budget", False, "standards/README.md no longer states the rule budget")
+    max_lines = int(budget.group(1))
     body = RULES.read_text()
     entries = re.findall(r"^### (R-\d+) · ([^\n]+)\n(.*?)(?=^### |^## |\Z)", body, re.M | re.S)
-    # A check-tier rule is outside the cap: a tool enforces it and the reviewer holds a pointer.
+    # A check-tier rule is outside the budget: a tool enforces it and the reviewer holds a pointer.
     checked = [e for e in entries if re.search(r"^tier: check\b", e[2], re.M)]
     live = len([e for e in entries if "retired" not in e[1].lower() and e not in checked])
     wording = re.search(r"^## Review Rules$.*?(?=^## |\Z)", INSTRUCTIONS.read_text(), re.M | re.S)
     if not wording:
-        return Result("rule cap", False, f"{INSTRUCTIONS.name} has no Review Rules section")
+        return Result("rule budget", False, f"{INSTRUCTIONS.name} has no Review Rules section")
     # Counted as the one file the rules used to be: each linked rule's second title and its
     # link line, each with a blank line, are structure the split added, not rule text.
     linked = len(re.findall(r"^Wording: \[", body, re.M))
@@ -88,14 +88,9 @@ def check_rule_cap(readme: str) -> Result:
         - 4 * linked
         - sum(len(f"{e[1]}\n{e[2]}".splitlines()) for e in checked)
     )
-    problems = []
-    if live > max_rules:
-        problems.append(f"{live} live rules over a cap of {max_rules}")
     if lines > max_lines:
-        problems.append(f"{lines} lines over a cap of {max_lines}")
-    if problems:
-        return Result("rule cap", False, "; ".join(problems))
-    return Result("rule cap", True, f"{live}/{max_rules} rules, {lines}/{max_lines} lines")
+        return Result("rule budget", False, f"{lines} lines over a budget of {max_lines}; {live} live rules")
+    return Result("rule budget", True, f"{lines}/{max_lines} lines; {live} live rules")
 
 
 def main() -> int:
@@ -107,7 +102,7 @@ def main() -> int:
     results = [
         check_lane("unit lane count", r"\| (\d[\d,]*) tests, measured on", ["tests/unit/"], readme),
         check_lane("PR lane count", r"\| (\d[\d,]*) tests, same run", ["-m", "not e2e", "tests/"], readme),
-        check_rule_cap(readme),
+        check_rule_budget(readme),
     ]
 
     failed = skipped = 0

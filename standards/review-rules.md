@@ -1,56 +1,13 @@
 # Review rules
 
-The ledger of what a reviewer checks in this repository, beyond what the tools already check.
-Each entry carries a rule's tier, status, the month it was admitted, the evidence that earned
-it and its do-not-flag sentence. **The wording of each rule is not here**: it lives once, under
-its ID, in `.github/instructions/libera-utils.instructions.md`, which Claude Code loads through
-`CLAUDE.md` and Copilot loads on its own, so the people and agents writing code read the same
-rule the reviewer checks. Each entry links to its section there.
-
-**Cap: 14 rules or 300 lines**, the lines counted across this file and the wording together,
-each rule's title once and its link line not at all. A `check`-tier rule is outside the cap:
-a tool enforces it, and the reviewer holds only its pointer. The cap is twice the measured monthly reviewed-PR count
-(`standards/README.md`). At the cap, a rule is admitted only by retiring one.
-
-Tiers say where a rule lives. `prose` — the instruction file only: the author is expected to
-know it, the reviewer does not check it, and it has no entry here. `reviewer` — the
-instruction file plus an entry here, which the reviewer checks against. `check` — the tool's
-configuration plus the shared archive: a tool enforces it, its reasoning is in
-`archive/libera_utils/`, and its entry here is a pointer so the reviewer knows the ground is
-covered.
-Statuses: `provisional` · `established` · `graduated` · `retired`.
-
-Where a rule restates a decision, shared or local, its evidence line names it.
-A rule and a decision on the same concern must not disagree about status: the decision is
-what the team settled, the rule is how a reviewer checks it, and the reviewer loads both.
-
-A rule becomes `established` when the reviewer has cited it and a person has accepted the
-finding in two different pull requests, **written by two different people**. During v0 a
-harvest may establish a rule on review-thread evidence that clears the same bar — two pull
-requests by two different authors — and its evidence line points at those pull requests. A
-rule whose evidence is one author's pull requests, or comes only from AI-drafted review
-comments, stays provisional however often it is cited: the citation count measures how often
-something came up, and breadth measures whether it is the team's standard or one person's. A
-`provisional` rule that has become neither `established` nor `graduated` within the
-provisional expiry in `standards/README.md` is retired by default. The expiry counts merged
-pull requests with records, never ratchets or months: a month in which nothing merges is no
-evidence against a rule.
-
-**No rule leaves without its reasoning being kept.** During v0 a harvest may propose
-retirements as well as admissions — R-008's was proposed that way at the second harvest,
-before any ratchet had run, and a person made the call — and the biography requirement is
-identical either way; after v0 proposing them is the ratchet's job alone. When a rule
-graduates into a check, retires or is rewritten, whoever does it writes its biography — the
-text as it read, why it was admitted, every decline reason quoted, and what the replacement
-cannot catch — to `archive/libera_utils/` in the shared corpus, in a pull request there that
-merges before the one here. The entry here becomes a one-line stub pointing at it, so an ID is
-never reused and the reason is never lost. Every entry carries its own status line; read that
-rather than assuming.
-
-v0 evidence points at the merged pull request whose review threads produced the rule. A
-rule resting on one author, or on one pull request and so below the new-rule cluster in
-`standards/README.md`, says so in its evidence line. From the first ratchet on, evidence
-points at the review records in `libera_llm_tooling/standards/libera_utils/log/`.
+The ledger of what a reviewer checks in this repository beyond what the tools check: each
+rule's tier, status, evidence and do-not-flag sentence. The wording of each rule lives once,
+under its ID, in `.github/instructions/libera-utils.instructions.md`, and each entry links there.
+**Budget: 300 lines**, counted across this file and the wording together, each rule's title
+once, its link line not at all, and a `check`-tier rule not at all. A rule is admitted when it
+meets the criteria: two merged pull requests from two authors, not something a tool can check,
+not a one-off design question, and not a restatement of a decision. Tiers, statuses,
+establishment, retirement and graduation are in `standards/README.md`.
 
 ---
 
@@ -208,26 +165,37 @@ Wording: [R-016 in the instruction file](../.github/instructions/libera-utils.in
 Do not flag: a message whose condition and next action are already in the exception type's
 name.
 
-## Candidates not admitted, because the cap binds
+### R-017 · A valid range or an enumeration cites its source
 
-Kept here with their evidence so the ratchet can promote one when a rule retires.
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0004, pr-0042
+
+Wording: [R-017 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-017--a-valid-range-or-an-enumeration-cites-its-source)
+
+Do not flag: a range that is the dtype's own limits; an enumeration defined once elsewhere in
+this repository and referenced by name.
+
+## Candidates below the criteria
+
+Kept here with their evidence and the criterion each fails, so a revision can admit one when
+its evidence meets them.
 
 - **Private symbols do not cross module boundaries.** A second consumer outside the defining
   module makes a symbol public in fact; rename and document it, or wrap it. Evidence:
-  pr-0048 (`_expand_sample_times`, `_extract_wfov_header_metadata_from_blob`).
+  pr-0048 (`_expand_sample_times`, `_extract_wfov_header_metadata_from_blob`). Fails: one pull
+  request.
 - **A registry whose values reach a filename has a uniqueness invariant test.** Evidence:
-  pr-0041 (one ObsID on two instruments produced two writes of the same filename).
-- **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`).
+  pr-0041 (one ObsID on two instruments produced two writes of the same filename). Fails: one
+  pull request.
+- **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`). Fails: one
+  pull request, and a tool can check it (ruff's `FBT` rules).
 - **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer
-  removed three of them in one pass — "yet another unnecessary helper function". Held below
-  the cap because the review contract's New surface section already reports call-site
+  removed three of them in one pass — "yet another unnecessary helper function". Fails: one
+  pull request, and the review contract's New surface section already reports call-site
   counts, so this is a check waiting for a firing rate rather than a rule waiting for a
   reviewer.
-- **A valid range or an enumeration cites its source.** Evidence: pr-0004 ("what's the
-  reasoning for this valid range?", answered "extraneous - removing"), pr-0042
-  (`LAND_SURFACE_TYPE_BIN` declared 6 categories where the ADM algorithm has 5).
 - **Do not hold a large array twice.** Evidence: pr-0027, a stitching path holding three
-  copies of the image data live at once on a full downlink. One pull request; it was part of
-  R-013 until that rule was trimmed to what two pull requests support.
+  copies of the image data live at once on a full downlink. Fails: one pull request; it was
+  part of R-013 until that rule was trimmed to what two pull requests support.
 - **A name is renamed when its contract widens.** Evidence: pr-0028
-  (`get_libera_utils_session` → `get_l2_team_role_session` once it took a `role_name`).
+  (`get_libera_utils_session` → `get_l2_team_role_session` once it took a `role_name`). Fails:
+  one pull request.

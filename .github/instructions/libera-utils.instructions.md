@@ -274,6 +274,14 @@ error persists, contact the SDC team." pr-0060 asked for an error telling the ca
 a tag rather than defaulting to `latest`; pr-0015 asked the log to name which data variables
 did not match.
 
+### R-017 · A valid range or an enumeration cites its source
+
+A valid range or a set of categories is a claim about the instrument or the algorithm, and a
+claim with no source cannot be checked in review. In pr-0004 a valid range, asked for its
+reasoning, had none and was removed; in pr-0042 `LAND_SURFACE_TYPE_BIN` declared six categories
+where the ADM algorithm has five. Name the document, algorithm or upstream definition the values
+come from, by name rather than by internal link (R-014).
+
 ## Restrictions for AI Agents
 
 The following actions require **explicit requests** or **explicit permission**, regardless of context.
