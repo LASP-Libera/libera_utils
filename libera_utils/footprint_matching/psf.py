@@ -2,7 +2,7 @@
 
 What this module is (and is not)
 --------------------------------
-This is a **partial** PSF module. It implements only the slice of PSF behaviour
+This is a **partial** PSF module. It implements only the slice of PSF behavior
 that the geographic bounding-box calculation in :mod:`geometry` actually needs:
 
 1. the analytic CERES PSF value :func:`psf_weight` (ATBD Eq. 4.4-1/4.4-2), and
@@ -14,10 +14,9 @@ that the geographic bounding-box calculation in :mod:`geometry` actually needs:
 Why the CERES PSF (for now)
 ---------------------------
 The Libera instrument PSF has not been measured/delivered yet, so we stand in the
-heritage CERES analytic PSF, which the reference notebook
-``instructions/CERES PSF PIPELINE-2.ipynb`` reproduces and validates against the
-CERES ATBD. Everything CERES-specific lives in the clearly marked constants block
-below so that swapping in the real Libera PSF is a single-file change.
+heritage CERES analytic PSF, validated against the CERES ATBD. Everything
+CERES-specific lives in the clearly marked constants block below so that swapping
+in the real Libera PSF is a single-file change.
 
 References
 ----------
@@ -153,8 +152,7 @@ def _f_response(xi: np.ndarray) -> np.ndarray:
 def psf_weight(delta_deg: np.ndarray, beta_deg: np.ndarray) -> np.ndarray:
     """Evaluate the CERES PSF P(delta', beta) -- ATBD Eq. 4.4-1.
 
-    This is a direct port of ``compute_psf_weight`` from cell 1 of the reference
-    notebook. ``delta_deg`` is the *geometric* along-scan angle (e.g. what
+    ``delta_deg`` is the *geometric* along-scan angle (e.g. what
     :mod:`geometry` produces by perturbing the cone angle); the radiometric
     centroid shift is applied internally as delta' = delta + Delta-delta, and the
     PSF is evaluated at delta'.
@@ -196,7 +194,7 @@ def psf_weight(delta_deg: np.ndarray, beta_deg: np.ndarray) -> np.ndarray:
         return P
 
     # The along-scan integration limits (df, db) depend on the cross-scan position
-    # because the FOV is a hexagon: near the centre (|beta| < a) the chord is full
+    # because the FOV is a hexagon: near the center (|beta| < a) the chord is full
     # width [-a, a]; toward the edges (|beta| >= a) the chord narrows linearly.
     df = np.zeros(out_shape)
     db = np.zeros(out_shape)
@@ -234,9 +232,8 @@ def psf_95_energy_extent(
 
     This finds the smallest set of grid cells (by descending energy density) whose
     cumulative PSF energy reaches ``energy_fraction``, then reports how far that set
-    reaches in delta and beta. It is the analogue of cell 9's ``compute_psf_95_mask``
-    in the reference notebook, but it sizes the *extent* directly from a fine,
-    fully-vectorised grid evaluation rather than from the slow per-bin
+    reaches in delta and beta. It sizes the *extent* directly from a fine,
+    fully-vectorized grid evaluation rather than from the slow per-bin
     ``dblquad`` pre-integration (which is only needed later for PSF-weighted
     aggregation, not for the bounding box).
 
