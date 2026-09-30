@@ -19,6 +19,13 @@ The phases this file refers to — 0 set up the standard, 1 define the work, 2 b
 | `decisions.md`       | Decisions local to this repository. Cross-repository ones are shared                                        |
 | `test-lanes.md`      | Every lane marker, path and command the corpus depends on, in one place                                     |
 
+The review rules are the code-level, diff-checkable half of what the team's reviews said, and
+their count is not the measure of the corpus. The design of the mission and its software, what
+a function is for, what a name means, what was settled and why, lives in `decisions.md`, the
+shared `terminology.md` and `context/`, and enters through the ticket session. A design
+constraint becomes a rule only when a diff can be checked against it, at a revision, with
+evidence.
+
 `.review/` is the agents' scratch directory and is gitignored.
 
 The review records, one per reviewed pull request, and the monthly revision reports are not
