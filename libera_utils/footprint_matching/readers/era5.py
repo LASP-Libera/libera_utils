@@ -218,14 +218,14 @@ class ERA5Reader(ERA5ReaderBase):
         VariableSpec(
             name="wind_u10",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="wind_v10",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
@@ -236,35 +236,35 @@ class ERA5Reader(ERA5ReaderBase):
         VariableSpec(
             name="temperature_2m",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         ),
         VariableSpec(
             name="dew_point_temperature_2m",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         ),
         VariableSpec(
             name="surface_pressure",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         ),
         VariableSpec(
             name="surface_geopotential",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         ),
         VariableSpec(
             name="forecast_albedo",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         ),

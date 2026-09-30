@@ -259,7 +259,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "layer_coverage",
         "Cloudy_Imager_Footprint_Layer",
         "layers_coverages",
-        "weighted_mean",
+        "weighted_mean",# Confirm
         (0.0, 100.0),
         _BOTH_LAYERS,
     ),
@@ -267,7 +267,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "cloud_coverage_multilayer",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_coverage_multilayer",
-        "weighted_mean",
+        "weighted_mean", # Confirm
         (0.0, 100.0),
         _BOTH_LAYERS,
     ),
@@ -283,7 +283,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "cloud_base_pressure",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_base_pressure_mean",
-        "weighted_mean",
+        "weighted_mean",# Confirm
         (0.0, 1100.0),
         _BOTH_LAYERS,
     ),
@@ -291,7 +291,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "cloud_particle_phase_37um",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_particle_phase_37um_mean",
-        "weighted_mean",
+        "weighted_mean", # Confirm
         (1.0, 2.0),
         _BOTH_LAYERS,
     ),
@@ -304,7 +304,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "cloud_optical_depth",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
-        "weighted_log_mean",
+        "weighted_log_mean", # Confirm
         (0.0, 512.0),
         _UPPER_LAYER_ONLY,
     ),
@@ -312,7 +312,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "cloud_water_particle_radius",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
-        "weighted_mean",
+        "weighted_mean", # Confirm
         (2.0, 60.0),
         _UPPER_LAYER_ONLY,
     ),
@@ -320,19 +320,19 @@ _IMAGER_SSF_SOURCES: tuple[
         "cloud_ice_particle_radius",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
-        "weighted_mean",
+        "weighted_mean", # Confirm
         (5.0, 90.0),
         _UPPER_LAYER_ONLY,
     ),
     # --- Aerosol fields ---
-    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", (0.0, 8.0), _SCALAR_MEMBER),
+    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", (0.0, 8.0), _SCALAR_MEMBER), # Confirm
     # aerosol_type_percentage is (Footprints, AeroTypePct=7). The seven type labels are
     # not recorded in the file; flattened to placeholder _type0.._type6 suffixes.
     (
         "aerosol_type_percentage",
         "Assimilated_Aerosol_Properties",
         "aerosol_type_percentage",
-        "weighted_mean",
+        "weighted_mean", # Confirm
         (0.0, 100.0),
         tuple((f"type{i}", i) for i in range(7)),
     ),
@@ -340,7 +340,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
         "Imager_Land_Aerosols",
         "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
-        "weighted_log_mean",
+        "weighted_log_mean", # Confirm
         (0.0, 5.0),
         _SCALAR_MEMBER,
     ),
@@ -348,7 +348,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "imager_deep_blue_ocean_055um_aerosol_optical_depth",
         "Imager_Ocean_Aerosols",
         "imager_deep_blue_ocean_055um_aerosol_optical_depth",
-        "weighted_log_mean",
+        "weighted_log_mean", # Confirm
         (0.0, 5.0),
         _SCALAR_MEMBER,
     ),
@@ -365,7 +365,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "toa_incoming_solar_radiation",
         "Observed_TOA_Fluxes",
         "toa_incoming_solar_radiation",
-        "weighted_mean",
+        "weighted_mean", # Confirm
         (0.0, 1400.0),
         _SCALAR_MEMBER,
     ),
