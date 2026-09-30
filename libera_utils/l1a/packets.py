@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 SDC_PACKET_DIMENSION = "PACKET"
 SPP_PACKET_DIMENSION = "packet"  # The original dimension name from SPP before we swap it to uppercase
 SRC_SEQ_CTR_DIMENSION = "SRC_SEQ_CTR"  # The name of the sequence counter variable in the dataset
+# SRC_SEQ_CTR is the 14-bit CCSDS primary header source sequence count, kept per APID; it wraps 16383 -> 0
+SRC_SEQ_CTR_MODULUS = 2**14
+# Largest backward SRC_SEQ_CTR step, in packets, reported as a counter/packet-time order mismatch rather than a
+# forward gap. It stands for the maximum depth to which FSW can reorder packets of one APID; 32 is interim until
+# FSW confirms that depth.
+SRC_SEQ_CTR_REORDER_WINDOW = 32
 
 DATETIME_USEC_DTYPE = np.dtype("datetime64[us]")
 
@@ -174,9 +180,11 @@ def parse_packets_to_l1a_dataset(
         configuration for generating the L1A Dataset structure.
     ground_data : bool, optional
         If True, non-identical duplicate timestamps will produce a warning instead of a ValueError. This is useful for ground
-        test data where duplicate timestamps with differing data may be expected. Default is False.
+        test data where duplicate timestamps with differing data may be expected. Also limits the SRC_SEQ_CTR order
+        report to its summary. Default is False.
     verbose : bool, optional
-        If True and ground_data is True, a warning will be issued for each duplicate coordinate value. Default is False.
+        If True and ground_data is True, a warning will be issued for each duplicate coordinate value and a log line
+        for each SRC_SEQ_CTR order mismatch. Default is False.
     skip_header_bytes : int | None, optional
         Bytes to skip before each CCSDS primary header. When ``None``, uses ``SKIP_PACKET_HEADER_BYTES`` from
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
@@ -190,8 +198,19 @@ def parse_packets_to_l1a_dataset(
         - Separate arrays for each sample group with optional multi-field expansion
         - All time coordinates properly set as dimensions
 
+    Raises
+    ------
+    KeyError
+        If the parsed packets have no ``SRC_SEQ_CTR`` variable.
+    ValueError
+        If ``ground_data`` is False and packets with the same packet time have different values.
+
     Notes
     -----
+    The packet axis is sorted by packet time. Steps in ``SRC_SEQ_CTR`` along that order that disagree with it are
+    reported by ``_report_src_seq_ctr_order`` and left as they are: packet order, values and the
+    ``{sample_group}_packet_index`` variables do not depend on the counter.
+
     For APID 1040 (ICIE WFOV SCI), the packet dataset is post-processed by
     ``enhance_wfov_l1a_dataset``: complete SOP→EOP images are stitched onto a ``CAMERA_TIME``
     dimension, compressed payloads and decoded header metadata are attached, ``ICIE__WFOV_DATA``
@@ -219,10 +238,10 @@ def parse_packets_to_l1a_dataset(
 
     # Sort the packet axis into its final order before samples are expanded; the
     # "{sample_group}_packet_index" variables built below enumerate this axis positionally.
-    # TODO[LIBSDC-830]: cross-check packet ordering against SRC_SEQ_CTR rather than relying on
-    # packet time alone, and reconcile packet_index with that ordering.
+    # Packet time is the sort key; SRC_SEQ_CTR disagreements with that order are reported, not repaired.
     packet_ds = packet_ds.sortby(packet_time_coordinate)
     packet_times_us = packet_ds[packet_time_coordinate].values
+    _report_src_seq_ctr_order(packet_ds, packet_time_coordinate, ground_data=ground_data, verbose=verbose)
 
     # Start building the dataset containing expanded sample fields
     sample_ds = xr.Dataset()
@@ -508,6 +527,83 @@ def _drop_duplicates(dataset: xr.Dataset, coordinate_name: str, ground_data: boo
         dataset_deduped = dataset
 
     return dataset_deduped, n_duplicates
+
+
+def _report_src_seq_ctr_order(
+    dataset: xr.Dataset, coordinate_name: str, *, ground_data: bool = False, verbose: bool = False
+) -> tuple[int, int]:
+    """Report SRC_SEQ_CTR steps that disagree with the packet-time order of a single-APID dataset.
+
+    For each pair of consecutive packets, ``d = (ctr[i] - ctr[i-1]) mod SRC_SEQ_CTR_MODULUS``. A step is normal
+    when ``d == 1``, which includes the wrap 16383 -> 0. It is a mismatch when it steps backward by at most
+    ``SRC_SEQ_CTR_REORDER_WINDOW`` (``SRC_SEQ_CTR_MODULUS - d <= SRC_SEQ_CTR_REORDER_WINDOW``), and a forward
+    gap otherwise, which includes ``d == 0`` and a wrap next to dropped packets such as 16380 -> 2. A single
+    swapped pair (1, 3, 2, 4) is one mismatch and two forward gaps. The dataset is not modified.
+
+    Mismatches produce a ``UserWarning`` and a ``logger.warning`` with their count, followed by one
+    ``logger.warning`` per mismatch giving its position on the packet axis, both packet times and both counter
+    values, unless ``ground_data`` is True and ``verbose`` is False. Forward gaps produce a ``logger.warning``
+    with their count only.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Single-APID packet dataset, already sorted by ``coordinate_name``, with a ``SRC_SEQ_CTR`` variable on
+        the packet dimension.
+    coordinate_name : str
+        The packet time coordinate the dataset is sorted by, used in the report.
+    ground_data : bool, optional
+        If True, the per-mismatch lines are omitted unless ``verbose`` is also True. Default is False.
+    verbose : bool, optional
+        If True and ``ground_data`` is True, the per-mismatch lines are logged. Default is False.
+
+    Returns
+    -------
+    n_mismatches : int
+        Number of backward steps within ``SRC_SEQ_CTR_REORDER_WINDOW``.
+    n_gaps : int
+        Number of forward gaps.
+
+    Raises
+    ------
+    KeyError
+        If the dataset has no ``SRC_SEQ_CTR`` variable or no ``coordinate_name`` coordinate.
+    """
+    counters = dataset[SRC_SEQ_CTR_DIMENSION].values.astype(np.int64)
+    packet_times = dataset[coordinate_name].values
+    steps = np.diff(counters) % SRC_SEQ_CTR_MODULUS
+    is_mismatch = SRC_SEQ_CTR_MODULUS - steps <= SRC_SEQ_CTR_REORDER_WINDOW
+    n_mismatches = int(np.count_nonzero(is_mismatch))
+    n_gaps = int(np.count_nonzero((steps != 1) & ~is_mismatch))
+
+    if n_mismatches > 0:
+        message = (
+            f"Detected {n_mismatches} {SRC_SEQ_CTR_DIMENSION} order mismatches in packets sorted by "
+            f"{coordinate_name}: the counter steps backward by at most {SRC_SEQ_CTR_REORDER_WINDOW}. "
+            f"{coordinate_name} is when the ICIE built each packet, so ground delivery order cannot cause this: "
+            f"either the ICIE packet clock jumped or {SRC_SEQ_CTR_DIMENSION} was assigned out of build order "
+            f"onboard. Packets are kept in {coordinate_name} order."
+        )
+        warnings.warn(message)
+        logger.warning(message)
+        if not ground_data or verbose:
+            for position in np.flatnonzero(is_mismatch) + 1:
+                logger.warning(
+                    f"{SRC_SEQ_CTR_DIMENSION} order mismatch at packet {position}: {coordinate_name} "
+                    f"{packet_times[position - 1]} -> {packet_times[position]}, {SRC_SEQ_CTR_DIMENSION} "
+                    f"{counters[position - 1]} -> {counters[position]}"
+                )
+    if n_gaps > 0:
+        logger.warning(
+            f"Detected {n_gaps} forward gaps in {SRC_SEQ_CTR_DIMENSION} in packets sorted by {coordinate_name}. "
+            f"A forward gap is any step other than +1 (mod {SRC_SEQ_CTR_MODULUS}) that is not a backward step of at "
+            f"most {SRC_SEQ_CTR_REORDER_WINDOW}: it counts dropped packets, repeated counters, backward steps "
+            f"deeper than {SRC_SEQ_CTR_REORDER_WINDOW}, and the two steps either side of each order mismatch. The "
+            f"window of {SRC_SEQ_CTR_REORDER_WINDOW} is interim, not a confirmed FSW reorder depth, so compare "
+            f"this count with the order mismatch count before reading it as dropped packets."
+        )
+
+    return n_mismatches, n_gaps
 
 
 def _expand_sample_group(dataset: xr.Dataset, group: SampleGroup) -> tuple[dict[str, np.ndarray], np.ndarray]:
