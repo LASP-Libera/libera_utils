@@ -81,7 +81,7 @@ Any agent that plans, builds or reviews a change here, including `implementation
   `implement-change` records how the build ended in `.review/build/outcome.md`, mapped as
   `.github/PULL_REQUEST_TEMPLATE.md` defines, and `pr-create` copies it and the build hooks'
   counts into the body. A body written by hand follows the template the same way, and opens in
-  the order of the shared `templates/brief.md`.
+  the order the PR template's In context block gives.
 
 If you are an AI agent working here, declare it where shared D-013 says: the `Co-Authored-By`
 trailer on commits, the generated-with line on a pull request body, and the attribution line
