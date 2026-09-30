@@ -46,8 +46,8 @@ live in `libera_llm_tooling/standards/`:
 
 **The review records** live there too, in `standards/libera_utils/log/`: one `pr-NNNN.yaml`
 per reviewed pull request and one report per monthly revision. `pr-findings` writes a record
-there and a person commits it in `libera_llm_tooling`, so no record sits in this repository's
-pull requests.
+there and the month's driver, a role that rotates, runs the monthly revision and commits that
+month's records in `libera_llm_tooling`, so no record sits in this repository's pull requests.
 
 ### Reaching it
 

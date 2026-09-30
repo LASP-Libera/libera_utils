@@ -156,7 +156,7 @@ build, not by a reviewer:
   a machine wrote it and a machine will read the replies
 - `pr-NNNN.yaml` in `libera_llm_tooling/standards/libera_utils/log/`, written by `pr-findings`
   from the replies in those threads — never from anything the reviewer decided on its own — and
-  committed there by a person, never the agent
+  committed there by the month's driver, never the agent
 
 ## What the agent may post
 
