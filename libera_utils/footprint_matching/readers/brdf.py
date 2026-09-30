@@ -108,63 +108,63 @@ class VIIRSBRDFReader(GriddedDataReader):
         VariableSpec(
             name="brdf_shortwave_fiso",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_shortwave_fvol",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_shortwave_fgeo",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_vis_fiso",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_vis_fvol",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_vis_fgeo",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_nir_fiso",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_nir_fvol",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
         VariableSpec(
             name="brdf_nir_fgeo",
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         ),
