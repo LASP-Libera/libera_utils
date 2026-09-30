@@ -126,7 +126,7 @@ The review standard lives in `standards/`, tool-neutral and read by people and a
   list. Never repeat a finding that `ruff`, `prettier`, `codespell`, `bandit` or a
   pre-commit hook already makes.
 - `standards/README.md` — the measured counts that set every threshold, and what this
-  repository is optimising for.
+  repository is optimizing for.
 - `standards/decisions.md` and the shared corpus named in `standards/README.md` ("Shared tier") — convention
   decisions already settled. Check there before asking a convention question again.
 
@@ -214,7 +214,7 @@ was no longer reachable, and three counters that were incremented and never read
 
 The most repeated request in the window, six times in one review: remove the ticket number,
 remove the historical title, remove the comment that says what this used to be. A test's
-subject is the behaviour, not the ticket that asked for it. Ticket references are for
+subject is the behavior, not the ticket that asked for it. Ticket references are for
 forward-looking work, which is what R-010 covers.
 
 ### R-011 · A dependency pins to an immutable ref

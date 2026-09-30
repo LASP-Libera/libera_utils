@@ -8,7 +8,7 @@ request to fix the corpus.
 
 The phases this file refers to — 0 set up the standard, 1 define the work, 2 build and verify,
 3 review and merge, 4 the monthly ratchet — are the standards workflow's, described in
-`libera_llm_tooling`'s README and summarised in `AGENTS.md` under "Working a change".
+`libera_llm_tooling`'s README and summarized in `AGENTS.md` under "Working a change".
 
 ## What is here
 
@@ -184,7 +184,7 @@ windowed 7 that the cap does not move.
 | Pull requests harvested, both rounds                 | **17 of 40**                     | Non-dependabot merges, listed by `merged_at`                                                                                                                                                                |
 | Review threads read, both rounds                     | ~212                             | ~105 in the first harvest, 107 in the second                                                                                                                                                                |
 | Share of second-harvest threads written by a bot     | **35%**                          | 37 of 107, `copilot-pull-request-reviewer`. None used as rule evidence                                                                                                                                      |
-| Median threads that asked for a change               | **11**                           | Excluding acknowledgements, answered questions and praise                                                                                                                                                   |
+| Median threads that asked for a change               | **11**                           | Excluding acknowledgments, answered questions and praise                                                                                                                                                    |
 | Distinct concerns raised more than once              | **21**                           | 14 admitted as rules, 7 held as candidates below the cap                                                                                                                                                    |
 | Share a linter could have caught                     | ~10%                             | 10 of the first harvest's ~105 threads. 9 of the 10 were line-length complaints in a single PR, from an automated reviewer, on a repo that disables `E501`                                                  |
 | Unit lane wall clock                                 | **70.7 s**                       | 1004 tests, measured on `main` 2026-09-22 at 1001, plus the three `check_version` tests; commands in `standards/test-lanes.md`                                                                              |

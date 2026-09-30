@@ -18,7 +18,7 @@ once and everything else points at it.
 `standards/` holds what a reviewer checks and why:
 
 - `standards/README.md` — the measurements that set every threshold, and the five tuning
-  answers. Read this first; it says what this repository is optimising for.
+  answers. Read this first; it says what this repository is optimizing for.
 - `standards/review-rules.md` — the ledger of the rules, capped at 14: tier, status, evidence
   and do-not-flag for each. The wording of each rule is in the Review Rules section of
   `.github/instructions/libera-utils.instructions.md`

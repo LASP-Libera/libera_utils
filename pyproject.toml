@@ -143,5 +143,6 @@ ignore = [
 ]
 
 [tool.codespell]
-ignore-words-list = "ANC,uncorrect"
+# British spellings in files outside standards/ and the developer docs, left as written; cancelled is also GitHub Actions' status name
+ignore-words-list = "ANC,uncorrect,behaviour,judgement,judgements,cancelled"
 
