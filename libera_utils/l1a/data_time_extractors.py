@@ -49,7 +49,7 @@ class DataTimeUndeterminedError(Exception):
 # timeseries it carries, even where those come from different clocks, and it is not narrowed to the
 # range all of them cover. Both of APID 11's independently timestamped sample groups (ADGPS
 # ephemeris, ADCFA attitude) contribute, and every in-window WFOV SOP contributes including one
-# whose image is truncated at the end of the file. Completeness judgements belong to consumers.
+# whose image is truncated at the end of the file. Completeness judgments belong to consumers.
 DATA_TIME_INDEXED_APIDS: frozenset[LiberaApid] = frozenset(
     {
         LiberaApid.icie_wfov_sci,

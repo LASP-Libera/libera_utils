@@ -21,7 +21,7 @@ Fields that appear only once per packet are left associated with the "PACKET" in
 
 L1A processing draws on three layers of configuration:
 
-- **Global runtime config** (`config.json`): controls file paths and behaviour flags such as
+- **Global runtime config** (`config.json`): controls file paths and behavior flags such as
   `SKIP_PACKET_HEADER_BYTES`. All values can be overridden by environment variables of the same name.
 - **L1A processing configs YAML** (`l1a_processing_configs.yml`): defines per-APID packet structure
   (sample groups, aggregation groups, array groups, time field mappings). Its path is set by the
@@ -170,7 +170,7 @@ All other APIDs remain **packet-time indexed** (Construction Record first/last p
 A span is the **full extent of data present in the file**: the earliest data time to the latest,
 across every timeseries the file carries, even when those times come from different clocks. It is
 deliberately _not_ narrowed to the range where all of a file's timeseries are simultaneously
-available, because the span exists for ingest indexing. Completeness is the consumer's judgement:
+available, because the span exists for ingest indexing. Completeness is the consumer's judgment:
 
 - **WFOV:** every in-window `SOP` contributes, including one whose image is truncated at the end of
   the file. The span therefore does not match the L1A product's `CAMERA_TIME` range for a chunked
