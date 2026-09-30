@@ -6,8 +6,10 @@ under its ID, in `.github/instructions/libera-utils.instructions.md`, and each e
 **Budget: 300 lines**, counted across this file and the wording together, each rule's title
 once, its link line not at all, and a `check`-tier rule not at all. A rule is admitted when it
 meets the criteria: two merged pull requests from two authors, not something a tool can check,
-not a one-off design question, and not a restatement of a decision. Tiers, statuses,
-establishment, retirement and graduation are in `standards/README.md`.
+not a one-off design question, and not a bare restatement of a decision: a rule may implement
+one when it says what a diff must show and names the decision on its evidence line, as R-011,
+R-014, R-015 and R-016 do. Tiers, statuses, establishment, retirement and graduation are in
+`standards/README.md`.
 
 ---
 
