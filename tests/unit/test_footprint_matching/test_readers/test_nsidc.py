@@ -465,7 +465,7 @@ class TestNISEReaderBothHemispheres:
 # format-identical fallback. Both possible stage roots are searched so the test runs
 # wherever the granule happens to be staged.
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_NISE_STAGE_ROOTS = (_REPO_ROOT / "external_data" / "NSDIC", _REPO_ROOT / "external_data" / "external_data" / "NSDIC")
+_NISE_STAGE_ROOTS = (_REPO_ROOT / "external_data" / "NSIDC", _REPO_ROOT / "external_data" / "external_data" / "NSIDC")
 _NISE_GRANULE_NAMES = ("NISE_AMSR2_20260610.HDFEOS", "NISE_SSMISF18_20260111.HDFEOS")
 
 

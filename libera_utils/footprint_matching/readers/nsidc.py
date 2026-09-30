@@ -205,7 +205,7 @@ class _HemisphereGrid:
 
 
 # The default: read both hemispheres from the single granule. Northern first so a
-# single-hemisphere default (e.g. the test shim) matches the historical behaviour.
+# single-hemisphere default (e.g. the test shim) matches the historical behavior.
 _DEFAULT_HEMISPHERES: tuple[_HemisphereGrid, ...] = (
     _HemisphereGrid(epsg=_DEFAULT_EPSG_NORTH, hemisphere_label=_HEMISPHERE_LABEL_NORTH),
     _HemisphereGrid(epsg=_DEFAULT_EPSG_SOUTH, hemisphere_label=_HEMISPHERE_LABEL_SOUTH),
@@ -384,7 +384,7 @@ class NISEReader(GriddedDataReader):
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray]
             ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_pixels,)`` float64 pixel-centre coordinates (WGS84), and ``values``
+            ``(n_pixels,)`` float64 pixel-center coordinates (WGS84), and ``values``
             is float64 shape ``(5, n_pixels)`` holding the five coverage layers in
             ``_VARIABLE_ORDER``. Pixels outside the EASE-Grid domain reproject to
             non-finite coordinates (pyproj yields ``inf``) and are dropped by the
@@ -443,7 +443,7 @@ class NISEReader(GriddedDataReader):
             ``(5, n_lat, n_lon)``. Axis 0 follows ``VARIABLES`` order
             (``_VARIABLE_ORDER``); covered cells hold values in [0.0, 1.0] and
             cells with no pixels are ``NaN``. ``lats``/``lons`` are 1-D
-            cell-centre coordinate arrays.
+            cell-center coordinate arrays.
         """
         lats, lons, values = self._load_points
         return rasterize_points_to_grid(

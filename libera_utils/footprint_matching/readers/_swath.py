@@ -86,7 +86,7 @@ def apply_fill_and_valid_range(
     """Return ``raw`` as float64 with fill / out-of-range values set to ``NaN``.
 
     netCDF variables in the CERES products flag missing data in two ways that we
-    must both honour: an explicit ``_FillValue`` sentinel (e.g. ``3.4028235e38``
+    must both honor: an explicit ``_FillValue`` sentinel (e.g. ``3.4028235e38``
     for floats, ``32767`` for int16, ``127`` for int8, ``-1`` for the snow/ice
     maps) *and* a ``valid_range`` attribute outside of which values are invalid.
     Reading as float64 first lets us represent ``NaN`` uniformly regardless of
