@@ -84,7 +84,7 @@ with a `/` of their own. The symbol is the enclosing function or class, or in a 
 when there is none. A `helper/path::symbol` citation is already a full key. The comment and
 the record both carry the whole key, which is what deduplication matches on.
 
-An omission from the PR body's "look at this" is a **must-fix**, above anything about the
+An omission from the PR body's "Key design choices and open questions" is a **must-fix**, above anything about the
 code.
 
 ## Test scrutiny

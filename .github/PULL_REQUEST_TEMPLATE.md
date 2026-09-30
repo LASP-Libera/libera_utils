@@ -1,9 +1,11 @@
-Closes #NNN · LIBSDC-NNNN · Driving requirement: <the ticket's, in one line>
+Ticket: LIBSDC-NNNN — <one sentence: what the ticket asked for and why>
 
 Build-exit: <clean | capped | flapping | blocked | halted>
 
 <!--
-LIBSDC is the tracker of record. Keep both refs when the work has a GitHub issue too.
+Ticket is the first line. LIBSDC is the tracker of record; when the work has a GitHub issue
+too, add "· Closes #NNN" after the sentence. A change with no ticket says so and why:
+    Ticket: none — <why this change has no ticket>
 
 Build-exit is one line and must be present. Exactly one of:
     Build-exit: clean | capped | flapping | blocked | halted
@@ -27,7 +29,14 @@ carries neither, and fails it once the check is set to blocking.
 
 ## In context
 
+<!-- Wide to narrow: what the function is, who depends on it and when it runs, before the
+problem, the options and the decision. A reader who stops after the first three lines knows
+what is affected and for whom. -->
+
 Function: <which function of this repository the change touches, in the repository's own words>
+Downstream: <who calls it, naming libera_rad, libera_cam, libera_cdk and CSDS where they do, or
+"nothing outside this repository">
+When: <when and why it runs: the pipeline step, and what triggers it>
 Problem: <what that function cannot do or does wrong, with the failure, the number and its unit,
 or the ticket>
 Options: <chosen> (chosen) · <alternative> (why it lost) · <alternative> (why it lost)
@@ -35,20 +44,30 @@ Decision: <what was chosen and why, in terms of the function>
 Consequences: <what the repository can do now that it could not; what is harder or now committed;
 any accepted limitation, stated plainly>
 
-## Look at this
+## Key design choices and open questions
 
 - <every escalation, every design choice the plan left open with what was chosen and why,
   every departure from the approved plan with its reason>
 
 <!-- When there is nothing: "Nothing outside the plan." and nothing else. -->
 
-## How to verify
+## What was tested
 
 | #   | Criterion | Test | Status |
 | --- | --------- | ---- | ------ |
 | 1   |           |      |        |
 
 Run: `<the one command>`
+
+## How to test this change
+
+<!-- For the reviewer: the command to run here, and where a consumer is affected, the
+downstream run that shows it, such as "run L1B in libera_rad and check the kernel is picked
+up". -->
+
+- Here: `<command>`
+- Downstream: <the run in the consuming repository and what to look for, or "none: no consumer
+  is affected">
 
 ## What changed
 
