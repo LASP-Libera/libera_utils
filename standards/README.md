@@ -219,7 +219,7 @@ windowed 7 that the dials derived from it do not move.
 | Unit lane wall clock                                 | **70.7 s**                       | 1004 tests, measured on `main` 2026-09-22 at 1001, plus the three `check_version` tests; commands in `standards/test-lanes.md`                                                                              |
 | PR lane wall clock                                   | **446 s** (7 min 26 s)           | 1098 tests, same run, on 2026-09-25, at 1095 plus the three `check_version` tests. Machine-local and load-sensitive: the same lane measured 102 s on the LIBSDC-703 base, which freezes the kernel fixtures |
 | Where work originates                                | LIBSDC Jira, written by the team | 112 issues closed or updated in 180 days; ops opens a ticket when a flight procedure changes an ObsID name                                                                                                  |
-| Repositories sharing this vocabulary                 | **6**                            | curryer, libera_utils, libera_rad, libera_cam, libera_analysis, CSDS                                                                                                                                        |
+| Repositories sharing this vocabulary                 | **7**                            | curryer, libera_utils, libera_rad, libera_cam, libera_analysis, CSDS, and libera_cdk (private)                                                                                                              |
 | What already states a convention                     | 8 files                          | `.github/instructions/*.instructions.md` (2), `copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md`, `doc/source/developer-docs/{testing,git,build_release}.md`                                               |
 
 One measurement is worth more than its row. The three largest reviews in the window took
@@ -253,7 +253,7 @@ a PR body that says where to look. Phase 2 comes next, because a change that arr
 verified is one that does not bounce. Phase 4 starts when the log has ten records.
 
 **2. Who reads this code, and who depends on it?** It is a shared library. `libera_rad`,
-`libera_cam`, `libera_analysis` and CSDS import it, and it is published on PyPI for L2
+`libera_cam`, `libera_analysis`, `libera_cdk` (private) and CSDS import it, and it is published on PyPI for L2
 algorithm developers outside the team. That makes it the shared-library archetype: the
 contract is the product, a silent contract break is the expensive failure, contract tests come first, and
 `terminology.md` is the highest-value file in the corpus. Ripple matters more than
