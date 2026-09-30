@@ -28,34 +28,37 @@ disk and the second write clobbers the first. The registry key carries the instr
 the ProductID does not, so any ObsID asserted on both the radiometer and the camera needs
 its own pair of product identifiers. This is what the uniqueness invariant test guards.
 
-### libera_utils/D-003 · Ground CCSDS filename times are bin starts, not data spans
+### libera_utils/D-003 · Ground CCSDS filename times are not data spans
 
-_2026-09-09, PR #48_
+_2026-09-09, PR #48 · **provisional · team input needed**_
 
-The time fields in a ground capture's filename are the bin the file was cut from. They say
-nothing about the packets inside it, and under DITL they disagree with the data by years.
-Searchable data times come from File Metadata at ingest, never from the archive path. Any
-code that reads a time from a filename must say which of the two it means (T-010, T-011,
-T-012).
+Question for the team: is the time in a ground CCSDS filename the bin start or the receipt time?
+
+The time fields in a ground capture's filename say nothing about the packets inside it, and
+under DITL they disagree with the data by years. Searchable data times come from File Metadata
+at ingest, never from the archive path. Any code that reads a time from a filename must say
+which of the two it means (T-010, T-011, T-012).
 
 ### libera_utils/D-004 · The NOAA-20 SPICE configuration is test data, not shipped config
 
-_2026-09, LIBSDC-703, changelog 5.12.0_
+_2026-09 · **pending LIBSDC-703**_
 
-It moved to `tests/test_data/noaa20_spice/`. Nothing in the pipeline could select it, and its
-frame kernel declares none of the measured misalignments, so it cannot produce
+LIBSDC-703 moves it to `tests/test_data/noaa20_spice/`. Nothing in the pipeline could select
+it, and its frame kernel declares none of the measured misalignments, so it cannot produce
 flight-representative geometry. It is kept as test data because it is the only kernel
 generation driven by real decoded spacecraft telemetry and the only geolocation validated
 against a third-party product (CERES). A downstream package that pointed `LIBERA_KERNEL_DIR`
 at it must vendor the configuration itself.
 
-### libera_utils/D-005 · Writing a product overwrites an existing object at the same key
+### libera_utils/D-005 · Writing a product overwrites an existing object at an identical key
 
 _2026-09-19 · **provisional** · source: PR #66 review, adjudicated by mmaclay_
 
-Reprocessing legitimately rewrites a granule at the same key, and a pipeline that halted
-because the object in the bucket was newer than the file it just produced would fail on its
-own success. So the write proceeds.
+A product's version is part of its key, so this applies only to reprocessing at the same
+version with the same identifiers, and a new version never overwrites an old one. That
+reprocessing legitimately rewrites the granule, and a pipeline that halted because the object
+in the bucket was newer than the file it just produced would fail on its own success. So the
+write proceeds.
 
 This is what the code did before PR #66, not something that PR decided. `CloudPath.open("w+b")`
 refreshed the cache from the existing object, recorded its mtime, and on close bumped the
