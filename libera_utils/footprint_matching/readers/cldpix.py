@@ -125,20 +125,20 @@ class _CLDPIXField(NamedTuple):
 
 _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
     # --- continuous cloud properties ---
-    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", (0.25, 150.0), None),
-    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", (0.0, 10000.0), None),
-    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", (190.0, 350.0), None),
-    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", (0.0, 18.0), None),
-    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", (10.0, 1100.0), None),
-    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", None, None),
+    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", (0.25, 150.0), None),  # Confirm
+    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", (0.0, 10000.0), None),  # Confirm
+    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", (190.0, 350.0), None),  # Confirm
+    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", (0.0, 18.0), None),  # Confirm
+    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", (10.0, 1100.0), None),  # Confirm
+    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", None, None),  # Confirm
     # Effective cloud particle radius (μm). Cld_Radius is the combined
     # (water+ice blended) effective radius produced by the CERES cloud
     # retrieval algorithm, distinct from the phase-separated radii
     # (Cld_Radius_0124, Cld_Radius_0160) at specific wavelengths.
-    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", (2.0, 60.0), None),
+    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", (2.0, 60.0), None),  # Confirm
     # --- categorical (mode-aggregated) ---
-    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", (1.0, 5.0), 5),
-    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", (0.0, 3.0), 4),
+    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", (1.0, 5.0), 5),  # Confirm
+    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", (0.0, 3.0), 4),  # Confirm
 )
 
 

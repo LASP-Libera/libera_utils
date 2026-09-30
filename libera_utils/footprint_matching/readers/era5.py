@@ -220,7 +220,7 @@ class ERA5Reader(ERA5ReaderBase):
         VariableSpec(
             name=name,
             dtype="float32",
-            aggregation="weighted_mean",
+            aggregation="weighted_mean", # Confirm
             required_mode=mode,
             n_categories=None,
         )

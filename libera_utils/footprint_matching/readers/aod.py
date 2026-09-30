@@ -125,7 +125,7 @@ class VIIRSAODReader(StaticReader):
             dtype="float32",
             # AOD is approximately log-normally distributed, so a geometric
             # (log) mean is the appropriate spatial aggregation.
-            aggregation="weighted_log_mean",
+            aggregation="weighted_log_mean", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         ),
@@ -135,7 +135,7 @@ class VIIRSAODReader(StaticReader):
             # Categorical: the single aggregated (most-common) aerosol type in
             # the footprint. A std-dev companion is (correctly) not generated for
             # weighted_mode variables.
-            aggregation="weighted_mode",
+            aggregation="weighted_mode", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=_N_AEROSOL_TYPES,
         ),
@@ -149,21 +149,21 @@ class VIIRSAODReader(StaticReader):
         VariableSpec(
             name="aerosol_type_primary",
             dtype="int16",
-            aggregation="weighted_mode_primary",
+            aggregation="weighted_mode_primary", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=_N_AEROSOL_TYPES,
         ),
         VariableSpec(
             name="aerosol_type_secondary",
             dtype="int16",
-            aggregation="weighted_mode_secondary",
+            aggregation="weighted_mode_secondary", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=_N_AEROSOL_TYPES,
         ),
         VariableSpec(
             name="aerosol_type_tertiary",
             dtype="int16",
-            aggregation="weighted_mode_tertiary",
+            aggregation="weighted_mode_tertiary", # Confirm
             required_mode=OperationalMode.IMAGER,
             n_categories=_N_AEROSOL_TYPES,
         ),
