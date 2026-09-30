@@ -121,8 +121,9 @@ stays the detail.
 The review standard lives in `standards/`, tool-neutral and read by people and agents alike.
 
 - `standards/review-rules.md` — the ledger for the rules below: each rule's tier, status,
-  evidence and do-not-flag sentence, capped at 14 rules. Cite the rule ID in a review comment.
-- `standards/review-contract.md` — severity, the seven-finding budget, and the do-not-flag
+  evidence and do-not-flag sentence, within a 300-line budget. Cite the rule ID in a review
+  comment.
+- `standards/review-contract.md` — severity, the finding criteria, and the do-not-flag
   list. Never repeat a finding that `ruff`, `prettier`, `codespell`, `bandit` or a
   pre-commit hook already makes.
 - `standards/README.md` — the measured counts that set every threshold, and what this
@@ -152,6 +153,9 @@ has the commands, under "Shared tier". If the clone is not there, say so rather 
 What a reviewer checks here, beyond what the tools check, and what anyone writing code here
 is expected to follow. This section is the only copy of each rule's wording; its tier, status,
 evidence and do-not-flag sentence are in `standards/review-rules.md`.
+
+These are the team's conventions, numbered `R-NNN` so a review comment and a record can cite
+them; they are not Claude Code's `.claude/rules/` files, which this repository does not use.
 
 ### R-001 · Validate a name or identifier where it is constructed, not where it is first used
 
@@ -211,6 +215,10 @@ explaining why it was not used, a `try`/`except` whose result was discarded and 
 was no longer reachable, and three counters that were incremented and never read.
 
 ### R-009 · Comments describe the code as it is, not how it got there
+
+A comment describes the code as it is, not how it got there and not where it is going, except
+a `TODO[LIBSDC-1234]` for work that is tracked. It never carries the context of a
+conversation, a prompt or a review, and it reads correctly with only the code around it.
 
 The most repeated request in the window, six times in one review: remove the ticket number,
 remove the historical title, remove the comment that says what this used to be. A test's
