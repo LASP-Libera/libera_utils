@@ -50,10 +50,9 @@ The skills come from the `libera-tools` Claude Code plugin in `libera_llm_toolin
 and `revise-standard` runs the monthly revision. None of them merges or edits a standard, and
 nothing is posted without a person's yes. Everything an agent produces is a proposal.
 
-The plugin pushes a branch in two places only: `pr-create`, after a person says yes to opening
-a pull request (`implement-change` step 11 hands off to it), and `pr-fix`, which pushes its
-fixes once the person approves the diff for commit. It never pushes otherwise. A person's own
-instruction files can forbid pushing outright; then the person runs the push.
+No agent pushes in this repository: the instruction file forbids it. `pr-create`, once a person
+says yes to opening a pull request, and `pr-fix`, once the person approves its fixes, stop at
+the push, print the command, and continue after the person runs the push. Nothing else pushes.
 
 ## Reviewers and builders in this repository
 
