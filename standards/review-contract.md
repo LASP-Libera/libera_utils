@@ -9,8 +9,12 @@ when `pr-findings` runs it. Read with `review-rules.md` and the rule wording it 
 ## What the reviewer loads
 
 Those six files on every run. A `context/` entry from the shared corpus only when the
-ticket's constraints name it, or a file the diff touches names it. **The ticket and the
-plan are read before the diff.**
+ticket's constraints name it, or a file the diff touches names it. **The ticket and the plan are
+read before the diff.** A comment, a docstring, a changelog line or a sentence in the pull
+request body is a claim about the code. Read the code it describes before relying on it; a
+finding rests on what the code does, and a claim the code contradicts is itself a finding: under
+R-009 for a comment, R-004 for a docstring, `ticket/plan` where the claim departs from the
+approved plan, and `other` for a changelog line or a body sentence.
 
 ## Paths
 
