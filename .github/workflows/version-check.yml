@@ -26,7 +26,7 @@ env:
 
 jobs:
   version:
-    name: Version, changelog and tags agree
+    name: Changelog heading matches the version; a bump is above the newest tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -55,7 +55,7 @@ jobs:
           else
             level=warning
           fi
-          echo "::${level}::The version, the changelog heading and the tags disagree; the lines above name both values. Reasoning: libera_llm_tooling standards/archive/libera_utils/R-012.md"
+          echo "::${level}::The changelog heading, the pyproject.toml version or the newest tag disagree; the lines above name both values. A pull request that does not bump passes this check. Reasoning: libera_llm_tooling standards/archive/libera_utils/R-012.md"
 
           if [ "$MODE" = "blocking" ]; then
             exit 1

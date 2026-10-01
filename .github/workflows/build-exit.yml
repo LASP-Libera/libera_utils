@@ -1,4 +1,4 @@
-name: Build exit
+name: Build exit line
 
 # Annotates a pull request by a person that carries neither a machine-readable Build-exit line
 # nor a No-build-gates line. Nothing else stops a pull request reaching a reviewer without
@@ -30,7 +30,7 @@ env:
 
 jobs:
   exit-line:
-    name: Body declares how the build ended
+    name: PR body has a Build-exit or No-build-gates line
     if: github.event.pull_request.user.type != 'Bot' && !endsWith(github.event.pull_request.user.login, '[bot]')
     runs-on: ubuntu-latest
     steps:

@@ -65,6 +65,25 @@ An agent working in this repository reads `AGENTS.md` first: it points at the re
 `.github/instructions/libera-utils.instructions.md` and the standard under `standards/`. Here an
 agent stops before `git push`, and the person runs the push.
 
+### Checks on a pull request
+
+Three workflows under `.github/workflows/` read the pull request rather than run the code. Each is
+a note, not a gate: the check passes and leaves one annotation in the Checks tab when it has
+something to say. Setting the repository variable named in the workflow (`BUILD_EXIT_MODE`,
+`MEASUREMENTS_MODE`, `VERSION_CHECK_MODE`) to `blocking` turns that one into a failure; that is a
+settings change, not a pull request.
+
+| Check                               | Runs on                                                        | Speaks when                                                                                                            |
+| ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Build exit line (`build-exit.yml`)  | every pull request by a person; bots are skipped               | the body has neither a `Build-exit:` line nor a `No-build-gates:` line                                                 |
+| Rule budget (`measurements.yml`)    | pull requests touching `standards/` or `.github/instructions/` | the review rule text is over the line budget `standards/README.md` states                                              |
+| Version check (`version-check.yml`) | every pull request                                             | the first changelog heading differs from the `pyproject.toml` version, or a bumped version is not above the newest tag |
+
+A pull request that neither bumps the version nor edits the changelog passes the version check.
+It holds a bump to the changelog and the tags; whether every pull request bumps is the
+[release process](build_release.md), which no check enforces. A dependency update that edits
+`pyproject.toml` without touching the version line passes too.
+
 # Git LFS (Large File Storage) Usage
 
 We use Git LFS to store large files in a way that doesn't blow up the size of our repo on the git server. Usually

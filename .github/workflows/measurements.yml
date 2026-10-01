@@ -1,10 +1,10 @@
-name: Measurements
+name: Rule budget
 
-# The corpus states numbers and reasons from them - a test count and a rule line budget.
-# They go stale silently, and a threshold derived from a stale number is worse than none,
-# because it looks measured. On a pull request this checks the rule budget only: the lane
-# counts move with every test a colleague adds, so the revision re-measures them by hand with
-# check_measurements.py --lanes.
+# Checks one number: the review rule text (the ledger in standards/review-rules.md plus the
+# wording in the instruction file) fits the line budget standards/README.md states. It runs
+# only when those files change, so an ordinary code pull request never sees it. The README
+# also states lane test counts; those move with every test a colleague adds, so the revision
+# re-measures them by hand with check_measurements.py --lanes rather than CI.
 #
 # Informational, like the exit-line check: set the repository variable MEASUREMENTS_MODE to
 # "blocking" once the numbers have been true for a while.
@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   measurements:
-    name: Stated numbers still measure
+    name: Review rule text fits the budget in standards/README.md
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,8 +43,8 @@ jobs:
             exit 0
           fi
           if [ "${{ vars.MEASUREMENTS_MODE }}" = "blocking" ]; then
-            echo "::error::A stated measurement in standards/ no longer holds."
+            echo "::error::check_measurements.py found a number stated in standards/ that no longer holds; the lines above name it."
             exit 1
           fi
-          echo "::warning::A stated measurement in standards/ no longer holds. MEASUREMENTS_MODE is not 'blocking', so this is a note."
+          echo "::warning::check_measurements.py found a number stated in standards/ that no longer holds; the lines above name it. MEASUREMENTS_MODE is not 'blocking', so this is a note."
           exit 0
