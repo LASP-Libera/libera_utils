@@ -4,12 +4,14 @@ The ledger of what a reviewer checks in this repository beyond what the tools ch
 rule's tier, status, evidence and do-not-flag sentence. The wording of each rule lives once,
 under its ID, in `.github/instructions/libera-utils.instructions.md`, and each entry links there.
 **Budget: 300 lines**, counted across this file and the wording together, each rule's title
-once, its link line not at all, and a `check`-tier rule not at all. A rule is admitted when it
-meets the criteria: two merged pull requests from two authors, not something a tool can check,
-not a one-off design question, and not a bare restatement of a decision: a rule may implement
-one when it says what a diff must show and names the decision on its evidence line, as R-011,
-R-014, R-015 and R-016 do. Tiers, statuses, establishment, retirement and graduation are in
-`standards/README.md`.
+once, its link line not at all, and a `check`-tier rule not at all. A rule is admitted, as
+provisional, on one merged pull request with a review thread written by a person, when it is not
+something a tool can check, not a one-off design question, and not a bare restatement of a
+decision: a rule may implement one when it says what a diff must show and names the decision on
+its evidence line, as R-011, R-014, R-015 and R-016 do. It becomes established on
+two merged pull requests by two authors; a provisional rule retires at the expiry unless
+established.
+Tiers, statuses, retirement and graduation are in `standards/README.md`.
 
 ---
 

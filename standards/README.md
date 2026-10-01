@@ -96,14 +96,17 @@ so the reviewer knows the ground is covered. Statuses: `provisional` · `establi
 `graduated` · `retired`. Every entry carries its own status line; read that rather than
 assuming.
 
-A rule becomes `established` when the reviewer has cited it and a person has accepted the
-finding in two different pull requests, **written by two different people**. During v0 a
+A rule is admitted, as `provisional`, on one merged pull request with a review thread written by
+a person, when it meets the other criteria in `review-rules.md`. It becomes `established` when
+the reviewer has cited it and a person has accepted the finding in two different pull requests,
+**written by two different people**. During v0 a
 harvest may establish a rule on review-thread evidence that clears the same bar, and its
 evidence line points at those pull requests. A rule whose evidence is one author's pull
 requests, or comes only from AI-drafted review comments, stays provisional however often it is
 cited: the citation count measures how often something came up, and breadth measures whether
 it is the team's standard or one person's. A `provisional` rule that has become neither
-`established` nor `graduated` within the provisional expiry below is retired by default.
+`established` nor `graduated` within the provisional expiry below is retired by default. An
+evidence line reading "needs a second" names what the rule still lacks for establishment.
 
 Where a rule restates a decision, shared or local, its evidence line names it. A rule and a
 decision on the same concern must not disagree about status: the decision is what the team
@@ -238,7 +241,7 @@ of review comments, it is how long a pull request sits between them.
 | Dial                  | Value                                                                                                                                                            | Derivation                                                                                                                                                                                                                                                             |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Rule budget           | **300 lines**, the ledger and the wording together                                                                                                               | What one reviewer can hold; the count is whatever meets the criteria                                                                                                                                                                                                   |
-| New-rule cluster      | **2 occurrences across 2 PRs**                                                                                                                                   | A quarter of the monthly count, floor 2                                                                                                                                                                                                                                |
+| New-rule admission    | **1 merged PR with a review thread written by a person**                                                                                                         | The admission bar in `review-rules.md`; establishment needs 2 merged PRs by 2 authors                                                                                                                                                                                  |
 | Provisional expiry    | **20 merged PRs with records** ≈ 3 months                                                                                                                        | Volume, never the calendar. Counted from the rule's admission; a merged PR with no record is no evidence either way and does not count                                                                                                                                 |
 | Decline-rate trigger  | Over 1/3 across 3 or more firings                                                                                                                                | Default; nothing measured yet                                                                                                                                                                                                                                          |
 | Never-fired trigger   | 6 months                                                                                                                                                         | Default; long enough that a release-only rule survives                                                                                                                                                                                                                 |
