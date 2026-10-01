@@ -14,14 +14,14 @@ plan are read before the diff.**
 
 ## Paths
 
-| Path                                        | Counts as                                                                                           |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `libera_utils/`                             | Library code. Every rule applies                                                                    |
-| `libera_utils/cli.py`                       | Entry point. R-002 applies at the boundary; converting an exception to an exit code here is correct |
-| `libera_utils/data/`                        | Shipped configuration and product definitions. R-005, R-006 and R-014 apply; the code rules do not  |
-| `tests/`                                    | Tests. R-009 and R-014 apply. R-004 does not. The test-scrutiny section below applies               |
-| `doc/`                                      | Documentation. R-005, R-009, R-012 and R-014 apply                                                  |
-| `pyproject.toml`, `.pre-commit-config.yaml` | Build and tool configuration. R-011 and R-012 apply; no code rule does                              |
+| Path                                        | Counts as                                                                                                  |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `libera_utils/`                             | Library code. Every rule applies                                                                           |
+| `libera_utils/cli.py`                       | Entry point. R-002 applies at the boundary; converting an exception to an exit code here is correct        |
+| `libera_utils/data/`                        | Shipped configuration and product definitions. R-005, R-006 and R-014 apply; the code rules do not         |
+| `tests/`                                    | Tests. R-009 and R-014 apply. R-004 does not. The test-scrutiny section below applies                      |
+| `doc/`                                      | Documentation. R-005, R-009 and R-014 apply; the changelog heading is the version check's (R-012)          |
+| `pyproject.toml`, `.pre-commit-config.yaml` | Build and tool configuration. R-011 applies; the version is the version check's (R-012); no code rule does |
 
 ## Answering a finding
 
