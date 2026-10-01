@@ -53,6 +53,18 @@ for a formal release. When we merge a release branch, we delete it and perform t
 in `main` by tagging that commit with the version and pushing this tag which automatically deploys build artifacts to
 PyPI. See the [build and release docs](build_release.md) for more details on our release process.
 
+## Pull Requests and the Review Standard
+
+Every pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`. Its first line is
+`Ticket: LIBSDC-NNNN — <what the ticket asked for and why>`, or `Ticket: none — <why>`. The next
+is the `Build-exit:` line, which the build in the `libera-tools` Claude Code plugin writes. A pull
+request written by hand carries `No-build-gates: <reason>` in its place and the `no-build-gates`
+label, which a person applies.
+
+An agent working in this repository reads `AGENTS.md` first: it points at the review rules in
+`.github/instructions/libera-utils.instructions.md` and the standard under `standards/`. Here an
+agent stops before `git push`, and the person runs the push.
+
 # Git LFS (Large File Storage) Usage
 
 We use Git LFS to store large files in a way that doesn't blow up the size of our repo on the git server. Usually
