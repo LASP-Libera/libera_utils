@@ -85,8 +85,20 @@ with a `/` of their own. The symbol is the enclosing function or class, or in a 
 when there is none. A `helper/path::symbol` citation is already a full key. The comment and
 the record both carry the whole key, which is what deduplication matches on.
 
-An omission from the PR body's "Key design choices and open questions" is a **must-fix**, above anything about the
-code.
+## Ticket findings
+
+- `ticket/AC-n` — an acceptance criterion not met, or met with no test
+- `ticket/scope` — a change outside the outcome, or inside the non-goals
+- `ticket/plan` — a departure from the approved plan that the PR body does not explain
+
+An omission from the PR body's "Key design choices and open questions" is a **must-fix**,
+ranked above anything about the code.
+
+## Terms
+
+A new public name that disagrees with `terminology.md` is a should-fix keyed
+`term/T-nnn`. A name that is in neither the code nor the glossary is a question, not a
+finding.
 
 ## Test scrutiny
 
