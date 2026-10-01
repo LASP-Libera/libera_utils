@@ -232,7 +232,7 @@ windowed 7 that the dials derived from it do not move.
 | PR lane wall clock                                   | **446 s** (7 min 26 s)           | 1098 tests, same run, on 2026-09-25, at 1095 plus the three `check_version` tests. Machine-local and load-sensitive: the same lane measured 102 s on the LIBSDC-703 base, which freezes the kernel fixtures |
 | Where work originates                                | LIBSDC Jira, written by the team | 112 issues closed or updated in 180 days; ops opens a ticket when a flight procedure changes an ObsID name                                                                                                  |
 | Repositories sharing this vocabulary                 | **7**                            | curryer, libera_utils, libera_rad, libera_cam, libera_analysis, CSDS, and libera_cdk (private)                                                                                                              |
-| What already states a convention                     | 8 files                          | `.github/instructions/*.instructions.md` (2), `copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md`, `doc/source/developer-docs/{testing,git,build_release}.md`                                               |
+| What already states a convention                     | 7 files                          | `.github/instructions/libera-utils.instructions.md`, `copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md`, `doc/source/developer-docs/{testing,git,build_release}.md`                                        |
 
 One measurement is worth more than its row. The three largest reviews in the window took
 **37, 45 and 83 days** from open to merge (#48, #41, #27). The cost here is not the number
@@ -273,7 +273,7 @@ duplication — a ticket here forces tickets in the consuming repositories, whic
 **3. How many pull requests a month merge with a review?** Seven. Every threshold above
 scales off that number and none of them was inherited.
 
-**4. What already exists?** Eight files already state a convention, plus a pre-commit
+**4. What already exists?** Seven files already state a convention, plus a pre-commit
 configuration and a ruff select list. Setting up the standard here was restructuring, not archaeology, which
 is why fourteen rules met the criteria at the first harvest rather than a handful.
 
