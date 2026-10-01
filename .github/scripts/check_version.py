@@ -18,8 +18,10 @@ Not checked: whether a change is minor or patch. That is the author's call, unde
 instruction file.
 
 Prints one ok or MISMATCH line per check, naming both values, and exits 1 on any MISMATCH.
-Raises ValueError when pyproject.toml has no version line, the changelog has no
-`## <version>` heading, or --bumped finds no bare-version tag.
+Exits 2 with one CANNOT RUN line saying why when the check cannot run: pyproject.toml is
+unreadable or has no version line, the changelog is unreadable or has no `## <version>`
+heading, or --bumped finds no bare-version tag. The readers below raise ValueError for a
+missing line; main turns that, an unreadable file or a failed `git tag` into exit 2.
 """
 
 import argparse
@@ -78,8 +80,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bumped", action="store_true", help="also require the version to exceed the highest tag")
     args = parser.parse_args(argv)
 
-    version = pyproject_version(args.pyproject)
-    heading = changelog_heading(args.changelog)
+    try:
+        version = pyproject_version(args.pyproject)
+        heading = changelog_heading(args.changelog)
+        top = None
+        if args.bumped:
+            top = highest_tag(args.tags.read_text().splitlines() if args.tags else tags_from_git())
+            release(version)
+    except (OSError, ValueError, subprocess.CalledProcessError) as e:
+        print(f"  CANNOT RUN {e}")
+        return 2
     failed = 0
 
     if heading == version:
@@ -88,9 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         failed += 1
         print(f"  MISMATCH changelog heading {heading} does not equal pyproject.toml version {version}")
 
-    if args.bumped:
-        tags = args.tags.read_text().splitlines() if args.tags else tags_from_git()
-        top = highest_tag(tags)
+    if top is not None:
         if release(version) > release(top):
             print(f"  ok       version {version} is above the highest tag {top}")
         else:

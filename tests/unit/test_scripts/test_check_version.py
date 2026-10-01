@@ -1,7 +1,8 @@
 """Tests for .github/scripts/check_version.py, the script the Version check workflow runs.
 
 Covers the changelog heading against the pyproject.toml version, the bumped version against the
-highest bare tag, and the ValueError raised when a file lacks the line the check reads. The
+highest bare tag, the ValueError raised when a file lacks the line the check reads, and exit 2
+with a CANNOT RUN line when the check cannot run. The
 script is imported by file path, since .github/scripts is not a package.
 """
 
@@ -43,6 +44,33 @@ def test_check_version(tmp_path, capsys, version, heading, top_tag, bumped, expe
     if mismatches:
         for value in (version, heading, top_tag):
             assert value in out
+
+
+@pytest.mark.parametrize(
+    ("break_it", "reason"),
+    [
+        pytest.param(
+            lambda d: (d / "changelog.md").write_text("# Version Changes\n"),
+            "has no '## <version>' heading",
+            id="no-heading",
+        ),
+        pytest.param(
+            lambda d: (d / "tags.txt").write_text("v1.0.0\n1.0.0rc1\n"), "no bare-version tag", id="no-tag-when-bumped"
+        ),
+        pytest.param(lambda d: (d / "pyproject.toml").unlink(), "No such file", id="unreadable-pyproject"),
+        pytest.param(
+            lambda d: (d / "pyproject.toml").write_text("[project]\n"), "has no version line", id="no-version-line"
+        ),
+    ],
+)
+def test_a_check_that_cannot_run_exits_2_saying_why(tmp_path, capsys, break_it, reason):
+    args = _args(tmp_path, "5.11.2", "5.11.2", "5.11.1", True)
+    break_it(tmp_path)
+    assert check_version.main(args) == 2
+    out = capsys.readouterr().out
+    assert out.count("CANNOT RUN") == 1
+    assert reason in out
+    assert "MISMATCH" not in out
 
 
 def test_release_reads_the_numeric_segment_before_an_rc_suffix():

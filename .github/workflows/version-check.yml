@@ -19,7 +19,9 @@ name: Version check
 #
 # What a failure means: the job passes and leaves a warning annotation; the MISMATCH line above
 # it names the two values that disagree. Setting the repository variable VERSION_CHECK_MODE to
-# "blocking" makes it fail the pull request instead.
+# "blocking" makes it fail the pull request instead. A check that cannot run (exit 2, a CANNOT
+# RUN line naming the missing heading, tag or file) fails the job whatever VERSION_CHECK_MODE
+# says: a check that silently passes when it reads nothing is worse than none.
 
 on:
   pull_request:
@@ -52,12 +54,18 @@ jobs:
           set -uo pipefail
 
           flag=""
-          if git diff "origin/${BASE_REF}...HEAD" -- pyproject.toml | grep -qE '^\+version = '; then
+          if git diff "origin/${BASE_REF}...HEAD" -- pyproject.toml | grep -qE '^\+version\s*='; then
             flag="--bumped"
           fi
 
-          if python3 .github/scripts/check_version.py $flag; then
+          rc=0
+          python3 .github/scripts/check_version.py $flag || rc=$?
+          if [ "$rc" -eq 0 ]; then
             exit 0
+          fi
+          if [ "$rc" -eq 2 ]; then
+            echo "::error::The version check could not run: the CANNOT RUN line above says why. This fails whatever VERSION_CHECK_MODE says."
+            exit 2
           fi
 
           if [ "$MODE" = "blocking" ]; then
