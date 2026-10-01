@@ -27,7 +27,7 @@ Markers are set per module with `pytestmark`, so a module belongs to exactly one
 
 ### Measured
 
-The counts `.github/scripts/check_measurements.py --lanes` re-collects. Wall clock is
+The counts `.github/scripts/check_rule_budget.py --lanes` re-collects. Wall clock is
 machine-local and load-sensitive, so it is recorded here and never checked.
 
 | Lane      | Tests | Wall clock             | Measured                                                                                                                                     | Command                      |
@@ -67,7 +67,7 @@ told the author nothing about their change.
 
 `standards/review-contract.md` (the coverage command and the guard), the plugin's
 `test-suite-review` skill (the lanes and commands), the implementation reviewer at the end of a
-build (through `AGENTS.md`), and `.github/scripts/check_measurements.py --lanes` (the measured lane counts). None of them hard-codes a marker or a path; they name this file.
+build (through `AGENTS.md`), and `.github/scripts/check_rule_budget.py --lanes` (the measured lane counts). None of them hard-codes a marker or a path; they name this file.
 
 **Test scrutiny judges the shape of a test, not its location.** Whether a new test belongs beside its
 siblings rather than in a new module, whether a changed line has a test, and whether a new

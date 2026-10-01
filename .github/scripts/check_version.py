@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""Check that the package version, the changelog and the tags agree.
+"""Check that the changelog heading, the package version and the release tags agree.
 
-Two checks. The first `## <version>` heading in the changelog equals the version
-`pyproject.toml` carries, always. With --bumped, that version is also greater than the
-highest bare-version tag (`5.11.1`, not `v5.11.1` or `5.11.1rc1`).
+CI runs this from .github/workflows/version-check.yml on every pull request. Two checks:
 
-The tag check is behind a flag because not every pull request bumps: a dependency update edits
-`pyproject.toml` and leaves the version alone, and on `main` the version equals the newest tag,
-so an unconditional tag check would fail every such pull request. The workflow passes --bumped
-when the pull request's diff changes the `version =` line.
+1. The first `## <version>` heading in doc/source/changelog.md equals the `version` in
+   pyproject.toml. Always run.
+2. With --bumped, that version is also above the highest bare-version tag (`5.11.1`, not
+   `v5.11.1` or `5.11.1rc1`). The workflow passes --bumped only when the pull request's diff
+   changes the `version =` line: a dependency update edits pyproject.toml without bumping, and
+   on `main` the version equals the newest tag, so an unconditional tag check would fail both.
 
-Deliberately not checked: whether a change is minor or patch. That is the author's call, and
-the instruction file states the rule for it.
+A release is cut by pushing a tag, and the package published carries pyproject.toml's version.
+A heading that disagrees mislabels the release notes, and a version at or below the newest tag
+repeats or predates a published release (rule R-012).
 
-Exit 1 naming both values on a mismatch.
+Not checked: whether a change is minor or patch. That is the author's call, under R-012 in the
+instruction file.
+
+Prints one ok or MISMATCH line per check, naming both values, and exits 1 on any MISMATCH.
+Raises ValueError when pyproject.toml has no version line, the changelog has no
+`## <version>` heading, or --bumped finds no bare-version tag.
 """
 
 import argparse
@@ -34,6 +40,7 @@ def release(version: str) -> tuple[int, ...]:
 
 
 def pyproject_version(path: Path) -> str:
+    """The `version = "..."` value in pyproject.toml; raises ValueError when there is none."""
     match = re.search(r'^version\s*=\s*"([^"]+)"', path.read_text(), re.M)
     if not match:
         raise ValueError(f"{path} has no version line")
@@ -41,6 +48,7 @@ def pyproject_version(path: Path) -> str:
 
 
 def changelog_heading(path: Path) -> str:
+    """The version in the changelog's first `## ` heading; raises ValueError when there is none."""
     match = re.search(r"^## (\S+)", path.read_text(), re.M)
     if not match:
         raise ValueError(f"{path} has no '## <version>' heading")
@@ -48,12 +56,14 @@ def changelog_heading(path: Path) -> str:
 
 
 def tags_from_git() -> list[str]:
+    """Every tag in the repository, as `git tag` lists them."""
     # S603, S607: a literal argument list, no shell, nothing from user input.
     proc = subprocess.run(["git", "tag"], cwd=ROOT, capture_output=True, text=True, check=True)  # noqa: S603, S607
     return proc.stdout.splitlines()
 
 
 def highest_tag(tags: list[str]) -> str:
+    """The highest bare-version tag, compared by release segment; raises ValueError when none is bare."""
     bare = [t.strip() for t in tags if BARE.match(t.strip())]
     if not bare:
         raise ValueError("no bare-version tag found")

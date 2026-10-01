@@ -68,14 +68,14 @@ agent stops before `git push`, and the person runs the push.
 
 Two workflows under `.github/workflows/` read the pull request rather than run the code. Each is
 a note, not a gate: the check passes and leaves one annotation in the Checks tab when it has
-something to say. Setting the repository variable named in the workflow (`MEASUREMENTS_MODE`,
+something to say. Setting the repository variable named in the workflow (`RULE_BUDGET_MODE`,
 `VERSION_CHECK_MODE`) to `blocking` turns that one into a failure; that is a settings change, not
 a pull request.
 
-| Check                               | Runs on                                                        | Speaks when                                                                                                            |
-| ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Rule budget (`measurements.yml`)    | pull requests touching `standards/` or `.github/instructions/` | the review rule text is over the line budget `standards/README.md` states                                              |
-| Version check (`version-check.yml`) | every pull request                                             | the first changelog heading differs from the `pyproject.toml` version, or a bumped version is not above the newest tag |
+| Check                               | Runs on                                                        | Speaks when                                                                                                            | Why it exists                                                                                                                                                                                        |
+| ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule budget (`rule-budget.yml`)     | pull requests touching `standards/` or `.github/instructions/` | the review rule text is over the line budget `standards/README.md` states                                              | every agent session here loads the rule wording, and the reviewer applies every rule; the budget caps how far the rules grow before one is retired or merged                                         |
+| Version check (`version-check.yml`) | every pull request                                             | the first changelog heading differs from the `pyproject.toml` version, or a bumped version is not above the newest tag | a release publishes `pyproject.toml`'s version from a pushed tag, so a mismatched heading mislabels the release notes and a version at or below the newest tag repeats or predates a release (R-012) |
 
 A pull request that neither bumps the version nor edits the changelog passes the version check.
 It holds a bump to the changelog and the tags; whether every pull request bumps is the

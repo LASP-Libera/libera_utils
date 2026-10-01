@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Check the claims in standards/ that a machine can still verify.
+"""Check that the review rules fit their line budget, and on request re-count the test lanes.
 
-The corpus states numbers and then reasons from them: a test count and a rule line budget.
-Those go stale silently, and a threshold derived from a stale number is worse than no
-threshold, because it looks measured. This re-derives them and reports what no longer holds.
+CI runs this with no options, from .github/workflows/rule-budget.yml. It counts the lines of the
+rule ledger (standards/review-rules.md) and the rule wording (the Review Rules section of
+.github/instructions/libera-utils.instructions.md) as one text, leaves out check-tier rules,
+which a tool enforces, and compares the total with the "Rule budget" row of standards/README.md.
+Every agent session in the repository loads the wording and the reviewer applies every rule, so
+the budget caps how far the rules can grow before one has to be retired or merged.
 
-Deliberately not checked: wall clock. `standards/test-lanes.md` records it as machine-local and
-load-sensitive, and the same lane has measured 102 s and 357 s on this hardware. A CI check
-on it would fail for reasons that say nothing about the repository. Remeasuring it stays a
-person's job, at the ratchet.
+--lanes also re-counts the tests pytest collects in the unit and PR lanes and compares them with
+the Tests column of standards/test-lanes.md. Those counts move with every test added, so a
+person checks them at the monthly revision; CI never does. Wall clock is never checked: it is
+machine-local and load-sensitive, and the same lane has measured 102 s and 357 s on one machine.
 
-By default only the rule budget, stated in standards/README.md, is checked, which is what CI
-runs. --lanes adds the two lane counts stated in standards/test-lanes.md, which move with every
-test added and are re-measured by hand at the revision. Exit 1
-on a mismatch. --strict makes an unverifiable check a failure too.
+Prints one line per check: ok; STALE, when the stated number no longer holds or the file no
+longer states it; or skipped, when pytest could not collect. Exits 1 on any STALE line, and with
+--strict on a skipped one too.
 """
 
 import argparse
@@ -33,6 +35,8 @@ PR_LANE = r"^\| PR lane\s*\| (\d[\d,]*)\s*\|"
 
 
 class Result:
+    """One check's outcome: ok is True, False when stale, or None when the check could not run."""
+
     def __init__(self, name: str, ok: bool | None, detail: str) -> None:
         self.name, self.ok, self.detail = name, ok, detail
 
@@ -57,11 +61,13 @@ def collected(args: list[str]) -> int | None:
 
 
 def stated(pattern: str, text: str) -> int | None:
+    """The number a standards/ file states where pattern matches, or None when it no longer does."""
     match = re.search(pattern, text, re.M)
     return int(match.group(1).replace(",", "")) if match else None
 
 
 def check_lane(label: str, pattern: str, pytest_args: list[str], lanes: str) -> Result:
+    """Compare the test count test-lanes.md states for one lane with what pytest collects."""
     want = stated(pattern, lanes)
     if want is None:
         return Result(label, False, f"standards/test-lanes.md no longer states this; pattern {pattern!r} found nothing")
@@ -74,6 +80,7 @@ def check_lane(label: str, pattern: str, pytest_args: list[str], lanes: str) -> 
 
 
 def check_rule_budget(readme: str) -> Result:
+    """Compare the ledger and wording line count with the budget the README text states."""
     budget = re.search(r"^\| Rule budget\s*\| \*\*(\d+) lines\*\*", readme, re.M)
     if not budget:
         return Result("rule budget", False, "standards/README.md no longer states the rule budget")
@@ -127,9 +134,9 @@ def main() -> int:
             print(f"  STALE    {r.name}: {r.detail}")
 
     if failed:
-        print(f"\n{failed} stated measurement(s) no longer hold. Remeasure and update standards/, or")
-        print("say in the row why the number stands. A threshold reasoned from a stale number")
-        print("looks measured and is not.")
+        print(f"\n{failed} number(s) stated in standards/ no longer hold. Re-measure and update the")
+        print("row, or say in it why the number stands: a setting reasoned from a stale number only")
+        print("looks measured.")
         return 1
     if skipped and args.strict:
         print(f"\n{skipped} check(s) could not run, and --strict was given.")

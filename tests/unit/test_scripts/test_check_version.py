@@ -1,4 +1,9 @@
-"""Tests for .github/scripts/check_version.py, imported by file path since it is not a package."""
+"""Tests for .github/scripts/check_version.py, the script the Version check workflow runs.
+
+Covers the changelog heading against the pyproject.toml version, the bumped version against the
+highest bare tag, and the ValueError raised when a file lacks the line the check reads. The
+script is imported by file path, since .github/scripts is not a package.
+"""
 
 import importlib.util
 import subprocess

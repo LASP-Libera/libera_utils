@@ -1,0 +1,61 @@
+name: Rule budget
+
+# What it checks: the review rules fit their line budget. The rules are written in two places,
+# the ledger (standards/review-rules.md: each rule's tier, status and evidence) and the wording
+# (the Review Rules section of .github/instructions/libera-utils.instructions.md). Their lines,
+# counted together, must not exceed the "Rule budget" row of standards/README.md, 300 lines
+# today. A check-tier rule is left out of the count, since a tool enforces it.
+#
+# Why it exists: every Claude, Gemini and Copilot session in this repository loads the rule
+# wording, and the reviewer applies every rule on every pull request. The budget is what one
+# reviewer can hold; past it, a new rule means retiring or merging an old one at the monthly
+# revision, not letting the text grow.
+#
+# When it runs: only on pull requests that change standards/ or .github/instructions/, so a
+# code pull request never sees it, or by hand from the Actions tab.
+#
+# What a failure means: the job passes and leaves a warning annotation; the log line above it
+# gives the count and the budget, or names the file whose heading the count could not find.
+# Setting the repository variable RULE_BUDGET_MODE to "blocking" makes it fail the pull request
+# instead.
+
+on:
+  pull_request:
+    paths:
+      - "standards/**"
+      - ".github/instructions/**"
+      - ".github/scripts/check_rule_budget.py"
+      - ".github/workflows/rule-budget.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rule-budget:
+    name: Review rules fit the line budget in standards/README.md
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-env
+        with:
+          python-version: "3.11"
+
+      - name: Count the rule lines against the budget
+        run: |
+          set -o pipefail
+          if poetry run python .github/scripts/check_rule_budget.py; then
+            exit 0
+          fi
+          message="The review rules do not fit the line budget in standards/README.md, or a file the count reads has lost its heading; the STALE line above says which. Over budget: retire or merge a rule, or raise the budget in standards/README.md with the reason."
+          if [ "${{ vars.RULE_BUDGET_MODE }}" = "blocking" ]; then
+            echo "::error::${message}"
+            exit 1
+          fi
+          echo "::warning::${message} RULE_BUDGET_MODE is not 'blocking', so this is a note, not a failure."
+          exit 0

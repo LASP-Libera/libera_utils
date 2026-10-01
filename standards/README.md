@@ -224,7 +224,7 @@ The dials the skills and the checks read; where each came from is in the private
 | Group ticket session  | **Estimate 5 or above**, and every epic                                                                                                                          | Below that a ticket is well enough defined that group design time costs more than it returns; its author runs `ticket-draft` and `implement-change` alone and posts the plan for async approval                                                                                  |
 | Plan approval         | A second reader at **estimate 5 or above**, and for any public-signature change whatever the estimate                                                            | Downstream consumers                                                                                                                                                                                                                                                             |
 
-Numbers that a machine can re-derive are checked by `.github/scripts/check_measurements.py`.
+Numbers that a machine can re-derive are checked by `.github/scripts/check_rule_budget.py`.
 On a pull request touching `standards/` it checks the rules (the ledger and the wording in the
 instruction file) against the rule budget in the table above, with the live rule count beside
 it, and reports what no longer holds. The lane counts are in `standards/test-lanes.md` and move
