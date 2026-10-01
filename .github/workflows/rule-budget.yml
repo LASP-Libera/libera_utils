@@ -12,7 +12,9 @@ name: Rule budget
 # revision, not letting the text grow.
 #
 # When it runs: only on pull requests that change standards/ or .github/instructions/, so a
-# code pull request never sees it, or by hand from the Actions tab.
+# code pull request never sees it, or by hand from the Actions tab. The script imports only the
+# standard library, so the job runs on a bare checkout; --lanes, which needs pytest, is run by
+# hand as standards/README.md says.
 #
 # What a failure means: the job passes and leaves a warning annotation; the log line above it
 # gives the count and the budget, or names the file whose heading the count could not find.
@@ -42,14 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-env
-        with:
-          python-version: "3.11"
-
       - name: Count the rule lines against the budget
         run: |
           set -o pipefail
-          if poetry run python .github/scripts/check_rule_budget.py; then
+          if python3 .github/scripts/check_rule_budget.py; then
             exit 0
           fi
           message="The review rules do not fit the line budget in standards/README.md, or a file the count reads has lost its heading; the STALE line above says which. Over budget: retire or merge a rule, or raise the budget in standards/README.md with the reason."
