@@ -10,7 +10,8 @@ something a tool can check, not a one-off design question, and not a bare restat
 decision: a rule may implement one when it says what a diff must show and names the decision on
 its evidence line, as R-011, R-014, R-015 and R-016 do. It becomes established on
 two merged pull requests by two authors; a provisional rule retires at the expiry unless
-established.
+established. No rule becomes established on authorship until the first revision records it,
+since authors were not recorded at the harvest.
 Tiers, statuses, retirement and graduation are in `standards/README.md`.
 
 ---
@@ -180,26 +181,29 @@ this repository and referenced by name.
 
 ## Candidates below the criteria
 
-Kept here with their evidence and the criterion each fails, so a revision can admit one when
-its evidence meets them.
+Kept here with their evidence and the criterion each fails, or why it is held, so a revision
+can admit one when its evidence meets them.
 
 - **Private symbols do not cross module boundaries.** A second consumer outside the defining
-  module makes a symbol public in fact; rename and document it, or wrap it. Evidence:
-  pr-0048 (`_expand_sample_times`, `_extract_wfov_header_metadata_from_blob`). Fails: one pull
-  request.
+  module makes a symbol public in fact; rename and document it, or wrap it. Evidence: pr-0048
+  (`_expand_sample_times`, `_extract_wfov_header_metadata_from_blob`). Held: judged against the
+  two-pull-request criterion admission used until 2026-09-30, and not re-judged since; the first
+  revision re-judges it.
 - **A registry whose values reach a filename has a uniqueness invariant test.** Evidence:
-  pr-0041 (one ObsID on two instruments produced two writes of the same filename). Fails: one
-  pull request.
-- **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`). Fails: one
-  pull request, and a tool can check it (ruff's `FBT` rules).
-- **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer
-  removed three of them in one pass — "yet another unnecessary helper function". Fails: one
-  pull request, and the review contract's New surface section already reports call-site
-  counts, so this is a check waiting for a firing rate rather than a rule waiting for a
-  reviewer.
-- **Do not hold a large array twice.** Evidence: pr-0027, a stitching path holding three
-  copies of the image data live at once on a full downlink. Fails: one pull request; it was
-  part of R-013 until that rule was trimmed to what two pull requests support.
-- **A name is renamed when its contract widens.** Evidence: pr-0028
-  (`get_libera_utils_session` → `get_l2_team_role_session` once it took a `role_name`). Fails:
-  one pull request.
+  pr-0041 (one ObsID on two instruments produced two writes of the same filename). Held: judged
+  against the two-pull-request criterion admission used until 2026-09-30, and not re-judged
+  since; the first revision re-judges it.
+- **Optional flags are keyword-only.** Evidence: pr-0048 (`ground_data`, `verbose`). Fails: a
+  tool can check it (ruff's `FBT` rules).
+- **A helper with one call site is inlined.** Evidence: pr-0030, where the same reviewer removed
+  three of them in one pass — "yet another unnecessary helper function". Fails: the review
+  contract's New surface section already reports call-site counts, so this is a check waiting
+  for a firing rate rather than a rule waiting for a reviewer.
+- **Do not hold a large array twice.** Evidence: pr-0027, a stitching path holding three copies
+  of the image data live at once on a full downlink. It was part of R-013 until that rule was
+  trimmed to what two pull requests support. Held: judged against the two-pull-request criterion
+  admission used until 2026-09-30, and not re-judged since; the first revision re-judges it.
+- **A name is renamed when its contract widens.** Evidence: pr-0028 (`get_libera_utils_session`
+  → `get_l2_team_role_session` once it took a `role_name`). Held: judged against the
+  two-pull-request criterion admission used until 2026-09-30, and not re-judged since; the first
+  revision re-judges it.
