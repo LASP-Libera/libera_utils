@@ -2,17 +2,22 @@
 
 ## 5.12.0
 
-- BUGFIX: `Manifest.write()` no longer mutates `Manifest.filename`. It used to overwrite the object's filename with the full path it had just written, so a second `write()` to a different directory silently re-targeted the first location (local) or raised `TypeError` (S3). Writing is now side-effect free and one manifest can be written to several locations.
-- BUGFIX: `Manifest.write()` uses only the basename of a preset `filename`, so a manifest read from `s3://a/LIBERA_INPUT_MANIFEST_<ULID>.json` and written to `/other/dir` lands in `/other/dir` rather than back at its original path.
-- BUGFIX: A manifest without a filename serialized `"filename": "None"` (the string) instead of `null`.
-- BUGFIX: A written manifest's on-disk `ulid_code` always matches the ULID in its filename. Previously `Manifest(manifest_type=INPUT).write(dir)` generated a filename with a fresh ULID but wrote `"ulid_code": null`.
-- BREAKING: `Manifest.ulid_code` is now a computed, read-only property derived from `Manifest.filename` (`None` without a filename) instead of a separately stored field, so the two can no longer disagree. The `default_factory=lambda data: ...` that populated it only works on Pydantic >= 2.10 and raised on older releases allowed by our dependency bound. `ulid_code=` is still accepted by the constructor: with no `filename` it yields a bare `LIBERA_<TYPE>_MANIFEST_<ULID>.json` filename, and with one it must agree with the filename's ULID (otherwise `ValidationError`). Assigning `manifest.ulid_code = ...` is no longer possible. `from_file()` now ignores any `filename`/`ulid_code` recorded inside the JSON (the path on disk is the source of truth) and warns when the stored ULID disagrees with the filename.
-- FEAT: Filename validation is lenient on read and strict on write. `Manifest.from_file()` reads a badly named file with a warning, yielding `filename=None` and no ULID, instead of raising `ValueError`. `write()` and `save()` raise `ManifestError` rather than producing a file whose name is not a valid manifest filename or whose `INPUT`/`OUTPUT` label disagrees with `manifest_type`. A type mismatch between a preset `filename` and `manifest_type` logs a warning at construction.
-- FEAT: `Manifest.write(out_path, filename=None)` accepts either a directory/S3 prefix or a full manifest file path as `out_path`. `filename` must be a bare name (no directory part) and must agree with `out_path` when that already names a file; conflicts raise `ManifestError` with an explanatory message. Writing a manifest that already has a filename to a path carrying a different ULID logs a warning, since the written file would no longer trace back to the manifest's ULID.
-- FEAT: File-state tracking. Manifests returned by `from_file()` are file-backed (`source_path`, `is_file_backed`) and can be written back in place with `save()`; `save()` on a manifest built in code raises `ManifestError`. `copy()` returns a detached deep copy that is not file-backed.
-- FEAT: Factory methods `Manifest.for_input(files=(), configuration=None, ulid_code=None)` (a new INPUT manifest with its ULID and bare filename assigned up front) and `Manifest.for_output_from_input(input_manifest, files=(), configuration=None)` (an OUTPUT manifest carrying the input's ULID, with the input file records under `configuration["input_manifest_files"]`). `for_output_from_input` raises `ManifestError` when the input has no ULID, since traceability cannot be preserved.
-- MAINT: `Manifest.output_manifest_from_input_manifest()` is deprecated in favor of `Manifest.for_output_from_input()`. It still works, delegates to the new method, and emits a `DeprecationWarning`. `kernel_maker` uses the new method.
-- DOCS: Rewrite the manifest user-docs page around the new API (ULID in the filename, lenient read / strict write, `write()` path rules, `save()`/`copy()`).
+- BREAKING: `Manifest.ulid_code` is a read-only property derived from `filename`. Assigning to it raises; assign `filename` instead. `ulid_code=` is still accepted by the constructor.
+- BREAKING: `Manifest.write()` sets `filename` to the path it wrote.
+- BREAKING: `Manifest.write()` no longer takes a `filename` argument; pass the full manifest file path as `out_path` instead. The old positional form `write(out_path, filename)` raises `TypeError`.
+- BREAKING: `Manifest.write()` raises `FileExistsError` for an existing target unless `overwrite=True` is passed, and `ManifestError` for a target whose INPUT/OUTPUT label disagrees with `manifest_type` or that would change the manifest's ULID.
+- BREAKING: `Manifest.validate_checksums()` raises `ManifestError` instead of `ValueError`. A file with no recorded checksum, or that cannot be found, fails validation.
+- BREAKING: `Manifest.from_file()` raises `ManifestError` for a path that is not a valid manifest filename, or when the filename or `ulid_code` stored in the file disagrees with the ULID in the path.
+- BREAKING: `Manifest.filename` is validated on assignment, and a `filename` or `manifest_type` whose INPUT/OUTPUT label disagrees with the other raises `ValidationError`.
+- BREAKING: `libera_utils.io.manifest.get_ulid_code` is removed. Use `Manifest.ulid_code`, or `ManifestFilename(path).filename_parts.ulid_code`.
+- BREAKING: `ManifestFileRecord.checksum` is `str | None`. It is None for a file that could not be found when it was added, and is written to the manifest file as `null`.
+- BREAKING: `MANIFEST_FILE_REGEX` must match the whole basename, so names such as `LIBERA_INPUT_MANIFEST_<ULID>.json.bak` are no longer valid manifest filenames.
+- FEAT: `Manifest.write(out_path=None, *, overwrite=False)`. `out_path` may be a directory, an S3 prefix, or a full manifest file path; without it, the manifest is written to its `filename`, or to the current working directory.
+- FEAT: `Manifest.output_manifest_from_input_manifest()` takes an optional `configuration=` dict, and raises `ManifestError` for an input manifest with no ULID.
+- BUGFIX: A file that cannot be found is added to a manifest with a null checksum and a warning, instead of raising. A null checksum read from a manifest file is kept, not recomputed.
+- BUGFIX: A second `write()` to a different directory no longer writes to the first location.
+- BUGFIX: A manifest with no filename serializes `filename` as `null`, not the string `"None"`.
+- BUGFIX: `Manifest` works with Pydantic versions before 2.10 again.
 
 ## 5.11.1
 
