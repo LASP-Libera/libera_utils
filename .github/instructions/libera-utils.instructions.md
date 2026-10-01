@@ -43,8 +43,8 @@ generation, Libera file naming, and AWS pipeline integration.
 
 - **Framework**: pytest. Unit tests in `tests/`; integration tests marked
   `@pytest.mark.integration` and in `tests/integration/`.
-- **Run unit tests**: `pytest -m "not integration" tests/`
-- **Run with coverage**: `pytest --cov=libera_utils tests/`
+- **Run unit tests**: `pytest -m "not integration and not e2e" tests/`
+- **Run with coverage**: `pytest -m "not e2e" --cov=libera_utils --cov-report=term-missing`
 - **AWS/HTTP mocking**: Use `moto[s3]` and `responses` — never call real AWS endpoints in
   unit tests.
 - **Fixtures**: Provided via plugins in `tests/plugins/`; prefer them over ad-hoc setup.

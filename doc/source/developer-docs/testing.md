@@ -13,10 +13,11 @@ Tests are stored in the `tests` directory and are divided into
 `integration` and `unit` tests. Unit tests check for expected behavior of small pieces of the
 package (e.g. a single function). Integration tests check for "larger" behavior across wider swaths of the package,
 testing that components function together cohesively. Integration test modules contain the pytest mark
-`pytestmark = pytest.mark.integration`. This allows you to selectively exclude running integration tests with
+`pytestmark = pytest.mark.integration`. This allows you to selectively exclude running integration tests, and the
+`e2e` lane where it exists, with the unit command `standards/test-lanes.md` gives:
 
 ```
-pytest -m "not integration" tests
+pytest -m "not integration and not e2e" tests/
 ```
 
 Unit tests heavily utilize pytest parameterization in order to
