@@ -5,13 +5,14 @@ The corpus states numbers and then reasons from them: a test count and a rule li
 Those go stale silently, and a threshold derived from a stale number is worse than no
 threshold, because it looks measured. This re-derives them and reports what no longer holds.
 
-Deliberately not checked: wall clock. `standards/README.md` records it as machine-local and
+Deliberately not checked: wall clock. `standards/test-lanes.md` records it as machine-local and
 load-sensitive, and the same lane has measured 102 s and 357 s on this hardware. A CI check
 on it would fail for reasons that say nothing about the repository. Remeasuring it stays a
 person's job, at the ratchet.
 
-By default only the rule budget is checked, which is what CI runs. --lanes adds the two lane
-counts, which move with every test added and are re-measured by hand at the revision. Exit 1
+By default only the rule budget, stated in standards/README.md, is checked, which is what CI
+runs. --lanes adds the two lane counts stated in standards/test-lanes.md, which move with every
+test added and are re-measured by hand at the revision. Exit 1
 on a mismatch. --strict makes an unverifiable check a failure too.
 """
 
@@ -23,8 +24,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "standards" / "README.md"
+LANES = ROOT / "standards" / "test-lanes.md"
 RULES = ROOT / "standards" / "review-rules.md"
 INSTRUCTIONS = ROOT / ".github" / "instructions" / "libera-utils.instructions.md"
+# The Tests cell of each row in test-lanes.md's Measured table.
+UNIT_LANE = r"^\| Unit lane\s*\| (\d[\d,]*)\s*\|"
+PR_LANE = r"^\| PR lane\s*\| (\d[\d,]*)\s*\|"
 
 
 class Result:
@@ -52,19 +57,19 @@ def collected(args: list[str]) -> int | None:
 
 
 def stated(pattern: str, text: str) -> int | None:
-    match = re.search(pattern, text)
+    match = re.search(pattern, text, re.M)
     return int(match.group(1).replace(",", "")) if match else None
 
 
-def check_lane(label: str, pattern: str, pytest_args: list[str], readme: str) -> Result:
-    want = stated(pattern, readme)
+def check_lane(label: str, pattern: str, pytest_args: list[str], lanes: str) -> Result:
+    want = stated(pattern, lanes)
     if want is None:
-        return Result(label, False, f"standards/README.md no longer states this; pattern {pattern!r} found nothing")
+        return Result(label, False, f"standards/test-lanes.md no longer states this; pattern {pattern!r} found nothing")
     got = collected(pytest_args)
     if got is None:
         return Result(label, None, "pytest could not collect; check skipped")
     if got != want:
-        return Result(label, False, f"README says {want}, pytest collects {got}")
+        return Result(label, False, f"test-lanes.md says {want}, pytest collects {got}")
     return Result(label, True, f"{got}")
 
 
@@ -101,14 +106,14 @@ def main() -> int:
     parser.add_argument("--strict", action="store_true", help="treat an unverifiable check as a failure")
     args = parser.parse_args()
 
-    readme = README.read_text()
     results = []
     if args.lanes:
+        lanes = LANES.read_text()
         results += [
-            check_lane("unit lane count", r"\| (\d[\d,]*) tests, measured on", ["tests/unit/"], readme),
-            check_lane("PR lane count", r"\| (\d[\d,]*) tests, same run", ["-m", "not e2e", "tests/"], readme),
+            check_lane("unit lane count", UNIT_LANE, ["tests/unit/"], lanes),
+            check_lane("PR lane count", PR_LANE, ["-m", "not e2e", "tests/"], lanes),
         ]
-    results.append(check_rule_budget(readme))
+    results.append(check_rule_budget(README.read_text()))
 
     failed = skipped = 0
     for r in results:

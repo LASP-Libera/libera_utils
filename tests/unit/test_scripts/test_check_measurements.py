@@ -10,7 +10,7 @@ _spec = importlib.util.spec_from_file_location("check_measurements", SCRIPT)
 check_measurements = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(check_measurements)
 
-LANE = r"\| (\d[\d,]*) tests, measured on"
+LANE = check_measurements.UNIT_LANE
 
 # One reviewer rule with a link line, one check-tier rule, and the wording for the first.
 LEDGER = """# Review rules
@@ -58,28 +58,28 @@ def _write_tests(root: Path, body: str) -> None:
 
 def test_lane_count_matches_what_pytest_collects(tree):
     _write_tests(tree, "def test_a():\n    pass\n\n\ndef test_b():\n    pass\n")
-    readme = "| Unit lane | **1 s** | 2 tests, measured on main |"
-    result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], readme)
+    lanes = "| Unit lane | 2 | **1 s** | on main | `pytest tests/` |"
+    result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], lanes)
     assert (result.ok, result.detail) == (True, "2")
 
 
 def test_lane_count_that_differs_is_stale(tree):
     _write_tests(tree, "def test_a():\n    pass\n")
-    readme = "| Unit lane | **1 s** | 2 tests, measured on main |"
-    result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], readme)
+    lanes = "| Unit lane | 2 | **1 s** | on main | `pytest tests/` |"
+    result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], lanes)
     assert result.ok is False
-    assert result.detail == "README says 2, pytest collects 1"
+    assert result.detail == "test-lanes.md says 2, pytest collects 1"
 
 
 def test_lane_count_is_skipped_when_pytest_cannot_collect(tree):
     _write_tests(tree, "import a_module_that_does_not_exist\n\n\ndef test_a():\n    pass\n")
-    readme = "| Unit lane | **1 s** | 1 tests, measured on main |"
-    result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], readme)
+    lanes = "| Unit lane | 1 | **1 s** | on main | `pytest tests/` |"
+    result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], lanes)
     assert result.ok is None
     assert "could not collect" in result.detail
 
 
-def test_lane_count_the_readme_no_longer_states_is_stale():
+def test_lane_count_test_lanes_no_longer_states_is_stale():
     result = check_measurements.check_lane("unit lane count", LANE, ["tests/"], "no counts here")
     assert result.ok is False
     assert "no longer states this" in result.detail
