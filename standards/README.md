@@ -40,6 +40,9 @@ live in `libera_llm_tooling/standards/`:
 | `decisions.md`   | Decisions that constrain more than one repository: ObsID ownership, dependency pinning, the upstream-first rule                                                                                   |
 | `context/`       | Confluence pages, Jira epics and PR threads. **It may carry internal links because that repository is private. This one is public (R-014), so it names context entries rather than copying them** |
 
+File names keep "ratchet" from the first design: each revision's report is
+`ratchet-YYYY-MM.md`.
+
 **The review records** live there too, in `standards/libera_utils/log/`: one `pr-NNNN.yaml`
 per reviewed pull request and one report per monthly revision. `pr-findings` writes a record
 there and the month's driver, a role that rotates, runs the monthly revision and commits that
@@ -113,7 +116,7 @@ settled, the rule is how a reviewer checks it, and the reviewer loads both.
 
 Harvest evidence points at the merged pull request whose review threads produced the rule, and a
 rule resting on one author or one pull request says so in its evidence line. From the first
-ratchet on, evidence points at the review records in
+revision on, evidence points at the review records in
 `libera_llm_tooling/standards/libera_utils/log/`.
 
 ## Graduated
@@ -123,8 +126,8 @@ replaced, so the rule's wording can be deleted from the instruction file and the
 legible.
 
 A rule graduates when a check catches every accepted instance in the evidence window with no
-false positive on `main`. The ratchet drafts the check; an ordinary pull request lands it;
-the same ratchet marks the rule `graduated` and writes its reasoning to the archive.
+false positive on `main`. The monthly revision drafts the check; an ordinary pull request lands it;
+the same revision marks the rule `graduated` and writes its reasoning to the archive.
 
 **Every check carries a header** naming the rule ID it replaced, the archive entry that
 holds the reasoning, and one sentence on what it catches. That is the pointer at the point
@@ -135,7 +138,7 @@ history out of comments, and a regression test's name says what it guards rather
 finding produced it.
 
 The number of rules the reviewer holds should be flat or falling over a year while the
-number of checks grows. If two consecutive ratchet reports propose no graduations, the rules
+number of checks grows. If two consecutive revision reports propose no graduations, the rules
 being written are not the mechanical kind, and the workflow is delivering a second opinion
 rather than a smaller job.
 
@@ -185,7 +188,7 @@ the call; once the monthly revision runs, proposing them is its job alone.
 ### The archive is a lookup, not a graveyard
 
 This is what makes the entries worth writing. Before admitting a new rule from a finding
-cluster, the ratchet searches this index for the same concern. Three outcomes, all useful:
+cluster, the revision searches this index for the same concern. Three outcomes, all useful:
 
 - **It graduated.** The concern is already enforced mechanically, so what the team is seeing
   is a gap in the check, not a missing rule. Fix the check.
@@ -244,7 +247,7 @@ of review comments, it is how long a pull request sits between them.
 | Provisional expiry    | **20 merged PRs with records** ≈ 3 months                                                                                                                        | Volume, never the calendar. Counted from the rule's admission; a merged PR with no record is no evidence either way and does not count                                                                                                                                      |
 | Decline-rate trigger  | Over 1/3 across 3 or more firings                                                                                                                                | Default; nothing measured yet                                                                                                                                                                                                                                               |
 | Never-fired trigger   | 6 months                                                                                                                                                         | Default; long enough that a release-only rule survives                                                                                                                                                                                                                      |
-| Ratchet cadence       | **Monthly, or 10 merged PRs**                                                                                                                                    | At 7 a month the calendar fires first; the count catches a busy month                                                                                                                                                                                                       |
+| Revision cadence      | **Monthly, or when ten records are waiting, whichever comes first**                                                                                              | At 7 a month the calendar fires first; the count catches a busy month                                                                                                                                                                                                       |
 | Finding criteria      | **Must-fix and should-fix always**, when keyed as the contract's Citation section says and carrying a Proposed line; **at most 7 suggestions**; questions always | A finding worth escalating is never dropped for a count; nits are the build's to catch. Suggestions keep a ceiling because 2 × median 11 exceeds it                                                                                                                         |
 | Reviewer rounds       | **5**, upstream's                                                                                                                                                | The implementation reviewer's own cap in `implement-change`, with a stop when one finding survives two fixes. Not a local dial: changing it is an upstream change. At the PR lane's 446 s measured above (2026-09-25), five rounds can cost over half an hour of suite time |
 | Wall clock            | Measured, not enforced                                                                                                                                           | The build hooks record it in the PR body's "already checked". The one recorded run, PR #66, took about 45 minutes; budgets of 25 and then 60 minutes were tried and dropped, because a wall-clock exit ends a converging run for a reason that is not about the change      |
@@ -290,7 +293,7 @@ or `tests/`. It re-collects each lane, checks the rules (the ledger and the word
 file) against their line budget with the live rule count beside it, and reports what no longer holds. The record cap lives with the
 records, in the shared clone. Wall clock is deliberately not
 checked: it is machine-local, and the same lane has measured 102 s and 357 s on one machine.
-Remeasuring it stays a person's job at the ratchet.
+Remeasuring it stays a person's job at the revision.
 
 The rest of the table is a record of a past harvest rather than a live measurement, and does
 not change unless someone harvests again.
@@ -301,7 +304,7 @@ the calibration runs) is in the shared corpus at `libera_utils/harvest.md`.
 ## What is not settled
 
 - **A rotating driver for the monthly revision, and its slot in a meeting we already have.**
-- **The first ratchet slot.** A calendar trigger with no named person and no recurring slot
+- **The first revision slot.** A calendar trigger with no named person and no recurring slot
   is the failure mode this pattern is most prone to in practice.
 - **Whether Copilot's automatic PR review is the suggestion tier or replaces the standards
   review.** Today both would run, holding two different standards, which is the drift this

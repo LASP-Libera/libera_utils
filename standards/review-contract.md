@@ -33,7 +33,7 @@ is the first one from a person, bots excluded, and that includes whoever ran `pr
 the findings are the agent's, not theirs.
 
 A must-fix or should-fix disagreement without its reason is not recorded. The reason is what tells the
-next ratchet whether the rule was wrong or the code was, and it is the only part of a record
+next revision whether the rule was wrong or the code was, and it is the only part of a record
 that cannot be reconstructed later. A finding
 nobody answers stays unanswered and out of the record; silence is not assent, a resolved
 thread is not a verdict, and the review says which findings it is. `Discuss` holds the
@@ -51,12 +51,12 @@ six accepts that mean one glance are worse than three that mean three.
 
 ## Severity
 
-| Tag        | Handling                                                                                                                                                                                                              |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| must-fix   | Ranked, posted whenever it meets the finding criteria, tagged by a person. Before emitting one, read the **file** rather than the diff and quote the lines; a must-fix that cannot be anchored to lines is downgraded |
-| should-fix | Ranked, posted by the same criteria, tagged                                                                                                                                                                           |
-| suggestion | Below the fold, own cap of 7, answered Agree (taken) or Disagree, no reason needed                                                                                                                                    |
-| question   | Its own list, always posted. Check both `decisions.md` files first: if a decision answers it, cite the decision instead of asking again                                                                               |
+| Tag        | Handling                                                                                                                                                                                                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| must-fix   | Ranked, posted whenever it meets the finding criteria, answered by a person, whose reply is its verdict. Before emitting one, read the **file** rather than the diff and quote the lines; a must-fix that cannot be anchored to lines is downgraded |
+| should-fix | Ranked, posted by the same criteria, answered                                                                                                                                                                                                       |
+| suggestion | Below the fold, own cap of 7, answered Agree (taken) or Disagree, no reason needed                                                                                                                                                                  |
+| question   | Its own list, always posted. Check both `decisions.md` files first: if a decision answers it, cite the decision instead of asking again                                                                                                             |
 
 Finding criteria: a must-fix or should-fix is posted whenever it is keyed as Citation says and
 carries a Proposed line, however many there are; at most **7** suggestions, ranked; questions
@@ -74,7 +74,7 @@ Every finding names a rule ID, a decision, `ticket/AC-n`, `ticket/scope`, `ticke
 `test/lane`), `helper/path::symbol`, or `other`. A shared decision is cited `D-nnn`; one of this
 repository's own is cited `D-nnn@libera_utils`, such as `D-008@libera_utils`, because the
 citation must contain no `/`. An `other` finding carries a one-line summary suitable for
-clustering at the ratchet.
+clustering at the revision.
 
 The finding key is that citation, then `/`, the file path, `::` and the enclosing symbol:
 `R-012/pyproject.toml::version`, `D-008@libera_utils/libera_utils/cli.py::main`,
@@ -127,7 +127,7 @@ something in the module or a sibling already does it. One caller and under about
 is a candidate to inline; a duplicate of an existing function is a finding. Extraction is
 not invention: a helper pulled out of existing code with two or more call sites is the good
 case and is reported as such. A helper in `libera_utils/` whose only callers are in
-`tests/` is not this key: R-008 covered it and retired, so it is `other` with a one-line summary, which is how the ratchet sees it
+`tests/` is not this key: R-008 covered it and retired, so it is `other` with a one-line summary, which is how the revision sees it
 recur and how the rule comes back if it does.
 
 ## Do not flag
