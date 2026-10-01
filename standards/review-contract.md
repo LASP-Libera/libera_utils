@@ -77,7 +77,8 @@ citation must contain no `/`. An `other` finding carries a one-line summary suit
 clustering at the revision.
 
 The finding key is that citation, then `/`, the file path, `::` and the enclosing symbol:
-`R-012/pyproject.toml::version`, `D-008@libera_utils/libera_utils/cli.py::main`,
+`R-003/libera_utils/l1a/data_time_extractors.py::is_data_time_indexed_apid`,
+`D-008@libera_utils/libera_utils/cli.py::main`,
 `test/uncovered/libera_utils/io/netcdf.py::write`. The citation is everything before the
 first `/` that follows it; the two-part `test/` and `ticket/` citations are the only ones
 with a `/` of their own. The symbol is the enclosing function or class, or in a non-code file the key or heading; `-`
