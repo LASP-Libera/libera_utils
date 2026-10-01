@@ -143,6 +143,5 @@ ignore = [
 ]
 
 [tool.codespell]
-# cancelled is GitHub Actions' cancelled() in .github/workflows/_run-tests.yml
-ignore-words-list = "ANC,uncorrect,cancelled"
+ignore-words-list = "ANC,uncorrect"
 
