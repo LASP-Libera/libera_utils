@@ -1,14 +1,10 @@
 # Standards for libera_utils
 
 The review standard this repository holds itself to, and the measurements that set every
-number in it. Written 2026-09-17. Re-measure at the tuning pass, not from memory.
+number in it. Written 2026-09-17. Re-measure at the monthly revision, not from memory.
 
 **When this corpus and an authoritative source disagree, the source wins.** Open a pull
 request to fix the corpus.
-
-The phases this file refers to — 0 set up the standard, 1 define the work, 2 build and verify,
-3 review and merge, 4 the monthly ratchet — are the standards workflow's, described in
-`libera_llm_tooling`'s README and summarized in `AGENTS.md` under "Working a change".
 
 ## What is here
 
@@ -61,9 +57,12 @@ repository:
 
 ```bash
 cd ../libera_llm_tooling
-./bootstrap.sh            # installs libera-tools@libera
+./bootstrap.sh --github standards/shared-corpus-v0   # installs libera-tools from GitHub
 ./bootstrap.sh --check    # checks the install and this repository's setup
 ```
+
+The plugin README's Install section has the rest, including the one-time switch once
+libera_llm_tooling#3 merges.
 
 Adding the tooling repository to `permissions.additionalDirectories` does not install anything: that
 setting grants read access, and Claude Code discovers skills only from `~/.claude/skills`, a
@@ -71,7 +70,7 @@ repository's own `.claude/skills`, and installed plugins.
 
 The **corpus** is a clone kept beside this repository, so that `libera_llm_tooling/standards/`
 is a sibling of `libera_utils/`. That convention is the whole configuration. The monthly
-revision writes to it on a branch, which is why it stays a clone rather than travelling inside
+revision writes to it on a branch, which is why it stays a clone rather than traveling inside
 the plugin.
 
 A skill that cannot find the shared corpus says so and continues without the vocabulary,
@@ -99,8 +98,8 @@ assuming.
 A rule is admitted, as `provisional`, on one merged pull request with a review thread written by
 a person, when it meets the other criteria in `review-rules.md`. It becomes `established` when
 the reviewer has cited it and a person has accepted the finding in two different pull requests,
-**written by two different people**. During v0 a
-harvest may establish a rule on review-thread evidence that clears the same bar, and its
+**written by two different people**. A harvest may establish a rule on review-thread evidence
+that clears the same bar, and its
 evidence line points at those pull requests. A rule whose evidence is one author's pull
 requests, or comes only from AI-drafted review comments, stays provisional however often it is
 cited: the citation count measures how often something came up, and breadth measures whether
@@ -112,7 +111,7 @@ Where a rule restates a decision, shared or local, its evidence line names it. A
 decision on the same concern must not disagree about status: the decision is what the team
 settled, the rule is how a reviewer checks it, and the reviewer loads both.
 
-v0 evidence points at the merged pull request whose review threads produced the rule, and a
+Harvest evidence points at the merged pull request whose review threads produced the rule, and a
 rule resting on one author or one pull request says so in its evidence line. From the first
 ratchet on, evidence points at the review records in
 `libera_llm_tooling/standards/libera_utils/log/`.
@@ -172,9 +171,9 @@ entry, not to this section, which holds one line. IDs are never reused.
 
 **No rule leaves without its reasoning being kept.** Whoever graduates, retires or rewrites a
 rule writes its biography to the entry: the text as it read, why it was admitted, every
-decline reason quoted, and what the replacement cannot catch. During v0 a harvest may propose
-retirements as well as admissions, as it did for R-008, with a person making the call; after
-v0 proposing them is the ratchet's job alone.
+decline reason quoted, and what the replacement cannot catch. A harvest may propose
+retirements as well as admissions, as the second harvest did for R-008, with a person making
+the call; once the monthly revision runs, proposing them is its job alone.
 
 | ID    | The rule, in a clause                                | End state                        | Became                                                     | Entry                           |
 | ----- | ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------------- | ------------------------------- |
@@ -238,29 +237,27 @@ of review comments, it is how long a pull request sits between them.
 
 ## Derived settings
 
-| Dial                  | Value                                                                                                                                                            | Derivation                                                                                                                                                                                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rule budget           | **300 lines**, the ledger and the wording together                                                                                                               | What one reviewer can hold; the count is whatever meets the criteria                                                                                                                                                                                                   |
-| New-rule admission    | **1 merged PR with a review thread written by a person**                                                                                                         | The admission bar in `review-rules.md`; establishment needs 2 merged PRs by 2 authors                                                                                                                                                                                  |
-| Provisional expiry    | **20 merged PRs with records** ≈ 3 months                                                                                                                        | Volume, never the calendar. Counted from the rule's admission; a merged PR with no record is no evidence either way and does not count                                                                                                                                 |
-| Decline-rate trigger  | Over 1/3 across 3 or more firings                                                                                                                                | Default; nothing measured yet                                                                                                                                                                                                                                          |
-| Never-fired trigger   | 6 months                                                                                                                                                         | Default; long enough that a release-only rule survives                                                                                                                                                                                                                 |
-| Ratchet cadence       | **Monthly, or 10 merged PRs**                                                                                                                                    | At 7 a month the calendar fires first; the count catches a busy month                                                                                                                                                                                                  |
-| Finding criteria      | **Must-fix and should-fix always**, when keyed as the contract's Citation section says and carrying a Proposed line; **at most 7 suggestions**; questions always | A finding worth escalating is never dropped for a count; nits are the build's to catch. Suggestions keep a ceiling because 2 × median 11 exceeds it                                                                                                                    |
-| Reviewer rounds       | **5**, upstream's                                                                                                                                                | The implementation reviewer's own cap in `implement-change`, with a stop when one finding survives two fixes. Not a local dial: changing it is an upstream change. The PR lane takes 5 min 57 s on `main`, so five rounds can cost half an hour of suite time          |
-| Wall clock            | Measured, not enforced                                                                                                                                           | The build hooks record it in the PR body's "already checked". The one recorded run, PR #66, took about 45 minutes; budgets of 25 and then 60 minutes were tried and dropped, because a wall-clock exit ends a converging run for a reason that is not about the change |
-| Contract tests first  | **On**                                                                                                                                                           | Other repositories import this one; `AGENTS.md` asks for the accept, return and raise tests before the implementation when a public signature changes                                                                                                                  |
-| Split before starting | **Estimate 8 or above**                                                                                                                                          | The team's Fibonacci story-point scale, estimated in the session by `ticket-draft` and not written to the ticket. A first cut, expected to move once a few tickets are behind us                                                                                       |
-| Group ticket session  | **Estimate 5 or above**, and every epic                                                                                                                          | Below that a ticket is well enough defined that group design time costs more than it returns; its author runs `ticket-draft` and `implement-change` alone and posts the plan for async approval                                                                        |
-| Plan approval         | A second reader at **estimate 5 or above**, and for any public-signature change whatever the estimate                                                            | Downstream consumers                                                                                                                                                                                                                                                   |
+| Dial                  | Value                                                                                                                                                            | Derivation                                                                                                                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rule budget           | **300 lines**, the ledger and the wording together                                                                                                               | What one reviewer can hold; the count is whatever meets the criteria                                                                                                                                                                                                        |
+| New-rule admission    | **1 merged PR with a review thread written by a person**                                                                                                         | The admission bar in `review-rules.md`; establishment needs 2 merged PRs by 2 authors                                                                                                                                                                                       |
+| Provisional expiry    | **20 merged PRs with records** ≈ 3 months                                                                                                                        | Volume, never the calendar. Counted from the rule's admission; a merged PR with no record is no evidence either way and does not count                                                                                                                                      |
+| Decline-rate trigger  | Over 1/3 across 3 or more firings                                                                                                                                | Default; nothing measured yet                                                                                                                                                                                                                                               |
+| Never-fired trigger   | 6 months                                                                                                                                                         | Default; long enough that a release-only rule survives                                                                                                                                                                                                                      |
+| Ratchet cadence       | **Monthly, or 10 merged PRs**                                                                                                                                    | At 7 a month the calendar fires first; the count catches a busy month                                                                                                                                                                                                       |
+| Finding criteria      | **Must-fix and should-fix always**, when keyed as the contract's Citation section says and carrying a Proposed line; **at most 7 suggestions**; questions always | A finding worth escalating is never dropped for a count; nits are the build's to catch. Suggestions keep a ceiling because 2 × median 11 exceeds it                                                                                                                         |
+| Reviewer rounds       | **5**, upstream's                                                                                                                                                | The implementation reviewer's own cap in `implement-change`, with a stop when one finding survives two fixes. Not a local dial: changing it is an upstream change. At the PR lane's 446 s measured above (2026-09-25), five rounds can cost over half an hour of suite time |
+| Wall clock            | Measured, not enforced                                                                                                                                           | The build hooks record it in the PR body's "already checked". The one recorded run, PR #66, took about 45 minutes; budgets of 25 and then 60 minutes were tried and dropped, because a wall-clock exit ends a converging run for a reason that is not about the change      |
+| Contract tests first  | **On**                                                                                                                                                           | Other repositories import this one; `AGENTS.md` asks for the accept, return and raise tests before the implementation when a public signature changes                                                                                                                       |
+| Split before starting | **Estimate 8 or above**                                                                                                                                          | The team's Fibonacci story-point scale, estimated in the session by `ticket-draft` and not written to the ticket. A first cut, expected to move once a few tickets are behind us                                                                                            |
+| Group ticket session  | **Estimate 5 or above**, and every epic                                                                                                                          | Below that a ticket is well enough defined that group design time costs more than it returns; its author runs `ticket-draft` and `implement-change` alone and posts the plan for async approval                                                                             |
+| Plan approval         | A second reader at **estimate 5 or above**, and for any public-signature change whatever the estimate                                                            | Downstream consumers                                                                                                                                                                                                                                                        |
 
 ## The five questions
 
 **1. What costs the most time?** Review latency. The comment counts are high but the days
 are higher, and a pull request that sits for six weeks is re-reviewed from scratch every
-time someone returns to it. Phases 0, 1 and 3 are in scope now: the corpus, the ticket, and
-a PR body that says where to look. Phase 2 comes next, because a change that arrives already
-verified is one that does not bounce. Phase 4 starts when the log has ten records.
+time someone returns to it.
 
 **2. Who reads this code, and who depends on it?** It is a shared library. `libera_rad`,
 `libera_cam`, `libera_analysis`, `libera_cdk` (private) and CSDS import it, and it is published on PyPI for L2
@@ -274,7 +271,7 @@ duplication — a ticket here forces tickets in the consuming repositories, whic
 scales off that number and none of them was inherited.
 
 **4. What already exists?** Eight files already state a convention, plus a pre-commit
-configuration and a ruff select list. Phase 0 here was restructuring, not archaeology, which
+configuration and a ruff select list. Setting up the standard here was restructuring, not archaeology, which
 is why fourteen rules met the criteria at the first harvest rather than a handful.
 
 **5. What may leave the repository?** **This repository is public**, and `standards/` does
@@ -284,7 +281,7 @@ so nothing here reaches a PyPI consumer. It is still readable by anyone with the
 or Jira URL and no internal document content goes into source, docstrings, tests, or
 anything under `standards/`. That is R-014, and it is why the shared corpus — which may
 carry internal links, because it is private — lives in `libera_llm_tooling` and is named
-from here rather than copied in. Decided before Phase 0, deliberately: retrofitting it
+from here rather than copied in. Decided before the standard was drafted, deliberately: retrofitting it
 would mean re-reading every file in the corpus.
 
 Numbers in the table above that a machine can re-derive are checked by
@@ -306,8 +303,8 @@ the calibration runs) is in the shared corpus at `libera_utils/harvest.md`.
 - **A rotating driver for the monthly revision, and its slot in a meeting we already have.**
 - **The first ratchet slot.** A calendar trigger with no named person and no recurring slot
   is the failure mode this pattern is most prone to in practice.
-- **Whether Copilot's automatic PR review is the suggestion tier or replaces the Phase 3
-  reviewer.** Today both would run, holding two different standards, which is the drift this
+- **Whether Copilot's automatic PR review is the suggestion tier or replaces the standards
+  review.** Today both would run, holding two different standards, which is the drift this
   pattern exists to prevent. The evidence is the "share a linter could have
   caught" row above, and it argues for
   the suggestion tier.
