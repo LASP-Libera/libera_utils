@@ -58,8 +58,8 @@ PyPI. See the [build and release docs](build_release.md) for more details on our
 Every pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`. Its first line is
 `Ticket: LIBSDC-NNNN — <what the ticket asked for and why>`, or `Ticket: none — <why>`. The next
 is the `Build-exit:` line, which the build in the `libera-tools` Claude Code plugin writes. A pull
-request written by hand carries `No-build-gates: <reason>` in its place and the `no-build-gates`
-label, which a person applies.
+request written by hand carries `No-build-gates: <reason>` in its place; the `no-build-gates`
+label is optional.
 
 An agent working in this repository reads `AGENTS.md` first: it points at the review rules in
 `.github/instructions/libera-utils.instructions.md` and the standard under `standards/`. Here an

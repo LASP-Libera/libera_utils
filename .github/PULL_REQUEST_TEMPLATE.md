@@ -18,8 +18,8 @@ test was weakened rather than the code fixed or a finding would change the agree
 which on the line above everything else. capped, flapping and blocked are not failures to
 hide: they say a bound was hit and a person should look.
 
-If the change was not built through implement-change, replace that line with a reason and add
-the no-build-gates label:
+If the change was not built through implement-change, replace that line with a reason; the
+no-build-gates label is optional:
     No-build-gates: <why>
 
 A pull request carrying neither line is one nobody can tell about, which is the whole point

@@ -1,9 +1,11 @@
 name: Build exit
 
-# Fails a pull request that carries neither a machine-readable Build-exit line nor a
-# no-build-gates label with a reason. Nothing else stops a pull request reaching a reviewer
-# without having been through the build's review loop, because the skills are triggered by
-# hand.
+# Annotates a pull request by a person that carries neither a machine-readable Build-exit line
+# nor a No-build-gates line. Nothing else stops a pull request reaching a reviewer without
+# having been through the build's review loop, because the skills are triggered by hand. The
+# no-build-gates label is optional, a filter for the revision, and is never required; a label
+# with no line is reported, since the label alone gives no reason. Pull requests opened by bots
+# are skipped: dependency updates and Copilot's pull requests never carry either line.
 #
 # A pre-commit hook would be the wrong layer: pre-commit runs on every fix commit inside the
 # build, so it would fire before the build has finished.
@@ -29,6 +31,7 @@ env:
 jobs:
   exit-line:
     name: Body declares how the build ended
+    if: github.event.pull_request.user.type != 'Bot' && !endsWith(github.event.pull_request.user.login, '[bot]')
     runs-on: ubuntu-latest
     steps:
       - name: Check the exit line
@@ -53,15 +56,15 @@ jobs:
           skip_reason=$(printf '%s' "$PR_BODY" \
             | grep -E '^No-build-gates: .+' | head -1 || true)
 
+          if [ -n "$skip_reason" ]; then
+            echo "$skip_reason"
+            exit 0
+          fi
+
           case ",$LABELS," in
             *,no-build-gates,*) has_label=1 ;;
             *) has_label=0 ;;
           esac
-
-          if [ "$has_label" = "1" ] && [ -n "$skip_reason" ]; then
-            echo "$skip_reason"
-            exit 0
-          fi
 
           if [ "$MODE" = "blocking" ]; then
             level=error
@@ -69,23 +72,18 @@ jobs:
             level=warning
           fi
 
-          echo "::${level}::This pull request says nothing about how the build ended."
-          echo
-          echo "Add one of these to the body, on its own line:"
+          if [ "$has_label" = "1" ]; then
+            echo "::${level}::The no-build-gates label is set but the body has no line saying why: add 'No-build-gates: <why>' on its own line."
+          else
+            echo "::${level}::Add one line to the body saying how the build ended: 'Build-exit: <outcome>' from the build, or 'No-build-gates: <why>' for a change made by hand."
+          fi
           echo
           echo "    Build-exit: clean | capped | flapping | blocked | halted"
-          echo
-          echo "from the implementation reviewer's last verdict. capped, flapping and blocked are"
-          echo "not failures to hide - they say a bound was hit and a person should look."
-          echo
-          echo "If the change was not built through implement-change, add the no-build-gates label"
-          echo "AND a reason line:"
-          echo
           echo "    No-build-gates: <why>"
           echo
-          if [ "$has_label" = "1" ] && [ -z "$skip_reason" ]; then
-            echo "The no-build-gates label is set but the body carries no 'No-build-gates:' reason."
-          fi
+          echo "Build-exit comes from the implementation reviewer's last verdict. capped, flapping and"
+          echo "blocked are not failures to hide - they say a bound was hit and a person should look."
+          echo
 
           if [ "$MODE" = "blocking" ]; then
             exit 1
