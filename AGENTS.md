@@ -84,8 +84,8 @@ Any agent that plans, builds or reviews a change here, including `implementation
   `implement-change` records how the build ended in `.review/build/outcome.md`, mapped as
   `implement-change` step 8 defines, and `pr-create` copies it and the build hooks'
   counts into the body. A body written by hand follows the template the same way, carries the
-  `No-build-gates: <reason>` line where `Build-exit:` would be (the `no-build-gates` label is
-  optional), and follows the template's headings.
+  `No-build-gates: <reason>` line where `Build-exit:` would be, and follows the template's
+  headings.
 
 If you are an AI agent working here, declare it where shared D-013 says: the `Co-Authored-By`
 trailer on commits, the generated-with line on a pull request body, and the attribution line

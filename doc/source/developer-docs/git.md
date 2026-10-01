@@ -58,8 +58,7 @@ PyPI. See the [build and release docs](build_release.md) for more details on our
 Every pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`. Its first line is
 `Ticket: LIBSDC-NNNN — <what the ticket asked for and why>`, or `Ticket: none — <why>`. The next
 is the `Build-exit:` line, which the build in the `libera-tools` Claude Code plugin writes. A pull
-request written by hand carries `No-build-gates: <reason>` in its place; the `no-build-gates`
-label is optional.
+request written by hand carries `No-build-gates: <reason>` in its place.
 
 An agent working in this repository reads `AGENTS.md` first: it points at the review rules in
 `.github/instructions/libera-utils.instructions.md` and the standard under `standards/`. Here an
@@ -67,15 +66,14 @@ agent stops before `git push`, and the person runs the push.
 
 ### Checks on a pull request
 
-Three workflows under `.github/workflows/` read the pull request rather than run the code. Each is
+Two workflows under `.github/workflows/` read the pull request rather than run the code. Each is
 a note, not a gate: the check passes and leaves one annotation in the Checks tab when it has
-something to say. Setting the repository variable named in the workflow (`BUILD_EXIT_MODE`,
-`MEASUREMENTS_MODE`, `VERSION_CHECK_MODE`) to `blocking` turns that one into a failure; that is a
-settings change, not a pull request.
+something to say. Setting the repository variable named in the workflow (`MEASUREMENTS_MODE`,
+`VERSION_CHECK_MODE`) to `blocking` turns that one into a failure; that is a settings change, not
+a pull request.
 
 | Check                               | Runs on                                                        | Speaks when                                                                                                            |
 | ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Build exit line (`build-exit.yml`)  | every pull request by a person; bots are skipped               | the body has neither a `Build-exit:` line nor a `No-build-gates:` line                                                 |
 | Rule budget (`measurements.yml`)    | pull requests touching `standards/` or `.github/instructions/` | the review rule text is over the line budget `standards/README.md` states                                              |
 | Version check (`version-check.yml`) | every pull request                                             | the first changelog heading differs from the `pyproject.toml` version, or a bumped version is not above the newest tag |
 

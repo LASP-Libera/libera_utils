@@ -6,7 +6,7 @@ name: Rule budget
 # also states lane test counts; those move with every test a colleague adds, so the revision
 # re-measures them by hand with check_measurements.py --lanes rather than CI.
 #
-# Informational, like the exit-line check: set the repository variable MEASUREMENTS_MODE to
+# Informational: set the repository variable MEASUREMENTS_MODE to
 # "blocking" once the numbers have been true for a while.
 
 on:
