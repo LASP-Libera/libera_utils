@@ -82,9 +82,9 @@ behind a feature flag that the changelog names.
 
 tier: — · status: retired · reasoning: `standards/README.md` "Archived" → `archive/libera_utils/R-008.md`
 
-Retired at the second harvest to make room for R-015, which the wider sample evidences three
-times over against this rule's one. The concern is real and has not gone away; it is now
-carried by `packages = [{include = "libera_utils"}]` in `pyproject.toml`, which was verified
+Retired at the second harvest: the wider sample found it once, against three times for R-015,
+and a configuration line could carry it instead. The concern is real and has not gone away; it
+is now carried by `packages = [{include = "libera_utils"}]` in `pyproject.toml`, which was verified
 by building the wheel.
 
 ### R-009 · Comments describe the code as it is, not how it got there

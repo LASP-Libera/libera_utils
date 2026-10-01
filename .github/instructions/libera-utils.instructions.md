@@ -192,15 +192,12 @@ here too; units, frames and epochs are R-005.
 
 ### R-005 · A published quantity states its unit; a time states its epoch and frame
 
-In PR #27 the commanded exposure times (`WFOV_FSW_HEADER_COMMANDED_EXP_TIME_1/2`) and the FPGA
+In pr-0027 the commanded exposure times (`WFOV_FSW_HEADER_COMMANDED_EXP_TIME_1/2`) and the FPGA
 integration-time registers (`WFOV_IMAGE_HEADER_ACTUAL_EXP_TIME_1/2`) went up for review with no
 `units` attribute. They merged as `milliseconds` and `raw counts` — the registers stay in counts
 because the conversion to milliseconds is unconfirmed with FSW. A number in a data product with
 no unit is not a measurement, and a consumer will guess. The same applies
-to a time with no epoch and a pointing angle with no frame. PR #43 was cited here and does
-not support it — its temperature comments are about ObsID naming coverage, not units — so
-this rests on one pull request by one author until the wider calibration sample gives it a
-second.
+to a time with no epoch and a pointing angle with no frame.
 
 ### R-006 · One source of truth for a value; tabular data lives in a data file
 
@@ -211,7 +208,7 @@ cannot be validated as data and a table in a comment cannot be used at all.
 
 ### R-007 · Delete dead code rather than leaving it unreferenced
 
-Three instances across those pull requests: a function whose only mention was a comment
+Three instances across pr-0027 and pr-0048: a function whose only mention was a comment
 explaining why it was not used, a `try`/`except` whose result was discarded and whose branch
 was no longer reachable, and three counters that were incremented and never read.
 
@@ -235,8 +232,9 @@ saying why it is pinned and what unpins it. A direct-URL dependency also blocks 
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
-`prose` tier: `version-check.yml` checks that the changelog heading equals the version and
-that a bump is above the latest tag. What it cannot judge is the size of the bump. New public
+`check` tier: `version-check.yml` checks that the changelog heading equals the version and
+that a bump is above the latest tag. What it cannot judge is the size of the bump, and that
+judgment stays as prose here. New public
 modules, a new filename class, a new enum member or a new keyword argument make a minor
 release, not a patch: downstream pins of the form `~=5.10.3` take a patch silently.
 
@@ -258,9 +256,9 @@ pointer. The background that needs a link lives in the private shared corpus.
 ### R-015 · The annotation says what the code actually accepts
 
 `PathType` where only a local path works is an undefined contract: the caller cannot tell what
-is accepted and the failure arrives late and in the wrong words. PR #12 carries seven separate
+is accepted and the failure arrives late and in the wrong words. pr-0012 carries seven separate
 requests to take `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an
-`S3Path` can reach. PR #28 settles how to fix the general case — "just change the typehint to
+`S3Path` can reach. pr-0028 settles how to fix the general case — "just change the typehint to
 only accept a local Path or str since that is what is actually required", chosen deliberately
 over rejecting cloud paths at runtime. **Narrow the annotation rather than widen the
 function.**
