@@ -140,8 +140,9 @@ included, follows `.github/PULL_REQUEST_TEMPLATE.md` over its own defaults: ever
 template has, and the `Build-exit:` line naming how the build ended (or, for a change made by
 hand, the `no-build-gates` label with a reason). `AGENTS.md` says how the exit is chosen.
 
-Changes to `standards/` happen in one pull request a month, proposed by the ratchet with its
-evidence. Nothing agentic edits a standard.
+No agent changes a standard on its own: a person chooses every change to `standards/`, and it
+lands through a reviewed pull request. That is how `revise-standard` and `correct-standard` both
+work.
 
 The shared corpus is a clone of `libera_llm_tooling` kept beside this repository, so
 `../libera_llm_tooling/standards/` holds `terminology.md`, `decisions.md` and `context/`.

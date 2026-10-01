@@ -47,8 +47,9 @@ The skills come from the `libera-tools` Claude Code plugin in `libera_llm_toolin
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
 `pr-findings` reviews it against this standard and, once people reply, writes the record
 (into `libera_llm_tooling/standards/libera_utils/log/`, never this repository),
-and `revise-standard` runs the monthly revision. None of them merges or edits a standard, and
-nothing is posted without a person's yes. Everything an agent produces is a proposal.
+and `revise-standard` runs the monthly revision. None of them merges. No agent changes a
+standard on its own: a person chooses every change to `standards/`, and it lands through a
+reviewed pull request. Nothing is posted without a person's yes. Everything an agent produces is a proposal.
 
 No agent pushes in this repository: the instruction file forbids it. `pr-create`, once a person
 says yes to opening a pull request, and `pr-fix`, once the person approves its fixes, stop at
