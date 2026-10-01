@@ -163,8 +163,9 @@ One line per rule whose reasoning has been archived — retired, expired, rewrit
 graduated into a check. This section exists so a check is never orphaned:
 someone who hits a failing check follows the ID here, and here to the reasoning.
 
-The full entries live in `libera_llm_tooling/standards/archive/libera_utils/`, and a copy is
-published to Confluence for readers who do not read repositories. They are not in this
+The full entries live in the private repository, at
+`libera_llm_tooling/standards/archive/libera_utils/`, and may be published to Confluence later
+for readers who do not read repositories. They are not in this
 repository because this repository is public (R-014) and an archive entry says what went
 wrong, on which mission, and what the team decided about it.
 

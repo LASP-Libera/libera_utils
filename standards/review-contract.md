@@ -95,7 +95,8 @@ the record both carry the whole key, which is what deduplication matches on.
 - `ticket/scope` — work the ticket's Not this ticket list excludes
 - `ticket/plan` — a departure from the approved plan that the PR body does not explain
 
-An omission from the PR body's "Key design choices and open questions" is a **must-fix**,
+An omission from the PR body's "Key design choices and open questions", a section `pr-create`
+writes and the repository template does not carry, is a **must-fix**,
 ranked above anything about the code.
 
 ## Terms

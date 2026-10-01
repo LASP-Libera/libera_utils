@@ -67,7 +67,8 @@ Any agent that plans, builds or reviews a change here, including `implementation
   `standards/decisions.md`, the
   shared decisions and terminology named in `standards/README.md` ("Shared tier"), and `standards/test-lanes.md`
   before judging anything. The test and coverage commands come from `test-lanes.md`, never a
-  guess.
+  guess. Without the shared clone beside this repository, it works from this repository's files
+  and says so in its first line.
 - When a change adds or alters a public signature, plans and writes what it accepts, returns
   and raises, and tests that fail for those reasons, before the implementation. Other
   repositories import this one.
@@ -80,7 +81,8 @@ Any agent that plans, builds or reviews a change here, including `implementation
   would weaken an existing test (a loosened tolerance or assertion, a removed `pytest.raises`,
   a new skip or xfail, a dropped parametrize case), a fix would change the agreed plan, a
   pre-existing failure blocks a check, or a check cannot run at all.
-- Leaves the `Build-exit:` line and the "already checked" section to the plugin:
+- Leaves the `Build-exit:` line and the "already checked" section, which `pr-create` writes and
+  the repository template does not carry, to the plugin:
   `implement-change` records how the build ended in `.review/build/outcome.md`, mapped as
   `implement-change` step 8 defines, and `pr-create` copies it and the build hooks'
   counts into the body. A body written by hand follows the template the same way, carries the

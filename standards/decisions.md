@@ -52,7 +52,7 @@ at it must vendor the configuration itself.
 
 ### libera_utils/D-005 · Writing a product overwrites an existing object at an identical key
 
-_2026-09-19 · **provisional** · source: PR #66 review, adjudicated by mmaclay_
+_2026-09-19 · **provisional** · source: PR #66 review, adjudicated in review_
 
 A product's version is part of its key, so this applies only to reprocessing at the same
 version with the same identifiers, and a new version never overwrites an old one. Under the
