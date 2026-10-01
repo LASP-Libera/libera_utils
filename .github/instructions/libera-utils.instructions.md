@@ -218,7 +218,7 @@ A comment describes the code as it is, not how it got there and not where it is 
 a `TODO[LIBSDC-1234]` for work that is tracked. It never carries the context of a
 conversation, a prompt or a review, and it reads correctly with only the code around it.
 
-The most repeated request in the window, six times in one review: remove the ticket number,
+The most repeated request in the harvested reviews, six times in one of them: remove the ticket number,
 remove the historical title, remove the comment that says what this used to be. A test's
 subject is the behavior, not the ticket that asked for it. Ticket references are for
 forward-looking work, which is what R-010 covers.

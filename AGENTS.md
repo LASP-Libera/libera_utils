@@ -47,7 +47,8 @@ The skills come from the `libera-tools` Claude Code plugin in `libera_llm_toolin
 `standards/README.md` says how to install it, under "Shared tier". `ticket-draft` writes and places the ticket,
 `implement-change` plans, builds and verifies it, `pr-create` opens the pull request,
 `pr-findings` reviews it against this standard and, once people reply, writes the record
-(into `libera_llm_tooling/standards/libera_utils/log/`, never this repository),
+(into `libera_llm_tooling/standards/libera_utils/log/`; a session with no clone beside this
+repository falls back to `.review/log/`, and nothing under `.review/` is committed),
 and `revise-standard` runs the monthly revision. None of them merges. No agent changes a
 standard on its own: a person chooses every change to `standards/`, and it lands through a
 reviewed pull request. Nothing is posted without a person's yes. Everything an agent produces is a proposal.

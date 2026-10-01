@@ -79,8 +79,8 @@ def check_rule_budget(readme: str) -> Result:
     wording = re.search(r"^## Review Rules$.*?(?=^## |\Z)", INSTRUCTIONS.read_text(), re.M | re.S)
     if not wording:
         return Result("rule budget", False, f"{INSTRUCTIONS.name} has no Review Rules section")
-    # Counted as the one file the rules used to be: each linked rule's second title and its
-    # link line, each with a blank line, are structure the split added, not rule text.
+    # Counted as if the ledger and the wording were one file: each linked rule's second title and
+    # its link line, each with a blank line, repeat structure rather than add rule text.
     linked = len(re.findall(r"^Wording: \[", body, re.M))
     lines = (
         len(body.splitlines())

@@ -263,7 +263,7 @@ are higher, and a pull request that sits for six weeks is re-reviewed from scrat
 time someone returns to it.
 
 **2. Who reads this code, and who depends on it?** It is a shared library. `libera_rad`,
-`libera_cam`, `libera_analysis`, `libera_cdk` (private) and CSDS import it, and it is published on PyPI for L2
+`libera_cam`, `libera_analysis` and `libera_cdk` (private) import it, and it is published on PyPI for L2
 algorithm developers outside the team. That makes it the shared-library archetype: the
 contract is the product, a silent contract break is the expensive failure, contract tests come first, and
 `terminology.md` is the highest-value file in the corpus. Ripple matters more than
