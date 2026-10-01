@@ -455,6 +455,20 @@ def test_ManifestFilename(filename):
 
 
 @pytest.mark.parametrize(
+    "filename",
+    [
+        "LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json.bak",
+        "LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json.gz",
+        "LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.jsonx",
+    ],
+)
+def test_ManifestFilename_rejects_trailing_characters(filename):
+    """The whole basename must match; a valid manifest name followed by more characters is rejected"""
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
+        filenaming.ManifestFilename(filename)
+
+
+@pytest.mark.parametrize(
     ("filename", "basepath", "parts"),
     [
         (

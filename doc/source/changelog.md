@@ -1,5 +1,24 @@
 # Version Changes
 
+## 5.12.0
+
+- BREAKING: `Manifest.ulid_code` is a read-only property derived from `filename`. Assigning to it raises; assign `filename` instead. `ulid_code=` is still accepted by the constructor.
+- BREAKING: `Manifest.write()` sets `filename` to the path it wrote.
+- BREAKING: `Manifest.write()` no longer takes a `filename` argument; pass the full manifest file path as `out_path` instead. The old positional form `write(out_path, filename)` raises `TypeError`.
+- BREAKING: `Manifest.write()` raises `FileExistsError` for an existing target unless `overwrite=True` is passed, and `ManifestError` for a target whose INPUT/OUTPUT label disagrees with `manifest_type` or that would change the manifest's ULID.
+- BREAKING: `Manifest.validate_checksums()` raises `ManifestError` instead of `ValueError`. A file with no recorded checksum, or that cannot be found, fails validation.
+- BREAKING: `Manifest.from_file()` raises `ManifestError` for a path that is not a valid manifest filename, or when the filename or `ulid_code` stored in the file disagrees with the ULID in the path.
+- BREAKING: `Manifest.filename` is validated on assignment, and a `filename` or `manifest_type` whose INPUT/OUTPUT label disagrees with the other raises `ValidationError`.
+- BREAKING: `libera_utils.io.manifest.get_ulid_code` is removed. Use `Manifest.ulid_code`, or `ManifestFilename(path).filename_parts.ulid_code`.
+- BREAKING: `ManifestFileRecord.checksum` is `str | None`. It is None for a file that could not be found when it was added, and is written to the manifest file as `null`.
+- BREAKING: `MANIFEST_FILE_REGEX` must match the whole basename, so names such as `LIBERA_INPUT_MANIFEST_<ULID>.json.bak` are no longer valid manifest filenames.
+- FEAT: `Manifest.write(out_path=None, *, overwrite=False)`. `out_path` may be a directory, an S3 prefix, or a full manifest file path; without it, the manifest is written to its `filename`, or to the current working directory.
+- FEAT: `Manifest.output_manifest_from_input_manifest()` takes an optional `configuration=` dict, and raises `ManifestError` for an input manifest with no ULID.
+- BUGFIX: A file that cannot be found is added to a manifest with a null checksum and a warning, instead of raising. A null checksum read from a manifest file is kept, not recomputed.
+- BUGFIX: A second `write()` to a different directory no longer writes to the first location.
+- BUGFIX: A manifest with no filename serializes `filename` as `null`, not the string `"None"`.
+- BUGFIX: `Manifest` works with Pydantic versions before 2.10 again.
+
 ## 5.11.1
 
 - FEAT: Add docker-compose entries for spice kernel making.

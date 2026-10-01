@@ -109,7 +109,7 @@ MANIFEST_FILE_REGEX = re.compile(
     r"_(?P<manifest_type>INPUT|OUTPUT)"
     r"_MANIFEST"
     r"_(?P<ulid_code>[0-9A-HJ-NP-TV-Z]{26})"
-    r"\.json"
+    r"\.json$"
 )
 
 LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
