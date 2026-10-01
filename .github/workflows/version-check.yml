@@ -1,12 +1,13 @@
 name: Version check
 
 # R-012 as a check: the first changelog heading equals the pyproject.toml version, and, when
-# the pull request changes pyproject.toml, that version is above the highest tag. The
+# the pull request changes pyproject.toml's version line, that version is above the highest tag. The
 # reasoning is in the shared corpus at archive/libera_utils/R-012.md. Whether a change is minor
 # or patch is not checked; the instruction file states that rule for the author.
 #
-# The tag comparison runs only on a bump because a dependency update can leave the version
-# alone, and a stacked branch can sit below the newest tag.
+# The tag comparison runs only on a bump, read from the diff of the version line itself: a
+# dependency update edits pyproject.toml and leaves the version alone, and a stacked branch can
+# sit below the newest tag.
 
 on:
   pull_request:
@@ -30,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Every tag and the base branch, for the tag comparison and the changed-file list.
+          # Every tag and the base branch, for the tag comparison and the version-line diff.
           fetch-depth: 0
 
       - name: Check the version
@@ -41,7 +42,7 @@ jobs:
           set -uo pipefail
 
           flag=""
-          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -qx 'pyproject.toml'; then
+          if git diff "origin/${BASE_REF}...HEAD" -- pyproject.toml | grep -qE '^\+version = '; then
             flag="--bumped"
           fi
 

@@ -5,10 +5,10 @@ Two checks. The first `## <version>` heading in the changelog equals the version
 `pyproject.toml` carries, always. With --bumped, that version is also greater than the
 highest bare-version tag (`5.11.1`, not `v5.11.1` or `5.11.1rc1`).
 
-The tag check is behind a flag because not every pull request bumps: a dependency update can
-leave `pyproject.toml` alone, and on `main` the version equals the newest tag, so an
-unconditional tag check would fail every such pull request. The workflow passes --bumped when
-`pyproject.toml` is among the changed files.
+The tag check is behind a flag because not every pull request bumps: a dependency update edits
+`pyproject.toml` and leaves the version alone, and on `main` the version equals the newest tag,
+so an unconditional tag check would fail every such pull request. The workflow passes --bumped
+when the pull request's diff changes the `version =` line.
 
 Deliberately not checked: whether a change is minor or patch. That is the author's call, and
 the instruction file states the rule for it.

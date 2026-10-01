@@ -127,7 +127,7 @@ Do not flag: this rule at all; the workflow owns the two equalities, and whether
 minor or patch is the author's call, stated in the instruction file.
 Check: `.github/workflows/version-check.yml`, running `.github/scripts/check_version.py`: the
 first changelog heading equals the `pyproject.toml` version, and on a pull request that
-changes `pyproject.toml` the version is above the highest tag. The reviewer does not check
+changes its `version =` line the version is above the highest tag. The reviewer does not check
 this; the workflow does.
 
 ### R-013 · Parse or sort an input once, not once per consumer
