@@ -66,7 +66,8 @@ cd ../libera_llm_tooling
 ```
 
 The plugin README's Install section has the rest, including the one-time switch once
-libera_llm_tooling#3 merges.
+libera_llm_tooling#3 merges. Its "MCP servers" section sets up the Jira,
+Confluence and GitHub access the skills need.
 
 Adding the tooling repository to `permissions.additionalDirectories` does not install anything: that
 setting grants read access, and Claude Code discovers skills only from `~/.claude/skills`, a
