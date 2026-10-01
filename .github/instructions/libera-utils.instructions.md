@@ -136,9 +136,9 @@ content in source, docstrings, tests, or `standards/`. Cite internal documents b
 (R-014).
 
 **Pull request bodies.** Any agent that writes a pull request body here, `pr-create`
-included, follows `.github/PULL_REQUEST_TEMPLATE.md` over its own defaults: every section the
-template has, and the `Build-exit:` line naming how the build ended (or, for a change made by
-hand, the `No-build-gates: <reason>` line; the label is optional). `AGENTS.md` says how the exit is chosen.
+included, follows `.github/PULL_REQUEST_TEMPLATE.md` over its own defaults, and the body
+carries the `Build-exit:` line naming how the build ended or, for a change made by hand, the
+`No-build-gates: <reason>` line. `AGENTS.md` says how the exit is chosen.
 
 No agent changes a standard on its own: a person chooses every change to `standards/`, and it
 lands through a reviewed pull request. That is how `revise-standard` and `correct-standard` both
