@@ -236,7 +236,10 @@ saying why it is pinned and what unpins it. A direct-URL dependency also blocks 
 that a bump is above the latest tag. What it cannot judge is the size of the bump, and that
 judgment stays as prose here. New public
 modules, a new filename class, a new enum member or a new keyword argument make a minor
-release, not a patch: downstream pins of the form `~=5.10.3` take a patch silently.
+release, not a patch: downstream pins of the form `~=5.10.3` take a patch silently. The judgment
+comes from two Confluence pages: "2. Development Lifecycle" makes a change that may break an API
+in minor ways, or adds a significant feature with new usage patterns, a minor release, and "SDC
+Data Product Versioning Scheme" makes a change users can see in a product a minor one.
 
 ### R-013 · Parse or sort an input once, not once per consumer
 

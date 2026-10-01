@@ -55,8 +55,10 @@ at it must vendor the configuration itself.
 _2026-09-19 · **provisional** · source: PR #66 review, adjudicated by mmaclay_
 
 A product's version is part of its key, so this applies only to reprocessing at the same
-version with the same identifiers, and a new version never overwrites an old one. That
-reprocessing legitimately rewrites the granule, and a pipeline that halted because the object
+version with the same identifiers, and a new version never overwrites an old one. Under the
+SDC Data Product Versioning Scheme a reprocessing normally produces a new revision, the file's
+creation time in its name, and so a new key: the overwrite case is a re-run at the same
+revision. That reprocessing legitimately rewrites the granule, and a pipeline that halted because the object
 in the bucket was newer than the file it just produced would fail on its own success. So the
 write proceeds.
 
