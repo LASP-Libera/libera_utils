@@ -10,7 +10,9 @@ load-sensitive, and the same lane has measured 102 s and 357 s on this hardware.
 on it would fail for reasons that say nothing about the repository. Remeasuring it stays a
 person's job, at the ratchet.
 
-Exit 1 on a mismatch. --strict makes an unverifiable check a failure too.
+By default only the rule budget is checked, which is what CI runs. --lanes adds the two lane
+counts, which move with every test added and are re-measured by hand at the revision. Exit 1
+on a mismatch. --strict makes an unverifiable check a failure too.
 """
 
 import argparse
@@ -95,15 +97,18 @@ def check_rule_budget(readme: str) -> Result:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--lanes", action="store_true", help="also check the stated lane test counts")
     parser.add_argument("--strict", action="store_true", help="treat an unverifiable check as a failure")
     args = parser.parse_args()
 
     readme = README.read_text()
-    results = [
-        check_lane("unit lane count", r"\| (\d[\d,]*) tests, measured on", ["tests/unit/"], readme),
-        check_lane("PR lane count", r"\| (\d[\d,]*) tests, same run", ["-m", "not e2e", "tests/"], readme),
-        check_rule_budget(readme),
-    ]
+    results = []
+    if args.lanes:
+        results += [
+            check_lane("unit lane count", r"\| (\d[\d,]*) tests, measured on", ["tests/unit/"], readme),
+            check_lane("PR lane count", r"\| (\d[\d,]*) tests, same run", ["-m", "not e2e", "tests/"], readme),
+        ]
+    results.append(check_rule_budget(readme))
 
     failed = skipped = 0
     for r in results:

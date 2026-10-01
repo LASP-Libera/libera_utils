@@ -2,8 +2,9 @@ name: Measurements
 
 # The corpus states numbers and reasons from them - a test count and a rule line budget.
 # They go stale silently, and a threshold derived from a stale number is worse than none,
-# because it looks measured. The stated unit-lane count was wrong by 18 tests and the PR
-# lane by a factor of five before anyone noticed.
+# because it looks measured. On a pull request this checks the rule budget only: the lane
+# counts move with every test a colleague adds, so the revision re-measures them by hand with
+# check_measurements.py --lanes.
 #
 # Informational, like the exit-line check: set the repository variable MEASUREMENTS_MODE to
 # "blocking" once the numbers have been true for a while.
@@ -12,7 +13,6 @@ on:
   pull_request:
     paths:
       - "standards/**"
-      - "tests/**"
       - ".github/instructions/**"
       - ".github/scripts/check_measurements.py"
       - ".github/workflows/measurements.yml"

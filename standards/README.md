@@ -288,9 +288,10 @@ from here rather than copied in. Decided before the standard was drafted, delibe
 would mean re-reading every file in the corpus.
 
 Numbers in the table above that a machine can re-derive are checked by
-`.github/scripts/check_measurements.py`, which runs on a pull request touching `standards/`
-or `tests/`. It re-collects each lane, checks the rules (the ledger and the wording in the instruction
-file) against their line budget with the live rule count beside it, and reports what no longer holds. The record cap lives with the
+`.github/scripts/check_measurements.py`. On a pull request touching `standards/` it checks the
+rules (the ledger and the wording in the instruction file) against their line budget with the
+live rule count beside it, and reports what no longer holds. The lane counts move with every
+test added, so the revision runs it by hand with `--lanes`, which re-collects each lane as well. The record cap lives with the
 records, in the shared clone. Wall clock is deliberately not
 checked: it is machine-local, and the same lane has measured 102 s and 357 s on one machine.
 Remeasuring it stays a person's job at the revision.
