@@ -87,8 +87,8 @@ the record both carry the whole key, which is what deduplication matches on.
 
 ## Ticket findings
 
-- `ticket/AC-n` — an acceptance criterion not met, or met with no test
-- `ticket/scope` — a change outside the outcome, or inside the non-goals
+- `ticket/AC-n` — an acceptance criterion, the numbered list under Driving Requirements, not met or met with no test
+- `ticket/scope` — work the ticket's Not this ticket list excludes
 - `ticket/plan` — a departure from the approved plan that the PR body does not explain
 
 An omission from the PR body's "Key design choices and open questions" is a **must-fix**,

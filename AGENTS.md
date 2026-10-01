@@ -32,8 +32,9 @@ name (R-014).
 
 ## Working a change
 
-A ticket first, in LIBSDC, in the team's format: context, driving requirements, technical
-requirements, acceptance criteria, out of scope, considerations.
+A ticket first, in LIBSDC, in the team's format: context with its footprint, driving
+requirements with technical requirements and acceptance criteria, not this ticket,
+considerations when needed, and open questions until the estimation meeting settles them.
 Then a plan, approved before code. Then the change, verified by a review loop. Then a pull
 request body in the shape of `.github/PULL_REQUEST_TEMPLATE.md`, written for the person who
 will read it.
