@@ -114,40 +114,11 @@ generation, Libera file naming, and AWS pipeline integration.
 
 ## Review Standards
 
-`AGENTS.md` is the tool-neutral entry point: it maps these instructions to the review
-standard and describes how a change moves from ticket to merge. Read it once; this file
-stays the detail.
-
-The review standard lives in `standards/`, tool-neutral and read by people and agents alike.
-
-- `standards/review-rules.md` — the ledger for the rules below: each rule's tier, status,
-  evidence and do-not-flag sentence, within a 300-line budget. Cite the rule ID in a review
-  comment.
-- `standards/review-contract.md` — severity, the finding criteria, and the do-not-flag
-  list. Never repeat a finding that `ruff`, `prettier`, `codespell`, `bandit` or a
-  pre-commit hook already makes.
-- `standards/README.md` — the measured counts that set every threshold, and what this
-  repository is optimizing for.
-- `standards/decisions.md` and the shared corpus named in `standards/README.md` ("Shared tier") — convention
-  decisions already settled. Check there before asking a convention question again.
-
-**This repository is public.** No internal Confluence or Jira URL and no internal document
-content in source, docstrings, tests, or `standards/`. Cite internal documents by name
-(R-014).
-
-**Pull request bodies.** Any agent that writes a pull request body here, `pr-create`
-included, follows `.github/PULL_REQUEST_TEMPLATE.md` over its own defaults, and the body
-carries the `Build-exit:` line naming how the build ended or, for a change made by hand, the
-`No-build-gates: <reason>` line. `AGENTS.md` says how the exit is chosen.
-
-No agent changes a standard on its own: a person chooses every change to `standards/`, and it
-lands through a reviewed pull request. That is how `revise-standard` and `correct-standard` both
-work.
-
-The shared corpus is a clone of `libera_llm_tooling` kept beside this repository, so
-`../libera_llm_tooling/standards/` holds `terminology.md`, `decisions.md` and `context/`.
-The skills that read it install as the private `libera-tools` plugin; `standards/README.md`
-has the commands, under "Shared tier". If the clone is not there, say so rather than inventing a term.
+The rules below are the team's review conventions, numbered `R-NNN` so a review comment can cite
+one; they are not Claude Code's `.claude/rules/` files. Each rule's status and evidence are in
+`standards/review-rules.md`, whose header carries the budget and the admission criteria. This
+repository is public, so R-014 applies to everything in it. A change to a rule lands through a
+reviewed pull request.
 
 ## Review Rules
 
@@ -155,134 +126,93 @@ What a reviewer checks here, beyond what the tools check, and what anyone writin
 is expected to follow. This section is the only copy of each rule's wording; its tier, status,
 evidence and do-not-flag sentence are in `standards/review-rules.md`.
 
-These are the team's conventions, numbered `R-NNN` so a review comment and a record can cite
-them; they are not Claude Code's `.claude/rules/` files, which this repository does not use.
-
 ### R-001 · Validate a name or identifier where it is constructed, not where it is first used
 
-A class that accepts an invalid value and raises later moves the failure away from the
-caller who could fix it. `LiberaGroundCcsdsFilename` accepted day-of-year 999 because the
-setter only ran the regex, and the `strptime` round trip that would have caught it did not
-run until `archive_prefix` was computed at staging — after ingest had accepted the file.
-Validate in the constructor or the setter, and make the regex reject what the parser cannot
-parse.
+An invalid name or identifier is rejected by the constructor or setter that receives it, so the
+failure reaches the caller who can fix it rather than a later stage. A pattern that accepts what
+the parser cannot parse is part of the same defect.
 
 ### R-002 · A condition that invalidates the output raises; it does not warn or no-op
 
-A warning is not a failure. When an Az/El CK had no encoder columns in its L1A input, the
-code returned quietly and produced a kernel with nothing in it; it now raises. The rule is
-the repository's fail-loud posture in review form: a defined input produces a defined
-product, or the run stops, because a crash gets noticed and a silently wrong number gets
-published.
+A condition that makes the output wrong or empty raises; a warning, a log line or a quiet return
+is not a failure. A defined input produces a defined product or the run stops, because a crash
+gets noticed and a silently wrong number gets published.
 
 ### R-003 · One exception type per condition, and a predicate returns rather than raises
 
-`GroundCcsdsApidAbsentError` was raised for four unrelated conditions, only one of which was
-an absent APID, so callers could not tell an unparsable APID from a missing one and the name
-misled on three of the four. Separately, `is_data_time_indexed_apid()` raised `ValueError`
-on an unknown APID, which a question of the form "is this X" should answer with `False`.
-Either give each condition its own type, or return the no-answer value the caller can act on.
+Each condition a caller may handle differently gets its own exception type, named for that
+condition. A predicate, a function that asks "is this X", answers with `False` or another
+no-answer value rather than raising.
 
 ### R-004 · Every public symbol has a numpydoc docstring, including what it raises
 
-Numpydoc on public symbols is a project standard and the `Raises` section is the half that
-gets left out. With fail-loud design the failure modes are part of the interface, so a
-function that raises and does not say so has an undocumented contract. Parameters belong
-here too; units, frames and epochs are R-005.
+Every public function, class and method has a numpydoc docstring with its parameters and a
+`Raises` section for every exception it raises: with fail-loud design the failure modes are part
+of the interface. Units, frames and epochs are R-005.
 
 ### R-005 · A published quantity states its unit; a time states its epoch and frame
 
-In pr-0027 the commanded exposure times (`WFOV_FSW_HEADER_COMMANDED_EXP_TIME_1/2`) and the FPGA
-integration-time registers (`WFOV_IMAGE_HEADER_ACTUAL_EXP_TIME_1/2`) went up for review with no
-`units` attribute. They merged as `milliseconds` and `raw counts` — the registers stay in counts
-because the conversion to milliseconds is unconfirmed with FSW. A number in a data product with
-no unit is not a measurement, and a consumer will guess. The same applies
-to a time with no epoch and a pointing angle with no frame.
+Every quantity that reaches a data product carries its unit, every time its epoch, and every
+pointing angle its frame. A number with no unit is not a measurement, and a consumer will guess.
 
 ### R-006 · One source of truth for a value; tabular data lives in a data file
 
-`PACKET_DATA_WIDTH` restated a width that the `|S972` dtype already carried, so the two
-could diverge silently. The ObsID registry started as a large literal inside a module and
-became `data/obsid_registry.csv`, read and validated at import, because a table in code
-cannot be validated as data and a table in a comment cannot be used at all.
+A value is defined once and everything else derives from it, so two copies cannot drift. A table
+lives in a data file that is read and validated, not as a literal in code or a list in a comment.
 
 ### R-007 · Delete dead code rather than leaving it unreferenced
 
-Three instances across pr-0027 and pr-0048: a function whose only mention was a comment
-explaining why it was not used, a `try`/`except` whose result was discarded and whose branch
-was no longer reachable, and three counters that were incremented and never read.
+Code nothing calls, a branch nothing reaches and a variable nothing reads are deleted in the
+change that makes them dead, not kept with a comment explaining why.
 
 ### R-009 · Comments describe the code as it is, not how it got there
 
-A comment describes the code as it is, not how it got there and not where it is going, except
-a `TODO[LIBSDC-1234]` for work that is tracked. It never carries the context of a
-conversation, a prompt or a review, and it reads correctly with only the code around it.
-
-The most repeated request in the harvested reviews, six times in one of them: remove the ticket number,
-remove the historical title, remove the comment that says what this used to be. A test's
-subject is the behavior, not the ticket that asked for it. Ticket references are for
-forward-looking work, which is what R-010 covers.
+A comment describes the code as it is, not how it got there or where it is going, and reads
+correctly with only the code around it. It carries no ticket number, historical title or context
+from a conversation, a prompt or a review; forward-looking work takes R-010's tagged marker.
 
 ### R-011 · A dependency pins to an immutable ref
 
-A `@main` ref makes the build non-reproducible and lets an upstream merge break CI with no
-commit on this side. This is not hypothetical: a moving ref in `libera_rad` took main and
-three pull requests red overnight. Pin to the commit or the tagged release, with a comment
-saying why it is pinned and what unpins it. A direct-URL dependency also blocks publishing.
+A dependency pins to a commit or a tagged release, never a branch, with a comment saying why it is
+pinned and what unpins it. A moving ref makes the build non-reproducible and lets an upstream
+merge break CI, and a direct-URL dependency also blocks publishing.
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
-`check` tier: `version-check.yml` checks that the changelog heading equals the version and
-that a bump is above the latest tag. What it cannot judge is the size of the bump, and that
-judgment stays as prose here. New public
-modules, a new filename class, a new enum member or a new keyword argument make a minor
-release, not a patch: downstream pins of the form `~=5.10.3` take a patch silently. The judgment
-comes from two Confluence pages: "2. Development Lifecycle" makes a change that may break an API
-in minor ways, or adds a significant feature with new usage patterns, a minor release, and "SDC
-Data Product Versioning Scheme" makes a change users can see in a product a minor one.
+What the version check cannot judge is the size of a bump: a new public module, filename class,
+enum member or keyword argument makes a minor release, not a patch, since downstream pins of the
+form `~=5.10.3` take a patch silently. The "2. Development Lifecycle" and "SDC Data Product
+Versioning Scheme" pages make a change that may break an API in minor ways, that adds a feature
+with new usage patterns, or that users can see in a product a minor release.
 
 ### R-013 · Parse or sort an input once, not once per consumer
 
-A scan that re-read and re-parsed a whole packet file once per APID, twelve passes over a
-2 MB fixture in the ingest path where real captures are far larger; and a trim loop that
-re-sorted a full-day dataset and re-read a YAML definition on every one of ~35 runs. Hoist
-the parse, the sort and the definition load out of the loop.
+An input is read, parsed or sorted once and the result handed to each consumer; a loop does not
+re-read a file, re-sort a dataset or reload a definition on every pass.
 
 ### R-014 · No internal URL or internal document content in this repository
 
-`libera_utils` is public and ships to PyPI. Cite an internal document by name — "the FSW
-user's guide", "the ICIE ObsID page" — say what it decides, and stop. No Confluence or Jira
-URL, no pasted internal content, in source, docstrings, tests or anything under
-`standards/`. Links rot as well as leak, so naming the document is also the more durable
-pointer. The background that needs a link lives in the private shared corpus.
+This repository is public and ships to PyPI. No internal URL, meaning any Confluence or Jira URL on
+`lasp.colorado.edu` and anything on the DMZ, and no internal document content goes into source,
+docstrings, tests or `standards/`. Cite a page by its title and a ticket by its key, and say what
+it decides.
 
 ### R-015 · The annotation says what the code actually accepts
 
-`PathType` where only a local path works is an undefined contract: the caller cannot tell what
-is accepted and the failure arrives late and in the wrong words. pr-0012 carries seven separate
-requests to take `LiberaDataProductFilename` rather than `str`, and to use `PathType` where an
-`S3Path` can reach. pr-0028 settles how to fix the general case — "just change the typehint to
-only accept a local Path or str since that is what is actually required", chosen deliberately
-over rejecting cloud paths at runtime. **Narrow the annotation rather than widen the
-function.**
+A parameter's annotation names exactly what the code handles, so a caller can tell what is
+accepted. Where a function is annotated with a type it cannot handle, narrow the annotation rather
+than widen the function.
 
 ### R-016 · An error message says what went wrong and what to do next
 
-The reader of a failure in this package is often an algorithm developer outside the SDC, and a
-message naming only internals, an IAM role ARN or a boto exception, gives them nothing to act
-on. State the condition and the next action. pr-0028 dictated the replacement text in full:
-"Check that you are using the profile that logs in as the L2 Developer base role. If this
-error persists, contact the SDC team." pr-0060 asked for an error telling the caller to provide
-a tag rather than defaulting to `latest`; pr-0015 asked the log to name which data variables
-did not match.
+An error message states the condition and the next action, in terms a reader outside the SDC can
+act on, rather than naming internals alone.
 
 ### R-017 · A valid range or an enumeration cites its source
 
-A valid range or a set of categories is a claim about the instrument or the algorithm, and a
-claim with no source cannot be checked in review. In pr-0004 a valid range, asked for its
-reasoning, had none and was removed; in pr-0042 `LAND_SURFACE_TYPE_BIN` declared six categories
-where the ADM algorithm has five. Name the document, algorithm or upstream definition the values
-come from, by name rather than by internal link (R-014).
+A valid range or a set of categories names the document, algorithm or upstream definition its
+values come from, by name rather than by internal link (R-014). A claim with no source cannot be
+checked in review.
 
 ## Restrictions for AI Agents
 

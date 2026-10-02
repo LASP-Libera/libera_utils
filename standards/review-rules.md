@@ -18,7 +18,7 @@ Tiers, statuses, retirement and graduation are in `standards/README.md`.
 
 ### R-001 · Validate a name or identifier where it is constructed, not where it is first used
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 (a filename setter accepted day-of-year 999, and the parse that would have caught it ran only at staging, after ingest) · **one pull request, needs a second**
 
 Wording: [R-001 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-001--validate-a-name-or-identifier-where-it-is-constructed-not-where-it-is-first-used)
 
@@ -27,7 +27,7 @@ not have, when the docstring says so.
 
 ### R-002 · A condition that invalidates the output raises; it does not warn or no-op
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0027, pr-0041, pr-0060, pr-0012
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0027, pr-0041, pr-0060, pr-0012 (in one of these, an Az/El CK whose L1A input had no encoder columns returned quietly with an empty kernel; it now raises)
 
 Wording: [R-002 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-002--a-condition-that-invalidates-the-output-raises-it-does-not-warn-or-no-op)
 
@@ -36,7 +36,7 @@ docstring names it; a `logger.warning` beside a raise, for context.
 
 ### R-003 · One exception type per condition, and a predicate returns rather than raises
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 · **one pull request, needs a second**
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 (one exception type was raised for four unrelated conditions, and a predicate raised `ValueError` on an unknown APID) · **one pull request, needs a second**
 
 Wording: [R-003 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-003--one-exception-type-per-condition-and-a-predicate-returns-rather-than-raises)
 
@@ -54,7 +54,7 @@ self-describing and that raises nothing.
 
 ### R-005 · A published quantity states its unit; a time states its epoch and frame
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027 · **one author, needs a second**
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027 (commanded exposure times and integration-time registers went up for review with no `units` attribute, and merged as milliseconds and raw counts) · **one author, needs a second**
 
 Wording: [R-005 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-005--a-published-quantity-states-its-unit-a-time-states-its-epoch-and-frame)
 
@@ -63,7 +63,7 @@ in the product definition.
 
 ### R-006 · One source of truth for a value; tabular data lives in a data file
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0027, pr-0041, pr-0015, pr-0002
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0027, pr-0041 (the ObsID registry moved from a module literal to a data file validated at import), pr-0015, pr-0002 (in one of these, a packet width constant restated what the dtype already carried)
 
 Wording: [R-006 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-006--one-source-of-truth-for-a-value-tabular-data-lives-in-a-data-file)
 
@@ -72,7 +72,7 @@ duplicated in a test on purpose, so the test fails when the source changes.
 
 ### R-007 · Delete dead code rather than leaving it unreferenced
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0048
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0048 (between them, a function mentioned only by a comment explaining why it was unused, a `try`/`except` whose result was discarded, and three counters never read)
 
 Wording: [R-007 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-007--delete-dead-code-rather-than-leaving-it-unreferenced)
 
@@ -90,7 +90,7 @@ by building the wheel.
 
 ### R-009 · Comments describe the code as it is, not how it got there
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030 (the most repeated request in the harvested reviews, six times in one of them: remove the ticket number, the historical title, the comment saying what this used to be)
 
 Wording: [R-009 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-009--comments-describe-the-code-as-it-is-not-how-it-got-there)
 
@@ -112,7 +112,7 @@ check this; the hook does.
 
 ### R-011 · A dependency pins to an immutable ref
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 · implements shared D-005 · **one pull request, needs a second**
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 (a moving ref in libera_rad had taken main and three pull requests red overnight) · implements shared D-005 · **one pull request, needs a second**
 
 Wording: [R-011 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-011--a-dependency-pins-to-an-immutable-ref)
 
@@ -133,7 +133,7 @@ this; the workflow does.
 
 ### R-013 · Parse or sort an input once, not once per consumer
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048, pr-0041
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 (a scan re-parsed a whole packet file once per APID, twelve passes over a 2 MB fixture in the ingest path), pr-0041 (a trim loop re-sorted a full-day dataset and re-read a YAML definition on each of about 35 runs)
 
 Wording: [R-013 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-013--parse-or-sort-an-input-once-not-once-per-consumer)
 
@@ -151,28 +151,32 @@ public URL, such as NAIF or the CERES documentation.
 
 ### R-015 · The annotation says what the code actually accepts
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012, pr-0028, pr-0060 · implements `libera_utils/D-007`
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012 (seven requests to take `LiberaDataProductFilename` rather than `str`, and `PathType` where an `S3Path` can reach), pr-0028 (narrowing the annotation to a local `Path` or `str` was chosen over rejecting cloud paths at runtime), pr-0060 · implements `libera_utils/D-007`
 
 Wording: [R-015 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-015--the-annotation-says-what-the-code-actually-accepts)
 
 Do not flag: a union the code genuinely handles — `Path | str` is the fix pr-0028 agreed on,
 not a violation of this rule; a genuine union the product definition names; a constructor that
-documents a single coercion at the boundary and says so in its docstring.
+documents a single coercion at the boundary and says so in its docstring; a runtime check beside a
+narrowed annotation, or its absence, since the annotation is the baseline and a check is neither
+required nor a finding.
 
 ---
 
 ### R-016 · An error message says what went wrong and what to do next
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0028, pr-0060, pr-0015 · implements `libera_utils/D-008`
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0028 (the reviewer dictated the replacement text naming the role to log in as and whom to contact), pr-0060 (an error telling the caller to provide a tag rather than defaulting to `latest`), pr-0015 (the log to name which data variables did not match) · implements `libera_utils/D-008`
 
 Wording: [R-016 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-016--an-error-message-says-what-went-wrong-and-what-to-do-next)
 
 Do not flag: a message whose condition and next action are already in the exception type's
-name.
+name; re-raising the original exception when its message already says what went wrong. Never
+propose wrapping a standard exception in a custom type only to add a message: custom exception
+types are public API and make common exceptions hard to catch.
 
 ### R-017 · A valid range or an enumeration cites its source
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0004, pr-0042
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0004 (a valid range asked for its reasoning had none and was removed), pr-0042 (a land-surface enumeration declared six categories where the ADM algorithm has five)
 
 Wording: [R-017 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-017--a-valid-range-or-an-enumeration-cites-its-source)
 
