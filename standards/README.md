@@ -61,15 +61,14 @@ repository:
 
 ```bash
 cd ../libera_llm_tooling
-./bootstrap.sh --github standards/shared-corpus-v0   # installs libera-tools from GitHub
+./bootstrap.sh --github   # installs libera-tools from GitHub, from main
 ./bootstrap.sh --check    # checks the install and this repository's setup
 ```
 
 Then, in Claude Code here, `/libera-tools:quickstart` says what applies in this repository and what
 to type.
 
-The plugin README's Install section has the rest, including the one-time switch once
-libera_llm_tooling#3 merges. Its "MCP servers" section sets up the Jira,
+The plugin README's Install section has the rest. Its "MCP servers" section sets up the Jira,
 Confluence and GitHub access the skills need. The plugin's `GUIDE.md` walks the workflow from the
 person's side.
 
