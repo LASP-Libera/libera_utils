@@ -292,6 +292,6 @@ def test_l1a_product_definition_file(test_data_path: Path) -> Path:
 
 
 @pytest.fixture
-def test_scene_id(test_data_path):
+def scene_id_test_data_path(test_data_path):
     """Path to folder containing scene ID integration test files"""
     return test_data_path / "scene_id"

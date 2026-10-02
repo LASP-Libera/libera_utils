@@ -31,6 +31,7 @@ import numpy as np
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils import Manifest, smart_copy_file
+from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
@@ -39,11 +40,9 @@ from libera_utils.io.smart_open import is_s3
 from libera_utils.logutil import configure_task_logging
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
+from libera_utils.version import version
 
 logger = logging.getLogger(__name__)
-
-# Directory holding the SCENE-ID product-definition YAMLs inside the installed libera_utils package.
-_PRODUCT_DEF_DIR = Path(__import__("libera_utils").__file__).parent / "data" / "product_definitions"
 
 
 @dataclass(frozen=True)
@@ -99,7 +98,7 @@ CAM_CONFIG = SceneIdRunnerConfig(
     input_product_id=None,
     output_product_id=DataProductIdentifier.aux_scene_id_cam,
     reader=FootprintData.from_ceres_ssf,
-    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_cam.yml",
+    product_definition_path=Path(config.get("SCENE_ID_CAM_PRODUCT_DEFINITION")),
     time_variable="RADIOMETER_TIME",
     scene_types=["erbe", "unfiltering"],
     log_prefix="scene_id_cam",
@@ -113,7 +112,7 @@ CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
     output_product_id=DataProductIdentifier.aux_scene_id_cam_camtime,
     reader=FootprintData.from_fmatch_cam_camtime,
-    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_cam_camtime.yml",
+    product_definition_path=Path(config.get("SCENE_ID_CAM_CAMTIME_PRODUCT_DEFINITION")),
     time_variable="CAMERA_TIME",
     scene_types=["erbe", "unfiltering"],
     log_prefix="scene_id_cam_camtime",
@@ -125,6 +124,38 @@ RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
     "cam": CAM_CONFIG,
     "cam-camtime": CAM_CAMTIME_CONFIG,
 }
+
+
+def scene_id_cam_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
+    """Run the SCENE-ID-CAM (radiometer-timescale) algorithm from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+    """
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam"])
+
+
+def scene_id_cam_camtime_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
+    """Run the SCENE-ID-CAM-CAMTIME (camera-timescale) algorithm from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+    """
+    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam-camtime"])
 
 
 def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> Path | S3Path:
@@ -237,6 +268,9 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
         except Exception:
             # Not a Libera product name. In placeholder mode that is exactly the CERES SSF input we want; in
             # Libera-product mode it cannot be an FMATCH input, so skip it.
+            # TODO[LIBSDC-794]: the non-Libera "placeholder" branch exists only because SCENE-ID-CAM currently reads
+            # raw CERES SSF input; it goes away once the FMATCH external products are available and every input is a
+            # Libera product selected by data_product_id.
             if input_product_id is None:
                 logger.info("Recording %s input file: %s", input_label, filename)
                 input_file_paths.append(filename)
@@ -349,8 +383,7 @@ def create_and_write_data_product(
             product_dataset = product_dataset.assign_coords({name: (name, index)})
 
     product_dataset.attrs["InputGranules"] = input_file_name
-    # TODO[LIBSDC-672]: source the algorithm version from package metadata once SCENE-ID is versioned/released.
-    product_dataset.attrs["algorithm_version"] = "0.1.0"
+    product_dataset.attrs["algorithm_version"] = version()
 
     logger.info("Writing %s data product for input %s", config.output_product_id.value, input_file_name)
     output_file_path = write_libera_data_product(

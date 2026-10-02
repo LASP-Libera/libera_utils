@@ -6,6 +6,7 @@ from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
 
 
@@ -21,42 +22,6 @@ def print_version_info(*args):
         f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}"
         f"\n\tCopyright 2025 University of Colorado\n\tReleased under BSD3 license"  # TODO[LIBSDC-607]: Automate date?
     )
-
-
-def scene_id_cam_cli_handler(parsed_args: argparse.Namespace):
-    """Run the SCENE-ID-CAM (radiometer-timescale) algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam"])
-
-
-def scene_id_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
-    """Run the SCENE-ID-CAM-CAMTIME (camera-timescale) algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.scene_identification.scene_id_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam-camtime"])
 
 
 # pylint: disable=too-many-statements
@@ -113,13 +78,13 @@ def parse_cli_args(cli_args: list):
     scene_id_cam_parser = scene_id_subparsers.add_parser(
         "cam", help="run the SCENE-ID-CAM algorithm (radiometer timescale) from a manifest file"
     )
-    scene_id_cam_parser.set_defaults(func=scene_id_cam_cli_handler)
+    scene_id_cam_parser.set_defaults(func=scene_id_algorithm.scene_id_cam_cli_handler)
     scene_id_cam_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     scene_id_cam_camtime_parser = scene_id_subparsers.add_parser(
         "cam-camtime", help="run the SCENE-ID-CAM-CAMTIME algorithm (camera timescale) from a manifest file"
     )
-    scene_id_cam_camtime_parser.set_defaults(func=scene_id_cam_camtime_cli_handler)
+    scene_id_cam_camtime_parser.set_defaults(func=scene_id_algorithm.scene_id_cam_camtime_cli_handler)
     scene_id_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
