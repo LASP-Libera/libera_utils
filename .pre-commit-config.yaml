@@ -45,3 +45,17 @@ repos:
         exclude: ".pre-commit-config.yaml"
         verbose: true
         always_run: true
+  - repo: local
+    hooks:
+      - id: rule-budget
+        name: The review rules and their wording fit the line budget the ledger states
+        entry: python3 .github/scripts/check_rule_budget.py
+        language: system
+        pass_filenames: false
+        files: ^(standards/|\.github/instructions/)
+      - id: version-check
+        name: The changelog heading equals the version, and the version is at or above the highest tag
+        entry: python3 .github/scripts/check_version.py
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|doc/source/changelog\.md)$

@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Every tag, for the version-check hook's comparison with the highest release tag.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v7
         with:
