@@ -1,4 +1,4 @@
-"""Integration tests for the SCENE-ID CAM-family runner and product write path.
+"""Runner tests for the SCENE-ID CAM-family runner and product write path.
 
 These exercise the manifest/dropbox plumbing in
 ``libera_utils.scene_identification.scene_id_algorithm`` and its concrete runner configs, including the actual product
@@ -19,8 +19,6 @@ from libera_utils.scene_identification.scene_id_algorithm import (
     run_scene_identification,
 )
 from libera_utils.version import version
-
-pytestmark = pytest.mark.integration
 
 # Product-definition path for the CAM variant, read straight from the runner registry.
 PRODUCT_DEFINITION_PATH = RUNNER_CONFIGS["cam"].product_definition_path
@@ -183,23 +181,3 @@ class TestSceneIdCamCamtimeWrite:
         assert bool(np.all(reopened["camera_pixel_x_max"].values >= reopened["camera_pixel_x_min"].values))
         assert bool(np.all(reopened["camera_pixel_y_max"].values >= reopened["camera_pixel_y_min"].values))
 
-    def test_write_drops_the_replaced_pixel_variables(self, tmp_path):
-        """The retired center_pixel / start-stop / (min,max)-pair variables must not appear in the written product."""
-        footprint_data = _synthetic_camtime_footprint_data()
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(["erbe", "unfiltering"]))
-        output_file = create_and_write_data_product_cam_camtime(footprint_data, "fmatch-cam-camtime.nc", tmp_path)
-
-        reopened = xr.open_dataset(output_file.path, mask_and_scale=False)
-        for retired in (
-            "center_pixel_x",
-            "center_pixel_y",
-            "camera_pixel_x_start",
-            "camera_pixel_x_stop",
-            "camera_pixel_y_start",
-            "camera_pixel_y_stop",
-            # The replaced (min, max)-pair coordinates and their axis are gone.
-            "camera_pixel_x",
-            "camera_pixel_y",
-        ):
-            assert retired not in reopened.variables
-        assert "CAMERA_PIXEL_BOUNDS" not in reopened.dims

@@ -1,11 +1,13 @@
 """Unit tests for scene identification module."""
 
+import pathlib
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils.config import config
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 from libera_utils.scene_identification.scene_id import (
     _CALCULATED_VARIABLE_MAP,
@@ -808,3 +810,278 @@ class TestSceneIdCamProductDtypes:
         assert definition.variables["scene_bin_unfiltering_surface_type_max"].dtype == "uint8"
         # And no variable in the definition declares a _FillValue.
         assert not any("_FillValue" in var.encoding for var in definition.variables.values())
+
+
+def _absent_bin_mask(array):
+    """Return a boolean mask of "no bound present" entries in a bin-bound or value array.
+
+    Continuous (float) bounds mark an unbounded side / unmatched footprint with NaN. Integer bounds (surface_type)
+    and integer value arrays carry no missing marker (an unmatched footprint is flagged separately by scene_id 0),
+    so they report all-present.
+    """
+    if np.issubdtype(array.dtype, np.floating):
+        return np.isnan(array)
+    return np.zeros(array.shape, dtype=bool)
+
+
+def assert_property_bins_consistent(dataset, scene_type, variables):
+    """Assert that the reported property bin bounds are consistent with the data.
+
+    For each classification variable, checks that the
+    ``scene_bin_{scene_type}_{variable}_min`` / ``_max`` columns exist, that
+    unmatched footprints (scene ID 0) carry no bin (NaN for the float bounds; the
+    integer surface_type bounds are just 0, flagged by scene_id 0), and that each
+    matched footprint's value falls within the reported bin (min inclusive, max
+    exclusive).
+    """
+    scene_ids = dataset[f"scene_id_{scene_type}"].values
+    matched = scene_ids != 0
+    for variable in variables:
+        min_name = f"scene_bin_{scene_type}_{variable}_min"
+        max_name = f"scene_bin_{scene_type}_{variable}_max"
+        assert min_name in dataset.data_vars
+        assert max_name in dataset.data_vars
+
+        bin_min = dataset[min_name].values
+        bin_max = dataset[max_name].values
+        values = dataset[variable].values
+
+        # Float bounds mark unmatched footprints as NaN; integer (surface_type) bounds instead carry 0 and rely on
+        # scene_id 0 to flag "unmatched", so we only assert the NaN convention for the float bounds.
+        if np.issubdtype(bin_min.dtype, np.floating):
+            assert np.all(np.isnan(bin_min[~matched]))
+            assert np.all(np.isnan(bin_max[~matched]))
+
+        # For matched footprints, where a value and a bound are both present, the value must lie in-bin.
+        min_present = ~_absent_bin_mask(bin_min)
+        max_present = ~_absent_bin_mask(bin_max)
+        has_value = ~_absent_bin_mask(values)
+        lower_ok = ~matched | ~min_present | ~has_value | (values >= bin_min)
+        upper_ok = ~matched | ~max_present | ~has_value | (values < bin_max)
+        assert np.all(lower_ok)
+        assert np.all(upper_ok)
+
+
+class TestEndToEndSceneIdentification:
+    """Tests for complete scene identification workflow."""
+
+    def test_from_ceres_ssf(self, scene_id_test_data_path):
+        input_file_path = scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
+        expected_file_path = (
+            scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
+        )
+        fp = FootprintData.from_ceres_ssf(input_file_path)
+        fp.identify_scenes()
+        expected = xr.open_dataset(expected_file_path)
+        xr.testing.assert_equal(fp._data, expected)
+        geometry_variables = ["solar_zenith_angle", "viewing_zenith_angle", "relative_azimuth_angle"]
+        assert_property_bins_consistent(fp._data, "trmm", ["surface_type", "cloud_fraction", *geometry_variables])
+        assert_property_bins_consistent(fp._data, "erbe", ["surface_type", "cloud_fraction", *geometry_variables])
+        for geometry_variable in geometry_variables:
+            assert geometry_variable in fp._data.data_vars
+
+    @pytest.mark.parametrize(
+        "scene_definition",
+        [
+            SceneDefinition(pathlib.Path(config.get("TRMM_SCENE_DEFINITION"))),
+            SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
+        ],
+    )
+    def test_from_ceres_ssf_single_scene_definition(self, scene_definition, scene_id_test_data_path):
+        input_file_path = scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
+        fp = FootprintData.from_ceres_ssf(input_file_path)
+        fp.identify_scenes(scene_definitions=[scene_definition])
+        expected_file_path = (
+            scene_id_test_data_path / "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100_identified.nc"
+        )
+        expected = xr.open_dataset(expected_file_path)
+        scene_id_col = f"scene_id_{scene_definition.type.lower()}"
+        np.testing.assert_array_equal(fp._data[scene_id_col].values, expected[scene_id_col].values)
+
+    @pytest.mark.parametrize(
+        ("input_file_name", "scene_definition", "expected_file_name"),
+        [
+            (
+                "trmm_footprints.nc",
+                SceneDefinition(pathlib.Path(config.get("TRMM_SCENE_DEFINITION"))),
+                "trmm_footprints_identified.nc",
+            ),
+            (
+                "erbe_footprints.nc",
+                SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION"))),
+                "erbe_footprints_identified.nc",
+            ),
+        ],
+    )
+    def test_standard_scene_definitions(
+        self, input_file_name, scene_definition, expected_file_name, scene_id_test_data_path
+    ):
+        input_dataset = xr.open_dataset(scene_id_test_data_path / input_file_name)
+        fp = FootprintData(input_dataset)
+        fp.identify_scenes(scene_definitions=[scene_definition])
+        expected = xr.open_dataset(scene_id_test_data_path / expected_file_name)
+        # Fixtures include the property-bin columns, so the full dataset must match.
+        xr.testing.assert_equal(fp._data, expected)
+        # Each synthetic dataset should contain one of every scene.
+        # Loop below confirms that we have coverage of all scenes for each scene type
+        for scene in scene_definition.scenes:
+            assert scene.scene_id in fp._data[f"scene_id_{scene_definition.type.lower()}"]
+
+
+class TestSceneDefinitionBehavior:
+    """Tests for scene definition behavior and edge cases."""
+
+    @pytest.fixture
+    def minimal_footprint_data(self):
+        """Create minimal footprint data for testing."""
+        data = xr.Dataset(
+            {
+                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 17, 15]),
+                FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0]),
+                FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0]),
+                FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0]),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0]),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0]),
+                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0]),
+                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0]),
+                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0]),
+                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0]),
+            }
+        )
+        return FootprintData(data)
+
+    def test_empty_scene_definition_list(self, minimal_footprint_data):
+        """Test behavior with empty scene definition list."""
+        # Should not raise an error
+        with pytest.raises(ValueError, match="Scene definitions list is empty."):
+            minimal_footprint_data.identify_scenes([])
+
+    def test_none_scene_definition_list(self, minimal_footprint_data):
+        """Test behavior with scene definition list is none."""
+        # Should not raise an error
+        with pytest.raises(ValueError, match="No scene definitions provided."):
+            minimal_footprint_data.identify_scenes(None)
+
+
+class TestDataQualityAndEdgeCases:
+    """Tests for data quality issues and edge cases."""
+
+    def test_mixed_valid_and_missing_data(self):
+        """Test handling of partially missing data."""
+        data = xr.Dataset(
+            {
+                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 17, 15, 5, 10]),
+                FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, np.nan, 5.0, 2.0, np.nan]),
+                FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, np.nan, 3.0, 8.0]),
+                FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, np.nan, 20.0, 60.0, 30.0]),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, np.nan, 15.0, 8.0]),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0, np.nan, 12.0]),
+                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
+                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
+                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, np.nan, 2.0, 1.0, 2.0]),
+                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, np.nan, 1.0, 1.0]),
+            }
+        )
+
+        footprint_data = FootprintData(data)
+
+        # Calculate all derived fields
+        footprint_data._calculate_required_fields(
+            [
+                FootprintVariables.CLOUD_FRACTION,
+                FootprintVariables.SURFACE_WIND,
+                FootprintVariables.OPTICAL_DEPTH,
+                FootprintVariables.CLOUD_PHASE,
+            ]
+        )
+
+        # Check cloud fraction calculation with NaN clear_area
+        cloud_fraction = footprint_data._data[FootprintVariables.CLOUD_FRACTION].values
+        assert cloud_fraction[0] == 20.0  # Valid calculation
+        assert np.isnan(cloud_fraction[1])  # NaN input
+        assert cloud_fraction[2] == 80.0  # Valid calculation
+
+        # Check surface wind with mixed NaN values
+        surface_wind = footprint_data._data[FootprintVariables.SURFACE_WIND].values
+        assert surface_wind[0] == 5.0  # Both components valid
+        assert np.isnan(surface_wind[1])  # U component NaN
+        assert np.isnan(surface_wind[2])  # V component NaN
+
+        # Check optical depth with NaN values
+        optical_depth = footprint_data._data[FootprintVariables.OPTICAL_DEPTH].values
+        # First footprint: both valid
+        expected_0 = (2.0 * 10.0 + 3.0 * 10.0) / 20.0
+        assert abs(optical_depth[0] - expected_0) < 1e-10
+
+        # Third footprint: lower is NaN, only upper contributes
+        expected_2 = (7.0 * 40.0) / 80.0
+        assert abs(optical_depth[2] - expected_2) < 1e-10
+
+
+class TestErrorHandling:
+    """Tests for error handling and recovery."""
+
+    def test_invalid_igbp_surface_type_handling(self):
+        """Test handling of invalid IGBP surface type values."""
+        # Create data with invalid IGBP types
+        data = xr.Dataset(
+            {
+                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [0, 25, -1, 10, 21]),  # Invalid values
+                FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0, 2.0, 6.0]),
+                FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0, 3.0, 8.0]),
+                FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0, 60.0, 30.0]),
+                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0, 15.0, 8.0]),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0, 20.0, 12.0]),
+                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
+                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0, 20.0, 35.0]),
+                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0, 1.0, 2.0]),
+                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0, 1.0, 1.0]),
+            }
+        )
+
+        footprint_data = FootprintData(data)
+
+        # Attempting to calculate surface type should raise an error for invalid values
+        with pytest.raises(ValueError, match="Cannot convert IGBP surface type"):
+            footprint_data._calculate_required_fields([FootprintVariables.SURFACE_TYPE])
+
+    def test_invalid_clear_area_range(self):
+        """Test handling of clear area values outside valid range."""
+        # Create data with invalid clear area percentages
+        data = xr.Dataset(
+            {
+                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 17, 15]),
+                FootprintVariables.SURFACE_WIND_U: (["footprint"], [3.0, 4.0, 5.0]),
+                FootprintVariables.SURFACE_WIND_V: (["footprint"], [4.0, 3.0, 12.0]),
+                FootprintVariables.CLEAR_AREA: (["footprint"], [-10.0, 110.0, 50.0]),  # Invalid values
+                FootprintVariables.OPTICAL_DEPTH_LOWER: (["footprint"], [2.0, 5.0, 3.0]),
+                FootprintVariables.OPTICAL_DEPTH_UPPER: (["footprint"], [3.0, 10.0, 7.0]),
+                FootprintVariables.CLOUD_FRACTION_LOWER: (["footprint"], [10.0, 25.0, 40.0]),
+                FootprintVariables.CLOUD_FRACTION_UPPER: (["footprint"], [10.0, 25.0, 40.0]),
+                FootprintVariables.CLOUD_PHASE_LOWER: (["footprint"], [1.0, 1.0, 2.0]),
+                FootprintVariables.CLOUD_PHASE_UPPER: (["footprint"], [2.0, 2.0, 2.0]),
+            }
+        )
+
+        footprint_data = FootprintData(data)
+
+        # Should raise error for invalid clear area values
+        with pytest.raises(ValueError, match="Clear Area must be between 0 and 100"):
+            footprint_data._calculate_required_fields([FootprintVariables.CLOUD_FRACTION])
+
+    def test_missing_required_variables_for_calculation(self):
+        """Test error handling when required variables are missing."""
+        # Create incomplete data
+        data = xr.Dataset(
+            {
+                FootprintVariables.IGBP_SURFACE_TYPE: (["footprint"], [1, 17, 15]),
+                FootprintVariables.CLEAR_AREA: (["footprint"], [80.0, 50.0, 20.0]),
+                # Missing: OPTICAL_DEPTH_LOWER, OPTICAL_DEPTH_UPPER, CLOUD_FRACTION_LOWER, CLOUD_FRACTION_UPPER
+            }
+        )
+
+        footprint_data = FootprintData(data)
+
+        # Should raise error when trying to calculate optical depth without required inputs
+        with pytest.raises(ValueError, match="Cannot calculate fields"):
+            footprint_data._calculate_required_fields([FootprintVariables.OPTICAL_DEPTH])
