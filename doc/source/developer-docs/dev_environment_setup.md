@@ -108,6 +108,5 @@ going through the steps above to create a new venv (you can name it differently)
    finds the system library.
 7. Next, [go run the tests](testing.md).
 
-The Claude Code tooling, the `libera-tools` plugin, installs separately, from a clone of
-`libera_llm_tooling` beside this repository: follow the Install section of that repository's
-README. `AGENTS.md` here says how the tooling works in this repository.
+The Claude Code tooling is the `libera-tools` plugin from `LASP-Libera/libera_llm_tooling`, whose
+README says how to install it.

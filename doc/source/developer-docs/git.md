@@ -55,32 +55,8 @@ PyPI. See the [build and release docs](build_release.md) for more details on our
 
 ## Pull Requests and the Review Standard
 
-Every pull request body follows `.github/PULL_REQUEST_TEMPLATE.md`. Its first line is
-`Ticket: LIBSDC-NNNN — <what the ticket asked for and why>`, or `Ticket: none — <why>`. The next
-is the `Build-exit:` line, which the build in the `libera-tools` Claude Code plugin writes. A pull
-request written by hand carries `No-build-gates: <reason>` in its place.
-
-An agent working in this repository reads `AGENTS.md` first: it points at the review rules in
-`.github/instructions/libera-utils.instructions.md` and the standard under `standards/`. Here an
-agent stops before `git push`, and the person runs the push.
-
-### Checks on a pull request
-
-Two workflows under `.github/workflows/` read the pull request rather than run the code. Each is
-a note, not a gate: the check passes and leaves one annotation in the Checks tab when it has
-something to say. Setting the repository variable named in the workflow (`RULE_BUDGET_MODE`,
-`VERSION_CHECK_MODE`) to `blocking` turns that one into a failure; that is a settings change, not
-a pull request.
-
-| Check                               | Runs on                                                        | Speaks when                                                                                                            | Why it exists                                                                                                                                                                                        |
-| ----------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Rule budget (`rule-budget.yml`)     | pull requests touching `standards/` or `.github/instructions/` | the review rule text is over the line budget `standards/README.md` states                                              | every agent session here loads the rule wording, and the reviewer applies every rule; the budget caps how far the rules grow before one is retired or merged                                         |
-| Version check (`version-check.yml`) | every pull request                                             | the first changelog heading differs from the `pyproject.toml` version, or a bumped version is not above the newest tag | a release publishes `pyproject.toml`'s version from a pushed tag, so a mismatched heading mislabels the release notes and a version at or below the newest tag repeats or predates a release (R-012) |
-
-A pull request that neither bumps the version nor edits the changelog passes the version check.
-It holds a bump to the changelog and the tags; whether every pull request bumps is the
-[release process](build_release.md), which no check enforces. A dependency update that edits
-`pyproject.toml` without touching the version line passes too.
+A pull request body opens with the `Ticket:` line of `.github/PULL_REQUEST_TEMPLATE.md`. An agent
+working in this repository stops before `git push`, and the person runs it.
 
 # Git LFS (Large File Storage) Usage
 
