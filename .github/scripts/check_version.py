@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Check that the changelog heading, the package version and the release tags agree.
 
-CI runs this from .github/workflows/version-check.yml on every pull request. Two checks:
+Pre-commit runs this, as the `version-check` hook, on a change to pyproject.toml or
+doc/source/changelog.md. Two checks:
 
 1. The first `## <version>` heading in doc/source/changelog.md equals the `version` in
-   pyproject.toml. Always run.
-2. With --bumped, that version is also above the highest bare-version tag (`5.11.1`, not
-   `v5.11.1` or `5.11.1rc1`). The workflow passes --bumped only when the pull request's diff
-   changes the `version =` line: a dependency update edits pyproject.toml without bumping, and
-   on `main` the version equals the newest tag, so an unconditional tag check would fail both.
+   pyproject.toml.
+2. That version is at or above the highest bare-version tag (`5.11.1`, not `v5.11.1` or
+   `5.11.1rc1`). That passes `main`, where the version equals the newest tag, and a bump, and
+   fails a downgrade or a stacked branch left below a newer release.
 
 A release is cut by pushing a tag, and the package published carries pyproject.toml's version.
-A heading that disagrees mislabels the release notes, and a version at or below the newest tag
-repeats or predates a published release (rule R-012).
+A heading that disagrees mislabels the release notes, and a version below the newest tag
+predates a published release (rule R-012, with its reasoning in libera_llm_tooling at
+standards/archive/libera_utils/R-012.md).
 
 Not checked: whether a change is minor or patch. That is the author's call, under R-012 in the
 instruction file.
@@ -20,7 +21,7 @@ instruction file.
 Prints one ok or MISMATCH line per check, naming both values, and exits 1 on any MISMATCH.
 Exits 2 with one CANNOT RUN line saying why when the check cannot run: pyproject.toml is
 unreadable or has no version line, the changelog is unreadable or has no `## <version>`
-heading, or --bumped finds no bare-version tag. The readers below raise ValueError for a
+heading, or there is no bare-version tag. The readers below raise ValueError for a
 missing line; main turns that, an unreadable file or a failed `git tag` into exit 2.
 """
 
@@ -77,16 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pyproject", type=Path, default=ROOT / "pyproject.toml")
     parser.add_argument("--changelog", type=Path, default=ROOT / "doc" / "source" / "changelog.md")
     parser.add_argument("--tags", type=Path, help="a file with one tag per line; default: git tag")
-    parser.add_argument("--bumped", action="store_true", help="also require the version to exceed the highest tag")
     args = parser.parse_args(argv)
 
     try:
         version = pyproject_version(args.pyproject)
         heading = changelog_heading(args.changelog)
-        top = None
-        if args.bumped:
-            top = highest_tag(args.tags.read_text().splitlines() if args.tags else tags_from_git())
-            release(version)
+        top = highest_tag(args.tags.read_text().splitlines() if args.tags else tags_from_git())
+        release(version)
     except (OSError, ValueError, subprocess.CalledProcessError) as e:
         print(f"  CANNOT RUN {e}")
         return 2
@@ -98,12 +96,11 @@ def main(argv: list[str] | None = None) -> int:
         failed += 1
         print(f"  MISMATCH changelog heading {heading} does not equal pyproject.toml version {version}")
 
-    if top is not None:
-        if release(version) > release(top):
-            print(f"  ok       version {version} is above the highest tag {top}")
-        else:
-            failed += 1
-            print(f"  MISMATCH pyproject.toml version {version} is not above the highest tag {top}")
+    if release(version) >= release(top):
+        print(f"  ok       version {version} is at or above the highest tag {top}")
+    else:
+        failed += 1
+        print(f"  MISMATCH pyproject.toml version {version} is below the highest tag {top}")
 
     return 1 if failed else 0
 

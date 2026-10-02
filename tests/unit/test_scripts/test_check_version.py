@@ -1,9 +1,9 @@
-"""Tests for .github/scripts/check_version.py, the script the Version check workflow runs.
+"""Tests for .github/scripts/check_version.py, the script the version-check pre-commit hook runs.
 
-Covers the changelog heading against the pyproject.toml version, the bumped version against the
-highest bare tag, the ValueError raised when a file lacks the line the check reads, and exit 2
-with a CANNOT RUN line when the check cannot run. The
-script is imported by file path, since .github/scripts is not a package.
+Covers the changelog heading against the pyproject.toml version, the version against the highest
+bare tag, the ValueError raised when a file lacks the line the check reads, and exit 2 with a
+CANNOT RUN line when the check cannot run. The script is imported by file path, since
+.github/scripts is not a package.
 """
 
 import importlib.util
@@ -18,27 +18,27 @@ check_version = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(check_version)
 
 
-def _args(tmp_path: Path, version: str, heading: str, top_tag: str, bumped: bool) -> list[str]:
+def _args(tmp_path: Path, version: str, heading: str, top_tag: str) -> list[str]:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(f'[project]\nname = "libera_utils"\nversion = "{version}"\n')
     changelog = tmp_path / "changelog.md"
     changelog.write_text(f"# Version Changes\n\n## {heading}\n\n- FIX: something\n\n## 5.0.0\n")
     tags = tmp_path / "tags.txt"
     tags.write_text(f"5.0.0\nv9.9.9\n{top_tag}\n5.10.0rc1\n")
-    args = ["--pyproject", str(pyproject), "--changelog", str(changelog), "--tags", str(tags)]
-    return [*args, "--bumped"] if bumped else args
+    return ["--pyproject", str(pyproject), "--changelog", str(changelog), "--tags", str(tags)]
 
 
 @pytest.mark.parametrize(
-    ("version", "heading", "top_tag", "bumped", "expected", "mismatches"),
+    ("version", "heading", "top_tag", "expected", "mismatches"),
     [
-        pytest.param("5.11.2", "5.11.2", "5.11.1", True, 0, 0, id="bumped-above-tag"),
-        pytest.param("5.10.9", "5.10.8", "5.10.9", True, 1, 2, id="heading-behind-and-version-at-tag"),
-        pytest.param("5.11.1", "5.11.1", "5.11.1", False, 0, 0, id="no-bump-at-tag"),
+        pytest.param("5.11.1", "5.11.1", "5.11.1", 0, 0, id="equal-to-tag"),
+        pytest.param("5.11.2", "5.11.2", "5.11.1", 0, 0, id="above-tag"),
+        pytest.param("5.11.0", "5.11.0", "5.11.1", 1, 1, id="below-tag"),
+        pytest.param("5.10.9", "5.10.8", "5.10.10", 1, 2, id="heading-behind-and-version-below-tag"),
     ],
 )
-def test_check_version(tmp_path, capsys, version, heading, top_tag, bumped, expected, mismatches):
-    assert check_version.main(_args(tmp_path, version, heading, top_tag, bumped)) == expected
+def test_check_version(tmp_path, capsys, version, heading, top_tag, expected, mismatches):
+    assert check_version.main(_args(tmp_path, version, heading, top_tag)) == expected
     out = capsys.readouterr().out
     assert out.count("MISMATCH") == mismatches
     if mismatches:
@@ -54,9 +54,7 @@ def test_check_version(tmp_path, capsys, version, heading, top_tag, bumped, expe
             "has no '## <version>' heading",
             id="no-heading",
         ),
-        pytest.param(
-            lambda d: (d / "tags.txt").write_text("v1.0.0\n1.0.0rc1\n"), "no bare-version tag", id="no-tag-when-bumped"
-        ),
+        pytest.param(lambda d: (d / "tags.txt").write_text("v1.0.0\n1.0.0rc1\n"), "no bare-version tag", id="no-tag"),
         pytest.param(lambda d: (d / "pyproject.toml").unlink(), "No such file", id="unreadable-pyproject"),
         pytest.param(
             lambda d: (d / "pyproject.toml").write_text("[project]\n"), "has no version line", id="no-version-line"
@@ -64,7 +62,7 @@ def test_check_version(tmp_path, capsys, version, heading, top_tag, bumped, expe
     ],
 )
 def test_a_check_that_cannot_run_exits_2_saying_why(tmp_path, capsys, break_it, reason):
-    args = _args(tmp_path, "5.11.2", "5.11.2", "5.11.1", True)
+    args = _args(tmp_path, "5.11.2", "5.11.2", "5.11.1")
     break_it(tmp_path)
     assert check_version.main(args) == 2
     out = capsys.readouterr().out
