@@ -76,7 +76,7 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
     wrap it in a :class:`~libera_utils.scene_identification.scene_definitions.SceneDefinition`, and pass it through
     the ``additional_scene_definitions_files`` argument of :meth:`FootprintData.identify_scenes` (or pass an explicit
     ``scene_definitions`` list). The CSV is the source of truth for the bins, which is what makes the classification
-    reconfigurable in an analysis context. TODO[LIBSDC-856]: expand this into fuller end-user documentation of the
+    reconfigurable in an analysis context. TODO[LIBSDC-857]: expand this into fuller end-user documentation of the
     custom-scene-definition workflow.
     """
     if scene_types is None:

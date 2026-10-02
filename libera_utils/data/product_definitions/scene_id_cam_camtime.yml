@@ -9,8 +9,7 @@ attributes:
 coordinates:
   # The product is defined on a 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid: each classified subsection is identified by the
   # combination of the time its image was taken (CAMERA_TIME) and which spatial subsection of that image it is
-  # (PSEUDOFOOTPRINT). Both are coordinates and every data variable hangs on both dimensions. The prose describing each
-  # axis lives in its `comment` attribute below so it travels with the written product.
+  # (PSEUDOFOOTPRINT).
   PSEUDOFOOTPRINT:
     dtype: int32
     dimensions: ["PSEUDOFOOTPRINT"]
