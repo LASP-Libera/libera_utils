@@ -23,7 +23,7 @@ CAMERA_PIXEL_COUNT_Y:
 # NOTE: A pseudo-footprint is a simulated radiometer-footprint location estimated from a collection of camera pixels --
 # i.e. the camera-pixel aggregation that stands in for a real radiometer footprint downstream (where e.g. ADMs are
 # applied). The exact camera-pixel-to-footprint definition is NOT finalized and will be specified by the camera science
-# team; revisit this description once that lands.
+# TODO[LIBSDC-856]: Finalize the exact camera-pixel-to-footprint definition with the camera science team; revisit this description.
 PSEUDOFOOTPRINT:
   long_name: >-
     Pseudo-footprint (image subsection) index within a single camera image: a simulated radiometer-footprint location
