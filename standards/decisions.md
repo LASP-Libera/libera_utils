@@ -27,16 +27,9 @@ disk and the second write clobbers the first. The registry key carries the instr
 the ProductID does not, so any ObsID asserted on both the radiometer and the camera needs
 its own pair of product identifiers. This is what the uniqueness invariant test guards.
 
-### libera_utils/D-003 · Ground CCSDS filename times are not data spans
+### libera_utils/D-003 · retired 2026-10-02
 
-_2026-09-09, PR #48 · **provisional · team input needed**_
-
-Question for the team: is the time in a ground CCSDS filename the bin start or the receipt time?
-
-The time fields in a ground capture's filename say nothing about the packets inside it, and
-under DITL they disagree with the data by years. Searchable data times come from File Metadata
-at ingest, never from the archive path. Any code that reads a time from a filename must say
-which of the two it means (T-010, T-011, T-012).
+The time in a ground CCSDS filename generated at LASP is the time the file was written, a fact rather than a decision, recorded in the shared glossary as T-012. Numbers are never reused.
 
 ### libera_utils/D-004 · The NOAA-20 SPICE configuration is test data, not shipped config
 
@@ -85,8 +78,9 @@ overwrite would destroy a granule someone still needs.
 
 _2026-08-05, PR libera_utils#41 review thread · shared D-004 until 2026-09-23_
 
-The package ships to PyPI. No internal Confluence or Jira URL, and no internal document
-content, goes into shipped source. Cite the document by name, say what it decides, and let
+The package ships to PyPI. No internal URL, meaning any Confluence or Jira URL on
+`lasp.colorado.edu` and anything on the DMZ, and no internal document content, goes into
+shipped source. Cite the document by name, say what it decides, and let
 the reader find it. This is also why links are not used as the pointer: Confluence links
 rot. The same posture applies to anything that would land under a public repository's
 `standards/`.
@@ -102,7 +96,8 @@ other way: "just change the typehint on `manual_ingest_data_products` to only ac
 policing it inside moves the failure later and states the contract in two places that drift.
 The corollary from pr-0012 is that the narrow type is usually a domain type the repository
 already owns — `LiberaDataProductFilename` rather than `str`, `PathType` where an `S3Path`
-can genuinely reach.
+can genuinely reach. The annotation is the baseline, and a check beside it is neither required
+nor rejected.
 
 ### libera_utils/D-008 · An error message says what went wrong and what to do next
 
@@ -120,3 +115,6 @@ and the other two sources do not do it. pr-0060 asked for an error telling the c
 must supply a tag rather than defaulting to `latest`. pr-0015 asked that a warning say which
 variables disagreed, and what the condition usually means — clock jamming. Neither names a
 reader; both say what happened and what to do about it.
+
+Re-raising the original exception is right when its message already says what went wrong and
+what to do. A standard exception is never wrapped in a custom type only to add a message.
