@@ -1,5 +1,15 @@
 # Version Changes
 
+## 5.12.0
+
+- BREAKING: Scene identification moved to the `libera_utils.scene_identification` package (import `scene_id` / `scene_definitions` from there).
+- FEAT: Add the SCENE-ID-CAM (radiometer timescale, written on `RADIOMETER_TIME`) and SCENE-ID-CAM-CAMTIME (camera timescale) algorithm runners — each with a product definition, Dockerfile, and a new `FootprintData.from_fmatch_cam` / `from_fmatch_cam_camtime` reader — sharing their manifest/dropbox plumbing via the single `scene_id_algorithm.py` runner engine (parameterized by a per-variant `SceneIdRunnerConfig`).
+- FEAT: SCENE-ID-CAM-CAMTIME stores one image subsection per record on the 2-D `(CAMERA_TIME, PSEUDOFOOTPRINT)` grid and passes the FMATCH footprint identifiers (camera time, pixel-index ranges, PSF bbox, boresight geolocation) straight through. `CAMERA_TIME` is a 1-D dimension coordinate (one entry per image) and `PSEUDOFOOTPRINT` a 0-based image-subsection index (an image is segmented into many, possibly overlapping, subsections that share its time).
+- FEAT: Add the `unfiltering` scene definition; default classifications are now TRMM, ERBE, and unfiltering. New `standard_scene_definitions` / `default_scene_definitions` helpers; `identify_scenes()` with no arguments uses the defaults.
+- FEAT: Scene identification now carries viewing geometry — `solar_zenith_angle`, `viewing_zenith_angle`, `relative_azimuth_angle` as classification variables with `scene_bin_{type}_{angle}_min/max` bounds. Bins currently span the full physical range (placeholder), so scene IDs are unchanged.
+- FEAT: `FootprintData.to_time_product()` (and the `to_radiometer_time_product()` wrapper) promote the observation-time variable to a coordinate and finalize the dataset on its per-footprint axis for writing.
+- TEST: Add integration tests for the SCENE-ID CAM-family runners (manifest-in/manifest-out plus strict product write).
+
 ## 5.11.1
 
 - FEAT: Add docker-compose entries for spice kernel making.
@@ -65,17 +75,6 @@
 - FEAT: WFOV SCI processing now raises `ValueError` when no complete image can be stitched. The raise happens before `ICIE__WFOV_DATA` is dropped, so the raw packets survive for diagnosis, and the message carries all stitch counters.
 - FIX: A structurally complete image whose 176-byte header cannot be decoded is now discarded and counted in `HeaderParseErrorCount`, rather than emitted with a `NaT` `CAMERA_TIME` that crashed filename generation. `CAMERA_TIME` is therefore always free of `NaT`.
 - FIX: `SINGLE`-flagged WFOV packets (whole image in one packet) are unsupported and were silently misattributed to window-edge truncation. They now log a warning and count toward `PacketCountNotUsedInImages`; a `SINGLE` mid-collection abandons the image in progress.
-
-<!-- TODO: placeholder version pending final stack version-bump policy (see #67) -->
-## 5.11.2
-
-- BREAKING: Scene identification moved to the `libera_utils.scene_identification` package (import `scene_id` / `scene_definitions` from there).
-- FEAT: Add the SCENE-ID-CAM (radiometer timescale, written on `RADIOMETER_TIME`) and SCENE-ID-CAM-CAMTIME (camera timescale) algorithm runners — each with a product definition, Dockerfile, and a new `FootprintData.from_fmatch_cam` / `from_fmatch_cam_camtime` reader — sharing their manifest/dropbox plumbing via the single `scene_id_algorithm.py` runner engine (parameterized by a per-variant `SceneIdRunnerConfig`).
-- FEAT: SCENE-ID-CAM-CAMTIME stores one image subsection per record on the 2-D `(CAMERA_TIME, PSEUDOFOOTPRINT)` grid and passes the FMATCH footprint identifiers (camera time, pixel-index ranges, PSF bbox, boresight geolocation) straight through. `CAMERA_TIME` is a 1-D dimension coordinate (one entry per image) and `PSEUDOFOOTPRINT` a 0-based image-subsection index (an image is segmented into many, possibly overlapping, subsections that share its time).
-- FEAT: Add the `unfiltering` scene definition; default classifications are now TRMM, ERBE, and unfiltering. New `standard_scene_definitions` / `default_scene_definitions` helpers; `identify_scenes()` with no arguments uses the defaults.
-- FEAT: Scene identification now carries viewing geometry — `solar_zenith_angle`, `viewing_zenith_angle`, `relative_azimuth_angle` as classification variables with `scene_bin_{type}_{angle}_min/max` bounds. Bins currently span the full physical range (placeholder), so scene IDs are unchanged.
-- FEAT: `FootprintData.to_time_product()` (and the `to_radiometer_time_product()` wrapper) promote the observation-time variable to a coordinate and finalize the dataset on its per-footprint axis for writing.
-- TEST: Add integration tests for the SCENE-ID CAM-family runners (manifest-in/manifest-out plus strict product write).
 
 ## 5.10.4
 
