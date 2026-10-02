@@ -9,6 +9,7 @@ import xarray as xr
 
 from libera_utils.config import config
 from libera_utils.scene_identification.scene_definitions import Scene, SceneDefinition
+from libera_utils.scene_identification.scene_id import FootprintData, FootprintVariables
 
 
 class TestScene:
@@ -398,3 +399,73 @@ class TestIdentifyAndUpdateGrid:
         np.testing.assert_array_equal(scene_ids.values, np.array([[1, 2], [2, 1]], dtype=np.uint8))
         # The passthrough variable is carried through untouched.
         assert updated["camera_pixel_x_min"].dims == grid_dims
+
+
+class TestSceneDefinitionValidation:
+    """Tests for scene definition validation and coverage."""
+
+    def test_overlapping_scenes_detection(self, tmp_path):
+        """Test detection of overlapping scene definitions."""
+        # Create overlapping scene definitions
+        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+1,0.0,60.0,0.0,10.0
+2,40.0,100.0,0.0,10.0
+3,0.0,50.0,5.0,15.0
+4,50.0,100.0,5.0,15.0
+"""
+        csv_file = tmp_path / "overlapping_scenes.csv"
+        csv_file.write_text(csv_content)
+
+        # This should log warnings about overlaps
+        with pytest.raises(ValueError, match="Overlapping scenes detected:"):
+            SceneDefinition(csv_file)
+
+    def test_gap_in_coverage_detection(self, tmp_path):
+        """Test detection of gaps in scene definition coverage."""
+        # Create scene definitions with gaps
+        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+1,0.0,30.0,0.0,10.0
+2,70.0,100.0,0.0,10.0
+3,0.0,30.0,20.0,50.0
+4,70.0,100.0,20.0,50.0
+"""
+        csv_file = tmp_path / "gap_scenes.csv"
+        csv_file.write_text(csv_content)
+
+        with pytest.raises(ValueError, match="Incomplete coverage detected."):
+            SceneDefinition(csv_file)
+
+    def test_unbounded_scene_definitions(self, tmp_path):
+        """Test scene definitions with unbounded ranges."""
+        # Create scenes with unbounded min/max values using very large numbers
+        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+1,0.0,50.0,0.0,10.0
+2,50.0,100.0,0.0,10.0
+3,0.0,50.0,10.0,9999999.0
+4,50.0,100.0,10.0,9999999.0
+"""
+        csv_file = tmp_path / "unbounded_scenes.csv"
+        csv_file.write_text(csv_content)
+
+        scene_def = SceneDefinition(csv_file)
+
+        # Create data with very large optical depth values
+        data = xr.Dataset(
+            {
+                str(FootprintVariables.CLEAR_AREA): (["footprint"], [75.0, 25.0, 75.0]),
+                str(FootprintVariables.OPTICAL_DEPTH_LOWER): (["footprint"], [5.0, 100.0, 10000.0]),
+                str(FootprintVariables.OPTICAL_DEPTH_UPPER): (["footprint"], [5.0, 200.0, 50000.0]),
+                str(FootprintVariables.CLOUD_FRACTION_LOWER): (["footprint"], [12.5, 37.5, 12.5]),
+                str(FootprintVariables.CLOUD_FRACTION_UPPER): (["footprint"], [12.5, 37.5, 12.5]),
+            }
+        )
+
+        footprint_data = FootprintData(data)
+        footprint_data.identify_scenes([scene_def])
+
+        scene_ids = footprint_data._data[f"scene_id_{scene_def.type}"].values
+
+        # All should be classified
+        assert scene_ids[0] == 1  # cloud=25%, optical=5
+        assert scene_ids[1] == 4  # cloud=75%, optical=150 (high but within "unbounded" range)
+        assert scene_ids[2] == 3  # cloud=25%, optical=30000 (very high but within "unbounded" range)
