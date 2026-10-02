@@ -67,6 +67,17 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
     ------
     ValueError
         If a requested scene type is not a known standard definition.
+
+    Notes
+    -----
+    These are only the definitions shipped with libera_utils. A user can supply a *custom* scene definition without
+    editing library code: build a CSV with the same column layout as the shipped definitions in
+    ``libera_utils/data/scene_definitions/`` (``scene_id`` plus ``<variable>_min`` / ``<variable>_max`` columns),
+    wrap it in a :class:`~libera_utils.scene_identification.scene_definitions.SceneDefinition`, and pass it through
+    the ``additional_scene_definitions_files`` argument of :meth:`FootprintData.identify_scenes` (or pass an explicit
+    ``scene_definitions`` list). The CSV is the source of truth for the bins, which is what makes the classification
+    reconfigurable in an analysis context. TODO[LIBSDC-856]: expand this into fuller end-user documentation of the
+    custom-scene-definition workflow.
     """
     if scene_types is None:
         scene_types = list(STANDARD_SCENE_DEFINITION_CONFIG_KEYS)

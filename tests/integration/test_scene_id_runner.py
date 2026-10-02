@@ -6,24 +6,19 @@ write (which is not covered by the algorithm-level tests in ``test_scene_id.py``
 is the guard that the SCENE-ID product definitions can be written under ``strict=True`` conformance.
 """
 
-from datetime import UTC, datetime
-
 import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
 from libera_utils.scene_identification.scene_id_algorithm import (
     RUNNER_CONFIGS,
-    collect_input_files,
     create_and_write_data_product,
     run_scene_identification,
 )
+from libera_utils.version import version
 
 pytestmark = pytest.mark.integration
 
@@ -51,22 +46,12 @@ def create_and_write_data_product_cam_camtime(footprint_data, input_file_name, o
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
 
-def _libera_product_name(product_id: DataProductIdentifier) -> str:
-    """Build a valid Libera data-product filename string for the given product id."""
-    return LiberaDataProductFilename.from_filename_parts(
-        product_name=product_id,
-        version="V1-0-0",
-        utc_start=datetime(2023, 1, 1, tzinfo=UTC),
-        utc_end=datetime(2023, 1, 1, 23, 59, 59, tzinfo=UTC),
-    ).path.name
-
-
 class TestSceneIdCamWrite:
     """The CAM runner must produce a conformant SCENE-ID-CAM product with only declared variables."""
 
-    def test_write_data_product_is_conformant(self, test_scene_id, tmp_path):
+    def test_write_data_product_is_conformant(self, scene_id_test_data_path, tmp_path):
         """A full run + write succeeds under strict conformance and re-opens."""
-        input_path = test_scene_id / SSF_INPUT_NAME
+        input_path = scene_id_test_data_path / SSF_INPUT_NAME
         footprint_data = run_scene_identification_cam(input_path)
 
         # create_and_write_data_product_cam writes with strict=True; if the product definition and dataset are not
@@ -77,11 +62,12 @@ class TestSceneIdCamWrite:
         reopened = xr.open_dataset(output_file.path)
         # Provenance attributes set by the runner survive the round trip.
         assert reopened.attrs["InputGranules"] == input_path.name
-        assert reopened.attrs["algorithm_version"] == "0.1.0"
+        # algorithm_version is sourced from the installed libera_utils version.
+        assert reopened.attrs["algorithm_version"] == version()
 
-    def test_written_product_has_no_undeclared_variables(self, test_scene_id, tmp_path):
+    def test_written_product_has_no_undeclared_variables(self, scene_id_test_data_path, tmp_path):
         """Intermediate FootprintData inputs must not leak into the written product."""
-        input_path = test_scene_id / SSF_INPUT_NAME
+        input_path = scene_id_test_data_path / SSF_INPUT_NAME
         footprint_data = run_scene_identification_cam(input_path)
         output_file = create_and_write_data_product_cam(footprint_data, input_path.name, tmp_path)
 
@@ -97,73 +83,33 @@ class TestSceneIdCamWrite:
             assert leaked not in reopened.variables
 
 
-class TestCollectInputFiles:
-    """collect_input_files selects the right manifest entries by product id."""
-
-    # Manifest records must be absolute paths; the runner keys off the filename (basename) when parsing.
-    _INPUT_DIR = "/dropbox/inputs"
-
-    def _manifest(self, *filenames: str) -> Manifest:
-        # collect_input_files selects purely by filename, so records need no real files;
-        # a placeholder checksum satisfies the required field (cf. test_manifest.py validation cases).
-        return Manifest(
-            manifest_type=ManifestType.INPUT,
-            files=[{"filename": f"{self._INPUT_DIR}/{name}", "checksum": "fakesum"} for name in filenames],
-        )
-
-    def test_product_mode_keeps_only_matching_product(self):
-        """In Libera-product mode only files with the configured product id are kept."""
-        wanted = _libera_product_name(DataProductIdentifier.aux_fmatch_cam_camtime)
-        other = _libera_product_name(DataProductIdentifier.l1b_rad)
-        manifest = self._manifest(wanted, other, SSF_INPUT_NAME)
-
-        selected = collect_input_files(manifest, DataProductIdentifier.aux_fmatch_cam_camtime)
-
-        assert selected == [f"{self._INPUT_DIR}/{wanted}"]
-
-
 class TestToTimeProduct:
-    """FootprintData.to_time_product prepares the dataset for writing on its time axis."""
+    """FootprintData.to_time_product prepares the dataset for writing on its time axis.
 
-    def test_promotes_time_and_adds_quality_flag(self, test_scene_id):
+    The error-path and the FMATCH not-implemented-reader checks are pure-logic unit tests and live in
+    ``tests/unit/test_scene_id.py`` / ``tests/unit/test_scene_id_algorithm.py``; this integration case runs the real
+    CAM runner on real data.
+    """
+
+    def test_promotes_time_and_adds_quality_flag(self, scene_id_test_data_path):
         """to_time_product promotes the named time variable to a coordinate and adds a Quality_Flag.
 
         Runs the real CAM runner to get a populated FootprintData, converts it on RADIOMETER_TIME,
         and asserts the time variable is now a coordinate and a Quality_Flag data variable was added.
         """
-        footprint_data = run_scene_identification_cam(test_scene_id / SSF_INPUT_NAME)
+        footprint_data = run_scene_identification_cam(scene_id_test_data_path / SSF_INPUT_NAME)
         product = footprint_data.to_time_product("RADIOMETER_TIME")
 
         assert "RADIOMETER_TIME" in product.coords
         assert "Quality_Flag" in product.data_vars
 
-    def test_missing_time_variable_raises(self):
-        """to_time_product raises when the requested time variable is absent from the dataset.
-
-        Builds a FootprintData whose dataset has the RADIOMETER_TIME dimension but no RADIOMETER_TIME
-        variable, then asserts to_time_product raises ValueError naming the missing variable.
-        """
-        footprint_data = FootprintData(xr.Dataset({"cloud_fraction": ("RADIOMETER_TIME", [1.0, 2.0])}))
-        with pytest.raises(ValueError, match="RADIOMETER_TIME"):
-            footprint_data.to_time_product("RADIOMETER_TIME")
-
-
-class TestFmatchReaders:
-    """The operational FMATCH readers are not implemented yet."""
-
-    def test_from_fmatch_cam_not_implemented(self, tmp_path):
-        """from_fmatch_cam is a not-yet-implemented stub: calling it raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            FootprintData.from_fmatch_cam(tmp_path / "fmatch.nc")
-
-    def test_from_fmatch_cam_camtime_not_implemented(self, tmp_path):
-        """from_fmatch_cam_camtime is a not-yet-implemented stub: calling it raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            FootprintData.from_fmatch_cam_camtime(tmp_path / "fmatch.nc")
-
 
 def _synthetic_camtime_footprint_data() -> FootprintData:
     """Build a small CAM-CAMTIME FootprintData on the 2-D ``(CAMERA_TIME, PSEUDOFOOTPRINT)`` grid.
+
+    TODO[LIBSDC-855]: this is synthetic input standing in for a real FMATCH-CAM-CAMTIME product, so the CAM-CAMTIME
+    write tests below behave as unit tests. Replace it with a real FMATCH-CAM-CAMTIME fixture (and a true manifest-in /
+    product-out end-to-end run) once the ``FootprintData.from_fmatch_cam_camtime`` reader is implemented.
 
     Mirrors the raw inputs the (unimplemented) FMATCH-CAM-CAMTIME reader will supply: the scene-property inputs the
     pipeline derives ``surface_type``/``cloud_fraction`` from, the viewing angles, the boresight geolocation + PSF

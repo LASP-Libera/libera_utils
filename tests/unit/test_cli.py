@@ -7,6 +7,7 @@ import pytest
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.scene_identification import scene_id_algorithm
 
 
 @pytest.mark.parametrize(("cli_args", "parsed"), [(["--version"], argparse.Namespace(func=cli.print_version_info))])
@@ -55,14 +56,14 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
         (
             ["scene-id", "cam", "file.manifest"],
             argparse.Namespace(
-                func=cli.scene_id_cam_cli_handler,
+                func=scene_id_algorithm.scene_id_cam_cli_handler,
                 manifest="file.manifest",
             ),
         ),
         (
             ["scene-id", "cam-camtime", "file.manifest"],
             argparse.Namespace(
-                func=cli.scene_id_cam_camtime_cli_handler,
+                func=scene_id_algorithm.scene_id_cam_camtime_cli_handler,
                 manifest="file.manifest",
             ),
         ),
