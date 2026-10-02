@@ -69,7 +69,7 @@ libera-utils = 'libera_utils.cli:main'
 
 [tool.poetry]
 # Only this directory reaches the wheel. Carries retired rule R-008 (test scaffolding does not
-# ship); standards/README.md's "Archived" section points at its reasoning.
+# ship); its entry in standards/review-rules.md points at its reasoning.
 packages = [
     { include = "libera_utils" }
 ]

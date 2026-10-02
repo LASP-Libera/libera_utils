@@ -11,8 +11,9 @@ decision: a rule may implement one when it says what a diff must show and names 
 its evidence line, as R-011, R-014, R-015 and R-016 do. It becomes established on
 two merged pull requests by two authors; a provisional rule retires at the expiry unless
 established. No rule becomes established on authorship until the first revision records it,
-since authors were not recorded at the harvest.
-Tiers, statuses, retirement and graduation are in `standards/README.md`.
+since authors were not recorded at the harvest. A rule's wording is two to four lines.
+How a rule is admitted, graduates and retires is the tooling's documentation, not this
+repository's.
 
 ---
 
@@ -81,7 +82,7 @@ behind a feature flag that the changelog names.
 
 ### R-008 · Test scaffolding does not ship in the package — **retired 2026-09-19**
 
-tier: — · status: retired · reasoning: `standards/README.md` "Archived" → `archive/libera_utils/R-008.md`
+tier: — · status: retired · reasoning: shared `archive/libera_utils/R-008.md`
 
 Retired at the second harvest: the wider sample found it once, against three times for R-015,
 and a configuration line could carry it instead. The concern is real and has not gone away; it
@@ -151,7 +152,7 @@ public URL, such as NAIF or the CERES documentation.
 
 ### R-015 · The annotation says what the code actually accepts
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012 (seven requests to take `LiberaDataProductFilename` rather than `str`, and `PathType` where an `S3Path` can reach), pr-0028 (narrowing the annotation to a local `Path` or `str` was chosen over rejecting cloud paths at runtime), pr-0060 · implements `libera_utils/D-007`
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012 (seven requests to take `LiberaDataProductFilename` rather than `str`, and `PathType` where an `S3Path` can reach), pr-0028 (narrowing the annotation to a local `Path` or `str` was chosen over rejecting cloud paths at runtime), pr-0060 · rewritten 2026-09-22, 2026-09-23 · archive/libera_utils/R-015.md · implements `libera_utils/D-007`
 
 Wording: [R-015 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-015--the-annotation-says-what-the-code-actually-accepts)
 
