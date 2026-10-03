@@ -7,7 +7,6 @@ is the guard that the SCENE-ID product definitions can be written under ``strict
 """
 
 import numpy as np
-import pytest
 import xarray as xr
 
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -180,4 +179,3 @@ class TestSceneIdCamCamtimeWrite:
         # Inclusive (min, max): the max endpoint is never below the min, elementwise across the grid.
         assert bool(np.all(reopened["camera_pixel_x_max"].values >= reopened["camera_pixel_x_min"].values))
         assert bool(np.all(reopened["camera_pixel_y_max"].values >= reopened["camera_pixel_y_min"].values))
-

@@ -21,7 +21,6 @@ and forward it to :func:`run_algorithm`; a new SCENE-ID variant is one config pl
 import argparse
 import logging
 import os
-import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,13 +29,12 @@ from pathlib import Path
 import numpy as np
 from cloudpathlib import AnyPath, S3Path
 
-from libera_utils import Manifest, smart_copy_file
+from libera_utils import Manifest
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
-from libera_utils.io.smart_open import is_s3
 from libera_utils.logutil import configure_task_logging
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
@@ -75,7 +73,7 @@ class SceneIdRunnerConfig:
 
     input_product_id: DataProductIdentifier | None
     output_product_id: DataProductIdentifier
-    reader: Callable[[Path], FootprintData]
+    reader: Callable[[str | Path | S3Path], FootprintData]
     product_definition_path: Path
     time_variable: str
     scene_types: list[str]
@@ -312,17 +310,16 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
 
     Notes
     -----
-    The reader (:meth:`FootprintData.from_ceres_ssf` / :meth:`FootprintData.from_fmatch_cam_camtime`) reads the file
-    with :func:`xarray.open_dataset`, which we point at a real local file. When the input lives in S3 we first
-    materialize it to a local temporary file; local inputs are read in place with no copy.
+    The reader (:meth:`FootprintData.from_ceres_ssf` / :meth:`FootprintData.from_fmatch_cam_camtime`) opens the file
+    through :func:`~libera_utils.io.smart_open.smart_open`, so local and S3 inputs are handled uniformly with no
+    manual download or temporary-file materialization.
     """
-    with _as_local_path(fmatch_file_path) as local_fmatch_path:
-        logger.info("Running scene identification on %s", local_fmatch_path)
-        footprint_data = config.reader(local_fmatch_path)
-        # Run the configured classifications (CAM runs ERBE and unfiltering, not the default full set which also
-        # includes TRMM). With report_bin_bounds=True (the default), the property-bin bounds of each matched scene are
-        # also recorded. Both scene IDs and their bin bounds are part of the SCENE-ID product definition.
-        footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(config.scene_types))
+    logger.info("Running scene identification on %s", fmatch_file_path)
+    footprint_data = config.reader(fmatch_file_path)
+    # Run the configured classifications (CAM runs ERBE and unfiltering, not the default full set which also
+    # includes TRMM). With report_bin_bounds=True (the default), the property-bin bounds of each matched scene are
+    # also recorded. Both scene IDs and their bin bounds are part of the SCENE-ID product definition.
+    footprint_data.identify_scenes(scene_definitions=standard_scene_definitions(config.scene_types))
     return footprint_data
 
 
@@ -395,29 +392,3 @@ def create_and_write_data_product(
     )
     logger.info(f"Wrote data product to {output_file_path.path}")
     return output_file_path
-
-
-class _as_local_path:
-    """Context manager yielding a local filesystem path for a possibly-remote input file.
-
-    Reading an input product with :func:`xarray.open_dataset` requires a real local file. For S3 inputs we download to
-    a temporary directory that is cleaned up on exit; local inputs are yielded unchanged (no copy).
-    """
-
-    def __init__(self, source_path: str | Path | S3Path):
-        self._source_path = AnyPath(source_path)
-        self._tempdir: tempfile.TemporaryDirectory | None = None
-
-    def __enter__(self) -> Path:
-        if is_s3(self._source_path):
-            # Materialize the S3 object locally so netCDF4 can open it.
-            self._tempdir = tempfile.TemporaryDirectory()
-            local_path = Path(self._tempdir.name) / self._source_path.name
-            smart_copy_file(self._source_path, local_path)
-            return local_path
-        # Already local; hand back a plain pathlib.Path.
-        return Path(str(self._source_path))
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        if self._tempdir is not None:
-            self._tempdir.cleanup()
