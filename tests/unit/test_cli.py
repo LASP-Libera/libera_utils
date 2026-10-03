@@ -7,6 +7,7 @@ import pytest
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.scene_identification import scene_id_algorithm
 
 
 @pytest.mark.parametrize(("cli_args", "parsed"), [(["--version"], argparse.Namespace(func=cli.print_version_info))])
@@ -43,6 +44,34 @@ def test_parse_cli_args(cli_args, parsed):
 def test_make_kernel_parse_cli_args(cli_args, parsed):
     """
     Test that cli args are parsed properly
+    """
+    print(f"CLI ARGS \n{cli_args}\n")
+    print(f"Parsed args: {parsed} \n")
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["scene-id", "cam", "file.manifest"],
+            argparse.Namespace(
+                func=scene_id_algorithm.scene_id_cam_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+        (
+            ["scene-id", "cam-camtime", "file.manifest"],
+            argparse.Namespace(
+                func=scene_id_algorithm.scene_id_cam_camtime_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+    ],
+)
+def test_scene_id_parse_cli_args(cli_args, parsed):
+    """
+    Test that scene-id cli args are parsed properly
     """
     print(f"CLI ARGS \n{cli_args}\n")
     print(f"Parsed args: {parsed} \n")
@@ -393,3 +422,29 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
 def test_wrong_libera_ids(cli_args):
     with pytest.raises(SystemExit):
         cli.parse_cli_args(cli_args)
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "config_key"),
+    [
+        (["scene-id", "cam", "file.manifest"], "cam"),
+        (["scene-id", "cam-camtime", "file.manifest"], "cam-camtime"),
+    ],
+)
+def test_scene_id_cli_dispatch(cli_args, config_key, monkeypatch):
+    """Each scene-id subcommand dispatches to ``run_algorithm`` with the parsed args and its registry config."""
+    from libera_utils.scene_identification import scene_id_algorithm
+
+    called_with = {}
+    monkeypatch.setattr(
+        scene_id_algorithm,
+        "run_algorithm",
+        lambda parsed_args, config: called_with.update(args=parsed_args, config=config),
+    )
+
+    args = cli.parse_cli_args(cli_args)
+    args.func(args)
+
+    assert called_with["args"] is args
+    assert called_with["args"].manifest == "file.manifest"
+    assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[config_key]

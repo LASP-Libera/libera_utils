@@ -6,6 +6,7 @@ from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
 
 
@@ -67,6 +68,24 @@ def parse_cli_args(cli_args: list):
     azel_kernel_parser.set_defaults(func=kernel_maker.azel_kernel_cli_handler)
     azel_kernel_parser.add_argument("input_manifest", type=str, help="path to input manifest file")
     azel_kernel_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
+
+    # ========
+    # Scene ID
+    # ========
+    scene_id_parser = subparsers.add_parser("scene-id", help="run a Libera SCENE-ID algorithm from a manifest file")
+    scene_id_subparsers = scene_id_parser.add_subparsers(description="sub-commands for scene-id sub-command")
+
+    scene_id_cam_parser = scene_id_subparsers.add_parser(
+        "cam", help="run the SCENE-ID-CAM algorithm (radiometer timescale) from a manifest file"
+    )
+    scene_id_cam_parser.set_defaults(func=scene_id_algorithm.scene_id_cam_cli_handler)
+    scene_id_cam_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+
+    scene_id_cam_camtime_parser = scene_id_subparsers.add_parser(
+        "cam-camtime", help="run the SCENE-ID-CAM-CAMTIME algorithm (camera timescale) from a manifest file"
+    )
+    scene_id_cam_camtime_parser.set_defaults(func=scene_id_algorithm.scene_id_cam_camtime_cli_handler)
+    scene_id_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
     # AWS CLI TOOLS

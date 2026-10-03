@@ -9,6 +9,13 @@ import xarray as xr
 
 logger = logging.getLogger(__name__)
 
+# Storage dtype for each classification variable's property-bin bounds (the scene_bin_{type}_{variable}_min/max
+# variables from _compute_property_bins). surface_type is a categorical code, stored as uint8; other (continuous)
+# variables use float32. There is no fill value: unbounded/unmatched sides are NaN for floats and 0 for ints, and
+# scene_id == 0 is the authoritative unmatched flag consumers key off.
+_BIN_BOUND_DTYPES: dict[str, type] = {"surface_type": np.uint8}
+_DEFAULT_BIN_BOUND_DTYPE: type = np.float32
+
 
 @dataclass
 class Scene:
@@ -226,7 +233,7 @@ class SceneDefinition:
         """
         variable_names = set()
         for col in columns:
-            if "_id" in col:
+            if "scene_id" in col:
                 continue
 
             # Remove _min or _max suffix to get variable name
@@ -312,9 +319,12 @@ class SceneDefinition:
         """
         self._validate_footprint_data_columns_present(data)
 
-        # Get dimensions and shape
-        dims = list(data.sizes.keys())
-        shape = tuple(data.sizes[dim] for dim in dims)
+        # Derive the mask shape from a classification variable, not data.sizes, so it matches the classification
+        # variables' own shape (1-D footprint axis for radiometer-timescale, 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) for
+        # camera-timescale) and unrelated passthrough variables don't distort it.
+        reference_variable = data[self.classification_variables[0]]
+        dims = list(reference_variable.dims)
+        shape = reference_variable.shape
 
         # Vectorized scene identification with chunking
         scene_ids = self._identify_vectorized(data, shape)
@@ -383,25 +393,41 @@ class SceneDefinition:
         -------
         dict of str to np.ndarray
             Mapping of output variable name (``scene_bin_{type}_{variable}_min``
-            / ``_max``) to a float64 array the same shape as ``scene_ids``.
-            Unbounded bin sides and unmatched footprints are filled with NaN.
+            / ``_max``) to an array the same shape as ``scene_ids``. Continuous
+            variables use ``float32`` with ``NaN`` marking an unbounded bin side
+            or an unmatched footprint; ``surface_type`` uses a compact ``uint8``
+            left at ``0`` for those cases (scene_id 0 flags the unmatched case).
         """
         scene_type = self.type.lower()
         bin_arrays: dict[str, np.ndarray] = {}
 
         max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
+        # scene_ids may be a narrow unsigned integer dtype (see _identify_vectorized); widen a copy to the platform
+        # index type so it can be used to fancy-index the per-scene lookup arrays below.
         scene_ids_int = scene_ids.astype(np.intp, copy=False)
 
         for var_name in self.classification_variables:
-            min_by_id = np.full(max_scene_id + 1, np.nan, dtype=np.float64)
-            max_by_id = np.full(max_scene_id + 1, np.nan, dtype=np.float64)
+            dtype = _BIN_BOUND_DTYPES.get(var_name, _DEFAULT_BIN_BOUND_DTYPE)
+            is_float = np.issubdtype(np.dtype(dtype), np.floating)
+
+            # Float bounds use NaN for an unbounded side. Integer bounds can't hold NaN, so an unbounded side of a
+            # matched scene is clamped to the variable's global range instead (unambiguous for a categorical code).
+            # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, 0 for ints.
+            if is_float:
+                min_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
+                max_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
+                unbounded_min = unbounded_max = np.nan
+            else:
+                min_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
+                max_by_id = np.zeros(max_scene_id + 1, dtype=dtype)
+                global_min, global_max = self._compute_global_bounds([var_name])[var_name]
+                unbounded_min = 0 if global_min is None else global_min
+                unbounded_max = 0 if global_max is None else global_max
 
             for scene in self.scenes:
                 min_val, max_val = scene.get_bin_bounds(var_name)
-                if min_val is not None:
-                    min_by_id[scene.scene_id] = min_val
-                if max_val is not None:
-                    max_by_id[scene.scene_id] = max_val
+                min_by_id[scene.scene_id] = unbounded_min if min_val is None else min_val
+                max_by_id[scene.scene_id] = unbounded_max if max_val is None else max_val
 
             bin_arrays[f"scene_bin_{scene_type}_{var_name}_min"] = min_by_id[scene_ids_int]
             bin_arrays[f"scene_bin_{scene_type}_{var_name}_max"] = max_by_id[scene_ids_int]
@@ -410,8 +436,12 @@ class SceneDefinition:
 
     def _identify_vectorized(self, data: xr.Dataset, shape: tuple[int, ...]) -> np.ndarray:
         """Vectorized scene identification using numpy arrays."""
-        # Initialize scene_ids with zeros
-        scene_ids = np.zeros(shape, dtype=np.int32)
+        # scene_ids: 0 = unmatched, positive = a scene. Sized to the narrowest unsigned int holding this
+        # definition's largest scene_id (uint8 for ERBE/unfiltering IDs 1-11; uint16 for TRMM's IDs up to 650).
+        # Sizing to the data avoids OverflowError under NEP 50, where np.where's scalar adopts the array dtype. The
+        # values are only small labels, widened to np.intp before indexing in _compute_property_bins, so this is safe.
+        max_scene_id = max((scene.scene_id for scene in self.scenes), default=0)
+        scene_ids = np.zeros(shape, dtype=np.min_scalar_type(max_scene_id))
 
         # For each scene, create a mask and assign IDs
         for scene in self.scenes:
@@ -423,13 +453,15 @@ class SceneDefinition:
                 min_val, max_val = scene.variable_ranges[var_name]
                 var_data = data[var_name].values  # Get numpy array from xarray
 
+                # A NaN classification value never matches any scene, so ~is_nan leaves such
+                # footprints unmatched (scene ID 0), consistent with Scene.matches().
                 is_nan = np.isnan(var_data)
-                var_mask = np.ones(shape, dtype=bool)
+                var_mask = ~is_nan
 
                 if min_val is not None:
-                    var_mask &= (var_data >= min_val) | is_nan
+                    var_mask &= var_data >= min_val
                 if max_val is not None:
-                    var_mask &= (var_data < max_val) | is_nan
+                    var_mask &= var_data < max_val
 
                 mask &= var_mask
 
