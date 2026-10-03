@@ -14,9 +14,11 @@ from dataclasses import dataclass
 import netCDF4 as nc
 import numpy as np
 import xarray as xr
+from cloudpathlib import S3Path
 from numpy.typing import NDArray
 
 from libera_utils.config import config
+from libera_utils.io.smart_open import smart_open
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
 logger = logging.getLogger(__name__)
@@ -717,7 +719,7 @@ class FootprintData:
         self._data = data
 
     @classmethod
-    def from_ceres_ssf(cls, ssf_path: pathlib.Path):
+    def from_ceres_ssf(cls, ssf_path: str | pathlib.Path | S3Path):
         """Process SSF (Single Scanner Footprint) and camera data to identify scenes.
 
         Reads CERES SSF data, extracts relevant variables, calculates derived fields, and identifies scene
@@ -725,9 +727,8 @@ class FootprintData:
 
         Parameters
         ----------
-        ssf_path : pathlib.Path
-            Path to the SSF NetCDF file (CeresSSFNOAA20FM6Ed1C format)
-
+        ssf_path : str | pathlib.Path | cloudpathlib.S3Path
+            Path (local or S3) to the SSF NetCDF file (CeresSSFNOAA20FM6Ed1C format).
         Returns
         -------
         FootprintData
@@ -758,8 +759,9 @@ class FootprintData:
         >>> footprint_data.identify_scenes()
         """
         try:
-            with nc.Dataset(ssf_path) as file:
-                extracted_data = cls._extract_data_from_CeresSSFNOAA20FM6Ed1C(file)
+            with smart_open(ssf_path) as file_handle:
+                with nc.Dataset(pathlib.Path(str(ssf_path)).name, memory=file_handle.read()) as file:
+                    extracted_data = cls._extract_data_from_CeresSSFNOAA20FM6Ed1C(file)
         except FileNotFoundError:
             raise FileNotFoundError(f"Unable to parse input file: {ssf_path}")
         footprint_data = cls(extracted_data)
