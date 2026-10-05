@@ -1,11 +1,12 @@
 """SCENE-ID algorithm runners for the Libera radiometer.
 
-This module is the single home for every SCENE-ID runner. The radiometer-timescale (``SCENE-ID-CAM``) and
-camera-timescale (``SCENE-ID-CAM-CAMTIME``) products are structurally identical: read an input manifest, keep the
-input files of a particular product, run scene identification on each footprint, write the resulting SCENE-ID
-product, and emit an output manifest. They differ only by a handful of parameters:
+This module is the single home for every SCENE-ID runner. The radiometer-timescale
+(``SCENE-ID-CAM``, ``SCENE-ID-IMAGER``, ``SCENE-ID-IMAGER-FLASH``) and camera-timescale
+(``SCENE-ID-CAM-CAMTIME``, ``SCENE-ID-IMAGER-CAMTIME``) products are structurally identical: read an input
+manifest, keep the FMATCH input files of a particular product, run scene identification on each footprint, write
+the resulting SCENE-ID product, and emit an output manifest. They differ only by a handful of parameters:
 
-* which product id counts as an input (``FMATCH-CAM-CAMTIME``, or ``None`` for the CERES SSF placeholder CAM uses),
+* which FMATCH product id counts as an input (``FMATCH-CAM`` vs ``FMATCH-CAM-CAMTIME`` etc.),
 * which :class:`~libera_utils.scene_identification.FootprintData` factory reads it,
 * which product-definition YAML / time variable the output is written against,
 * which scene classifications are run, and
@@ -13,9 +14,10 @@ product, and emit an output manifest. They differ only by a handful of parameter
 
 Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
 :func:`run_algorithm` and is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
-the :data:`SceneIdRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed by their CLI subcommand name
-(``"cam"``, ``"cam-camtime"``). The ``libera-utils scene-id <sub>`` CLI handlers select a config from that registry
-and forward it to :func:`run_algorithm`; a new SCENE-ID variant is one config plus one registry entry, no new module.
+the five :data:`SceneIdRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed by their CLI subcommand
+name (``"cam"``, ``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``, ``"imager-flash"``). The
+``libera-utils scene-id <sub>`` CLI handlers select a config from that registry and forward it to
+:func:`run_algorithm`; a new SCENE-ID variant is one config plus one registry entry, no new module.
 """
 
 import argparse
@@ -30,7 +32,6 @@ import numpy as np
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils import Manifest
-from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
@@ -42,6 +43,9 @@ from libera_utils.version import version
 
 logger = logging.getLogger(__name__)
 
+# Directory holding the SCENE-ID product-definition YAMLs inside the installed libera_utils package.
+_PRODUCT_DEF_DIR = Path(__import__("libera_utils").__file__).parent / "data" / "product_definitions"
+
 
 @dataclass(frozen=True)
 class SceneIdRunnerConfig:
@@ -49,11 +53,9 @@ class SceneIdRunnerConfig:
 
     Attributes
     ----------
-    input_product_id : DataProductIdentifier or None
-        The Libera product id that counts as an input for this runner (e.g. ``aux_fmatch_cam_camtime``). Files with
-        any other product id (or unparsable names) are skipped. Pass ``None`` for the placeholder mode used by
-        SCENE-ID-CAM today, where the input is a raw CERES SSF file that is *not* a Libera product: in that mode the
-        runner keeps exactly the manifest files that do **not** parse as a Libera product filename. See
+    input_product_id : DataProductIdentifier
+        The Libera product id that counts as an input for this runner (e.g. ``aux_fmatch_cam`` or
+        ``aux_fmatch_cam_camtime``). Files with any other product id (or unparsable names) are skipped. See
         :func:`collect_input_files`.
     output_product_id : DataProductIdentifier
         The SCENE-ID product this runner emits. Used only for documentation/logging; the written filename's product id
@@ -71,7 +73,7 @@ class SceneIdRunnerConfig:
         Short label used in task-log filenames (e.g. ``scene_id_cam`` / ``scene_id_cam_camtime``).
     """
 
-    input_product_id: DataProductIdentifier | None
+    input_product_id: DataProductIdentifier
     output_product_id: DataProductIdentifier
     reader: Callable[[str | Path | S3Path], FootprintData]
     product_definition_path: Path
@@ -83,20 +85,16 @@ class SceneIdRunnerConfig:
 # --- Per-variant runner configs ------------------------------------------------------------------------------------
 #
 # Each config below is a complete SCENE-ID runner. The comment on each records the domain rationale for its parameter
-# choices; the shared engine (run_algorithm and friends) is otherwise identical across every runner.
+# choices; the shared engine (run_algorithm and friends) is otherwise identical across all five.
 
-# SCENE-ID-CAM (radiometer timescale): the lowest-latency (camera / near-real-time) product. The operational input is
-# FMATCH-CAM, but that reader is not implemented yet (the FMATCH step is a separate milestone), so this runner
-# currently reads placeholder CERES SSF files via from_ceres_ssf. CERES SSF files are NOT Libera products, so
-# input_product_id is None to select the "keep non-Libera-product files" input-collection mode in collect_input_files.
-# Runs ERBE and unfiltering (both keyed off surface_type and cloud_fraction) but not TRMM, whose variables are absent.
-# TODO[LIBSDC-794]: switch reader to FootprintData.from_fmatch_cam and input_product_id to aux_fmatch_cam once the
-# FMATCH-CAM product format is available.
+# SCENE-ID-CAM (radiometer timescale): the lowest-latency (camera / near-real-time) product. Input is FMATCH-CAM
+# (one footprint per RADIOMETER_TIME carrying the Libera-camera-derived cloud fraction). Runs ERBE and unfiltering
+# (both keyed off surface_type and cloud_fraction) but not TRMM, whose classification variables are unavailable.
 CAM_CONFIG = SceneIdRunnerConfig(
-    input_product_id=None,
+    input_product_id=DataProductIdentifier.aux_fmatch_cam,
     output_product_id=DataProductIdentifier.aux_scene_id_cam,
-    reader=FootprintData.from_ceres_ssf,
-    product_definition_path=Path(config.get("SCENE_ID_CAM_PRODUCT_DEFINITION")),
+    reader=FootprintData.from_fmatch_cam,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_cam.yml",
     time_variable="RADIOMETER_TIME",
     scene_types=["erbe", "unfiltering"],
     log_prefix="scene_id_cam",
@@ -110,10 +108,55 @@ CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
     input_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
     output_product_id=DataProductIdentifier.aux_scene_id_cam_camtime,
     reader=FootprintData.from_fmatch_cam_camtime,
-    product_definition_path=Path(config.get("SCENE_ID_CAM_CAMTIME_PRODUCT_DEFINITION")),
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_cam_camtime.yml",
     time_variable="CAMERA_TIME",
     scene_types=["erbe", "unfiltering"],
     log_prefix="scene_id_cam_camtime",
+)
+
+# SCENE-ID-IMAGER (radiometer timescale): input is FMATCH-IMAGER (one footprint per RADIOMETER_TIME carrying the
+# CERES SSF clear coverage for cloud fraction, the RBSP CLDPIX cloud optical depth and particle phase for TRMM, the
+# ERA5 winds for surface wind, and the IGBP surface type). Because those extra TRMM inputs are present it runs the
+# full TRMM classification in addition to ERBE and unfiltering. from_fmatch_imager raises a clear error if handed a
+# file lacking the RBSP ssf/cldpix variables (e.g. a FMATCH-IMAGER-FLASH product).
+IMAGER_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_imager,
+    output_product_id=DataProductIdentifier.aux_scene_id_imager,
+    reader=FootprintData.from_fmatch_imager,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_imager.yml",
+    time_variable="RADIOMETER_TIME",
+    scene_types=["erbe", "unfiltering", "trmm"],
+    log_prefix="scene_id_imager",
+)
+
+# SCENE-ID-IMAGER-CAMTIME (camera timescale): the camera-timescale counterpart of SCENE-ID-IMAGER. Reads
+# FMATCH-IMAGER-CAMTIME on the 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) grid; like SCENE-ID-IMAGER it runs full TRMM (the
+# input carries the RBSP CLDPIX optical depth/phase, ERA5 winds, CERES SSF clear coverage, and IGBP surface type) and,
+# like SCENE-ID-CAM-CAMTIME, passes the FMATCH footprint identifier variables straight through (from_fmatch_imager_
+# camtime + scene_id_imager_camtime.yml). from_fmatch_imager_camtime raises if the RBSP ssf/cldpix variables are absent.
+IMAGER_CAMTIME_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
+    output_product_id=DataProductIdentifier.aux_scene_id_imager_camtime,
+    reader=FootprintData.from_fmatch_imager_camtime,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_imager_camtime.yml",
+    time_variable="CAMERA_TIME",
+    scene_types=["erbe", "unfiltering", "trmm"],
+    log_prefix="scene_id_imager_camtime",
+)
+
+# SCENE-ID-IMAGER-FLASH (radiometer timescale, flash latency): input is FMATCH-IMAGER-FLASH (one footprint per
+# RADIOMETER_TIME carrying the CERES SSF clear coverage for cloud fraction, the CERES SSF cloud optical depth, the
+# ERA5 winds, and the IGBP surface type). TRMM is run for parity with SCENE-ID-IMAGER, but FLASH has NO cloud-phase
+# source, so from_fmatch_imager_flash injects an all-NaN cloud_phase: TRMM then matches only clear/surface scenes that
+# leave cloud_phase unbounded and leaves every phase-gated cloudy TRMM scene unmatched.
+IMAGER_FLASH_CONFIG = SceneIdRunnerConfig(
+    input_product_id=DataProductIdentifier.aux_fmatch_imager_flash,
+    output_product_id=DataProductIdentifier.aux_scene_id_imager_flash,
+    reader=FootprintData.from_fmatch_imager_flash,
+    product_definition_path=_PRODUCT_DEF_DIR / "scene_id_imager_flash.yml",
+    time_variable="RADIOMETER_TIME",
+    scene_types=["erbe", "unfiltering", "trmm"],
+    log_prefix="scene_id_imager_flash",
 )
 
 # Registry of every SCENE-ID runner, keyed by its ``libera-utils scene-id <sub>`` CLI subcommand name. The CLI
@@ -121,6 +164,9 @@ CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
 RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
     "cam": CAM_CONFIG,
     "cam-camtime": CAM_CAMTIME_CONFIG,
+    "imager": IMAGER_CONFIG,
+    "imager-camtime": IMAGER_CAMTIME_CONFIG,
+    "imager-flash": IMAGER_FLASH_CONFIG,
 }
 
 
@@ -162,8 +208,8 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     Parameters
     ----------
     manifest_path : Path | S3Path
-        Path to the input manifest file listing the input file(s). An ``argparse.Namespace`` (as produced by a CLI
-        handler) is also accepted for convenience when invoked as a CLI.
+        Path to the input manifest file listing the FMATCH input file(s). An ``argparse.Namespace`` (as produced by a
+        CLI handler) is also accepted for convenience when invoked as a CLI.
     config : SceneIdRunnerConfig
         The per-runner parameters (input/output product, reader, definition, time variable, scene types, log label).
 
@@ -193,9 +239,8 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     if not dropbox_path:
         raise ValueError("PROCESSING_PATH environment variable is not set")
 
-    # Step 2: Collect the input file(s) from the manifest. In placeholder mode (input_product_id is None) these are
-    # non-Libera CERES SSF files; otherwise they are the configured Libera FMATCH product.
-    input_label = config.input_product_id.value if config.input_product_id is not None else "CERES SSF (placeholder)"
+    # Step 2: Collect the configured Libera FMATCH product file(s) from the manifest.
+    input_label = config.input_product_id.value
     logger.info("Step 2: Collecting %s input files from the manifest", input_label)
     input_file_paths = collect_input_files(input_manifest, config.input_product_id)
     if not input_file_paths:
@@ -230,17 +275,12 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     return output_manifest_filepath
 
 
-def collect_input_files(input_manifest: Manifest, input_product_id: DataProductIdentifier | None) -> list[str]:
+def collect_input_files(input_manifest: Manifest, input_product_id: DataProductIdentifier) -> list[str]:
     """Select the input files referenced by a manifest for a runner.
 
-    This supports two modes, distinguished by ``input_product_id``:
-
-    * **Libera-product mode** (``input_product_id`` is a :class:`~libera_utils.constants.DataProductIdentifier`):
-      the operational case. Keeps exactly the manifest files whose Libera product id equals ``input_product_id``.
-    * **Placeholder mode** (``input_product_id`` is ``None``): the case SCENE-ID-CAM uses, where the input is
-      a raw CERES SSF file. CERES SSF files are *not* Libera products, so they do not parse as a
-      ``LiberaDataProductFilename``. We use that fact to keep exactly the files that do **not** parse, and skip any
-      Libera-named ancillary files that might also appear in the manifest.
+    Keeps exactly the manifest files whose Libera product id equals ``input_product_id`` (e.g. ``aux_fmatch_cam`` or
+    ``aux_fmatch_cam_camtime``). Files with any other product id, and files whose names do not parse as a
+    ``LiberaDataProductFilename``, are skipped.
 
     Files whose names do not parse as a ``LiberaDataProductFilename`` are skipped in Libera-product mode.
 
@@ -248,38 +288,26 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
     ----------
     input_manifest : Manifest
         The input manifest to inspect.
-    input_product_id : DataProductIdentifier or None
-        The Libera product id to keep (e.g. ``aux_fmatch_cam_camtime``), or ``None`` for the CERES SSF placeholder
-        mode.
+    input_product_id : DataProductIdentifier
+        The Libera product id to keep (e.g. ``aux_fmatch_cam`` or ``aux_fmatch_cam_camtime``).
 
     Returns
     -------
     list[str]
         The manifest filenames identified as inputs, in manifest order.
     """
-    input_label = input_product_id.value if input_product_id is not None else "CERES SSF (placeholder)"
+    input_label = input_product_id.value
     input_file_paths: list[str] = []
     for file_record in input_manifest.files:
         filename = file_record.filename
         try:
             libera_filename = LiberaDataProductFilename.from_file_path(filename)
         except Exception:
-            # Not a Libera product name. In placeholder mode that is exactly the CERES SSF input we want; in
-            # Libera-product mode it cannot be an FMATCH input, so skip it.
-            # TODO[LIBSDC-794]: the non-Libera "placeholder" branch exists only because SCENE-ID-CAM currently reads
-            # raw CERES SSF input; it goes away once the FMATCH external products are available and every input is a
-            # Libera product selected by data_product_id.
-            if input_product_id is None:
-                logger.info("Recording %s input file: %s", input_label, filename)
-                input_file_paths.append(filename)
-            else:
-                logger.info("Skipping non-Libera-product file (not a %s input): %s", input_label, filename)
+            # Not a Libera product name, so it cannot be an FMATCH input.
+            logger.info("Skipping non-Libera-product file (not a %s input): %s", input_label, filename)
             continue
-        # Parsed as a Libera product.
-        if input_product_id is None:
-            # Placeholder mode wants only non-Libera files, so a Libera-named file is not an input here.
-            logger.info("Skipping Libera-named file (not a %s input): %s", input_label, filename)
-        elif libera_filename.data_product_id is input_product_id:
+        # Parsed as a Libera product; keep it only if it is the configured input product.
+        if libera_filename.data_product_id is input_product_id:
             logger.info("Recording %s input file: %s", input_label, filename)
             input_file_paths.append(filename)
         else:
