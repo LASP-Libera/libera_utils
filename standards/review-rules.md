@@ -125,12 +125,12 @@ tier: check · status: graduated · since: 2026-09 · evidence: pr-0048, pr-0037
 
 Reasoning: shared `archive/libera_utils/R-012.md`
 
-Do not flag: this rule at all; the workflow owns the two equalities, and whether a change is
-minor or patch is the author's call, stated in the instruction file.
-Check: `.github/workflows/version-check.yml`, running `.github/scripts/check_version.py`: the
-first changelog heading equals the `pyproject.toml` version, and on a pull request that
-changes its `version =` line the version is above the highest tag. The reviewer does not check
-this; the workflow does.
+Do not flag: this rule at all; the hook owns the two checks, and whether a change is minor or
+patch is the author's call, stated in the instruction file.
+Check: the `version-check` pre-commit hook, running `.github/scripts/check_version.py`, which the
+pre-commit workflow runs on every pull request: the first changelog heading equals the
+`pyproject.toml` version, and that version is at or above the highest release tag. The reviewer
+does not check this; the hook does.
 
 ### R-013 · Parse or sort an input once, not once per consumer
 
@@ -166,7 +166,7 @@ the baseline and a check is neither required nor a finding.
 
 ### R-016 · An error message says what went wrong and what to do next
 
-tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0028 (the reviewer dictated the replacement text naming the role to log in as and whom to contact), pr-0060 (an error telling the caller to provide a tag rather than defaulting to `latest`), pr-0015 (the log to name which data variables did not match) · implements `libera_utils/D-008`
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0028 (the reviewer dictated the replacement text naming the role to log in as and whom to contact), pr-0060 (an error telling the caller to provide a tag rather than defaulting to `latest`), pr-0015 (the log to name which data variables did not match) · established 2026-10-04, to match the decision it implements · implements `libera_utils/D-008`
 
 Wording: [R-016 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-016--an-error-message-says-what-went-wrong-and-what-to-do-next)
 
