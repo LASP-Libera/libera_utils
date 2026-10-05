@@ -419,7 +419,7 @@ def test_wrong_libera_ids(cli_args):
         cli.parse_cli_args(cli_args)
 
 
-@pytest.mark.parametrize("variant", ["cam", "cam-camtime"])
+@pytest.mark.parametrize("variant", ["cam", "cam-camtime", "imager", "imager-camtime", "imager-flash"])
 def test_scene_id_cli_dispatch(variant, monkeypatch):
     """``scene-id`` runs the variant named by LIBERA_SCENE_ID_VARIANT, passing ``run_algorithm`` the manifest path."""
     called_with = {}
