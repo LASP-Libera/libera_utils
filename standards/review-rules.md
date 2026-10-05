@@ -11,7 +11,8 @@ decision: a rule may implement one when it says what a diff must show and names 
 its evidence line, as R-011, R-014, R-015 and R-016 do. It becomes established on
 two merged pull requests by two authors; a provisional rule retires at the expiry unless
 established. No rule becomes established on authorship until the first revision records it,
-since authors were not recorded at the harvest. A rule's wording is two to four lines.
+since authors were not recorded at the harvest; a rule that implements a decision carries the
+decision's status, as R-015 and R-016 do. A rule's wording is two to four lines.
 How a rule is admitted, graduates and retires is the tooling's documentation, not this
 repository's.
 
