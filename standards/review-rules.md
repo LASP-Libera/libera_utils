@@ -64,7 +64,7 @@ in the product definition.
 
 ### R-006 · One source of truth for a value; tabular data lives in a data file
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0027, pr-0041 (the ObsID registry moved from a module literal to a data file validated at import), pr-0015, pr-0002 (in one of these, a packet width constant restated what the dtype already carried)
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0041 (the ObsID registry moved from a module literal to a data file validated at import), pr-0015, pr-0002 (in one of these, a packet width constant restated what the dtype already carried)
 
 Wording: [R-006 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-006--one-source-of-truth-for-a-value-tabular-data-lives-in-a-data-file)
 
@@ -91,7 +91,7 @@ by building the wheel.
 
 ### R-009 · Comments describe the code as it is, not how it got there
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030 (the most repeated request in the harvested reviews, six times in one of them: remove the ticket number, the historical title, the comment saying what this used to be)
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0037, pr-0058, pr-0030 (the most repeated request in the harvested reviews, six times in one of them: remove the ticket number, the historical title, the comment saying what this used to be)
 
 Wording: [R-009 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-009--comments-describe-the-code-as-it-is-not-how-it-got-there)
 
