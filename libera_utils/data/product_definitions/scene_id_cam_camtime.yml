@@ -49,7 +49,7 @@ variables:
     dtype: uint8
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code
+      long_name: IGBP (International Geosphere-Biosphere Programme) land cover classification code (MODIS)
   # Viewing geometry at the pseudo-footprint's center pixel, passed through unchanged from L1B CAM via
   # FMATCH-CAM-CAMTIME; long_names are the L1B ones. Relative azimuth is referenced to the Sun: 0 degrees means the
   # viewing azimuth is aligned with the Sun's azimuth.
