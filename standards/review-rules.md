@@ -152,15 +152,15 @@ public URL, such as NAIF or the CERES documentation.
 
 ### R-015 · The annotation says what the code actually accepts
 
-tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012 (seven requests to take `LiberaDataProductFilename` rather than `str`, and `PathType` where an `S3Path` can reach), pr-0028 (narrowing the annotation to a local `Path` or `str` was chosen over rejecting cloud paths at runtime), pr-0060 · rewritten 2026-09-22, 2026-09-23 · archive/libera_utils/R-015.md · implements `libera_utils/D-007`
+tier: reviewer · status: **established** · since: 2026-09 · evidence: pr-0012 (seven requests to take `LiberaDataProductFilename` rather than `str`, and `PathType` where an `S3Path` can reach), pr-0028 (narrowing the annotation to local paths was chosen over rejecting cloud paths at runtime; the merged signature takes `list[Path]`, and the command line converts each `str` before the call), pr-0060 · rewritten 2026-09-22, 2026-09-23, corrected 2026-10-03 · archive/libera_utils/R-015.md · implements `libera_utils/D-007`
 
 Wording: [R-015 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-015--the-annotation-says-what-the-code-actually-accepts)
 
-Do not flag: a union the code genuinely handles — `Path | str` is the fix pr-0028 agreed on,
-not a violation of this rule; a genuine union the product definition names; a constructor that
-documents a single coercion at the boundary and says so in its docstring; a runtime check beside a
-narrowed annotation, or its absence, since the annotation is the baseline and a check is neither
-required nor a finding.
+Do not flag: a union every branch of which the body handles, as pr-0041's
+`source_product_filename: str | PathType` is by `Path(str(...))`; a genuine union the product
+definition names; a constructor that documents a single coercion at the boundary and says so in its
+docstring; a runtime check beside a narrowed annotation, or its absence, since the annotation is
+the baseline and a check is neither required nor a finding.
 
 ---
 
