@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- SCENE-ID-IMAGER, SCENE-ID-IMAGER-CAMTIME and SCENE-ID-IMAGER-FLASH runners, each with a product definition and a `FootprintData.from_fmatch_imager` / `from_fmatch_imager_camtime` / `from_fmatch_imager_flash` reader, registered in `scene_id_algorithm.RUNNER_CONFIGS` so `LIBERA_SCENE_ID_VARIANT=imager`, `imager-camtime` or `imager-flash` selects them. All three run the TRMM classification as well as ERBE and unfiltering.
+- SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
+
 ## [6.1.0] - 2026-11-19
 
 ### Added
@@ -241,6 +246,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **BREAKING:** `OperationalMode.rank`, `VariableSpec.required_mode`, `VariableSpec.only_modes` and `spec_active_in_mode`. A variable belongs to a product exactly when `mode in spec.modes`.
+
+### Fixed
+
+- `scene_id_trmm` is `uint16`, and the scene-ID accumulator is sized to the definition's largest scene ID. TRMM assigns IDs up to 650, which wrapped in the previous `uint8`.
 
 ## [5.17.0] - 2026-10-29
 

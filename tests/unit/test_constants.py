@@ -256,6 +256,7 @@ class TestDataProductIdentifier:
             "aux_fmatch_imager_camtime",
             "aux_scene_id_imager",
             "aux_scene_id_imager_camtime",
+            "aux_scene_id_imager_flash",
             "aux_adm_stats_imager",
             "aux_adm_imager",
             # ANC Products — externally produced inputs
@@ -478,6 +479,7 @@ class TestProcessingStepIdentifier:
             "aux_fmatch_imager_camtime",
             "aux_scene_id_imager",
             "aux_scene_id_imager_camtime",
+            "aux_scene_id_imager_flash",
             "aux_adm_stats_imager",
             "aux_adm_imager",
         ]
