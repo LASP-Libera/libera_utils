@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Check that the changelog heading, the package version and the release tags agree.
+"""Check that the changelog's latest release, the package version and the release tags agree.
 
 Pre-commit runs this, as the `version-check` hook, on a change to pyproject.toml or
-doc/source/changelog.md. Two checks:
+CHANGELOG.md. Two checks:
 
-1. The first `## <version>` heading in doc/source/changelog.md equals the `version` in
-   pyproject.toml.
+1. The first release heading in CHANGELOG.md, `## [<version>] - <date>` below `## [Unreleased]`
+   in the Keep a Changelog layout, equals the `version` in pyproject.toml. Only the pull request
+   that releases a version bumps pyproject.toml and turns `[Unreleased]` into that heading, so the
+   two move together.
 2. That version is at or above the highest bare-version tag (`5.11.1`, not `v5.11.1` or
    `5.11.1rc1`), a pre-release ranking below the release of the same number. That passes `main`,
    where the version equals the newest tag, and a bump, and fails a downgrade or a stacked branch
@@ -21,8 +23,8 @@ instruction file.
 
 Prints one ok or MISMATCH line per check, naming both values, and exits 1 on any MISMATCH.
 Exits 2 with one CANNOT RUN line saying why when the check cannot run: pyproject.toml is
-unreadable or has no version line, the changelog is unreadable or has no `## <version>`
-heading, or there is no bare-version tag. The readers below raise ValueError for a
+unreadable or has no version line, the changelog is unreadable or has no `## [<version>]`
+release heading, or there is no bare-version tag. The readers below raise ValueError for a
 missing line; main turns that, an unreadable file or a failed `git tag` into exit 2.
 """
 
@@ -52,10 +54,10 @@ def pyproject_version(path: Path) -> str:
 
 
 def changelog_heading(path: Path) -> str:
-    """The version in the changelog's first `## ` heading; raises ValueError when there is none."""
-    match = re.search(r"^## (\S+)", path.read_text(), re.M)
+    """The first `## [<version>]` heading's version, `[Unreleased]` skipped; raises ValueError if none."""
+    match = re.search(r"^## \[(\d[^\]]*)\]", path.read_text(), re.M)
     if not match:
-        raise ValueError(f"{path} has no '## <version>' heading")
+        raise ValueError(f"{path} has no '## [<version>]' release heading")
     return match.group(1)
 
 
@@ -77,7 +79,7 @@ def highest_tag(tags: list[str]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pyproject", type=Path, default=ROOT / "pyproject.toml")
-    parser.add_argument("--changelog", type=Path, default=ROOT / "doc" / "source" / "changelog.md")
+    parser.add_argument("--changelog", type=Path, default=ROOT / "CHANGELOG.md")
     parser.add_argument("--tags", type=Path, help="a file with one tag per line; default: git tag")
     args = parser.parse_args(argv)
 
@@ -92,10 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     failed = 0
 
     if heading == version:
-        print(f"  ok       changelog heading: {heading}")
+        print(f"  ok       changelog release heading: {heading}")
     else:
         failed += 1
-        print(f"  MISMATCH changelog heading {heading} does not equal pyproject.toml version {version}")
+        print(f"  MISMATCH changelog release heading {heading} does not equal pyproject.toml version {version}")
 
     if (release(version), bool(BARE.match(version))) >= (release(top), True):
         print(f"  ok       version {version} is at or above the highest tag {top}")

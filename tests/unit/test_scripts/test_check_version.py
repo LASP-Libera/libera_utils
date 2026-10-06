@@ -1,6 +1,6 @@
 """Tests for .github/scripts/check_version.py, the script the version-check pre-commit hook runs.
 
-Covers the changelog heading against the pyproject.toml version, the version against the highest
+Covers the changelog's first release heading against the pyproject.toml version, the version against the highest
 bare tag, the ValueError raised when a file lacks the line the check reads, and exit 2 with a
 CANNOT RUN line when the check cannot run. The script is imported by file path, since
 .github/scripts is not a package.
@@ -21,8 +21,10 @@ _spec.loader.exec_module(check_version)
 def _args(tmp_path: Path, version: str, heading: str, top_tag: str) -> list[str]:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(f'[project]\nname = "libera_utils"\nversion = "{version}"\n')
-    changelog = tmp_path / "changelog.md"
-    changelog.write_text(f"# Version Changes\n\n## {heading}\n\n- FIX: something\n\n## 5.0.0\n")
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        f"# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Something.\n\n## [{heading}] - 2026-10-06\n\n## [5.0.0] - 2026-01-01\n"
+    )
     tags = tmp_path / "tags.txt"
     tags.write_text(f"5.0.0\nv9.9.9\n{top_tag}\n5.10.0rc1\n")
     return ["--pyproject", str(pyproject), "--changelog", str(changelog), "--tags", str(tags)]
@@ -52,8 +54,8 @@ def test_check_version(tmp_path, capsys, version, heading, top_tag, expected, mi
     ("break_it", "reason"),
     [
         pytest.param(
-            lambda d: (d / "changelog.md").write_text("# Version Changes\n"),
-            "has no '## <version>' heading",
+            lambda d: (d / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n"),
+            "has no '## [<version>]' release heading",
             id="no-heading",
         ),
         pytest.param(lambda d: (d / "tags.txt").write_text("v1.0.0\n1.0.0rc1\n"), "no bare-version tag", id="no-tag"),
@@ -90,10 +92,16 @@ def test_pyproject_version_raises_without_a_version_line(tmp_path):
         check_version.pyproject_version(pyproject)
 
 
-def test_changelog_heading_raises_without_a_version_heading(tmp_path):
-    changelog = tmp_path / "changelog.md"
-    changelog.write_text("# Version Changes\n\nNothing yet.\n")
-    with pytest.raises(ValueError, match="has no '## <version>' heading"):
+def test_changelog_heading_skips_unreleased_and_reads_the_first_release(tmp_path):
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("# Changelog\n\n## [Unreleased]\n\n## [5.11.1] - 2026-09-25\n\n## [5.11.0] - 2026-09-09\n")
+    assert check_version.changelog_heading(changelog) == "5.11.1"
+
+
+def test_changelog_heading_raises_without_a_release_heading(tmp_path):
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("# Changelog\n\n## [Unreleased]\n\n### Added\n")
+    with pytest.raises(ValueError, match="has no '## \\[<version>\\]' release heading"):
         check_version.changelog_heading(changelog)
 
 

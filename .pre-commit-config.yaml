@@ -56,8 +56,8 @@ repos:
         pass_filenames: false
         files: ^(standards/|\.github/instructions/)
       - id: version-check
-        name: The changelog heading equals the version, and the version is at or above the highest tag
+        name: The changelog's latest release equals the version, and the version is at or above the highest tag
         entry: python3 .github/scripts/check_version.py
         language: system
         pass_filenames: false
-        files: ^(pyproject\.toml|doc/source/changelog\.md)$
+        files: ^(pyproject\.toml|CHANGELOG\.md)$
