@@ -1097,7 +1097,7 @@ def make_l1b_radiometer_fixture(
         Path to the written L1B RAD-4CH NetCDF file.
     """
     from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
-    from libera_utils.footprint_matching._runner import L1B_TIME_VARIABLE  # noqa: PLC0415
+    from libera_utils.footprint_matching._runner_common import L1B_TIME_VARIABLE  # noqa: PLC0415
     from libera_utils.footprint_matching.product import (  # noqa: PLC0415
         L1B_CONE_ANGLE_RATE_VARIABLE,
         L1B_PASSTHROUGH_VARIABLES,
