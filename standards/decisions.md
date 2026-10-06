@@ -44,7 +44,7 @@ at it must vendor the configuration itself.
 
 ### libera_utils/D-005 · Writing a product overwrites an existing object at an identical key
 
-_2026-09-19 · **provisional** · source: PR #66 review, adjudicated in review_
+_2026-09-19 · **provisional** · source: first recorded in the review of PR #66, an open draft_
 
 A product's version is part of its key, so this applies only to reprocessing at the same
 version with the same identifiers, and a new version never overwrites an old one. Under the
@@ -54,20 +54,20 @@ revision. That reprocessing legitimately rewrites the granule, and a pipeline th
 in the bucket was newer than the file it just produced would fail on its own success. So the
 write proceeds.
 
-This is what the code did before PR #66, not something that PR decided. `CloudPath.open("w+b")`
-refreshed the cache from the existing object, recorded its mtime, and on close bumped the
-freshly written cache file to `original_mtime + 1` if it came out older — a step cloudpathlib
+This is what `main`'s code does, not something PR #66 decided. `CloudPath.open("w+b")`
+refreshes the cache from the existing object, records its mtime, and on close bumps the
+freshly written cache file to `original_mtime + 1` if it comes out older — a step cloudpathlib
 takes so that a write through `open` always counts as newer than what it is replacing. The
-upload that followed then passed its `local newer than cloud` test by construction.
-`OverwriteNewerCloudError` could not fire on a sequential write.
+upload that follows passes its `local newer than cloud` test by construction, so
+`OverwriteNewerCloudError` cannot fire on a sequential write.
 
-`force_overwrite_to_cloud=True` on the staged upload is therefore the faithful translation, not
-a loosening. A staged temporary file carries no relationship to the object's mtime, so leaving
-the argument at its default would compare a local clock against S3's and raise where the old
-path could not — a behavior change wearing the default's clothes.
+PR #66 stages the write in a temporary file and uploads it; `force_overwrite_to_cloud=True` on
+that upload is therefore the faithful translation, not a loosening. A staged temporary file carries no relationship to the object's mtime, so leaving
+the argument at its default would compare a local clock against S3's and raise where the current
+path cannot — a behavior change wearing the default's clothes.
 
-One check is genuinely gone: an object replaced by another writer between the open and the
-close used to raise. Nothing checks for that now. The window was the duration of one write, and
+One check goes with that change: an object replaced by another writer between the open and the
+close raises today, and would not. The window was the duration of one write, and
 nothing in the pipeline writes the same key from two processes, which is why this is recorded
 rather than treated as a regression.
 
