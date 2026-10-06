@@ -67,6 +67,27 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
                 manifest="file.manifest",
             ),
         ),
+        (
+            ["scene-id", "imager", "file.manifest"],
+            argparse.Namespace(
+                func=cli.scene_id_imager_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+        (
+            ["scene-id", "imager-camtime", "file.manifest"],
+            argparse.Namespace(
+                func=cli.scene_id_imager_camtime_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+        (
+            ["scene-id", "imager-flash", "file.manifest"],
+            argparse.Namespace(
+                func=cli.scene_id_imager_flash_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
     ],
 )
 def test_scene_id_parse_cli_args(cli_args, parsed):
@@ -429,6 +450,9 @@ def test_wrong_libera_ids(cli_args):
     [
         (["scene-id", "cam", "file.manifest"], "cam"),
         (["scene-id", "cam-camtime", "file.manifest"], "cam-camtime"),
+        (["scene-id", "imager", "file.manifest"], "imager"),
+        (["scene-id", "imager-camtime", "file.manifest"], "imager-camtime"),
+        (["scene-id", "imager-flash", "file.manifest"], "imager-flash"),
     ],
 )
 def test_scene_id_cli_dispatch(cli_args, config_key, monkeypatch):
