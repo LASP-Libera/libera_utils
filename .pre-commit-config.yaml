@@ -4,6 +4,8 @@ repos:
     hooks:
       - id: prettier
         types_or: [yaml, json, markdown]
+        # The rule ledger's scope: and example: lines are read by the rule lint as written.
+        exclude: ^standards/review-rules\.md$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
