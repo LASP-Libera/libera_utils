@@ -36,6 +36,15 @@ Wording: [R-002 in the instruction file](../.github/instructions/libera-utils.in
 Do not flag: a genuinely optional input whose absence has a defined meaning, when the
 docstring names it; a `logger.warning` beside a raise, for context.
 
+### R-003 · One exception type per condition, and a predicate returns rather than raises
+
+tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0048 (one exception type was raised for four unrelated conditions, and a predicate raised `ValueError` on an unknown APID; the first ask is a reviewed draft and the second a bot's, so it needs a person's ask) · **one pull request, needs a second**
+
+Wording: [R-003 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-003--one-exception-type-per-condition-and-a-predicate-returns-rather-than-raises)
+
+Do not flag: one exception type covering conditions a caller genuinely handles identically,
+when the message distinguishes them.
+
 ### R-004 · Every public symbol has a numpydoc docstring, including what it raises
 
 tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0027, pr-0015, pr-0012
@@ -198,10 +207,6 @@ example: fires on libera_utils#23 PRRT_kwDORdqWxM6FyIrR; not on libera_utils#23@
 Kept here with their evidence and the criterion each fails, or why it is held, so a revision
 can admit one when its evidence meets them.
 
-- **One exception type per condition, and a predicate returns rather than raises.** Formerly
-  R-003. Evidence: pr-0048 (one exception type raised for four unrelated conditions; a predicate
-  that raised on an unknown APID). Held: the first ask is AI-drafted and the second is a bot's;
-  no person asked for either in the 36 records harvested on 2026-10-06.
 - **Private symbols do not cross module boundaries.** A second consumer outside the defining
   module makes a symbol public in fact; rename and document it, or wrap it. Evidence: pr-0048
   (`_expand_sample_times`, `_extract_wfov_header_metadata_from_blob`). Held: its one ask is

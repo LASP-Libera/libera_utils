@@ -138,6 +138,12 @@ A condition that makes the output wrong or empty raises; a warning, a log line o
 is not a failure. A defined input produces a defined product or the run stops, because a crash
 gets noticed and a silently wrong number gets published.
 
+### R-003 · One exception type per condition, and a predicate returns rather than raises
+
+Each condition a caller may handle differently gets its own exception type, named for that
+condition. A predicate, a function that asks "is this X", answers with `False` or another
+no-answer value rather than raising.
+
 ### R-004 · Every public symbol has a numpydoc docstring, including what it raises
 
 Every public function, class and method has a numpydoc docstring with its parameters and a
