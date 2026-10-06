@@ -138,12 +138,6 @@ A condition that makes the output wrong or empty raises; a warning, a log line o
 is not a failure. A defined input produces a defined product or the run stops, because a crash
 gets noticed and a silently wrong number gets published.
 
-### R-003 · One exception type per condition, and a predicate returns rather than raises
-
-Each condition a caller may handle differently gets its own exception type, named for that
-condition. A predicate, a function that asks "is this X", answers with `False` or another
-no-answer value rather than raising.
-
 ### R-004 · Every public symbol has a numpydoc docstring, including what it raises
 
 Every public function, class and method has a numpydoc docstring with its parameters and a
@@ -165,11 +159,12 @@ lives in a data file that is read and validated, not as a literal in code or a l
 Code nothing calls, a branch nothing reaches and a variable nothing reads are deleted in the
 change that makes them dead, not kept with a comment explaining why.
 
-### R-009 · Comments describe the code as it is, not how it got there
+### R-009 · Comments and names describe the code as it is, not how it got there
 
-A comment describes the code as it is, not how it got there or where it is going, and reads
-correctly with only the code around it. It carries no ticket number, historical title or context
-from a conversation, a prompt or a review; forward-looking work takes R-010's tagged marker.
+A comment or a name describes the code as it is, not how it got there or where it is going, and
+reads correctly with only the code around it. It carries no ticket number, historical title,
+"new" or "old" qualifier, or context from a conversation, a prompt or a review; forward-looking
+work takes R-010's tagged marker.
 
 ### R-011 · A dependency pins to an immutable ref
 
@@ -185,10 +180,11 @@ form `~=5.10.3` take a patch silently. The "2. Development Lifecycle" and "SDC D
 Versioning Scheme" pages make a change that may break an API in minor ways, that adds a feature
 with new usage patterns, or that users can see in a product a minor release.
 
-### R-013 · Parse or sort an input once, not once per consumer
+### R-013 · Hold one copy of a large input, and pass over it once
 
-An input is read, parsed or sorted once and the result handed to each consumer; a loop does not
-re-read a file, re-sort a dataset or reload a definition on every pass.
+A large input is held once, and read, parsed or sorted once with the result handed to each
+consumer. A change does not keep a second full copy alive, or redo a full pass per consumer or per
+loop iteration: a granule-sized copy doubles peak memory, and a repeated pass multiplies run time.
 
 ### R-014 · No internal URL or internal document content in this repository
 
@@ -213,6 +209,13 @@ act on, rather than naming internals alone.
 A valid range or a set of categories names the document, algorithm or upstream definition its
 values come from, by name rather than by internal link (R-014). A claim with no source cannot be
 checked in review.
+
+### R-018 · Use the code that already does a job, and do not run it twice
+
+Where this repository already does a job, such as opening a product, building a filename,
+checking conformance or serializing a model, a change calls that code rather than writing its own,
+and does not run a step again that the code it calls already runs. A second version drifts from
+the first, and a repeated step hides which run the product depends on.
 
 ## Restrictions for AI Agents
 
