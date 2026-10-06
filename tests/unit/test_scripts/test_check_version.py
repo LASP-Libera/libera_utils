@@ -1,0 +1,123 @@
+"""Tests for .github/scripts/check_version.py, the script the version-check pre-commit hook runs.
+
+Covers the changelog's first release heading against the pyproject.toml version, the version against the highest
+bare tag, the ValueError raised when a file lacks the line the check reads, and exit 2 with a
+CANNOT RUN line when the check cannot run. The script is imported by file path, since
+.github/scripts is not a package.
+"""
+
+import importlib.util
+import subprocess
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).resolve().parents[3] / ".github" / "scripts" / "check_version.py"
+_spec = importlib.util.spec_from_file_location("check_version", SCRIPT)
+check_version = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(check_version)
+
+
+def _args(tmp_path: Path, version: str, heading: str, top_tag: str) -> list[str]:
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(f'[project]\nname = "libera_utils"\nversion = "{version}"\n')
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(
+        f"# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- Something.\n\n## [{heading}] - 2026-10-06\n\n## [5.0.0] - 2026-01-01\n"
+    )
+    tags = tmp_path / "tags.txt"
+    tags.write_text(f"5.0.0\nv9.9.9\n{top_tag}\n5.10.0rc1\n")
+    return ["--pyproject", str(pyproject), "--changelog", str(changelog), "--tags", str(tags)]
+
+
+@pytest.mark.parametrize(
+    ("version", "heading", "top_tag", "expected", "mismatches"),
+    [
+        pytest.param("5.11.1", "5.11.1", "5.11.1", 0, 0, id="equal-to-tag"),
+        pytest.param("5.11.2", "5.11.2", "5.11.1", 0, 0, id="above-tag"),
+        pytest.param("5.11.0", "5.11.0", "5.11.1", 1, 1, id="below-tag"),
+        pytest.param("5.11.2rc1", "5.11.2rc1", "5.11.1", 0, 0, id="pre-release-above-tag"),
+        pytest.param("5.11.2rc1", "5.11.2rc1", "5.11.2", 1, 1, id="pre-release-of-a-tagged-release"),
+        pytest.param("5.10.9", "5.10.8", "5.10.10", 1, 2, id="heading-behind-and-version-below-tag"),
+    ],
+)
+def test_check_version(tmp_path, capsys, version, heading, top_tag, expected, mismatches):
+    assert check_version.main(_args(tmp_path, version, heading, top_tag)) == expected
+    out = capsys.readouterr().out
+    assert out.count("MISMATCH") == mismatches
+    if mismatches:
+        for value in (version, heading, top_tag):
+            assert value in out
+
+
+@pytest.mark.parametrize(
+    ("break_it", "reason"),
+    [
+        pytest.param(
+            lambda d: (d / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n"),
+            "has no '## [<version>]' release heading",
+            id="no-heading",
+        ),
+        pytest.param(lambda d: (d / "tags.txt").write_text("v1.0.0\n1.0.0rc1\n"), "no bare-version tag", id="no-tag"),
+        pytest.param(lambda d: (d / "pyproject.toml").unlink(), "No such file", id="unreadable-pyproject"),
+        pytest.param(
+            lambda d: (d / "pyproject.toml").write_text("[project]\n"), "has no version line", id="no-version-line"
+        ),
+    ],
+)
+def test_a_check_that_cannot_run_exits_2_saying_why(tmp_path, capsys, break_it, reason):
+    args = _args(tmp_path, "5.11.2", "5.11.2", "5.11.1")
+    break_it(tmp_path)
+    assert check_version.main(args) == 2
+    out = capsys.readouterr().out
+    assert out.count("CANNOT RUN") == 1
+    assert reason in out
+    assert "MISMATCH" not in out
+
+
+def test_release_reads_the_numeric_segment_before_an_rc_suffix():
+    assert check_version.release("5.11.2rc1") == (5, 11, 2)
+    assert check_version.release("5.11.2") > check_version.release("5.11.1")
+
+
+def test_release_raises_on_a_version_with_no_numeric_segment():
+    with pytest.raises(ValueError, match="numeric release segment"):
+        check_version.release("dev")
+
+
+def test_pyproject_version_raises_without_a_version_line(tmp_path):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "libera_utils"\n')
+    with pytest.raises(ValueError, match="has no version line"):
+        check_version.pyproject_version(pyproject)
+
+
+def test_changelog_heading_skips_unreleased_and_reads_the_first_release(tmp_path):
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("# Changelog\n\n## [Unreleased]\n\n## [5.11.1] - 2026-09-25\n\n## [5.11.0] - 2026-09-09\n")
+    assert check_version.changelog_heading(changelog) == "5.11.1"
+
+
+def test_changelog_heading_raises_without_a_release_heading(tmp_path):
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("# Changelog\n\n## [Unreleased]\n\n### Added\n")
+    with pytest.raises(ValueError, match="has no '## \\[<version>\\]' release heading"):
+        check_version.changelog_heading(changelog)
+
+
+def test_highest_tag_ignores_prefixed_and_rc_tags_and_raises_with_none_bare():
+    assert check_version.highest_tag(["v9.9.9", "5.10.0rc1", "5.9.0", "5.10.0", " 5.2.1 "]) == "5.10.0"
+    with pytest.raises(ValueError, match="no bare-version tag"):
+        check_version.highest_tag(["v1.0.0", "1.0.0rc1"])
+
+
+def test_tags_from_git_reads_the_repository_tags(tmp_path, monkeypatch):
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)  # noqa: S603, S607
+
+    git("init", "-q")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+    git("tag", "5.1.0")
+    git("tag", "v5.2.0")
+    monkeypatch.setattr(check_version, "ROOT", tmp_path)
+    assert sorted(check_version.tags_from_git()) == ["5.1.0", "v5.2.0"]

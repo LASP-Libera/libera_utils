@@ -4,6 +4,8 @@ repos:
     hooks:
       - id: prettier
         types_or: [yaml, json, markdown]
+        # The rule ledger's scope: and example: lines are read by the rule lint as written.
+        exclude: ^standards/review-rules\.md$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
@@ -45,3 +47,17 @@ repos:
         exclude: ".pre-commit-config.yaml"
         verbose: true
         always_run: true
+  - repo: local
+    hooks:
+      - id: rule-budget
+        name: The review rules and their wording fit the line budget the ledger states
+        entry: python3 .github/scripts/check_rule_budget.py
+        language: system
+        pass_filenames: false
+        files: ^(standards/|\.github/instructions/)
+      - id: version-check
+        name: The changelog's latest release equals the version, and the version is at or above the highest tag
+        entry: python3 .github/scripts/check_version.py
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|CHANGELOG\.md)$

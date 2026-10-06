@@ -8,3 +8,6 @@ file naming conventions, and AWS pipeline integration.
 Detailed coding rules, package layout, testing conventions, key patterns, and AI agent
 restrictions are defined in `.github/instructions/libera-utils.instructions.md`. Copilot
 applies that file automatically to all files in this repository.
+
+The Review Rules section of that file holds the team's review conventions, and
+`standards/review-rules.md` holds each rule's status and evidence.
