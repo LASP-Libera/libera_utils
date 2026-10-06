@@ -53,11 +53,6 @@ for a formal release. When we merge a release branch, we delete it and perform t
 in `main` by tagging that commit with the version and pushing this tag which automatically deploys build artifacts to
 PyPI. See the [build and release docs](build_release.md) for more details on our release process.
 
-## Pull Requests and the Review Standard
-
-A pull request body opens with the `Ticket:` line of `.github/PULL_REQUEST_TEMPLATE.md`. An agent
-working in this repository stops before `git push`, and the person runs it.
-
 # Git LFS (Large File Storage) Usage
 
 We use Git LFS to store large files in a way that doesn't blow up the size of our repo on the git server. Usually

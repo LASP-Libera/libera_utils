@@ -101,12 +101,4 @@ going through the steps above to create a new venv (you can name it differently)
    This can also be run with `poetry run libera-utils --version`.
 5. Set up `pre-commit` by running `pre-commit install`. This installs the standard git hooks that we use to prevent
    mistakes before they are committed. Configuration for pre-commit can be found in `.pre-commit-config.yaml`.
-6. On macOS, install the UDUNITS-2 library with `brew install udunits`, then add
-   `export DYLD_LIBRARY_PATH=/opt/homebrew/opt/udunits/lib` to your shell profile
-   (`/usr/local/opt/udunits/lib` on an Intel Mac). `cfunits`, which `cfchecker` installs, loads
-   the library at import, and Homebrew's lib directory is not on the loader's search path; Linux
-   finds the system library.
-7. Next, [go run the tests](testing.md).
-
-The Claude Code tooling is the `libera-tools` plugin from `LASP-Libera/libera_llm_tooling`, whose
-README says how to install it.
+6. Next, [go run the tests](testing.md).
