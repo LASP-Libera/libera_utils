@@ -4,17 +4,10 @@ The ledger of what a reviewer checks in this repository beyond what the tools ch
 rule's tier, status, evidence and do-not-flag sentence. The wording of each rule lives once,
 under its ID, in `.github/instructions/libera-utils.instructions.md`, and each entry links there.
 **Budget: 300 lines**, counted across this file and the wording together, each rule's title
-once, its link line not at all, and a `check`-tier rule not at all. A rule is admitted, as
-provisional, on one merged pull request with a review thread written by a person, when it is not
-something a tool can check, not a one-off design question, and not a bare restatement of a
-decision: a rule may implement one when it says what a diff must show and names the decision on
-its evidence line, as R-011, R-014, R-015 and R-016 do. It becomes established on
-two merged pull requests by two authors; a provisional rule retires at the expiry unless
-established. No rule becomes established on authorship until the first revision records it,
-since authors were not recorded at the harvest; a rule that implements a decision carries the
-decision's status, as R-015 and R-016 do. A rule's wording is two to four lines.
-How a rule is admitted, graduates and retires is the tooling's documentation, not this
-repository's.
+once, its link line not at all, and a `check`-tier rule not at all. A rule that implements a
+decision carries that decision's status, as R-015 and R-016 do. How a rule is admitted,
+established, graduated and retired, and every threshold that decides it, is the tooling's:
+`standards/dials.md` in libera_llm_tooling.
 
 ---
 

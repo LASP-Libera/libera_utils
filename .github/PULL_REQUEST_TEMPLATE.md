@@ -7,4 +7,4 @@ Ticket: LIBSDC-NNNN â€” <what the ticket asked for and why>, or `Ticket: none â€
 ## How to test
 
 - Here: `<command>`
-- Downstream: <the run in libera_rad, libera_cam, libera_cdk or CSDS that shows it, or "none">
+- Downstream: <the run in libera_rad, libera_cam, libera_analysis or libera_cdk that shows it, or "none">
