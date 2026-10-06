@@ -7,8 +7,9 @@ doc/source/changelog.md. Two checks:
 1. The first `## <version>` heading in doc/source/changelog.md equals the `version` in
    pyproject.toml.
 2. That version is at or above the highest bare-version tag (`5.11.1`, not `v5.11.1` or
-   `5.11.1rc1`). That passes `main`, where the version equals the newest tag, and a bump, and
-   fails a downgrade or a stacked branch left below a newer release.
+   `5.11.1rc1`), a pre-release ranking below the release of the same number. That passes `main`,
+   where the version equals the newest tag, and a bump, and fails a downgrade or a stacked branch
+   left below a newer release, including one still at `5.11.2rc1` once `5.11.2` is tagged.
 
 A release is cut by pushing a tag, and the package published carries pyproject.toml's version.
 A heading that disagrees mislabels the release notes, and a version below the newest tag
@@ -96,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         failed += 1
         print(f"  MISMATCH changelog heading {heading} does not equal pyproject.toml version {version}")
 
-    if release(version) >= release(top):
+    if (release(version), bool(BARE.match(version))) >= (release(top), True):
         print(f"  ok       version {version} is at or above the highest tag {top}")
     else:
         failed += 1

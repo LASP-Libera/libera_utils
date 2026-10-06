@@ -34,6 +34,8 @@ def _args(tmp_path: Path, version: str, heading: str, top_tag: str) -> list[str]
         pytest.param("5.11.1", "5.11.1", "5.11.1", 0, 0, id="equal-to-tag"),
         pytest.param("5.11.2", "5.11.2", "5.11.1", 0, 0, id="above-tag"),
         pytest.param("5.11.0", "5.11.0", "5.11.1", 1, 1, id="below-tag"),
+        pytest.param("5.11.2rc1", "5.11.2rc1", "5.11.1", 0, 0, id="pre-release-above-tag"),
+        pytest.param("5.11.2rc1", "5.11.2rc1", "5.11.2", 1, 1, id="pre-release-of-a-tagged-release"),
         pytest.param("5.10.9", "5.10.8", "5.10.10", 1, 2, id="heading-behind-and-version-below-tag"),
     ],
 )
