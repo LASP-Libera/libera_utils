@@ -37,7 +37,7 @@ stay decoupled from product I/O.
 
 See Also
 --------
-libera_utils.footprint_matching._runner : Manifest-driven runners that call into this module.
+libera_utils.footprint_matching.footprint_match_algorithm : Manifest-driven runners that call into this module.
 """
 
 from __future__ import annotations
@@ -710,7 +710,7 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
 
     When the L1B scan reference is present (``subsatellite_latitude`` /
     ``subsatellite_longitude`` from
-    :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`), the
+    :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs`), the
     box is the **true ray-traced footprint** from
     :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_box`
     (boresight + subsatellite point + viewing zenith projected onto the WGS84
@@ -735,7 +735,7 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     ----------
     l1b_inputs : dict[str, np.ndarray]
         The arrays from
-        :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`
+        :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs`
         (already filtered to finite geolocation). ``latitude``, ``longitude`` and
         ``viewing_zenith_angle`` are always read; ``subsatellite_latitude`` /
         ``subsatellite_longitude`` / ``cone_angle_rate`` are read when present.
@@ -988,7 +988,7 @@ def assemble_fmatch_dataset(
       :class:`PseudoFootprint` objects. See :func:`_assemble_camtime_dataset`.
     * **Radiometer-timescale** (``CAM``, ``IMAGER_FLASH``, ``IMAGER``) - assembled
       from the L1B pass-through arrays produced by
-      :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`.
+      :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs`.
       The first positional argument is that dict. See
       :func:`_assemble_radiometer_dataset`.
 
@@ -1706,7 +1706,7 @@ def _assemble_radiometer_dataset(
     ----------
     l1b_inputs : dict[str, np.ndarray]
         The pass-through arrays from
-        :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`:
+        :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs`:
         the ``RADIOMETER_TIME`` coordinate plus each of
         :data:`_RADIOMETER_L1B_VARIABLES`, all the same length.
     mode : OperationalMode
