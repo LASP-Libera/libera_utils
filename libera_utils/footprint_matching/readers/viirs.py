@@ -49,7 +49,7 @@ from libera_utils.footprint_matching.types import BoundingBox, GridTile, Operati
 _D3_GROUP_MAP: dict[str, tuple[str, str]] = {
     "cloud_optical_thickness": ("Cloud_Optical_Thickness_Combined", "Mean"),
     "cloud_top_pressure": ("Cloud_Top_Pressure", "Mean"),
-}
+} # Confirm
 
 # Fill / missing value used in CLDPROP_D3 files.
 _D3_FILL_VALUE: float = -9999.0

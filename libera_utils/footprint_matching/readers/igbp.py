@@ -100,7 +100,7 @@ class IGBPReader(GriddedDataReader):
         VariableSpec(
             name="surface_type",
             dtype="int16",
-            aggregation="weighted_mode",
+            aggregation="weighted_mode", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=_N_IGBP_CATEGORIES,
         ),
@@ -114,21 +114,21 @@ class IGBPReader(GriddedDataReader):
         VariableSpec(
             name="surface_type_primary",
             dtype="int16",
-            aggregation="weighted_mode_primary",
+            aggregation="weighted_mode_primary", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
             name="surface_type_secondary",
             dtype="int16",
-            aggregation="weighted_mode_secondary",
+            aggregation="weighted_mode_secondary", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
             name="surface_type_tertiary",
             dtype="int16",
-            aggregation="weighted_mode_tertiary",
+            aggregation="weighted_mode_tertiary", # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=_N_IGBP_CATEGORIES,
         ),
