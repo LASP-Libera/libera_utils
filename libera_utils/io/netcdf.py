@@ -148,6 +148,9 @@ def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEn
     open file object has no path to reopen from, so the distributed scheduler fails on it
     with `TypeError: cannot pickle '_io.BufferedRandom' object`. A cloud destination is
     therefore staged on local disk and uploaded rather than written through an open handle.
+    The workers reopen the staged file by its path, so under the distributed scheduler they must
+    share this process's local filesystem, as the workers of a `LocalCluster` do. A worker on
+    another host cannot reopen it.
 
     The upload replaces whatever is already at the key. `force_overwrite_to_cloud=True` is
     required for that rather than optional: the argument's default compares the staged file's
