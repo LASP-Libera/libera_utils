@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.2] - 2026-10-07
+
+### Changed
+
+- `write_libera_data_product` always hands the NetCDF engine a filesystem path, never an open file object. An S3 destination is staged in a temporary directory and uploaded, replacing any existing object at the same key. Both `h5netcdf` and `netcdf4` now write to S3; `netcdf4` previously wrote into the cloudpathlib cache and uploaded nothing.
+- `encoding.chunksizes` in a product definition is stored as a tuple, so a YAML list is accepted by the `h5netcdf` engine as well as `netcdf4`. A `chunksizes` whose entry count differs from the variable's `dimensions` now raises `ValidationError` when the definition loads rather than when the product is written, and a non-iterable one raises `TypeError`.
+
+### Fixed
+
+- Writing a product under the distributed Dask scheduler with the `h5netcdf` engine no longer fails with `TypeError: cannot pickle '_io.BufferedRandom' object`.
+
 ## [5.11.1] - 2026-09-25
 
 ### Added
@@ -741,7 +752,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...HEAD
+[5.11.2]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...5.11.2
 [5.11.1]: https://github.com/LASP-Libera/libera_utils/compare/5.11.0...5.11.1
 [5.11.0]: https://github.com/LASP-Libera/libera_utils/compare/5.10.11...5.11.0
 [5.10.11]: https://github.com/LASP-Libera/libera_utils/compare/5.10.10...5.10.11
