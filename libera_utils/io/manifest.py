@@ -24,18 +24,24 @@ class ManifestError(Exception):
     pass
 
 
+_CHECKSUM_BLOCK_BYTES = 16 * 2**20
+
+
 def calculate_checksum(file: str | Path | S3Path) -> str:
-    """Compute the checksum of the given file.
+    """Compute the MD5 checksum of the given file, reading it in fixed-size blocks.
 
     The checksum is taken over the bytes as they are stored on disk. For a ``*.gz`` file that means
     the compressed bytes, so the value can be compared against the file a data provider delivered.
     Hence ``enable_gzip=False``: letting smart_open transparently decompress would checksum content
     that exists nowhere on disk, and would change if the file were ever recompressed at a different
-    level.
+    level. Memory use is one block regardless of file size, so a product larger than the host's
+    memory can still be checksummed.
     """
+    digest = md5(usedforsecurity=False)
     with smart_open(file, "rb", enable_gzip=False) as fh:
-        checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
-    return checksum_calculated
+        while block := fh.read(_CHECKSUM_BLOCK_BYTES):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def get_ulid_code(filename: str | Path | S3Path | ManifestFilename | None) -> ULID | None:
