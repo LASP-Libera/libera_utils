@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from cloudpathlib import AnyPath
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from xarray import DataArray, Dataset
 
 from libera_utils.config import config
@@ -55,6 +55,16 @@ class LiberaVariableDefinition(BaseModel):
         A list of dimension names that the variable's data array references.
     encoding: dict
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
+        ``chunksizes``, when given, is a list of positive integers with one entry per dimension. It
+        is parsed from YAML as a list and stored as a tuple, because the h5netcdf engine rejects a
+        list and netcdf4 accepts either.
+
+    Raises
+    ------
+    ValidationError
+        If ``dimensions`` names a dimension the standard dimension set does not define, if
+        ``dtype`` is not a recognized NumPy dtype, or if ``encoding['chunksizes']`` is not a list
+        of positive integers with as many entries as ``dimensions``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -66,7 +76,10 @@ class LiberaVariableDefinition(BaseModel):
     dimensions: list[str] = Field(default=list(), description="Dimensions of the variable's data array")
     encoding: dict = Field(
         default_factory=lambda: DEFAULT_ENCODING.copy(),
-        description="Encoding settings for the variable, determining how it is stored on disk",
+        description=(
+            "Encoding settings for the variable, determining how it is stored on disk. "
+            "chunksizes is stored as a tuple with one entry per dimension"
+        ),
     )
 
     @staticmethod
@@ -164,7 +177,41 @@ class LiberaVariableDefinition(BaseModel):
                     f"this warning, set the encoding value to '{v}' in your product definition.",
                     UserWarning,
                 )
-        return {**encoding, **DEFAULT_ENCODING}
+        merged = {**encoding, **DEFAULT_ENCODING}
+        # YAML parses a sequence into a list, but the h5netcdf engine requires a tuple and raises
+        # "chunksize must be a tuple" on a list. The netcdf4 engine accepts either, so an
+        # uncoerced list makes the product definition silently engine-dependent. The entries are
+        # checked first because tuple() would accept a string or a mapping, and the engines
+        # truncate a float.
+        chunksizes = merged.get("chunksizes")
+        if chunksizes is not None:
+            if not isinstance(chunksizes, list | tuple) or not all(
+                type(size) is int and size > 0 for size in chunksizes
+            ):
+                raise ValueError(
+                    f"encoding 'chunksizes' must be a list of positive integers, one per dimension, got "
+                    f"{chunksizes!r}. Write it in the product definition as a YAML list such as [1, 512, 512]."
+                )
+            merged["chunksizes"] = tuple(chunksizes)
+        return merged
+
+    @model_validator(mode="after")
+    def _check_chunksizes_rank(self):
+        """Reject a chunksizes that does not match the variable's dimensionality.
+
+        Raises
+        ------
+        ValueError
+            If ``encoding['chunksizes']`` has a different length than ``dimensions``. Both
+            engines fail on a rank mismatch at write time, long after the definition is loaded.
+        """
+        chunksizes = self.encoding.get("chunksizes")
+        if chunksizes is not None and len(chunksizes) != len(self.dimensions):
+            raise ValueError(
+                f"encoding 'chunksizes' {chunksizes} has {len(chunksizes)} entries but the variable has "
+                f"{len(self.dimensions)} dimension(s) {self.dimensions}. They must match."
+            )
+        return self
 
     @property
     def static_attributes(self) -> dict:

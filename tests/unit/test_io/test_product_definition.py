@@ -867,3 +867,55 @@ class TestLiberaDataProductDefinitionCreateMethods:
         assert ds["fil_rad"].attrs["long_name"] == "Custom Radiance"
         # Other attributes should still be present
         assert ds["fil_rad"].attrs["units"] == "W/(m^2*sr*nm)"
+
+
+class TestVariableChunksizesEncoding:
+    """chunksizes must survive YAML as something both NetCDF engines accept."""
+
+    _DIMS = ["CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y"]
+
+    def _definition(self, chunksizes) -> LiberaVariableDefinition:
+        spec = yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\nencoding: {{chunksizes: {chunksizes}}}\n")
+        return LiberaVariableDefinition(**spec)
+
+    def test_chunksizes_from_yaml_is_coerced_to_a_tuple(self):
+        """YAML yields a list; h5netcdf requires a tuple and netcdf4 accepts either."""
+        variable = self._definition([2, 128, 128])
+        assert variable.encoding["chunksizes"] == (2, 128, 128)
+        assert isinstance(variable.encoding["chunksizes"], tuple)
+
+    @pytest.mark.parametrize("engine", ["h5netcdf", "netcdf4"])
+    def test_declared_chunksizes_are_written_by_either_engine(self, engine, tmp_path):
+        """A chunk shape declared in YAML survives to the file, through either engine.
+
+        The DataArray comes from the definition itself, so the assertion covers the encoding
+        this package applies rather than an encoding dict copied on by the test.
+        """
+        h5py = pytest.importorskip("h5py")
+        variable = self._definition([2, 128, 128])
+        data_array = variable.create_variable_data_array(np.zeros((4, 256, 256), dtype="float32"), "X")
+
+        output_path = tmp_path / f"{engine}.nc"
+        xr.Dataset({"X": data_array}).to_netcdf(output_path, engine=engine)
+
+        with h5py.File(output_path) as f:
+            assert f["X"].chunks == (2, 128, 128)
+
+    def test_chunksizes_rank_mismatch_is_rejected(self):
+        """A rank mismatch otherwise fails at write time, long after the definition loads."""
+        with pytest.raises(ValidationError, match="chunksizes"):
+            self._definition([2, 128])
+
+    @pytest.mark.parametrize(
+        "chunksizes",
+        ["512", "abc", "{a: 1, b: 2, c: 3}", "[2.5, 128, 128]", "[0, 128, 128]", "[-1, 128, 128]", "[true, 128, 128]"],
+        ids=["scalar", "string", "mapping", "float", "zero", "negative", "bool"],
+    )
+    def test_malformed_chunksizes_is_rejected_at_load(self, chunksizes):
+        """Anything but a list of positive integers fails at load as a ValidationError, not at write."""
+        with pytest.raises(ValidationError, match="positive integers"):
+            self._definition(chunksizes)
+
+    def test_encoding_without_chunksizes_is_untouched(self):
+        variable = LiberaVariableDefinition(**yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\n"))
+        assert "chunksizes" not in variable.encoding

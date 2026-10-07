@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.2] - 2026-10-07
+
+### Changed
+
+- `write_libera_data_product` always hands the NetCDF engine a filesystem path, never an open file object. An S3 destination is written to the path's cloudpathlib cache file and uploaded from there, replacing any existing object at the same key. The cache keeps the product afterwards, as it did when the writer went through `CloudPath.open`, so reading it back in the same process (the output manifest's checksum, for one) does not download it again. Both `h5netcdf` and `netcdf4` now write to S3; `netcdf4` previously wrote into the cloudpathlib cache and uploaded nothing.
+- `encoding.chunksizes` in a product definition is stored as a tuple, so a YAML list is accepted by the `h5netcdf` engine as well as `netcdf4`. A `chunksizes` that is not a list of positive integers with one entry per dimension now raises `ValidationError` when the definition loads rather than when the product is written.
+
+### Fixed
+
+- `calculate_checksum`, which `Manifest.add_files` calls for every output file, reads in 16 MiB blocks instead of reading the whole file into memory, so a product larger than the host's memory can be added to a manifest.
+- Writing a product under the distributed Dask scheduler with the `h5netcdf` engine no longer fails with `TypeError: cannot pickle '_io.BufferedRandom' object`.
+
 ## [5.11.1] - 2026-09-25
 
 ### Added
@@ -741,7 +753,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...HEAD
+[5.11.2]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...5.11.2
 [5.11.1]: https://github.com/LASP-Libera/libera_utils/compare/5.11.0...5.11.1
 [5.11.0]: https://github.com/LASP-Libera/libera_utils/compare/5.10.11...5.11.0
 [5.10.11]: https://github.com/LASP-Libera/libera_utils/compare/5.10.10...5.10.11

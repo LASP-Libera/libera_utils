@@ -61,8 +61,8 @@ takes so that a write through `open` always counts as newer than what it is repl
 upload that follows passes its `local newer than cloud` test by construction, so
 `OverwriteNewerCloudError` cannot fire on a sequential write.
 
-PR #66 stages the write in a temporary file and uploads it; `force_overwrite_to_cloud=True` on
-that upload is therefore the faithful translation, not a loosening. A staged temporary file carries no relationship to the object's mtime, so leaving
+PR #66 writes the product into the path's cache file and uploads it with `upload_from` instead of
+through `open`; `force_overwrite_to_cloud=True` on that upload is therefore the faithful translation, not a loosening. A freshly written file carries no relationship to the object's mtime, so leaving
 the argument at its default would compare a local clock against S3's and raise where the current
 path cannot — a behavior change wearing the default's clothes.
 

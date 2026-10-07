@@ -11,7 +11,8 @@ from cloudpathlib import S3Path
 from pydantic import ValidationError
 
 from libera_utils.constants import ManifestType
-from libera_utils.io.manifest import Manifest, ManifestFileRecord
+from libera_utils.io import manifest as manifest_module
+from libera_utils.io.manifest import Manifest, ManifestFileRecord, calculate_checksum
 from libera_utils.io.smart_open import smart_open
 
 
@@ -169,6 +170,16 @@ def test_validate_checksums(test_jpss_manifest, caplog):
         checksum = md5(fh.read()).hexdigest()
     m.files = [ManifestFileRecord(filename=str(test_jpss_manifest.absolute()), checksum=checksum)]
     m.validate_checksums()
+
+
+def test_calculate_checksum_reads_in_blocks(tmp_path, monkeypatch):
+    """A file spanning several blocks hashes to the same MD5 as one read of the whole file"""
+    monkeypatch.setattr(manifest_module, "_CHECKSUM_BLOCK_BYTES", 1000)
+    payload = bytes(range(256)) * 50  # 12,800 bytes: twelve full blocks and a partial one
+    path = tmp_path / "payload.bin"
+    path.write_bytes(payload)
+
+    assert calculate_checksum(path) == md5(payload, usedforsecurity=False).hexdigest()
 
 
 @pytest.mark.parametrize(
