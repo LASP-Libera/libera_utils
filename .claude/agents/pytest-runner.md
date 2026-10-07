@@ -20,7 +20,7 @@ Follow these steps when running tests:
 
 1. **Identify the test scope**: Determine which tests to run based on the user's request:
 
-   - **All unit tests**: `pytest -m "not integration" tests/ -v --tb=short -q 2>&1`
+   - **All unit tests**: `pytest -m "not integration and not e2e" tests/ -v --tb=short -q 2>&1`
    - **All integration tests**: `pytest -m integration tests/ -v --tb=short -q 2>&1`
    - **All tests (unit + integration)**: `pytest tests/ -v --tb=short -q 2>&1`
    - **Specific test file**: `pytest tests/unit/test_io/test_filenaming.py -v --tb=short -q 2>&1`
@@ -28,7 +28,7 @@ Follow these steps when running tests:
    - **Pattern matching**: `pytest -k "pattern" tests/ -v --tb=short -q 2>&1`
    - **Specific module directory**: `pytest tests/unit/test_aws/ -v --tb=short -q 2>&1`
 
-   **IMPORTANT**: Always run pytest from the repository root (where `pyproject.toml` lives). Use `-m "not integration"` to exclude integration tests and `-m integration` to run only integration tests. Do NOT use marker flags when targeting a specific file directly.
+   **IMPORTANT**: Always run pytest from the repository root (where `pyproject.toml` lives). Use `-m "not integration and not e2e"` for unit tests only and `-m integration` to run only integration tests. Do NOT use marker flags when targeting a specific file directly.
 
 2. **Standard pytest flags to use**:
 
@@ -89,15 +89,15 @@ Brief observation about failure patterns or likely root cause
 - **Include moderate detail**: For each failure, include the test name, file location, error type, and first 3-5 lines of traceback
 - **Group related failures**: If multiple tests fail for the same reason, note the pattern in the Analysis section
 - **Suggest next steps**: When appropriate, suggest which code to examine based on the failures
-- **Default to unit tests**: When user says "run tests" without specifying, run unit tests with `pytest -m "not integration" tests/ -v --tb=short -q 2>&1`
+- **Default to unit tests**: When user says "run tests" without specifying, run unit tests with `pytest -m "not integration and not e2e" tests/ -v --tb=short -q 2>&1`
 
 ## Project Test Structure
 
 ### Pytest Configuration
 
 - **Pytest config**: `[tool.pytest.ini_options]` section in `pyproject.toml`
-- Integration tests are marked with `@pytest.mark.integration`
-- Use `-m "not integration"` to exclude them; `-m integration` to select only them
+- Integration tests are marked with `@pytest.mark.integration`; e2e tests in `tests/e2e/` are marked with `@pytest.mark.e2e` and run only in the daily build
+- Use `-m "not integration and not e2e"` for unit tests only, `-m "not e2e"` for what a PR runs, `-m e2e` for the daily lane
 
 ### Test Directory Layout
 
@@ -132,7 +132,7 @@ Brief observation about failure patterns or likely root cause
 ### Quick Health Check
 
 User says: "Run tests" or "Health check"
-→ Run: `pytest -m "not integration" tests/ -v --tb=short -q 2>&1`
+→ Run: `pytest -m "not integration and not e2e" tests/ -v --tb=short -q 2>&1`
 
 ### After Code Changes
 
@@ -151,7 +151,7 @@ User modified SPICE utilities
 ### Fail Fast (Iterative Debugging)
 
 User is fixing issues and wants quick feedback
-→ Add `-x` flag: `pytest -m "not integration" tests/ -v --tb=short -q -x 2>&1`
+→ Add `-x` flag: `pytest -m "not integration and not e2e" tests/ -v --tb=short -q -x 2>&1`
 
 ### Integration Testing
 

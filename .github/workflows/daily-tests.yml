@@ -8,3 +8,5 @@ on:
 jobs:
   run-tests:
     uses: ./.github/workflows/_run-tests.yml
+    with:
+      lane: daily
