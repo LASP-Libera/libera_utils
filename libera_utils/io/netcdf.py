@@ -1,13 +1,13 @@
 """Module containing utilities for writing Libera-conforming NetCDF4 data products"""
 
 import logging
-import tempfile
+import os
 from enum import StrEnum
-from pathlib import Path
 from typing import Any, Literal
 
 import xarray as xr
 from cloudpathlib import AnyPath, CloudPath
+from cloudpathlib.enums import FileCacheMode
 from numpy.typing import NDArray
 
 from libera_utils.config import config
@@ -146,33 +146,46 @@ def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEn
     The engine's argument must be picklable. `xarray` wraps it in a `CachingFileManager`,
     which pickles as its opener and arguments so each Dask worker can reopen the file; an
     open file object has no path to reopen from, so the distributed scheduler fails on it
-    with `TypeError: cannot pickle '_io.BufferedRandom' object`. A cloud destination is
-    therefore staged on local disk and uploaded rather than written through an open handle.
-    The workers reopen the staged file by its path, so under the distributed scheduler they must
-    share this process's local filesystem, as the workers of a `LocalCluster` do. A worker on
-    another host cannot reopen it.
+    with `TypeError: cannot pickle '_io.BufferedRandom' object`. The workers reopen the file by
+    its path, so under the distributed scheduler they must share this process's local
+    filesystem, as the workers of a `LocalCluster` do. A worker on another host cannot reopen it.
+
+    A cloud destination is therefore written to the path's own cloudpathlib cache file and
+    uploaded from there, which is where `CloudPath.open("w+b")` writes before uploading on
+    close. The cache keeps the product afterwards, as it did through `open`, so a later read of
+    `path` in the same process, such as the manifest checksum, is served from local disk
+    instead of downloading the object again. The cache file's modification time is set to the
+    object's after the upload, the step cloudpathlib takes on close, because the cache treats a
+    file older than its object as stale. Under `FileCacheMode.close_file` the cache file is
+    removed after the upload, again as `open` does on close.
 
     The upload replaces whatever is already at the key. `force_overwrite_to_cloud=True` is
-    required for that rather than optional: the argument's default compares the staged file's
-    modification time against the object's, and a temporary file carries a local clock with no
-    relationship to S3's, so a product could be refused for being older than the object it is
-    meant to replace. A concurrent replacement mid-write is correspondingly not detected.
+    required for that rather than optional: the argument's default compares the cache file's
+    modification time against the object's, and a freshly written file carries a local clock
+    with no relationship to S3's, so a product could be refused for being older than the object
+    it is meant to replace. A concurrent replacement mid-write is correspondingly not detected.
 
     Parameters
     ----------
     dataset : xr.Dataset
         Dataset to write.
     path : PathType
-        Destination path. A `CloudPath` is staged locally and uploaded; a `Path` is written
-        directly. An existing file or object at this path is replaced.
+        Destination path. A `CloudPath` is written to its cache file and uploaded; a `Path` is
+        written directly. An existing file or object at this path is replaced.
     engine : T_XarrayNetcdfEngine
         NetCDF engine to write with.
     """
     if isinstance(path, CloudPath):
-        with tempfile.TemporaryDirectory() as staging_dir:
-            staged_path = Path(staging_dir) / path.name
-            dataset.to_netcdf(staged_path, engine=engine)
-            logger.info(f"Uploading staged product to {path}")
-            path.upload_from(staged_path, force_overwrite_to_cloud=True)
+        # cloudpathlib has no public accessor for the cache location that does not first
+        # download an existing object, so this reads `_local` directly.
+        cache_file = path._local
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        dataset.to_netcdf(cache_file, engine=engine)
+        logger.info(f"Uploading {cache_file} to {path}")
+        path.upload_from(cache_file, force_overwrite_to_cloud=True)
+        cloud_mtime = path.stat().st_mtime
+        os.utime(cache_file, times=(cloud_mtime, cloud_mtime))
+        if path.client.file_cache_mode == FileCacheMode.close_file:
+            path.clear_cache()
     else:
         dataset.to_netcdf(path, engine=engine)
