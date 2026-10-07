@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `write_libera_data_product` always hands the NetCDF engine a filesystem path, never an open file object. An S3 destination is staged in a temporary directory and uploaded, replacing any existing object at the same key. Both `h5netcdf` and `netcdf4` now write to S3; `netcdf4` previously wrote into the cloudpathlib cache and uploaded nothing.
-- `encoding.chunksizes` in a product definition is stored as a tuple, so a YAML list is accepted by the `h5netcdf` engine as well as `netcdf4`. A `chunksizes` whose entry count differs from the variable's `dimensions` now raises `ValidationError` when the definition loads rather than when the product is written, and a non-iterable one raises `TypeError`.
+- `encoding.chunksizes` in a product definition is stored as a tuple, so a YAML list is accepted by the `h5netcdf` engine as well as `netcdf4`. A `chunksizes` that is not a list of positive integers with one entry per dimension now raises `ValidationError` when the definition loads rather than when the product is written.
 
 ### Fixed
 

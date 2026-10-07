@@ -906,10 +906,15 @@ class TestVariableChunksizesEncoding:
         with pytest.raises(ValidationError, match="chunksizes"):
             self._definition([2, 128])
 
-    def test_non_iterable_chunksizes_raises_type_error(self):
-        """The TypeError escapes pydantic, so it does not arrive as a ValidationError."""
-        with pytest.raises(TypeError, match="not iterable"):
-            self._definition(512)
+    @pytest.mark.parametrize(
+        "chunksizes",
+        ["512", "abc", "{a: 1, b: 2, c: 3}", "[2.5, 128, 128]", "[0, 128, 128]", "[-1, 128, 128]", "[true, 128, 128]"],
+        ids=["scalar", "string", "mapping", "float", "zero", "negative", "bool"],
+    )
+    def test_malformed_chunksizes_is_rejected_at_load(self, chunksizes):
+        """Anything but a list of positive integers fails at load as a ValidationError, not at write."""
+        with pytest.raises(ValidationError, match="positive integers"):
+            self._definition(chunksizes)
 
     def test_encoding_without_chunksizes_is_untouched(self):
         variable = LiberaVariableDefinition(**yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\n"))
