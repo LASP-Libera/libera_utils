@@ -906,6 +906,11 @@ class TestVariableChunksizesEncoding:
         with pytest.raises(ValidationError, match="chunksizes"):
             self._definition([2, 128])
 
+    def test_non_iterable_chunksizes_raises_type_error(self):
+        """The TypeError escapes pydantic, so it does not arrive as a ValidationError."""
+        with pytest.raises(TypeError, match="not iterable"):
+            self._definition(512)
+
     def test_encoding_without_chunksizes_is_untouched(self):
         variable = LiberaVariableDefinition(**yaml.safe_load(f"dtype: float32\ndimensions: {self._DIMS}\n"))
         assert "chunksizes" not in variable.encoding
