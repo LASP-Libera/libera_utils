@@ -90,11 +90,8 @@ def write_libera_data_product(
         not have a datetime64 dtype, or, when `strict` is True, if the Dataset does not conform
         to the product definition.
     pydantic.ValidationError
-        If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` has a
-        different number of entries than its ``dimensions``.
-    TypeError
         If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
-        iterable.
+        a list of positive integers with as many entries as its ``dimensions``.
     """
     logger.info("Writing Libera data product")
 

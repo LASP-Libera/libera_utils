@@ -55,20 +55,16 @@ class LiberaVariableDefinition(BaseModel):
         A list of dimension names that the variable's data array references.
     encoding: dict
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
-        ``chunksizes`` is parsed from YAML as a list and stored as a tuple, because the h5netcdf
-        engine rejects a list and netcdf4 accepts either. Only the number of entries is checked.
-        The entries themselves are not: a float is truncated by the engine, and a string becomes
-        a tuple of its characters and then fails at write.
+        ``chunksizes``, when given, is a list of positive integers with one entry per dimension. It
+        is parsed from YAML as a list and stored as a tuple, because the h5netcdf engine rejects a
+        list and netcdf4 accepts either.
 
     Raises
     ------
     ValidationError
         If ``dimensions`` names a dimension the standard dimension set does not define, if
-        ``dtype`` is not a recognized NumPy dtype, or if ``encoding['chunksizes']`` has a
-        different number of entries than ``dimensions``.
-    TypeError
-        If ``encoding['chunksizes']`` is not iterable. This escapes pydantic's error surface
-        rather than arriving as a ``ValidationError``.
+        ``dtype`` is not a recognized NumPy dtype, or if ``encoding['chunksizes']`` is not a list
+        of positive integers with as many entries as ``dimensions``.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -184,9 +180,19 @@ class LiberaVariableDefinition(BaseModel):
         merged = {**encoding, **DEFAULT_ENCODING}
         # YAML parses a sequence into a list, but the h5netcdf engine requires a tuple and raises
         # "chunksize must be a tuple" on a list. The netcdf4 engine accepts either, so an
-        # uncoerced list makes the product definition silently engine-dependent.
-        if merged.get("chunksizes") is not None:
-            merged["chunksizes"] = tuple(merged["chunksizes"])
+        # uncoerced list makes the product definition silently engine-dependent. The entries are
+        # checked first because tuple() would accept a string or a mapping, and the engines
+        # truncate a float.
+        chunksizes = merged.get("chunksizes")
+        if chunksizes is not None:
+            if not isinstance(chunksizes, list | tuple) or not all(
+                type(size) is int and size > 0 for size in chunksizes
+            ):
+                raise ValueError(
+                    f"encoding 'chunksizes' must be a list of positive integers, one per dimension, got "
+                    f"{chunksizes!r}. Write it in the product definition as a YAML list such as [1, 512, 512]."
+                )
+            merged["chunksizes"] = tuple(chunksizes)
         return merged
 
     @model_validator(mode="after")

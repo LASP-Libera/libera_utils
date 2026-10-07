@@ -70,16 +70,14 @@ value in a particular product definition yml file or it could be passed via kwar
 
 ### Chunking
 
-Give `encoding.chunksizes` one integer per entry in `dimensions`, in dimension order. A count
-that does not match raises when the definition is loaded rather than when a product is
-written, so a bad chunk shape fails before any data is processed.
+Give `encoding.chunksizes` as a list of positive integers, one per entry in `dimensions`, in
+dimension order. Anything else, including a count that does not match, raises when the definition
+is loaded rather than when a product is written, so a bad chunk shape fails before any data is
+processed.
 
 YAML parses the sequence as a list and the definition stores it as a tuple, because the
 h5netcdf engine rejects a list outright while netcdf4 accepts either; leaving it uncoerced
 would make a product definition behave differently depending on which engine is configured.
-Only the count is checked. Beyond that, a float is truncated by the engine, a string becomes a
-tuple of its characters and fails at write, and a value that is not iterable at all raises
-`TypeError` when the definition loads. See `LiberaVariableDefinition` for the exact conditions.
 
 ## Basic Usage
 
