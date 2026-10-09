@@ -10,9 +10,10 @@ Full specifics including all available file naming classes are available [in the
 ## Hashing and Equality
 
 All `Filename` classes are hashable and compare equal when their paths are equal, so they can be used as dictionary
-keys and set members. Two filenames with the same basename in different directories or buckets are distinct, and
-comparing a filename with anything that is not a filename is simply `False`. Reassigning `path` changes the object's
-hash, so do not modify a filename that is already a set member or a dictionary key.
+keys and set members. Two filenames with the same basename in different directories or buckets are distinct. A
+filename's equality check only handles other filenames; for anything else it returns `NotImplemented` and Python
+falls back to the other operand, so comparing a filename with a string, `None` or a path is `False`. Reassigning
+`path` changes the object's hash, so do not modify a filename that is already a set member or a dictionary key.
 
 ## Working With Paths
 

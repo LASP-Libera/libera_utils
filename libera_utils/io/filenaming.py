@@ -123,8 +123,7 @@ class AbstractValidFilename(ABC):
     - This is an abstract base class that must be inherited by concrete filename classes.
     - This class internally stores a CloudPath or Path object in the `path` property (composition).
     - Instances are hashable and compare equal when their paths are equal (as given; a relative and an absolute
-      spelling of the same file are distinct). Reassigning `path` changes the hash, so do not mutate an instance
-      that is already a member of a set or a dict key.
+      spelling of the same file are distinct).
     """
 
     _regex: re.Pattern

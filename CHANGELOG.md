@@ -9,15 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- All `Filename` classes in `libera_utils.io.filenaming` are hashable (LIBSDC-723). `hash()` is the hash of the path as given, so filenames can be dictionary keys and set members. Reassigning `path` changes the hash, so do not mutate a filename that is already in a set or a dict.
+- All `Filename` classes in `libera_utils.io.filenaming` are hashable. `hash()` is the hash of the path as given, so filenames can be dictionary keys and set members. Reassigning `path` changes the hash, so do not mutate a filename that is already in a set or a dict.
 
 ### Changed
 
 - **BREAKING:** `AbstractValidFilename.__eq__` compares paths only and returns `NotImplemented` for non-filename operands, so `filename == "some string"` is `False` instead of raising `AttributeError`. Two filenames with the same basename in different directories or buckets are not equal. Previously the parsed filename parts were compared as well, which was redundant because they are derived from the path.
-
-### Removed
-
-- The never-assigned `AbstractValidFilename._required_parts` class annotation.
 
 ### Fixed
 
