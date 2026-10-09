@@ -184,8 +184,6 @@ class Manifest(BaseModel):
 
     def validate_checksums(self) -> None:
         """Validate checksums of listed files"""
-        # Note: any gzipped file will be opened and read by smart_open so the checksum reflects the data
-        # in the zipped file not the zipped file itself.
         failed_filenames = []
         for file_structure in self.files:
             checksum_expected = file_structure.checksum
