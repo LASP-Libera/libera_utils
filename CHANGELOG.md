@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.2] - 2026-10-06
+
+### Changed
+
+- Fix the intermittent `PytestUnraisableExceptionWarning` CI failures. Leaked handles (see Fixed), test fixtures that detached root logging handlers without closing them, and an `h5py.File` handed a file object it does not own produced `ResourceWarning`s during garbage collection. pytest drains those from one global queue at each test's setup, call and teardown, so the failure landed on whichever unrelated test was running at the time. Tests that assert no warnings now use the shared `strict_warnings` mark, which keeps warnings-as-errors but declines to own unraisable exceptions leaked elsewhere in the suite.
+- `calculate_checksum` no longer decompresses `*.gz` input before hashing. A manifest checksum has to cover the bytes as stored so it can be compared against the file a data provider delivered; the previous value hashed content that exists nowhere on disk and would change if the file were recompressed at a different level. Any checksum an earlier version recorded for a `*.gz` file must be regenerated.
+
+### Fixed
+
+- `smart_open` now closes the underlying file object when the `GzipFile` it returns is closed. `GzipFile` only closes a file it opened itself, so reading any `*.gz` through `smart_open` leaked an open file handle until the garbage collector finalized it. This affected library callers (`calculate_checksum`, `metadata_writer`, SPICE kernel downloads), not just tests.
+- `smart_open` passes the requested mode to `GzipFile` when opening a `*.gz` file. Writing one no longer emits the `FutureWarning` `GzipFile` raises when it infers a write mode from the file object, and `'wb+'` now opens for writing instead of read-only.
+- `smart_open` rejects a text mode for a `*.gz` path before opening the file, so the `OSError` no longer leaves an open file handle behind.
+- Writing a `*.gz` file through `smart_open` with an `S3Path` or `AnyPath` that already had a local cached copy (a second write, or a write after a read through the same object) no longer leaves cloudpathlib's cache marked dirty, which made the next read raise `OverwriteDirtyFileError`.
+
 ## [5.11.1] - 2026-09-25
 
 ### Added

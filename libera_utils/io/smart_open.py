@@ -74,11 +74,17 @@ def smart_open(path: str | Path | S3Path, mode: str | None = "rb", enable_gzip: 
     Returns
     -------
     : typing.IO or gzip.GzipFile
+
+    Raises
+    ------
+    OSError
+        If `path` is a `*.gz` file, `enable_gzip` is True and `mode` is not a binary mode.
+        Raised before the file is opened.
     """
 
     def _gzip_wrapper(fileobj: typing.IO):
-        """Wrapper around a filelike object that unzips it
-        (if it is enabled and if the file object was opened in binary mode).
+        """Wrapper around a filelike object that unzips it if gzip handling is enabled
+        and the path is `*.gz`. The caller has already rejected non-binary modes.
 
         Parameters
         ----------
@@ -90,10 +96,20 @@ def smart_open(path: str | Path | S3Path, mode: str | None = "rb", enable_gzip: 
         : gzip.GzipFile
         """
         if is_gzip(path) and enable_gzip:
-            if "b" not in mode:
-                raise OSError(f"Gzip files must be opened in binary (b) mode. Got {mode}.")
-            return GzipFile(filename=path, fileobj=fileobj)
+            # str(path): on a write GzipFile takes os.path.basename of filename for the header, and an
+            # S3Path's __fspath__ refreshes its local cache, which marks a file open for writing as dirty
+            gzip_file = GzipFile(filename=str(path), mode=mode, fileobj=fileobj)
+            # GzipFile.close() only closes the underlying file object if GzipFile opened it itself,
+            # which it records by setting myfileobj. Since we hand it an already-open fileobj, that
+            # attribute stays None and closing the GzipFile would leak fileobj until garbage
+            # collection. Setting it here is how gzip.open() itself arranges the same cascade.
+            gzip_file.myfileobj = fileobj
+            return gzip_file
         return fileobj
+
+    # Checked before opening, since a raise after the open would drop the handle it acquired
+    if enable_gzip and is_gzip(path) and "b" not in mode:
+        raise OSError(f"Gzip files must be opened in binary (b) mode. Got {mode}.")
 
     if isinstance(path, Path | S3Path):
         return _gzip_wrapper(path.open(mode=mode))

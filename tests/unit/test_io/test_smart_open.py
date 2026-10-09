@@ -11,6 +11,7 @@ from cloudpathlib import AnyPath, S3Path
 
 from libera_utils.aws.s3_utilities import s3_copy_file
 from libera_utils.io.smart_open import is_gzip, is_s3, smart_copy_file, smart_open
+from tests.marks import strict_warnings
 
 
 @pytest.mark.parametrize(
@@ -82,9 +83,11 @@ def test_smart_open_hdf5(test_hdf5, create_mock_bucket, write_file_to_s3, wrappe
 
     hdf5_wrapped = wrapper(hdf5_uri)
     # Check that the contents of the files match, regardless of s3 or local
-    with h5.File(smart_open(test_hdf5), "r") as fh:
+    # h5py.File.close() does not close a file object handed to it, so the smart_open handle needs
+    # its own context manager or it leaks until garbage collection.
+    with smart_open(test_hdf5) as local_fileobj, h5.File(local_fileobj, "r") as fh:
         dataset_local = np.array(fh[list(fh.keys())[0]])
-    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
+    with smart_open(hdf5_wrapped) as s3_fileobj, h5.File(s3_fileobj, "r") as fh:
         dataset_s3 = np.array(fh[list(fh.keys())[0]])
     assert dataset_local.all() == dataset_s3.all()
 
@@ -104,7 +107,7 @@ def test_smart_open_mode(create_mock_bucket, write_file_to_s3, wrapper, test_hdf
     with smart_open(hdf5_wrapped, "wb") as fh:
         with h5.File(fh, "r+") as hdf:
             hdf.create_group("new_group")
-    with h5.File(smart_open(hdf5_wrapped), "r") as fh:
+    with smart_open(hdf5_wrapped) as fileobj, h5.File(fileobj, "r") as fh:
         group_name = list(fh.keys())[0]
     assert group_name == "new_group"
 
@@ -120,6 +123,83 @@ def test_smart_open_local(test_txt, test_txt_gz, wrapper):
     with smart_open(gz_wrapped) as fh_compressed:
         compressed_contents = fh_compressed.readlines()
     assert uncompressed_contents == compressed_contents
+
+
+@pytest.mark.parametrize("wrapper", [AnyPath, Path, str])
+def test_smart_open_gzip_text_mode_opens_nothing(test_txt_gz, monkeypatch, wrapper):
+    """A text mode on a gzip path is rejected before the file is opened, so no handle leaks."""
+    opened = []
+    original_open = Path.open
+
+    def _spy_open(self, *args, **kwargs):
+        opened.append(self)
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _spy_open)
+    with pytest.raises(OSError, match="binary"):
+        smart_open(wrapper(test_txt_gz.absolute()), "r")
+    assert opened == []
+
+
+@strict_warnings
+@pytest.mark.parametrize("mode", ["rb", "wb", "wb+"])
+@pytest.mark.parametrize(
+    ("location", "wrapper"),
+    [
+        ("local", AnyPath),
+        ("local", Path),
+        ("local", str),
+        ("s3", AnyPath),
+        ("s3", S3Path),
+        ("s3", str),
+    ],
+)
+def test_smart_open_gzip_closes_underlying_file(
+    test_txt_gz, tmp_path, create_mock_bucket, write_file_to_s3, location, wrapper, mode
+):
+    """Closing the returned GzipFile must also close the file object underneath it.
+
+    GzipFile only closes the underlying object when it opened that object itself, so smart_open
+    has to arrange the cascade explicitly. Without it the handle survives as cyclic garbage and
+    raises a ResourceWarning whenever the garbage collector eventually finalizes it, which pytest
+    then reports as an unraisable exception against an unrelated test. Covers reads and writes,
+    local and S3; an S3 write is only uploaded when the underlying file object is closed.
+
+    The write cases open the same path object twice and then read it back. On an S3Path that
+    second open finds a local cached copy, which cloudpathlib would mark dirty (and refuse to read
+    back) if smart_open handed the S3Path itself to GzipFile as its filename.
+    """
+    if location == "s3":
+        bucket = create_mock_bucket()
+        target = f"s3://{bucket.name}/somepath/test.txt.gz"
+        if mode == "rb":
+            write_file_to_s3(test_txt_gz, target)
+    else:
+        target = test_txt_gz.absolute() if mode == "rb" else tmp_path / "out.txt.gz"
+
+    def _use(gz):
+        if mode == "rb":
+            gz.read()
+        else:
+            gz.write(b"hello\n")
+
+    gz = smart_open(wrapper(target), mode)
+    underlying = gz.fileobj  # GzipFile clears this attribute on close, so grab it first
+    _use(gz)
+    gz.close()
+    assert gz.closed
+    assert underlying.closed
+
+    # The context manager form is how callers actually use this, so check it closes too
+    gz = smart_open(wrapper(target), mode)
+    underlying = gz.fileobj
+    with gz:
+        _use(gz)
+    assert underlying.closed
+
+    if mode != "rb":
+        with smart_open(wrapper(target)) as fh:
+            assert fh.read() == b"hello\n"
 
 
 @pytest.mark.parametrize("wrapper", [AnyPath, str])

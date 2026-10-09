@@ -25,8 +25,15 @@ class ManifestError(Exception):
 
 
 def calculate_checksum(file: str | Path | S3Path) -> str:
-    """Compute the checksum of the given file."""
-    with smart_open(file, "rb") as fh:
+    """Compute the checksum of the given file.
+
+    The checksum is taken over the bytes as they are stored on disk. For a ``*.gz`` file that means
+    the compressed bytes, so the value can be compared against the file a data provider delivered.
+    Hence ``enable_gzip=False``: letting smart_open transparently decompress would checksum content
+    that exists nowhere on disk, and would change if the file were ever recompressed at a different
+    level.
+    """
+    with smart_open(file, "rb", enable_gzip=False) as fh:
         checksum_calculated = md5(fh.read(), usedforsecurity=False).hexdigest()
     return checksum_calculated
 
@@ -177,8 +184,6 @@ class Manifest(BaseModel):
 
     def validate_checksums(self) -> None:
         """Validate checksums of listed files"""
-        # Note: any gzipped file will be opened and read by smart_open so the checksum reflects the data
-        # in the zipped file not the zipped file itself.
         failed_filenames = []
         for file_structure in self.files:
             checksum_expected = file_structure.checksum
