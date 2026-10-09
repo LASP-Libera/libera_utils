@@ -68,17 +68,9 @@ extensions = [
     "sphinx.ext.autodoc",  # Generates API docs
     "sphinx.ext.autosummary",
     "sphinx.ext.intersphinx",  # Link to other projects' documentation
-    "sphinx.ext.napoleon",  # Handles numpy style docstrings
+    "sphinx.ext.napoleon",  # Parses our numpy style docstrings (napoleon, not numpydoc)
     "sphinx.ext.autosectionlabel",
     "myst_parser",  # Markdown
-    # NOTE: numpydoc is deliberately NOT enabled. napoleon (above) already parses numpy style
-    # docstrings, and running both is a long standing conflict (sphinx-doc/sphinx#1384). Worse,
-    # numpydoc's autodoc-process-signature hook crashes Sphinx 9's rewritten autodoc on members
-    # inherited from builtins, e.g. the str methods a StrEnum inherits (sphinx-doc/sphinx#14576),
-    # which autosummary then reports as "failed to import object". numpydoc also emitted a second,
-    # noisier copy of every class Methods table. Between them these accounted for roughly 7700 of
-    # the ~9800 warnings this build used to produce. If we want numpydoc's docstring linting back,
-    # numpydoc_validation_checks is available as a standalone pre-commit hook.
 ]
 
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
