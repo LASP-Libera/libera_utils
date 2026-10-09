@@ -139,6 +139,14 @@ def test_manifest_generate_filename():
     assert m.configuration == {}
 
 
+def test_manifest_equality_with_and_without_filename():
+    """Test that a manifest with a filename and one without compare unequal in either order without raising"""
+    named = Manifest(manifest_type=ManifestType.INPUT, filename="LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json")
+    unnamed = Manifest(manifest_type=ManifestType.INPUT)
+    assert named != unnamed
+    assert unnamed != named
+
+
 def test_manifest_write_s3(create_mock_bucket):
     """Test writing a manifest file from an object"""
     bucket = create_mock_bucket()
