@@ -103,7 +103,6 @@ snakeviz = "*"  # Visualization for time profiling
 # Sphinx, so leaving the rest unmarked would just make Poetry resolve 9.0.4 for a 3.11 interpreter.
 # Docs are only ever built on the RTD builder, which .readthedocs.yaml keeps at 3.13.
 myst-parser = { version = "*", python = ">=3.12,<4" }  # Parses markdown for sphinx
-numpydoc = { version = "*", python = ">=3.12,<4" }  # Parses Numpy style docstrings
 pydata-sphinx-theme = { version = "*", python = ">=3.12,<4" }
 # A floor, not a pin. Sphinx 9.0.4, the newest release that supports Python 3.11, renders pydantic
 # Annotated[...] metadata and the stdlib int.from_bytes/to_bytes docstrings our IntEnums inherit as
