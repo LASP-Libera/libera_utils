@@ -259,7 +259,7 @@ class Manifest(BaseModel):
 
         Parameters
         ----------
-        input_manifest : Union[Path, S3Path, 'Manifest']
+        input_manifest : Path | S3Path | Manifest
             An S3 or regular path to an input_manifest object, or the input manifest object itself
 
         Returns

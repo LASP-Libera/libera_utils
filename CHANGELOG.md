@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [5.11.2] - 2026-10-06
+### Added
+
+- The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
+- Link the UMM-G granule page from the user docs index.
+
+### Changed
+
+- The docs build fails on any warning: `doc/Makefile` runs `sphinx-build -W --keep-going`, and `.readthedocs.yaml` sets `fail_on_warning`.
+- ReadTheDocs builds the docs on Python 3.13 (Ubuntu 24.04), and the `docgen` dependency group requires Sphinx 9.1 or newer on Python 3.12 or newer.
+
+### Removed
+
+- `numpydoc` from the `docgen` dependency group. `sphinx.ext.napoleon` parses the numpy style docstrings.
+
+### Fixed
+
+- Fix the docstring, markdown and Sphinx config defects behind the docs build's 9841 warnings, including cross-references to private or renamed targets (`create_l1a_dataset` is now `parse_packets_to_l1a_dataset`).
+
+## [5.11.2] - 2026-10-09
 
 ### Changed
 
@@ -230,8 +248,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.8.3] - 2026-06-04
 
-_Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-index fields with indexed arrays). Treat this as breaking for external consumers of those variables; a patch bump was chosen during early development. Changed variables: ICIE**SW_FP_WP_ST_WP, ICIE**SW_SEQ_EXEC_BUF_OP,
-ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
+_Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-index fields with indexed arrays). Treat this as breaking for external consumers of those variables; a patch bump was chosen during early development. Changed variables: `ICIE__SW_FP_WP_ST_WP`, `ICIE__SW_SEQ_EXEC_BUF_OP`,
+`ICIE__SW_SEQ_EXEC_POS_OP`, `ICIE__SW_SEQ_ST_OP`, `ICIE__SW_SEQ_STOP_CD_OP`
 
 ### Added
 
@@ -363,6 +381,11 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 ### Added
 
 - Add enforcement of valid versioning in Filename classes
+
+## [5.4.4] - 2026-01-13
+
+### Added
+
 - Allow passing dynamic product level attributes to data product writer
 
 ## [5.4.3] - 2026-01-10
@@ -755,7 +778,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...HEAD
+[5.11.2]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...5.11.2
 [5.11.1]: https://github.com/LASP-Libera/libera_utils/compare/5.11.0...5.11.1
 [5.11.0]: https://github.com/LASP-Libera/libera_utils/compare/5.10.11...5.11.0
 [5.10.11]: https://github.com/LASP-Libera/libera_utils/compare/5.10.10...5.10.11
@@ -793,7 +817,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 [5.4.8]: https://github.com/LASP-Libera/libera_utils/compare/5.4.7...5.4.8
 [5.4.7]: https://github.com/LASP-Libera/libera_utils/compare/5.4.6...5.4.7
 [5.4.6]: https://github.com/LASP-Libera/libera_utils/compare/5.4.5...5.4.6
-[5.4.5]: https://github.com/LASP-Libera/libera_utils/compare/5.4.3...5.4.5
+[5.4.5]: https://github.com/LASP-Libera/libera_utils/compare/5.4.4...5.4.5
+[5.4.4]: https://github.com/LASP-Libera/libera_utils/compare/5.4.3...5.4.4
 [5.4.3]: https://github.com/LASP-Libera/libera_utils/compare/5.4.2...5.4.3
 [5.4.2]: https://github.com/LASP-Libera/libera_utils/compare/5.4.1...5.4.2
 [5.4.1]: https://github.com/LASP-Libera/libera_utils/compare/5.4.0...5.4.1

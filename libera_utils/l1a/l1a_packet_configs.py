@@ -124,7 +124,7 @@ class SampleGroup(BaseModel):
     epoch_time_fields : TimeFieldMapping | None
         Mapping of time fields to units for a single epoch timestamp.
         Used with sample_period to calculate sample times.
-    sample_period : timedelta | None
+    sample_period : datetime.timedelta | None
         Fixed time period between samples, used with epoch_time_fields.
     data_field_patterns : list[str]
         List of data field name patterns. Use %i for sample index if multiple samples.
@@ -253,7 +253,7 @@ class AggregationGroup(BaseModel):
     field_count : int
         Expected number of fields to aggregate (e.g., 972)
     dtype : np.dtype
-        Resulting numpy dtype for the aggregated data (e.g., np.dtype('|S972'))
+        Resulting numpy dtype for the aggregated data (e.g., ``np.dtype('|S972')``)
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -300,7 +300,7 @@ class ArrayGroup(BaseModel):
     dimension : str
         Name of the array index dimension (e.g., "ARRAY_8")
     dtype : np.dtype
-        Resulting numpy dtype for each stacked element (e.g., np.dtype("|S7"))
+        Resulting numpy dtype for each stacked element (e.g., ``np.dtype("|S7")``)
     """
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
