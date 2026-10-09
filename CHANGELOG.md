@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.3] - 2026-10-09
+
 ### Added
 
 - All `Filename` classes in `libera_utils.io.filenaming` are hashable. `hash()` is the hash of the path as given, so filenames can be dictionary keys and set members. Reassigning `path` changes the hash, so do not mutate a filename that is already in a set or a dict.
@@ -767,7 +769,9 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...HEAD
+[5.11.3]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...5.11.3
+[5.11.2]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...5.11.2
 [5.11.1]: https://github.com/LASP-Libera/libera_utils/compare/5.11.0...5.11.1
 [5.11.0]: https://github.com/LASP-Libera/libera_utils/compare/5.10.11...5.11.0
 [5.10.11]: https://github.com/LASP-Libera/libera_utils/compare/5.10.10...5.10.11
