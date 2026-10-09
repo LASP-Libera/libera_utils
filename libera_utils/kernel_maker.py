@@ -648,7 +648,6 @@ def create_kernel_from_l1a(
         utc_start=input_time_range[0],
         utc_end=input_time_range[1],
         version=filenaming.get_current_version_str("libera_utils"),
-        revision=datetime.now(UTC),
     )
     if kernel_identifier.value.endswith("SPK"):
         extension = "bsp"
