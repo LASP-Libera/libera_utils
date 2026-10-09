@@ -614,7 +614,7 @@ class KernelManager:
         """
         Verify the furnished kernels cover every target across a time window.
 
-        Wraps :func:`curryer.kernels.coverage.coverage_gaps`, scoped to the kernels this
+        Wraps ``curryer.kernels.coverage.coverage_gaps``, scoped to the kernels this
         manager furnished. Raises rather than warns: an uncovered window otherwise surfaces
         as a SPICE failure deep inside a later computation, or as silently wrong numbers
         with no traceback at all.
@@ -629,7 +629,7 @@ class KernelManager:
 
         Parameters
         ----------
-        targets : sequence of int or str
+        targets : collections.abc.Sequence[int | str]
             Objects that must be covered across the whole window: body IDs or names for
             SPK coverage, frame IDs or names for CK. Binary PCKs are also in scope, and
             their coverage is keyed on the frame *class* ID rather than the body or frame
