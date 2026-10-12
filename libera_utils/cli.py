@@ -5,7 +5,8 @@ import argparse
 from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, l1a_combine, s3_utilities
 from libera_utils.aws import manual_processing as mp
-from libera_utils.constants import DataProductIdentifier, LiberaApid, ProcessingStepIdentifier
+from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.l1a.l1a_packet_configs import configured_apids
 from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
 
@@ -271,7 +272,7 @@ def parse_cli_args(cli_args: list):
         "--apid",
         type=int,
         required=True,
-        choices=[int(apid) for apid in LiberaApid],
+        choices=[int(apid) for apid in configured_apids()],
         help="APID to assemble into day products.",
     )
     force_l1a_parser.add_argument(

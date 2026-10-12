@@ -7,7 +7,10 @@ import pytest
 import xarray as xr
 
 from libera_utils.l1a.packet_slicing import (
+    MissingDataTimeError,
+    assert_no_missing_times,
     find_sample_dims,
+    packet_time_coordinate,
     sample_to_packet_index,
     select_packets,
     slice_l1a_dataset_to_time_window,
@@ -78,7 +81,7 @@ def _packet_only_product(n_packets: int = 5, *, start: str = "2028-02-13T02:00:0
     packet_times = np.datetime64(start) + np.arange(n_packets) * np.timedelta64(1, "s")
     return xr.Dataset(
         {
-            "PKT_APID": ("PACKET", np.full(n_packets, 1300, dtype=np.uint16)),
+            "PKT_APID": ("PACKET", np.full(n_packets, 1002, dtype=np.uint16)),
             "SOME_ARRAY": (("PACKET", "ARRAY_8"), np.zeros((n_packets, 8), dtype=np.int32)),
         },
         coords={
@@ -149,23 +152,53 @@ class TestWfovCameraTime:
         assert out.sizes["PACKET"] == 0
         assert out.sizes["CAMERA_TIME"] == 0
 
-    def test_unowned_packet_selected_on_packet_time(self):
+    def test_unowned_packet_is_never_selected(self):
+        """Packet 3 belongs to no image, so it has no data time even though its packet time is in the window."""
         out = slice_l1a_dataset_to_time_window(
-            _wfov_product(), np.datetime64("2028-02-13T02:00:03"), np.datetime64("2028-02-13T02:00:03")
+            _wfov_product(), np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:20")
         )
-        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [3])
-        assert out.sizes["CAMERA_TIME"] == 0
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2, 4, 5, 6, 7, 8, 9])
 
-    def test_nat_camera_time_is_placed_by_its_sop_packet_time(self):
+    def test_nat_camera_time_raises(self):
         ds = _wfov_product()
         camera_times = ds["CAMERA_TIME"].values.copy()
         camera_times[2] = np.datetime64("NaT", "us")
         ds = ds.assign_coords(CAMERA_TIME=("CAMERA_TIME", camera_times))
-        out = slice_l1a_dataset_to_time_window(
-            ds, np.datetime64("2028-02-13T02:00:07"), np.datetime64("2028-02-13T02:00:07")
-        )
-        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [7, 8, 9])
-        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0])
+        with pytest.raises(MissingDataTimeError, match="CAMERA_TIME holds 1 NaT"):
+            slice_l1a_dataset_to_time_window(
+                ds, np.datetime64("2028-02-13T02:00:07"), np.datetime64("2028-02-13T02:00:07")
+            )
+
+    def test_missing_packet_image_id_raises(self):
+        with pytest.raises(ValueError, match="no 'PACKET_IMAGE_ID'"):
+            slice_l1a_dataset_to_time_window(
+                _wfov_product().drop_vars("PACKET_IMAGE_ID"),
+                np.datetime64("2028-02-13T02:00:00"),
+                np.datetime64("2028-02-13T02:00:20"),
+            )
+
+
+def test_assert_no_missing_times_ignores_undecoded_axes():
+    """An axis opened with decode_times=False holds integers, which cannot be NaT."""
+    assert_no_missing_times(np.arange(3), "RAD_SAMPLE_FPE_TIME")
+
+
+class TestPacketTimeCoordinate:
+    """The packet time coordinate comes from the packet configuration of the dataset's APID."""
+
+    @pytest.mark.parametrize(("apid", "expected"), [(1002, "PACKET_ICIE_TIME"), (11, "PACKET_JPSS_TIME")])
+    def test_named_by_apid(self, apid, expected):
+        ds = _packet_only_product(n_packets=2)
+        ds["PKT_APID"] = ("PACKET", np.full(2, apid, dtype=np.uint16))
+        assert packet_time_coordinate(ds) == expected
+
+    def test_unconfigured_apid_raises(self):
+        with pytest.raises(ValueError, match="APID 1408 has no entry"):
+            packet_time_coordinate(_sample_product())
+
+    def test_no_apid_raises(self):
+        with pytest.raises(ValueError, match="no 'PKT_APID'"):
+            packet_time_coordinate(_packet_only_product().drop_vars("PKT_APID"))
 
 
 class TestFindSampleDims:
@@ -355,6 +388,30 @@ class TestSliceL1aDatasetToTimeWindow:
             slice_l1a_dataset_to_time_window(
                 ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:01")
             )
+
+    def test_nat_sample_time_raises(self):
+        ds = _sample_product(n_packets=2, samples_per_packet=2)
+        ds["RAD_SAMPLE_FPE_TIME"].values[1] = np.datetime64("NaT", "ns")
+        with pytest.raises(MissingDataTimeError, match="RAD_SAMPLE_FPE_TIME holds 1 NaT"):
+            slice_l1a_dataset_to_time_window(
+                ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:01")
+            )
+
+    def test_nat_packet_time_raises_on_packet_only_product(self):
+        ds = _packet_only_product(n_packets=3)
+        ds["PACKET_ICIE_TIME"].values[1] = np.datetime64("NaT", "ns")
+        with pytest.raises(MissingDataTimeError, match="PACKET_ICIE_TIME holds 1 NaT"):
+            slice_l1a_dataset_to_time_window(
+                ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:05")
+            )
+
+    def test_empty_packet_axis_returns_empty(self):
+        """No packets means no APID to resolve, and nothing to select."""
+        ds = _packet_only_product(n_packets=0).drop_vars("PKT_APID")
+        out = slice_l1a_dataset_to_time_window(
+            ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:05")
+        )
+        assert out.sizes["PACKET"] == 0
 
     def test_window_outside_data_returns_empty(self):
         ds = _sample_product(n_packets=4, samples_per_packet=2)

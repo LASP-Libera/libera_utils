@@ -70,6 +70,16 @@
 #   - dimension: Dimension name, must match ARRAY_{field_count} (e.g., "ARRAY_8")
 #   - dtype: NumPy dtype string for each stacked element (e.g., "|S7")
 #
+# day_coverage: (DayCoveragePolicy, required)
+#   Completeness rule the L1A combine applies to one UTC day of this APID.
+#   - mode: "continuous" gates on the fractions below; "event_driven" passes as soon as any
+#     data overlaps the buffered day window and takes no fractions.
+#   - day_coverage_frac: minimum covered fraction of the day core [D, D+1) (continuous only)
+#   - buffer_coverage_frac: minimum covered fraction of each midnight buffer (continuous only)
+#   Fractions must be in (0, 1].
+#   TODO[LIBSDC-576]: the continuous fractions are initial estimates; revise them as more data
+#   runs through the system.
+#
 # Time Sources Explained:
 # ----------------------
 # - ICIE: Libera Instrument Control and Interface Electronics (main processor)
@@ -92,6 +102,8 @@ pev_sw_stat:
     us_field: "PEV__TM_US_SW_STAT"
   packet_definition_config_key: "LIBERA_PEV_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # PEC Software Status Packet: Calibration and status telemetry
 pec_sw_stat:
@@ -102,6 +114,8 @@ pec_sw_stat:
     us_field: "PEC__TM_US_SW_STAT"
   packet_definition_config_key: "LIBERA_PEC_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # Axis Sample Packet: Azimuth and elevation encoder measurements
 icie_axis_sample:
@@ -122,6 +136,10 @@ icie_axis_sample:
       time_source: "ICIE"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.90
+    buffer_coverage_frac: 0.95
 
 # Radiometer Sample Packet: Science data from the four radiometer channels
 icie_rad_sample:
@@ -145,6 +163,10 @@ icie_rad_sample:
       time_source: "FPE"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.90
+    buffer_coverage_frac: 0.95
 
 # Radiometer Full Resolution Packet: High-rate science data (1kHz)
 icie_rad_full:
@@ -168,6 +190,8 @@ icie_rad_full:
       time_source: "FPE"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # Calibration Full Resolution Packet: High-rate calibration data (1kHz)
 icie_cal_full:
@@ -188,6 +212,8 @@ icie_cal_full:
       time_source: "FPE"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # Calibration Downsampled Packet: Routine calibration data (200Hz)
 icie_cal_sample:
@@ -208,6 +234,8 @@ icie_cal_sample:
       time_source: "FPE"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # Wide Field of View Science Packet: Camera science data as aggregated binary blob
 icie_wfov_sci:
@@ -218,6 +246,10 @@ icie_wfov_sci:
     us_field: "ICIE__TM_US_WFOV_SCI"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.60
+    buffer_coverage_frac: 0.60
 
 # Nominal Housekeeping Packet: Routine telemetry and status
 icie_nom_hk:
@@ -254,6 +286,10 @@ icie_nom_hk:
       dtype: "|S7" # 8 sequence state fields, 7 bytes each
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.99
+    buffer_coverage_frac: 0.99
 
 # Critical Housekeeping Packet: Important status and health monitoring
 icie_crit_hk:
@@ -264,6 +300,8 @@ icie_crit_hk:
     us_field: "ICIE__TM_US_CRIT_HK"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # Temperature Housekeeping Packet: Thermal monitoring data
 icie_temp_hk:
@@ -274,6 +312,8 @@ icie_temp_hk:
     us_field: "ICIE__TM_US_TEMP_HK"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "event_driven"
 
 # ==============================================================================
 # JPSS SPACECRAFT PACKETS
@@ -315,3 +355,7 @@ jpss_sc_pos:
       time_source: "JPSS"
   packet_definition_config_key: "JPSS_GEOLOCATION_PACKET_DEFINITION"
   packet_time_source: "JPSS"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.99
+    buffer_coverage_frac: 0.99

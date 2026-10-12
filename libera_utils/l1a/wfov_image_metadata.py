@@ -19,7 +19,6 @@ CAMERA_TIME_COORD = "CAMERA_TIME"
 BLOB_BYTE_COORD = "BLOB_BYTE"
 CAMERA_PACKET_INDEX_VAR = "CAMERA_PACKET_INDEX"
 PACKET_IMAGE_ID_VAR = "PACKET_IMAGE_ID"
-WFOV_HEADER_PARSE_VALID_VAR = "WFOV_HEADER_PARSE_VALID"
 WFOV_COMPRESSED_IMAGE_VAR = "WFOV_COMPRESSED_IMAGE"
 WFOV_COMPRESSED_IMAGE_LENGTH_VAR = "WFOV_COMPRESSED_IMAGE_LENGTH"
 
@@ -633,7 +632,6 @@ def _build_camera_dataset(stitched_images: list[_StitchedImage]) -> xr.Dataset:
 
     camera_times = np.full(n_images, np.datetime64("NaT", "us"), dtype=DATETIME_USEC_DTYPE)
     packet_indices = np.zeros(n_images, dtype=np.int32)
-    header_parse_valid = np.zeros(n_images, dtype=bool)
 
     category_arrays = [
         {field: np.zeros(n_images, dtype=dtype) for field, dtype in field_dtypes.items()}
@@ -643,7 +641,6 @@ def _build_camera_dataset(stitched_images: list[_StitchedImage]) -> xr.Dataset:
     for row, image in enumerate(stitched_images):
         header_meta = image.header_meta
         packet_indices[row] = image.sop_index
-        header_parse_valid[row] = header_meta is not None
 
         if header_meta is not None:
             camera_times[row] = _fsw_timestamps_to_datetime64(
@@ -657,7 +654,6 @@ def _build_camera_dataset(stitched_images: list[_StitchedImage]) -> xr.Dataset:
 
     data_vars: dict[str, tuple[tuple[str, ...], np.ndarray]] = {
         CAMERA_PACKET_INDEX_VAR: ((CAMERA_TIME_COORD,), packet_indices),
-        WFOV_HEADER_PARSE_VALID_VAR: ((CAMERA_TIME_COORD,), header_parse_valid),
         WFOV_COMPRESSED_IMAGE_VAR: ((CAMERA_TIME_COORD, BLOB_BYTE_COORD), blob_array),
         WFOV_COMPRESSED_IMAGE_LENGTH_VAR: ((CAMERA_TIME_COORD,), payload_lengths),
     }

@@ -63,8 +63,8 @@ generation, Libera file naming, and AWS pipeline integration.
 - **Cloud paths**: Use `cloudpathlib` abstractions so code works with both local and S3 paths.
 - **XTCE configs**: Telemetry packet field definitions live in `libera_utils/data/`. Do not
   hardcode packet offsets or field names outside of these config files.
-- **Day coverage policies**: Every `LiberaApid` needs a row in `APID_COVERAGE_POLICIES`
-  (`l1a/day_coverage.py`); importing `libera_utils.l1a.day_coverage` raises `ValueError` otherwise.
+- **Day coverage policies**: Every entry in `data/l1a_processing_configs.yml` needs a `day_coverage`
+  block (`PacketConfiguration.day_coverage`); loading the packet configurations fails without one.
 - **Logging**: Use the `logutil` module for structured JSON output. Pass loggers via
   dependency injection rather than calling `logging.getLogger` ad-hoc in library code.
 - **ObsID registry**: `libera_utils/data/obsid_registry.csv` is the local source of truth mapping

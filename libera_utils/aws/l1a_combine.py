@@ -25,6 +25,7 @@ from libera_utils.aws.utils import (
     to_date,
 )
 from libera_utils.constants import LiberaApid
+from libera_utils.l1a.l1a_packet_configs import configured_apids
 from libera_utils.logutil import configure_task_logging
 
 logger = logging.getLogger(__name__)
@@ -97,13 +98,20 @@ def force_l1a_combine(
     Raises
     ------
     ValueError
-        If ``apid`` is not a ``LiberaApid`` member, no applicable dates were given, a date string
+        If ``apid`` is not a ``LiberaApid`` member or has no packet configuration, no applicable
+        dates were given, a date string
         is not ISO 8601, or the account does not hold exactly one event bus matching
         ``LiberaSDCEventBus``.
     RuntimeError
         If EventBridge rejects the event.
     """
     libera_apid = LiberaApid(apid)
+    if libera_apid not in configured_apids():
+        choices = ", ".join(f"{int(a)} ({a.name})" for a in configured_apids())
+        raise ValueError(
+            f"APID {int(libera_apid)} ({libera_apid.name}) has no entry in l1a_processing_configs.yml, so the L1A "
+            f"Preprocessor cannot parse it. Choose one of: {choices}."
+        )
     normalized_dates = [to_date(d) for d in applicable_dates]
     if not normalized_dates:
         raise ValueError("At least one applicable date is required.")

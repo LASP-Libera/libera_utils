@@ -9,15 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `libera_utils.l1a.day_window`. `trim_l1a_to_day_window(ds, day=, packet_time_var=)` keeps the packets in the closed window `[D − DAY_BUFFER, D + 1 + DAY_BUFFER]` (10 minutes) through `slice_l1a_dataset_to_time_window`, selecting on every sample group and keeping whole packets. `assert_data_times_unique_monotonic` asserts unique, non-decreasing data times.
-- `packet_slicing` handles WFOV SCI `CAMERA_TIME`: an image selected on camera time keeps every packet from SOP through EOP, `CAMERA_PACKET_INDEX` is renumbered, and packets in no image are selected on packet time.
-- Add `libera_utils.l1a.day_coverage.evaluate_day_coverage` for L1A combine completeness gates over the day core and the left/right midnight buffers. `APID_COVERAGE_POLICIES` gives every `LiberaApid` a `DayCoveragePolicy`: `CONTINUOUS` gates on coverage fractions, `EVENT_DRIVEN` on any presence in the buffered window, tested by `overlaps_day_window`. Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge, because a file's span runs from its first to its last sample timestamp and under-reports its occupancy by one sample period.
+- Add `libera_utils.l1a.day_window`. `trim_l1a_to_day_window(ds, day=)` keeps the packets in the closed window `[D − DAY_BUFFER, D + 1 + DAY_BUFFER]` (10 minutes) through `slice_l1a_dataset_to_time_window`, selecting on every sample group and keeping whole packets. `assert_data_times_unique_monotonic(ds, ground_data=)` asserts unique, non-decreasing data times on every sample axis, or on the packet time coordinate for an APID with no sample axis.
+- `packet_slicing` handles WFOV SCI `CAMERA_TIME`: an image selected on camera time keeps every packet from SOP through EOP, `CAMERA_PACKET_INDEX` is renumbered, and packets in no image (`PACKET_IMAGE_ID == -1`) are dropped. Slicing WFOV SCI without `PACKET_IMAGE_ID` raises `ValueError`.
+- Add `packet_slicing.MissingDataTimeError`, raised by slicing, the day trim, `assert_data_times_unique_monotonic` and `measure_time_axis_coverage` when a data-time axis holds `NaT`, whatever `ground_data` is.
+- Add `packet_slicing.assert_no_missing_times(times, axis_name)`, which raises `MissingDataTimeError` when a datetime64 axis holds `NaT`.
+- Add `packet_slicing.packet_time_coordinate(ds)`, which names a dataset's packet time coordinate from the packet configuration of its `PKT_APID`.
+- Add `libera_utils.l1a.day_coverage.evaluate_day_coverage` for L1A combine completeness gates over the day core and the left/right midnight buffers. Each APID's `DayCoveragePolicy` is the `day_coverage` block of its entry in `l1a_processing_configs.yml`: `CONTINUOUS` gates on coverage fractions, `EVENT_DRIVEN` on any presence in the buffered window, tested by `overlaps_day_window`. Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge, because a file's span runs from its first to its last sample timestamp and under-reports its occupancy by one sample period.
 - Add `libera_utils.l1a.day_coverage.measure_time_axis_coverage`, which measures day and buffer occupancy from a granule's own time axis, splitting runs at spacings above `DEFAULT_GAP_FACTOR` (5) times the median cadence. Unlike `evaluate_day_coverage`, it sees gaps inside a file.
-- Add the `force-l1a-combine` CLI (`libera_utils.aws.l1a_combine.force_l1a_combine`), which emits a `ManualL1APreprocessing` event asking the L1A Preprocessor to combine an APID for one or more applicable dates, skipping the coverage gates unless `--no-force` is given. `_to_date` in `manual_processing` moves to `libera_utils.aws.utils.to_date`.
+- Add `libera_utils.l1a.l1a_packet_configs.configured_apids()`, the APIDs with a packet configuration.
+- Add the `force-l1a-combine` CLI (`libera_utils.aws.l1a_combine.force_l1a_combine`), which emits a `ManualL1APreprocessing` event asking the L1A Preprocessor to combine an APID for one or more applicable dates, skipping the coverage gates unless `--no-force` is given. It accepts only APIDs with a packet configuration. `_to_date` in `manual_processing` moves to `libera_utils.aws.utils.to_date`.
 
 ### Changed
 
+- **BREAKING:** `PacketConfiguration` requires a `day_coverage` field (`DayCoveragePolicy`), and every entry in `l1a_processing_configs.yml` carries one.
+- `manual-processing` and `step-function-trigger` take the UTC calendar date of a timezone-aware date or datetime.
 - Document shared flight/ground daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → uniqueness assert).
+
+### Removed
+
+- **BREAKING:** Remove the `WFOV_HEADER_PARSE_VALID` variable from WFOV SCI L1A products, and `wfov_image_metadata.WFOV_HEADER_PARSE_VALID_VAR`. It was always true: an image whose header cannot be decoded is discarded and counted in `HeaderParseErrorCount`.
 
 ## [5.11.5] - 2026-10-14
 

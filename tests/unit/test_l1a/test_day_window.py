@@ -1,11 +1,12 @@
 """Unit tests for L1A day-window trim and uniqueness checks."""
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils.constants import LiberaApid
 from libera_utils.l1a.day_window import (
     DataTimeUniquenessError,
     assert_data_times_unique_monotonic,
@@ -13,6 +14,7 @@ from libera_utils.l1a.day_window import (
     day_window_bounds,
     trim_l1a_to_day_window,
 )
+from libera_utils.l1a.packet_slicing import MissingDataTimeError
 
 DAY = date(2028, 2, 15)
 WINDOW_START = datetime(2028, 2, 14, 23, 50)
@@ -24,9 +26,12 @@ def _dt64(times: list[datetime], unit: str = "us") -> np.ndarray:
     return np.array([np.datetime64(t.replace(tzinfo=None), unit) for t in times])
 
 
-def _packet_dataset(times: list[datetime], packet_time_var: str = "PACKET_ICIE_TIME") -> xr.Dataset:
+def _packet_dataset(
+    times: list[datetime], *, apid: LiberaApid = LiberaApid.icie_nom_hk, packet_time_var: str = "PACKET_ICIE_TIME"
+) -> xr.Dataset:
+    """Build a dataset with no sample axis, of an APID whose packet time is ``packet_time_var``."""
     return xr.Dataset(
-        {"VALUE": ("PACKET", np.arange(len(times)))},
+        {"VALUE": ("PACKET", np.arange(len(times))), "PKT_APID": ("PACKET", np.full(len(times), int(apid)))},
         coords={packet_time_var: ("PACKET", _dt64(times))},
     )
 
@@ -51,22 +56,9 @@ def _sample_dataset(
     return xr.Dataset(data_vars, coords=coords)
 
 
-def _wfov_dataset(camera_times: list[datetime], packet_image_ids: list[int], packet_times: list[datetime]):
-    """Build a WFOV SCI-shaped dataset. Each image's SOP is its first packet in ``packet_image_ids``."""
-    image_ids = sorted({i for i in packet_image_ids if i >= 0})
-    sop_indices = [packet_image_ids.index(i) for i in image_ids]
-    return xr.Dataset(
-        {
-            "PKT_VAL": ("PACKET", np.arange(len(packet_times))),
-            "PACKET_IMAGE_ID": ("PACKET", np.asarray(packet_image_ids, dtype=np.int32)),
-            "CAMERA_PACKET_INDEX": ("CAMERA_TIME", np.asarray(sop_indices, dtype=np.int32)),
-            "IMG": ("CAMERA_TIME", np.asarray(image_ids)),
-        },
-        coords={
-            "PACKET_ICIE_TIME": ("PACKET", _dt64(packet_times)),
-            "CAMERA_TIME": ("CAMERA_TIME", _dt64(camera_times)),
-        },
-    )
+def _axis_dataset(times: list[datetime]) -> xr.Dataset:
+    """Build a dataset with one sample axis, ``RAD_SAMPLE_TIME``, one sample per packet."""
+    return _sample_dataset({"RAD_SAMPLE": (times, list(range(len(times))))}, times)
 
 
 def test_day_window_bounds_are_naive_datetimes():
@@ -89,141 +81,84 @@ def test_trim_keeps_both_window_edges_and_drops_one_microsecond_outside(unit):
     assert out["RAD_SAMPLE_packet_index"].values.tolist() == [0, 1, 2]
 
 
-def test_trim_packet_only_product_on_packet_time():
-    ds = _packet_dataset(
-        [
-            datetime(2028, 2, 14, 23, 40, tzinfo=UTC),
-            WINDOW_START,
-            datetime(2028, 2, 15, 12, 0, tzinfo=UTC),
-            WINDOW_END,
-            datetime(2028, 2, 16, 0, 20, tzinfo=UTC),
-        ],
-        packet_time_var="PACKET_JPSS_TIME",
-    )
-    out = trim_l1a_to_day_window(ds, day=DAY, packet_time_var="PACKET_JPSS_TIME")
-    assert out["VALUE"].values.tolist() == [1, 2, 3]
-
-
-def test_trim_packet_only_product_without_its_time_variable_raises():
-    ds = _packet_dataset([datetime(2028, 2, 15, 12)], packet_time_var="PACKET_JPSS_TIME")
-    with pytest.raises(ValueError, match="PACKET_ICIE_TIME"):
-        trim_l1a_to_day_window(ds, day=DAY)
-
-
-def test_trim_empty_window():
-    out = trim_l1a_to_day_window(_packet_dataset([datetime(2028, 2, 14, 12, 0, tzinfo=UTC)]), day=DAY)
-    assert out.sizes["PACKET"] == 0
-
-
-def test_trim_keeps_whole_packets_for_straddling_samples():
-    """If any sample of a packet is in the window, all samples of that packet are kept."""
-    sample_times = [
-        datetime(2028, 2, 14, 23, 40),
-        datetime(2028, 2, 14, 23, 41),
-        datetime(2028, 2, 14, 23, 49),
-        datetime(2028, 2, 14, 23, 55),
-        datetime(2028, 2, 15, 12, 0),
-        datetime(2028, 2, 15, 12, 0, 5),
-    ]
-    ds = _sample_dataset({"RAD_SAMPLE": (sample_times, [0, 0, 1, 1, 2, 2])}, sample_times[::2])
-    out = trim_l1a_to_day_window(ds, day=DAY)
-    assert out["RAD_SAMPLE_VALUE"].values.tolist() == [2, 3, 4, 5]
-    assert out["PKT_VAL"].values.tolist() == [1, 2]
-    assert out["RAD_SAMPLE_packet_index"].values.tolist() == [0, 0, 1, 1]
-
-
-def test_trim_covers_every_sample_group():
-    """ADGPS and ADCFA are trimmed together, and both indices stay within the trimmed PACKET axis."""
-    packet_times = [datetime(2028, 2, 14, 23, 0), datetime(2028, 2, 15, 12, 0), datetime(2028, 2, 16, 1, 0)]
-    ds = _sample_dataset(
-        {
-            "ADGPS": (
-                [datetime(2028, 2, 14, 23, 0), datetime(2028, 2, 15, 12, 0), datetime(2028, 2, 16, 1, 0)],
-                [0, 1, 2],
-            ),
-            # ADCFA of packet 0 is late enough to fall in the window; ADGPS of packet 0 is not.
-            "ADCFA": (
-                [datetime(2028, 2, 14, 23, 55), datetime(2028, 2, 15, 12, 0, 1), datetime(2028, 2, 16, 1, 0, 1)],
-                [0, 1, 2],
-            ),
-        },
-        packet_times,
-    )
-    out = trim_l1a_to_day_window(ds, day=DAY)
-    assert out["PKT_VAL"].values.tolist() == [0, 1]
-    assert out["ADGPS_VALUE"].values.tolist() == [0, 1]
-    assert out["ADCFA_VALUE"].values.tolist() == [0, 1]
-    for index_var in ("ADGPS_packet_index", "ADCFA_packet_index"):
-        assert out[index_var].values.tolist() == [0, 1]
-        assert out[index_var].values.max() < out.sizes["PACKET"]
-
-
-def test_trim_keeps_every_packet_of_a_kept_wfov_image():
-    """Image 1's SOP packet time is outside the window but its camera time is in it."""
-    ds = _wfov_dataset(
-        camera_times=[datetime(2028, 2, 14, 23, 0), datetime(2028, 2, 14, 23, 52), datetime(2028, 2, 16, 0, 20)],
-        packet_image_ids=[0, 0, 0, 1, 1, 1, -1, 2, 2, 2],
-        packet_times=[
-            datetime(2028, 2, 14, 23, 0),
-            datetime(2028, 2, 14, 23, 0, 1),
-            datetime(2028, 2, 14, 23, 0, 2),
-            datetime(2028, 2, 14, 23, 49),
-            datetime(2028, 2, 14, 23, 50, 1),
-            datetime(2028, 2, 14, 23, 50, 2),
-            datetime(2028, 2, 15, 12),
-            datetime(2028, 2, 16, 0, 20),
-            datetime(2028, 2, 16, 0, 20, 1),
-            datetime(2028, 2, 16, 0, 20, 2),
-        ],
-    )
-    out = trim_l1a_to_day_window(ds, day=DAY)
-    assert out["PKT_VAL"].values.tolist() == [3, 4, 5, 6]
-    assert out["IMG"].values.tolist() == [1]
-    assert out["CAMERA_PACKET_INDEX"].values.tolist() == [0]
-
-
 def test_uniqueness_ok():
-    ds = _packet_dataset([datetime(2028, 2, 15, 1, 0), datetime(2028, 2, 15, 2, 0)])
-    assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME")
+    assert_data_times_unique_monotonic(_axis_dataset([datetime(2028, 2, 15, 1, 0), datetime(2028, 2, 15, 2, 0)]))
 
 
 def test_uniqueness_empty_passes():
-    assert_data_times_unique_monotonic(_packet_dataset([]), "PACKET_ICIE_TIME")
-
-
-def test_uniqueness_missing_coordinate_raises():
-    with pytest.raises(KeyError, match="CAMERA_TIME"):
-        assert_data_times_unique_monotonic(_packet_dataset([datetime(2028, 2, 15)]), "CAMERA_TIME")
+    assert_data_times_unique_monotonic(_packet_dataset([]))
 
 
 def test_uniqueness_duplicate_raises_and_lists_duplicates():
     t = datetime(2028, 2, 15, 1, 0)
-    ds = _packet_dataset([t, t, datetime(2028, 2, 15, 2, 0)])
-    with pytest.raises(DataTimeUniquenessError, match=r"1 duplicate value\(s\): \['2028-02-15T01:00:00.000000'\]"):
-        assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME")
+    ds = _axis_dataset([t, t, datetime(2028, 2, 15, 2, 0)])
+    with pytest.raises(
+        DataTimeUniquenessError,
+        match=r"'RAD_SAMPLE_TIME' are not unique: 1 duplicate value\(s\): \['2028-02-15T01:00:00.000000'\]",
+    ):
+        assert_data_times_unique_monotonic(ds)
 
 
 def test_uniqueness_lists_at_most_ten_duplicates():
     times = [datetime(2028, 2, 15, hour) for hour in range(12) for _ in range(2)]
     with pytest.raises(DataTimeUniquenessError, match="12 duplicate") as excinfo:
-        assert_data_times_unique_monotonic(_packet_dataset(times), "PACKET_ICIE_TIME")
+        assert_data_times_unique_monotonic(_axis_dataset(times))
     assert "T09:00" in str(excinfo.value)
     assert "T10:00" not in str(excinfo.value)
 
 
 def test_uniqueness_out_of_order_raises():
-    ds = _packet_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
+    ds = _axis_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
     with pytest.raises(DataTimeUniquenessError, match="monotonic"):
-        assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME")
+        assert_data_times_unique_monotonic(ds)
+
+
+def test_uniqueness_out_of_order_duplicates_are_listed():
+    t = datetime(2028, 2, 15, 1, 0)
+    ds = _axis_dataset([t, datetime(2028, 2, 15, 2, 0), t])
+    with pytest.raises(DataTimeUniquenessError, match="1 duplicate"):
+        assert_data_times_unique_monotonic(ds)
+
+
+def test_uniqueness_checks_every_sample_axis():
+    """ADGPS is clean; a duplicate on ADCFA alone still raises and is named."""
+    times = [datetime(2028, 2, 15, 1, 0), datetime(2028, 2, 15, 2, 0)]
+    ds = _sample_dataset({"ADGPS": (times, [0, 1]), "ADCFA": ([times[0], times[0]], [0, 1])}, times)
+    with pytest.raises(DataTimeUniquenessError, match="'ADCFA_TIME'"):
+        assert_data_times_unique_monotonic(ds)
+
+
+def test_uniqueness_packet_only_product_checks_packet_time():
+    t = datetime(2028, 2, 15, 1, 0)
+    with pytest.raises(DataTimeUniquenessError, match="'PACKET_ICIE_TIME'"):
+        assert_data_times_unique_monotonic(_packet_dataset([t, t]))
+
+
+def test_uniqueness_packet_only_product_without_its_time_variable_raises():
+    ds = _packet_dataset([datetime(2028, 2, 15, 12)], apid=LiberaApid.jpss_sc_pos)
+    with pytest.raises(ValueError, match="PACKET_JPSS_TIME"):
+        assert_data_times_unique_monotonic(ds)
+
+
+@pytest.mark.parametrize("n_nat", [1, 2])
+@pytest.mark.parametrize("ground_data", [False, True])
+def test_uniqueness_nat_raises(n_nat, ground_data):
+    """NaT is a missing data time, not a duplicate, and ground_data does not soften it."""
+    ds = _axis_dataset([datetime(2028, 2, 15, 1, 0)] * (n_nat + 1))
+    ds["RAD_SAMPLE_TIME"] = np.concatenate(
+        [_dt64([datetime(2028, 2, 15, 1, 0)]), np.full(n_nat, np.datetime64("NaT", "us"))]
+    )
+    with pytest.raises(MissingDataTimeError, match=f"RAD_SAMPLE_TIME holds {n_nat} NaT"):
+        assert_data_times_unique_monotonic(ds, ground_data=ground_data)
 
 
 def test_uniqueness_ground_data_warns_on_duplicates():
     t = datetime(2028, 2, 15, 1, 0)
     with pytest.warns(UserWarning, match="not unique"):
-        assert_data_times_unique_monotonic(_packet_dataset([t, t]), "PACKET_ICIE_TIME", ground_data=True)
+        assert_data_times_unique_monotonic(_axis_dataset([t, t]), ground_data=True)
 
 
 def test_uniqueness_ground_data_warns_on_out_of_order():
-    ds = _packet_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
+    ds = _axis_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
     with pytest.warns(UserWarning, match="monotonic"):
-        assert_data_times_unique_monotonic(ds, "PACKET_ICIE_TIME", ground_data=True)
+        assert_data_times_unique_monotonic(ds, ground_data=True)
