@@ -121,6 +121,13 @@ it, or every packet time is implausible. Several APIDs present in ground capture
 (`icie_sw_stat`, `icie_seq_hk`, `icie_fp_hk`, `icie_log_msg`, `icie_axis_hk`, `icie_ana_hk`)
 currently have no packet configuration, so they archive but yield no searchable times.
 
+A fault in the environment rather than in the file propagates instead of returning `None`:
+`OSError` (including a full disk, since reading an S3 object caches it locally first),
+`MemoryError`, and botocore `BotoCoreError`/`ClientError`. These are
+`libera_utils.l1a.ground_ccsds.ENVIRONMENT_ERRORS`. A `None` return therefore always means the
+file itself cannot yield a span, and the caller decides whether an environment fault is worth a
+retry.
+
 A data-time failure is narrower: the packet-time span is still returned, with
 `first_data_time`/`last_data_time` left `None` and `degraded_reason` set. This is the expected
 outcome for a WFOV file whose `SOP` packet landed in a different bin.
@@ -545,6 +552,37 @@ icie_nom_hk:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
 ```
+
+## Parsing many files
+
+`parse_packets_to_dataset` hands `create_dataset` one file at a time. `create_dataset` keeps a
+Python object per parsed field until it converts the batch to numpy, about 800 MiB per two-hour
+NOM-HK file, so passing a day of files in one batch exhausts an 8 GiB container. Each parsed file
+is copied onto a preallocated packet axis and released before the next one is parsed. `xr.concat`
+would instead peak at about 2.9× its output, because it allocates the result while every input is
+still referenced. The packet axis keeps the order of the files given.
+
+- `packet_definition` may be an XTCE path or a loaded `XtcePacketDefinition`.
+  `parse_packets_to_l1a_dataset` loads the XTCE once for a multi-file call and reuses it for file
+  ordering and parsing.
+- A file with no packets of the APID is skipped with a warning. `ValueError` is raised when no
+  file has any, or when files parse to different sets of variables (concatenating them would
+  fill the gaps with NaN).
+- A string column that is wider in a later file (a file containing `SINGLE` parses to `<U6`
+  where the others give `<U3`) is widened rather than truncated.
+
+`max_workers` (on both `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset`, default 1)
+parses files concurrently in worker processes, `max_workers` at a time. Parsing is single-threaded
+Python, so this is the only way to use more than one vCPU. Results are appended in the order given,
+so the packet axis is the same as for an in-process parse.
+
+- Peak memory is the accumulated axis plus about one parsed file per worker. Memory, not core
+  count, limits a useful worker count.
+- Workers load the XTCE from its path, because a loaded `XtcePacketDefinition` cannot be pickled.
+  `parse_packets_to_dataset` raises `ValueError` for `max_workers > 1` with a loaded definition.
+  A single file is always parsed in process.
+- An exception in a worker is re-raised in the caller. A worker that exits without reporting
+  raises `RuntimeError` with its exit code; `-9` means the container ran out of memory.
 
 ## L1A Product Structure
 

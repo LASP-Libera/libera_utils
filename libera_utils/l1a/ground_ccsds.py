@@ -15,6 +15,7 @@ from os import PathLike
 
 import numpy as np
 import xarray as xr
+from botocore.exceptions import BotoCoreError, ClientError
 from cloudpathlib import AnyPath
 
 from libera_utils.config import config
@@ -33,6 +34,12 @@ logger = logging.getLogger(__name__)
 
 # Demuxed ground files carry no record header before the CCSDS primary header.
 GROUND_CCSDS_SKIP_HEADER_BYTES = 0
+
+# Faults in the environment rather than in the file: a full or unwritable disk (reading an S3
+# object caches it locally first), exhausted memory, or S3 refusing the read. Reducing these to
+# the same None return as unparsable data would report a readable file as permanently bad, so
+# they propagate and let the caller decide whether to retry.
+ENVIRONMENT_ERRORS = (OSError, MemoryError, BotoCoreError, ClientError)
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,11 @@ def _parse_ground_ccsds(
     """Parse a demuxed ground CCSDS file using the APID's configured XTCE definition.
 
     Returns ``None``, having logged the reason, if no usable dataset can be produced.
+
+    Raises
+    ------
+    ENVIRONMENT_ERRORS
+        If reading the file fails for a reason outside the file's own contents.
     """
     try:
         packet_config = get_packet_config(apid)
@@ -101,6 +113,8 @@ def _parse_ground_ccsds(
             int(apid),
             skip_header_bytes=skip_header_bytes,
         )
+    except ENVIRONMENT_ERRORS:
+        raise
     except Exception as exc:
         _log_no_packet_span(apid, packet_file, f"Failed to parse packets: {exc}")
         return None
@@ -175,6 +189,9 @@ def scan_ground_ccsds_file(
     ------
     ValueError
         If ``apid`` is omitted and the basename is not a valid ground CCSDS filename.
+    ENVIRONMENT_ERRORS
+        If reading the file fails for a reason outside the file's own contents. Distinct from
+        the ``None`` return, which means the file itself cannot yield a span.
     """
     resolved_apid = apid_from_ground_ccsds_filename(packet_file) if apid is None else apid
     try:
