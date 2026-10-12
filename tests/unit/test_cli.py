@@ -5,7 +5,7 @@ import argparse
 import pytest
 
 from libera_utils import cli, kernel_maker
-from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
+from libera_utils.aws import algorithm_registration, ecr_upload, l1a_combine, s3_utilities
 from libera_utils.aws import manual_processing as mp
 
 
@@ -382,12 +382,60 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
 
 
 @pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["force-l1a-combine", "2026-07-12", "--apid", "1057"],
+            argparse.Namespace(
+                func=l1a_combine.force_l1a_combine_cli_handler,
+                applicable_dates=["2026-07-12"],
+                apid=1057,
+                start=None,
+                end=None,
+                force=True,
+                ground_data=False,
+                reason=None,
+                profile=None,
+            ),
+        ),
+        (
+            [
+                "force-l1a-combine",
+                "--apid=1035",
+                "--start=2026-07-01",
+                "--end=2026-07-03",
+                "--no-force",
+                "--ground-data",
+                "--reason=DITL2 backfill",
+                "--profile=test-profile",
+            ],
+            argparse.Namespace(
+                func=l1a_combine.force_l1a_combine_cli_handler,
+                applicable_dates=[],
+                apid=1035,
+                start="2026-07-01",
+                end="2026-07-03",
+                force=False,
+                ground_data=True,
+                reason="DITL2 backfill",
+                profile="test-profile",
+            ),
+        ),
+    ],
+)
+def test_force_l1a_combine_parse_cli_args(cli_args, parsed):
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
     "cli_args",
     [
         ["s3-utils", "ls", "NOT-A-PRODUCT"],
         ["ecr-upload", "not-an-alg", "test-image"],
         ["step-function-trigger", "not-an-alg", "2030-01-01"],
         ["manual-processing", "2026-06-01", "--start-steps", "not-a-step"],
+        ["force-l1a-combine", "2026-07-12", "--apid", "4321"],
+        ["force-l1a-combine", "2026-07-12"],
     ],
 )
 def test_wrong_libera_ids(cli_args):
