@@ -26,17 +26,21 @@ def _synthetic_nom_hk(
     wfov_obsids: list[int] | None = None,
     *,
     start: str = "2028-02-13T02:00:00",
+    sequence_counter: list[int] | None = None,
 ) -> xr.Dataset:
     """Build a minimal NOM-HK-shaped Dataset for run-detection unit tests."""
     n = len(rad_obsids)
     if wfov_obsids is None:
         wfov_obsids = [0] * n
     assert len(wfov_obsids) == n
+    if sequence_counter is None:
+        sequence_counter = list(range(100, 100 + n))
     times = np.datetime64(start) + np.arange(n) * np.timedelta64(1, "s")
     return xr.Dataset(
         {
             "ICIE__SW_OBSID_RAD": ("PACKET", np.asarray(rad_obsids, dtype=np.uint16)),
             "ICIE__SW_OBSID_WFOV": ("PACKET", np.asarray(wfov_obsids, dtype=np.uint16)),
+            "SRC_SEQ_CTR": ("PACKET", np.asarray(sequence_counter, dtype=np.uint16)),
         },
         coords={"PACKET_ICIE_TIME": ("PACKET", times)},
         attrs={
@@ -109,10 +113,25 @@ class TestFindObsidRuns:
         assert len(rad_only) == 1
         assert rad_only[0][0].obsid == 257
 
-    def test_rejects_unsorted_packet_time(self):
+    def test_backward_packet_time_is_tolerated(self):
+        """A packet-time inversion is the FSW defect, not an ordering fault: keep the run intact.
+
+        The counter still advances by one across the inversion, so acquisition order stands and
+        the run must stay a single contiguous slice.
+        """
         ds = _synthetic_nom_hk(rad_obsids=[257, 257, 257])
-        with pytest.raises(ValueError, match="not sorted by PACKET_ICIE_TIME"):
-            find_obsid_runs(ds.isel(PACKET=[2, 1, 0]))
+        times = ds["PACKET_ICIE_TIME"].values.copy()
+        times[1] = times[0] - np.timedelta64(2, "s")
+        inverted = ds.assign_coords(PACKET_ICIE_TIME=("PACKET", times))
+        runs = find_obsid_runs(inverted)
+        assert len(runs) == 1
+        assert runs[0][1] == slice(0, 3)
+
+    def test_rejects_uncorroborated_sequence_counter(self):
+        """A counter step too large to be lost packets means the axis order is not trustworthy."""
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257, 257], sequence_counter=[100, 9000, 9001])
+        with pytest.raises(ValueError, match="not in corroborated acquisition order"):
+            find_obsid_runs(ds)
 
 
 class TestWriteTrimmedNomHkProducts:
@@ -259,4 +278,4 @@ class TestWriteTrimmedNomHkProducts:
             )
 
         assert len(written) == 1
-        assert any("skipping the packet-time ordering check" in r.message for r in caplog.records)
+        assert any("skipping the packet ordering check" in r.message for r in caplog.records)
