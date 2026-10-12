@@ -435,6 +435,7 @@ def test_force_l1a_combine_parse_cli_args(cli_args, parsed):
         ["step-function-trigger", "not-an-alg", "2030-01-01"],
         ["manual-processing", "2026-06-01", "--start-steps", "not-a-step"],
         ["force-l1a-combine", "2026-07-12", "--apid", "4321"],
+        ["force-l1a-combine", "2026-07-12", "--apid", "1013"],
         ["force-l1a-combine", "2026-07-12"],
     ],
 )

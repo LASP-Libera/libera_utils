@@ -5,21 +5,19 @@ from datetime import UTC, date, datetime, timedelta, timezone
 import numpy as np
 import pytest
 
-from libera_utils.constants import LiberaApid
 from libera_utils.l1a.day_coverage import (
     DEFAULT_SEAM_TOLERANCE,
-    CoverageMode,
-    DayCoveragePolicy,
-    coverage_policy_for_apid,
     evaluate_day_coverage,
     measure_time_axis_coverage,
     overlaps_day_window,
 )
+from libera_utils.l1a.l1a_packet_configs import CoverageMode, DayCoveragePolicy
+from libera_utils.l1a.packet_slicing import MissingDataTimeError
 
 # Stands in for the continuous APIDs in the tests below that are about the coverage arithmetic
 # rather than about any one APID's thresholds.
-CONTINUOUS_POLICY = DayCoveragePolicy(CoverageMode.CONTINUOUS, 0.9, 0.99)
-EVENT_DRIVEN_POLICY = DayCoveragePolicy(CoverageMode.EVENT_DRIVEN)
+CONTINUOUS_POLICY = DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=0.99)
+EVENT_DRIVEN_POLICY = DayCoveragePolicy(mode=CoverageMode.EVENT_DRIVEN)
 
 
 def test_full_day_and_buffers_complete():
@@ -121,7 +119,7 @@ def test_measured_seams_reach_full_buffer_coverage(seam_ms):
     result = evaluate_day_coverage(
         _day_spanning_intervals(day, timedelta(milliseconds=seam_ms)),
         day=day,
-        policy=DayCoveragePolicy(CoverageMode.CONTINUOUS, 0.9, 1.0),
+        policy=DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
     )
     assert result.is_complete
     assert result.left_frac == 1.0
@@ -141,7 +139,7 @@ def test_real_gap_in_right_buffer_fails():
 def test_gap_just_over_seam_tolerance_is_not_merged():
     day = date(2026, 7, 12)
     over = DEFAULT_SEAM_TOLERANCE + timedelta(milliseconds=1)
-    strict_buffer = DayCoveragePolicy(CoverageMode.CONTINUOUS, 0.9, 1.0)
+    strict_buffer = DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=1.0)
     result = evaluate_day_coverage(_day_spanning_intervals(day, over), day=day, policy=strict_buffer)
     assert not result.right_ok
     under = DEFAULT_SEAM_TOLERANCE - timedelta(milliseconds=1)
@@ -155,7 +153,7 @@ def test_seam_tolerance_is_tunable_per_caller():
     strict = evaluate_day_coverage(
         intervals,
         day=day,
-        policy=DayCoveragePolicy(CoverageMode.CONTINUOUS, 0.9, 1.0),
+        policy=DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
         seam_tolerance=timedelta(0),
     )
     assert not strict.is_complete
@@ -238,7 +236,11 @@ def test_continuous_just_under_its_threshold_fails():
         (start, start + timedelta(seconds=round(86400 * 0.985))),
         (start + timedelta(days=1), start + timedelta(days=1, minutes=10)),
     ]
-    strict = evaluate_day_coverage(intervals, day=day, policy=DayCoveragePolicy(CoverageMode.CONTINUOUS, 0.99, 0.99))
+    strict = evaluate_day_coverage(
+        intervals,
+        day=day,
+        policy=DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.99, buffer_coverage_frac=0.99),
+    )
     assert not strict.day_ok
     assert not strict.is_complete
     assert evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY).is_complete
@@ -322,50 +324,6 @@ def test_overlaps_day_window(start, end, expected):
     assert overlaps_day_window(start, end, day=date(2028, 2, 15)) is expected
 
 
-@pytest.mark.parametrize(
-    ("apid", "mode", "day_frac", "buffer_frac"),
-    [
-        (LiberaApid.icie_nom_hk, CoverageMode.CONTINUOUS, 0.99, 0.99),
-        (LiberaApid.icie_rad_sample, CoverageMode.CONTINUOUS, 0.90, 0.95),
-        (LiberaApid.icie_wfov_sci, CoverageMode.CONTINUOUS, 0.60, 0.60),
-        (LiberaApid.icie_rad_full, CoverageMode.EVENT_DRIVEN, None, None),
-        (LiberaApid.icie_cal_sample, CoverageMode.EVENT_DRIVEN, None, None),
-    ],
-)
-def test_registered_policies(apid, mode, day_frac, buffer_frac):
-    policy = coverage_policy_for_apid(apid)
-    assert policy.mode is mode
-    assert policy.day_coverage_frac == day_frac
-    assert policy.buffer_coverage_frac == buffer_frac
-
-
-def test_policy_lookup_accepts_int_and_rejects_unknown():
-    assert coverage_policy_for_apid(1057) is coverage_policy_for_apid(LiberaApid.icie_nom_hk)
-    with pytest.raises(KeyError):
-        coverage_policy_for_apid(4321)
-
-
-@pytest.mark.parametrize(
-    ("kwargs", "match"),
-    [
-        ({"mode": CoverageMode.CONTINUOUS}, "requires day_coverage_frac, buffer_coverage_frac"),
-        ({"mode": CoverageMode.CONTINUOUS, "day_coverage_frac": 0.9}, "requires buffer_coverage_frac"),
-        (
-            {"mode": CoverageMode.CONTINUOUS, "day_coverage_frac": 1.5, "buffer_coverage_frac": 0.9},
-            r"day_coverage_frac must be in \(0, 1\], got 1.5",
-        ),
-        (
-            {"mode": CoverageMode.CONTINUOUS, "day_coverage_frac": 0.0, "buffer_coverage_frac": 0.9},
-            r"day_coverage_frac must be in \(0, 1\], got 0.0",
-        ),
-        ({"mode": CoverageMode.EVENT_DRIVEN, "day_coverage_frac": 0.9}, "drop day_coverage_frac"),
-    ],
-)
-def test_malformed_policies_rejected(kwargs, match):
-    with pytest.raises(ValueError, match=match):
-        DayCoveragePolicy(**kwargs)
-
-
 def _axis(start: str, stop: str, step_s: int) -> np.ndarray:
     return np.arange(
         np.datetime64(start, "us"),
@@ -425,14 +383,18 @@ def test_measure_single_sample_occupies_one_seam_tolerance():
     assert coverage.day_frac == pytest.approx(DEFAULT_SEAM_TOLERANCE.total_seconds() / 86400)
 
 
-def test_measure_ignores_nat_and_order():
+def test_measure_ignores_order():
     axis = _axis("2026-07-12T00:00:00", "2026-07-13T00:00:00", 5)
-    shuffled = np.random.default_rng(0).permutation(
-        np.concatenate([axis, np.array(["NaT"] * 3, dtype="datetime64[us]")])
-    )
+    shuffled = np.random.default_rng(0).permutation(axis)
     assert measure_time_axis_coverage(shuffled, day=date(2026, 7, 12)) == measure_time_axis_coverage(
         axis, day=date(2026, 7, 12)
     )
+
+
+def test_measure_raises_on_nat():
+    axis = np.concatenate([_axis("2026-07-12T00:00:00", "2026-07-12T01:00:00", 5), np.array(["NaT"], "datetime64[us]")])
+    with pytest.raises(MissingDataTimeError, match="1 NaT"):
+        measure_time_axis_coverage(axis, day=date(2026, 7, 12))
 
 
 def test_measure_buffer_fractions():

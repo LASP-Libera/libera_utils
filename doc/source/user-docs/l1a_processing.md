@@ -198,30 +198,34 @@ cover it.
 
 ## Day-window trim and uniqueness
 
-After decoding L1A, `libera_utils.l1a.day_window.trim_l1a_to_day_window(ds, day=, packet_time_var=)`
+After decoding L1A, `libera_utils.l1a.day_window.trim_l1a_to_day_window(ds, day=)`
 keeps the packets in the closed window `[D − B, D + 1 + B]`, where `B` is `DAY_BUFFER` (10
 minutes) and `day_window_bounds(day)` returns the two ends as naive-UTC datetimes. It calls
 `packet_slicing.slice_l1a_dataset_to_time_window`, so:
 
 - A product with sample axes is selected on the union of all of them (both `ADGPS` and `ADCFA`
-  for `jpss_sc_pos`); one without is selected on `packet_time_var`, which should be the APID's
-  `get_packet_config(apid).packet_time_coordinate`.
+  for `jpss_sc_pos`); one without is selected on its packet time coordinate, the
+  `packet_time_coordinate` of the packet configuration for the APID in its `PKT_APID`.
 - Whole packets survive, and every `*_packet_index` and `CAMERA_PACKET_INDEX` is renumbered
   against the trimmed `PACKET` axis.
 - A WFOV image in the window keeps all its packets, SOP through EOP. Packets in no image
-  (`PACKET_IMAGE_ID == -1`) are selected on packet time.
+  (`PACKET_IMAGE_ID == -1`) have no data time and are dropped; the decode already counts them in
+  `PacketCountNotUsedInImages`.
+- A `NaT` on the axis selected on raises `MissingDataTimeError`. A WFOV dataset with no
+  `PACKET_IMAGE_ID` raises `ValueError`.
 
 ```python
 from libera_utils.l1a.day_window import assert_data_times_unique_monotonic, trim_l1a_to_day_window
-from libera_utils.l1a.l1a_packet_configs import get_packet_config
 
-config = get_packet_config(apid)
-day_ds = trim_l1a_to_day_window(ds, day=applicable_date, packet_time_var=config.packet_time_coordinate)
-assert_data_times_unique_monotonic(day_ds, config.packet_time_coordinate, ground_data=ground_data)
+day_ds = trim_l1a_to_day_window(ds, day=applicable_date)
+assert_data_times_unique_monotonic(day_ds, ground_data=ground_data)
 ```
 
-`assert_data_times_unique_monotonic` enforces unique, non-decreasing data times after packet
-dedupe and lists up to 10 duplicated values. With `ground_data=True` it warns instead of raising.
+`assert_data_times_unique_monotonic` checks the same axes the trim selects on: every sample axis
+(`CAMERA_TIME` for WFOV), or the packet time coordinate for an APID with no sample axis. On each it
+requires unique, non-decreasing data times and lists up to 10 duplicated values. With
+`ground_data=True` a duplicate or a backwards step warns instead of raising; a `NaT` raises
+`MissingDataTimeError` either way.
 
 ## Day coverage gates (combine readiness)
 
@@ -229,22 +233,22 @@ The L1A Preprocessor evaluates File Metadata time spans with
 `libera_utils.l1a.day_coverage.evaluate_day_coverage` before decoding:
 
 - **Left buffer** `[D − B, D]`, **day core** `[D, D+1]`, **right buffer** `[D+1, D+1 + B]`.
-- Each APID's rule is its `DayCoveragePolicy` in `APID_COVERAGE_POLICIES`, looked up with
-  `coverage_policy_for_apid`. Every `LiberaApid` must have an entry; importing
-  `libera_utils.l1a.day_coverage` raises `ValueError` otherwise.
+- Each APID's rule is the `day_coverage` block of its entry in `l1a_processing_configs.yml`,
+  read as `get_packet_config(apid).day_coverage` (a `DayCoveragePolicy`). The block is required;
+  loading the configurations fails without it.
 - A `CONTINUOUS` policy requires a minimum covered fraction of the day core and of each buffer.
   An `EVENT_DRIVEN` policy passes all three gates as soon as any span overlaps the buffered
   window (`overlaps_day_window`, closed at both ends like the trim; a zero-length span counts),
   since an APID that only runs during an event rarely has data at both midnights.
 
-  | APID                                  | Mode           | Day  | Buffers |
-  | ------------------------------------- | -------------- | ---- | ------- |
-  | `jpss_sc_pos`, `icie_nom_hk`          | `CONTINUOUS`   | 0.99 | 0.99    |
-  | `icie_rad_sample`, `icie_axis_sample` | `CONTINUOUS`   | 0.90 | 0.95    |
-  | `icie_wfov_sci`                       | `CONTINUOUS`   | 0.60 | 0.60    |
-  | all others                            | `EVENT_DRIVEN` | —    | —       |
-
-  Thresholds are provisional.
+  ```yaml
+  icie_nom_hk:
+    # ...
+    day_coverage:
+      mode: "continuous"
+      day_coverage_frac: 0.99
+      buffer_coverage_frac: 0.99
+  ```
 
 - Spans separated by up to `DEFAULT_SEAM_TOLERANCE` (1 s) merge as continuous. A file's span is
   recorded over sample timestamps, `[t_first, t_last]`, while coverage is about time occupied:
@@ -266,7 +270,7 @@ from a granule's own samples and returns a `TimeAxisCoverage` (`day_frac`, `left
 Samples count as continuous until their spacing exceeds `DEFAULT_GAP_FACTOR` (5) times the axis's
 median spacing, with `DEFAULT_SEAM_TOLERANCE` as a floor on that threshold. The last
 sample of each run is credited with one median cadence of occupancy. `times` need not be sorted,
-`NaT` values are ignored, and an empty axis returns all zeros.
+an empty axis returns all zeros, and a `NaT` raises `MissingDataTimeError`.
 
 ## Shared day assembly (flight and ground)
 
@@ -276,8 +280,9 @@ Production daily L1A uses the **same** combine sequence for flight PDS and groun
 2. `parse_packets_to_l1a_dataset(..., ground_data=)` — flight uses `ground_data=False`, ground
    uses `ground_data=True`; both use the default header skip of `0`.
 3. `trim_l1a_to_day_window` to the applicable UTC day ± `DAY_BUFFER`.
-4. `assert_data_times_unique_monotonic(..., ground_data=)` — with `ground_data=True`, duplicate or
-   non-monotonic data times **warn** instead of raising (same semantics as packet dedupe).
+4. `assert_data_times_unique_monotonic(..., ground_data=)` on every data-time axis — with
+   `ground_data=True`, duplicate or non-monotonic data times **warn** instead of raising (same
+   semantics as packet dedupe); a `NaT` raises either way.
 
 ## L1A Packet Processing Configurations
 
@@ -307,6 +312,7 @@ The top-level object describing how to process one packet type.
 | `sample_groups`                | list[`SampleGroup`]      | Zero or more sample group configurations                                             |
 | `aggregation_groups`           | list[`AggregationGroup`] | Zero or more aggregation group configurations                                        |
 | `array_groups`                 | list[`ArrayGroup`]       | Zero or more array group configurations                                              |
+| `day_coverage`                 | `DayCoveragePolicy`      | Required. Completeness rule for combining one day; see Day coverage gates            |
 
 The computed property `packet_time_coordinate` returns `PACKET_{time_source}_TIME`
 (e.g. `PACKET_ICIE_TIME` for `packet_time_source: "ICIE"`). This is the non-dimension coordinate
@@ -323,6 +329,10 @@ icie_nom_hk:
     us_field: "ICIE__TM_US_NOM_HK"
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.99
+    buffer_coverage_frac: 0.99
 ```
 
 A JPSS packet using a different XTCE definition and time source:
@@ -336,6 +346,10 @@ jpss_sc_pos:
     us_field: "USEC"
   packet_definition_config_key: "JPSS_GEOLOCATION_PACKET_DEFINITION"
   packet_time_source: "JPSS"
+  day_coverage:
+    mode: "continuous"
+    day_coverage_frac: 0.99
+    buffer_coverage_frac: 0.99
   sample_groups:
     - ... # see SampleGroup below
 ```
@@ -676,7 +690,7 @@ File-level quality attributes:
 
 Decoded metadata on the `CAMERA_TIME` dimension:
 
-- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_HEADER_PARSE_VALID`, `WFOV_COMPRESSED_IMAGE`,
+- Supporting variables: `CAMERA_PACKET_INDEX`, `WFOV_COMPRESSED_IMAGE`,
   `WFOV_COMPRESSED_IMAGE_LENGTH`
 - FSW header fields: `WFOV_FSW_HEADER_*` (19 uppercase field names matching the libera_cam FSW header layout)
 - Image header fields: `WFOV_IMAGE_HEADER_*` (21 fields from the FPGA block's image header)

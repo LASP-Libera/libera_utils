@@ -95,6 +95,13 @@ class TestForceL1ACombine:
             l1a_combine.force_l1a_combine(4321, ["2026-07-12"], boto_session=session)
         assert "entries" not in captured
 
+    def test_unconfigured_apid_rejected(self, make_sdc_event_bus, make_event_capturing_session):
+        """icie_sw_stat (1013) is a LiberaApid with no packet configuration, so it cannot be combined."""
+        session, captured = make_event_capturing_session()
+        with pytest.raises(ValueError, match=r"APID 1013 \(icie_sw_stat\) has no entry in l1a_processing_configs.yml"):
+            l1a_combine.force_l1a_combine(1013, ["2026-07-12"], boto_session=session)
+        assert "entries" not in captured
+
     def test_no_dates_rejected(self, make_sdc_event_bus, make_event_capturing_session):
         session, captured = make_event_capturing_session()
         with pytest.raises(ValueError, match="At least one applicable date"):
