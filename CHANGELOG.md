@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `DataLevel.ANC` for ancillary inputs produced outside the SDC and ingested from their upstream providers. It archives to `libera-ancillary-data` (`LiberaDataBucketName.ANCILLARY_ARCHIVE_BUCKET`); `AUX` keeps the non-leveled products the SDC produces.
+- Twelve `DataProductIdentifier` members at `DataLevel.ANC`, one per external input product, with ProductIDs of the form `<SOURCE>-<PRODUCT>`: `anc_ceres_cldpix` (`CERES-CLDPIX`), `anc_ceres_flashflux` (`CERES-FLASHFLUX`), `anc_ceres_ssf` (`CERES-SSF`), `anc_nsidc_land_ocean_mask` (`NSIDC-LAND-OCEAN-MASK`), `anc_nsidc_ice_snow` (`NSIDC-ICE-SNOW`), `anc_modis_igbp` (`MODIS-IGBP`), `anc_era5_pressure_level` (`ERA5-PRESSURE-LEVEL`), `anc_era5_single_level` (`ERA5-SINGLE-LEVEL`), `anc_viirs_aod` (`VIIRS-AOD`), `anc_viirs_brdf` (`VIIRS-BRDF`), `anc_viirs_cloud_properties` (`VIIRS-CLOUD-PROPERTIES`) and `anc_viirs_m4_sdr` (`VIIRS-M4-SDR`). No processing step produces them. The `DataProductIdentifier` docstring states the ProductID pattern, and unit tests check that every ProductID is unique and uses only uppercase letters, digits and hyphens.
+
 ## [5.11.3] - 2026-10-09
 
 ### Added
