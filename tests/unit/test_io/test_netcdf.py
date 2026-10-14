@@ -4,6 +4,9 @@ from hashlib import md5
 from pathlib import Path
 from unittest.mock import patch
 
+import dask
+import dask.array as da
+import h5py
 import numpy as np
 import pandas as pd
 import pytest
@@ -11,10 +14,11 @@ import xarray as xr
 import yaml
 from cloudpathlib import AnyPath, S3Client, S3Path
 from cloudpathlib.enums import FileCacheMode
+from distributed import Client
 
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import calculate_checksum
-from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
+from libera_utils.io.netcdf import NetcdfEngine, _write_worker_compressed, write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
 from tests.marks import strict_warnings
@@ -814,3 +818,237 @@ class TestNetcdfEngineConfig:
 
         assert result.path.exists()
         assert not result.path._local.exists()
+
+
+@pytest.fixture
+def distributed_client():
+    """An in-process dask.distributed Client, closed after the test so later tests find none"""
+    with Client(processes=False, n_workers=2, threads_per_worker=1, dashboard_address=None) as client:
+        yield client
+
+
+def _counted_blocks(counter: Path, n_frames: int, frames_per_block: int, size: int):
+    """Two Dask arrays (float32 and uint16) fed by one shared task per block, which logs each call to `counter`"""
+
+    def produce(frame_start):
+        with counter.open("a") as log:
+            log.write("call\n")
+        rng = np.random.default_rng(frame_start)
+        values = rng.normal(size=(frames_per_block, size, size)).astype(np.float32)
+        values[:, : size // 4] = -999
+        return values, (np.abs(values) % 100).astype(np.uint16)
+
+    task = dask.delayed(produce, nout=2, pure=False)
+    floats, ints = [], []
+    for start in range(0, n_frames, frames_per_block):
+        values, counts = task(start)
+        floats.append(da.from_delayed(values, (frames_per_block, size, size), np.float32))
+        ints.append(da.from_delayed(counts, (frames_per_block, size, size), np.uint16))
+    return da.concatenate(floats), da.concatenate(ints)
+
+
+def _small_dataset(counter: Path, chunks: tuple[int, int, int] = (1, 16, 16), **float_encoding) -> xr.Dataset:
+    """A 6-frame 64x64 Dataset with two Dask variables sharing their upstream task"""
+    floats, ints = _counted_blocks(counter, n_frames=6, frames_per_block=2, size=64)
+    dataset = xr.Dataset(
+        {
+            "floats": (("t", "y", "x"), floats, {"_FillValue": np.float32(-999)}),
+            "ints": (("t", "y", "x"), ints),
+            "frame_flag": (("t",), (floats.max(axis=(1, 2)) > 0).astype(np.uint32)),
+        },
+        coords={"t": np.arange(6)},
+    )
+    dataset["floats"].encoding = {"zlib": True, "complevel": 4, "chunksizes": chunks, "shuffle": True, **float_encoding}
+    dataset["ints"].encoding = {"zlib": True, "complevel": 4, "chunksizes": chunks}
+    return dataset
+
+
+def _calls(counter: Path) -> int:
+    return len(counter.read_text().split()) if counter.exists() else 0
+
+
+def _stored_bits(dset: h5py.Dataset) -> np.ndarray:
+    """Values read through HDF5's filters, without CF decoding, as unsigned integers of the same width"""
+    values = dset[()]
+    return values.view(f"u{values.dtype.itemsize}")
+
+
+def _storage_settings(dset: h5py.Dataset) -> tuple:
+    plist = dset.id.get_create_plist()
+    return dset.dtype, dset.chunks, [plist.get_filter(i)[:3] for i in range(plist.get_nfilters())], dset.fillvalue
+
+
+class TestWorkerCompression:
+    """`worker_compressed_variables` stores worker-compressed chunks that read back as a to_netcdf write does"""
+
+    @staticmethod
+    def _camera_dataset() -> xr.Dataset:
+        n_frames, size = 2, 2048
+        rng = np.random.default_rng(0)
+        values = rng.normal(size=(n_frames, size, size)).astype(np.float32)
+        values[0, :512, :512] = -999
+        counts = (np.abs(values) * 100).astype(np.uint16)
+        counts[1, 512:1024, 512:1024] = 0
+        times = pd.date_range("2026-07-12", periods=n_frames, freq="10s").to_numpy("datetime64[ns]")
+        dims = ("CAMERA_TIME", "CAMERA_PIXEL_COUNT_X", "CAMERA_PIXEL_COUNT_Y")
+        # Built (time, y, x) and transposed, so every block reaches the workers non-contiguous.
+        shuffled = da.from_array(np.ascontiguousarray(values.transpose(0, 2, 1)), chunks=(1, 2048, 2048))
+        return xr.Dataset(
+            {
+                "float_fill": (dims, da.from_array(values, chunks=(1, 1024, 2048))),
+                "float_fill_shuffled": (dims, shuffled.transpose(0, 2, 1)),
+                "counts": (dims, da.from_array(counts, chunks=(2, 512, 1024))),
+                "mask": (dims, da.from_array((counts % 2).astype(np.uint8), chunks=(1, 2048, 2048))),
+                "frame_flag": (("CAMERA_TIME",), da.from_array(np.array([1, 2], dtype=np.uint32), chunks=1)),
+            },
+            coords={"CAMERA_TIME": times},
+            attrs={"ProductID": "CAM", "algorithm_version": "0.0.1"},
+        )
+
+    @pytest.mark.parametrize("to_s3", [False, True], ids=["local", "s3"])
+    def test_reads_back_identical_to_a_to_netcdf_write(
+        self, to_s3, distributed_client, test_worker_compression_product_definition, tmp_path, create_mock_bucket
+    ):
+        """Every variable's stored values, settings and metadata match a to_netcdf write; fill chunks are not stored"""
+        names = ("float_fill", "float_fill_shuffled", "counts", "mask")
+        (tmp_path / "reference").mkdir()
+        (tmp_path / "direct").mkdir()
+        reference = write_libera_data_product(
+            test_worker_compression_product_definition, self._camera_dataset(), tmp_path / "reference", "CAMERA_TIME"
+        )
+        if to_s3:
+            bucket = create_mock_bucket()
+            written = write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                S3Path(f"s3://{bucket.name}/prefix"),
+                "CAMERA_TIME",
+                worker_compressed_variables=names,
+            )
+            direct_path = tmp_path / written.path.name
+            bucket.download_file(f"prefix/{written.path.name}", str(direct_path))
+        else:
+            direct_path = write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                tmp_path / "direct",
+                "CAMERA_TIME",
+                worker_compressed_variables=names,
+            ).path
+
+        with h5py.File(reference.path) as expected, h5py.File(direct_path) as actual:
+            for name in (*names, "frame_flag", "CAMERA_TIME"):
+                assert _storage_settings(actual[name]) == _storage_settings(expected[name]), name
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+            # One 512x512 chunk of each float variable is all fill and left unallocated; it reads back as fill.
+            for name in ("float_fill", "float_fill_shuffled"):
+                assert actual[name].id.get_num_chunks() == expected[name].id.get_num_chunks() - 1, name
+            # The all-zero chunk of a variable with no _FillValue is still stored.
+            assert actual["counts"].id.get_num_chunks() == expected["counts"].id.get_num_chunks()
+        with xr.open_dataset(reference.path) as expected, xr.open_dataset(direct_path) as actual:
+            assert actual.identical(expected)
+
+    def test_a_task_shared_by_variables_runs_once_per_block(self, tmp_path, distributed_client):
+        """One compute holds every variable's blocks, so a task feeding two variables runs once per block"""
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset.to_netcdf(tmp_path / "reference.nc", engine="h5netcdf")
+        counter.unlink()
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats", "ints"))
+        assert _calls(counter) == 3
+        with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
+            for name in ("floats", "ints", "frame_flag", "t"):
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+
+    def test_unlimited_dims_named_by_a_string_are_unlimited(self, tmp_path, distributed_client):
+        """A string ``unlimited_dims`` encoding marks that one dimension unlimited, as to_netcdf does"""
+        dataset = _small_dataset(tmp_path / "calls.log")
+        dataset.encoding["unlimited_dims"] = "t"
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        with h5py.File(tmp_path / "out.nc") as written:
+            assert written["floats"].maxshape == (None, 64, 64)
+            assert written["ints"].maxshape == (None, 64, 64)
+
+    def test_configured_engine_other_than_h5netcdf_raises(
+        self, monkeypatch, test_worker_compression_product_definition, tmp_path
+    ):
+        monkeypatch.setenv("XARRAY_NETCDF_ENGINE", "netcdf4")
+        with pytest.raises(ValueError, match="requires the h5netcdf engine"):
+            write_libera_data_product(
+                test_worker_compression_product_definition,
+                self._camera_dataset(),
+                tmp_path,
+                "CAMERA_TIME",
+                worker_compressed_variables=("counts",),
+            )
+        assert not list(tmp_path.iterdir())
+
+    @pytest.mark.parametrize(
+        ("names", "match"),
+        [
+            (("floats", "missing"), "not Dask-backed data variables"),
+            (("t",), "not Dask-backed data variables"),
+            (("floats", "floats"), "repeats a name"),
+            (("numpy_values",), "not Dask-backed data variables"),
+        ],
+        ids=["unknown", "coordinate", "repeated", "numpy-backed"],
+    )
+    def test_names_that_are_not_distinct_dask_data_variables_raise(self, names, match, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["numpy_values"] = (("t",), np.arange(6))
+        with pytest.raises(ValueError, match=match):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", names)
+        assert _calls(counter) == 0
+
+    def test_variable_not_chunked_on_disk_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["floats"].encoding = {}
+        with pytest.raises(ValueError, match="is not chunked on disk"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
+
+    def test_named_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
+        # xarray stores the byte strings as a (t, string2) character array, hence two chunk lengths.
+        dataset["labels"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (3, 2)}
+        with pytest.raises(ValueError, match="compress only numeric data"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("labels",))
+        assert _calls(counter) == 0
+
+    def test_no_distributed_client_raises(self, tmp_path):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="requires an active dask.distributed Client"):
+            _write_worker_compressed(_small_dataset(counter), tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
+
+    def test_filter_the_workers_do_not_apply_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="the workers apply only deflate"):
+            _write_worker_compressed(_small_dataset(counter, fletcher32=True), tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
+
+    def test_dask_chunks_not_a_multiple_of_the_disk_chunks_raise(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        with pytest.raises(ValueError, match="each must be a whole multiple"):
+            _write_worker_compressed(_small_dataset(counter, chunks=(1, 24, 64)), tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
+
+    def test_block_that_differs_from_its_declared_dtype_raises(self, tmp_path, distributed_client):
+        """Dask does not check a computed block against from_delayed's declaration, so the worker does"""
+        mislabeled = da.from_delayed(dask.delayed(np.zeros)((2, 32, 32), np.float64), (2, 32, 32), np.float32)
+        dataset = xr.Dataset({"values": (("t", "y", "x"), mislabeled)})
+        dataset["values"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (1, 16, 16)}
+        with pytest.raises(ValueError, match="A computed block of values has dtype float64"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("values",))
+
+    def test_other_dask_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
+        counter = tmp_path / "calls.log"
+        dataset = _small_dataset(counter)
+        dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
+        with pytest.raises(ValueError, match="not numeric or boolean"):
+            _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert _calls(counter) == 0
