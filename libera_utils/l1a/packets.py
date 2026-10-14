@@ -22,7 +22,13 @@ from libera_utils.l1a.l1a_packet_configs import (
     TimeFieldMapping,
     get_packet_config,
 )
-from libera_utils.l1a.wfov_image_metadata import enhance_wfov_l1a_dataset
+from libera_utils.l1a.packet_slicing import select_packets
+from libera_utils.l1a.wfov_image_metadata import (
+    CAMERA_PACKET_INDEX_VAR,
+    CAMERA_TIME_COORD,
+    PACKET_IMAGE_ID_VAR,
+    enhance_wfov_l1a_dataset,
+)
 from libera_utils.time import multipart_to_dt64
 from libera_utils.version import version
 
@@ -342,8 +348,31 @@ def parse_packets_to_l1a_dataset(
 
     if packet_config.packet_apid == LiberaApid.icie_wfov_sci:
         packet_ds = enhance_wfov_l1a_dataset(packet_ds)
+        packet_ds = _drop_duplicate_images(packet_ds, ground_data=ground_data, verbose=verbose)
 
     return packet_ds
+
+
+def _drop_duplicate_images(dataset: xr.Dataset, *, ground_data: bool, verbose: bool) -> xr.Dataset:
+    """Drop each WFOV image whose ``CAMERA_TIME`` repeats an earlier image's, with all of its packets.
+
+    Duplicates follow :func:`_drop_duplicates`: identical images are dropped, and differing ones
+    raise unless ``ground_data``. Neither axis is reordered.
+
+    Raises
+    ------
+    ValueError
+        If two images share a ``CAMERA_TIME`` but differ, and ``ground_data`` is False.
+    """
+    camera = dataset[[name for name, var in dataset.data_vars.items() if CAMERA_TIME_COORD in var.dims]]
+    # CAMERA_PACKET_INDEX differs between copies of one image, so it is kept out of the comparison
+    camera = camera.set_coords(CAMERA_PACKET_INDEX_VAR)
+    deduped, n_duplicates = _drop_duplicates(camera, CAMERA_TIME_COORD, ground_data=ground_data, verbose=verbose)
+    if not n_duplicates:
+        return dataset
+    dropped_sops = np.setdiff1d(camera[CAMERA_PACKET_INDEX_VAR].values, deduped[CAMERA_PACKET_INDEX_VAR].values)
+    image_ids = dataset[PACKET_IMAGE_ID_VAR].values
+    return select_packets(dataset, ~np.isin(image_ids, image_ids[dropped_sops]))
 
 
 def _validate_duplicate_values(

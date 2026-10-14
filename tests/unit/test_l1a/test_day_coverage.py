@@ -12,7 +12,6 @@ from libera_utils.l1a.day_coverage import (
     overlaps_day_window,
 )
 from libera_utils.l1a.l1a_packet_configs import CoverageMode, DayCoveragePolicy
-from libera_utils.l1a.packet_slicing import MissingDataTimeError
 
 # Stands in for the continuous APIDs in the tests below that are about the coverage arithmetic
 # rather than about any one APID's thresholds.
@@ -94,10 +93,10 @@ _MEASURED_SEAMS_MS = (5, 15, 25)
 
 def _day_spanning_intervals(day: date, seam: timedelta) -> list[tuple[datetime, datetime]]:
     """Three back-to-back files covering both buffers and the whole core, split by ``seam``."""
-    left_start = datetime.combine(day, datetime.min.time()) - timedelta(minutes=10)
-    right_end = datetime.combine(day + timedelta(days=1), datetime.min.time()) + timedelta(minutes=10)
-    midnight = datetime.combine(day, datetime.min.time())
-    next_midnight = datetime.combine(day + timedelta(days=1), datetime.min.time())
+    left_start = datetime.combine(day, datetime.min.time(), tzinfo=UTC) - timedelta(minutes=10)
+    right_end = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=UTC) + timedelta(minutes=10)
+    midnight = datetime.combine(day, datetime.min.time(), tzinfo=UTC)
+    next_midnight = datetime.combine(day + timedelta(days=1), datetime.min.time(), tzinfo=UTC)
     # Seams land inside each buffer, where DITL2 two-hour chunk boundaries actually fall.
     first_seam = midnight + timedelta(seconds=24)
     second_seam = next_midnight + timedelta(seconds=45)
@@ -193,7 +192,10 @@ _DITL2_APID_1036_2026_07_12 = [
 
 
 def test_ditl2_full_day_gates_complete():
-    intervals = [(datetime.fromisoformat(a), datetime.fromisoformat(b)) for a, b in _DITL2_APID_1036_2026_07_12]
+    intervals = [
+        (datetime.fromisoformat(a + "+00:00"), datetime.fromisoformat(b + "+00:00"))
+        for a, b in _DITL2_APID_1036_2026_07_12
+    ]
     result = evaluate_day_coverage(intervals, day=date(2026, 7, 12), policy=CONTINUOUS_POLICY)
     assert result.left_frac == 1.0
     assert result.day_frac == 1.0
@@ -204,7 +206,7 @@ def test_ditl2_full_day_gates_complete():
 def test_event_driven_passes_buffers_it_does_not_cover():
     """Buffers with no data at all do not fail an event-driven APID."""
     day = date(2026, 7, 12)
-    intervals = [(datetime(2026, 7, 12, 14, 0), datetime(2026, 7, 12, 14, 3))]
+    intervals = [(datetime(2026, 7, 12, 14, 0, tzinfo=UTC), datetime(2026, 7, 12, 14, 3, tzinfo=UTC))]
     result = evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY)
     assert result.left_frac == 0.0
     assert result.right_frac == 0.0
@@ -214,14 +216,14 @@ def test_event_driven_passes_buffers_it_does_not_cover():
 
 def test_event_driven_with_no_overlapping_data_is_incomplete():
     day = date(2026, 7, 12)
-    intervals = [(datetime(2026, 7, 10, 14, 0), datetime(2026, 7, 10, 14, 3))]
+    intervals = [(datetime(2026, 7, 10, 14, 0, tzinfo=UTC), datetime(2026, 7, 10, 14, 3, tzinfo=UTC))]
     assert not evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY).is_complete
 
 
 def test_event_driven_data_only_in_a_buffer_still_passes():
     """Data inside the buffer belongs to this day's combine window, so it must trigger one."""
     day = date(2026, 7, 12)
-    intervals = [(datetime(2026, 7, 11, 23, 55), datetime(2026, 7, 11, 23, 58))]
+    intervals = [(datetime(2026, 7, 11, 23, 55, tzinfo=UTC), datetime(2026, 7, 11, 23, 58, tzinfo=UTC))]
     result = evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY)
     assert result.day_frac == 0.0
     assert result.is_complete
@@ -229,7 +231,7 @@ def test_event_driven_data_only_in_a_buffer_still_passes():
 
 def test_continuous_just_under_its_threshold_fails():
     day = date(2026, 7, 12)
-    start = datetime(2026, 7, 12, 0, 0)
+    start = datetime(2026, 7, 12, 0, 0, tzinfo=UTC)
     # 0.985 of the core, above the 0.90 policy and below the 0.99 one.
     intervals = [
         (start - timedelta(minutes=10), start),
@@ -248,25 +250,27 @@ def test_continuous_just_under_its_threshold_fails():
 
 def test_unusable_intervals_are_ignored():
     day = date(2028, 2, 15)
-    full = (datetime(2028, 2, 14, 23, 50), datetime(2028, 2, 16, 0, 10))
+    full = (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC))
     baseline = evaluate_day_coverage([full], day=day, policy=CONTINUOUS_POLICY)
     noisy = evaluate_day_coverage(
         [
             full,
-            (None, datetime(2028, 2, 15, 12)),
-            (datetime(2028, 2, 15, 12), None),
-            (datetime(2028, 2, 15, 13), datetime(2028, 2, 15, 12)),
+            (None, datetime(2028, 2, 15, 12, tzinfo=UTC)),
+            (datetime(2028, 2, 15, 12, tzinfo=UTC), None),
+            (datetime(2028, 2, 15, 13, tzinfo=UTC), datetime(2028, 2, 15, 12, tzinfo=UTC)),
         ],
         day=day,
         policy=CONTINUOUS_POLICY,
     )
     assert noisy == baseline
     assert not evaluate_day_coverage(
-        [(datetime(2028, 2, 15, 13), datetime(2028, 2, 15, 12))], day=day, policy=EVENT_DRIVEN_POLICY
+        [(datetime(2028, 2, 15, 13, tzinfo=UTC), datetime(2028, 2, 15, 12, tzinfo=UTC))],
+        day=day,
+        policy=EVENT_DRIVEN_POLICY,
     ).is_complete
 
 
-def test_non_utc_aware_intervals_are_converted_to_utc():
+def test_non_utc_aware_intervals_compare_as_utc():
     """19:00-05:00 on the 14th is 00:00 UTC on the 15th, so the span covers the whole core."""
     day = date(2028, 2, 15)
     minus_five = timezone(timedelta(hours=-5))
@@ -277,9 +281,21 @@ def test_non_utc_aware_intervals_are_converted_to_utc():
     assert result.right_frac == 0.0
 
 
+@pytest.mark.parametrize("policy", [CONTINUOUS_POLICY, EVENT_DRIVEN_POLICY], ids=["continuous", "event_driven"])
+def test_naive_interval_raises(policy):
+    span = (datetime(2028, 2, 15, 0, 0), datetime(2028, 2, 15, 12, 0))
+    with pytest.raises(TypeError, match="offset-naive and offset-aware"):
+        evaluate_day_coverage([span], day=date(2028, 2, 15), policy=policy)
+
+
+def test_overlaps_day_window_naive_raises():
+    with pytest.raises(TypeError, match="offset-naive and offset-aware"):
+        overlaps_day_window(datetime(2028, 2, 15), datetime(2028, 2, 15), day=date(2028, 2, 15))
+
+
 def test_zero_length_span_is_present_for_event_driven():
     day = date(2028, 2, 15)
-    instant = datetime(2028, 2, 15, 12, 0)
+    instant = datetime(2028, 2, 15, 12, 0, tzinfo=UTC)
     result = evaluate_day_coverage([(instant, instant)], day=day, policy=EVENT_DRIVEN_POLICY)
     assert result.is_complete
     assert result.day_frac == 0.0
@@ -287,8 +303,8 @@ def test_zero_length_span_is_present_for_event_driven():
 
 def test_zero_length_span_leaves_continuous_fractions_unchanged():
     day = date(2028, 2, 15)
-    half_day = (datetime(2028, 2, 15, 0, 0), datetime(2028, 2, 15, 12, 0))
-    instant = datetime(2028, 2, 15, 18, 0)
+    half_day = (datetime(2028, 2, 15, 0, 0, tzinfo=UTC), datetime(2028, 2, 15, 12, 0, tzinfo=UTC))
+    instant = datetime(2028, 2, 15, 18, 0, tzinfo=UTC)
     without = evaluate_day_coverage([half_day], day=day, policy=CONTINUOUS_POLICY)
     with_instant = evaluate_day_coverage([half_day, (instant, instant)], day=day, policy=CONTINUOUS_POLICY)
     assert with_instant == without
@@ -296,7 +312,7 @@ def test_zero_length_span_leaves_continuous_fractions_unchanged():
 
 @pytest.mark.parametrize(
     "instant",
-    [datetime(2028, 2, 14, 23, 50), datetime(2028, 2, 16, 0, 10)],
+    [datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)],
     ids=["window_start", "window_end"],
 )
 def test_span_touching_only_a_window_edge_is_present(instant):
@@ -308,17 +324,21 @@ def test_span_touching_only_a_window_edge_is_present(instant):
 @pytest.mark.parametrize(
     ("start", "end", "expected"),
     [
-        (datetime(2028, 2, 14, 23, 0), datetime(2028, 2, 14, 23, 49, 59, 999999), False),
-        (datetime(2028, 2, 16, 0, 10, 0, 1), datetime(2028, 2, 16, 1, 0), False),
-        (datetime(2028, 2, 14, 0, 0), datetime(2028, 2, 17, 0, 0), True),
-        (datetime(2028, 2, 15, 0, 0, tzinfo=timezone(timedelta(hours=1))), datetime(2028, 2, 15, 0, 0), True),
+        (datetime(2028, 2, 14, 23, 0, tzinfo=UTC), datetime(2028, 2, 14, 23, 49, 59, 999999, tzinfo=UTC), False),
+        (datetime(2028, 2, 16, 0, 10, 0, 1, tzinfo=UTC), datetime(2028, 2, 16, 1, 0, tzinfo=UTC), False),
+        (datetime(2028, 2, 14, 0, 0, tzinfo=UTC), datetime(2028, 2, 17, 0, 0, tzinfo=UTC), True),
+        (
+            datetime(2028, 2, 15, 0, 0, tzinfo=timezone(timedelta(hours=1))),
+            datetime(2028, 2, 15, 0, 0, tzinfo=UTC),
+            True,
+        ),
         (
             datetime(2028, 2, 14, 18, 0, tzinfo=timezone(timedelta(hours=-5))),
             datetime(2028, 2, 14, 18, 49, tzinfo=timezone(timedelta(hours=-5))),
             False,
         ),
     ],
-    ids=["before", "after", "enclosing", "aware_inside", "aware_before"],
+    ids=["before", "after", "enclosing", "offset_inside", "offset_before"],
 )
 def test_overlaps_day_window(start, end, expected):
     assert overlaps_day_window(start, end, day=date(2028, 2, 15)) is expected
@@ -349,7 +369,7 @@ def test_measure_sees_a_gap_inside_the_axis():
     # The spacing across the hole is the two missing hours plus the one cadence that bridges it.
     assert coverage.max_gap == timedelta(hours=2, seconds=5)
     # The same data as whole-file spans reads as a covered day, because the gap is inside a file.
-    spans = [(axis[0].astype(datetime), axis[-1].astype(datetime))]
+    spans = [(axis[0].astype(datetime).replace(tzinfo=UTC), axis[-1].astype(datetime).replace(tzinfo=UTC))]
     assert evaluate_day_coverage(spans, day=date(2026, 7, 12), policy=CONTINUOUS_POLICY).day_frac == pytest.approx(
         1.0, abs=1e-4
     )
@@ -373,14 +393,14 @@ def test_measure_empty_axis():
     assert coverage.n_times == 0
 
 
-def test_measure_single_sample_occupies_one_seam_tolerance():
+def test_measure_single_sample_occupies_nothing():
     coverage = measure_time_axis_coverage(
         np.array(["2026-07-12T12:00:00"], dtype="datetime64[us]"), day=date(2026, 7, 12)
     )
     assert coverage.n_times == 1
-    assert coverage.median_cadence == DEFAULT_SEAM_TOLERANCE
+    assert coverage.median_cadence == timedelta(0)
     assert coverage.max_gap == timedelta(0)
-    assert coverage.day_frac == pytest.approx(DEFAULT_SEAM_TOLERANCE.total_seconds() / 86400)
+    assert coverage.day_frac == 0.0
 
 
 def test_measure_ignores_order():
@@ -389,12 +409,6 @@ def test_measure_ignores_order():
     assert measure_time_axis_coverage(shuffled, day=date(2026, 7, 12)) == measure_time_axis_coverage(
         axis, day=date(2026, 7, 12)
     )
-
-
-def test_measure_raises_on_nat():
-    axis = np.concatenate([_axis("2026-07-12T00:00:00", "2026-07-12T01:00:00", 5), np.array(["NaT"], "datetime64[us]")])
-    with pytest.raises(MissingDataTimeError, match="1 NaT"):
-        measure_time_axis_coverage(axis, day=date(2026, 7, 12))
 
 
 def test_measure_buffer_fractions():

@@ -1,6 +1,6 @@
-"""Unit tests for L1A day-window trim and uniqueness checks."""
+"""Unit tests for L1A day-window trim and data-time checks."""
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -8,17 +8,15 @@ import xarray as xr
 
 from libera_utils.constants import LiberaApid
 from libera_utils.l1a.day_window import (
-    DataTimeUniquenessError,
-    assert_data_times_unique_monotonic,
-    day_core_and_buffer_bounds,
-    day_window_bounds,
+    DayBounds,
+    check_data_times,
+    day_bounds,
     trim_l1a_to_day_window,
 )
-from libera_utils.l1a.packet_slicing import MissingDataTimeError
 
 DAY = date(2028, 2, 15)
-WINDOW_START = datetime(2028, 2, 14, 23, 50)
-WINDOW_END = datetime(2028, 2, 16, 0, 10)
+WINDOW_START = datetime(2028, 2, 14, 23, 50, tzinfo=UTC)
+WINDOW_END = datetime(2028, 2, 16, 0, 10, tzinfo=UTC)
 ONE_US = timedelta(microseconds=1)
 
 
@@ -61,15 +59,12 @@ def _axis_dataset(times: list[datetime]) -> xr.Dataset:
     return _sample_dataset({"RAD_SAMPLE": (times, list(range(len(times))))}, times)
 
 
-def test_day_window_bounds_are_naive_datetimes():
-    assert day_window_bounds(DAY) == (WINDOW_START, WINDOW_END)
-
-
-def test_day_core_and_buffer_bounds_abut():
-    left, core, right = day_core_and_buffer_bounds(DAY)
-    assert left == (WINDOW_START, datetime(2028, 2, 15))
-    assert core == (datetime(2028, 2, 15), datetime(2028, 2, 16))
-    assert right == (datetime(2028, 2, 16), WINDOW_END)
+def test_day_bounds_are_aware_utc():
+    bounds = day_bounds(DAY)
+    assert bounds == DayBounds(
+        WINDOW_START, datetime(2028, 2, 15, tzinfo=UTC), datetime(2028, 2, 16, tzinfo=UTC), WINDOW_END
+    )
+    assert all(value.tzinfo is UTC for value in bounds)
 
 
 @pytest.mark.parametrize("unit", ["us", "ns"])
@@ -81,84 +76,74 @@ def test_trim_keeps_both_window_edges_and_drops_one_microsecond_outside(unit):
     assert out["RAD_SAMPLE_packet_index"].values.tolist() == [0, 1, 2]
 
 
-def test_uniqueness_ok():
-    assert_data_times_unique_monotonic(_axis_dataset([datetime(2028, 2, 15, 1, 0), datetime(2028, 2, 15, 2, 0)]))
+def _warnings(caplog) -> list[str]:
+    return [r.message for r in caplog.records if r.name == "libera_utils.l1a.day_window" and r.levelname == "WARNING"]
 
 
-def test_uniqueness_empty_passes():
-    assert_data_times_unique_monotonic(_packet_dataset([]))
+@pytest.fixture
+def day_window_log(caplog):
+    caplog.set_level("WARNING", logger="libera_utils.l1a.day_window")
+    return caplog
 
 
-def test_uniqueness_duplicate_raises_and_lists_duplicates():
+def test_check_ok_logs_nothing(day_window_log):
+    check_data_times(_axis_dataset([datetime(2028, 2, 15, 1, 0), datetime(2028, 2, 15, 2, 0)]))
+    assert _warnings(day_window_log) == []
+
+
+def test_check_empty_logs_nothing(day_window_log):
+    check_data_times(_packet_dataset([]))
+    assert _warnings(day_window_log) == []
+
+
+def test_check_duplicate_warns_and_lists_duplicates(day_window_log):
     t = datetime(2028, 2, 15, 1, 0)
-    ds = _axis_dataset([t, t, datetime(2028, 2, 15, 2, 0)])
-    with pytest.raises(
-        DataTimeUniquenessError,
-        match=r"'RAD_SAMPLE_TIME' are not unique: 1 duplicate value\(s\): \['2028-02-15T01:00:00.000000'\]",
-    ):
-        assert_data_times_unique_monotonic(ds)
+    check_data_times(_axis_dataset([t, t, datetime(2028, 2, 15, 2, 0)]))
+    assert _warnings(day_window_log) == [
+        "Data times on 'RAD_SAMPLE_TIME' are not unique: 1 duplicate value(s): ['2028-02-15T01:00:00.000000']"
+    ]
 
 
-def test_uniqueness_lists_at_most_ten_duplicates():
+def test_check_lists_at_most_ten_duplicates(day_window_log):
     times = [datetime(2028, 2, 15, hour) for hour in range(12) for _ in range(2)]
-    with pytest.raises(DataTimeUniquenessError, match="12 duplicate") as excinfo:
-        assert_data_times_unique_monotonic(_axis_dataset(times))
-    assert "T09:00" in str(excinfo.value)
-    assert "T10:00" not in str(excinfo.value)
+    check_data_times(_axis_dataset(times))
+    (message,) = _warnings(day_window_log)
+    assert "12 duplicate" in message
+    assert "T09:00" in message
+    assert "T10:00" not in message
 
 
-def test_uniqueness_out_of_order_raises():
-    ds = _axis_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
-    with pytest.raises(DataTimeUniquenessError, match="monotonic"):
-        assert_data_times_unique_monotonic(ds)
+def test_check_backwards_step_warns(day_window_log):
+    check_data_times(_axis_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)]))
+    assert _warnings(day_window_log) == ["Data times on 'RAD_SAMPLE_TIME' step backwards at 1 of 2 position(s)"]
 
 
-def test_uniqueness_out_of_order_duplicates_are_listed():
+def test_check_reports_duplicates_and_backwards_steps_together(day_window_log):
     t = datetime(2028, 2, 15, 1, 0)
-    ds = _axis_dataset([t, datetime(2028, 2, 15, 2, 0), t])
-    with pytest.raises(DataTimeUniquenessError, match="1 duplicate"):
-        assert_data_times_unique_monotonic(ds)
+    check_data_times(_axis_dataset([t, datetime(2028, 2, 15, 2, 0), t]))
+    messages = _warnings(day_window_log)
+    assert len(messages) == 2
+    assert "1 duplicate" in messages[0]
+    assert "step backwards" in messages[1]
 
 
-def test_uniqueness_checks_every_sample_axis():
-    """ADGPS is clean; a duplicate on ADCFA alone still raises and is named."""
+def test_check_covers_every_sample_axis(day_window_log):
+    """ADGPS is clean; a duplicate on ADCFA alone still warns and is named."""
     times = [datetime(2028, 2, 15, 1, 0), datetime(2028, 2, 15, 2, 0)]
     ds = _sample_dataset({"ADGPS": (times, [0, 1]), "ADCFA": ([times[0], times[0]], [0, 1])}, times)
-    with pytest.raises(DataTimeUniquenessError, match="'ADCFA_TIME'"):
-        assert_data_times_unique_monotonic(ds)
+    check_data_times(ds)
+    (message,) = _warnings(day_window_log)
+    assert "'ADCFA_TIME'" in message
 
 
-def test_uniqueness_packet_only_product_checks_packet_time():
+def test_check_packet_only_product_checks_packet_time(day_window_log):
     t = datetime(2028, 2, 15, 1, 0)
-    with pytest.raises(DataTimeUniquenessError, match="'PACKET_ICIE_TIME'"):
-        assert_data_times_unique_monotonic(_packet_dataset([t, t]))
+    check_data_times(_packet_dataset([t, t]))
+    (message,) = _warnings(day_window_log)
+    assert "'PACKET_ICIE_TIME'" in message
 
 
-def test_uniqueness_packet_only_product_without_its_time_variable_raises():
+def test_check_packet_only_product_without_its_time_variable_raises():
     ds = _packet_dataset([datetime(2028, 2, 15, 12)], apid=LiberaApid.jpss_sc_pos)
     with pytest.raises(ValueError, match="PACKET_JPSS_TIME"):
-        assert_data_times_unique_monotonic(ds)
-
-
-@pytest.mark.parametrize("n_nat", [1, 2])
-@pytest.mark.parametrize("ground_data", [False, True])
-def test_uniqueness_nat_raises(n_nat, ground_data):
-    """NaT is a missing data time, not a duplicate, and ground_data does not soften it."""
-    ds = _axis_dataset([datetime(2028, 2, 15, 1, 0)] * (n_nat + 1))
-    ds["RAD_SAMPLE_TIME"] = np.concatenate(
-        [_dt64([datetime(2028, 2, 15, 1, 0)]), np.full(n_nat, np.datetime64("NaT", "us"))]
-    )
-    with pytest.raises(MissingDataTimeError, match=f"RAD_SAMPLE_TIME holds {n_nat} NaT"):
-        assert_data_times_unique_monotonic(ds, ground_data=ground_data)
-
-
-def test_uniqueness_ground_data_warns_on_duplicates():
-    t = datetime(2028, 2, 15, 1, 0)
-    with pytest.warns(UserWarning, match="not unique"):
-        assert_data_times_unique_monotonic(_axis_dataset([t, t]), ground_data=True)
-
-
-def test_uniqueness_ground_data_warns_on_out_of_order():
-    ds = _axis_dataset([datetime(2028, 2, 15, 2, 0), datetime(2028, 2, 15, 1, 0)])
-    with pytest.warns(UserWarning, match="monotonic"):
-        assert_data_times_unique_monotonic(ds, ground_data=True)
+        check_data_times(ds)
