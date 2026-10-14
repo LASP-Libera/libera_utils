@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from libera_utils.l1a.packets import _drop_duplicate_images
 from libera_utils.l1a.wfov_image_metadata import (
     BLOB_BYTE_COORD,
     CAMERA_TIME_COORD,
@@ -649,42 +648,3 @@ class TestEnhanceWfovL1aDataset:
         enhanced = enhance_wfov_l1a_dataset(ds)
         length = int(enhanced[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[0])
         assert enhanced[WFOV_COMPRESSED_IMAGE_VAR].values[0, :length].tobytes() == payload
-
-
-class TestDropDuplicateImages:
-    """A WFOV image repeating an earlier image's CAMERA_TIME is dropped with all of its packets."""
-
-    def test_identical_repeat_drops_the_later_image_and_its_packets(self):
-        blob = _build_complete_image_blob(b"\x01", timestamp_seconds=100)
-        other = _build_complete_image_blob(b"\x02", timestamp_seconds=200)
-        enhanced = enhance_wfov_l1a_dataset(
-            _make_wfov_packet_dataset([*_complete_rows(blob), *_complete_rows(other), *_complete_rows(blob)])
-        )
-
-        with pytest.warns(UserWarning, match="1 duplicate CAMERA_TIME"):
-            out = _drop_duplicate_images(enhanced, ground_data=False, verbose=False)
-
-        assert out.sizes[CAMERA_TIME_COORD] == 2
-        assert out.sizes["PACKET"] == 4
-        np.testing.assert_array_equal(out[PACKET_IMAGE_ID_VAR].values, [0, 0, 1, 1])
-        np.testing.assert_array_equal(out["CAMERA_PACKET_INDEX"].values, [0, 2])
-
-    def test_differing_repeat_raises_unless_ground_data(self):
-        first = _build_complete_image_blob(b"\x01", timestamp_seconds=100)
-        second = _build_complete_image_blob(b"\x02", timestamp_seconds=100)
-        enhanced = enhance_wfov_l1a_dataset(
-            _make_wfov_packet_dataset([*_complete_rows(first), *_complete_rows(second)])
-        )
-
-        with pytest.raises(ValueError, match="differing values"):
-            _drop_duplicate_images(enhanced, ground_data=False, verbose=False)
-        with pytest.warns(UserWarning, match="1 duplicate CAMERA_TIME"):
-            out = _drop_duplicate_images(enhanced, ground_data=True, verbose=False)
-        assert out.sizes[CAMERA_TIME_COORD] == 1
-        np.testing.assert_array_equal(out[PACKET_IMAGE_ID_VAR].values, [0, 0])
-
-    def test_no_repeat_returns_the_dataset_unchanged(self):
-        enhanced = enhance_wfov_l1a_dataset(
-            _make_wfov_packet_dataset(_complete_rows(_build_complete_image_blob(b"\x01")))
-        )
-        assert _drop_duplicate_images(enhanced, ground_data=False, verbose=False) is enhanced

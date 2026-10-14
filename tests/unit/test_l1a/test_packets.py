@@ -846,7 +846,7 @@ def test_parse_packets_to_l1a_dataset_basic(
     # Create a minimal packet configuration using Pydantic
     config = PacketConfiguration(
         packet_apid=LiberaApid.icie_nom_hk,
-        day_coverage=DayCoveragePolicy(mode=CoverageMode.EVENT_DRIVEN),
+        day_coverage=DayCoveragePolicy(mode=CoverageMode.PRESENCE),
         packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
         sample_groups=[
             SampleGroup(
@@ -927,7 +927,7 @@ def test_parse_packets_to_l1a_dataset_explicit_skip_header_bytes(
     """Explicit skip_header_bytes overrides config for ground CCSDS decode."""
     config = PacketConfiguration(
         packet_apid=LiberaApid.icie_nom_hk,
-        day_coverage=DayCoveragePolicy(mode=CoverageMode.EVENT_DRIVEN),
+        day_coverage=DayCoveragePolicy(mode=CoverageMode.PRESENCE),
         packet_time_fields=TimeFieldMapping(day_field="PKT_DAY", ms_field="PKT_MS"),
         sample_groups=[
             SampleGroup(

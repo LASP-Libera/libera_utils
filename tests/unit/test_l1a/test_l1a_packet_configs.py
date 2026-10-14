@@ -18,7 +18,7 @@ from libera_utils.l1a.l1a_packet_configs import (
     get_packet_config,
 )
 
-_EVENT_DRIVEN = DayCoveragePolicy(mode=CoverageMode.EVENT_DRIVEN)
+_PRESENCE = DayCoveragePolicy(mode=CoverageMode.PRESENCE)
 
 
 class TestPacketConfiguration:
@@ -28,7 +28,7 @@ class TestPacketConfiguration:
         """Test that PacketConfiguration can be instantiated with required fields."""
         config = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.icie_axis_sample,
-            day_coverage=_EVENT_DRIVEN,
+            day_coverage=_PRESENCE,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(
                 day_field="TM_DAY",
                 ms_field="TM_MS",
@@ -89,7 +89,7 @@ class TestPacketConfiguration:
         """Test that packet_time_coordinate derives its name from packet_time_source."""
         config_icie = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.icie_nom_hk,
-            day_coverage=_EVENT_DRIVEN,
+            day_coverage=_PRESENCE,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
             packet_time_source=l1a_packet_configs.SampleTimeSource.ICIE,
         )
@@ -97,7 +97,7 @@ class TestPacketConfiguration:
 
         config_jpss = l1a_packet_configs.PacketConfiguration(
             packet_apid=LiberaApid.jpss_sc_pos,
-            day_coverage=_EVENT_DRIVEN,
+            day_coverage=_PRESENCE,
             packet_time_fields=l1a_packet_configs.TimeFieldMapping(day_field="DAY"),
             packet_time_source=l1a_packet_configs.SampleTimeSource.JPSS,
         )
@@ -134,11 +134,11 @@ def test_configured_apids_loads_every_yaml_entry(monkeypatch):
 @pytest.mark.parametrize(
     ("apid", "mode", "day_frac", "buffer_frac"),
     [
-        (LiberaApid.icie_nom_hk, CoverageMode.CONTINUOUS, 0.99, 0.99),
-        (LiberaApid.icie_rad_sample, CoverageMode.CONTINUOUS, 0.90, 0.95),
-        (LiberaApid.icie_wfov_sci, CoverageMode.CONTINUOUS, 0.60, 0.60),
-        (LiberaApid.icie_rad_full, CoverageMode.EVENT_DRIVEN, None, None),
-        (LiberaApid.icie_cal_sample, CoverageMode.EVENT_DRIVEN, None, None),
+        (LiberaApid.icie_nom_hk, CoverageMode.FRACTION, 0.99, 0.99),
+        (LiberaApid.icie_rad_sample, CoverageMode.FRACTION, 0.90, 0.95),
+        (LiberaApid.icie_wfov_sci, CoverageMode.FRACTION, 0.60, 0.60),
+        (LiberaApid.icie_rad_full, CoverageMode.PRESENCE, None, None),
+        (LiberaApid.icie_cal_sample, CoverageMode.PRESENCE, None, None),
     ],
 )
 def test_day_coverage_loaded_from_yaml(apid, mode, day_frac, buffer_frac):
@@ -152,17 +152,17 @@ def test_day_coverage_loaded_from_yaml(apid, mode, day_frac, buffer_frac):
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"mode": CoverageMode.CONTINUOUS}, "requires day_coverage_frac, buffer_coverage_frac"),
-        ({"mode": CoverageMode.CONTINUOUS, "day_coverage_frac": 0.9}, "requires buffer_coverage_frac"),
+        ({"mode": CoverageMode.FRACTION}, "requires day_coverage_frac, buffer_coverage_frac"),
+        ({"mode": CoverageMode.FRACTION, "day_coverage_frac": 0.9}, "requires buffer_coverage_frac"),
         (
-            {"mode": CoverageMode.CONTINUOUS, "day_coverage_frac": 1.5, "buffer_coverage_frac": 0.9},
+            {"mode": CoverageMode.FRACTION, "day_coverage_frac": 1.5, "buffer_coverage_frac": 0.9},
             r"day_coverage_frac must be in \(0, 1\], got 1.5",
         ),
         (
-            {"mode": CoverageMode.CONTINUOUS, "day_coverage_frac": 0.0, "buffer_coverage_frac": 0.9},
+            {"mode": CoverageMode.FRACTION, "day_coverage_frac": 0.0, "buffer_coverage_frac": 0.9},
             r"day_coverage_frac must be in \(0, 1\], got 0.0",
         ),
-        ({"mode": CoverageMode.EVENT_DRIVEN, "day_coverage_frac": 0.9}, "drop day_coverage_frac"),
+        ({"mode": CoverageMode.PRESENCE, "day_coverage_frac": 0.9}, "drop day_coverage_frac"),
     ],
 )
 def test_malformed_policies_rejected(kwargs, match):

@@ -239,13 +239,13 @@ as `get_packet_config(apid).day_coverage`. The block is required.
 icie_nom_hk:
   # ...
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.99
     buffer_coverage_frac: 0.99
 ```
 
-- `continuous` requires a minimum covered fraction of the day core and of each buffer.
-- `event_driven` passes all three gates when any span touches the day window
+- `fraction` requires a minimum covered fraction of the day core and of each buffer.
+- `presence` passes all three gates when any span touches the day window
   (`overlaps_day_window`), since an APID that only runs during an event rarely has data at both
   midnights. A file whose start equals its end, such as a file holding one time, counts as
   present.
@@ -339,7 +339,7 @@ icie_nom_hk:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.99
     buffer_coverage_frac: 0.99
 ```
@@ -356,7 +356,7 @@ jpss_sc_pos:
   packet_definition_config_key: "JPSS_GEOLOCATION_PACKET_DEFINITION"
   packet_time_source: "JPSS"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.99
     buffer_coverage_frac: 0.99
   sample_groups:

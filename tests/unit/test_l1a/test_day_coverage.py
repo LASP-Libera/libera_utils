@@ -13,10 +13,10 @@ from libera_utils.l1a.day_coverage import (
 )
 from libera_utils.l1a.l1a_packet_configs import CoverageMode, DayCoveragePolicy
 
-# Stands in for the continuous APIDs in the tests below that are about the coverage arithmetic
+# Stands in for the fraction-gated APIDs in the tests below that are about the coverage arithmetic
 # rather than about any one APID's thresholds.
-CONTINUOUS_POLICY = DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=0.99)
-EVENT_DRIVEN_POLICY = DayCoveragePolicy(mode=CoverageMode.EVENT_DRIVEN)
+FRACTION_POLICY = DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=0.99)
+PRESENCE_POLICY = DayCoveragePolicy(mode=CoverageMode.PRESENCE)
 
 
 def test_full_day_and_buffers_complete():
@@ -26,7 +26,7 @@ def test_full_day_and_buffers_complete():
         (datetime(2028, 2, 15, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 0, tzinfo=UTC)),
         (datetime(2028, 2, 16, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
-    result = evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
     assert result.is_complete
     assert result.left_frac == 1.0
     assert result.day_frac == 1.0
@@ -38,14 +38,14 @@ def test_missing_right_buffer_incomplete():
     intervals = [
         (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 16, 0, 0, tzinfo=UTC)),
     ]
-    result = evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
     assert result.left_ok
     assert result.day_ok
     assert not result.right_ok
     assert not result.is_complete
 
 
-def test_half_day_fails_continuous_policy():
+def test_half_day_fails_fraction_policy():
     day = date(2028, 2, 15)
     # Only 12 hours of the day core
     intervals = [
@@ -53,24 +53,24 @@ def test_half_day_fails_continuous_policy():
         (datetime(2028, 2, 15, 0, 0, tzinfo=UTC), datetime(2028, 2, 15, 12, 0, tzinfo=UTC)),
         (datetime(2028, 2, 16, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
-    result = evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
     assert result.day_frac == 0.5
     assert not result.day_ok
     assert not result.is_complete
 
 
-def test_short_span_passes_event_driven_but_not_continuous():
+def test_short_span_passes_presence_but_not_fraction():
     day = date(2028, 2, 15)
     intervals = [
         (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 15, 0, 0, tzinfo=UTC)),
         (datetime(2028, 2, 15, 12, 0, tzinfo=UTC), datetime(2028, 2, 15, 12, 5, tzinfo=UTC)),
         (datetime(2028, 2, 16, 0, 0, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
-    continuous = evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY)
-    assert not continuous.day_ok
-    event_driven = evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY)
-    assert event_driven.day_ok
-    assert event_driven.is_complete
+    fraction = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
+    assert not fraction.day_ok
+    presence = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)
+    assert presence.day_ok
+    assert presence.is_complete
 
 
 def test_overlapping_intervals_merged():
@@ -81,7 +81,7 @@ def test_overlapping_intervals_merged():
         (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 15, 0, 5, tzinfo=UTC)),
         (datetime(2028, 2, 15, 23, 55, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC)),
     ]
-    result = evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
     assert result.day_frac == 1.0
     assert result.is_complete
 
@@ -118,7 +118,7 @@ def test_measured_seams_reach_full_buffer_coverage(seam_ms):
     result = evaluate_day_coverage(
         _day_spanning_intervals(day, timedelta(milliseconds=seam_ms)),
         day=day,
-        policy=DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
+        policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
     )
     assert result.is_complete
     assert result.left_frac == 1.0
@@ -127,9 +127,7 @@ def test_measured_seams_reach_full_buffer_coverage(seam_ms):
 
 def test_real_gap_in_right_buffer_fails():
     day = date(2026, 7, 12)
-    result = evaluate_day_coverage(
-        _day_spanning_intervals(day, timedelta(seconds=30)), day=day, policy=CONTINUOUS_POLICY
-    )
+    result = evaluate_day_coverage(_day_spanning_intervals(day, timedelta(seconds=30)), day=day, policy=FRACTION_POLICY)
     assert result.left_ok
     assert not result.right_ok
     assert not result.is_complete
@@ -138,7 +136,7 @@ def test_real_gap_in_right_buffer_fails():
 def test_gap_just_over_seam_tolerance_is_not_merged():
     day = date(2026, 7, 12)
     over = DEFAULT_SEAM_TOLERANCE + timedelta(milliseconds=1)
-    strict_buffer = DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=1.0)
+    strict_buffer = DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=1.0)
     result = evaluate_day_coverage(_day_spanning_intervals(day, over), day=day, policy=strict_buffer)
     assert not result.right_ok
     under = DEFAULT_SEAM_TOLERANCE - timedelta(milliseconds=1)
@@ -152,7 +150,7 @@ def test_seam_tolerance_is_tunable_per_caller():
     strict = evaluate_day_coverage(
         intervals,
         day=day,
-        policy=DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
+        policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.9, buffer_coverage_frac=1.0),
         seam_tolerance=timedelta(0),
     )
     assert not strict.is_complete
@@ -162,11 +160,11 @@ def test_buffer_frac_absorbs_a_small_real_dropout():
     """0.99 of a 600 s buffer allows a 6 s outage, which the tolerance alone would not."""
     day = date(2026, 7, 12)
     six_seconds = evaluate_day_coverage(
-        _day_spanning_intervals(day, timedelta(seconds=6)), day=day, policy=CONTINUOUS_POLICY
+        _day_spanning_intervals(day, timedelta(seconds=6)), day=day, policy=FRACTION_POLICY
     )
     assert six_seconds.is_complete
     seven_seconds = evaluate_day_coverage(
-        _day_spanning_intervals(day, timedelta(seconds=7)), day=day, policy=CONTINUOUS_POLICY
+        _day_spanning_intervals(day, timedelta(seconds=7)), day=day, policy=FRACTION_POLICY
     )
     assert not seven_seconds.right_ok
 
@@ -196,40 +194,40 @@ def test_ditl2_full_day_gates_complete():
         (datetime.fromisoformat(a + "+00:00"), datetime.fromisoformat(b + "+00:00"))
         for a, b in _DITL2_APID_1036_2026_07_12
     ]
-    result = evaluate_day_coverage(intervals, day=date(2026, 7, 12), policy=CONTINUOUS_POLICY)
+    result = evaluate_day_coverage(intervals, day=date(2026, 7, 12), policy=FRACTION_POLICY)
     assert result.left_frac == 1.0
     assert result.day_frac == 1.0
     assert result.right_frac == 1.0
     assert result.is_complete
 
 
-def test_event_driven_passes_buffers_it_does_not_cover():
-    """Buffers with no data at all do not fail an event-driven APID."""
+def test_presence_passes_buffers_it_does_not_cover():
+    """Buffers with no data at all do not fail a presence-gated APID."""
     day = date(2026, 7, 12)
     intervals = [(datetime(2026, 7, 12, 14, 0, tzinfo=UTC), datetime(2026, 7, 12, 14, 3, tzinfo=UTC))]
-    result = evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)
     assert result.left_frac == 0.0
     assert result.right_frac == 0.0
     assert result.is_complete
-    assert result.mode is CoverageMode.EVENT_DRIVEN
+    assert result.mode is CoverageMode.PRESENCE
 
 
-def test_event_driven_with_no_overlapping_data_is_incomplete():
+def test_presence_with_no_overlapping_data_is_incomplete():
     day = date(2026, 7, 12)
     intervals = [(datetime(2026, 7, 10, 14, 0, tzinfo=UTC), datetime(2026, 7, 10, 14, 3, tzinfo=UTC))]
-    assert not evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY).is_complete
+    assert not evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY).is_complete
 
 
-def test_event_driven_data_only_in_a_buffer_still_passes():
+def test_presence_data_only_in_a_buffer_still_passes():
     """Data inside the buffer belongs to this day's combine window, so it must trigger one."""
     day = date(2026, 7, 12)
     intervals = [(datetime(2026, 7, 11, 23, 55, tzinfo=UTC), datetime(2026, 7, 11, 23, 58, tzinfo=UTC))]
-    result = evaluate_day_coverage(intervals, day=day, policy=EVENT_DRIVEN_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=PRESENCE_POLICY)
     assert result.day_frac == 0.0
     assert result.is_complete
 
 
-def test_continuous_just_under_its_threshold_fails():
+def test_fraction_just_under_its_threshold_fails():
     day = date(2026, 7, 12)
     start = datetime(2026, 7, 12, 0, 0, tzinfo=UTC)
     # 0.985 of the core, above the 0.90 policy and below the 0.99 one.
@@ -241,17 +239,17 @@ def test_continuous_just_under_its_threshold_fails():
     strict = evaluate_day_coverage(
         intervals,
         day=day,
-        policy=DayCoveragePolicy(mode=CoverageMode.CONTINUOUS, day_coverage_frac=0.99, buffer_coverage_frac=0.99),
+        policy=DayCoveragePolicy(mode=CoverageMode.FRACTION, day_coverage_frac=0.99, buffer_coverage_frac=0.99),
     )
     assert not strict.day_ok
     assert not strict.is_complete
-    assert evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY).is_complete
+    assert evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY).is_complete
 
 
 def test_unusable_intervals_are_ignored():
     day = date(2028, 2, 15)
     full = (datetime(2028, 2, 14, 23, 50, tzinfo=UTC), datetime(2028, 2, 16, 0, 10, tzinfo=UTC))
-    baseline = evaluate_day_coverage([full], day=day, policy=CONTINUOUS_POLICY)
+    baseline = evaluate_day_coverage([full], day=day, policy=FRACTION_POLICY)
     noisy = evaluate_day_coverage(
         [
             full,
@@ -260,13 +258,13 @@ def test_unusable_intervals_are_ignored():
             (datetime(2028, 2, 15, 13, tzinfo=UTC), datetime(2028, 2, 15, 12, tzinfo=UTC)),
         ],
         day=day,
-        policy=CONTINUOUS_POLICY,
+        policy=FRACTION_POLICY,
     )
     assert noisy == baseline
     assert not evaluate_day_coverage(
         [(datetime(2028, 2, 15, 13, tzinfo=UTC), datetime(2028, 2, 15, 12, tzinfo=UTC))],
         day=day,
-        policy=EVENT_DRIVEN_POLICY,
+        policy=PRESENCE_POLICY,
     ).is_complete
 
 
@@ -275,13 +273,13 @@ def test_non_utc_aware_intervals_compare_as_utc():
     day = date(2028, 2, 15)
     minus_five = timezone(timedelta(hours=-5))
     intervals = [(datetime(2028, 2, 14, 19, 0, tzinfo=minus_five), datetime(2028, 2, 15, 19, 0, tzinfo=minus_five))]
-    result = evaluate_day_coverage(intervals, day=day, policy=CONTINUOUS_POLICY)
+    result = evaluate_day_coverage(intervals, day=day, policy=FRACTION_POLICY)
     assert result.day_frac == 1.0
     assert result.left_frac == 0.0
     assert result.right_frac == 0.0
 
 
-@pytest.mark.parametrize("policy", [CONTINUOUS_POLICY, EVENT_DRIVEN_POLICY], ids=["continuous", "event_driven"])
+@pytest.mark.parametrize("policy", [FRACTION_POLICY, PRESENCE_POLICY], ids=["fraction", "presence"])
 def test_naive_interval_raises(policy):
     span = (datetime(2028, 2, 15, 0, 0), datetime(2028, 2, 15, 12, 0))
     with pytest.raises(TypeError, match="offset-naive and offset-aware"):
@@ -293,20 +291,20 @@ def test_overlaps_day_window_naive_raises():
         overlaps_day_window(datetime(2028, 2, 15), datetime(2028, 2, 15), day=date(2028, 2, 15))
 
 
-def test_zero_length_span_is_present_for_event_driven():
+def test_zero_length_span_is_present_for_presence():
     day = date(2028, 2, 15)
     instant = datetime(2028, 2, 15, 12, 0, tzinfo=UTC)
-    result = evaluate_day_coverage([(instant, instant)], day=day, policy=EVENT_DRIVEN_POLICY)
+    result = evaluate_day_coverage([(instant, instant)], day=day, policy=PRESENCE_POLICY)
     assert result.is_complete
     assert result.day_frac == 0.0
 
 
-def test_zero_length_span_leaves_continuous_fractions_unchanged():
+def test_zero_length_span_leaves_fraction_policy_fractions_unchanged():
     day = date(2028, 2, 15)
     half_day = (datetime(2028, 2, 15, 0, 0, tzinfo=UTC), datetime(2028, 2, 15, 12, 0, tzinfo=UTC))
     instant = datetime(2028, 2, 15, 18, 0, tzinfo=UTC)
-    without = evaluate_day_coverage([half_day], day=day, policy=CONTINUOUS_POLICY)
-    with_instant = evaluate_day_coverage([half_day, (instant, instant)], day=day, policy=CONTINUOUS_POLICY)
+    without = evaluate_day_coverage([half_day], day=day, policy=FRACTION_POLICY)
+    with_instant = evaluate_day_coverage([half_day, (instant, instant)], day=day, policy=FRACTION_POLICY)
     assert with_instant == without
 
 
@@ -318,7 +316,7 @@ def test_zero_length_span_leaves_continuous_fractions_unchanged():
 def test_span_touching_only_a_window_edge_is_present(instant):
     day = date(2028, 2, 15)
     assert overlaps_day_window(instant, instant, day=day)
-    assert evaluate_day_coverage([(instant, instant)], day=day, policy=EVENT_DRIVEN_POLICY).is_complete
+    assert evaluate_day_coverage([(instant, instant)], day=day, policy=PRESENCE_POLICY).is_complete
 
 
 @pytest.mark.parametrize(
@@ -370,7 +368,7 @@ def test_measure_sees_a_gap_inside_the_axis():
     assert coverage.max_gap == timedelta(hours=2, seconds=5)
     # The same data as whole-file spans reads as a covered day, because the gap is inside a file.
     spans = [(axis[0].astype(datetime).replace(tzinfo=UTC), axis[-1].astype(datetime).replace(tzinfo=UTC))]
-    assert evaluate_day_coverage(spans, day=date(2026, 7, 12), policy=CONTINUOUS_POLICY).day_frac == pytest.approx(
+    assert evaluate_day_coverage(spans, day=date(2026, 7, 12), policy=FRACTION_POLICY).day_frac == pytest.approx(
         1.0, abs=1e-4
     )
 
