@@ -355,8 +355,8 @@ class ArrayGroup(BaseModel):
 class CoverageMode(StrEnum):
     """How a day's completeness is judged for one APID."""
 
-    CONTINUOUS = "continuous"
-    EVENT_DRIVEN = "event_driven"
+    FRACTION = "fraction"
+    PRESENCE = "presence"
 
 
 class DayCoveragePolicy(BaseModel):
@@ -365,17 +365,17 @@ class DayCoveragePolicy(BaseModel):
     Attributes
     ----------
     mode : CoverageMode
-        ``CONTINUOUS`` gates on the fractions below. ``EVENT_DRIVEN`` passes every gate as soon
+        ``FRACTION`` gates on the fractions below. ``PRESENCE`` passes every gate as soon
         as any data overlaps the buffered day window, and takes no fractions.
     day_coverage_frac : float | None
-        Minimum covered fraction of ``[D, D+1)``. Required for ``CONTINUOUS``.
+        Minimum covered fraction of ``[D, D+1)``. Required for ``FRACTION``.
     buffer_coverage_frac : float | None
-        Minimum covered fraction of each midnight buffer. Required for ``CONTINUOUS``.
+        Minimum covered fraction of each midnight buffer. Required for ``FRACTION``.
 
     Raises
     ------
     pydantic.ValidationError
-        If a ``CONTINUOUS`` policy omits either fraction, an ``EVENT_DRIVEN`` policy carries
+        If a ``FRACTION`` policy omits either fraction, a ``PRESENCE`` policy carries
         one, or a fraction falls outside ``(0, 1]``.
     """
 
@@ -387,12 +387,12 @@ class DayCoveragePolicy(BaseModel):
 
     @model_validator(mode="after")
     def _validate_fractions(self) -> "DayCoveragePolicy":
-        """Require fractions in ``(0, 1]`` for ``CONTINUOUS`` and none for ``EVENT_DRIVEN``."""
+        """Require fractions in ``(0, 1]`` for ``FRACTION`` and none for ``PRESENCE``."""
         fractions = {
             "day_coverage_frac": self.day_coverage_frac,
             "buffer_coverage_frac": self.buffer_coverage_frac,
         }
-        if self.mode is CoverageMode.CONTINUOUS:
+        if self.mode is CoverageMode.FRACTION:
             missing = [name for name, value in fractions.items() if value is None]
             if missing:
                 raise ValueError(f"A {self.mode} policy requires {', '.join(missing)}.")

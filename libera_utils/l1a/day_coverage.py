@@ -32,7 +32,7 @@ class DayCoverageResult:
         Covered fraction, in ``[0, 1]``, of the left midnight buffer, the day core ``[D, D+1)``
         and the right midnight buffer.
     left_ok, day_ok, right_ok : bool
-        Whether each region passes the policy. Under ``EVENT_DRIVEN`` all three equal presence.
+        Whether each region passes the policy. Under ``PRESENCE`` all three equal presence.
     """
 
     mode: CoverageMode
@@ -129,7 +129,7 @@ def evaluate_day_coverage(
     -------
     DayCoverageResult
         Fractions and boolean gates for left buffer, day core, and right buffer. Under
-        ``EVENT_DRIVEN`` all three ``*_ok`` equal presence: whether any span overlaps the day
+        ``PRESENCE`` all three ``*_ok`` equal presence: whether any span overlaps the day
         window (:func:`overlaps_day_window`).
 
     Raises
@@ -145,7 +145,7 @@ def evaluate_day_coverage(
     day_frac = _coverage_fraction(spans, bounds.day_start, bounds.day_end, seam_tolerance)
     right_frac = _coverage_fraction(spans, bounds.day_end, bounds.window_end, seam_tolerance)
 
-    if policy.mode is CoverageMode.EVENT_DRIVEN:
+    if policy.mode is CoverageMode.PRESENCE:
         # An APID that is on only for an event almost never has data at both midnights.
         present = any(overlaps_day_window(start, end, day=day) for start, end in spans)
         left_ok = day_ok = right_ok = present

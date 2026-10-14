@@ -72,12 +72,12 @@
 #
 # day_coverage: (DayCoveragePolicy, required)
 #   Completeness rule the L1A combine applies to one UTC day of this APID.
-#   - mode: "continuous" gates on the fractions below; "event_driven" passes as soon as any
+#   - mode: "fraction" gates on the fractions below; "presence" passes as soon as any
 #     data overlaps the buffered day window and takes no fractions.
-#   - day_coverage_frac: minimum covered fraction of the day core [D, D+1) (continuous only)
-#   - buffer_coverage_frac: minimum covered fraction of each midnight buffer (continuous only)
+#   - day_coverage_frac: minimum covered fraction of the day core [D, D+1) (fraction only)
+#   - buffer_coverage_frac: minimum covered fraction of each midnight buffer (fraction only)
 #   Fractions must be in (0, 1].
-#   TODO[LIBSDC-576]: the continuous fractions are initial estimates; revise them as more data
+#   TODO[LIBSDC-576]: the fractions are initial estimates; revise them as more data
 #   runs through the system.
 #
 # Time Sources Explained:
@@ -103,7 +103,7 @@ pev_sw_stat:
   packet_definition_config_key: "LIBERA_PEV_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # PEC Software Status Packet: Calibration and status telemetry
 pec_sw_stat:
@@ -115,7 +115,7 @@ pec_sw_stat:
   packet_definition_config_key: "LIBERA_PEC_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # Axis Sample Packet: Azimuth and elevation encoder measurements
 icie_axis_sample:
@@ -137,7 +137,7 @@ icie_axis_sample:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.90
     buffer_coverage_frac: 0.95
 
@@ -164,7 +164,7 @@ icie_rad_sample:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.90
     buffer_coverage_frac: 0.95
 
@@ -191,7 +191,7 @@ icie_rad_full:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # Calibration Full Resolution Packet: High-rate calibration data (1kHz)
 icie_cal_full:
@@ -213,7 +213,7 @@ icie_cal_full:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # Calibration Downsampled Packet: Routine calibration data (200Hz)
 icie_cal_sample:
@@ -235,7 +235,7 @@ icie_cal_sample:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # Wide Field of View Science Packet: Camera science data as aggregated binary blob
 icie_wfov_sci:
@@ -247,7 +247,7 @@ icie_wfov_sci:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.60
     buffer_coverage_frac: 0.60
 
@@ -287,7 +287,7 @@ icie_nom_hk:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.99
     buffer_coverage_frac: 0.99
 
@@ -301,7 +301,7 @@ icie_crit_hk:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # Temperature Housekeeping Packet: Thermal monitoring data
 icie_temp_hk:
@@ -313,7 +313,7 @@ icie_temp_hk:
   packet_definition_config_key: "LIBERA_PACKET_DEFINITION"
   packet_time_source: "ICIE"
   day_coverage:
-    mode: "event_driven"
+    mode: "presence"
 
 # ==============================================================================
 # JPSS SPACECRAFT PACKETS
@@ -356,6 +356,6 @@ jpss_sc_pos:
   packet_definition_config_key: "JPSS_GEOLOCATION_PACKET_DEFINITION"
   packet_time_source: "JPSS"
   day_coverage:
-    mode: "continuous"
+    mode: "fraction"
     day_coverage_frac: 0.99
     buffer_coverage_frac: 0.99

@@ -37,7 +37,7 @@ def test_packet_configuration() -> PacketConfiguration:
     """
     return PacketConfiguration(
         packet_apid=LiberaApid.icie_nom_hk,
-        day_coverage=DayCoveragePolicy(mode=CoverageMode.EVENT_DRIVEN),
+        day_coverage=DayCoveragePolicy(mode=CoverageMode.PRESENCE),
         packet_time_fields=TimeFieldMapping(day_field="PACKET_DAY", ms_field="PACKET_MS"),
         sample_groups=[
             SampleGroup(
