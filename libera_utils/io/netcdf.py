@@ -1,11 +1,13 @@
 """Module containing utilities for writing Libera-conforming NetCDF4 data products"""
 
 import logging
+import os
 from enum import StrEnum
 from typing import Any, Literal
 
 import xarray as xr
-from cloudpathlib import AnyPath
+from cloudpathlib import AnyPath, CloudPath
+from cloudpathlib.enums import FileCacheMode
 from numpy.typing import NDArray
 
 from libera_utils.config import config
@@ -20,8 +22,8 @@ logger = logging.getLogger(__name__)
 class NetcdfEngine(StrEnum):
     """String enum class for our allowed NetCDF engines for xarray
 
-    The netcdf4 engine does not support writing to filelike objects (e.g. S3 objects via cloudpathlib).
-    The h5netcdf engine does support writing to filelike objects.
+    Neither engine streams to object storage. Products destined for S3 are staged on local disk
+    and uploaded, so both engines support cloud output paths equally. See `_write_dataset`.
     """
 
     netcdf4 = "netcdf4"
@@ -52,6 +54,11 @@ def write_libera_data_product(
     4. Generate the data product filename using the product definition and the specified time variable.
     5. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
+    A product already present at the generated path is replaced, on local disk and in S3
+    alike. Reprocessing rewrites a granule at the same key by design: a run that halted because
+    the object in the bucket was newer than the file it just produced would fail on its own
+    success.
+
     Parameters
     ----------
     data_product_definition : str | PathType | LiberaDataProductDefinition
@@ -75,6 +82,16 @@ def write_libera_data_product(
     -------
     : LiberaDataProductFilename
         Filename object containing the full path to the written NetCDF4 data product file.
+
+    Raises
+    ------
+    ValueError
+        If `dynamic_product_attributes` is passed alongside a Dataset, if `time_variable` does
+        not have a datetime64 dtype, or, when `strict` is True, if the Dataset does not conform
+        to the product definition.
+    pydantic.ValidationError
+        If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
+        a list of positive integers with as many entries as its ``dimensions``.
     """
     logger.info("Writing Libera data product")
 
@@ -117,11 +134,49 @@ def write_libera_data_product(
     else:
         data_product_filename.path = AnyPath(output_path) / data_product_filename.path.name
 
-    netcdf4_engine = NetcdfEngine.get_from_config()
-    if netcdf4_engine == NetcdfEngine.netcdf4:
-        logger.info("Using netcdf4 engine to write data product, this will not work for S3 paths")
-        dataset.to_netcdf(data_product_filename.path, engine=NetcdfEngine.netcdf4)
-    else:
-        with data_product_filename.path.open("w+b") as fh:
-            dataset.to_netcdf(fh, engine=NetcdfEngine.h5netcdf)
+    engine = NetcdfEngine.get_from_config()
+    logger.info(f"Writing data product with the {engine} engine")
+    _write_dataset(dataset, data_product_filename.path, engine)
     return data_product_filename
+
+
+def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEngine) -> None:
+    """Write a Dataset to `path`, always handing the NetCDF engine a real filesystem path
+
+    Each Dask worker under the distributed scheduler reopens the file from the pickled engine
+    argument. An open file object cannot be pickled and fails with `TypeError: cannot pickle
+    '_io.BufferedRandom' object`; a path can, so the workers must share this process's
+    filesystem, as those of a `LocalCluster` do.
+
+    A cloud destination is written to the path's cloudpathlib cache file and uploaded, as
+    `CloudPath.open` does on close, so a later read of `path` in this process, such as the
+    manifest checksum, is served from local disk. The cache file's modification time is then set
+    to the object's, because the cache treats an older file as stale, and under
+    `FileCacheMode.close_file` the cache file is removed. The upload replaces any existing object
+    at the key (`libera_utils/D-005`); `force_overwrite_to_cloud=True` is needed because the
+    default compares the local clock against S3's and could refuse the replacement.
+
+    Parameters
+    ----------
+    dataset : xr.Dataset
+        Dataset to write.
+    path : PathType
+        Destination path. A `CloudPath` is written to its cache file and uploaded; a `Path` is
+        written directly. An existing file or object at this path is replaced.
+    engine : T_XarrayNetcdfEngine
+        NetCDF engine to write with.
+    """
+    if isinstance(path, CloudPath):
+        # cloudpathlib has no public accessor for the cache location that does not first
+        # download an existing object, so this reads `_local` directly.
+        cache_file = path._local
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        dataset.to_netcdf(cache_file, engine=engine)
+        logger.info(f"Uploading {cache_file} to {path}")
+        path.upload_from(cache_file, force_overwrite_to_cloud=True)
+        cloud_mtime = path.stat().st_mtime
+        os.utime(cache_file, times=(cloud_mtime, cloud_mtime))
+        if path.client.file_cache_mode == FileCacheMode.close_file:
+            path.clear_cache()
+    else:
+        dataset.to_netcdf(path, engine=engine)

@@ -38,6 +38,8 @@ variables:
       long_name: Filtered Radiance
       units: W/(m^2*sr*nm)
       valid_range: [0, 1000]
+    encoding:
+      chunksizes: [1024]
 ```
 
 The `LiberaDataProductDefinition` system ensures all Libera data products maintain consistent structure, metadata, and
@@ -65,6 +67,18 @@ The precedence for attribute assignment is: `required_product_attributes.yml` (g
 `product_definition_file.yml` (defined in product definition) < `dynamic_product_attributes` kwarg. For example,
 `ProductID` is required by the standard metadata file but it is dynamic (`null` valued). It could be defined with a
 value in a particular product definition yml file or it could be passed via kwarg to `write_libera_data_product`.
+
+### Chunking
+
+NetCDF4 stores each variable in fixed-size blocks called chunks, and reads, writes and compresses
+a whole chunk at a time. A chunk shape that matches how the product is read, such as one camera
+frame (`[1, 512, 512]`) for a product read frame by frame, keeps a reader from pulling in data it
+does not need. A chunk shape that matches the Dask chunks the product is computed in lets each
+worker write whole chunks. Without `chunksizes`, the engine picks a shape itself.
+
+Give `encoding.chunksizes` as a list of positive integers, one per entry in `dimensions`, in
+dimension order. Anything else, including a count that does not match, raises `ValidationError`
+when the definition is loaded, so a bad chunk shape fails before any data is processed.
 
 ## Basic Usage
 
