@@ -161,13 +161,16 @@ def _fake_kernel_writer(
 ):
     """Stand-in for create_kernel_from_l1a that runs in the forked kernel process.
 
-    Writes a small file named for the kernel into `output_dir` and returns its path. Raises for the
+    Checks that it received the parent's Dataset and that CURRYER_TEMP_DIR is its own `output_dir`, then
+    writes a small file named for the kernel into `output_dir` and returns its path. Raises for the
     `failing` identifier, kills its own process for the `killed` one and sleeps for the `blocked` one.
     """
 
     def create_kernel(l1a_data, kernel_identifier, output_dir, overwrite):
         if l1a_data is not l1a_dataset:
             raise AssertionError("The kernel process did not receive the L1A Dataset loaded by the parent")
+        if os.environ.get("CURRYER_TEMP_DIR") != str(output_dir):
+            raise AssertionError("The kernel process did not set CURRYER_TEMP_DIR to its own work directory")
         if kernel_identifier == failing:
             raise RuntimeError("Test error")
         if kernel_identifier == killed:
@@ -308,6 +311,21 @@ def test_from_manifest_repeated_kernel_raises(manifest_kernel_run, tmp_path):
             output_dir=tmp_path,
         )
     manifest_kernel_run.load_l1a.assert_not_called()
+
+
+def test_from_manifest_without_fork_raises_before_reading_l1a(manifest_kernel_run, tmp_path):
+    """A platform with no fork start method is rejected before the L1A is read or the kernel cache populated"""
+    with mock.patch.object(
+        kernel_maker.multiprocessing, "get_context", side_effect=ValueError("cannot find context for 'fork'")
+    ):
+        with pytest.raises(ValueError, match="cannot find context for 'fork'"):
+            kernel_maker.create_kernels_from_manifest(
+                input_manifest="test.manifest",
+                kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+                output_dir=tmp_path,
+            )
+    manifest_kernel_run.load_l1a.assert_not_called()
+    manifest_kernel_run.kernel_manager_class.assert_not_called()
 
 
 @pytest.mark.parametrize(

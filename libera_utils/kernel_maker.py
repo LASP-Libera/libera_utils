@@ -879,6 +879,10 @@ def create_kernels_from_manifest(
     if len(set(kernel_list)) != len(kernel_list):
         raise ValueError(f"The `kernel_product_ids` [{kernel_list}] repeat a kernel. Request each kernel once.")
 
+    # Fork shares the loaded L1A with every worker and keeps the logging configuration; it is named
+    # explicitly because it is not the default start method on every platform and Python version.
+    fork_context = multiprocessing.get_context("fork")
+
     # Verify expectations for processing L1A files to SPICE kernels
     input_file_names = [file_entry.filename for file_entry in input_l1a_files]
     if len(input_file_names) == 0:
@@ -906,11 +910,10 @@ def create_kernels_from_manifest(
     with KernelManager():
         pass
 
-    # Fork shares the loaded L1A with every worker and keeps the logging configuration; it is named
-    # explicitly because it is not the default start method on every platform and Python version.
-    fork_context = multiprocessing.get_context("fork")
     outputs = []
     kernel_processing_failures: list[tuple[str, list]] = []
+    # Workers write to local staging and this process copies each kernel to `output_dir`, because a forked
+    # child must not use the parent's S3 connections.
     with tempfile.TemporaryDirectory(dir=get_local_short_temp_dir()) as staging_dir:
         work_dirs = {dpi: Path(staging_dir) / dpi.value for dpi in kernel_list}
         for work_dir in work_dirs.values():
@@ -966,8 +969,7 @@ def create_kernels_from_manifest(
     if kernel_processing_failures:
         raise ValueError(f"Kernel processing steps failed (kernel DPI, input_files): {kernel_processing_failures}")
 
-    # Duplicates are possible depending on file naming and append flag.
-    outputs = sorted(set(outputs))
+    outputs = sorted(outputs)
 
     # Generate output manifest.
     pedi = Manifest.output_manifest_from_input_manifest(mani)
