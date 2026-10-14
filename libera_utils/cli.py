@@ -72,20 +72,12 @@ def parse_cli_args(cli_args: list):
     # ========
     # Scene ID
     # ========
-    scene_id_parser = subparsers.add_parser("scene-id", help="run a Libera SCENE-ID algorithm from a manifest file")
-    scene_id_subparsers = scene_id_parser.add_subparsers(description="sub-commands for scene-id sub-command")
-
-    scene_id_cam_parser = scene_id_subparsers.add_parser(
-        "cam", help="run the SCENE-ID-CAM algorithm (radiometer timescale) from a manifest file"
+    scene_id_parser = subparsers.add_parser(
+        "scene-id",
+        help="run the Libera SCENE-ID algorithm variant named by LIBERA_SCENE_ID_VARIANT from a manifest file",
     )
-    scene_id_cam_parser.set_defaults(func=scene_id_algorithm.scene_id_cam_cli_handler)
-    scene_id_cam_parser.add_argument("manifest", type=str, help="path to the input manifest file")
-
-    scene_id_cam_camtime_parser = scene_id_subparsers.add_parser(
-        "cam-camtime", help="run the SCENE-ID-CAM-CAMTIME algorithm (camera timescale) from a manifest file"
-    )
-    scene_id_cam_camtime_parser.set_defaults(func=scene_id_algorithm.scene_id_cam_camtime_cli_handler)
-    scene_id_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+    scene_id_parser.set_defaults(func=scene_id_algorithm.scene_id_cli_handler)
+    scene_id_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
     # AWS CLI TOOLS

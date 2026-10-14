@@ -11,11 +11,11 @@ product, and emit an output manifest. They differ only by a handful of parameter
 * which scene classifications are run, and
 * logging labels.
 
-Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
-:func:`run_algorithm` and is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
-the :data:`SceneIdRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed by their CLI subcommand name
-(``"cam"``, ``"cam-camtime"``). The ``libera-utils scene-id <sub>`` CLI handlers select a config from that registry
-and forward it to :func:`run_algorithm`; a new SCENE-ID variant is one config plus one registry entry, no new module.
+:func:`run_algorithm` is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
+the :data:`SceneIdRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed by variant name (``"cam"``,
+``"cam-camtime"``). Every variant runs from the one ``libera-utils scene-id <manifest>`` command, and so from one
+container image: :func:`scene_id_cli_handler` selects the config named by the ``LIBERA_SCENE_ID_VARIANT`` environment
+variable, which each processing step sets.
 """
 
 import argparse
@@ -116,16 +116,42 @@ CAM_CAMTIME_CONFIG = SceneIdRunnerConfig(
     log_prefix="scene_id_cam_camtime",
 )
 
-# Registry of every SCENE-ID runner, keyed by its ``libera-utils scene-id <sub>`` CLI subcommand name. The CLI
-# handlers look a config up here and forward it to run_algorithm; adding a variant is one config plus one entry.
+# Registry of every SCENE-ID runner, keyed by the variant name the LIBERA_SCENE_ID_VARIANT environment variable
+# selects. Adding a variant is one config plus one entry.
 RUNNER_CONFIGS: dict[str, SceneIdRunnerConfig] = {
     "cam": CAM_CONFIG,
     "cam-camtime": CAM_CAMTIME_CONFIG,
 }
 
+# Environment variable naming the RUNNER_CONFIGS entry to run; set per processing step.
+SCENE_ID_VARIANT_ENV = "LIBERA_SCENE_ID_VARIANT"
 
-def scene_id_cam_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
-    """Run the SCENE-ID-CAM (radiometer-timescale) algorithm from an input manifest.
+
+def resolve_runner_config_from_env() -> SceneIdRunnerConfig:
+    """Select the SCENE-ID runner config named by the ``LIBERA_SCENE_ID_VARIANT`` environment variable.
+
+    Returns
+    -------
+    SceneIdRunnerConfig
+        The :data:`RUNNER_CONFIGS` entry for the named variant.
+
+    Raises
+    ------
+    ValueError
+        If the variable is not set or names no entry in :data:`RUNNER_CONFIGS`.
+    """
+    variant = os.getenv(SCENE_ID_VARIANT_ENV, "").strip()
+    if not variant:
+        raise ValueError(f"{SCENE_ID_VARIANT_ENV} environment variable is not set")
+    if variant not in RUNNER_CONFIGS:
+        raise ValueError(
+            f"{SCENE_ID_VARIANT_ENV}={variant!r} is not a SCENE-ID variant; expected one of {sorted(RUNNER_CONFIGS)}"
+        )
+    return RUNNER_CONFIGS[variant]
+
+
+def scene_id_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
+    """Run the SCENE-ID variant selected by ``LIBERA_SCENE_ID_VARIANT`` from an input manifest.
 
     Parameters
     ----------
@@ -136,24 +162,14 @@ def scene_id_cam_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
     -------
     pathlib.Path | cloudpathlib.S3Path
         Path to the written output manifest file.
+
+    Raises
+    ------
+    ValueError
+        If ``LIBERA_SCENE_ID_VARIANT`` is not set or names no SCENE-ID variant.
     """
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam"])
-
-
-def scene_id_cam_camtime_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
-    """Run the SCENE-ID-CAM-CAMTIME (camera-timescale) algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam-camtime"])
+    runner_config = resolve_runner_config_from_env()
+    return run_algorithm(AnyPath(parsed_args.manifest), runner_config)
 
 
 def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> Path | S3Path:
@@ -162,8 +178,7 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
     Parameters
     ----------
     manifest_path : Path | S3Path
-        Path to the input manifest file listing the input file(s). An ``argparse.Namespace`` (as produced by a CLI
-        handler) is also accepted for convenience when invoked as a CLI.
+        Path to the input manifest file listing the input file(s).
     config : SceneIdRunnerConfig
         The per-runner parameters (input/output product, reader, definition, time variable, scene types, log label).
 
@@ -182,11 +197,7 @@ def run_algorithm(manifest_path: Path | S3Path, config: SceneIdRunnerConfig) -> 
 
     # Step 1: Read the input manifest.
     logger.info("Step 1: Reading the input manifest file")
-    if isinstance(manifest_path, argparse.Namespace):
-        manifest = AnyPath(manifest_path.manifest)
-    else:
-        manifest = AnyPath(manifest_path)
-    input_manifest = Manifest.from_file(manifest)
+    input_manifest = Manifest.from_file(manifest_path)
     logger.info(f"Loaded manifest with {len(input_manifest.files)} files")
 
     dropbox_path = os.getenv("PROCESSING_PATH")
@@ -311,8 +322,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
     Notes
     -----
     The reader (:meth:`FootprintData.from_ceres_ssf` / :meth:`FootprintData.from_fmatch_cam_camtime`) opens the file
-    through :func:`~libera_utils.io.smart_open.smart_open`, so local and S3 inputs are handled uniformly with no
-    manual download or temporary-file materialization.
+    through :func:`~libera_utils.io.smart_open.smart_open`, so local and S3 inputs are handled uniformly.
     """
     logger.info("Running scene identification on %s", fmatch_file_path)
     footprint_data = config.reader(fmatch_file_path)

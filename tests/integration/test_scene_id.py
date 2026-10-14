@@ -13,7 +13,7 @@ import xarray as xr
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
-from libera_utils.scene_identification.scene_id_algorithm import scene_id_cam_cli_handler
+from libera_utils.scene_identification.scene_id_algorithm import SCENE_ID_VARIANT_ENV, scene_id_cli_handler
 from libera_utils.version import version
 
 pytestmark = pytest.mark.integration
@@ -27,9 +27,10 @@ class TestSceneIdCamRunnerEndToEnd:
     """Full manifest-in / product-out end-to-end run of the SCENE-ID-CAM algorithm.
 
     Unlike the component unit tests (which call the reader/classifier directly), this drives the whole runner the way
-    the pipeline does: build an input manifest, set ``PROCESSING_PATH``, invoke the CLI handler, then assert on the
-    output manifest and the written product. It is the "scrutinized example" integration test and the guard that the
-    manifest/dropbox plumbing, strict product write, and output-manifest generation all work together.
+    the pipeline does: build an input manifest, set ``PROCESSING_PATH`` and ``LIBERA_SCENE_ID_VARIANT``, invoke the
+    CLI handler, then assert on the output manifest and the written product. It is the "scrutinized example"
+    integration test and the guard that the variant dispatch, manifest/dropbox plumbing, strict product write, and
+    output-manifest generation all work together.
 
     TODO[LIBSDC-855]: extend this end-to-end coverage to the SCENE-ID-CAM-CAMTIME runner once
     ``FootprintData.from_fmatch_cam_camtime`` is implemented and a real FMATCH-CAM-CAMTIME input fixture exists.
@@ -42,13 +43,15 @@ class TestSceneIdCamRunnerEndToEnd:
         # Step 1: build an input manifest pointing at the CERES SSF placeholder input.
         input_manifest_path = generate_input_manifest_local(_SSF_INPUT_RELATIVE_PATH)
 
-        # Step 2: set the processing dropbox the runner writes products and the output manifest into.
+        # Step 2: set the environment a processing step provides: the dropbox the runner writes products and the
+        # output manifest into, and the SCENE-ID variant to run.
         dropbox_path = tmp_path / "dropbox"
         dropbox_path.mkdir()
         monkeypatch.setenv("PROCESSING_PATH", str(dropbox_path))
+        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, "cam")
 
-        # Step 3: run the algorithm end-to-end through the CLI handler.
-        output_manifest_path = scene_id_cam_cli_handler(argparse.Namespace(manifest=str(input_manifest_path)))
+        # Step 3: run the algorithm end-to-end through the CLI handler, as the container entrypoint does.
+        output_manifest_path = scene_id_cli_handler(argparse.Namespace(manifest=str(input_manifest_path)))
 
         # Step 4: the output manifest exists, is an OUTPUT manifest, and registers exactly one product file.
         assert output_manifest_path.exists()

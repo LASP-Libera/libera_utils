@@ -758,12 +758,15 @@ class FootprintData:
         >>> footprint_data = FootprintData.from_ceres_ssf(Path("CERES_SSF_NOAA20_2024001.nc"))
         >>> footprint_data.identify_scenes()
         """
+        # netCDF4 opens only a filesystem path or an in-memory buffer, so the bytes are read through smart_open (local,
+        # S3 or gzip) and handed to netCDF4 as a buffer.
         try:
             with smart_open(ssf_path) as file_handle:
-                with nc.Dataset(pathlib.Path(str(ssf_path)).name, memory=file_handle.read()) as file:
-                    extracted_data = cls._extract_data_from_CeresSSFNOAA20FM6Ed1C(file)
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Unable to parse input file: {ssf_path}")
+                ssf_bytes = file_handle.read()
+        except FileNotFoundError as err:
+            raise FileNotFoundError(f"Unable to open input file: {ssf_path}") from err
+        with nc.Dataset(pathlib.Path(str(ssf_path)).name, memory=ssf_bytes) as file:
+            extracted_data = cls._extract_data_from_CeresSSFNOAA20FM6Ed1C(file)
         footprint_data = cls(extracted_data)
         # Format extracted data
         max_cloud_fraction = 100.0

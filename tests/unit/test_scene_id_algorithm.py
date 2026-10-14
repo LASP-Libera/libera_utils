@@ -1,16 +1,23 @@
 """Unit tests for SCENE-ID runner helper logic in ``libera_utils.scene_identification.scene_id_algorithm``.
 
 These are pure-logic tests that need no real data or product write — e.g. the manifest input-selection rules in
-:func:`collect_input_files`. The full manifest-in / product-out behavior is covered by the integration tests in
-``tests/integration/test_scene_id.py``.
+:func:`collect_input_files` and the ``LIBERA_SCENE_ID_VARIANT`` dispatch in :func:`resolve_runner_config_from_env`.
+The full manifest-in / product-out behavior is covered by the integration tests in ``tests/integration/test_scene_id.py``.
 """
 
 from datetime import UTC, datetime
 
+import pytest
+
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
-from libera_utils.scene_identification.scene_id_algorithm import collect_input_files
+from libera_utils.scene_identification.scene_id_algorithm import (
+    RUNNER_CONFIGS,
+    SCENE_ID_VARIANT_ENV,
+    collect_input_files,
+    resolve_runner_config_from_env,
+)
 
 # A CERES SSF filename: not a Libera product name, so it stands in for the placeholder-mode input.
 SSF_INPUT_NAME = "CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
@@ -49,3 +56,32 @@ class TestCollectInputFiles:
         selected = collect_input_files(manifest, DataProductIdentifier.aux_fmatch_cam_camtime)
 
         assert selected == [f"{self._INPUT_DIR}/{wanted}"]
+
+
+class TestRunnerDispatch:
+    """LIBERA_SCENE_ID_VARIANT selects the SCENE-ID runner config that the CLI handler runs."""
+
+    @pytest.mark.parametrize("variant", sorted(RUNNER_CONFIGS))
+    def test_variant_selects_its_config(self, monkeypatch, variant):
+        """Each registry key in the environment variable selects that registry entry."""
+        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, variant)
+
+        assert resolve_runner_config_from_env() is RUNNER_CONFIGS[variant]
+
+    @pytest.mark.parametrize("value", [None, "", "  "])
+    def test_unset_variant_raises(self, monkeypatch, value):
+        """A missing or blank variable is an error rather than a silent default variant."""
+        if value is None:
+            monkeypatch.delenv(SCENE_ID_VARIANT_ENV, raising=False)
+        else:
+            monkeypatch.setenv(SCENE_ID_VARIANT_ENV, value)
+
+        with pytest.raises(ValueError, match="is not set"):
+            resolve_runner_config_from_env()
+
+    def test_unknown_variant_raises(self, monkeypatch):
+        """A value naming no registry entry is rejected, listing the valid variants."""
+        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, "imager")
+
+        with pytest.raises(ValueError, match="'imager' is not a SCENE-ID variant"):
+            resolve_runner_config_from_env()

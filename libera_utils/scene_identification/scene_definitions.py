@@ -411,7 +411,8 @@ class SceneDefinition:
             is_float = np.issubdtype(np.dtype(dtype), np.floating)
 
             # Float bounds use NaN for an unbounded side. Integer bounds can't hold NaN, so an unbounded side of a
-            # matched scene is clamped to the variable's global range instead (unambiguous for a categorical code).
+            # matched scene is filled with the outermost bin edge any scene in this definition uses for the variable
+            # (0 if no scene bounds that side), which is unambiguous for a categorical code.
             # Unmatched footprints (scene_id 0) keep the initial value: NaN for floats, 0 for ints.
             if is_float:
                 min_by_id = np.full(max_scene_id + 1, np.nan, dtype=dtype)
