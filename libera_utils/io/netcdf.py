@@ -143,27 +143,18 @@ def write_libera_data_product(
 def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEngine) -> None:
     """Write a Dataset to `path`, always handing the NetCDF engine a real filesystem path
 
-    The engine's argument must be picklable. `xarray` wraps it in a `CachingFileManager`,
-    which pickles as its opener and arguments so each Dask worker can reopen the file; an
-    open file object has no path to reopen from, so the distributed scheduler fails on it
-    with `TypeError: cannot pickle '_io.BufferedRandom' object`. The workers reopen the file by
-    its path, so under the distributed scheduler they must share this process's local
-    filesystem, as the workers of a `LocalCluster` do. A worker on another host cannot reopen it.
+    Each Dask worker under the distributed scheduler reopens the file from the pickled engine
+    argument. An open file object cannot be pickled and fails with `TypeError: cannot pickle
+    '_io.BufferedRandom' object`; a path can, so the workers must share this process's
+    filesystem, as those of a `LocalCluster` do.
 
-    A cloud destination is therefore written to the path's own cloudpathlib cache file and
-    uploaded from there, which is where `CloudPath.open("w+b")` writes before uploading on
-    close. The cache keeps the product afterwards, as it did through `open`, so a later read of
-    `path` in the same process, such as the manifest checksum, is served from local disk
-    instead of downloading the object again. The cache file's modification time is set to the
-    object's after the upload, the step cloudpathlib takes on close, because the cache treats a
-    file older than its object as stale. Under `FileCacheMode.close_file` the cache file is
-    removed after the upload, again as `open` does on close.
-
-    The upload replaces whatever is already at the key. `force_overwrite_to_cloud=True` is
-    required for that rather than optional: the argument's default compares the cache file's
-    modification time against the object's, and a freshly written file carries a local clock
-    with no relationship to S3's, so a product could be refused for being older than the object
-    it is meant to replace. A concurrent replacement mid-write is correspondingly not detected.
+    A cloud destination is written to the path's cloudpathlib cache file and uploaded, as
+    `CloudPath.open` does on close, so a later read of `path` in this process, such as the
+    manifest checksum, is served from local disk. The cache file's modification time is then set
+    to the object's, because the cache treats an older file as stale, and under
+    `FileCacheMode.close_file` the cache file is removed. The upload replaces any existing object
+    at the key (`libera_utils/D-005`); `force_overwrite_to_cloud=True` is needed because the
+    default compares the local clock against S3's and could refuse the replacement.
 
     Parameters
     ----------

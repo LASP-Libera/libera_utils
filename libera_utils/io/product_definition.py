@@ -55,9 +55,8 @@ class LiberaVariableDefinition(BaseModel):
         A list of dimension names that the variable's data array references.
     encoding: dict
         A dictionary specifying how the variable's data should be encoded when written to a NetCDF file.
-        ``chunksizes``, when given, is a list of positive integers with one entry per dimension. It
-        is parsed from YAML as a list and stored as a tuple, because the h5netcdf engine rejects a
-        list and netcdf4 accepts either.
+        ``chunksizes``, when given, sets the shape of the blocks the variable is stored, read and
+        compressed in on disk, one positive integer per dimension in dimension order.
 
     Raises
     ------
@@ -78,7 +77,7 @@ class LiberaVariableDefinition(BaseModel):
         default_factory=lambda: DEFAULT_ENCODING.copy(),
         description=(
             "Encoding settings for the variable, determining how it is stored on disk. "
-            "chunksizes is stored as a tuple with one entry per dimension"
+            "chunksizes sets the on-disk chunk shape, one entry per dimension"
         ),
     )
 

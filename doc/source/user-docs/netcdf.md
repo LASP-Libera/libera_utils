@@ -70,14 +70,15 @@ value in a particular product definition yml file or it could be passed via kwar
 
 ### Chunking
 
-Give `encoding.chunksizes` as a list of positive integers, one per entry in `dimensions`, in
-dimension order. Anything else, including a count that does not match, raises when the definition
-is loaded rather than when a product is written, so a bad chunk shape fails before any data is
-processed.
+NetCDF4 stores each variable in fixed-size blocks called chunks, and reads, writes and compresses
+a whole chunk at a time. A chunk shape that matches how the product is read, such as one camera
+frame (`[1, 512, 512]`) for a product read frame by frame, keeps a reader from pulling in data it
+does not need. A chunk shape that matches the Dask chunks the product is computed in lets each
+worker write whole chunks. Without `chunksizes`, the engine picks a shape itself.
 
-YAML parses the sequence as a list and the definition stores it as a tuple, because the
-h5netcdf engine rejects a list outright while netcdf4 accepts either; leaving it uncoerced
-would make a product definition behave differently depending on which engine is configured.
+Give `encoding.chunksizes` as a list of positive integers, one per entry in `dimensions`, in
+dimension order. Anything else, including a count that does not match, raises `ValidationError`
+when the definition is loaded, so a bad chunk shape fails before any data is processed.
 
 ## Basic Usage
 
