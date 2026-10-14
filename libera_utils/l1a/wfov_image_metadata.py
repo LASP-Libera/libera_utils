@@ -151,8 +151,7 @@ class _StitchedImage:
     sop_index: int
     eop_index: int
     payload: bytes
-    header_meta: dict | None
-    footer_valid: bool
+    header_meta: dict
 
 
 @dataclass
@@ -517,8 +516,7 @@ def _stitch_wfov_images(
                 if any(header_meta[field] for field in FPGA_STATUS_FIELD_DTYPES):
                     stats.n_error_flagged_images += 1
 
-                footer_valid = _is_valid_footer_from_blob(raw_blob)
-                if not footer_valid:
+                if not _is_valid_footer_from_blob(raw_blob):
                     stats.n_footer_mismatches += 1
 
                 try:
@@ -533,7 +531,6 @@ def _stitch_wfov_images(
                         eop_index=i,
                         payload=payload,
                         header_meta=header_meta,
-                        footer_valid=footer_valid,
                     )
                 )
                 image_id += 1
@@ -584,13 +581,6 @@ def _fsw_timestamps_to_datetime64(timestamp_seconds: int, timestamp_subseconds: 
     return np.datetime64(pd.Timestamp(dt).to_datetime64(), "us")
 
 
-def _field_fill_value(dtype: np.dtype):
-    """Default value for a metadata field on rows where header parsing failed."""
-    if dtype.kind == "f":
-        return dtype.type(np.nan)
-    return dtype.type(0)
-
-
 # (output name prefix, field dtype dict) for each of the four data-product metadata categories
 # decoded from the single WFOV header blob (see _extract_wfov_header_metadata_from_blob).
 _HEADER_METADATA_CATEGORIES = (
@@ -630,7 +620,7 @@ def _build_camera_dataset(stitched_images: list[_StitchedImage]) -> xr.Dataset:
         # payload — enhance_wfov_l1a_dataset only uses sop_index/eop_index/image_id and the count.
         image.payload = b""
 
-    camera_times = np.full(n_images, np.datetime64("NaT", "us"), dtype=DATETIME_USEC_DTYPE)
+    camera_times = np.empty(n_images, dtype=DATETIME_USEC_DTYPE)
     packet_indices = np.zeros(n_images, dtype=np.int32)
 
     category_arrays = [
@@ -642,15 +632,14 @@ def _build_camera_dataset(stitched_images: list[_StitchedImage]) -> xr.Dataset:
         header_meta = image.header_meta
         packet_indices[row] = image.sop_index
 
-        if header_meta is not None:
-            camera_times[row] = _fsw_timestamps_to_datetime64(
-                header_meta["timestamp_seconds"],
-                header_meta["timestamp_subseconds"],
-            )
+        camera_times[row] = _fsw_timestamps_to_datetime64(
+            header_meta["timestamp_seconds"],
+            header_meta["timestamp_subseconds"],
+        )
 
         for arrays, (_, field_dtypes) in zip(category_arrays, _HEADER_METADATA_CATEGORIES):
-            for field, dtype in field_dtypes.items():
-                arrays[field][row] = (header_meta or {}).get(field, _field_fill_value(dtype))
+            for field in field_dtypes:
+                arrays[field][row] = header_meta[field]
 
     data_vars: dict[str, tuple[tuple[str, ...], np.ndarray]] = {
         CAMERA_PACKET_INDEX_VAR: ((CAMERA_TIME_COORD,), packet_indices),

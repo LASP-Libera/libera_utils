@@ -38,7 +38,7 @@ import numpy as np
 import xarray as xr
 
 from libera_utils.constants import LiberaApid
-from libera_utils.l1a.l1a_packet_configs import get_packet_config
+from libera_utils.l1a.l1a_packet_configs import PacketConfiguration, get_packet_config
 from libera_utils.l1a.wfov_image_metadata import CAMERA_PACKET_INDEX_VAR, CAMERA_TIME_COORD, PACKET_IMAGE_ID_VAR
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,30 @@ PACKET_APID_VAR = "PKT_APID"
 PACKET_INDEX_SUFFIX = "_packet_index"
 
 
-class MissingDataTimeError(ValueError):
-    """A data-time axis holds ``NaT``, so its samples cannot be placed in time."""
+def _packet_config(dataset: xr.Dataset) -> PacketConfiguration:
+    """Return the packet configuration of the APID in a decoded L1A Dataset's ``PKT_APID``.
+
+    Raises
+    ------
+    ValueError
+        If ``dataset`` has no ``PKT_APID`` variable, has no packets, or its APID has no packet
+        configuration.
+    """
+    if PACKET_APID_VAR not in dataset:
+        raise ValueError(
+            f"The Dataset has no {PACKET_APID_VAR!r} variable, so its APID is unknown. Decode it with "
+            f"libera_utils.l1a.packets.parse_packets_to_l1a_dataset, which writes it."
+        )
+    if dataset.sizes.get(PACKET_DIM, 0) == 0:
+        raise ValueError(f"The Dataset has no packets, so its APID cannot be read from {PACKET_APID_VAR!r}.")
+    apid = int(dataset[PACKET_APID_VAR].isel({PACKET_DIM: 0}).values)
+    try:
+        return get_packet_config(LiberaApid(apid))
+    except (ValueError, KeyError) as err:
+        raise ValueError(
+            f"APID {apid} has no entry in l1a_processing_configs.yml. Check that {PACKET_APID_VAR} holds the "
+            f"dataset's APID, or add a configuration entry for it."
+        ) from err
 
 
 def packet_time_coordinate(dataset: xr.Dataset) -> str:
@@ -71,47 +93,49 @@ def packet_time_coordinate(dataset: xr.Dataset) -> str:
     Raises
     ------
     ValueError
-        If ``dataset`` has no packets or no ``PKT_APID`` variable, or its APID has no packet
+        If ``dataset`` has no ``PKT_APID`` variable, has no packets, or its APID has no packet
         configuration.
     """
-    if PACKET_APID_VAR not in dataset or dataset.sizes.get(PACKET_DIM, 0) == 0:
-        raise ValueError(
-            f"Cannot tell which packet time coordinate to use: the Dataset has no {PACKET_APID_VAR!r} "
-            f"values. Decode it with libera_utils.l1a.packets.parse_packets_to_l1a_dataset, which writes them."
-        )
-    apid = int(dataset[PACKET_APID_VAR].isel({PACKET_DIM: 0}).values)
-    try:
-        return get_packet_config(LiberaApid(apid)).packet_time_coordinate
-    except (ValueError, KeyError) as err:
-        raise ValueError(
-            f"APID {apid} has no entry in l1a_processing_configs.yml, so its packet time coordinate is unknown. "
-            f"Check that {PACKET_APID_VAR} holds the dataset's APID, or add a configuration entry for it."
-        ) from err
+    return _packet_config(dataset).packet_time_coordinate
 
 
-def assert_no_missing_times(times: np.ndarray, axis_name: str) -> None:
-    """Raise if a datetime64 time axis holds ``NaT``.
+def data_time_axes(dataset: xr.Dataset) -> list[str]:
+    """Return the axes that place a decoded L1A Dataset's packets in time.
+
+    These are the sample axes (:func:`find_sample_dims`; ``CAMERA_TIME`` for WFOV SCI). A Dataset
+    with no sample axis is placed by its packet time coordinate (:func:`packet_time_coordinate`).
 
     Parameters
     ----------
-    times : np.ndarray
-        Values of the axis. Non-datetime values (e.g. opened with ``decode_times=False``) pass.
-    axis_name : str
-        Axis name, for the error message.
+    dataset : xr.Dataset
+        Decoded L1A Dataset with a ``PACKET`` dimension.
+
+    Returns
+    -------
+    list of str
+        Axis names, sorted. Empty for a Dataset with no sample axis and no packets.
 
     Raises
     ------
-    MissingDataTimeError
-        If any value is ``NaT``.
+    ValueError
+        If ``dataset`` has no ``PACKET`` dimension, or it has no sample axis and its packet time
+        coordinate cannot be resolved or is absent.
     """
-    if not np.issubdtype(times.dtype, np.datetime64):
-        return
-    n_missing = int(np.count_nonzero(np.isnat(times)))
-    if n_missing:
-        raise MissingDataTimeError(
-            f"{axis_name} holds {n_missing} NaT value(s) out of {times.size}; every sample must carry a data time. "
-            f"Fix the decode step that produced {axis_name}."
+    if PACKET_DIM not in dataset.dims:
+        raise ValueError(f"Dataset is missing required dimension {PACKET_DIM!r}")
+    sample_dims = sorted(find_sample_dims(dataset))
+    if sample_dims:
+        return sample_dims
+    if dataset.sizes[PACKET_DIM] == 0:
+        return []
+    packet_time_var = packet_time_coordinate(dataset)
+    if packet_time_var not in dataset:
+        raise ValueError(
+            f"Dataset has no sample axis and is missing {packet_time_var!r}, the packet time coordinate its APID's "
+            f"configuration names. Decode it with libera_utils.l1a.packets.parse_packets_to_l1a_dataset, which "
+            f"writes it."
         )
+    return [packet_time_var]
 
 
 def find_sample_dims(dataset: xr.Dataset) -> set[str]:
@@ -185,12 +209,9 @@ def _configured_sample_count(dataset: xr.Dataset, sample_dim: str) -> int | None
         Configured samples per packet, or ``None`` when the APID or sample group cannot be
         resolved (e.g. a synthetic Dataset with no ``PKT_APID``, or a renamed packet axis).
     """
-    if PACKET_APID_VAR not in dataset or dataset.sizes.get(PACKET_DIM, 0) == 0:
-        return None
     try:
-        apid = LiberaApid(int(dataset[PACKET_APID_VAR].isel({PACKET_DIM: 0}).values))
-        packet_config = get_packet_config(apid)
-    except (ValueError, KeyError, IndexError):
+        packet_config = _packet_config(dataset)
+    except ValueError:
         logger.debug("Could not resolve a packet configuration for sample dimension %s", sample_dim)
         return None
 
@@ -340,7 +361,16 @@ def select_packets(dataset: xr.Dataset, keep_packets: slice | np.ndarray) -> xr.
     """
     if PACKET_DIM not in dataset.dims:
         raise ValueError(f"Dataset is missing required dimension {PACKET_DIM!r}")
+    packet_index_by_dim = {dim: sample_to_packet_index(dataset, dim) for dim in find_sample_dims(dataset)}
+    return _select_packets(dataset, keep_packets, packet_index_by_dim)
 
+
+def _select_packets(
+    dataset: xr.Dataset,
+    keep_packets: slice | np.ndarray,
+    packet_index_by_dim: dict[str, np.ndarray],
+) -> xr.Dataset:
+    """Apply :func:`select_packets` given each sample axis's :func:`sample_to_packet_index` mapping."""
     n_packets = dataset.sizes[PACKET_DIM]
     # Sort the indexer so isel preserves packet order even for an unordered integer array
     keep = np.unique(np.arange(n_packets)[keep_packets])
@@ -351,15 +381,15 @@ def select_packets(dataset: xr.Dataset, keep_packets: slice | np.ndarray) -> xr.
 
     indexers: dict[str, np.ndarray] = {PACKET_DIM: keep}
     renumbered_indices: dict[str, tuple[str, np.ndarray]] = {}
-    for sample_dim in sorted(find_sample_dims(dataset)):
-        old_packet_index = sample_to_packet_index(dataset, sample_dim)
+    for sample_dim in sorted(packet_index_by_dim):
+        old_packet_index = packet_index_by_dim[sample_dim]
         sample_mask = packet_mask[old_packet_index]
         indexers[sample_dim] = np.flatnonzero(sample_mask)
         index_var = _packet_index_var_name(dataset, sample_dim)
         if index_var is not None:
             renumbered_indices[sample_dim] = (
                 index_var,
-                renumber[old_packet_index[sample_mask]].astype(np.int64),
+                renumber[old_packet_index[sample_mask]].astype(dataset[index_var].dtype),
             )
 
     selected = dataset.isel(indexers)
@@ -406,39 +436,23 @@ def slice_l1a_dataset_to_time_window(
 
     Raises
     ------
-    MissingDataTimeError
-        If the time axis selected on holds ``NaT``.
     ValueError
-        If ``dataset`` has no ``PACKET`` dimension; if it has no sample axes and its packet time
-        coordinate cannot be resolved or is absent; or if it has a ``CAMERA_TIME`` axis but no
+        As :func:`data_time_axes` raises it, or if ``dataset`` has a ``CAMERA_TIME`` axis but no
         ``PACKET_IMAGE_ID``.
     """
-    if PACKET_DIM not in dataset.dims:
-        raise ValueError(f"Dataset is missing required dimension {PACKET_DIM!r}")
-
+    axes = data_time_axes(dataset)
     n_packets = dataset.sizes[PACKET_DIM]
     if n_packets == 0:
         return dataset
-    sample_dims = sorted(find_sample_dims(dataset))
 
-    if not sample_dims:
-        packet_time_var = packet_time_coordinate(dataset)
-        if packet_time_var not in dataset:
-            raise ValueError(
-                f"Dataset has no sample dimensions and is missing {packet_time_var!r}, so no time window can be applied"
-            )
-        packet_times = dataset[packet_time_var].values
-        assert_no_missing_times(packet_times, packet_time_var)
-        keep_mask = (packet_times >= t0) & (packet_times <= t1)
-        _log_selection(dataset, keep_mask, t0, t1, None, criterion="packet time")
-        return select_packets(dataset, keep_mask)
-
+    packet_index_by_dim = {dim: sample_to_packet_index(dataset, dim) for dim in find_sample_dims(dataset)}
     keep_mask = np.zeros(n_packets, dtype=bool)
-    for sample_dim in sample_dims:
-        sample_times = dataset[sample_dim].values
-        assert_no_missing_times(sample_times, sample_dim)
-        in_window = (sample_times >= t0) & (sample_times <= t1)
-        if sample_dim == CAMERA_TIME_COORD:
+    for axis in axes:
+        times = dataset[axis].values
+        in_window = (times >= t0) & (times <= t1)
+        if axis not in packet_index_by_dim:
+            keep_mask |= in_window
+        elif axis == CAMERA_TIME_COORD:
             if PACKET_IMAGE_ID_VAR not in dataset:
                 raise ValueError(
                     f"Dataset has a {CAMERA_TIME_COORD} axis but no {PACKET_IMAGE_ID_VAR!r}, so an image's packets "
@@ -446,38 +460,19 @@ def slice_l1a_dataset_to_time_window(
                     f"libera_utils.l1a.wfov_image_metadata.enhance_wfov_l1a_dataset."
                 )
             packet_image_id = dataset[PACKET_IMAGE_ID_VAR].values
-            sop_packets = sample_to_packet_index(dataset, CAMERA_TIME_COORD)[in_window]
+            sop_packets = packet_index_by_dim[axis][in_window]
             keep_mask |= np.isin(packet_image_id, packet_image_id[sop_packets])
-            continue
-        keep_mask[np.unique(sample_to_packet_index(dataset, sample_dim)[in_window])] = True
+        else:
+            keep_mask[packet_index_by_dim[axis][in_window]] = True
 
-    try:
-        packet_time_var = packet_time_coordinate(dataset)
-    except ValueError:
-        # The packet-time comparison in _log_selection is diagnostic only.
-        packet_time_var = None
-    _log_selection(dataset, keep_mask, t0, t1, packet_time_var, criterion="sample time")
-    return select_packets(dataset, keep_mask)
+    _log_selection(keep_mask, t0, t1, criterion="sample time" if packet_index_by_dim else "packet time")
+    return _select_packets(dataset, keep_mask, packet_index_by_dim)
 
 
-def _log_selection(
-    dataset: xr.Dataset,
-    keep_mask: np.ndarray,
-    t0: np.datetime64,
-    t1: np.datetime64,
-    packet_time_var: str | None,
-    criterion: str,
-) -> None:
+def _log_selection(keep_mask: np.ndarray, t0: np.datetime64, t1: np.datetime64, criterion: str) -> None:
     """Report how many packets a time window selected, and warn if the retained run has gaps."""
     n_selected = int(keep_mask.sum())
     logger.info("Selected %d/%d packets on %s for window [%s — %s]", n_selected, keep_mask.size, criterion, t0, t1)
-    if packet_time_var is not None and packet_time_var in dataset:
-        packet_times = dataset[packet_time_var].values
-        n_packet_time = int(((packet_times >= t0) & (packet_times <= t1)).sum())
-        if n_packet_time != n_selected:
-            logger.info(
-                "Packet time would have selected %d packets, indicating packet/sample clock skew", n_packet_time
-            )
 
     if n_selected:
         # Count transitions from unselected to selected to detect gaps in the retained run

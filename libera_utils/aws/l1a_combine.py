@@ -1,8 +1,10 @@
 """Operator-triggered L1A day assembly.
 
 The L1A Preprocessor normally combines a day on its own, once the L0 files covering that day
-meet the APID's coverage policy (see :mod:`libera_utils.l1a.day_coverage`). This module emits
-the event that combines a day that never meets it, such as a partial campaign or ground capture.
+meet the APID's coverage policy (see :mod:`libera_utils.l1a.day_coverage`). This module sends
+the event that asks the L1A Preprocessor to combine a day whose L0 files do not meet that policy,
+such as a partial campaign or a ground capture, or, with ``force=False``, to re-evaluate the gates
+for a day.
 
 It emits a single ``ManualL1APreprocessing`` event to the SDC central EventBridge bus (the
 ``LiberaSDCEventBus``); the L1A Preprocessor consumes it and runs one combine per applicable

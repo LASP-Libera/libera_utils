@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from libera_utils.l1a import packet_slicing
 from libera_utils.l1a.packet_slicing import (
-    MissingDataTimeError,
-    assert_no_missing_times,
+    data_time_axes,
     find_sample_dims,
     packet_time_coordinate,
     sample_to_packet_index,
@@ -159,16 +159,6 @@ class TestWfovCameraTime:
         )
         np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2, 4, 5, 6, 7, 8, 9])
 
-    def test_nat_camera_time_raises(self):
-        ds = _wfov_product()
-        camera_times = ds["CAMERA_TIME"].values.copy()
-        camera_times[2] = np.datetime64("NaT", "us")
-        ds = ds.assign_coords(CAMERA_TIME=("CAMERA_TIME", camera_times))
-        with pytest.raises(MissingDataTimeError, match="CAMERA_TIME holds 1 NaT"):
-            slice_l1a_dataset_to_time_window(
-                ds, np.datetime64("2028-02-13T02:00:07"), np.datetime64("2028-02-13T02:00:07")
-            )
-
     def test_missing_packet_image_id_raises(self):
         with pytest.raises(ValueError, match="no 'PACKET_IMAGE_ID'"):
             slice_l1a_dataset_to_time_window(
@@ -176,11 +166,6 @@ class TestWfovCameraTime:
                 np.datetime64("2028-02-13T02:00:00"),
                 np.datetime64("2028-02-13T02:00:20"),
             )
-
-
-def test_assert_no_missing_times_ignores_undecoded_axes():
-    """An axis opened with decode_times=False holds integers, which cannot be NaT."""
-    assert_no_missing_times(np.arange(3), "RAD_SAMPLE_FPE_TIME")
 
 
 class TestPacketTimeCoordinate:
@@ -197,8 +182,35 @@ class TestPacketTimeCoordinate:
             packet_time_coordinate(_sample_product())
 
     def test_no_apid_raises(self):
-        with pytest.raises(ValueError, match="no 'PKT_APID'"):
+        with pytest.raises(ValueError, match="no 'PKT_APID' variable"):
             packet_time_coordinate(_packet_only_product().drop_vars("PKT_APID"))
+
+    def test_no_packets_raises(self):
+        with pytest.raises(ValueError, match="has no packets"):
+            packet_time_coordinate(_packet_only_product(n_packets=0))
+
+
+class TestDataTimeAxes:
+    """Sample axes place packets in time; a product with none is placed by its packet time."""
+
+    def test_sample_axes_sorted(self):
+        ds = _sample_product()
+        ds = ds.assign_coords(ADCFA_SC_TIME=("ADCFA_SC_TIME", ds["RAD_SAMPLE_FPE_TIME"].values))
+        assert data_time_axes(ds) == ["ADCFA_SC_TIME", "RAD_SAMPLE_FPE_TIME"]
+
+    def test_packet_only_product_uses_packet_time(self):
+        assert data_time_axes(_packet_only_product()) == ["PACKET_ICIE_TIME"]
+
+    def test_packet_only_product_without_packets_has_none(self):
+        assert data_time_axes(_packet_only_product(n_packets=0).drop_vars("PKT_APID")) == []
+
+    def test_missing_packet_dimension_raises(self):
+        with pytest.raises(ValueError, match="missing required dimension 'PACKET'"):
+            data_time_axes(xr.Dataset({"X": ("OTHER", np.arange(2))}))
+
+    def test_packet_only_product_missing_its_time_variable_raises(self):
+        with pytest.raises(ValueError, match="no sample axis and is missing 'PACKET_ICIE_TIME'"):
+            data_time_axes(_packet_only_product().drop_vars("PACKET_ICIE_TIME"))
 
 
 class TestFindSampleDims:
@@ -332,6 +344,14 @@ class TestSelectPackets:
         out = select_packets(ds, slice(0, 2))
         assert out["RAD_SAMPLE_packet_index"].attrs["long_name"] == "Packet index for radiometer sample data"
 
+    def test_preserves_packet_index_dtype(self):
+        """A product definition fixes the index dtype (int32 for CAMERA_PACKET_INDEX), so renumbering keeps it."""
+        ds = _sample_product(n_packets=4, samples_per_packet=2)
+        ds["RAD_SAMPLE_packet_index"] = ds["RAD_SAMPLE_packet_index"].astype(np.int32)
+        out = select_packets(ds, slice(1, 3))
+        assert out["RAD_SAMPLE_packet_index"].dtype == np.int32
+        np.testing.assert_array_equal(out["RAD_SAMPLE_packet_index"].values, [0, 0, 1, 1])
+
 
 class TestSliceL1aDatasetToTimeWindow:
     """Time-window selection semantics."""
@@ -384,26 +404,24 @@ class TestSliceL1aDatasetToTimeWindow:
 
     def test_packet_only_product_missing_time_variable_raises(self):
         ds = _packet_only_product(n_packets=3).drop_vars("PACKET_ICIE_TIME")
-        with pytest.raises(ValueError, match="no sample dimensions and is missing"):
+        with pytest.raises(ValueError, match="no sample axis and is missing"):
             slice_l1a_dataset_to_time_window(
                 ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:01")
             )
 
-    def test_nat_sample_time_raises(self):
-        ds = _sample_product(n_packets=2, samples_per_packet=2)
-        ds["RAD_SAMPLE_FPE_TIME"].values[1] = np.datetime64("NaT", "ns")
-        with pytest.raises(MissingDataTimeError, match="RAD_SAMPLE_FPE_TIME holds 1 NaT"):
-            slice_l1a_dataset_to_time_window(
-                ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:01")
-            )
-
-    def test_nat_packet_time_raises_on_packet_only_product(self):
-        ds = _packet_only_product(n_packets=3)
-        ds["PACKET_ICIE_TIME"].values[1] = np.datetime64("NaT", "ns")
-        with pytest.raises(MissingDataTimeError, match="PACKET_ICIE_TIME holds 1 NaT"):
-            slice_l1a_dataset_to_time_window(
-                ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:05")
-            )
+    def test_maps_each_sample_axis_to_packets_once(self, monkeypatch):
+        ds = _interleave_packet_pair(_sample_product(n_packets=8, samples_per_packet=4), 0, 4)
+        calls = []
+        original = packet_slicing.sample_to_packet_index
+        monkeypatch.setattr(
+            packet_slicing, "sample_to_packet_index", lambda d, dim: calls.append(dim) or original(d, dim)
+        )
+        out = slice_l1a_dataset_to_time_window(
+            ds, np.datetime64("2028-02-13T02:00:00"), np.datetime64("2028-02-13T02:00:03")
+        )
+        assert calls == ["RAD_SAMPLE_FPE_TIME"]
+        np.testing.assert_array_equal(out["SRC_SEQ_CTR"].values, [0, 1, 2, 3])
+        np.testing.assert_array_equal(np.unique(out["RAD_SAMPLE_packet_index"].values), [0, 1, 2, 3])
 
     def test_empty_packet_axis_returns_empty(self):
         """No packets means no APID to resolve, and nothing to select."""
