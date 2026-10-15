@@ -409,9 +409,15 @@ class TestStaticKernelLoading:
 
         KernelManager._max_path_length = 80  # Reset to default
 
+    @patch.object(KernelManager, "load_naif_kernels")
     @patch.object(KernelManager, "_static_generated_kernel_basenames", return_value=[])
-    def test_load_static_empty_manifest_error(self, mock_manifest, tmp_path):
-        """Test error when the static kernel manifest is empty."""
+    def test_load_static_empty_manifest_error(self, mock_manifest, mock_load_naif, tmp_path):
+        """Test error when the static kernel manifest is empty.
+
+        ``load_static_kernels`` calls ``load_naif_kernels`` first, which reaches the real NAIF
+        server. Patching it keeps this unit test hermetic and off the network; the empty-manifest
+        branch under test is downstream of it either way.
+        """
         km = KernelManager(temp_dir_base=tmp_path)
 
         with pytest.raises(FileNotFoundError, match="No static kernels found for configured manifest"):
