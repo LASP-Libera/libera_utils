@@ -849,7 +849,9 @@ def create_kernels_from_manifest(
     -----
     The L1A file is read once, then each kernel is created at the same time in its own forked process
     (CSPICE is not thread-safe), so this requires a platform with the ``fork`` start method (Linux or
-    macOS). Peak memory is about the sum of the concurrent kernels'. Kernels are written to a local
+    macOS). Call it from a process with no other threads running, for example not alongside a
+    ``dask.distributed`` Client, because each forked kernel process inherits only the calling thread.
+    Peak memory is about the sum of the concurrent kernels'. Kernels are written to a local
     staging directory and copied to `output_dir` by the calling process. A kernel process killed by the
     operating system, for example at the job's memory limit, counts as that kernel failing.
     """
