@@ -2,6 +2,7 @@
 
 import logging
 import warnings
+from datetime import datetime
 from os import PathLike
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -21,6 +22,9 @@ from libera_utils.version import ALGORITHM_VERSION_REGEX
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENCODING = {"zlib": True, "complevel": 4}
+
+# Required product attribute holding the file creation time, which is also the revision in the product filename
+PRODUCTION_DATETIME_ATTRIBUTE = "ProductionDateTime"
 
 
 class LiberaDimensionDefinition(BaseModel):
@@ -721,7 +725,8 @@ class LiberaDataProductDefinition(BaseModel):
         Parameters
         ----------
         dataset : Dataset
-            The Dataset for which to create a filename. Used to extract algorithm version and start and end times.
+            The Dataset for which to create a filename. Used to extract the product ID, algorithm version, start and
+            end times, and the revision, which is the dataset's ``ProductionDateTime`` attribute.
         time_variable : str
             Name of the time dimension to use for determining the start and end time.
 
@@ -729,6 +734,13 @@ class LiberaDataProductDefinition(BaseModel):
         -------
         LiberaDataProductFilename
             Properly formatted filename object
+
+        Raises
+        ------
+        KeyError
+            If the dataset lacks the ``ProductID``, ``algorithm_version`` or ``ProductionDateTime`` attribute.
+        ValueError
+            If ``ProductionDateTime`` is not an ISO 8601 datetime string.
         """
         # Convert numpy.datetime64 to Python datetime for filename generation
         with warnings.catch_warnings():
@@ -743,6 +755,7 @@ class LiberaDataProductDefinition(BaseModel):
             version=dataset.attrs["algorithm_version"],
             utc_start=utc_start,
             utc_end=utc_end,
+            revision=datetime.fromisoformat(dataset.attrs[PRODUCTION_DATETIME_ATTRIBUTE]),
         )
 
     def _check_dataset_attrs(self, dataset_attrs: dict[str, Any]) -> list[str]:
