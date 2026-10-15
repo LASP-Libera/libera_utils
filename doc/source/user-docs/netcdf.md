@@ -121,13 +121,15 @@ filename = write_libera_data_product(
 )
 
 print(f"Created data product: {filename.path}")
-# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T002739_R25280215327.nc
+# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T002739_R20270103T080910123456.nc
 ```
 
 The function automatically:
 
 - Validates data against the product definition
-- Generates a standardized filename based on the time range
+- Sets the `ProductionDateTime` attribute to the write time, overwriting (with a warning) any value already set
+- Generates a standardized filename from the product, algorithm version, and time range, whose revision is that
+  `ProductionDateTime`
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
 
@@ -147,6 +149,10 @@ The `LiberaDataProductDefinition.check_dataset_conformance()` method takes a dat
 conforms to the data product definition. The typical usage of this method is in strict mode, which raises an exception
 for any validation error. For debugging, you can run with `strict=False`, in which case it returns a (possibly empty)
 list of informational error messages.
+
+`ProductionDateTime` is a required attribute that `write_libera_data_product` sets when it writes the file. A
+conformance check on a Dataset before it is written reports `ProductionDateTime` as missing; that is expected, and
+setting it yourself only makes the writer overwrite it with a warning.
 
 ```python
 # Call LiberaDataProductDefinition.check_dataset_conformance() with strict=False

@@ -23,7 +23,7 @@ import xarray as xr
 from libera_utils.constants import DataProductIdentifier, LiberaApid
 from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
 from libera_utils.io.netcdf import write_libera_data_product
-from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_definition import PRODUCTION_DATETIME_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
 from libera_utils.obsids import TRIM_FAMILIES, NomHkObsidSource, ObsIdSpec, iter_trim_eligible
@@ -163,13 +163,15 @@ def _prepare_trimmed_attrs(
 
     ``input_files`` is set to the single NOM-HK-DECODED granule this product was trimmed from,
     replacing the parent's own L0 packet-file provenance, and ``algorithm_version`` is restamped
-    with the running libera_utils version.
+    with the running libera_utils version. The parent's ``ProductionDateTime`` is dropped, since
+    ``write_libera_data_product`` sets it for the trimmed file.
     """
     out = trimmed.copy(deep=False)
     # Drop source-file encodings so conformance enforce does not warn on leftovers
     for name in list(out.variables):
         out[name].encoding = {}
     out.attrs = dict(source_attrs)
+    out.attrs.pop(PRODUCTION_DATETIME_ATTRIBUTE, None)
     out.attrs["ProductID"] = trimmed_product.value
     out.attrs["date_created"] = datetime.now(tz=UTC).isoformat()
     out.attrs["input_files"] = [Path(str(source_product_filename)).name]

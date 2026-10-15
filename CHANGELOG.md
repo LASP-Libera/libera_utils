@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-10-15
+
+### Added
+
+- `write_libera_data_product` sets the `ProductionDateTime` attribute to the write time (ISO 8601 UTC, microsecond precision). If the input Dataset already carries a value, the writer overwrites it and warns.
+- `libera_utils.io.product_definition.PRODUCTION_DATETIME_ATTRIBUTE`, the name of that attribute.
+
+### Changed
+
+- **BREAKING:** The revision in Libera data product filenames is the UTC creation time at microsecond precision, `R%Y%m%dT%H%M%S%f`, e.g. `LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456.nc`, so files produced within the same second no longer clobber each other in the dropbox bucket. Names with the earlier second-resolution `R%y%j%H%M%S` revision still parse, and rebuilding one from its parts writes the new form. The two forms do not sort correctly against each other as strings: order files by `filename_parts.revision`, a timezone-aware UTC `datetime` for both. The UMM-G GranuleUR, which is the filename stem, and the `.cmr.json` metadata name follow the new form.
+- **BREAKING:** `libera_utils.io.filenaming.REVISION_TS_FORMAT` is now `R%Y%m%dT%H%M%S%f`.
+- **BREAKING:** `ProductionDateTime` is a required product attribute, so a strict conformance check on a Dataset that has not been through `write_libera_data_product` reports it missing. `generate_data_product_filename` takes the filename revision from it.
+- **BREAKING:** UMM-G generation (`UMMGranule.from_dataset`, `write_data_product_metadata_ummg`) raises `ValueError` when a Dataset has no `ProductionDateTime`. It previously warned and used the current time. Products written by a libera_utils version before 5.12.0 lack the attribute.
+- UMM-G `TemporalExtent` is now the `ProductionDateTime` for products with no `RangeBeginningDate`/`RangeEndingDate` attributes, which is every product the writer produces. Before, products had no `ProductionDateTime` and so no `TemporalExtent`.
+- `from_filename_parts` takes `revision: datetime | None`; the default `None` uses the current UTC time at the call.
+- The NOM-HK trimmer drops the parent product's `ProductionDateTime` from each trimmed product, so the writer sets a fresh one.
+- `kernel_maker` no longer builds a revision for SPICE kernel filenames; the default applies.
+
+### Removed
+
+- **BREAKING:** `.h5` is no longer an accepted data product filename extension.
+
+### Fixed
+
+- The `revision` default in `from_filename_parts` was `datetime.now(tz=UTC)` evaluated once at import, so every product written by one process shared a single revision. Revisions are now generated per call.
+- A stray debug `print` in `UMMGDatasetTransformer.extract_temporal_extent` is removed.
+
 ## [5.11.5] - 2026-10-14
 
 ### Added
@@ -796,7 +823,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...HEAD
+[5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0
 [5.11.5]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...5.11.5
 [5.11.4]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...5.11.4
 [5.11.3]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...5.11.3
