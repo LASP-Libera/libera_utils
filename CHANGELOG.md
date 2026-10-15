@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.11.5] - 2026-10-14
+
+### Added
+
+- SCENE-ID-CAM (radiometer timescale, written on `RADIOMETER_TIME`) and SCENE-ID-CAM-CAMTIME (camera timescale) algorithm runners, each with a product definition and a `FootprintData.from_fmatch_cam` / `from_fmatch_cam_camtime` reader. Both run from one `libera-utils scene-id <manifest>` command and one `libera-utils-scene-id` Docker target; the `LIBERA_SCENE_ID_VARIANT` environment variable (`cam` or `cam-camtime`) selects the variant, and the runner raises `ValueError` when it is unset or unknown. The variants share their manifest/dropbox plumbing through `scene_id_algorithm.run_algorithm`, parameterized by a per-variant `SceneIdRunnerConfig`.
+- SCENE-ID-CAM-CAMTIME stores one image subsection per record on the 2-D `(CAMERA_TIME, PSEUDOFOOTPRINT)` grid and passes the FMATCH footprint identifiers (camera time, pixel-index ranges, PSF bounding box, boresight geolocation) straight through. `CAMERA_TIME` is a 1-D dimension coordinate (one entry per image) and `PSEUDOFOOTPRINT` a 0-based image-subsection index (an image is segmented into many, possibly overlapping, subsections that share its time).
+- The `unfiltering` scene definition, and the `standard_scene_definitions` / `default_scene_definitions` helpers.
+- Viewing geometry in scene identification: `solar_zenith_angle`, `viewing_zenith_angle` and `relative_azimuth_angle` are classification variables with `scene_bin_{type}_{angle}_min/max` bounds. The bins currently span the full physical range as a placeholder, so scene IDs are unchanged.
+- `FootprintData.to_time_product()` and its `to_radiometer_time_product()` wrapper, which promote the observation-time variable to a coordinate and finalize the dataset on its per-footprint axis for writing.
+
+### Changed
+
+- **BREAKING:** Scene identification moved to the `libera_utils.scene_identification` package; import `scene_id` and `scene_definitions` from there.
+- Default scene classifications are now TRMM, ERBE and unfiltering, and `identify_scenes()` with no arguments uses them.
+
 ## [5.11.4] - 2026-10-14
 
 ### Changed
@@ -781,7 +796,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...HEAD
+[5.11.5]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...5.11.5
 [5.11.4]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...5.11.4
 [5.11.3]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...5.11.3
 [5.11.2]: https://github.com/LASP-Libera/libera_utils/compare/5.11.1...5.11.2

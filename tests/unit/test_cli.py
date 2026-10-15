@@ -1,12 +1,14 @@
 """Tests for cli module"""
 
 import argparse
+from pathlib import Path
 
 import pytest
 
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.scene_identification import scene_id_algorithm
 
 
 @pytest.mark.parametrize(("cli_args", "parsed"), [(["--version"], argparse.Namespace(func=cli.print_version_info))])
@@ -43,6 +45,27 @@ def test_parse_cli_args(cli_args, parsed):
 def test_make_kernel_parse_cli_args(cli_args, parsed):
     """
     Test that cli args are parsed properly
+    """
+    print(f"CLI ARGS \n{cli_args}\n")
+    print(f"Parsed args: {parsed} \n")
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["scene-id", "file.manifest"],
+            argparse.Namespace(
+                func=scene_id_algorithm.scene_id_cli_handler,
+                manifest="file.manifest",
+            ),
+        ),
+    ],
+)
+def test_scene_id_parse_cli_args(cli_args, parsed):
+    """
+    Test that scene-id cli args are parsed properly
     """
     print(f"CLI ARGS \n{cli_args}\n")
     print(f"Parsed args: {parsed} \n")
@@ -393,3 +416,21 @@ def test_s3_utils_parse_cli_args(cli_args, parsed):
 def test_wrong_libera_ids(cli_args):
     with pytest.raises(SystemExit):
         cli.parse_cli_args(cli_args)
+
+
+@pytest.mark.parametrize("variant", ["cam", "cam-camtime"])
+def test_scene_id_cli_dispatch(variant, monkeypatch):
+    """``scene-id`` runs the variant named by LIBERA_SCENE_ID_VARIANT, passing ``run_algorithm`` the manifest path."""
+    called_with = {}
+    monkeypatch.setattr(
+        scene_id_algorithm,
+        "run_algorithm",
+        lambda manifest_path, config: called_with.update(manifest_path=manifest_path, config=config),
+    )
+    monkeypatch.setenv(scene_id_algorithm.SCENE_ID_VARIANT_ENV, variant)
+
+    args = cli.parse_cli_args(["scene-id", "file.manifest"])
+    args.func(args)
+
+    assert called_with["manifest_path"] == Path("file.manifest")
+    assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[variant]

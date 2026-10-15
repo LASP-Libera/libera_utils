@@ -94,3 +94,11 @@ ENTRYPOINT ["libera-utils", "make-kernel", "jpss"]
 FROM libera-utils AS libera-utils-make-kernel-azel
 
 ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
+
+
+# CLI for the SCENE-ID algorithms from a manifest file. The LIBERA_SCENE_ID_VARIANT environment variable, set per
+# processing step, selects the variant (e.g. "cam", "cam-camtime").
+# -----------------------------------------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-scene-id
+
+ENTRYPOINT ["libera-utils", "scene-id"]
