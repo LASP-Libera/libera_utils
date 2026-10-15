@@ -2,6 +2,8 @@
 
 import logging
 import os
+import warnings
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -12,7 +14,7 @@ from numpy.typing import NDArray
 
 from libera_utils.config import config
 from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
-from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_definition import PRODUCTION_DATETIME_ATTRIBUTE, LiberaDataProductDefinition
 
 T_XarrayNetcdfEngine = Literal["netcdf4", "h5netcdf"]
 
@@ -49,10 +51,11 @@ def write_libera_data_product(
     Steps:
 
     1. (Numpy array input only) Create a product Dataset from the input arrays and optional dynamic attributes, using the product definition to determine the expected structure and metadata.
-    2. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
-    3. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
-    4. Generate the data product filename using the product definition and the specified time variable.
-    5. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
+    2. Set the ``ProductionDateTime`` attribute to the current UTC time, overwriting (with a warning) any value the input Dataset already carries.
+    3. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
+    4. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
+    5. Generate the data product filename using the product definition and the specified time variable. The filename's revision is the ``ProductionDateTime`` set in step 2.
+    6. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
     A product already present at the generated path is replaced, on local disk and in S3
     alike. Reprocessing rewrites a granule at the same key by design: a run that halted because
@@ -92,6 +95,11 @@ def write_libera_data_product(
     pydantic_core.ValidationError
         If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
         a list of positive integers with as many entries as its ``dimensions``.
+
+    Warns
+    -----
+    UserWarning
+        If the input Dataset already carries a ``ProductionDateTime`` attribute, which the writer overwrites.
     """
     logger.info("Writing Libera data product")
 
@@ -115,6 +123,20 @@ def write_libera_data_product(
         # This is the expectation for L2 product creation (from numpy arrays)
         logger.info(f"Creating Dataset from data arrays with variables: {list(data.keys())}")
         dataset = definition.create_product_dataset(data, dynamic_product_attributes=dynamic_product_attributes)
+
+    production_datetime = datetime.now(tz=UTC).isoformat(timespec="microseconds")
+    old_production_datetime = dataset.attrs.get(PRODUCTION_DATETIME_ATTRIBUTE)
+    dataset.attrs[PRODUCTION_DATETIME_ATTRIBUTE] = production_datetime
+    if old_production_datetime is not None:
+        warnings.warn(
+            f"Dataset attribute '{PRODUCTION_DATETIME_ATTRIBUTE}' was set to '{old_production_datetime}'. "
+            "write_libera_data_product sets this attribute to the write time, which is also the filename revision. "
+            "Remove it from the input Dataset."
+        )
+        logger.warning(
+            f"Overwrote global attribute '{PRODUCTION_DATETIME_ATTRIBUTE}' from '{old_production_datetime}' "
+            f"to '{production_datetime}'"
+        )
 
     logger.info(f"Bringing Dataset into conformance with product definition")
     dataset = definition.enforce_dataset_conformance(dataset)

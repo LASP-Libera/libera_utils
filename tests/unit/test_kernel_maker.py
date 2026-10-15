@@ -15,6 +15,7 @@ from cloudpathlib import AnyPath
 from libera_utils import kernel_maker
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier, LiberaApid
+from libera_utils.io import filenaming
 from libera_utils.io.manifest import Manifest, ManifestFileRecord
 from libera_utils.l1a.l1a_packet_configs import PacketConfiguration
 
@@ -63,7 +64,7 @@ def test_create_kernel_from_packets(
     ],
 )
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V2-5-2")
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
+@mock.patch.object(filenaming, "datetime", mock.Mock(wraps=datetime))
 @mock.patch(
     "libera_utils.kernel_maker.create_kernel_dataframe_from_l1a",
     return_value=(
@@ -87,7 +88,7 @@ def test_create_kernel_from_l1a(
     out_ext,
 ):
     """Test the kernel maker create from L1A function"""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
+    filenaming.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
 
     # Mock KernelManager instance
     mock_km_instance = mock.Mock()
@@ -111,13 +112,13 @@ def test_create_kernel_from_l1a(
     mock_make_kernel.assert_called_once_with(
         config_file=Path(config.get(config_key)),
         output_kernel=Path(
-            f"/fake/dropbox/LIBERA_SPICE_{kernel_dpi}_V2-5-2_20200101T000000_20200101T235959_R25056154513.{out_ext}"
+            f"/fake/dropbox/LIBERA_SPICE_{kernel_dpi}_V2-5-2_20200101T000000_20200101T235959_R20250225T154513000000.{out_ext}"
         ),
         input_data=mock_create_kernel_dataframe_from_l1a.return_value[0],
         overwrite=False,
         append=False,
     )
-    kernel_maker.datetime.now.assert_called()
+    filenaming.datetime.now.assert_called()
 
     # Encoder correction + mechanism-quaternion generation run only for the Az/El mechanism CKs.
     if kernel_dpi in ("AZROT-CK", "ELSCAN-CK"):
@@ -668,12 +669,10 @@ class TestEncoderCorrection:
 
 
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V2-5-2")
-@mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.libera_spice.spice_utils.make_kernel", return_value=AnyPath("/fake/kernel.bc"))
 @mock.patch("libera_utils.kernel_maker.KernelManager")
 def test_create_kernel_from_l1a_applies_encoder_corrections(mock_kernel_manager_class, mock_make_kernel, mock_version):
     """create_kernel_from_l1a corrects the raw Az/El encoder angles before handing them to make_kernel."""
-    kernel_maker.datetime.now.return_value = datetime(2025, 2, 25, 15, 45, 13)
     mock_kernel_manager_class.return_value = mock.Mock()
 
     raw_az = np.array([0.1, 0.5, 1.0])
