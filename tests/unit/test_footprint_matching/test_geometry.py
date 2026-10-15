@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 from libera_utils.footprint_matching import geometry as geo
+from libera_utils.footprint_matching import psf
 from libera_utils.footprint_matching.geometry import (
     NOMINAL_ALTITUDE_KM,
     WGS84_SEMI_MAJOR_AXIS_KM,
@@ -156,6 +157,58 @@ class TestComputeBoundingBoxBasics:
         assert lat_span_km > lon_span_km
 
 
+def _psf_contour_angles(energy_fraction: float = 0.95, step_deg: float = 0.02) -> tuple[np.ndarray, np.ndarray]:
+    """(delta, beta) of every angular cell inside the PSF energy contour, both scan directions."""
+    delta_axis = np.arange(-3.0, 3.0 + step_deg, step_deg)
+    beta_axis = np.arange(-1.4, 1.4 + step_deg, step_deg)
+    delta, beta = np.meshgrid(delta_axis, beta_axis)
+    density = (psf.psf_weight(delta, beta) * np.cos(np.radians(beta))).ravel()
+    order = np.argsort(density)[::-1]
+    cumulative = np.cumsum(density[order])
+    inside = order[: int(np.searchsorted(cumulative, energy_fraction * cumulative[-1])) + 1]
+    d, b = delta.ravel()[inside], beta.ravel()[inside]
+    # The box is scan-direction independent, so the contour must fit either way round.
+    return np.concatenate([d, -d]), np.concatenate([b, b])
+
+
+class TestPerimeterCoversPsfContour:
+    """The perimeter traces the PSF extent rectangle, so its corners are not cut off."""
+
+    def test_samples_include_rectangle_corners(self):
+        delta, beta = geo._perimeter_angles(1.4, 1.3, geo._N_PERIMETER_SAMPLES)
+        corners = {(round(d, 9), round(b, 9)) for d, b in zip(delta, beta, strict=True)}
+        for corner in [(1.4, 1.3), (-1.4, 1.3), (-1.4, -1.3), (1.4, -1.3)]:
+            assert corner in corners
+
+    @pytest.mark.parametrize(
+        ("sub_lat", "sub_lon"),
+        [(15.0, 20.0), (13.5, 23.5), (12.5, 24.3), (10.0, 25.0)],
+        ids=["az0", "az45", "az60", "az90"],
+    )
+    def test_box_encloses_ray_traced_psf_contour(self, sub_lat, sub_lon):
+        # Ray-trace every cell of the 95% PSF contour onto the ground and check it lies in
+        # the box. With an inscribed-ellipse perimeter the contour pokes out of the box at
+        # scan azimuths ~30-60 deg from north.
+        lat, lon, vza = 10.0, 20.0, 30.0
+        box = compute_footprint_bounding_box(lat, lon, sub_lat, sub_lon, vza, altitude_km=ALT)
+
+        satellite, boresight, normal = geo._viewing_geometry(lat, lon, sub_lat, sub_lon, vza, ALT)
+        cross_axis = geo._scan_frame_axes(boresight, normal)
+        delta, beta = _psf_contour_angles()
+        n = delta.size
+        directions = geo._offset_ray_direction_batch(
+            np.broadcast_to(boresight, (n, 3)), np.broadcast_to(cross_axis, (n, 3)), delta, beta
+        )
+        points, hit = geo._ray_ellipsoid_intersection_batch(np.broadcast_to(satellite, (n, 3)), directions)
+        assert hit.all()
+        contour_lat, contour_lon, _ = geo._ecef_to_geodetic_batch(points)
+
+        assert contour_lat.min() >= box.lat_min
+        assert contour_lat.max() <= box.lat_max
+        assert contour_lon.min() >= box.lon_min
+        assert contour_lon.max() <= box.lon_max
+
+
 class TestComputeBoundingBoxEdgeCases:
     def test_pole_enclosure(self):
         # A footprint very close to the North pole encloses it: full longitude range,
@@ -186,6 +239,19 @@ class TestComputeBoundingBoxEdgeCases:
     def test_nan_inputs_raise(self):
         with pytest.raises(OffLimbError):
             compute_footprint_bounding_box(float("nan"), 0.0, 10.0, 0.0, 30.0, altitude_km=ALT)
+
+    @pytest.mark.parametrize(
+        ("sub_lat", "sub_lon"),
+        [(geo.L1B_FILL_VALUE, 0.0), (10.0, geo.L1B_FILL_VALUE), (float("nan"), 0.0), (9.96921e36, 0.0)],
+        ids=["fill-lat", "fill-lon", "nan-lat", "netcdf-fill-lat"],
+    )
+    def test_invalid_subsatellite_raises(self, sub_lat, sub_lon):
+        with pytest.raises(OffLimbError):
+            compute_footprint_bounding_box(0.0, 0.0, sub_lat, sub_lon, 30.0, altitude_km=ALT)
+
+    def test_out_of_range_boresight_latitude_raises(self):
+        with pytest.raises(OffLimbError):
+            compute_footprint_bounding_box(9.96921e36, 0.0, 10.0, 0.0, 30.0, altitude_km=ALT)
 
     def test_invalid_on_limb_argument(self):
         with pytest.raises(ValueError, match="on_limb"):
@@ -348,6 +414,26 @@ class TestPsfGroundRadius:
         # The 1/cos(vza) elongation makes an oblique view reach farther on the ground.
         assert psf_ground_radius_km(ALT, 60.0) > psf_ground_radius_km(ALT, 0.0)
 
+    @pytest.mark.parametrize("vza", [0.0, 30.0, 45.0, 60.0, 70.0])
+    def test_matches_ray_traced_along_view_reach(self, vza):
+        # A FOV floor above the PSF's diagonal extent pins the angle the radius uses, so
+        # the radius can be checked against rays traced +/- that angle along the view
+        # direction. Their mean ground reach is what rho * tan(theta) / cos(vza) predicts;
+        # a flat-Earth h * tan(theta) / cos(vza) falls ~40% short at vza 60.
+        theta = 2.0
+        lat, lon = 0.0, 0.0
+        satellite, boresight, normal = geo._viewing_geometry(lat, lon, 5.0, 0.0, vza, ALT)
+        cross_axis = geo._scan_frame_axes(boresight, normal)
+        geod = geo._wgs84_geod()
+        reach_km = []
+        for delta in (theta, -theta):
+            plat, plon, missed = geo._perimeter_point(satellite, boresight, cross_axis, delta, 0.0)
+            assert not missed
+            reach_km.append(geod.inv(lon, lat, plon, plat)[2] / 1000.0)
+
+        radius = psf_ground_radius_km(ALT, vza, fov_halfangle_deg=theta)
+        assert radius == pytest.approx(np.mean(reach_km), rel=0.05)
+
 
 class TestBoundingBoxFromBoresight:
     """The boresight-centered box is a symmetric superset needing no subsatellite point."""
@@ -453,6 +539,18 @@ class TestBatchBoundingBoxParity:
             np.array([95.0, 5.0]),  # second is beyond-limb
         )
         assert boxes == [None, None]
+
+    def test_invalid_subsatellite_returns_none(self):
+        boxes = compute_footprint_bounding_boxes(
+            np.array([0.0, 0.0, 0.0]),
+            np.array([0.0, 0.0, 0.0]),
+            np.array([geo.L1B_FILL_VALUE, 9.96921e36, 5.0]),
+            np.array([0.0, 0.0, 0.0]),
+            np.array([30.0, 30.0, 30.0]),
+        )
+        assert boxes[0] is None
+        assert boxes[1] is None
+        assert boxes[2] is not None
 
     def test_supplied_altitude_matches_scalar(self):
         rng = np.random.default_rng(3)

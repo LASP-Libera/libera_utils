@@ -109,7 +109,8 @@ L1B_FILL_VALUE: float = -999.0
 # Private alias of the public fill-value constant, used internally below.
 _L1B_FILL_VALUE: float = L1B_FILL_VALUE
 
-# Number of samples around the PSF angular-extent ellipse perimeter. 72 == every 5 deg.
+# Number of samples around the PSF angular-extent rectangle perimeter. 72 == every 5 deg;
+# a multiple of 8 so that samples land exactly on the rectangle's four corners.
 _N_PERIMETER_SAMPLES: int = 72
 
 # Viewing-zenith angle (deg) past which the ground-footprint elongation factor is
@@ -410,6 +411,51 @@ def _offset_ray_direction(
     return _rotate(along, inplane_axis, math.radians(beta_deg))
 
 
+def _perimeter_angles(
+    along_extent_deg: float, cross_extent_deg: float, n_samples: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Along-scan (delta) and cross-scan (beta) offsets tracing the PSF extent rectangle.
+
+    The PSF energy contour is bounded by its delta and beta half-extents, i.e. by a
+    rectangle in the angular frame, and its corners reach into that rectangle's corners.
+    Sampling the inscribed ellipse instead would cut those corners off, so a scan azimuth
+    rotated ~30-45 deg from north would leave part of the footprint outside the lat/lon box.
+    Each unit-circle direction is pushed out to the unit square, then scaled by the extents.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        ``(delta_deg, beta_deg)``, each of shape ``(n_samples,)``.
+    """
+    t = np.linspace(0.0, 2.0 * math.pi, n_samples, endpoint=False)
+    cos_t, sin_t = np.cos(t), np.sin(t)
+    to_square = 1.0 / np.maximum(np.abs(cos_t), np.abs(sin_t))
+    return along_extent_deg * cos_t * to_square, cross_extent_deg * sin_t * to_square
+
+
+def _valid_geolocation(
+    boresight_lat_deg: float | np.ndarray,
+    boresight_lon_deg: float | np.ndarray,
+    subsatellite_lat_deg: float | np.ndarray,
+    subsatellite_lon_deg: float | np.ndarray,
+    viewing_zenith_deg: float | np.ndarray,
+) -> np.ndarray:
+    """True where every geolocation input is usable: finite, not the L1B fill, latitudes in range.
+
+    Shared by the scalar and batched bounding-box paths so they reject the same inputs.
+    The latitude range check also catches fill conventions other than
+    :data:`L1B_FILL_VALUE` (e.g. the NetCDF default fill).
+    """
+    values = [np.asarray(v, dtype=float) for v in (boresight_lon_deg, subsatellite_lon_deg, viewing_zenith_deg)]
+    lats = [np.asarray(v, dtype=float) for v in (boresight_lat_deg, subsatellite_lat_deg)]
+    valid = np.ones(np.broadcast(*values, *lats).shape, dtype=bool)
+    for v in values + lats:
+        valid &= np.isfinite(v) & (v != _L1B_FILL_VALUE)
+    for lat in lats:
+        valid &= np.abs(lat) <= 90.0
+    return valid
+
+
 def _perimeter_point(
     satellite_km: np.ndarray,
     boresight_direction: np.ndarray,
@@ -531,12 +577,19 @@ def psf_ground_radius_km(
 ) -> float:
     """Project the PSF angular half-extent to an isotropic ground radius, in km.
 
-    A fixed angular offset at the satellite projects to a ground distance that grows
-    with altitude and, at oblique views, with ``1/cos(vza)`` because the line of sight
-    strikes the surface at a shallow angle (the footprint "elongates on the ground" at
-    high viewing zenith angles). We take the larger of the PSF's along-scan and
-    cross-scan 95%-energy half-extents -- an isotropic over-estimate -- and floor it at
-    the optical FOV half-angle so the radius is never smaller than the field of view.
+    A small angular offset ``theta`` at the satellite spans ``rho * tan(theta)``
+    perpendicular to the line of sight, where ``rho`` is the slant range. On a spherical
+    Earth of radius ``R``, a satellite at altitude ``h`` sees a point at viewing zenith
+    ``v`` from ``rho = sqrt((R + h)^2 - (R sin v)^2) - R cos v``. Along the view
+    direction the line of sight strikes the surface obliquely, stretching that span by
+    a further ``1/cos(v)``; across it there is no stretch. We return the along-view
+    (larger) value so the radius bounds the footprint in every direction. At nadir this
+    reduces to ``h * tan(theta)``.
+
+    The angular half-extent is the diagonal of the PSF's along-scan and cross-scan
+    95%-energy half-extents, because the energy contour reaches toward the corners of
+    that rectangle (see :func:`_perimeter_angles`). It is floored at the optical FOV
+    half-angle so the radius is never smaller than the field of view.
 
     This is the single home for the angular-extent -> ground-radius projection, shared
     by the boresight-centered bounding box (:func:`bounding_box_from_boresight`) and the
@@ -560,12 +613,15 @@ def psf_ground_radius_km(
         Ground radius in km.
     """
     extent = psf_95_energy_extent()
-    # Largest angular half-extent -> isotropic radius. conservative_along_scan_extent
+    # Diagonal angular half-extent -> isotropic radius. conservative_along_scan_extent
     # picks the larger of the asymmetric front/back along-scan reaches.
-    angular_deg = max(conservative_along_scan_extent(extent), extent.beta_max_deg, fov_halfangle_deg)
-    nadir_radius_km = altitude_km * math.tan(math.radians(angular_deg))
-    vza = min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG)
-    return nadir_radius_km / math.cos(math.radians(vza))
+    angular_deg = max(math.hypot(conservative_along_scan_extent(extent), extent.beta_max_deg), fov_halfangle_deg)
+    vza_rad = math.radians(min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG))
+    earth_radius_km = WGS84_SEMI_MAJOR_AXIS_KM
+    slant_range_km = math.sqrt(
+        (earth_radius_km + altitude_km) ** 2 - (earth_radius_km * math.sin(vza_rad)) ** 2
+    ) - earth_radius_km * math.cos(vza_rad)
+    return slant_range_km * math.tan(math.radians(angular_deg)) / math.cos(vza_rad)
 
 
 def bounding_box_from_boresight(
@@ -711,9 +767,10 @@ def compute_footprint_bounding_box(
     Raises
     ------
     OffLimbError
-        If any input is an L1B fill value (a non-Earth view), or if the *centroid*
-        viewing zenith angle is at or beyond 90 deg (on/past the limb). These mean
-        there is no footprint at all, so they raise regardless of ``on_limb``.
+        If any input is an L1B fill value (a non-Earth view), non-finite, or a latitude
+        outside +/- 90 deg, or if the *centroid* viewing zenith angle is at or beyond
+        90 deg (on/past the limb). These mean there is no footprint to build, so they
+        raise regardless of ``on_limb``.
     PartialFootprintError
         A subclass of :class:`OffLimbError`. Raised only when the boresight is on Earth
         but a corner ray of the box is off it (severe-angle truncation) *and*
@@ -724,11 +781,13 @@ def compute_footprint_bounding_box(
     if on_limb not in ("flag", "raise"):
         raise ValueError(f"on_limb must be 'flag' or 'raise', got {on_limb!r}")
 
-    # Reject fill-valued / non-finite inputs: these are space or calibration views
-    # with no Earth intersection. Treat them like an off-limb footprint.
-    for value in (boresight_lat_deg, boresight_lon_deg, viewing_zenith_deg):
-        if not math.isfinite(value) or value == _L1B_FILL_VALUE:
-            raise OffLimbError("Footprint has fill/non-finite geolocation (non-Earth view).")
+    # Reject fill-valued / non-finite / out-of-range inputs: these are space or calibration
+    # views with no Earth intersection, or records whose geometry cannot be built. Treat
+    # them like an off-limb footprint.
+    if not _valid_geolocation(
+        boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, viewing_zenith_deg
+    ):
+        raise OffLimbError("Footprint has fill/non-finite/out-of-range geolocation.")
 
     # A viewing zenith angle at or beyond 90 deg means the boresight is on or past
     # the limb: there is no footprint at all.
@@ -761,9 +820,9 @@ def compute_footprint_bounding_box(
     lats: list[float] = []
     lons: list[float] = []
     truncated = False
-    for t in np.linspace(0.0, 2.0 * math.pi, _N_PERIMETER_SAMPLES, endpoint=False):
-        delta_deg = along_extent_deg * math.cos(t)
-        beta_deg = cross_extent_deg * math.sin(t)
+    for delta_deg, beta_deg in zip(
+        *_perimeter_angles(along_extent_deg, cross_extent_deg, _N_PERIMETER_SAMPLES), strict=True
+    ):
         lat, lon, missed = _perimeter_point(satellite, boresight_direction, cross_axis, delta_deg, beta_deg)
         if missed:
             if on_limb == "raise":
@@ -1198,9 +1257,9 @@ def compute_footprint_bounding_boxes(
     work is amortized across the whole segment. Numerically equivalent to calling the
     scalar entry point per footprint with ``on_limb="flag"`` (validated in the tests).
 
-    Off-limb footprints -- those the scalar path raises :class:`OffLimbError` for (a fill
-    or non-finite ``latitude``/``longitude``/``viewing_zenith``, or a centroid viewing
-    zenith at/beyond 90 deg) -- are returned as ``None`` at their index rather than
+    Off-limb footprints -- those the scalar path raises :class:`OffLimbError` for (a fill,
+    non-finite or out-of-range boresight, subsatellite or viewing-zenith input, or a
+    centroid viewing zenith at/beyond 90 deg) -- are returned as ``None`` at their index rather than
     raising, so the caller can substitute a fallback box per footprint (see
     :func:`libera_utils.footprint_matching.product.build_radiometer_footprints`). Corner
     rays that run off the limb at a severe angle are truncated at the horizon and the
@@ -1235,12 +1294,9 @@ def compute_footprint_bounding_boxes(
     vza = np.asarray(viewing_zenith_deg, dtype=float)
     n_total = lat.size
 
-    # Off-limb centroids are exactly the scalar OffLimbError conditions: a fill / non-
-    # finite lat/lon/vza, or a viewing zenith at or beyond the limb (90 deg).
-    finite = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(vza)
-    not_fill = (lat != _L1B_FILL_VALUE) & (lon != _L1B_FILL_VALUE) & (vza != _L1B_FILL_VALUE)
-    on_earth = vza < 90.0
-    valid = finite & not_fill & on_earth
+    # Off-limb centroids are exactly the scalar OffLimbError conditions: invalid
+    # geolocation (see _valid_geolocation), or a viewing zenith at or beyond the limb.
+    valid = _valid_geolocation(lat, lon, sub_lat, sub_lon, vza) & (vza < 90.0)
 
     boxes: list[BoundingBox | None] = [None] * n_total
     idx = np.nonzero(valid)[0]
@@ -1260,9 +1316,7 @@ def compute_footprint_bounding_boxes(
 
     cross_axis = _scan_frame_axes_batch(boresight_direction, subsatellite_normal)
 
-    t = np.linspace(0.0, 2.0 * math.pi, n_samples, endpoint=False)
-    delta_deg = along_extent_deg * np.cos(t)  # (S,)
-    beta_deg = cross_extent_deg * np.sin(t)  # (S,)
+    delta_deg, beta_deg = _perimeter_angles(along_extent_deg, cross_extent_deg, n_samples)  # (S,), (S,)
 
     # (M, S, 3) perimeter ray directions and their ellipsoid intersections.
     directions = _offset_ray_direction_batch(
