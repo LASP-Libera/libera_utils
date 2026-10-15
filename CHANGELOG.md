@@ -17,22 +17,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `libera_utils.l1a.day_coverage.measure_time_axis_coverage`, which measures day and buffer occupancy from a granule's own time axis, in one pass: each sample occupies the spacing to the next, except across a gap, a spacing above `DEFAULT_GAP_FACTOR` (5) times the median cadence. A single sample occupies no time. Unlike `evaluate_day_coverage`, it sees gaps inside a file.
 - Add `libera_utils.l1a.l1a_packet_configs.configured_apids()`, the APIDs with a packet configuration.
 - Add the `force-l1a-combine` CLI (`libera_utils.aws.l1a_combine.force_l1a_combine`), which emits a `ManualL1APreprocessing` event asking the L1A Preprocessor to combine an APID for one or more applicable dates, skipping the coverage gates unless `--no-force` is given. It accepts only APIDs with a packet configuration. `_to_date` in `manual_processing` moves to `libera_utils.aws.utils.to_date`.
+- Add `libera_utils.l1a.packet_ordering.check_packet_order(ds, packet_time_coordinate)`, which logs how `SRC_SEQ_CTR` and packet time step along the `PACKET` axis: runs, missing packets and packet-time inversions. Where packet time steps backward along the counter order it emits a `UserWarning` with the count, the largest step and the first one's counters and times; where the counter repeats or steps backward within a run it logs a warning. It raises `ValueError` only when `SRC_SEQ_CTR` or the packet time variable is missing.
 
 ### Changed
 
 - **BREAKING:** `PacketConfiguration` requires a `day_coverage` field (`DayCoveragePolicy`), and every entry in `l1a_processing_configs.yml` carries one.
 - **BREAKING:** `slice_l1a_dataset_to_time_window` no longer takes `packet_time_var`; a dataset with no sample axis is sliced on the packet time coordinate its APID's packet configuration names.
+- **BREAKING:** `parse_packets_to_l1a_dataset` orders the `PACKET` axis by `SRC_SEQ_CTR` instead of by packet time, whatever the order of the input files; packet time only resolves which counter wrap a packet falls in. Published `{group}_packet_index`, `CAMERA_PACKET_INDEX` and `PACKET_IMAGE_ID` values change, and packet time is not monotonic along `PACKET`; sort packet times before `numpy.searchsorted` or `numpy.interp`. `input_files` lists the file names sorted.
+- **BREAKING:** `parse_packets_to_l1a_dataset` drops duplicate packets by `SRC_SEQ_CTR` instead of by packet time, so a distinct packet that shares a packet time with another is kept. Packets that share a packet time but not a counter are no longer treated as duplicates. Packets that share a counter but differ raise `ValueError` unless `ground_data=True`, which keeps the first. The duplicate warning reads "Detected N duplicate SRC_SEQ_CTR packets".
+- **BREAKING:** `nom_hk_trim.find_obsid_runs` raises `ValueError` for a NOM-HK dataset without `PACKET_ICIE_TIME` or `SRC_SEQ_CTR`, instead of skipping its ordering check. A NOM-HK product written in packet-time order by 5.11.3 or earlier logs a warning; decode its L0 files again.
+- `parse_packets_to_dataset` accepts a loaded `XtcePacketDefinition` as well as a path.
 - `manual-processing` and `step-function-trigger` take the UTC calendar date of a timezone-aware date or datetime.
 - Document daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → `check_data_times` → `measure_time_axis_coverage`).
 
 ### Removed
 
 - **BREAKING:** Remove `packet_slicing.DEFAULT_PACKET_TIME_VAR`.
+- **BREAKING:** Remove `packets.SRC_SEQ_CTR_DIMENSION`.
 - **BREAKING:** Remove the `WFOV_HEADER_PARSE_VALID` variable from WFOV SCI L1A products, and `wfov_image_metadata.WFOV_HEADER_PARSE_VALID_VAR`. It was always true: an image whose header cannot be decoded is discarded and counted in `HeaderParseErrorCount`.
 
 ### Fixed
 
 - `select_packets` and `slice_l1a_dataset_to_time_window` keep each packet index variable's dtype when renumbering it, so a sliced WFOV SCI dataset, whose `CAMERA_PACKET_INDEX` is `int32`, can be written.
+- `LiberaDataProductDefinition.generate_data_product_filename` takes the start and end from the minimum and maximum of the time variable, not its first and last values.
 
 ## [5.11.5] - 2026-10-14
 

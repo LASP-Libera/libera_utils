@@ -25,6 +25,7 @@ from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.l1a.l1a_packet_configs import get_l1a_product_definition_path
+from libera_utils.l1a.packet_ordering import check_packet_order
 from libera_utils.l1a.packet_slicing import PACKET_DIM, select_packets
 from libera_utils.obsids import TRIM_FAMILIES, NomHkObsidSource, ObsIdSpec, iter_trim_eligible
 from libera_utils.version import version as libera_utils_version
@@ -65,39 +66,6 @@ def get_trimmed_nom_hk_product_definition(
     return base.model_copy(update={"attributes": updated_attrs})
 
 
-def _check_packet_time_sorted(nom_hk: xr.Dataset) -> None:
-    """Verify the ``PACKET`` axis is in non-decreasing packet-time order.
-
-    Decoded L1A products are written packet-time sorted, so this is a guard, not a fixup; the
-    positional run indices from :func:`find_obsid_runs` are only meaningful against a
-    time-ordered packet axis. If ``PACKET_ICIE_TIME`` is absent the check is skipped with a
-    warning and the packet axis is trusted as-is.
-
-    Parameters
-    ----------
-    nom_hk : xr.Dataset
-        Decoded NOM-HK Dataset.
-
-    Raises
-    ------
-    ValueError
-        If ``PACKET_ICIE_TIME`` is present but not monotonically non-decreasing.
-    """
-    if DEFAULT_TIME_VARIABLE not in nom_hk:
-        logger.warning(
-            "NOM-HK Dataset has no %s variable; skipping the packet-time ordering check. ObsID run "
-            "slices will be trusted as-is.",
-            DEFAULT_TIME_VARIABLE,
-        )
-        return
-    times = nom_hk[DEFAULT_TIME_VARIABLE].values
-    if times.size and np.any(np.diff(times) < np.timedelta64(0, "ns")):
-        raise ValueError(
-            f"NOM-HK Dataset is not sorted by {DEFAULT_TIME_VARIABLE}. Decoded L1A products are "
-            f"written in packet-time order; re-decode the source product."
-        )
-
-
 def _contiguous_run_slices(mask: np.ndarray) -> list[slice]:
     """Return ``slice(start, end)`` for each contiguous True run in ``mask``."""
     padded = np.concatenate(([False], mask.astype(bool), [False]))
@@ -129,13 +97,19 @@ def find_obsid_runs(
     Raises
     ------
     ValueError
-        If ``nom_hk`` has no ``PACKET`` dimension, or if its ``PACKET_ICIE_TIME`` variable is
-        present but not in non-decreasing order (see :func:`_check_packet_time_sorted`).
+        If ``nom_hk`` has no ``PACKET`` dimension, or no ``PACKET_ICIE_TIME`` or ``SRC_SEQ_CTR``
+        variable.
+
+    Notes
+    -----
+    Run slices are positions on the ``PACKET`` axis, so they are contiguous acquisition only when
+    the axis is in ``SRC_SEQ_CTR`` order, as ``parse_packets_to_l1a_dataset`` writes it.
+    :func:`~libera_utils.l1a.packet_ordering.check_packet_order` logs a warning when it is not.
     """
     if PACKET_DIM not in nom_hk.dims:
         raise ValueError(f"NOM-HK Dataset is missing required dimension {PACKET_DIM!r}")
 
-    _check_packet_time_sorted(nom_hk)
+    check_packet_order(nom_hk, DEFAULT_TIME_VARIABLE)
 
     runs: list[tuple[ObsIdSpec, slice]] = []
     for spec in iter_trim_eligible(source):
@@ -218,6 +192,11 @@ def write_trimmed_nom_hk_products(
     -------
     list of LiberaDataProductFilename
         Paths of written TRIMMED products.
+
+    Raises
+    ------
+    ValueError
+        As :func:`find_obsid_runs` raises it.
     """
     runs = find_obsid_runs(nom_hk, source=source)
     counts: dict[tuple[NomHkObsidSource, int], int] = defaultdict(int)

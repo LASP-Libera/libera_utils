@@ -26,17 +26,21 @@ def _synthetic_nom_hk(
     wfov_obsids: list[int] | None = None,
     *,
     start: str = "2028-02-13T02:00:00",
+    sequence_counter: list[int] | None = None,
 ) -> xr.Dataset:
     """Build a minimal NOM-HK-shaped Dataset for run-detection unit tests."""
     n = len(rad_obsids)
     if wfov_obsids is None:
         wfov_obsids = [0] * n
     assert len(wfov_obsids) == n
+    if sequence_counter is None:
+        sequence_counter = list(range(100, 100 + n))
     times = np.datetime64(start) + np.arange(n) * np.timedelta64(1, "s")
     return xr.Dataset(
         {
             "ICIE__SW_OBSID_RAD": ("PACKET", np.asarray(rad_obsids, dtype=np.uint16)),
             "ICIE__SW_OBSID_WFOV": ("PACKET", np.asarray(wfov_obsids, dtype=np.uint16)),
+            "SRC_SEQ_CTR": ("PACKET", np.asarray(sequence_counter, dtype=np.uint16)),
         },
         coords={"PACKET_ICIE_TIME": ("PACKET", times)},
         attrs={
@@ -109,10 +113,27 @@ class TestFindObsidRuns:
         assert len(rad_only) == 1
         assert rad_only[0][0].obsid == 257
 
-    def test_rejects_unsorted_packet_time(self):
+    def test_backward_packet_time_keeps_one_run(self):
+        """The counter advances by one across a packet-time inversion, so the run stays one slice."""
         ds = _synthetic_nom_hk(rad_obsids=[257, 257, 257])
-        with pytest.raises(ValueError, match="not sorted by PACKET_ICIE_TIME"):
-            find_obsid_runs(ds.isel(PACKET=[2, 1, 0]))
+        times = ds["PACKET_ICIE_TIME"].values.copy()
+        times[1] = times[0] - np.timedelta64(2, "s")
+        inverted = ds.assign_coords(PACKET_ICIE_TIME=("PACKET", times))
+        runs = find_obsid_runs(inverted)
+        assert len(runs) == 1
+        assert runs[0][1] == slice(0, 3)
+
+    def test_backward_sequence_counter_warns(self, caplog):
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257, 257], sequence_counter=[100, 102, 101])
+        with caplog.at_level("WARNING", logger="libera_utils.l1a.packet_ordering"):
+            runs = find_obsid_runs(ds)
+        assert runs[0][1] == slice(0, 3)
+        assert any("sorted by packet time" in r.getMessage() for r in caplog.records)
+
+    def test_missing_packet_time_raises(self):
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257]).drop_vars("PACKET_ICIE_TIME")
+        with pytest.raises(ValueError, match="PACKET_ICIE_TIME"):
+            find_obsid_runs(ds)
 
 
 class TestWriteTrimmedNomHkProducts:
@@ -243,20 +264,3 @@ class TestWriteTrimmedNomHkProducts:
         assert len(written) == 4, "one file per contiguous ObsID run"
         assert mock_definition.call_count == 3, "definition built once per family, not once per run"
         assert mock_from_yaml.call_count == 3, "definition YAML parsed once per family, not once per run"
-
-    def test_missing_packet_time_warns_but_still_writes(self, tmp_path, caplog):
-        """Without PACKET_ICIE_TIME the ordering guard cannot run, so it says so."""
-        ds = _synthetic_nom_hk(rad_obsids=[257, 257]).drop_vars("PACKET_ICIE_TIME")
-        mock_filename = MagicMock()
-        mock_filename.path.name = "LIBERA_L1A_NOM-HK-SWC-FAMILY-TRIMMED_fake.nc"
-
-        with (
-            patch("libera_utils.l1a.nom_hk_trim.write_libera_data_product", return_value=mock_filename),
-            caplog.at_level("WARNING"),
-        ):
-            written = write_trimmed_nom_hk_products(
-                ds, tmp_path, source_product_filename=_PARENT_GRANULE, time_variable="PACKET", strict=False
-            )
-
-        assert len(written) == 1
-        assert any("skipping the packet-time ordering check" in r.message for r in caplog.records)

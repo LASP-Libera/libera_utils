@@ -594,6 +594,38 @@ This varies by packet but there is some consistent behavior:
   positions. Consumers must use it as an element-wise mapping and must not assume that each
   packet's samples form one contiguous block.
 
+### Packet axis order
+
+The `PACKET` axis is in **`SRC_SEQ_CTR` order**, whatever the order of the input files. It is
+**not** sorted by packet time, which can step backward while `SRC_SEQ_CTR` advances. The counter is
+14 bits and wraps from 16383 to 0; packet time only tells which wrap a packet falls in:
+
+- Within a stretch of packets with no packet-time step over 60 s, each counter step is read modulo
+  16384, so `16383 -> 0` is one step and `16380 -> 2` counts 5 missing packets. This holds while packet
+  time is right to within about 96 s, the time WFOV SCI takes to send half the counter's range.
+- Across a step over 60 s the counter may have wrapped unseen or reset. A stretch whose counter
+  continues another's by one, as across a time sync, follows it; otherwise stretches go in packet-time
+  order.
+- A packet received twice, such as in two overlapping files, has the same counter and is kept once,
+  with a `UserWarning`. Packets that share a counter but differ raise `ValueError`, or keep the first
+  with `ground_data=True`. Packets that share a packet time but not a counter are all kept.
+- Where packets next to each other in a file with consecutive counters land a wrap apart, their packet
+  times are wrong by more than the counter can resolve, and a `UserWarning` says so.
+
+`input_files` lists the file names sorted.
+
+`parse_packets_to_l1a_dataset` then calls `packet_ordering.check_packet_order`, which logs one summary per
+granule: runs, missing packets, and packet-time inversions. Where packet time steps backward along the
+counter order it emits a `UserWarning` with the count, the largest step and the first one's counters
+and times; the packets stay in counter order. A counter that repeats or steps backward within a run logs
+a warning: a product decoded with its `PACKET` axis sorted by packet time shows this. Neither raises. A
+dataset without `SRC_SEQ_CTR` or its packet time variable raises `ValueError`.
+
+**For consumers.** `{group}_packet_index`, `CAMERA_PACKET_INDEX` and `PACKET_IMAGE_ID` index the
+`PACKET` axis by position. Anything that needs packet times in ascending order sorts them first:
+`numpy.searchsorted` and `numpy.interp` return wrong values without raising on an unsorted axis. The
+granule filename's start and end are the minimum and maximum of its time variable.
+
 ### WFOV camera science (APID 1040) image metadata
 
 #### Packet Data Structure - Slicing and Reconstructing
@@ -628,7 +660,7 @@ truncated at all.
 WFOV science packets carry two independent time sources:
 
 - **`PACKET_ICIE_TIME`**: CCSDS telemetry time from `ICIE__TM_DAY/MS/US_WFOV_SCI` on every
-  packet. This coordinate is used for packet ordering and deduplication.
+  packet. It is not monotonic along `PACKET`; see [Packet axis order](#packet-axis-order).
 - **`CAMERA_TIME`**: FSW image acquisition time decoded from each **complete** stitched image (SOP→EOP with
   valid offsets). One row is added per successfully stitched image in **packet stream order**.
 
@@ -709,8 +741,7 @@ Decoded metadata on the `CAMERA_TIME` dimension:
 - FPGA status fields: `WFOV_FPGA_STATUS_*` (7 single-bit error flags from the FPGA status word)
 
 When writing the L1A NetCDF product, pass `time_variable="CAMERA_TIME"` to
-`write_libera_data_product()` so the filename reflects the first and last complete image FSW times in
-packet order. Use `PACKET_ICIE_TIME` for packet ordering and all other non-filename uses.
+`write_libera_data_product()` so the filename reflects the earliest and latest complete image FSW times.
 
 #### Dual exposure and VIDEO timing
 
