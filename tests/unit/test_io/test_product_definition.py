@@ -31,6 +31,9 @@ def _libera_dimensions_yaml_contents() -> dict:
 
 _STANDARD_DIMENSION_NAMES = tuple(_libera_dimensions_yaml_contents())
 
+# ProductionDateTime for datasets that have not been through write_libera_data_product, which sets it
+_PRODUCTION_DATETIME = "2027-01-03T08:09:10.123456+00:00"
+
 
 @pytest.fixture(scope="module")
 def standard_dimensions() -> dict[str, LiberaDimensionDefinition]:
@@ -99,6 +102,18 @@ class TestLiberaDataProductDefinition:
         assert fn.filename_parts.version == "V0-0-1"
         assert fn.filename_parts.utc_start == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         assert fn.filename_parts.utc_end == datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
+        # The revision is the dataset's ProductionDateTime
+        assert fn.filename_parts.revision == datetime.fromisoformat(test_dataset.attrs["ProductionDateTime"])
+        assert fn.path.name.endswith("_R20270103T080910123456.nc")
+
+    def test_check_dataset_conformance_missing_production_datetime(self, test_product_definition, test_dataset):
+        """Test that a dataset without ProductionDateTime fails a strict conformance check"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        del test_dataset.attrs["ProductionDateTime"]
+
+        with pytest.warns(UserWarning, match="Expected attribute 'ProductionDateTime' not found"):
+            with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
+                definition.check_dataset_conformance(test_dataset, strict=True)
 
 
 @strict_warnings
@@ -514,6 +529,7 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
                     attrs={"long_name": "Geolocation longitude", "units": "degrees", "valid_range": [-180, 180]},
                 ),
             },
+            attrs={"ProductionDateTime": _PRODUCTION_DATETIME},
         )
 
         # Fix the dataset
@@ -718,8 +734,8 @@ class TestLiberaDataProductDefinitionCreateMethods:
         """Test creating a valid Dataset from numpy arrays"""
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
 
-        # No additional global or variable attributes needed (all are static in the definition)
-        user_global_attrs = {}
+        # Only the dynamic ProductionDateTime is needed; all other attributes are static in the definition
+        user_global_attrs = {"ProductionDateTime": _PRODUCTION_DATETIME}
         user_var_attrs = {
             "radiometer_time": {},
             "lat": {},
@@ -777,7 +793,7 @@ class TestLiberaDataProductDefinitionCreateMethods:
             "lat": lat_data,
         }
 
-        user_global_attrs = {}
+        user_global_attrs = {"ProductionDateTime": _PRODUCTION_DATETIME}
         # Provide attributes for only the variables we have data for
         incomplete_var_attrs = {
             "radiometer_time": {},
@@ -842,7 +858,7 @@ class TestLiberaDataProductDefinitionCreateMethods:
 
         # Override some attributes (setting dynamic attributes is allowed, adding new ones or overriding static
         # attributes will fail validation)
-        user_global_attrs = {}  # Can't add new global attrs that aren't in definition
+        user_global_attrs = {"ProductionDateTime": _PRODUCTION_DATETIME}  # Can't add globals not in the definition
         user_var_attrs = {
             "radiometer_time": {"long_name": "Custom Time"},  # Override existing
             "lat": {},

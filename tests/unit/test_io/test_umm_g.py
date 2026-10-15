@@ -402,8 +402,9 @@ def test_umm_g_dataset_transformer_from_dataset_classmethod():
 def test_umm_g_dataset_transformer_minimal_metadata():
     """Test UMMGDatasetTransformer with minimal metadata triggers warnings."""
 
-    # Create a minimal dataset
+    # Create a minimal dataset, carrying only the ProductionDateTime that UMM-G requires
     test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    test_dataset.attrs["ProductionDateTime"] = "2027-01-03T08:09:10.123456+00:00"
 
     # Create transformer
     transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
@@ -445,3 +446,26 @@ def test_granule_ur_equals_filename_stem():
     transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
 
     assert transformer.umm_granule.GranuleUR == _TEST_FILEPATH.path.stem
+
+
+def test_umm_g_requires_production_datetime():
+    """Test that UMM-G generation raises for a dataset without ProductionDateTime."""
+    test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    assert "ProductionDateTime" not in test_dataset.attrs
+
+    with pytest.raises(ValueError, match="ProductionDateTime"):
+        UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
+
+
+def test_temporal_extent_is_production_datetime_without_range_attributes():
+    """Test that a dataset with ProductionDateTime and no Range* attributes gets it as its SingleDateTime extent."""
+    test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    test_dataset.attrs["ProductionDateTime"] = "2027-01-03T08:09:10.123456+00:00"
+
+    umm_granule = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False).umm_granule
+
+    expected = datetime(2027, 1, 3, 8, 9, 10, 123456, tzinfo=UTC)
+    assert umm_granule.TemporalExtent.SingleDateTime == "2027-01-03T08:09:10.123456+00:00"
+    assert umm_granule.TemporalExtent.RangeDateTime is None
+    assert umm_granule.DataGranule.ProductionDateTime == expected
+    assert [provider_date.Date for provider_date in umm_granule.ProviderDates] == [expected]
