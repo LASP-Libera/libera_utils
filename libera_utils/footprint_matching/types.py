@@ -1,6 +1,5 @@
 """Shared data classes and enumerations for the footprint matching subsystem.
 
-
 All classes in this module are intentionally dependency-free so they can be
 imported by any layer without creating circular dependencies.
 """
@@ -9,6 +8,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 
@@ -96,11 +96,11 @@ class FmatchCoverageFlag(enum.IntFlag):
     OFF_LIMB = 0b10000
 
 
-class BoundingBox(tuple):
+class BoundingBox(NamedTuple):
     """Geographic bounding box for a footprint's PSF contour.
 
     An immutable, hashable seven-element tuple of (lat_min, lat_max, lon_min,
-    lon_max, wraps_dateline, is_polar, truncated), constructed directly.
+    lon_max, wraps_dateline, is_polar, truncated).
 
     Attributes
     ----------
@@ -127,54 +127,13 @@ class BoundingBox(tuple):
         corresponding QA flag. Always ``False`` for tile bounding boxes.
     """
 
-    __slots__ = ()
-
-    def __new__(
-        cls,
-        lat_min: float,
-        lat_max: float,
-        lon_min: float,
-        lon_max: float,
-        wraps_dateline: bool = False,
-        is_polar: bool = False,
-        truncated: bool = False,
-    ) -> BoundingBox:
-        return super().__new__(cls, (lat_min, lat_max, lon_min, lon_max, wraps_dateline, is_polar, truncated))
-
-    @property
-    def lat_min(self) -> float:
-        """Minimum latitude in degrees."""
-        return self[0]
-
-    @property
-    def lat_max(self) -> float:
-        """Maximum latitude in degrees."""
-        return self[1]
-
-    @property
-    def lon_min(self) -> float:
-        """Minimum longitude in degrees."""
-        return self[2]
-
-    @property
-    def lon_max(self) -> float:
-        """Maximum longitude in degrees."""
-        return self[3]
-
-    @property
-    def wraps_dateline(self) -> bool:
-        """True when the box straddles the antimeridian."""
-        return bool(self[4])
-
-    @property
-    def is_polar(self) -> bool:
-        """True when the boresight is poleward of 85°."""
-        return bool(self[5])
-
-    @property
-    def truncated(self) -> bool:
-        """True when the box was clipped at the Earth's limb (partial coverage)."""
-        return bool(self[6])
+    lat_min: float
+    lat_max: float
+    lon_min: float
+    lon_max: float
+    wraps_dateline: bool = False
+    is_polar: bool = False
+    truncated: bool = False
 
     def __repr__(self) -> str:
         return (
@@ -185,7 +144,7 @@ class BoundingBox(tuple):
         )
 
 
-class TileKey(tuple):
+class TileKey(NamedTuple):
     """Immutable, hashable cache key for a spatial tile.
 
     A three-element tuple of (source, lat_idx, lon_idx) used by the TileManager
@@ -202,28 +161,9 @@ class TileKey(tuple):
         Tile column index in the global tile grid (0-based).
     """
 
-    __slots__ = ()
-
-    def __new__(cls, source: str, lat_idx: int, lon_idx: int) -> TileKey:
-        return super().__new__(cls, (source, lat_idx, lon_idx))
-
-    @property
-    def source(self) -> str:
-        """Reader registry key for this tile."""
-        return self[0]
-
-    @property
-    def lat_idx(self) -> int:
-        """Tile row index in the global tile grid."""
-        return self[1]
-
-    @property
-    def lon_idx(self) -> int:
-        """Tile column index in the global tile grid."""
-        return self[2]
-
-    def __repr__(self) -> str:
-        return f"TileKey(source={self.source!r}, lat_idx={self.lat_idx}, lon_idx={self.lon_idx})"
+    source: str
+    lat_idx: int
+    lon_idx: int
 
 
 @dataclass

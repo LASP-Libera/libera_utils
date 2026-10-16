@@ -2,9 +2,9 @@
 
 Purpose
 -------
-Given a single radiometer footprint's geolocation and viewing geometry from an
-L1B file, compute the geographic (latitude/longitude) bounding box of the patch of
-Earth the radiometer is sensing. Downstream, that box tells the tile manager which
+Given a footprint's geolocation and viewing geometry from an L1B file,
+compute the geographic (latitude/longitude) bounding box of the patch of Earth the
+radiometer is sensing. Downstream, that box tells the tile manager which
 ancillary-data tiles to load for this footprint. The box is therefore a *safe
 superset*: it must always enclose the footprint, and over-covering slightly is fine
 (a few extra tiles) while under-covering is not (dropped data). We deliberately
@@ -40,6 +40,13 @@ whose box *corner* rays miss the ellipsoid is partial coverage (truncated/flagge
 raised as :class:`PartialFootprintError`). Unusable ephemeris fields, or a footprint the
 satellite could not have seen, raise :class:`MissingGeolocationError`.
 
+Batched implementation
+----------------------
+Every helper operates on arrays of footprints. :func:`compute_footprint_bounding_boxes`
+and :func:`compute_viewing_frames` are the implementations; the single-footprint
+:func:`compute_footprint_bounding_box` and :func:`project_to_angular` run them on a
+batch of one.
+
 The geodetic<->ECEF transforms and the ray-ellipsoid intersection are curryer's
 (:mod:`curryer.compute.spatial`); :mod:`pyproj` is used only for the surface distances in
 the pole-enclosure test (``pyproj.Geod``).
@@ -57,11 +64,13 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import Literal
 
 import numpy as np
 from curryer.compute import spatial
 from curryer.compute.constants import WGS84_SEMI_MAJOR_AXIS_KM as WGS84_SEMI_MAJOR_AXIS_KM
 from curryer.compute.constants import WGS84_SEMI_MINOR_AXIS_KM as WGS84_SEMI_MINOR_AXIS_KM
+from numpy.typing import ArrayLike
 from pyproj import Geod
 
 from libera_utils.footprint_matching.psf import (
@@ -97,9 +106,6 @@ _VISIBILITY_TOLERANCE_KM: float = 1.0
 # truth so a change to the L1B fill value propagates to both call sites.
 L1B_FILL_VALUE: float = -999.0
 
-# Private alias of the public fill-value constant, used internally below.
-_L1B_FILL_VALUE: float = L1B_FILL_VALUE
-
 # A box that does not cross 0 or 180 deg has the same longitude span in [-180, 180) and
 # [0, 360); the wrapped representation must be smaller by more than this before it is
 # chosen, so float rounding in ``lon % 360`` cannot flag such a box as dateline-wrapping.
@@ -108,6 +114,9 @@ _LON_SPAN_TIE_TOL_DEG: float = 1e-9
 # Number of samples around the PSF angular-extent rectangle perimeter. 72 == every 5 deg;
 # a multiple of 8 so that samples land exactly on the rectangle's four corners.
 _N_PERIMETER_SAMPLES: int = 72
+
+# Bisection steps that pull a limb-missing perimeter ray back to the grazing direction.
+_LIMB_BISECTION_STEPS: int = 40
 
 # Viewing-zenith angle (deg) past which the ground-footprint elongation factor is
 # clamped. At grazing angles ``1/cos(vza)`` diverges; clamping keeps the projected
@@ -121,14 +130,14 @@ class GeometryError(Exception):
 
 
 class OffLimbError(GeometryError):
-    """Raised when the viewing geometry does not intersect the Earth's surface.
+    """Raised when the boresight does not intersect the Earth's surface.
 
-    This happens when the boresight viewing zenith angle is at or beyond 90 deg (the
-    line of sight is tangent to / past the limb), or when the boresight latitude,
-    longitude or viewing zenith is missing while the spacecraft geolocation is present:
-    L1B RAD writes NaN there for a space or calibration view, where the boresight ray
-    misses the ellipsoid. The orchestrator is expected to catch this and flag/discard
-    the footprint rather than silently substituting data.
+    L1B RAD writes NaN (or a fill value) for the boresight latitude/longitude of a space
+    or calibration view, where the boresight ray misses the ellipsoid. A missing or
+    out-of-range boresight latitude or longitude, with the spacecraft geolocation
+    present, therefore means there is no Earth footprint at all. The orchestrator is
+    expected to catch this and flag/discard the footprint rather than silently
+    substituting data.
     """
 
 
@@ -176,82 +185,177 @@ def _wgs84_geod() -> Geod:
     return Geod(ellps="WGS84")
 
 
+def _pyproj_seq(array: np.ndarray) -> list[float] | np.ndarray:
+    """Coerce a coordinate array into a form pyproj treats as a sequence.
+
+    pyproj dispatches a length-1 NumPy array to its scalar-point code path, which then
+    triggers a NumPy>=1.25 ``DeprecationWarning`` (ndim>0 -> scalar). Passing a Python
+    list of length 1 keeps it on the array path; arrays of length >= 2 are returned
+    unchanged (no copy). Callers normalize the returned coordinates with ``np.asarray``.
+    """
+    array = np.asarray(array, dtype=float)
+    return array.tolist() if array.size == 1 else array
+
+
 # ---------------------------------------------------------------------------
-# Vector / coordinate helpers
+# Vector / coordinate helpers. Points and directions are ``(..., 3)`` arrays; per-point
+# scalars (latitudes, angles) are ``(...)`` arrays.
 # ---------------------------------------------------------------------------
 
 
 def _unit(vec: np.ndarray) -> np.ndarray:
-    """Return ``vec`` scaled to unit length."""
-    return vec / np.linalg.norm(vec)
+    """Return each ``(..., 3)`` vector scaled to unit length."""
+    return vec / np.linalg.norm(vec, axis=-1, keepdims=True)
 
 
-def _geodetic_to_ecef(lat_deg: float, lon_deg: float, height_km: float) -> np.ndarray:
-    """Geodetic (lat, lon, ellipsoidal height) -> ECEF position vector, in km (curryer)."""
-    return spatial.geodetic_to_ecef(np.array([lon_deg, lat_deg, height_km], dtype=float))
+def _geodetic_to_ecef(lat_deg: ArrayLike, lon_deg: ArrayLike, height_km: ArrayLike) -> np.ndarray:
+    """Geodetic (lat, lon, ellipsoidal height) -> ``(N, 3)`` ECEF positions in km (curryer)."""
+    lat, lon, height = np.broadcast_arrays(
+        np.atleast_1d(np.asarray(lat_deg, dtype=float)),
+        np.atleast_1d(np.asarray(lon_deg, dtype=float)),
+        np.atleast_1d(np.asarray(height_km, dtype=float)),
+    )
+    return spatial.geodetic_to_ecef(np.stack([lon, lat, height], axis=-1))
 
 
-def _ecef_to_geodetic(xyz_km: np.ndarray) -> tuple[float, float, float]:
-    """ECEF position (km) -> geodetic ``(lat_deg, lon_deg, height_km)`` (curryer).
+def _ecef_to_geodetic(xyz_km: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(..., 3)`` ECEF km -> flat geodetic ``(lat_deg, lon_deg, height_km)`` arrays (curryer).
 
     Longitude is in [-180, 180].
     """
-    lon, lat, height_km = spatial.ecef_to_geodetic(np.asarray(xyz_km, dtype=float))
-    return float(lat), float(lon), float(height_km)
+    lon_lat_alt = spatial.ecef_to_geodetic(np.asarray(xyz_km, dtype=float).reshape(-1, 3))
+    return lon_lat_alt[:, 1], lon_lat_alt[:, 0], lon_lat_alt[:, 2]
 
 
-def _ellipsoid_normal(lat_deg: float, lon_deg: float) -> np.ndarray:
-    """Outward unit normal (local geodetic zenith) at a surface point.
+def _ellipsoid_normal(lat_deg: ArrayLike, lon_deg: ArrayLike) -> np.ndarray:
+    """Outward unit normals (local geodetic zenith) at surface points, ``(N,)`` -> ``(N, 3)``.
 
     This is the geodetic vertical, ``(cos lat cos lon, cos lat sin lon, sin lat)`` --
     *not* the geocentric radial direction. Honoring this difference is the whole
     point of using the ellipsoid rather than a sphere.
     """
-    lat, lon = math.radians(lat_deg), math.radians(lon_deg)
-    return np.array(
-        [math.cos(lat) * math.cos(lon), math.cos(lat) * math.sin(lon), math.sin(lat)],
-        dtype=float,
-    )
+    lat = np.radians(np.atleast_1d(np.asarray(lat_deg, dtype=float)))
+    lon = np.radians(np.atleast_1d(np.asarray(lon_deg, dtype=float)))
+    return np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=-1)
 
 
 def _arbitrary_tangent(normal: np.ndarray) -> np.ndarray:
-    """A unit vector perpendicular to ``normal`` (direction is arbitrary).
+    """A unit vector perpendicular to each ``(N, 3)`` ``normal`` (direction is arbitrary).
 
     Used only at nadir, where the scan azimuth is irrelevant (the footprint is a
     near-circular disc), so any tangent direction will do.
     """
-    reference = np.array([0.0, 0.0, 1.0]) if abs(normal[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    reference = np.where(
+        (np.abs(normal[..., 2]) < 0.9)[..., None],
+        np.array([0.0, 0.0, 1.0]),
+        np.array([1.0, 0.0, 0.0]),
+    )
     return _unit(np.cross(normal, reference))
 
 
-def _rotate(vec: np.ndarray, axis: np.ndarray, angle_rad: float) -> np.ndarray:
-    """Rotate ``vec`` about a unit ``axis`` by ``angle_rad`` (Rodrigues' formula)."""
+def _rotate(vec: np.ndarray, axis: np.ndarray, angle_rad: ArrayLike) -> np.ndarray:
+    """Rotate ``vec`` about ``axis`` by ``angle_rad`` (Rodrigues' formula).
+
+    ``vec`` and ``axis`` are ``(..., 3)``; ``angle_rad`` broadcasts against the leading
+    dims. ``axis`` is normalized to unit length.
+    """
     axis = _unit(axis)
-    cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
-    return vec * cos_a + np.cross(axis, vec) * sin_a + axis * np.dot(axis, vec) * (1.0 - cos_a)
+    cos_a = np.cos(angle_rad)[..., None]
+    sin_a = np.sin(angle_rad)[..., None]
+    dot = np.sum(axis * vec, axis=-1, keepdims=True)
+    return vec * cos_a + np.cross(axis, vec) * sin_a + axis * dot * (1.0 - cos_a)
 
 
-def _ray_ellipsoid_intersection(origin_km: np.ndarray, direction: np.ndarray) -> np.ndarray | None:
-    """Nearest intersection of a ray with the WGS84 ellipsoid, or ``None`` if it misses.
-
-    Wraps :func:`curryer.compute.spatial.ray_intersect_ellipsoid`, which marks a miss
-    with NaN, as the ``None`` the scalar path tests for.
+def _ray_ellipsoid_intersection(origin_km: np.ndarray, direction: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest intersection of each ray with the WGS84 ellipsoid (curryer).
 
     Parameters
     ----------
     origin_km : np.ndarray
-        Ray start (the satellite), ECEF km.
+        ``(..., 3)`` ray starts (the satellite), ECEF km; broadcast against ``direction``.
     direction : np.ndarray
-        Ray direction (need not be unit length).
+        ``(..., 3)`` ray directions (need not be unit length).
 
     Returns
     -------
-    np.ndarray or None
-        The ECEF intersection point (km) at the smallest positive ray parameter, or
-        ``None`` when the ray does not meet the ellipsoid.
+    tuple[np.ndarray, np.ndarray]
+        ``(points, hit)``: ``points`` has ``direction``'s shape and holds the ECEF
+        intersection (km) at the smallest positive ray parameter, NaN where the ray
+        misses; ``hit`` is the matching boolean mask over the leading dims.
     """
-    point = spatial.ray_intersect_ellipsoid(np.asarray(direction, dtype=float), np.asarray(origin_km, dtype=float))
-    return None if not np.all(np.isfinite(point)) else point
+    direction = np.asarray(direction, dtype=float)
+    origin = np.broadcast_to(np.asarray(origin_km, dtype=float), direction.shape)
+    points = spatial.ray_intersect_ellipsoid(direction.reshape(-1, 3), np.ascontiguousarray(origin).reshape(-1, 3))
+    points = points.reshape(direction.shape)
+    return points, np.all(np.isfinite(points), axis=-1)
+
+
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+
+def _footprint_arrays(*arrays: ArrayLike) -> list[np.ndarray]:
+    """Per-footprint inputs as float arrays of one common 1-D shape.
+
+    Scalars broadcast against the arrays (e.g. one satellite radius for a whole batch).
+
+    Raises
+    ------
+    ValueError
+        If an input has more than one dimension, or the inputs do not share a length.
+    """
+    converted = [np.atleast_1d(np.asarray(a, dtype=float)) for a in arrays]
+    if any(a.ndim != 1 for a in converted):
+        raise ValueError(
+            f"Per-footprint inputs must be scalars or 1-D arrays, got shapes {[a.shape for a in converted]}."
+        )
+    try:
+        return np.broadcast_arrays(*converted)
+    except ValueError as err:
+        raise ValueError(
+            f"Per-footprint inputs must share one length, got shapes {[a.shape for a in converted]}."
+        ) from err
+
+
+def _usable(lat_deg: ArrayLike, *others: ArrayLike) -> np.ndarray:
+    """True where a latitude and its companion values are usable: finite, not the L1B fill, |lat| <= 90.
+
+    xarray decodes ``_FillValue`` to NaN on read, so NaN is the main signal; the explicit
+    :data:`L1B_FILL_VALUE` check covers raw reads, and the latitude range check catches
+    other fill conventions (e.g. the NetCDF default fill).
+    """
+    lat = np.asarray(lat_deg, dtype=float)
+    values = [lat, *(np.asarray(v, dtype=float) for v in others)]
+    valid = np.ones(np.broadcast(*values).shape, dtype=bool)
+    for v in values:
+        valid &= np.isfinite(v) & (v != L1B_FILL_VALUE)
+    return valid & (np.abs(lat) <= 90.0)
+
+
+def _valid_boresight(boresight_lat_deg: ArrayLike, boresight_lon_deg: ArrayLike) -> np.ndarray:
+    """True where the boresight geolocation is usable (missing there means an off-Earth view)."""
+    return _usable(boresight_lat_deg, boresight_lon_deg)
+
+
+def _require_spacecraft(sub_lat: np.ndarray, sub_lon: np.ndarray, satellite_radius_km: np.ndarray) -> None:
+    """Raise unless every footprint's ephemeris fields are usable.
+
+    The radius must put the satellite above the ellipsoid (greater than the semi-major
+    axis), which also rejects its -9999 fill and any non-physical value.
+
+    Raises
+    ------
+    MissingGeolocationError
+        If any subsatellite point or radius is fill, non-finite or out of range.
+    """
+    radius = np.asarray(satellite_radius_km, dtype=float)
+    valid = _usable(sub_lat, sub_lon) & np.isfinite(radius) & (radius > WGS84_SEMI_MAJOR_AXIS_KM)
+    if not np.all(valid):
+        raise MissingGeolocationError(
+            f"{int(np.count_nonzero(~valid))} footprint(s) have a fill/non-finite/out-of-range "
+            "subsatellite point or radius."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -259,39 +363,89 @@ def _ray_ellipsoid_intersection(origin_km: np.ndarray, direction: np.ndarray) ->
 # ---------------------------------------------------------------------------
 
 
-def _viewing_geometry(
-    boresight_lat_deg: float,
-    boresight_lon_deg: float,
-    subsatellite_lat_deg: float,
-    subsatellite_lon_deg: float,
-    satellite_radius_km: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Locate the satellite in ECEF and build the boresight line of sight to the footprint.
+def _satellite_from_subpoint(
+    subsatellite_lat_deg: np.ndarray, subsatellite_lon_deg: np.ndarray, satellite_radius_km: np.ndarray
+) -> np.ndarray:
+    """Satellite ECEF positions (km) from the L1B sub-point and radius, ``(N,)`` -> ``(N, 3)``.
 
-    The satellite is placed exactly from the L1B ephemeris fields
-    (:func:`_satellite_from_subpoint_batch`), and the boresight is the unit vector from
-    it to the reported footprint ground point. No viewing-zenith input or altitude
-    recovery is needed, and nadir is not a special case.
+    L1B ``Subsatellite_Latitude``/``Longitude`` is the geodetic sub-point of the
+    spacecraft (curryer's ``subobserver_point``, the geodetic coordinates of the
+    spacecraft position), so the spacecraft lies on the ellipsoid normal ``n`` through
+    the surface point ``s`` there: ``sat = s + h n`` for its geodetic height ``h``. L1B
+    carries ``|sat|`` (``Radius_of_Satellite_from_Center_of_Earth``) rather than ``h``,
+    so ``h`` is the positive root of ``|s + h n|^2 = R^2``::
+
+        h = -(s . n) + sqrt((s . n)^2 - |s|^2 + R^2)
+
+    Closed form; the root is real and positive because ``R`` exceeds the ellipsoid's
+    semi-major axis (:func:`_require_spacecraft`).
+    """
+    surface = _geodetic_to_ecef(subsatellite_lat_deg, subsatellite_lon_deg, 0.0)
+    normal = _ellipsoid_normal(subsatellite_lat_deg, subsatellite_lon_deg)
+    s_dot_n = np.sum(surface * normal, axis=1)
+    radius = np.asarray(satellite_radius_km, dtype=float)
+    height = -s_dot_n + np.sqrt(s_dot_n * s_dot_n - np.sum(surface * surface, axis=1) + radius * radius)
+    return surface + height[:, None] * normal
+
+
+def _viewing_geometry(
+    lat: np.ndarray,
+    lon: np.ndarray,
+    sub_lat: np.ndarray,
+    sub_lon: np.ndarray,
+    satellite_radius_km: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Locate each satellite in ECEF and build the boresight line of sight to its footprint.
+
+    The satellite is placed from the L1B ephemeris fields (:func:`_satellite_from_subpoint`),
+    and the boresight is the unit vector from it to the reported footprint ground point.
 
     Returns
     -------
     tuple[np.ndarray, np.ndarray]
-        ``(satellite_ecef_km, boresight_direction)``; the direction points from the
-        satellite toward the ground.
+        ``(satellite_ecef_km, boresight_direction)``, each ``(N, 3)``; the direction
+        points from the satellite toward the ground.
 
     Raises
     ------
     MissingGeolocationError
-        If the footprint is not visible from the satellite (beyond its horizon).
+        If any footprint is not visible from its satellite: the boresight ray's first
+        ground intersection lands more than :data:`_VISIBILITY_TOLERANCE_KM` from the
+        reported footprint, i.e. the footprint lies beyond the satellite's horizon.
     """
-    satellite, boresight_direction = _viewing_geometry_batch(
-        np.array([boresight_lat_deg], dtype=float),
-        np.array([boresight_lon_deg], dtype=float),
-        np.array([subsatellite_lat_deg], dtype=float),
-        np.array([subsatellite_lon_deg], dtype=float),
-        np.array([satellite_radius_km], dtype=float),
-    )
-    return satellite[0], boresight_direction[0]
+    satellite = _satellite_from_subpoint(sub_lat, sub_lon, satellite_radius_km)
+    ground = _geodetic_to_ecef(lat, lon, 0.0)
+    boresight_direction = _unit(ground - satellite)
+
+    first_hit, hit = _ray_ellipsoid_intersection(satellite, boresight_direction)
+    with np.errstate(invalid="ignore"):
+        visible = hit & (np.linalg.norm(first_hit - ground, axis=1) <= _VISIBILITY_TOLERANCE_KM)
+    if not np.all(visible):
+        raise MissingGeolocationError(
+            f"{int(np.count_nonzero(~visible))} footprint(s) are not visible from the satellite placed by their "
+            "subsatellite point and radius (beyond its horizon): inconsistent geolocation."
+        )
+    return satellite, boresight_direction
+
+
+def _cross_scan_axis(boresight_direction: np.ndarray, satellite_km: np.ndarray) -> np.ndarray:
+    """Unit cross-scan rotation axes (perpendicular to the scan plane), ``(N, 3)``.
+
+    The scan plane contains the boresight and the satellite's geocentric nadir
+    (``-satellite / |satellite|``), the direction curryer measures the cone angle from, so
+    the along-scan axis matches the plane L1B ``Cone_Angle``/``Cone_Angle_Rate`` are
+    defined in. (The geodetic nadir differs from it by up to ~0.2 deg.) Rotating
+    the boresight about this axis slides the look-point along the scan (a cone-angle
+    perturbation); rotating about an axis in the plane tilts it cross-scan. A boresight
+    at nadir leaves the plane undefined; any tangent then serves, since the footprint is
+    a near-circular disc.
+    """
+    cross_axis = np.cross(-_unit(satellite_km), boresight_direction)
+    norm = np.linalg.norm(cross_axis, axis=-1)
+    degenerate = norm < 1.0e-9
+    with np.errstate(invalid="ignore", divide="ignore"):
+        unit = cross_axis / norm[..., None]
+    return np.where(degenerate[..., None], _arbitrary_tangent(boresight_direction), unit)
 
 
 # ---------------------------------------------------------------------------
@@ -299,36 +453,13 @@ def _viewing_geometry(
 # ---------------------------------------------------------------------------
 
 
-def _scan_frame_axes(boresight_direction: np.ndarray, satellite_km: np.ndarray) -> np.ndarray:
-    """Cross-scan rotation axis (perpendicular to the scan plane).
-
-    The scan plane contains the boresight and the satellite's geocentric nadir
-    (``-satellite / |satellite|``), the direction curryer measures the cone angle from, so
-    the along-scan axis matches the plane L1B ``Cone_Angle``/``Cone_Angle_Rate`` are
-    defined in. (The geodetic nadir differs from it by up to ~0.2 deg.) Rotating
-    the boresight about this axis slides the look-point along the scan (a cone-angle
-    perturbation); rotating about an axis in the plane tilts it cross-scan.
-
-    Returns
-    -------
-    np.ndarray
-        Unit cross-scan rotation axis.
-    """
-    nadir = -_unit(satellite_km)
-    cross_axis = np.cross(nadir, boresight_direction)
-    if float(np.linalg.norm(cross_axis)) < 1.0e-9:
-        # Boresight ~ nadir: orientation is irrelevant for the near-circular disc.
-        return _arbitrary_tangent(boresight_direction)
-    return _unit(cross_axis)
-
-
 def _offset_ray_direction(
-    boresight_direction: np.ndarray, cross_axis: np.ndarray, delta_deg: float, beta_deg: float
+    boresight_direction: np.ndarray, cross_axis: np.ndarray, delta_deg: ArrayLike, beta_deg: ArrayLike
 ) -> np.ndarray:
-    """Boresight direction rotated by an along-scan (delta) and cross-scan (beta) angle."""
-    along = _rotate(boresight_direction, cross_axis, math.radians(delta_deg))
+    """Boresight directions rotated by an along-scan (delta) and cross-scan (beta) angle."""
+    along = _rotate(boresight_direction, cross_axis, np.radians(delta_deg))
     inplane_axis = np.cross(cross_axis, along)  # in the scan plane, perpendicular to `along`
-    return _rotate(along, inplane_axis, math.radians(beta_deg))
+    return _rotate(along, inplane_axis, np.radians(beta_deg))
 
 
 def _perimeter_angles(
@@ -338,9 +469,10 @@ def _perimeter_angles(
 
     The PSF energy contour is bounded by its delta and beta half-extents, i.e. by a
     rectangle in the angular frame, and its corners reach into that rectangle's corners.
-    Sampling the inscribed ellipse instead would cut those corners off, so a scan azimuth
-    rotated ~30-45 deg from north would leave part of the footprint outside the lat/lon box.
-    Each unit-circle direction is pushed out to the unit square, then scaled by the extents.
+    The rectangle itself is therefore sampled, not the ellipse inscribed in it, which
+    would cut the corners off and, at scan azimuths ~30-45 deg from north, leave part of
+    the footprint outside the lat/lon box. Each unit-circle direction is pushed out to
+    the unit square, then scaled by the extents.
 
     Returns
     -------
@@ -353,75 +485,85 @@ def _perimeter_angles(
     return along_extent_deg * cos_t * to_square, cross_extent_deg * sin_t * to_square
 
 
-def _usable(lat_deg: float | np.ndarray, *others: float | np.ndarray) -> np.ndarray:
-    """True where a latitude and its companion values are usable: finite, not the L1B fill, |lat| <= 90.
+def _box_angular_extents(fov_halfangle_deg: float) -> tuple[float, float]:
+    """Along-scan and cross-scan angular half-extents (deg) the box perimeter is traced at.
 
-    xarray decodes ``_FillValue`` to NaN on read, so NaN is the main signal; the explicit
-    :data:`L1B_FILL_VALUE` check covers raw reads, and the latitude range check catches
-    other fill conventions (e.g. the NetCDF default fill).
+    The larger of the dynamic 95%-energy extent and the static FOV, so the box is never
+    smaller than the optical field of view (the FOV also stands in for the
+    stationary-scanner case, since the box takes no cone-angle rate), enlarged by the
+    outward safety margin :data:`BBOX_MARGIN_FRACTION`.
     """
-    lat = np.asarray(lat_deg, dtype=float)
-    values = [lat, *(np.asarray(v, dtype=float) for v in others)]
-    valid = np.ones(np.broadcast(*values).shape, dtype=bool)
-    for v in values:
-        valid &= np.isfinite(v) & (v != _L1B_FILL_VALUE)
-    return valid & (np.abs(lat) <= 90.0)
+    psf_extent = psf_95_energy_extent()
+    scale = 1.0 + BBOX_MARGIN_FRACTION
+    along_deg = max(conservative_along_scan_extent(psf_extent), fov_halfangle_deg) * scale
+    cross_deg = max(psf_extent.beta_max_deg, fov_halfangle_deg) * scale
+    return along_deg, cross_deg
 
 
-def _valid_boresight(boresight_lat_deg: float | np.ndarray, boresight_lon_deg: float | np.ndarray) -> np.ndarray:
-    """True where the boresight geolocation is usable (missing there means an off-Earth view)."""
-    return _usable(boresight_lat_deg, boresight_lon_deg)
-
-
-def _valid_spacecraft(
-    subsatellite_lat_deg: float | np.ndarray,
-    subsatellite_lon_deg: float | np.ndarray,
-    satellite_radius_km: float | np.ndarray,
-) -> np.ndarray:
-    """True where the ephemeris fields are usable (missing there means no geolocation at all).
-
-    The radius must put the satellite above the ellipsoid (greater than the semi-major
-    axis), which also rejects its -9999 fill and any non-physical value.
-    """
-    radius = np.asarray(satellite_radius_km, dtype=float)
-    return (
-        _usable(subsatellite_lat_deg, subsatellite_lon_deg) & np.isfinite(radius) & (radius > WGS84_SEMI_MAJOR_AXIS_KM)
-    )
-
-
-def _perimeter_point(
-    satellite_km: np.ndarray,
+def _limb_clip(
+    satellite: np.ndarray,
     boresight_direction: np.ndarray,
     cross_axis: np.ndarray,
-    delta_deg: float,
-    beta_deg: float,
-) -> tuple[float, float, bool]:
-    """Ground intersection of one PSF-perimeter ray, clipping to the limb if it misses.
+    delta_deg: np.ndarray,
+    beta_deg: np.ndarray,
+) -> np.ndarray:
+    """Grazing ground points of perimeter rays that missed the ellipsoid, ``(K, 3)`` ECEF km.
 
-    Returns ``(lat_deg, lon_deg, missed)``. When the full-extent ray misses the
-    ellipsoid (``missed=True``) the angular offset is bisected back toward the
-    boresight until the ray just grazes the limb, so the returned point sits on the
-    horizon (keeping the box a conservative superset up to the limb).
+    Bisects each ray's angular fraction back toward the boresight (which is on Earth)
+    until the ray just grazes the limb, so the point sits on the horizon and the box
+    stays a conservative superset up to the limb.
     """
-    direction = _offset_ray_direction(boresight_direction, cross_axis, delta_deg, beta_deg)
-    hit = _ray_ellipsoid_intersection(satellite_km, direction)
-    if hit is not None:
-        lat, lon, _ = _ecef_to_geodetic(hit)
-        return lat, lon, False
-
-    # Bisect the angular fraction down to the grazing direction (largest that hits).
-    lo, hi = 0.0, 1.0
-    for _ in range(40):
+    lo = np.zeros(satellite.shape[0])
+    hi = np.ones(satellite.shape[0])
+    for _ in range(_LIMB_BISECTION_STEPS):
         mid = 0.5 * (lo + hi)
         probe = _offset_ray_direction(boresight_direction, cross_axis, delta_deg * mid, beta_deg * mid)
-        if _ray_ellipsoid_intersection(satellite_km, probe) is not None:
-            lo = mid
-        else:
-            hi = mid
+        _, hit = _ray_ellipsoid_intersection(satellite, probe)
+        lo = np.where(hit, mid, lo)
+        hi = np.where(hit, hi, mid)
     grazing = _offset_ray_direction(boresight_direction, cross_axis, delta_deg * lo, beta_deg * lo)
-    hit = _ray_ellipsoid_intersection(satellite_km, grazing)
-    lat, lon, _ = _ecef_to_geodetic(hit)
-    return lat, lon, True
+    points, _ = _ray_ellipsoid_intersection(satellite, grazing)
+    return points
+
+
+def _trace_perimeter(
+    satellite: np.ndarray,
+    boresight_direction: np.ndarray,
+    cross_axis: np.ndarray,
+    delta_deg: np.ndarray,
+    beta_deg: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Ground intersections of every footprint's perimeter rays, clipped to the limb.
+
+    Parameters
+    ----------
+    satellite, boresight_direction, cross_axis : np.ndarray
+        ``(M, 3)`` per-footprint viewing geometry.
+    delta_deg, beta_deg : np.ndarray
+        ``(S,)`` perimeter offsets shared by every footprint.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray]
+        ``(lat_deg, lon_deg, missed)``, each ``(M, S)``. ``missed`` marks rays whose full
+        offset runs off the Earth; their point is the grazing point on the horizon.
+    """
+    directions = _offset_ray_direction(
+        boresight_direction[:, None, :], cross_axis[:, None, :], delta_deg[None, :], beta_deg[None, :]
+    )
+    points, hit = _ray_ellipsoid_intersection(satellite[:, None, :], directions)
+    missed = ~hit
+    if np.any(missed):
+        shape = directions.shape
+        points[missed] = _limb_clip(
+            np.broadcast_to(satellite[:, None, :], shape)[missed],
+            np.broadcast_to(boresight_direction[:, None, :], shape)[missed],
+            np.broadcast_to(cross_axis[:, None, :], shape)[missed],
+            np.broadcast_to(delta_deg[None, :], missed.shape)[missed],
+            np.broadcast_to(beta_deg[None, :], missed.shape)[missed],
+        )
+    lat, lon, _ = _ecef_to_geodetic(points)
+    return lat.reshape(missed.shape), lon.reshape(missed.shape), missed
 
 
 # ---------------------------------------------------------------------------
@@ -429,82 +571,150 @@ def _perimeter_point(
 # ---------------------------------------------------------------------------
 
 
-def bounding_box_from_points(
-    center_lat_deg: float,
-    center_lon_deg: float,
-    lats: list[float],
-    lons: list[float],
-    *,
-    truncated: bool = False,
-) -> BoundingBox:
-    """Build a lat/lon bounding box from a set of footprint boundary points.
+def bounding_box_from_points_batch(
+    center_lat_deg: np.ndarray,
+    center_lon_deg: np.ndarray,
+    lats: np.ndarray,
+    lons: np.ndarray,
+    truncated: np.ndarray,
+) -> list[BoundingBox]:
+    """Build one lat/lon bounding box per footprint from its boundary points.
 
-    This is the shared box-assembly step used by two producers:
+    This is the box-assembly step shared by two producers:
 
-    * the radiometer path (:func:`compute_footprint_bounding_box`), which passes the
+    * the radiometer path (:func:`compute_footprint_bounding_boxes`), which passes the
       ray-traced PSF *perimeter* samples, and
     * the camera path (:mod:`libera_utils.footprint_matching.camera_segmentation`),
       which passes the four *corner pixels* of a pseudo-footprint's pixel block.
 
-    Both need identical pole/dateline handling, so keeping one implementation avoids
-    two subtly different box builders. ``center_lat_deg``/``center_lon_deg`` is the
-    footprint anchor (the radiometer boresight, or the camera block's center pixel)
-    and is used only for the pole-enclosure reach test, not for the box extent.
+    ``center_lat_deg``/``center_lon_deg`` is each footprint's anchor (the radiometer
+    boresight, or the camera block's center pixel) and is used only for the
+    pole-enclosure reach test, not for the box extent.
 
     Handles the three structural edge cases:
 
     * **Pole enclosure**: if the footprint reaches a pole, all meridians are inside
       it, so longitude spans the full [-180, 180] and the bounding latitude is pinned
-      to +/- 90. Detected when the surface distance from the boresight to the pole is
-      within the footprint's reach (the max boresight-to-perimeter distance).
+      to +/- 90. Detected when the surface distance from the anchor to the pole is
+      within the footprint's reach (the max anchor-to-boundary distance).
     * **Dateline crossing**: detected by comparing the longitude span in [-180, 180]
       vs in [0, 360); the smaller span wins. When it wraps, we return the [0, 360)
       representation (``lon_max`` > 180) and set ``wraps_dateline``.
     * **Polar advisory**: boxes touching very high latitudes are flagged ``is_polar``
       so downstream code knows the rectangular box is a coarse over-approximation.
+
+    Parameters
+    ----------
+    center_lat_deg, center_lon_deg : np.ndarray
+        ``(N,)`` footprint anchors, degrees.
+    lats, lons : np.ndarray
+        ``(N, S)`` boundary points, degrees.
+    truncated : np.ndarray
+        ``(N,)`` limb-truncation flags, carried onto the boxes.
+
+    Returns
+    -------
+    list[BoundingBox]
+        One box per footprint, in input order.
     """
     geod = _wgs84_geod()
+    center_lat = np.asarray(center_lat_deg, dtype=float)
+    center_lon = np.asarray(center_lon_deg, dtype=float)
+    lats = np.asarray(lats, dtype=float)
+    lons = np.asarray(lons, dtype=float)
+    n, s = lats.shape
 
-    # Pole enclosure: compare the footprint's reach to the distance to each pole.
-    perimeter_distances_m = [
-        geod.inv(center_lon_deg, center_lat_deg, lon, lat)[2] for lat, lon in zip(lats, lons, strict=True)
-    ]
-    max_reach_m = max(perimeter_distances_m)
-    dist_north_pole_m = geod.inv(center_lon_deg, center_lat_deg, center_lon_deg, 90.0)[2]
-    dist_south_pole_m = geod.inv(center_lon_deg, center_lat_deg, center_lon_deg, -90.0)[2]
-
-    if dist_north_pole_m <= max_reach_m:
-        return BoundingBox(min(lats), 90.0, -180.0, 180.0, wraps_dateline=False, is_polar=True, truncated=truncated)
-    if dist_south_pole_m <= max_reach_m:
-        return BoundingBox(-90.0, max(lats), -180.0, 180.0, wraps_dateline=False, is_polar=True, truncated=truncated)
-
-    lat_min, lat_max = min(lats), max(lats)
-
-    # Dateline handling: choose the representation with the smaller longitude span.
-    lons_arr = np.asarray(lons)
-    span_signed = float(lons_arr.max() - lons_arr.min())  # span in [-180, 180]
-    lons_360 = lons_arr % 360.0
-    span_360 = float(lons_360.max() - lons_360.min())  # span in [0, 360)
-
-    if span_360 < span_signed - _LON_SPAN_TIE_TOL_DEG:
-        lon_min = float(lons_360.min())
-        lon_max = float(lons_360.max())  # may exceed 180 -> signals the wrap
-        wraps_dateline = lon_max > 180.0
-    else:
-        lon_min = float(lons_arr.min())
-        lon_max = float(lons_arr.max())
-        wraps_dateline = False
-
-    # Advisory polar flag for boxes that reach very high latitudes.
-    is_polar = abs(lat_min) >= POLAR_LATITUDE_THRESHOLD_DEG or abs(lat_max) >= POLAR_LATITUDE_THRESHOLD_DEG
-
-    return BoundingBox(
-        lat_min, lat_max, lon_min, lon_max, wraps_dateline=wraps_dateline, is_polar=is_polar, truncated=truncated
+    # Pole-enclosure reach: geodesic distance from each center to every boundary point.
+    _, _, reach = geod.inv(
+        _pyproj_seq(np.repeat(center_lon, s)),
+        _pyproj_seq(np.repeat(center_lat, s)),
+        _pyproj_seq(lons.reshape(-1)),
+        _pyproj_seq(lats.reshape(-1)),
     )
+    max_reach = np.asarray(reach, dtype=float).reshape(n, s).max(axis=1)
+    _, _, dist_north = geod.inv(
+        _pyproj_seq(center_lon), _pyproj_seq(center_lat), _pyproj_seq(center_lon), _pyproj_seq(np.full(n, 90.0))
+    )
+    _, _, dist_south = geod.inv(
+        _pyproj_seq(center_lon), _pyproj_seq(center_lat), _pyproj_seq(center_lon), _pyproj_seq(np.full(n, -90.0))
+    )
+    encloses_north = np.asarray(dist_north, dtype=float) <= max_reach
+    encloses_south = np.asarray(dist_south, dtype=float) <= max_reach
+
+    lat_min = lats.min(axis=1)
+    lat_max = lats.max(axis=1)
+
+    # Dateline: choose the [-180,180) or [0,360) representation with the smaller span.
+    span_signed = lons.max(axis=1) - lons.min(axis=1)
+    lons_360 = lons % 360.0
+    span_360 = lons_360.max(axis=1) - lons_360.min(axis=1)
+    use_360 = span_360 < span_signed - _LON_SPAN_TIE_TOL_DEG
+    lon_min = np.where(use_360, lons_360.min(axis=1), lons.min(axis=1))
+    lon_max = np.where(use_360, lons_360.max(axis=1), lons.max(axis=1))
+    wraps = use_360 & (lon_max > 180.0)
+
+    is_polar = (np.abs(lat_min) >= POLAR_LATITUDE_THRESHOLD_DEG) | (np.abs(lat_max) >= POLAR_LATITUDE_THRESHOLD_DEG)
+    truncated = np.broadcast_to(np.asarray(truncated, dtype=bool), (n,))
+
+    boxes: list[BoundingBox] = []
+    for m in range(n):
+        if encloses_north[m]:
+            boxes.append(BoundingBox(float(lat_min[m]), 90.0, -180.0, 180.0, False, True, bool(truncated[m])))
+        elif encloses_south[m]:
+            boxes.append(BoundingBox(-90.0, float(lat_max[m]), -180.0, 180.0, False, True, bool(truncated[m])))
+        else:
+            boxes.append(
+                BoundingBox(
+                    float(lat_min[m]),
+                    float(lat_max[m]),
+                    float(lon_min[m]),
+                    float(lon_max[m]),
+                    bool(wraps[m]),
+                    bool(is_polar[m]),
+                    bool(truncated[m]),
+                )
+            )
+    return boxes
+
+
+def bounding_box_from_points(
+    center_lat_deg: float,
+    center_lon_deg: float,
+    lats: ArrayLike,
+    lons: ArrayLike,
+    *,
+    truncated: bool = False,
+) -> BoundingBox:
+    """Build the lat/lon bounding box of one footprint from its boundary points.
+
+    Single-footprint form of :func:`bounding_box_from_points_batch`, which documents the
+    pole, dateline and polar handling.
+
+    Parameters
+    ----------
+    center_lat_deg, center_lon_deg : float
+        Footprint anchor, degrees; used only for the pole-enclosure test.
+    lats, lons : array_like
+        Boundary-point latitudes and longitudes, degrees.
+    truncated : bool, optional
+        Limb-truncation flag carried onto the box.
+
+    Returns
+    -------
+    BoundingBox
+        The enclosing box.
+    """
+    return bounding_box_from_points_batch(
+        np.array([center_lat_deg], dtype=float),
+        np.array([center_lon_deg], dtype=float),
+        np.asarray(lats, dtype=float)[None, :],
+        np.asarray(lons, dtype=float)[None, :],
+        np.array([truncated]),
+    )[0]
 
 
 def psf_ground_radius_km(
-    spacecraft_altitude_km: float,
+    satellite_radius_km: float,
     viewing_zenith_deg: float,
     fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
 ) -> float:
@@ -512,12 +722,16 @@ def psf_ground_radius_km(
 
     A small angular offset ``theta`` at the satellite spans ``rho * tan(theta)``
     perpendicular to the line of sight, where ``rho`` is the slant range. On a spherical
-    Earth of radius ``R``, a satellite at altitude ``h`` sees a point at viewing zenith
-    ``v`` from ``rho = sqrt((R + h)^2 - (R sin v)^2) - R cos v``. Along the view
-    direction the line of sight strikes the surface obliquely, stretching that span by
-    a further ``1/cos(v)``; across it there is no stretch. We return the along-view
-    (larger) value so the radius bounds the footprint in every direction. At nadir this
-    reduces to ``h * tan(theta)``.
+    Earth of radius ``R``, a satellite at distance ``R_s`` from Earth's center sees a
+    point at viewing zenith ``v`` from ``rho = sqrt(R_s^2 - (R sin v)^2) - R cos v``. Along
+    the view direction the line of sight strikes the surface obliquely, stretching that
+    span by a further ``1/cos(v)``; across it there is no stretch. We return the
+    along-view (larger) value so the radius bounds the footprint in every direction. At
+    nadir this reduces to ``(R_s - R) * tan(theta)``.
+
+    Unlike the rest of this module, which ray-traces the WGS84 ellipsoid, this is an
+    analytic estimate on a sphere of the WGS84 equatorial radius
+    (:data:`WGS84_SEMI_MAJOR_AXIS_KM`).
 
     The angular half-extent is the diagonal of the PSF's along-scan and cross-scan
     95%-energy half-extents, because the energy contour reaches toward the corners of
@@ -529,9 +743,9 @@ def psf_ground_radius_km(
 
     Parameters
     ----------
-    spacecraft_altitude_km : float
-        Spacecraft geodetic height above the ellipsoid, km. Not L1B ``Altitude``, which
-        is the height of the boresight's ellipsoid intersection (~0).
+    satellite_radius_km : float
+        Spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
     viewing_zenith_deg : float
         Viewing zenith angle, degrees (clamped at
         :data:`_MAX_VZA_FOR_ELONGATION_DEG` for the elongation factor).
@@ -551,14 +765,102 @@ def psf_ground_radius_km(
     vza_rad = math.radians(min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG))
     earth_radius_km = WGS84_SEMI_MAJOR_AXIS_KM
     slant_range_km = math.sqrt(
-        (earth_radius_km + spacecraft_altitude_km) ** 2 - (earth_radius_km * math.sin(vza_rad)) ** 2
+        satellite_radius_km**2 - (earth_radius_km * math.sin(vza_rad)) ** 2
     ) - earth_radius_km * math.cos(vza_rad)
     return slant_range_km * math.tan(math.radians(angular_deg)) / math.cos(vza_rad)
 
 
 # ---------------------------------------------------------------------------
-# Public entry point
+# Public bounding-box entry points
 # ---------------------------------------------------------------------------
+
+
+def compute_footprint_bounding_boxes(
+    boresight_lat_deg: ArrayLike,
+    boresight_lon_deg: ArrayLike,
+    subsatellite_lat_deg: ArrayLike,
+    subsatellite_lon_deg: ArrayLike,
+    *,
+    satellite_radius_km: ArrayLike,
+    fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
+    n_samples: int = _N_PERIMETER_SAMPLES,
+) -> list[BoundingBox | None]:
+    """Compute the lat/lon bounding box of each of ``N`` radiometer footprints on the surface.
+
+    Chains: locate each satellite and build the boresight line of sight -> get the PSF
+    angular extent -> rotate each boresight by that extent and ray-trace each ray onto
+    the WGS84 ellipsoid -> assemble a lat/lon box with pole and dateline handling.
+
+    Inputs come straight from L1B RAD fields: footprint ``Latitude``/``Longitude``,
+    ``Subsatellite_Latitude``/``Longitude`` and
+    ``Radius_of_Satellite_from_Center_of_Earth``. The last three place the satellite
+    exactly; the line from it to the footprint is the boresight, so the viewing zenith
+    angle and the scan orientation follow from the geometry rather than being inputs.
+
+    Off-Earth views (a fill, non-finite or out-of-range boresight latitude/longitude) are
+    returned as ``None`` at their index rather than raising, so the caller can flag them
+    per footprint. Corner rays that run off the limb at a severe angle are truncated at
+    the horizon and the box's ``truncated`` flag is set. Missing ephemeris fields or a
+    footprint not visible from its satellite raises :class:`MissingGeolocationError` for
+    the whole call instead of hiding among the ``None`` entries.
+
+    Parameters
+    ----------
+    boresight_lat_deg, boresight_lon_deg : array_like
+        Per-footprint boresight centroids (L1B ``Latitude``/``Longitude``), degrees.
+    subsatellite_lat_deg, subsatellite_lon_deg : array_like
+        Per-footprint geodetic spacecraft sub-points (L1B ``Subsatellite_Latitude`` /
+        ``Subsatellite_Longitude``), degrees.
+    satellite_radius_km : array_like
+        Per-footprint spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+    fov_halfangle_deg : float, optional
+        Instrument FOV half-angle, degrees. Used as a floor on the PSF extent so the
+        box is never smaller than the optical field of view. Defaults to
+        :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
+    n_samples : int, optional
+        Number of PSF-perimeter samples. Defaults to :data:`_N_PERIMETER_SAMPLES`.
+
+    Returns
+    -------
+    list[BoundingBox | None]
+        One entry per input footprint, in input order. ``None`` marks an off-Earth view.
+
+    Raises
+    ------
+    ValueError
+        If an input is more than 1-D, or the inputs do not share a length (scalars
+        broadcast).
+    MissingGeolocationError
+        If any footprint's subsatellite point or radius is unusable, or any footprint is
+        not visible from its satellite.
+    """
+    lat, lon, sub_lat, sub_lon, radius = _footprint_arrays(
+        boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km
+    )
+    # Missing ephemeris is bad input, not an off-Earth view: fail loudly rather than hide
+    # it among the Nones. A missing boresight with the spacecraft present is a
+    # space/calibration view: no Earth intersection.
+    _require_spacecraft(sub_lat, sub_lon, radius)
+    idx = np.nonzero(_valid_boresight(lat, lon))[0]
+
+    boxes: list[BoundingBox | None] = [None] * lat.size
+    if idx.size == 0:
+        return boxes
+
+    satellite, boresight_direction = _viewing_geometry(lat[idx], lon[idx], sub_lat[idx], sub_lon[idx], radius[idx])
+    cross_axis = _cross_scan_axis(boresight_direction, satellite)
+    delta_deg, beta_deg = _perimeter_angles(*_box_angular_extents(fov_halfangle_deg), n_samples)
+    perimeter_lat, perimeter_lon, missed = _trace_perimeter(
+        satellite, boresight_direction, cross_axis, delta_deg, beta_deg
+    )
+
+    valid_boxes = bounding_box_from_points_batch(
+        lat[idx], lon[idx], perimeter_lat, perimeter_lon, np.any(missed, axis=1)
+    )
+    for i, box in zip(idx, valid_boxes, strict=True):
+        boxes[int(i)] = box
+    return boxes
 
 
 def compute_footprint_bounding_box(
@@ -569,27 +871,13 @@ def compute_footprint_bounding_box(
     *,
     satellite_radius_km: float,
     fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
-    on_limb: str = "flag",
+    on_limb: Literal["flag", "raise"] = "flag",
 ) -> BoundingBox:
     """Compute the lat/lon bounding box of one radiometer footprint on the surface.
 
-    This is the public, per-footprint entry point. It chains: build the boresight
-    line of sight and locate the satellite -> get the PSF angular extent -> rotate
-    the boresight by that extent and ray-trace each ray onto the WGS84 ellipsoid ->
-    assemble a lat/lon box with pole and dateline handling.
-
-    Inputs come straight from L1B RAD fields: footprint ``Latitude``/``Longitude``,
-    ``Subsatellite_Latitude``/``Longitude`` and
-    ``Radius_of_Satellite_from_Center_of_Earth``. The last three place the satellite
-    exactly; the line from it to the footprint is the boresight, so the viewing zenith
-    angle and the scan orientation follow from the geometry rather than being inputs.
-    (The solar angles describe sun geometry and do not affect which ground patch the
-    radiometer sees.)
-
-    TODO[LIBSDC-794]: this is scalar (one footprint per call) for clarity. To meet
-    the real-time latency budget, vectorize the helpers over NumPy arrays of
-    footprints; the math is all elementwise except the perimeter sampling, which can
-    be batched.
+    Single-footprint form of :func:`compute_footprint_bounding_boxes`, which documents
+    the method and inputs, that raises instead of returning ``None`` for an off-Earth
+    view and can raise on limb truncation.
 
     Parameters
     ----------
@@ -602,8 +890,7 @@ def compute_footprint_bounding_box(
         Distance of the spacecraft from Earth's center (L1B
         ``Radius_of_Satellite_from_Center_of_Earth``), km.
     fov_halfangle_deg : float, optional
-        Instrument FOV half-angle, degrees. Used as a floor on the PSF extent so the
-        box is never smaller than the optical field of view. Defaults to
+        Instrument FOV half-angle, degrees; the floor on the PSF extent. Defaults to
         :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
     on_limb : {"flag", "raise"}, optional
         Behavior when a box *corner* ray runs off the Earth limb at a severe angle
@@ -641,78 +928,128 @@ def compute_footprint_bounding_box(
     if on_limb not in ("flag", "raise"):
         raise ValueError(f"on_limb must be 'flag' or 'raise', got {on_limb!r}")
 
-    # The ephemeris fields are populated for every record, so missing values there mean
-    # no geolocation at all. A missing boresight with the spacecraft present is a
-    # space/calibration view: no Earth intersection.
-    if not _valid_spacecraft(subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km):
-        raise MissingGeolocationError("Footprint has a fill/non-finite/out-of-range subsatellite point or radius.")
-    if not _valid_boresight(boresight_lat_deg, boresight_lon_deg):
+    (box,) = compute_footprint_bounding_boxes(
+        boresight_lat_deg,
+        boresight_lon_deg,
+        subsatellite_lat_deg,
+        subsatellite_lon_deg,
+        satellite_radius_km=satellite_radius_km,
+        fov_halfangle_deg=fov_halfangle_deg,
+    )
+    if box is None:
         raise OffLimbError("Footprint boresight has no Earth intersection (fill/non-finite geolocation).")
+    if box.truncated and on_limb == "raise":
+        raise PartialFootprintError(
+            "A bounding-box corner ray is off the Earth limb: part of the box is off the Earth. "
+            "The default on_limb='flag' truncates the box at the horizon and marks it as partial "
+            "coverage instead of raising."
+        )
+    return box
 
-    # 1. Locate the satellite in ECEF and build the boresight ray to the footprint.
-    satellite, boresight_direction = _viewing_geometry(
+
+# ---------------------------------------------------------------------------
+# Viewing frame: computed once per footprint, reused by the PSF weigher
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ViewingFrame:
+    """Radiometer viewing frames of ``N`` footprints.
+
+    The angular-frame PSF projection (:func:`project_to_angular`) needs, per footprint,
+    the satellite ECEF position and the three orthonormal look axes ``(b_hat, c_hat,
+    n_hat)``. :func:`compute_viewing_frames` builds all ``N`` together so the orchestrator
+    can hand each footprint its single-footprint frame via :meth:`for_index`.
+
+    Attributes
+    ----------
+    satellite : np.ndarray
+        ``(N, 3)`` satellite ECEF positions, km.
+    b_hat : np.ndarray
+        ``(N, 3)`` boresight look-direction unit vectors (``delta = beta = 0``).
+    c_hat : np.ndarray
+        ``(N, 3)`` cross-scan unit axes (perpendicular to the scan plane).
+    n_hat : np.ndarray
+        ``(N, 3)`` in-scan-plane unit axes (``= c_hat x b_hat``).
+    """
+
+    satellite: np.ndarray
+    b_hat: np.ndarray
+    c_hat: np.ndarray
+    n_hat: np.ndarray
+
+    def __len__(self) -> int:
+        return int(self.satellite.shape[0])
+
+    def for_index(self, i: int) -> ViewingFrame:
+        """Return the single-footprint frame at index ``i`` (arrays of shape ``(1, 3)``)."""
+        rows = [i]
+        return ViewingFrame(self.satellite[rows], self.b_hat[rows], self.c_hat[rows], self.n_hat[rows])
+
+
+def compute_viewing_frames(
+    boresight_lat_deg: ArrayLike,
+    boresight_lon_deg: ArrayLike,
+    subsatellite_lat_deg: ArrayLike,
+    subsatellite_lon_deg: ArrayLike,
+    *,
+    satellite_radius_km: ArrayLike,
+) -> ViewingFrame:
+    """Build every footprint's viewing frame in one batched call.
+
+    Uses the same viewing geometry and scan-plane axes as the bounding box, so the
+    angles :func:`project_to_angular` reads off a frame are consistent with the box.
+    Off-Earth views have no frame: drop them (e.g. the ``None`` entries of
+    :func:`compute_footprint_bounding_boxes`) before calling.
+
+    Parameters
+    ----------
+    boresight_lat_deg, boresight_lon_deg : array_like
+        Per-footprint boresight centroids, degrees.
+    subsatellite_lat_deg, subsatellite_lon_deg : array_like
+        Per-footprint geodetic spacecraft sub-points (L1B ``Subsatellite_Latitude`` /
+        ``Subsatellite_Longitude``), degrees.
+    satellite_radius_km : array_like
+        Per-footprint spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+
+    Returns
+    -------
+    ViewingFrame
+        The ``N`` batched frames.
+
+    Raises
+    ------
+    ValueError
+        If an input is more than 1-D, or the inputs do not share a length.
+    MissingGeolocationError
+        If any footprint's ephemeris fields are unusable or the footprint is not visible
+        from its satellite.
+    OffLimbError
+        If any boresight latitude or longitude is fill, non-finite or out of range (an
+        off-Earth view).
+    """
+    lat, lon, sub_lat, sub_lon, radius = _footprint_arrays(
         boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km
     )
+    _require_spacecraft(sub_lat, sub_lon, radius)
+    off_earth = ~_valid_boresight(lat, lon)
+    if np.any(off_earth):
+        raise OffLimbError(
+            f"{int(np.count_nonzero(off_earth))} footprint(s) have no Earth intersection (fill/non-finite "
+            "boresight); drop off-Earth views before building viewing frames."
+        )
 
-    # 2. Get the PSF angular extent and apply the FOV floor. We use the larger of the
-    #    dynamic 95%-energy extent and the static FOV so the box is never smaller than
-    #    the optical field of view (the FOV also stands in for the stationary-scanner
-    #    case, which we cannot currently detect without the cone-angle rate). The
-    #    outward safety margin is applied to the angular extents.
-    psf_extent = psf_95_energy_extent()
-    along_extent_deg = max(conservative_along_scan_extent(psf_extent), fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
-    cross_extent_deg = max(psf_extent.beta_max_deg, fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
-
-    # 3. Rotate the boresight by the PSF angular extent and ray-trace each perimeter
-    #    sample onto the ellipsoid. Rays that miss are clipped to the limb (flag) or
-    #    raise PartialFootprintError (raise).
-    cross_axis = _scan_frame_axes(boresight_direction, satellite)
-    lats: list[float] = []
-    lons: list[float] = []
-    truncated = False
-    for delta_deg, beta_deg in zip(
-        *_perimeter_angles(along_extent_deg, cross_extent_deg, _N_PERIMETER_SAMPLES), strict=True
-    ):
-        lat, lon, missed = _perimeter_point(satellite, boresight_direction, cross_axis, delta_deg, beta_deg)
-        if missed:
-            if on_limb == "raise":
-                raise PartialFootprintError(
-                    "A bounding-box corner ray is off the Earth limb: part of the box is off the Earth. "
-                    "The default on_limb='flag' truncates the box at the horizon and marks it as partial "
-                    "coverage instead of raising."
-                )
-            truncated = True
-        lats.append(lat)
-        lons.append(lon)
-
-    # 4. Assemble the lat/lon box (handles poles and dateline), carrying the
-    #    partial-coverage truncation flag onto the returned box.
-    return bounding_box_from_points(boresight_lat_deg, boresight_lon_deg, lats, lons, truncated=truncated)
+    satellite, b_hat = _viewing_geometry(lat, lon, sub_lat, sub_lon, radius)
+    c_hat = _cross_scan_axis(b_hat, satellite)
+    # Unit, because c_hat is a unit vector perpendicular to the unit b_hat.
+    n_hat = np.cross(c_hat, b_hat)
+    return ViewingFrame(satellite=satellite, b_hat=b_hat, c_hat=c_hat, n_hat=n_hat)
 
 
 # ---------------------------------------------------------------------------
-# Vectorized bounding box: the whole pipeline batched over N footprints
+# Inverse projection: ground lat/lon -> radiometer angular frame (delta, beta)
 # ---------------------------------------------------------------------------
-#
-# These functions reproduce compute_footprint_bounding_box exactly, but operate on
-# arrays of N footprints so the per-footprint pyproj / rotation work is paid once per
-# *segment* instead of once per footprint (design: doc/fmatch_vectorization_plan.md,
-# Phase 1). The scalar path above is retained as the readable parity reference; the
-# batch path is validated against it cell-for-cell in the unit tests. Only the
-# on_limb="flag" semantics are implemented here (corner misses truncate); the "raise"
-# behavior stays on the scalar entry point.
-
-
-def _pyproj_seq(array: np.ndarray) -> list[float] | np.ndarray:
-    """Coerce a batch coordinate array into a form pyproj treats as a sequence.
-
-    pyproj dispatches a length-1 NumPy array to its scalar-point code path, which then
-    triggers a NumPy>=1.25 ``DeprecationWarning`` (ndim>0 -> scalar). Passing a Python
-    list of length 1 keeps it on the array path; arrays of length >= 2 are returned
-    unchanged (no copy). Callers normalize the returned coordinates with ``np.asarray``.
-    """
-    array = np.asarray(array, dtype=float)
-    return array.tolist() if array.size == 1 else array
 
 
 def surface_cell_ecef_km(cell_lats_deg: np.ndarray, cell_lons_deg: np.ndarray) -> np.ndarray:
@@ -739,492 +1076,19 @@ def surface_cell_ecef_km(cell_lats_deg: np.ndarray, cell_lons_deg: np.ndarray) -
     """
     lats = np.asarray(cell_lats_deg, dtype=float).ravel()
     lons = np.asarray(cell_lons_deg, dtype=float).ravel()
-    return _geodetic_to_ecef_batch(lats, lons, np.zeros_like(lats))
-
-
-def _geodetic_to_ecef_batch(lat_deg: np.ndarray, lon_deg: np.ndarray, height_km: np.ndarray) -> np.ndarray:
-    """Vectorized :func:`_geodetic_to_ecef`: ``(N,)`` geodetic -> ``(N, 3)`` ECEF km."""
-    lon_lat_alt = np.stack(
-        [np.asarray(lon_deg, dtype=float), np.asarray(lat_deg, dtype=float), np.asarray(height_km, dtype=float)],
-        axis=1,
-    )
-    return spatial.geodetic_to_ecef(lon_lat_alt)
-
-
-def _ecef_to_geodetic_batch(xyz_km: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Vectorized :func:`_ecef_to_geodetic`: ``(K, 3)`` ECEF km -> ``(lat, lon, height_km)`` arrays."""
-    lon_lat_alt = spatial.ecef_to_geodetic(np.asarray(xyz_km, dtype=float).reshape(-1, 3))
-    return lon_lat_alt[:, 1], lon_lat_alt[:, 0], lon_lat_alt[:, 2]
-
-
-def _ellipsoid_normal_batch(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
-    """Vectorized :func:`_ellipsoid_normal`: ``(N,)`` geodetic -> ``(N, 3)`` outward normals."""
-    lat = np.radians(np.asarray(lat_deg, dtype=float))
-    lon = np.radians(np.asarray(lon_deg, dtype=float))
-    return np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=1)
-
-
-def _arbitrary_tangent_batch(normal: np.ndarray) -> np.ndarray:
-    """Vectorized :func:`_arbitrary_tangent`: a unit vector perpendicular to each ``normal``."""
-    reference = np.where(
-        (np.abs(normal[:, 2]) < 0.9)[:, None],
-        np.array([0.0, 0.0, 1.0]),
-        np.array([1.0, 0.0, 0.0]),
-    )
-    tangent = np.cross(normal, reference)
-    return tangent / np.linalg.norm(tangent, axis=-1, keepdims=True)
-
-
-def _rotate_batch(vec: np.ndarray, axis: np.ndarray, angle_rad: np.ndarray) -> np.ndarray:
-    """Vectorized Rodrigues rotation (:func:`_rotate`) over broadcastable leading dims.
-
-    ``vec`` and ``axis`` are ``(..., 3)``; ``angle_rad`` broadcasts against the leading
-    dims. ``axis`` is normalized to unit length, matching the scalar helper.
-    """
-    axis = axis / np.linalg.norm(axis, axis=-1, keepdims=True)
-    cos_a = np.cos(angle_rad)[..., None]
-    sin_a = np.sin(angle_rad)[..., None]
-    dot = np.sum(axis * vec, axis=-1, keepdims=True)
-    return vec * cos_a + np.cross(axis, vec) * sin_a + axis * dot * (1.0 - cos_a)
-
-
-def _ray_ellipsoid_intersection_batch(origin_km: np.ndarray, direction: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Vectorized :func:`_ray_ellipsoid_intersection`.
-
-    Parameters
-    ----------
-    origin_km, direction : np.ndarray
-        ``(K, 3)`` ray origins (satellite) and directions.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray]
-        ``(points, hit)`` where ``points`` is ``(K, 3)`` (the nearest positive-ray
-        intersection, NaN where ``hit`` is False) and ``hit`` is a ``(K,)`` bool
-        mask marking rays that meet the ellipsoid at a positive ray parameter.
-    """
-    origin = np.broadcast_to(np.asarray(origin_km, dtype=float), np.shape(direction))
-    points = spatial.ray_intersect_ellipsoid(np.asarray(direction, dtype=float), np.ascontiguousarray(origin))
-    hit = np.all(np.isfinite(points), axis=-1)
-    return points, hit
-
-
-def _satellite_from_subpoint_batch(
-    subsatellite_lat_deg: np.ndarray, subsatellite_lon_deg: np.ndarray, satellite_radius_km: np.ndarray
-) -> np.ndarray:
-    """Satellite ECEF positions (km) from the L1B sub-point and radius, ``(N,)`` -> ``(N, 3)``.
-
-    L1B ``Subsatellite_Latitude``/``Longitude`` is the geodetic sub-point of the
-    spacecraft (curryer's ``subobserver_point``, the geodetic coordinates of the
-    spacecraft position), so the spacecraft lies on the ellipsoid normal ``n`` through
-    the surface point ``s`` there: ``sat = s + h n`` for its geodetic height ``h``. L1B
-    carries ``|sat|`` (``Radius_of_Satellite_from_Center_of_Earth``) rather than ``h``,
-    so ``h`` is the positive root of ``|s + h n|^2 = R^2``::
-
-        h = -(s . n) + sqrt((s . n)^2 - |s|^2 + R^2)
-
-    Closed form; the root is real and positive because ``R`` exceeds the ellipsoid's
-    semi-major axis (:func:`_valid_spacecraft`).
-    """
-    surface = _geodetic_to_ecef_batch(subsatellite_lat_deg, subsatellite_lon_deg, np.zeros_like(subsatellite_lat_deg))
-    normal = _ellipsoid_normal_batch(subsatellite_lat_deg, subsatellite_lon_deg)
-    s_dot_n = np.sum(surface * normal, axis=1)
-    radius = np.asarray(satellite_radius_km, dtype=float)
-    height = -s_dot_n + np.sqrt(s_dot_n * s_dot_n - np.sum(surface * surface, axis=1) + radius * radius)
-    return surface + height[:, None] * normal
-
-
-def _viewing_geometry_batch(
-    lat: np.ndarray,
-    lon: np.ndarray,
-    sub_lat: np.ndarray,
-    sub_lon: np.ndarray,
-    satellite_radius_km: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Vectorized :func:`_viewing_geometry` over ``N`` footprints.
-
-    Returns ``(satellite (N,3), boresight_direction (N,3))``.
-
-    Raises
-    ------
-    MissingGeolocationError
-        If any footprint is not visible from its satellite: the boresight ray's first
-        ground intersection lands more than :data:`_VISIBILITY_TOLERANCE_KM` from the
-        reported footprint, i.e. the footprint lies beyond the satellite's horizon.
-    """
-    satellite = _satellite_from_subpoint_batch(sub_lat, sub_lon, satellite_radius_km)
-    ground = _geodetic_to_ecef_batch(lat, lon, np.zeros_like(lat))
-    to_ground = ground - satellite
-    boresight_direction = to_ground / np.linalg.norm(to_ground, axis=1, keepdims=True)
-
-    first_hit, hit = _ray_ellipsoid_intersection_batch(satellite, boresight_direction)
-    with np.errstate(invalid="ignore"):
-        visible = hit & (np.linalg.norm(first_hit - ground, axis=1) <= _VISIBILITY_TOLERANCE_KM)
-    if not np.all(visible):
-        raise MissingGeolocationError(
-            f"{int(np.count_nonzero(~visible))} footprint(s) are not visible from the satellite placed by their "
-            "subsatellite point and radius (beyond its horizon): inconsistent geolocation."
-        )
-    return satellite, boresight_direction
-
-
-def _scan_frame_axes_batch(boresight_direction: np.ndarray, satellite_km: np.ndarray) -> np.ndarray:
-    """Vectorized :func:`_scan_frame_axes`: the ``(N, 3)`` cross-scan rotation axes."""
-    nadir = -satellite_km / np.linalg.norm(satellite_km, axis=1, keepdims=True)
-    cross_axis = np.cross(nadir, boresight_direction)
-    norm = np.linalg.norm(cross_axis, axis=1)
-    degenerate = norm < 1.0e-9
-    with np.errstate(invalid="ignore", divide="ignore"):
-        unit = cross_axis / norm[:, None]
-    return np.where(degenerate[:, None], _arbitrary_tangent_batch(boresight_direction), unit)
-
-
-def _offset_ray_direction_batch(
-    boresight_direction: np.ndarray, cross_axis: np.ndarray, delta_deg: np.ndarray, beta_deg: np.ndarray
-) -> np.ndarray:
-    """Vectorized :func:`_offset_ray_direction` (along-scan then cross-scan rotation)."""
-    along = _rotate_batch(boresight_direction, cross_axis, np.radians(delta_deg))
-    inplane_axis = np.cross(cross_axis, along)
-    return _rotate_batch(along, inplane_axis, np.radians(beta_deg))
-
-
-def _grazing_points_batch(
-    satellite: np.ndarray,
-    boresight_direction: np.ndarray,
-    cross_axis: np.ndarray,
-    delta_deg: np.ndarray,
-    beta_deg: np.ndarray,
-) -> np.ndarray:
-    """Vectorized limb-clip: the miss-bisection branch of :func:`_perimeter_point`.
-
-    For each ray that missed the ellipsoid at its full extent, bisects the angular
-    fraction back toward the boresight until it just grazes the limb, returning the
-    grazing ground intersection.
-    """
-    k = satellite.shape[0]
-    lo = np.zeros(k)
-    hi = np.ones(k)
-    for _ in range(40):
-        mid = 0.5 * (lo + hi)
-        probe = _offset_ray_direction_batch(boresight_direction, cross_axis, delta_deg * mid, beta_deg * mid)
-        _, hit = _ray_ellipsoid_intersection_batch(satellite, probe)
-        lo = np.where(hit, mid, lo)
-        hi = np.where(hit, hi, mid)
-    grazing = _offset_ray_direction_batch(boresight_direction, cross_axis, delta_deg * lo, beta_deg * lo)
-    points, _ = _ray_ellipsoid_intersection_batch(satellite, grazing)
-    return points
-
-
-def bounding_box_from_points_batch(
-    center_lat_deg: np.ndarray,
-    center_lon_deg: np.ndarray,
-    lats: np.ndarray,
-    lons: np.ndarray,
-    truncated: np.ndarray,
-) -> list[BoundingBox]:
-    """Vectorized :func:`bounding_box_from_points` over ``N`` footprints.
-
-    ``center_lat_deg``/``center_lon_deg`` are ``(N,)``; ``lats``/``lons`` are ``(N, S)``
-    perimeter samples; ``truncated`` is ``(N,)``. Returns one :class:`BoundingBox` per
-    footprint, with identical pole-enclosure, dateline, and polar-advisory handling to
-    the scalar assembler.
-    """
-    geod = _wgs84_geod()
-    n, s = lats.shape
-
-    # Pole-enclosure reach: geodesic distance from each center to every perimeter point.
-    center_lat_rep = np.repeat(center_lat_deg, s)
-    center_lon_rep = np.repeat(center_lon_deg, s)
-    _, _, reach = geod.inv(
-        _pyproj_seq(center_lon_rep),
-        _pyproj_seq(center_lat_rep),
-        _pyproj_seq(lons.reshape(-1)),
-        _pyproj_seq(lats.reshape(-1)),
-    )
-    max_reach = np.asarray(reach, dtype=float).reshape(n, s).max(axis=1)
-    north = np.full(n, 90.0)
-    south = np.full(n, -90.0)
-    _, _, dist_north = geod.inv(
-        _pyproj_seq(center_lon_deg), _pyproj_seq(center_lat_deg), _pyproj_seq(center_lon_deg), _pyproj_seq(north)
-    )
-    _, _, dist_south = geod.inv(
-        _pyproj_seq(center_lon_deg), _pyproj_seq(center_lat_deg), _pyproj_seq(center_lon_deg), _pyproj_seq(south)
-    )
-    encloses_north = np.asarray(dist_north, dtype=float) <= max_reach
-    encloses_south = np.asarray(dist_south, dtype=float) <= max_reach
-
-    lat_min = lats.min(axis=1)
-    lat_max = lats.max(axis=1)
-
-    # Dateline: choose the [-180,180) or [0,360) representation with the smaller span.
-    span_signed = lons.max(axis=1) - lons.min(axis=1)
-    lons_360 = lons % 360.0
-    span_360 = lons_360.max(axis=1) - lons_360.min(axis=1)
-    use_360 = span_360 < span_signed - _LON_SPAN_TIE_TOL_DEG
-    lon_min = np.where(use_360, lons_360.min(axis=1), lons.min(axis=1))
-    lon_max = np.where(use_360, lons_360.max(axis=1), lons.max(axis=1))
-    wraps = use_360 & (lon_max > 180.0)
-
-    is_polar = (np.abs(lat_min) >= POLAR_LATITUDE_THRESHOLD_DEG) | (np.abs(lat_max) >= POLAR_LATITUDE_THRESHOLD_DEG)
-    truncated = np.asarray(truncated, dtype=bool)
-
-    boxes: list[BoundingBox] = []
-    for m in range(n):
-        if encloses_north[m]:
-            boxes.append(BoundingBox(float(lat_min[m]), 90.0, -180.0, 180.0, False, True, bool(truncated[m])))
-        elif encloses_south[m]:
-            boxes.append(BoundingBox(-90.0, float(lat_max[m]), -180.0, 180.0, False, True, bool(truncated[m])))
-        else:
-            boxes.append(
-                BoundingBox(
-                    float(lat_min[m]),
-                    float(lat_max[m]),
-                    float(lon_min[m]),
-                    float(lon_max[m]),
-                    bool(wraps[m]),
-                    bool(is_polar[m]),
-                    bool(truncated[m]),
-                )
-            )
-    return boxes
-
-
-def compute_footprint_bounding_boxes(
-    boresight_lat_deg: np.ndarray,
-    boresight_lon_deg: np.ndarray,
-    subsatellite_lat_deg: np.ndarray,
-    subsatellite_lon_deg: np.ndarray,
-    *,
-    satellite_radius_km: np.ndarray,
-    fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
-    n_samples: int = _N_PERIMETER_SAMPLES,
-) -> list[BoundingBox | None]:
-    """Batched :func:`compute_footprint_bounding_box` over ``N`` footprints.
-
-    Vectorizes the entire scalar pipeline (viewing geometry, PSF perimeter ray-trace,
-    box assembly) over arrays of ``N`` footprints so the per-footprint pyproj / rotation
-    work is amortized across the whole segment. Numerically equivalent to calling the
-    scalar entry point per footprint with ``on_limb="flag"`` (validated in the tests).
-
-    Off-Earth views -- those the scalar path raises :class:`OffLimbError` for (a fill,
-    non-finite or out-of-range boresight latitude/longitude) -- are returned as ``None``
-    at their index rather than raising, so the caller can flag them per footprint. Corner
-    rays that run off the limb at a severe angle are truncated at the horizon and the
-    box's ``truncated`` flag is set, exactly like ``on_limb="flag"``. Missing ephemeris
-    fields or a footprint not visible from its satellite raises
-    :class:`MissingGeolocationError` for the whole call instead of hiding among the
-    ``None`` entries.
-
-    Parameters
-    ----------
-    boresight_lat_deg, boresight_lon_deg : np.ndarray
-        Per-footprint boresight centroids (L1B ``Latitude``/``Longitude``), degrees.
-    subsatellite_lat_deg, subsatellite_lon_deg : np.ndarray
-        Per-footprint geodetic spacecraft sub-points (L1B ``Subsatellite_Latitude`` /
-        ``Subsatellite_Longitude``), degrees.
-    satellite_radius_km : np.ndarray
-        Per-footprint spacecraft distance from Earth's center (L1B
-        ``Radius_of_Satellite_from_Center_of_Earth``), km.
-    fov_halfangle_deg : float, optional
-        Instrument FOV half-angle floor on the PSF extent, degrees.
-    n_samples : int, optional
-        Number of PSF-perimeter samples. Defaults to :data:`_N_PERIMETER_SAMPLES`.
-
-    Returns
-    -------
-    list[BoundingBox | None]
-        One entry per input footprint, in input order. ``None`` marks an off-Earth view
-        (the scalar :class:`OffLimbError` case).
-
-    Raises
-    ------
-    MissingGeolocationError
-        If any footprint's subsatellite point or radius is unusable, or any footprint is
-        not visible from its satellite.
-    """
-    lat = np.asarray(boresight_lat_deg, dtype=float)
-    lon = np.asarray(boresight_lon_deg, dtype=float)
-    sub_lat = np.asarray(subsatellite_lat_deg, dtype=float)
-    sub_lon = np.asarray(subsatellite_lon_deg, dtype=float)
-    radius = np.broadcast_to(np.asarray(satellite_radius_km, dtype=float), lat.shape)
-    n_total = lat.size
-
-    # Missing ephemeris is bad input, not an off-Earth view: fail loudly, as the scalar
-    # path's MissingGeolocationError does, rather than hide it among the Nones.
-    spacecraft_ok = _valid_spacecraft(sub_lat, sub_lon, radius)
-    if not np.all(spacecraft_ok):
-        raise MissingGeolocationError(
-            f"{int(np.count_nonzero(~spacecraft_ok))} footprint(s) have a fill/non-finite/out-of-range "
-            "subsatellite point or radius."
-        )
-    # Off-Earth views are exactly the scalar OffLimbError condition: a missing boresight.
-    valid = _valid_boresight(lat, lon)
-
-    boxes: list[BoundingBox | None] = [None] * n_total
-    idx = np.nonzero(valid)[0]
-    if idx.size == 0:
-        return boxes
-
-    la, lo_ = lat[idx], lon[idx]
-    m = idx.size
-
-    satellite, boresight_direction = _viewing_geometry_batch(la, lo_, sub_lat[idx], sub_lon[idx], radius[idx])
-
-    # PSF angular extents: static across footprints (same as the scalar path), with the
-    # FOV floor and outward safety margin applied.
-    psf_extent = psf_95_energy_extent()
-    along_extent_deg = max(conservative_along_scan_extent(psf_extent), fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
-    cross_extent_deg = max(psf_extent.beta_max_deg, fov_halfangle_deg) * (1.0 + BBOX_MARGIN_FRACTION)
-
-    cross_axis = _scan_frame_axes_batch(boresight_direction, satellite)
-
-    delta_deg, beta_deg = _perimeter_angles(along_extent_deg, cross_extent_deg, n_samples)  # (S,), (S,)
-
-    # (M, S, 3) perimeter ray directions and their ellipsoid intersections.
-    directions = _offset_ray_direction_batch(
-        boresight_direction[:, None, :], cross_axis[:, None, :], delta_deg[None, :], beta_deg[None, :]
-    )
-    origin = np.broadcast_to(satellite[:, None, :], directions.shape)
-    points, hit = _ray_ellipsoid_intersection_batch(origin.reshape(-1, 3), directions.reshape(-1, 3))
-    hit = hit.reshape(m, n_samples)
-    points = points.reshape(m, n_samples, 3)
-    missed = ~hit
-
-    # Limb-clip the rays that missed (their box corner is off the Earth): bisect each to
-    # its grazing direction. Handled as one flattened sub-batch of the missed entries.
-    if np.any(missed):
-        missed_flat = missed.reshape(-1)
-        sel = np.nonzero(missed_flat)[0]
-        bore_full = np.broadcast_to(boresight_direction[:, None, :], (m, n_samples, 3)).reshape(-1, 3)[sel]
-        cross_full = np.broadcast_to(cross_axis[:, None, :], (m, n_samples, 3)).reshape(-1, 3)[sel]
-        sat_full = np.broadcast_to(satellite[:, None, :], (m, n_samples, 3)).reshape(-1, 3)[sel]
-        delta_full = np.broadcast_to(delta_deg[None, :], (m, n_samples)).reshape(-1)[sel]
-        beta_full = np.broadcast_to(beta_deg[None, :], (m, n_samples)).reshape(-1)[sel]
-        grazing = _grazing_points_batch(sat_full, bore_full, cross_full, delta_full, beta_full)
-        flat_points = points.reshape(-1, 3)
-        flat_points[sel] = grazing
-        points = flat_points.reshape(m, n_samples, 3)
-
-    perimeter_lat, perimeter_lon, _ = _ecef_to_geodetic_batch(points.reshape(-1, 3))
-    perimeter_lat = perimeter_lat.reshape(m, n_samples)
-    perimeter_lon = perimeter_lon.reshape(m, n_samples)
-    truncated = np.any(missed, axis=1)
-
-    sub_boxes = bounding_box_from_points_batch(la, lo_, perimeter_lat, perimeter_lon, truncated)
-    for k, i in enumerate(idx):
-        boxes[int(i)] = sub_boxes[k]
-    return boxes
-
-
-# ---------------------------------------------------------------------------
-# Shared viewing frame: computed once per footprint, reused by the PSF weigher
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ViewingFrame:
-    """Per-footprint radiometer viewing frame, batched over ``N`` footprints.
-
-    The angular-frame PSF projection (:func:`project_to_angular`) needs, per footprint,
-    the satellite ECEF position and the three orthonormal look axes ``(b_hat, c_hat,
-    n_hat)``. Building them per footprint repeats :func:`_viewing_geometry`. This struct holds all ``N``
-    frames computed together (:func:`compute_viewing_frames`) so the orchestrator can
-    build them in one batched call and hand each footprint its slice via
-    :meth:`for_index`, keeping the per-footprint projection frame-free.
-
-    Attributes
-    ----------
-    satellite : np.ndarray
-        ``(N, 3)`` satellite ECEF positions, km.
-    b_hat : np.ndarray
-        ``(N, 3)`` boresight look-direction unit vectors (``delta = beta = 0``).
-    c_hat : np.ndarray
-        ``(N, 3)`` cross-scan unit axes (perpendicular to the scan plane).
-    n_hat : np.ndarray
-        ``(N, 3)`` in-scan-plane unit axes (``= c_hat x b_hat``).
-    """
-
-    satellite: np.ndarray
-    b_hat: np.ndarray
-    c_hat: np.ndarray
-    n_hat: np.ndarray
-
-    def __len__(self) -> int:
-        return int(self.satellite.shape[0])
-
-    def for_index(self, i: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Return the single-footprint ``(satellite, b_hat, c_hat, n_hat)`` at index ``i``."""
-        return self.satellite[i], self.b_hat[i], self.c_hat[i], self.n_hat[i]
-
-
-def compute_viewing_frames(
-    boresight_lat_deg: np.ndarray,
-    boresight_lon_deg: np.ndarray,
-    subsatellite_lat_deg: np.ndarray,
-    subsatellite_lon_deg: np.ndarray,
-    *,
-    satellite_radius_km: np.ndarray,
-) -> ViewingFrame:
-    """Build every footprint's :class:`ViewingFrame` in one batched call.
-
-    Vectorized companion to the frame construction inside :func:`project_to_angular`.
-    Reproduces it exactly (same viewing geometry, same orthonormal basis) so a frame
-    fed back into :func:`project_to_angular` yields identical ``(delta, beta)`` to the
-    inline path -- validated in the tests.
-
-    Parameters
-    ----------
-    boresight_lat_deg, boresight_lon_deg : np.ndarray
-        Per-footprint boresight centroids, degrees.
-    subsatellite_lat_deg, subsatellite_lon_deg : np.ndarray
-        Per-footprint geodetic spacecraft sub-points (L1B ``Subsatellite_Latitude`` /
-        ``Subsatellite_Longitude``), degrees.
-    satellite_radius_km : np.ndarray
-        Per-footprint spacecraft distance from Earth's center (L1B
-        ``Radius_of_Satellite_from_Center_of_Earth``), km.
-
-    Returns
-    -------
-    ViewingFrame
-        The ``N`` batched frames.
-
-    Raises
-    ------
-    MissingGeolocationError
-        If any footprint's ephemeris fields are unusable or the footprint is not visible
-        from its satellite.
-    """
-    lat = np.asarray(boresight_lat_deg, dtype=float)
-    lon = np.asarray(boresight_lon_deg, dtype=float)
-    sub_lat = np.asarray(subsatellite_lat_deg, dtype=float)
-    sub_lon = np.asarray(subsatellite_lon_deg, dtype=float)
-    radius = np.broadcast_to(np.asarray(satellite_radius_km, dtype=float), lat.shape)
-    if not np.all(_valid_spacecraft(sub_lat, sub_lon, radius)):
-        raise MissingGeolocationError("Fill/non-finite/out-of-range subsatellite point or radius.")
-
-    satellite, boresight_direction = _viewing_geometry_batch(lat, lon, sub_lat, sub_lon, radius)
-    b_hat = boresight_direction / np.linalg.norm(boresight_direction, axis=1, keepdims=True)
-    c_hat = _scan_frame_axes_batch(boresight_direction, satellite)
-    c_hat = c_hat / np.linalg.norm(c_hat, axis=1, keepdims=True)
-    n_hat = np.cross(c_hat, b_hat)
-    return ViewingFrame(satellite=satellite, b_hat=b_hat, c_hat=c_hat, n_hat=n_hat)
-
-
-# ---------------------------------------------------------------------------
-# Inverse projection: ground lat/lon -> radiometer angular frame (delta, beta)
-# ---------------------------------------------------------------------------
+    return _geodetic_to_ecef(lats, lons, 0.0)
 
 
 def project_to_angular(
     cell_lats_deg: np.ndarray,
     cell_lons_deg: np.ndarray,
-    boresight_lat_deg: float,
-    boresight_lon_deg: float,
-    subsatellite_lat_deg: float,
-    subsatellite_lon_deg: float,
     *,
+    frame: ViewingFrame | None = None,
+    boresight_lat_deg: float | None = None,
+    boresight_lon_deg: float | None = None,
+    subsatellite_lat_deg: float | None = None,
+    subsatellite_lon_deg: float | None = None,
     satellite_radius_km: float | None = None,
-    frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
     cell_ecef_km: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Project ground grid cells into the radiometer's angular frame ``(delta, beta)``.
@@ -1237,11 +1101,13 @@ def project_to_angular(
     coordinates the CERES PSF :func:`libera_utils.footprint_matching.psf.psf_weight`
     is a function of (CERES ATBD v2.2 §4.4.2.3, Eq. 4.4-8).
 
+    Pass either a precomputed single-footprint ``frame`` or the footprint's geolocation
+    (all of ``boresight_lat_deg``, ``boresight_lon_deg``, ``subsatellite_lat_deg``,
+    ``subsatellite_lon_deg`` and ``satellite_radius_km``), from which the frame is built.
+
     Method
     ------
-    We reconstruct the same satellite viewing frame the bounding-box code builds
-    (:func:`_viewing_geometry` + :func:`_scan_frame_axes`), giving three orthonormal
-    axes:
+    The viewing frame (:func:`compute_viewing_frames`) gives three orthonormal axes:
 
     * ``b_hat`` -- the boresight look direction (``delta = beta = 0``),
     * ``c_hat`` -- the cross-scan axis (perpendicular to the scan plane),
@@ -1256,32 +1122,26 @@ def project_to_angular(
         beta  = asin(-look . c_hat)
         delta = atan2(look . n_hat, look . b_hat)
 
-    Since the elongation of the footprint at oblique viewing is captured by projecting
-    the *actual* ground cells to satellite angles, no separate viewing-zenith stretch
-    factor is needed (unlike the radial stand-in).
+    The elongation of the footprint at oblique viewing is captured by projecting the
+    *actual* ground cells to satellite angles, so no viewing-zenith stretch factor is
+    needed.
 
     Parameters
     ----------
     cell_lats_deg, cell_lons_deg : np.ndarray
         Grid-cell latitudes and longitudes in degrees (any common shape). Assumed on
         the surface (ellipsoidal height 0).
-    boresight_lat_deg, boresight_lon_deg : float
+    frame : ViewingFrame, optional
+        A precomputed single-footprint frame, as returned by
+        :meth:`ViewingFrame.for_index`. When given, the geolocation arguments are ignored.
+    boresight_lat_deg, boresight_lon_deg : float, optional
         Footprint boresight centroid, degrees (``delta = beta = 0`` anchor).
-    subsatellite_lat_deg, subsatellite_lon_deg : float
+    subsatellite_lat_deg, subsatellite_lon_deg : float, optional
         Geodetic spacecraft sub-point (L1B ``Subsatellite_Latitude``/``Longitude``),
         degrees.
     satellite_radius_km : float, optional
         Spacecraft distance from Earth's center (L1B
-        ``Radius_of_Satellite_from_Center_of_Earth``), km. Required unless ``frame`` is
-        given, and ignored when it is.
-    frame : tuple of np.ndarray, optional
-        A precomputed ``(satellite, b_hat, c_hat, n_hat)`` viewing frame for this
-        footprint (each a length-3 array), as produced per footprint by
-        :func:`compute_viewing_frames` / :meth:`ViewingFrame.for_index`. When supplied,
-        the per-footprint :func:`_viewing_geometry` reconstruction is skipped and the
-        frame is used directly -- the boresight / subsatellite / radius arguments are
-        then unused. Passing the
-        frame the orchestrator already batched avoids recomputing it once per footprint.
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
     cell_ecef_km : np.ndarray, optional
         Precomputed surface ECEF (km) of the cells, ``(N, 3)`` in ``cell_lats_deg.ravel()``
         order (i.e. exactly :func:`surface_cell_ecef_km`). A tile's cell geometry is
@@ -1299,43 +1159,47 @@ def project_to_angular(
     Raises
     ------
     ValueError
-        If neither ``frame`` nor ``satellite_radius_km`` is given.
+        If neither ``frame`` nor the full geolocation is given, or ``frame`` does not
+        hold exactly one footprint.
     MissingGeolocationError
         If the ephemeris fields are unusable or the footprint is not visible from the
         satellite.
+    OffLimbError
+        If the boresight latitude or longitude is fill, non-finite or out of range.
     """
     lats = np.asarray(cell_lats_deg, dtype=float)
     lons = np.asarray(cell_lons_deg, dtype=float)
     shape = lats.shape
 
-    if frame is not None:
-        # Use the frame the orchestrator batched (identical to the inline construction).
-        satellite, b_hat, c_hat, n_hat = frame
-    else:
-        if satellite_radius_km is None:
-            raise ValueError("project_to_angular needs satellite_radius_km when no frame is given.")
-        if not _valid_spacecraft(subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km):
-            raise MissingGeolocationError("Fill/non-finite/out-of-range subsatellite point or radius.")
-        # Rebuild the satellite viewing frame for this footprint (same construction the
-        # bounding-box path uses, so the projection is consistent with it).
-        satellite, boresight_direction = _viewing_geometry(
-            boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km
+    if frame is None:
+        geolocation = {
+            "boresight_lat_deg": boresight_lat_deg,
+            "boresight_lon_deg": boresight_lon_deg,
+            "subsatellite_lat_deg": subsatellite_lat_deg,
+            "subsatellite_lon_deg": subsatellite_lon_deg,
+            "satellite_radius_km": satellite_radius_km,
+        }
+        missing = [name for name, value in geolocation.items() if value is None]
+        if missing:
+            raise ValueError(f"project_to_angular needs a frame or the footprint geolocation; missing {missing}.")
+        frame = compute_viewing_frames(
+            boresight_lat_deg,
+            boresight_lon_deg,
+            subsatellite_lat_deg,
+            subsatellite_lon_deg,
+            satellite_radius_km=satellite_radius_km,
         )
-        b_hat = _unit(boresight_direction)
-        c_hat = _unit(_scan_frame_axes(boresight_direction, satellite))
-        # In-plane axis: unit because c_hat is perpendicular to b_hat (cross-scan axis is
-        # built as a cross product with the boresight), and both are unit vectors.
-        n_hat = np.cross(c_hat, b_hat)
+    if len(frame) != 1:
+        raise ValueError(f"frame must hold exactly one footprint (use ViewingFrame.for_index), got {len(frame)}.")
+    satellite, b_hat, c_hat, n_hat = frame.satellite[0], frame.b_hat[0], frame.c_hat[0], frame.n_hat[0]
 
     # Geodetic -> ECEF (km) for every cell center (cells sit on the ellipsoid). This
-    # depends only on the cell coordinates, not
-    # the frame, so an already-computed value (shared across footprints on the same tile) is
-    # used when supplied and recomputed otherwise -- identical either way.
+    # depends only on the cell coordinates, not the frame, so an already-computed value
+    # (shared across footprints on the same tile) is used when supplied.
     cells_km = cell_ecef_km if cell_ecef_km is not None else surface_cell_ecef_km(lats, lons)  # (M, 3)
 
     # Unit look vector from the satellite toward each cell.
-    look = cells_km - satellite
-    look /= np.linalg.norm(look, axis=1, keepdims=True)
+    look = _unit(cells_km - satellite)
 
     # Read the angles off the orthonormal basis (the exact inverse of the forward map).
     # The forward beta-rotation in _offset_ray_direction is about (c_hat x along), which

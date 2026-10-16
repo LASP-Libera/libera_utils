@@ -152,7 +152,7 @@ def psf_weight(delta_deg: np.ndarray, beta_deg: np.ndarray) -> np.ndarray:
     """Evaluate the CERES PSF P(delta', beta) -- ATBD Eq. 4.4-1.
 
     ``delta_deg`` is the *geometric* along-scan angle (e.g. what
-    :mod:`geometry` produces by perturbing the cone angle); the radiometric
+    :func:`~libera_utils.footprint_matching.geometry.project_to_angular` returns); the radiometric
     centroid shift is applied internally as delta' = delta + Delta-delta, and the
     PSF is evaluated at delta'.
 
@@ -231,10 +231,7 @@ def psf_95_energy_extent(
 
     This finds the smallest set of grid cells (by descending energy density) whose
     cumulative PSF energy reaches ``energy_fraction``, then reports how far that set
-    reaches in delta and beta. It sizes the *extent* directly from a fine,
-    fully-vectorized grid evaluation rather than from the slow per-bin
-    ``dblquad`` pre-integration (which is only needed later for PSF-weighted
-    aggregation, not for the bounding box).
+    reaches in delta and beta, from a fine, fully-vectorized grid evaluation.
 
     "Energy" here is P(delta, beta) * cos(beta): the cos(beta) factor is the
     spherical-area Jacobian from ATBD Eq. 4.4-18, weighting each angular cell by the
@@ -296,12 +293,14 @@ def psf_95_energy_extent(
 
 
 def static_fov_extent(fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG) -> PSFAngularExtent:
-    """Angular extent of the uniform "static" FOV used when the scanner is stationary.
+    """Angular extent of the uniform "static" FOV, the response of a stationary scanner.
 
     When the cone-angle rate is zero (scan turnarounds), there is no time-response
     tail -- the instrument simply integrates uniformly over its circular optical
     field of view (design doc section 2.4.2.2). The extent is then just the FOV
-    half-angle in every direction.
+    half-angle in every direction. The bounding box does not take the cone-angle rate,
+    so it applies the FOV half-angle as a floor on the PSF extent instead of switching to
+    this extent.
 
     Parameters
     ----------
