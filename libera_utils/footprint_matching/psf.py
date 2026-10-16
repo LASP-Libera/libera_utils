@@ -36,9 +36,11 @@ import numpy as np
 # =============================================================================
 # INSTRUMENT RESPONSE PARAMETERS  --  CERES STAND-IN
 #
-# TODO[LIBSDC-794]: Everything in THIS block is a CERES placeholder. When the
-# measured Libera PSF lookup table and ground-measured FOV are available, replace
-# this block ONLY. Nothing in geometry.py should need to change, because geometry
+# TODO[LIBSDC-883]: Everything in THIS block is a CERES placeholder. The ATBD
+# coefficients may need correcting to match current CERES practice (the time-response
+# filter frequency is suspect), or the block replaced with a Libera-specific PSF once
+# the measured lookup table and ground-measured FOV are available. Replace this block
+# ONLY. Nothing in geometry.py should need to change, because geometry
 # consumes the PSF solely through the PSFAngularExtent returned by the functions
 # below -- it never sees these constants directly.
 #
@@ -329,11 +331,14 @@ def conservative_along_scan_extent(extent: PSFAngularExtent) -> float:
     data tiles to load) we do not need the exact asymmetry. Taking the larger of the two
     half-extents guarantees the box encloses the footprint regardless of scan direction.
 
-    TODO[LIBSDC-794]: ``Cone_Angle_Rate`` is populated on libera_rad main as the time
+    The PSF weighting, which needs the exact footprint rather than a superset, uses the
+    true (asymmetric) front/back extents for the scan direction and the static FOV for a
+    stationary scanner instead of this conservative maximum.
+
+    TODO[LIBSDC-884]: ``Cone_Angle_Rate`` is populated on libera_rad main as the time
     derivative of curryer's orbital cone angle; libera_rad PR #34 (LIBSDC-739, open)
-    redefines it from the motor encoders, with -999 where the rate is undefined. Once
-    that settles, the PSF weighting can use the true (asymmetric) front/back extents,
-    and the stationary (rate 0) case the static FOV, instead of this conservative maximum.
+    redefines it from the motor encoders, with -999 where the rate is undefined. Adopt
+    that definition once it merges.
 
     Parameters
     ----------

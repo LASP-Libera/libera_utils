@@ -773,6 +773,11 @@ def psf_ground_radius_km(
 # ---------------------------------------------------------------------------
 # Public bounding-box entry points
 # ---------------------------------------------------------------------------
+#
+# TODO[LIBSDC-882]: nothing below is Libera-specific except the PSF extents: rotating
+# the boresight by angular half-extents, ray-tracing the perimeter, clipping at the limb
+# and boxing the result belong in curryer. Once curryer releases that routine, import it
+# here, passing the PSF extents from _box_angular_extents.
 
 
 def compute_footprint_bounding_boxes(

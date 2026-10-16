@@ -243,8 +243,9 @@ class RadiometerFootprint:
         Instrument cone-angle rate (L1B ``Cone_Angle_Rate``), degrees per second:
         negative toward nadir, positive away, 0 when the scanner is stationary. ``None``
         when unavailable.
-        TODO[LIBSDC-794]: make it required once libera_rad PR #34 (LIBSDC-739) settles
-        its definition and fill convention.
+        TODO[LIBSDC-884]: adopt libera_rad PR #34's (LIBSDC-739) definition and fill
+        convention once it merges, and handle a footprint with no usable rate in one
+        stated way: kept, weighted direction-independently, and QA-flagged.
     off_limb : bool
         ``True`` for a space / calibration view whose centroid is off the Earth's limb,
         i.e. one with no Earth footprint (:class:`OffLimbError`). ``bbox`` is then only a
