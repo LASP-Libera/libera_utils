@@ -20,6 +20,13 @@ services:
       context: .
       target: libera-utils-make-kernel-azel
 
+  scene-id:
+    platform: linux/amd64
+    image: libera-utils-scene-id:latest
+    build:
+      context: .
+      target: libera-utils-scene-id
+
   # Tests against the default version of python in the Dockerfile
   tests:
     platform: linux/amd64

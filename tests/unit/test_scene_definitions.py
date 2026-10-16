@@ -5,9 +5,11 @@ import tempfile
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from libera_utils.config import config
-from libera_utils.scene_definitions import Scene, SceneDefinition
+from libera_utils.scene_identification.scene_definitions import Scene, SceneDefinition
+from libera_utils.scene_identification.scene_id import FootprintData, FootprintVariables
 
 
 class TestScene:
@@ -227,6 +229,58 @@ class TestSceneDefinitionLoading:
         assert trmm_def.type != erbe_def.type, "TRMM and ERBE should have different types"
 
 
+class TestViewingGeometryClassificationVariables:
+    """Tests that the viewing-geometry angles are required, bounded classification variables everywhere.
+
+    The three viewing-geometry angles (solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle) were added
+    to every standard scene definition with the full physical range as a placeholder bin. Because those bins are
+    defined (not empty), the angles behave like any other classification variable: they are required inputs, they
+    are validated, and their bin bounds are reported. These tests lock in that behavior so a future change that
+    subdivides the geometry space does not accidentally drop the angles from the required/classification sets.
+    """
+
+    # The full physical range placeholder bins, shared by every scene (degrees). These match the CERES SSF
+    # valid_range attributes and the values written into the scene definition CSVs.
+    GEOMETRY_BINS = {
+        "solar_zenith_angle": (0.0, 180.0),
+        "viewing_zenith_angle": (0.0, 90.0),
+        "relative_azimuth_angle": (0.0, 360.0),
+    }
+
+    @pytest.mark.parametrize(
+        "config_key", ["TRMM_SCENE_DEFINITION", "ERBE_SCENE_DEFINITION", "UNFILTERING_SCENE_DEFINITION"]
+    )
+    def test_geometry_angles_are_required_and_classification_variables(self, config_key):
+        """Every standard definition must require and classify on all three geometry angles."""
+        scene_def = SceneDefinition(pathlib.Path(config.get(config_key)))
+        for variable in self.GEOMETRY_BINS:
+            assert variable in scene_def.required_columns
+            assert variable in scene_def.classification_variables
+
+    @pytest.mark.parametrize(
+        "config_key", ["TRMM_SCENE_DEFINITION", "ERBE_SCENE_DEFINITION", "UNFILTERING_SCENE_DEFINITION"]
+    )
+    def test_every_scene_uses_full_range_geometry_placeholder_bins(self, config_key):
+        """Each scene's geometry bins are the full physical range placeholder (no special-casing needed)."""
+        scene_def = SceneDefinition(pathlib.Path(config.get(config_key)))
+        for scene in scene_def.scenes:
+            for variable, expected_bounds in self.GEOMETRY_BINS.items():
+                assert scene.get_bin_bounds(variable) == expected_bounds
+
+    def test_geometry_bins_reported_by_compute_property_bins(self):
+        """_compute_property_bins emits bounded geometry bins for matched footprints and NaN for unmatched."""
+        scene_def = SceneDefinition(pathlib.Path(config.get("ERBE_SCENE_DEFINITION")))
+        scene_ids = np.array([1, 0])  # one matched scene, one unmatched footprint
+        bins = scene_def._compute_property_bins(scene_ids)
+
+        for variable, (bin_min, bin_max) in self.GEOMETRY_BINS.items():
+            min_name = f"scene_bin_{scene_def.type}_{variable}_min"
+            max_name = f"scene_bin_{scene_def.type}_{variable}_max"
+            # Matched footprint gets the placeholder bounds; unmatched footprint gets NaN.
+            np.testing.assert_array_equal(bins[min_name], [bin_min, np.nan])
+            np.testing.assert_array_equal(bins[max_name], [bin_max, np.nan])
+
+
 class TestPropertyBins:
     """Tests for property bin reporting (min/max bounds alongside scene IDs)."""
 
@@ -278,3 +332,140 @@ class TestPropertyBins:
         bins = scene_definition._compute_property_bins(np.array([1, 2]))
         np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_min"], [np.nan, 50.0])
         np.testing.assert_array_equal(bins["scene_bin_unbounded_cloud_fraction_max"], [50.0, np.nan])
+
+    def test_continuous_bin_bounds_are_float32(self, scene_definition):
+        """Continuous (non-categorical) bin bounds are stored as compact float32, not float64."""
+        bins = scene_definition._compute_property_bins(np.array([1, 4, 0]))
+        # cloud_fraction / optical_depth are continuous, so they use the default float32 storage dtype.
+        assert bins["scene_bin_bins_cloud_fraction_min"].dtype == np.float32
+        assert bins["scene_bin_bins_optical_depth_max"].dtype == np.float32
+
+    def test_surface_type_bin_bounds_are_uint8(self, tmp_path):
+        """surface_type bin bounds are stored as compact uint8; unmatched footprints get 0.
+
+        surface_type is a small categorical code, so its bin bounds are kept as uint8 rather than float32 to save
+        storage. There is no fill value: an unmatched footprint (scene_id 0) simply gets 0 for its bounds, and
+        scene_id == 0 is the authoritative flag that the footprint was not classified.
+        """
+        # Two contiguous bins covering surface_type [0, 6) so the SceneDefinition coverage check passes.
+        csv_content = "scene_id,surface_type_min,surface_type_max\n1,0,3\n2,3,6\n"
+        csv_file = tmp_path / "surface.csv"
+        csv_file.write_text(csv_content)
+        scene_definition = SceneDefinition(csv_file)
+
+        # Two matched footprints (scenes 1 and 2) and one unmatched footprint (scene_id 0).
+        bins = scene_definition._compute_property_bins(np.array([1, 2, 0]))
+
+        min_bounds = bins["scene_bin_surface_surface_type_min"]
+        max_bounds = bins["scene_bin_surface_surface_type_max"]
+
+        # Bounds are stored as compact unsigned bytes.
+        assert min_bounds.dtype == np.uint8
+        assert max_bounds.dtype == np.uint8
+        # Matched footprints report their bounds; the unmatched footprint gets 0 (disambiguated by scene_id 0).
+        np.testing.assert_array_equal(min_bounds, np.array([0, 3, 0], dtype=np.uint8))
+        np.testing.assert_array_equal(max_bounds, np.array([3, 6, 0], dtype=np.uint8))
+
+
+class TestIdentifyAndUpdateGrid:
+    """identify_and_update classifies elementwise over the (CAMERA_TIME, PSEUDOFOOTPRINT) grid of camtime products."""
+
+    def test_two_dimensional_grid_classification(self, tmp_path):
+        """A 2-D (CAMERA_TIME, PSEUDOFOOTPRINT) classification variable yields 2-D scene IDs of the same shape.
+
+        The camtime product is defined on a 2-D grid, so the scene-id mask must match the classification variables'
+        own shape (derived from a reference classification variable rather than from all dataset dims), and the
+        pixel-block bound passthroughs on the same grid must be carried through untouched.
+        """
+        csv_content = "scene_id,cloud_fraction_min,cloud_fraction_max\n1,0.0,50.0\n2,50.0,100.0\n"
+        csv_file = tmp_path / "single.csv"
+        csv_file.write_text(csv_content)
+        scene_definition = SceneDefinition(csv_file)
+
+        grid_dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
+        data = xr.Dataset(
+            {
+                "cloud_fraction": (grid_dims, np.array([[10.0, 60.0], [90.0, 40.0]], dtype=np.float32)),
+                # Pixel-block bound passthrough on the same grid; classification must carry it through untouched.
+                "camera_pixel_x_min": (grid_dims, np.array([[0, 6], [10, 3]], dtype=np.int32)),
+            }
+        )
+
+        updated = scene_definition.identify_and_update(data, report_bin_bounds=False)
+
+        scene_ids = updated["scene_id_single"]
+        # Scene IDs stay 2-D on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid, one per subsection.
+        assert scene_ids.dims == grid_dims
+        np.testing.assert_array_equal(scene_ids.values, np.array([[1, 2], [2, 1]], dtype=np.uint8))
+        # The passthrough variable is carried through untouched.
+        assert updated["camera_pixel_x_min"].dims == grid_dims
+
+
+class TestSceneDefinitionValidation:
+    """Tests for scene definition validation and coverage."""
+
+    def test_overlapping_scenes_detection(self, tmp_path):
+        """Test detection of overlapping scene definitions."""
+        # Create overlapping scene definitions
+        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+1,0.0,60.0,0.0,10.0
+2,40.0,100.0,0.0,10.0
+3,0.0,50.0,5.0,15.0
+4,50.0,100.0,5.0,15.0
+"""
+        csv_file = tmp_path / "overlapping_scenes.csv"
+        csv_file.write_text(csv_content)
+
+        # This should log warnings about overlaps
+        with pytest.raises(ValueError, match="Overlapping scenes detected:"):
+            SceneDefinition(csv_file)
+
+    def test_gap_in_coverage_detection(self, tmp_path):
+        """Test detection of gaps in scene definition coverage."""
+        # Create scene definitions with gaps
+        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+1,0.0,30.0,0.0,10.0
+2,70.0,100.0,0.0,10.0
+3,0.0,30.0,20.0,50.0
+4,70.0,100.0,20.0,50.0
+"""
+        csv_file = tmp_path / "gap_scenes.csv"
+        csv_file.write_text(csv_content)
+
+        with pytest.raises(ValueError, match="Incomplete coverage detected."):
+            SceneDefinition(csv_file)
+
+    def test_unbounded_scene_definitions(self, tmp_path):
+        """Test scene definitions with unbounded ranges."""
+        # Create scenes with unbounded min/max values using very large numbers
+        csv_content = """scene_id,cloud_fraction_min,cloud_fraction_max,optical_depth_min,optical_depth_max
+1,0.0,50.0,0.0,10.0
+2,50.0,100.0,0.0,10.0
+3,0.0,50.0,10.0,9999999.0
+4,50.0,100.0,10.0,9999999.0
+"""
+        csv_file = tmp_path / "unbounded_scenes.csv"
+        csv_file.write_text(csv_content)
+
+        scene_def = SceneDefinition(csv_file)
+
+        # Create data with very large optical depth values
+        data = xr.Dataset(
+            {
+                str(FootprintVariables.CLEAR_AREA): (["footprint"], [75.0, 25.0, 75.0]),
+                str(FootprintVariables.OPTICAL_DEPTH_LOWER): (["footprint"], [5.0, 100.0, 10000.0]),
+                str(FootprintVariables.OPTICAL_DEPTH_UPPER): (["footprint"], [5.0, 200.0, 50000.0]),
+                str(FootprintVariables.CLOUD_FRACTION_LOWER): (["footprint"], [12.5, 37.5, 12.5]),
+                str(FootprintVariables.CLOUD_FRACTION_UPPER): (["footprint"], [12.5, 37.5, 12.5]),
+            }
+        )
+
+        footprint_data = FootprintData(data)
+        footprint_data.identify_scenes([scene_def])
+
+        scene_ids = footprint_data._data[f"scene_id_{scene_def.type}"].values
+
+        # All should be classified
+        assert scene_ids[0] == 1  # cloud=25%, optical=5
+        assert scene_ids[1] == 4  # cloud=75%, optical=150 (high but within "unbounded" range)
+        assert scene_ids[2] == 3  # cloud=25%, optical=30000 (very high but within "unbounded" range)
