@@ -433,8 +433,6 @@ def test_wrong_libera_ids(cli_args):
 )
 def test_scene_id_cli_dispatch(cli_args, config_key, monkeypatch):
     """Each scene-id subcommand dispatches to ``run_algorithm`` with the parsed args and its registry config."""
-    from libera_utils.scene_identification import scene_id_algorithm
-
     called_with = {}
     monkeypatch.setattr(
         scene_id_algorithm,

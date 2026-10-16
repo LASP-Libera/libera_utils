@@ -6,9 +6,13 @@ These confirm the CERES PSF port behaves as the ATBD specifies:
 - zero response outside the optical FOV in the cross-scan direction
 - the 95%-energy angular extent matches the ATBD Table 4.4-2 cutoffs
 - the static FOV and conservative-extent helpers behave as documented
+- the FOV half-angle constant matches the Libera instrument kernel
 """
 
 from __future__ import annotations
+
+import re
+from importlib.resources import files
 
 import numpy as np
 import pytest
@@ -85,3 +89,16 @@ class TestConservativeAlongScanExtent:
     def test_returns_larger_half_extent(self):
         ext = psf.PSFAngularExtent(delta_back_deg=1.2, delta_front_deg=1.5, beta_max_deg=1.0)
         assert psf.conservative_along_scan_extent(ext) == 1.5
+
+
+class TestFovMatchesInstrumentKernel:
+    def test_halfangle_matches_ik_ref_angle(self):
+        # FMATCH loads no kernels, so read the radiometer's (INS-143013011) FOV straight from
+        # the IK text; the constant and the kernel must not drift apart.
+        ik = (files("libera_utils.data") / "spice/jpss4/libera.instruments.ik.ti").read_text()
+        ref_angle = re.search(r"INS-143013011_FOV_REF_ANGLE\s*=\s*([0-9.]+)", ik)
+        units = re.search(r"INS-143013011_FOV_ANGLE_UNITS\s*=\s*'(\w+)'", ik)
+        assert ref_angle is not None
+        assert units is not None
+        assert units.group(1) == "DEGREES"
+        assert float(ref_angle.group(1)) == psf.LIBERA_FOV_HALFANGLE_DEG
