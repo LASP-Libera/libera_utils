@@ -107,14 +107,18 @@ class BoundingBox(tuple):
     lat_min, lat_max : float
         Latitude extent in degrees. ``lat_min < lat_max``.
     lon_min, lon_max : float
-        Longitude extent in degrees. For standard (non-dateline-crossing) boxes,
-        ``lon_min < lon_max``.
+        Longitude extent in degrees, always with ``lon_min <= lon_max``. A box that
+        does not cross the antimeridian is in [-180, 180]. A box that crosses it is
+        given in [0, 360), so ``lon_max > 180`` (e.g. ``179.9`` to ``180.2``); subtract
+        360 from the part above 180 to get signed longitudes. A box enclosing a pole
+        spans the full ``-180`` to ``180``.
     wraps_dateline : bool
-        True when the box straddles the antimeridian (detected when
-        ``lon_max - lon_min > 180°``). The TileManager issues two sub-requests.
+        True when the box crosses the antimeridian, i.e. it is given in the [0, 360)
+        form with ``lon_max > 180``. The TileManager issues two sub-requests.
     is_polar : bool
-        True when the boresight latitude exceeds 85°, triggering a great-circle
-        distance test instead of rectangular bounding box logic.
+        True when the box reaches 85° latitude or beyond, or encloses a pole (then
+        latitude is pinned to +/-90 and longitude spans -180 to 180). Advisory: a
+        lat/lon rectangle is only a coarse fit at such latitudes.
     truncated : bool
         True when the box was clipped at the Earth's limb because the footprint
         ran partly off the edge of the Earth at a severe viewing angle (see
@@ -274,14 +278,11 @@ class RadiometerFootprint:
     :class:`~libera_utils.footprint_matching.camera_segmentation.PseudoFootprint`,
     kept deliberately small so it stays dependency-free here.
 
-    The scan-frame fields the CERES-faithful ``AngularPSFWeigher`` needs
-    (subsatellite point and cone-angle rate) are optional. When they are populated -
-    which the production reader now does from the L1B ``Subsatellite_Latitude`` /
-    ``Subsatellite_Longitude`` / ``Cone_Angle_Rate`` fields - the footprint carries a
-    true ray-traced bounding box (:func:`compute_footprint_bounding_box`) and the
-    angular weigher orients the PSF along the real scan plane. When they are ``None``
-    (e.g. a minimal caller-built dict), the box degrades to the boresight-centered
-    approximation and the angular weigher falls back to a nadir frame.
+    The subsatellite point and satellite radius are required: L1B RAD populates them
+    from the ephemeris for every record, and together with the boresight they fix the
+    satellite viewing frame the ray-traced bounding box
+    (:func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_box`) and
+    the CERES-faithful ``AngularPSFWeigher`` are built on.
 
     Attributes
     ----------
@@ -289,21 +290,21 @@ class RadiometerFootprint:
         Geographic box enclosing the footprint's PSF ground contour.
     latitude, longitude : float
         Boresight centroid (L1B ``Latitude``/``Longitude``), degrees.
-    spacecraft_altitude_km : float
-        Spacecraft altitude above the surface, km (nominal orbit altitude when the L1B
-        field is unavailable). Read only by the PSF geometry; this is the satellite
-        altitude, not a surface/terrain height -- kept explicitly in km and separate
-        from the camera path's metres-valued surface-height output field.
     viewing_zenith_angle : float
         Viewing zenith angle (L1B ``Viewing_Zenith_Surface``), degrees.
-    subsatellite_latitude, subsatellite_longitude : float or None
-        Subsatellite ground point (L1B ``Subsatellite_Latitude`` /
-        ``Subsatellite_Longitude``), degrees. ``None`` when unavailable. Read by the
-        angular weigher (and the ray-traced box) to orient the scan plane.
+    subsatellite_latitude, subsatellite_longitude : float
+        Geodetic sub-point of the spacecraft (L1B ``Subsatellite_Latitude`` /
+        ``Subsatellite_Longitude``), degrees.
+    satellite_radius_km : float
+        Spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km. Not L1B ``Altitude``, which is
+        the height of the boresight's ellipsoid intersection.
     cone_angle_rate : float or None
-        Instrument cone-angle rate (L1B ``Cone_Angle_Rate``), degrees per second.
-        ``None`` when unavailable. Its sign sets the along-scan PSF orientation and a
-        near-zero magnitude flags the stationary-scanner (uniform-FOV) case.
+        Instrument cone-angle rate (L1B ``Cone_Angle_Rate``), degrees per second:
+        negative toward nadir, positive away, 0 when the scanner is stationary. ``None``
+        when unavailable.
+        TODO[LIBSDC-794]: make it required once libera_rad PR #34 (LIBSDC-739) settles
+        its definition and fill convention.
     off_limb : bool
         ``True`` for a space / calibration view whose centroid is off the Earth's limb,
         i.e. one with no Earth footprint (:class:`OffLimbError`). ``bbox`` is then only a
@@ -315,10 +316,10 @@ class RadiometerFootprint:
     bbox: BoundingBox
     latitude: float
     longitude: float
-    spacecraft_altitude_km: float
     viewing_zenith_angle: float
-    subsatellite_latitude: float | None = None
-    subsatellite_longitude: float | None = None
+    subsatellite_latitude: float
+    subsatellite_longitude: float
+    satellite_radius_km: float
     cone_angle_rate: float | None = None
     off_limb: bool = False
 

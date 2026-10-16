@@ -72,19 +72,18 @@ _K3_FREQ: float = 5.83072
 # Libera radiometer field-of-view HALF-angle, in degrees.
 #
 # Source: the Libera instrument kernel
-# ``libera_utils/data/spice/jpss4/libera_v01.instruments.ik.ti`` defines every
-# radiometer (SW/SSW/LW/TOT) with ``FOV_SHAPE = 'CIRCLE'`` and
-# ``FOV_REF_ANGLE = 1.0``. Per the SPICE getfov convention, for a CIRCLE/ANGLES
-# field of view the reference angle is the half-angle (angular radius from the
-# boresight to the cone edge):
+# ``libera_utils/data/spice/jpss4/libera.instruments.ik.ti`` defines one radiometer,
+# INS-143013011 (frame ``LIBERA_RAD_COORD``), shared by the co-aligned SW/SSW/LW/TOT
+# channels, with ``FOV_SHAPE = 'CIRCLE'`` and ``FOV_REF_ANGLE = 1.0``. Per the SPICE
+# getfov convention, for a CIRCLE/ANGLES field of view the reference angle is the
+# half-angle (angular radius from the boresight to the cone edge):
 # https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/C/cspice/getfov_c.html
+# A unit test checks this constant against the IK so the two cannot drift.
 #
 # This is THE single source of truth for the Libera FOV across the pipeline.
 #
-# TODO[LIBSDC-601]: 1.0 deg is a PLACEHOLDER. The kernel itself flags two open
-# questions: (a) whether FOV_REF_ANGLE is a half- or full-angle, and (b) that the
-# ground-measured value is still pending. Confirm both, and ideally read this
-# value directly from the IK via spiceypy.getfov instead of hard-coding it here.
+# TODO[LIBSDC-601]: 1.0 deg is a PLACEHOLDER: the IK notes the ground-measured
+# radiometer FOV is still pending. Update the IK and this constant together.
 LIBERA_FOV_HALFANGLE_DEG: float = 1.0
 
 
@@ -325,15 +324,17 @@ def conservative_along_scan_extent(extent: PSFAngularExtent) -> float:
     """Return a single, scan-direction-independent along-scan half-extent.
 
     The true along-scan footprint is asymmetric and which side is "leading" depends
-    on the scan direction (the sign of the cone-angle rate). In the current L1B
-    product the cone-angle rate is not populated, and for a *bounding box* (a safe
-    superset used only to decide which data tiles to load) we do not need the exact
-    asymmetry anyway. Taking the larger of the two half-extents guarantees the box
-    encloses the footprint regardless of scan direction.
+    on the scan direction: the sign of L1B RAD ``Cone_Angle_Rate``, negative when
+    scanning toward nadir and positive away from it, with a rate of 0 marking a
+    stationary scanner. For a *bounding box* (a safe superset used only to decide which
+    data tiles to load) we do not need the exact asymmetry. Taking the larger of the two
+    half-extents guarantees the box encloses the footprint regardless of scan direction.
 
-    TODO[LIBSDC-794]: once the cone-angle rate is available and the directional
-    pixel-projection step is implemented, the orchestrator can switch to the true
-    (asymmetric) front/back extents instead of this conservative maximum.
+    TODO[LIBSDC-794]: ``Cone_Angle_Rate`` is populated on libera_rad main as the time
+    derivative of curryer's orbital cone angle; libera_rad PR #34 (LIBSDC-739, open)
+    redefines it from the motor encoders, with -999 where the rate is undefined. Once
+    that settles, the PSF weighting can use the true (asymmetric) front/back extents,
+    and the stationary (rate 0) case the static FOV, instead of this conservative maximum.
 
     Parameters
     ----------
