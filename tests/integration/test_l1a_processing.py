@@ -11,6 +11,9 @@ import pytest
 import space_packet_parser as spp
 import xarray as xr
 from cfchecker import cfchecks
+from cloudpathlib import AnyPath
+from space_packet_parser import load_xtce
+from space_packet_parser.xarr import create_dataset
 from space_packet_parser.xtce.validation import validate_xtce
 
 from libera_utils.config import config
@@ -416,6 +419,94 @@ def test_ditl_camera_duplicate_packet_timestamp_deduplicated(
     assert dataset.sizes["PACKET"] == 1509
     _, counts = np.unique(dataset[packet_time_coordinate].values, return_counts=True)
     assert not np.any(counts > 1)
+
+
+def _single_batch_reference(packet_files: list[Path], apid: int, skip_header_bytes: int) -> xr.Dataset:
+    """Every file handed to ``create_dataset`` in one call: the result a per-file parse must reproduce."""
+    definition_path = config.get(get_packet_config(LiberaApid(apid)).packet_definition_config_key)
+    return create_dataset(
+        packet_files=[AnyPath(f) for f in packet_files],
+        xtce_packet_definition=load_xtce(definition_path),
+        generator_kwargs={"skip_header_bytes": skip_header_bytes},
+        packet_filter=lambda packet_bytes: packet_bytes.apid == apid,
+    )[apid].swap_dims({"packet": "PACKET"})
+
+
+def _assert_same_packet_dataset(actual: xr.Dataset, expected: xr.Dataset) -> None:
+    # assert_identical compares string values but not their width, which the accumulator widens.
+    xr.testing.assert_identical(actual, expected)
+    assert {name: var.dtype for name, var in actual.variables.items()} == {
+        name: var.dtype for name, var in expected.variables.items()
+    }
+
+
+_EQUIVALENCE_CASES = pytest.mark.parametrize(
+    ("packet_file_fixtures", "apid", "skip_header_bytes"),
+    [
+        pytest.param(
+            [("test_jpss1_pds_file_1", None), ("test_jpss1_pds_file_2", None), ("test_jpss1_pds_file_3", None)],
+            LiberaApid.jpss_sc_pos.value,
+            0,
+            id="JPSS1_3xPDS",
+        ),
+        pytest.param(
+            [
+                ("test_ditl_demux_path", "LIBERA_SDC_1040_ccsds_2025_318_13_00_00"),
+                ("test_ditl_demux_path", "LIBERA_SDC_1040_ccsds_2025_318_13_20_00"),
+            ],
+            LiberaApid.icie_wfov_sci.value,
+            0,
+            id="DITL_DEMUX_2x1040",
+        ),
+        pytest.param(
+            [("test_ccsds_2025_218_18_37_32", None), ("test_ccsds_2025_218_18_41_30", None)],
+            LiberaApid.icie_rad_sample.value,
+            8,
+            id="ISTR_2x1036",
+        ),
+    ],
+)
+
+
+def _resolve_packet_files(request: pytest.FixtureRequest, packet_file_fixtures: list[tuple[str, str | None]]):
+    """Fixture names, each with an optional file name inside the directory the fixture names."""
+    paths = []
+    for fixture, name in packet_file_fixtures:
+        path = request.getfixturevalue(fixture)
+        paths.append(path / name if name else path)
+    return paths
+
+
+@_EQUIVALENCE_CASES
+def test_per_file_parse_matches_single_batch(packet_file_fixtures, apid, skip_header_bytes, request):
+    packet_files = _resolve_packet_files(request, packet_file_fixtures)
+    definition_path = config.get(get_packet_config(LiberaApid(apid)).packet_definition_config_key)
+    parsed = packets.parse_packets_to_dataset(packet_files, definition_path, apid, skip_header_bytes=skip_header_bytes)
+    _assert_same_packet_dataset(parsed, _single_batch_reference(packet_files, apid, skip_header_bytes))
+
+
+@_EQUIVALENCE_CASES
+def test_max_workers_matches_in_process(packet_file_fixtures, apid, skip_header_bytes, request):
+    # Not strict_warnings: forking a multi-threaded process warns on Python 3.12+.
+    packet_files = _resolve_packet_files(request, packet_file_fixtures)
+    definition_path = config.get(get_packet_config(LiberaApid(apid)).packet_definition_config_key)
+    in_process = packets.parse_packets_to_dataset(
+        packet_files, definition_path, apid, skip_header_bytes=skip_header_bytes
+    )
+    in_workers = packets.parse_packets_to_dataset(
+        packet_files, definition_path, apid, max_workers=2, skip_header_bytes=skip_header_bytes
+    )
+    _assert_same_packet_dataset(in_workers, in_process)
+
+
+def test_l1a_dataset_max_workers_matches_in_process(
+    test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3
+):
+    files = [test_jpss1_pds_file_1, test_jpss1_pds_file_2, test_jpss1_pds_file_3]
+    apid = LiberaApid.jpss_sc_pos.value
+    in_process = packets.parse_packets_to_l1a_dataset(packet_files=files, apid=apid)
+    in_workers = packets.parse_packets_to_l1a_dataset(packet_files=files, apid=apid, max_workers=2)
+    _assert_same_packet_dataset(in_workers.drop_attrs(), in_process.drop_attrs())
 
 
 def test_jpss1_file_order_does_not_change_the_product(
