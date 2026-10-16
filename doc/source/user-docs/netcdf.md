@@ -80,6 +80,39 @@ Give `encoding.chunksizes` as a list of positive integers, one per entry in `dim
 dimension order. Anything else, including a count that does not match, raises `ValidationError`
 when the definition is loaded, so a bad chunk shape fails before any data is processed.
 
+### Compressing chunks on Dask workers
+
+A product computed from Dask arrays under the `dask.distributed` scheduler is otherwise
+compressed one chunk at a time: every block reaches HDF5 through a single write lock, and the
+shuffle and deflate filters run inside it. For a large product that serial compression can be
+most of the run. Passing `worker_compressed_variables`, a tuple of Dask-backed data variable
+names, has the workers shuffle and deflate each of those variables' chunks in parallel. The
+writing process then only stores the compressed bytes with h5py `write_direct_chunk`.
+
+```python
+write_libera_data_product(
+    data_product_definition=product_definition_path,
+    data=dataset,
+    output_path=output_dir,
+    time_variable="CAMERA_TIME",
+    worker_compressed_variables=("Radiance", "Latitude", "Longitude"),
+)
+```
+
+The file reads back the same as a normal write, with the same metadata, chunk shapes and
+filters. The two writes differ only in storage: a chunk equal to the variable's `_FillValue`
+throughout is not stored when that value is also the HDF5 fill value, with the same dtype, and
+HDF5 returns the fill value for it. Every Dask block is computed in one graph, so a task that
+feeds several variables runs once.
+
+It requires the `h5netcdf` engine and an active `distributed.Client`. Each named variable must
+be chunked on disk with deflate, optionally after shuffle, have a numeric dtype, and have Dask
+chunk lengths that are whole multiples of its on-disk chunk lengths. Any other Dask-backed
+variable must be numeric or boolean. Anything else raises `ValueError` before any data is
+computed, though the file already exists by then and is left partly written. A computed block
+whose dtype or shape differs from what its Dask array declared raises `ValueError`, naming the
+variable, when it arrives.
+
 ## Basic Usage
 
 The simplest way to create a valid Libera data product is using the `write_libera_data_product` function:

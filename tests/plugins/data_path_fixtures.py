@@ -272,6 +272,12 @@ def test_product_definition(product_definitions_test_data_path):
 
 
 @pytest.fixture(scope="session")
+def test_worker_compression_product_definition(product_definitions_test_data_path):
+    """Path to a camera-shaped product definition for worker-compressed writes"""
+    return product_definitions_test_data_path / "test_worker_compression_product_definition.yml"
+
+
+@pytest.fixture(scope="session")
 def test_camera_product_definition(product_definitions_test_data_path):
     """Path to a full camera product definition yaml file for unit testing
 

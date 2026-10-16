@@ -1,8 +1,13 @@
 """Unit tests for kernel_maker module"""
 
 import argparse
+import multiprocessing
+import os
+import signal
+import time
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import patch
 
@@ -15,7 +20,7 @@ from cloudpathlib import AnyPath
 from libera_utils import kernel_maker
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier, LiberaApid
-from libera_utils.io.manifest import Manifest, ManifestFileRecord
+from libera_utils.io.manifest import Manifest
 from libera_utils.l1a.l1a_packet_configs import PacketConfiguration
 
 
@@ -151,33 +156,72 @@ def test_create_kernel_from_l1a_missing_encoder_columns_raises(
         )
 
 
-@mock.patch(
-    "libera_utils.io.manifest.Manifest.output_manifest_from_input_manifest", return_value=mock.MagicMock(Manifest)
-)
-@mock.patch(
-    "libera_utils.io.manifest.Manifest.from_file",
-    return_value=mock.MagicMock(Manifest, files=[mock.MagicMock(ManifestFileRecord, filename="/fake/fake_l1a.nc")]),
-)
-@mock.patch("libera_utils.kernel_maker.create_kernel_from_l1a", return_value=AnyPath("/fake/kernel.spk"))
-def test_from_manifest(mock_create_kernel_from_l1a, mock_mani, mock_pedi):
+def _fake_kernel_writer(
+    l1a_dataset: xr.Dataset, failing: str | None = None, killed: str | None = None, blocked: str | None = None
+):
+    """Stand-in for create_kernel_from_l1a that runs in the forked kernel process.
+
+    Checks that it received the parent's Dataset and that CURRYER_TEMP_DIR is its own `output_dir`, then
+    writes a small file named for the kernel into `output_dir` and returns its path. Raises for the
+    `failing` identifier, kills its own process for the `killed` one and sleeps for the `blocked` one.
+    """
+
+    def create_kernel(l1a_data, kernel_identifier, output_dir, overwrite):
+        if l1a_data is not l1a_dataset:
+            raise AssertionError("The kernel process did not receive the L1A Dataset loaded by the parent")
+        if os.environ.get("CURRYER_TEMP_DIR") != str(output_dir):
+            raise AssertionError("The kernel process did not set CURRYER_TEMP_DIR to its own work directory")
+        if kernel_identifier == failing:
+            raise RuntimeError("Test error")
+        if kernel_identifier == killed:
+            os.kill(os.getpid(), signal.SIGKILL)
+        if kernel_identifier == blocked:
+            time.sleep(60)
+        kernel = Path(output_dir) / f"{kernel_identifier.value}.bsp"
+        kernel.write_text(f"overwrite={overwrite}")
+        return kernel
+
+    return create_kernel
+
+
+@pytest.fixture
+def manifest_kernel_run():
+    """Patch the manifest, the L1A read, the kernel cache and kernel creation around create_kernels_from_manifest."""
+    l1a_dataset = xr.Dataset()
+    with (
+        mock.patch.object(kernel_maker, "Manifest") as manifest_class,
+        mock.patch.object(kernel_maker, "_load_l1a_dataset", return_value=l1a_dataset) as load_l1a,
+        mock.patch.object(kernel_maker, "KernelManager") as kernel_manager_class,
+        mock.patch.object(
+            kernel_maker, "create_kernel_from_l1a", side_effect=_fake_kernel_writer(l1a_dataset)
+        ) as create_kernel,
+    ):
+        manifest_class.from_file.return_value = mock.Mock(files=[mock.Mock(filename="l1a_file.nc")])
+        yield SimpleNamespace(
+            l1a_dataset=l1a_dataset,
+            manifest_class=manifest_class,
+            output_manifest=manifest_class.output_manifest_from_input_manifest.return_value,
+            load_l1a=load_l1a,
+            kernel_manager_class=kernel_manager_class,
+            create_kernel=create_kernel,
+        )
+
+
+def test_from_manifest(manifest_kernel_run, tmp_path):
     """Test the kernel maker from manifest function"""
     pedi = kernel_maker.create_kernels_from_manifest(
         input_manifest="/fake/mocked_call.json",
         kernel_product_ids=[DataProductIdentifier.spice_jpss_spk],
-        output_dir="/fake/dropbox",
+        output_dir=tmp_path,
         overwrite=True,
     )
-    assert isinstance(pedi, Manifest)
-    assert pedi is mock_pedi.return_value
-    mock_mani.return_value.validate_checksums.assert_called_once()
-    mock_pedi.assert_called_once_with(mock_mani.return_value)
-    mock_pedi.return_value.add_files.assert_called_once_with(Path("/fake/kernel.spk"))
-    mock_create_kernel_from_l1a.assert_called_once_with(
-        l1a_data="/fake/fake_l1a.nc",
-        kernel_identifier=DataProductIdentifier.spice_jpss_spk,
-        output_dir="/fake/dropbox",
-        overwrite=True,
-    )
+    assert pedi is manifest_kernel_run.output_manifest
+    manifest_kernel_run.manifest_class.from_file.return_value.validate_checksums.assert_called_once()
+    manifest_kernel_run.load_l1a.assert_called_once_with("l1a_file.nc")
+    manifest_kernel_run.kernel_manager_class.return_value.__enter__.assert_called_once()
+    assert (tmp_path / "JPSS-SPK.bsp").read_text() == "overwrite=True"
+    pedi.add_files.assert_called_once_with(tmp_path / "JPSS-SPK.bsp")
+    pedi.write.assert_called_once_with(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -203,59 +247,26 @@ def test_kernel_cli_handler(mock_from_manifest, cli_handler, dpis, monkeypatch):
     )
 
 
-@mock.patch.object(kernel_maker, "create_kernel_from_l1a")
-@mock.patch.object(kernel_maker, "Manifest")
-def test_from_manifest_multi_kernel_processing(mock_manifest_class, mock_create_kernel_from_l1a):
-    """Test that from_manifest correctly creates multiple kernels from a single manifest"""
-    mock_mani = mock.Mock()
-    mock_mani.files = [
-        mock.Mock(filename="l1a_file.nc"),
-    ]
-    mock_manifest_class.from_file.return_value = mock_mani
-    mock_manifest_class.output_manifest_from_input_manifest.return_value = mock.Mock()
-
-    # Mock from_args to return a unique filename for each call
-    mock_create_kernel_from_l1a.side_effect = ["output1.bsp", "output2.bsp"]
-
-    # Call to from_manifest with two DPIs (only one input file per expectations for kernel generation)
-    _ = kernel_maker.create_kernels_from_manifest(
+def test_from_manifest_multi_kernel_processing(manifest_kernel_run, tmp_path):
+    """Test that from_manifest reads the L1A once and creates every requested kernel from it"""
+    pedi = kernel_maker.create_kernels_from_manifest(
         input_manifest="test.manifest",
         kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
-        output_dir="/output",
+        output_dir=tmp_path,
     )
 
-    # Verify that from_args is called with the input file for each DPI
-    assert mock_create_kernel_from_l1a.call_count == 2
-    expected_calls = [
-        mock.call(
-            l1a_data="l1a_file.nc",
-            kernel_identifier="JPSS-SPK",
-            output_dir="/output",
-            overwrite=False,
-        ),
-        mock.call(
-            l1a_data="l1a_file.nc",
-            kernel_identifier="JPSS-CK",
-            output_dir="/output",
-            overwrite=False,
-        ),
-    ]
-    mock_create_kernel_from_l1a.assert_has_calls(expected_calls)
+    manifest_kernel_run.load_l1a.assert_called_once_with("l1a_file.nc")
+    manifest_kernel_run.kernel_manager_class.return_value.__enter__.assert_called_once()
+    assert (tmp_path / "JPSS-SPK.bsp").read_text() == "overwrite=False"
+    assert (tmp_path / "JPSS-CK.bsp").read_text() == "overwrite=False"
+    pedi.add_files.assert_called_once_with(tmp_path / "JPSS-CK.bsp", tmp_path / "JPSS-SPK.bsp")
 
 
-@mock.patch("libera_utils.kernel_maker.logger")
-@mock.patch.object(kernel_maker, "create_kernel_from_l1a")
-@mock.patch.object(kernel_maker, "Manifest")
-def test_from_manifest_exception_handling(mock_manifest_class, create_kernel_from_l1a, mock_logger):
-    """Test that from_manifest handles exceptions properly and continues processing"""
-    mock_mani = mock.Mock()
-    mock_mani.files = [mock.Mock(filename="l1a_file.nc")]
-    mock_manifest_class.from_file.return_value = mock_mani
-    mock_pedi = mock.Mock()
-    mock_manifest_class.output_manifest_from_input_manifest.return_value = mock_pedi
-
-    # Mock from_args to raise exception for first DPI, succeed for second
-    create_kernel_from_l1a.side_effect = [Exception("Test error"), "output2.bsp"]
+def test_from_manifest_exception_handling(manifest_kernel_run, tmp_path):
+    """A kernel that fails does not stop the other kernel; the run then raises without writing a manifest"""
+    manifest_kernel_run.create_kernel.side_effect = _fake_kernel_writer(
+        manifest_kernel_run.l1a_dataset, failing="JPSS-SPK"
+    )
 
     with pytest.raises(
         ValueError,
@@ -264,13 +275,156 @@ def test_from_manifest_exception_handling(mock_manifest_class, create_kernel_fro
         _ = kernel_maker.create_kernels_from_manifest(
             input_manifest="test.manifest",
             kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
-            output_dir="/output",
+            output_dir=tmp_path,
         )
 
-    # Verify exception was logged
-    mock_logger.exception.assert_called_once()
-    # Verify we did not make it to the manifest creation due to the error
-    mock_pedi.add_files.assert_not_called()
+    assert (tmp_path / "JPSS-CK.bsp").exists()
+    assert not (tmp_path / "JPSS-SPK.bsp").exists()
+    manifest_kernel_run.output_manifest.add_files.assert_not_called()
+    manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def test_from_manifest_killed_kernel_process_is_a_failure(manifest_kernel_run, tmp_path, caplog):
+    """A kernel process killed by a signal counts as that kernel failing; the other kernel is still produced"""
+    manifest_kernel_run.create_kernel.side_effect = _fake_kernel_writer(
+        manifest_kernel_run.l1a_dataset, killed="JPSS-SPK"
+    )
+
+    with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'"):
+        _ = kernel_maker.create_kernels_from_manifest(
+            input_manifest="test.manifest",
+            kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+            output_dir=tmp_path,
+        )
+
+    assert "exited with code -9" in caplog.text
+    assert (tmp_path / "JPSS-CK.bsp").exists()
+    manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def test_from_manifest_repeated_kernel_raises(manifest_kernel_run, tmp_path):
+    """A kernel requested twice is rejected before the L1A is read"""
+    with pytest.raises(ValueError, match="repeat a kernel"):
+        kernel_maker.create_kernels_from_manifest(
+            input_manifest="test.manifest",
+            kernel_product_ids=["JPSS-SPK", "JPSS-SPK"],
+            output_dir=tmp_path,
+        )
+    manifest_kernel_run.load_l1a.assert_not_called()
+
+
+def test_from_manifest_without_fork_raises_before_reading_l1a(manifest_kernel_run, tmp_path):
+    """A platform with no fork start method is rejected before the L1A is read or the kernel cache populated"""
+    with mock.patch.object(
+        kernel_maker.multiprocessing, "get_context", side_effect=ValueError("cannot find context for 'fork'")
+    ):
+        with pytest.raises(ValueError, match="cannot find context for 'fork'"):
+            kernel_maker.create_kernels_from_manifest(
+                input_manifest="test.manifest",
+                kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+                output_dir=tmp_path,
+            )
+    manifest_kernel_run.load_l1a.assert_not_called()
+    manifest_kernel_run.kernel_manager_class.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("failing_step", "error"),
+    [
+        ("load_l1a", ValueError("Failed to open or read L1A NetCDF file l1a_file.nc")),
+        ("kernel_manager_class", RuntimeError("Static kernel creation failed")),
+    ],
+)
+def test_from_manifest_shared_setup_failure_raises_before_any_kernel(
+    manifest_kernel_run, tmp_path, failing_step, error
+):
+    """A failure reading the L1A or populating the kernel cache raises before any kernel process starts"""
+    getattr(manifest_kernel_run, failing_step).side_effect = error
+
+    with mock.patch.object(kernel_maker, "multiprocessing") as mock_multiprocessing:
+        with pytest.raises(type(error), match=str(error)):
+            kernel_maker.create_kernels_from_manifest(
+                input_manifest="test.manifest",
+                kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+                output_dir=tmp_path,
+            )
+
+    mock_multiprocessing.get_context.return_value.Process.assert_not_called()
+    manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def test_from_manifest_work_dir_path_too_long_raises(manifest_kernel_run, tmp_path, monkeypatch):
+    """A temp base path that would make a kernel work directory too long for curryer raises before any kernel"""
+    monkeypatch.setenv("LIBERA_TEMP_DIR", str(tmp_path / ("x" * 50)))
+
+    with mock.patch.object(kernel_maker, "multiprocessing") as mock_multiprocessing:
+        with pytest.raises(RuntimeError, match="exceeds limit"):
+            kernel_maker.create_kernels_from_manifest(
+                input_manifest="test.manifest",
+                kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+                output_dir=tmp_path,
+            )
+
+    mock_multiprocessing.get_context.return_value.Process.assert_not_called()
+    manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def test_from_manifest_copy_failure_is_a_failure(manifest_kernel_run, tmp_path):
+    """A kernel that cannot be copied to the output directory counts as that kernel failing"""
+    copy_kernel = kernel_maker.smart_copy_file
+
+    def copy_all_but_spk(source_path, dest_path):
+        if Path(source_path).name == "JPSS-SPK.bsp":
+            raise OSError("Test copy error")
+        return copy_kernel(source_path, dest_path)
+
+    with mock.patch.object(kernel_maker, "smart_copy_file", side_effect=copy_all_but_spk):
+        with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'"):
+            kernel_maker.create_kernels_from_manifest(
+                input_manifest="test.manifest",
+                kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+                output_dir=tmp_path,
+            )
+
+    assert (tmp_path / "JPSS-CK.bsp").exists()
+    assert not (tmp_path / "JPSS-SPK.bsp").exists()
+    manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def test_from_manifest_parent_error_terminates_running_kernel_processes(manifest_kernel_run, tmp_path):
+    """When the parent raises while a kernel process is still running, that process is terminated"""
+    manifest_kernel_run.create_kernel.side_effect = _fake_kernel_writer(
+        manifest_kernel_run.l1a_dataset, blocked="JPSS-SPK"
+    )
+    fork_context = multiprocessing.get_context("fork")
+    started = []
+
+    class SecondStartFails(fork_context.Process):
+        def start(self):
+            if started:
+                raise OSError("Test start error")
+            super().start()
+            started.append(self)
+
+    failing_context = SimpleNamespace(Pipe=fork_context.Pipe, Process=SecondStartFails)
+    with mock.patch.object(kernel_maker.multiprocessing, "get_context", return_value=failing_context):
+        with pytest.raises(OSError, match="Test start error"):
+            kernel_maker.create_kernels_from_manifest(
+                input_manifest="test.manifest",
+                kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+                output_dir=tmp_path,
+            )
+
+    assert started[0].exitcode == -signal.SIGTERM
+    manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def test_load_l1a_dataset_unreadable_file_raises(tmp_path):
+    """A file that is not NetCDF raises ValueError naming the file"""
+    not_netcdf = tmp_path / "not_netcdf.nc"
+    not_netcdf.write_text("not a NetCDF file")
+    with pytest.raises(ValueError, match="Failed to open or read L1A NetCDF file"):
+        kernel_maker._load_l1a_dataset(not_netcdf)
 
 
 @pytest.fixture

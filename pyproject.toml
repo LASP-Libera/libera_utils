@@ -43,6 +43,7 @@ dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
     "lasp-curryer >= 0.5.2, <1.0",
     "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
+    "h5py>=3.0,<4.0",  # Imported directly by io/netcdf.py for worker-compressed writes; h5netcdf also requires it
     "netCDF4>=1.7.0,<2.0.0,!=1.7.3",  # netcdf4 engine support for xarray
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
     "pydantic>2.0.3",
@@ -82,6 +83,7 @@ include = [
 # These specs are totally open because they are only needed for developers
 bandit = "*"
 cfchecker = "*"
+dask = {extras = ["distributed"], version = "*"}  # Tests of worker-compressed product writes
 matplotlib = "*"
 memory-profiler = "*"
 moto = {extras = ["s3"], version = "*"}
