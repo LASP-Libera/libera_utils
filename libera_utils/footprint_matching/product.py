@@ -133,6 +133,7 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
 L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
     "latitude": "Latitude",
     "longitude": "Longitude",
+    "altitude": "Altitude",
     "solar_zenith_angle": "Solar_Zenith_Surface",
     "viewing_zenith_angle": "Viewing_Zenith_Surface",
     "relative_azimuth_angle": "Relative_Azimuth_Surface",
