@@ -302,6 +302,30 @@ def test_from_manifest_killed_kernel_process_is_a_failure(manifest_kernel_run, t
     manifest_kernel_run.output_manifest.write.assert_not_called()
 
 
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_from_manifest_existing_kernel_is_replaced_only_with_overwrite(manifest_kernel_run, tmp_path, overwrite):
+    """An existing kernel in output_dir is a failure unless overwrite is set; the other kernel is still produced"""
+    manifest_kernel_run.create_kernel.side_effect = _fake_kernel_writer(manifest_kernel_run.l1a_dataset)
+    existing = tmp_path / "JPSS-CK.bsp"
+    existing.write_text("existing")
+    kwargs = dict(
+        input_manifest="test.manifest",
+        kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
+        output_dir=tmp_path,
+        overwrite=overwrite,
+    )
+
+    if overwrite:
+        kernel_maker.create_kernels_from_manifest(**kwargs)
+        assert existing.read_text() == "overwrite=True"
+    else:
+        with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-CK'"):
+            kernel_maker.create_kernels_from_manifest(**kwargs)
+        assert existing.read_text() == "existing"
+        manifest_kernel_run.output_manifest.write.assert_not_called()
+    assert (tmp_path / "JPSS-SPK.bsp").exists()
+
+
 def test_from_manifest_repeated_kernel_raises(manifest_kernel_run, tmp_path):
     """A kernel requested twice is rejected before the L1A is read"""
     with pytest.raises(ValueError, match="repeat a kernel"):

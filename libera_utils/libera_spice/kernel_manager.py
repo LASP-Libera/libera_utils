@@ -68,6 +68,13 @@ class KernelManager:
     -----
     The path length limit is fixed by the class attribute ``_max_path_length`` (80) and is not
     a constructor argument. ``load_static_kernels`` validates paths before furnishing kernels.
+
+    A KernelManager is not shared between processes. Loading kernels writes the NAIF and static
+    kernel files into the on-disk cache in place, so processes that fill an empty cache at the same
+    time overwrite each other's files. Before forking workers, fill the cache once in the parent
+    by entering and leaving a ``KernelManager`` context, and have each worker create its own. A
+    worker must not exit a context on the parent's instance, which deletes the temporary static
+    kernels the parent and the other workers still read.
     """
 
     _naif_kernel_regexs = [

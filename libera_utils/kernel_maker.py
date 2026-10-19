@@ -952,6 +952,10 @@ def create_kernels_from_manifest(
                     )
                     continue
                 output_kernel = AnyPath(output_dir) / staged_kernel.name
+                if not overwrite and output_kernel.exists():
+                    kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    logger.error("Kernel %s already exists and overwrite is False", output_kernel)
+                    continue
                 try:
                     smart_copy_file(staged_kernel, output_kernel)
                 except Exception:
