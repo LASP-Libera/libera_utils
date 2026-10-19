@@ -315,11 +315,16 @@ options:
 #### Sub-Command `s3-utils put`
 
 Stages one or more Libera data product files for ingest into the SDC. This does **not** write directly to an archive
-bucket. Instead, each file is uploaded to the SDC Ingest Dropbox bucket and a single `NewFilesAvailable` event is
-emitted to the SDC event bus. The SDC Data Ingester service then archives the files and creates the associated file
-metadata and data availability records — exactly as it does for files produced by automated processing steps. The
-command returns once the files are staged and the event is emitted; the ingest itself runs asynchronously, so it may
-take a few minutes for files to appear in their archive bucket.
+bucket. Instead, each file is uploaded to the SDC Ingest Dropbox bucket and `NewFilesAvailable` events are emitted to
+the SDC event bus. The SDC Data Ingester service then archives the files and creates the associated file metadata and
+data availability records — exactly as it does for files produced by automated processing steps. The command returns
+once the files are staged and the events are emitted; the ingest itself runs asynchronously, so it may take a few
+minutes for files to appear in their archive bucket.
+
+Each event describes at most `MAX_FILES_PER_INGEST_EVENT` (5) files, so that one Data Ingester invocation can archive
+them within its 10 minute limit. L0 files are the exception and always share one event, whatever their count: the
+ingester archives a construction record ahead of the PDS files that read it, and that ordering only holds within one
+event.
 
 Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
 

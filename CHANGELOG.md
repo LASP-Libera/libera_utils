@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `libera_utils.l1a.day_coverage.measure_time_axis_coverage`, which measures day and buffer occupancy from a granule's own time axis, in one pass: each sample occupies the spacing to the next, except across a gap, a spacing above `DEFAULT_GAP_FACTOR` (5) times the median cadence. A single sample occupies no time. Unlike `evaluate_day_coverage`, it sees gaps inside a file.
 - Add `libera_utils.l1a.l1a_packet_configs.configured_apids()`, the APIDs with a packet configuration.
 - Add the `force-l1a-combine` CLI (`libera_utils.aws.l1a_combine.force_l1a_combine`), which emits a `ManualL1APreprocessing` event asking the L1A Preprocessor to combine an APID for one or more applicable dates, skipping the coverage gates unless `--no-force` is given. It accepts only APIDs with a packet configuration. `_to_date` in `manual_processing` moves to `libera_utils.aws.utils.to_date`.
-- Add `libera_utils.l1a.packet_ordering.check_packet_order(ds, packet_time_coordinate)`, which logs how `SRC_SEQ_CTR` and packet time step along the `PACKET` axis: runs, missing packets and packet-time inversions. Where packet time steps backward along the counter order it emits a `UserWarning` with the count, the largest step and the first one's counters and times; where the counter repeats or steps backward within a run it logs a warning. It raises `ValueError` only when `SRC_SEQ_CTR` or the packet time variable is missing.
+- Add `libera_utils.l1a.packet_ordering.check_packet_order(ds, packet_time_coordinate)`, which logs how `SRC_SEQ_CTR` and packet time step along the `PACKET` axis: runs, missing packets and packet-time inversions, with a warning where the counter repeats or steps backward within a run. It raises `ValueError` only when `SRC_SEQ_CTR` or the packet time variable is missing.
+- Add a `max_workers` argument (default 1) to `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset`, which parses files concurrently in worker processes, keeping the packet axis in the order given. A worker that dies without reporting raises `RuntimeError` with its exit code, and `max_workers` below 1 raises `ValueError`.
 
 ### Changed
 
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `parse_packets_to_l1a_dataset` drops duplicate packets by `SRC_SEQ_CTR` instead of by packet time, so a distinct packet that shares a packet time with another is kept. Packets that share a packet time but not a counter are no longer treated as duplicates. Packets that share a counter but differ raise `ValueError` unless `ground_data=True`, which keeps the first. The duplicate warning reads "Detected N duplicate SRC_SEQ_CTR packets".
 - **BREAKING:** `nom_hk_trim.find_obsid_runs` raises `ValueError` for a NOM-HK dataset without `PACKET_ICIE_TIME` or `SRC_SEQ_CTR`, instead of skipping its ordering check. A NOM-HK product written in packet-time order by 5.11.3 or earlier logs a warning; decode its L0 files again.
 - `parse_packets_to_dataset` accepts a loaded `XtcePacketDefinition` as well as a path.
+- `parse_packets_to_dataset` parses files one at a time onto a preallocated packet axis instead of passing them to `create_dataset` together, which cost ~800 MiB per two-hour NOM-HK file and ran a full day out of memory. It skips a file with no packets of the APID, and raises `ValueError` when files parse to different variable sets.
 - `manual-processing` and `step-function-trigger` take the UTC calendar date of a timezone-aware date or datetime.
 - Document daily L1A assembly (`evaluate_day_coverage` → multi-file parse → trim → `check_data_times` → `measure_time_axis_coverage`).
 
@@ -40,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `select_packets` and `slice_l1a_dataset_to_time_window` keep each packet index variable's dtype when renumbering it, so a sliced WFOV SCI dataset, whose `CAMERA_PACKET_INDEX` is `int32`, can be written.
 - `LiberaDataProductDefinition.generate_data_product_filename` takes the start and end from the minimum and maximum of the time variable, not its first and last values.
+- `manual_ingest_data_products` (`s3-utils put`) splits its files across `NewFilesAvailable` events of at most `MAX_FILES_PER_INGEST_EVENT` (5) files, keeping all L0 files in one event. A single event holding a day of ground CCSDS captures could not be archived inside one 10 minute Data Ingester invocation.
 
 ## [5.11.5] - 2026-10-14
 

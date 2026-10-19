@@ -569,6 +569,39 @@ icie_nom_hk:
   packet_time_source: "ICIE"
 ```
 
+## Parsing many files
+
+`parse_packets_to_dataset` hands `create_dataset` one file at a time. `create_dataset` keeps a
+Python object per parsed field until it converts the batch to numpy, about 800 MiB per two-hour
+NOM-HK file, so passing a day of files in one batch exhausts an 8 GiB container. Each parsed file
+is copied onto a preallocated packet axis and released before the next one is parsed. `xr.concat`
+would instead peak at about 2.9× its output, because it allocates the result while every input is
+still referenced. The packet axis keeps the order of the files given.
+
+- `packet_definition` may be an XTCE path or a loaded `XtcePacketDefinition`.
+  `parse_packets_to_l1a_dataset` passes the path: an in-process parse loads the XTCE once per
+  call, and with `max_workers` above 1 each worker loads it from the path.
+- A file with no packets of the APID is skipped with a warning. `ValueError` is raised when no
+  file has any, or when files parse to different sets of variables (concatenating them would
+  fill the gaps with NaN).
+- A string column that is wider in a later file (a file containing `SINGLE` parses to `<U6`
+  where the others give `<U3`) is widened rather than truncated.
+
+`max_workers` (on both `parse_packets_to_dataset` and `parse_packets_to_l1a_dataset`, default 1)
+parses files concurrently in worker processes, `max_workers` at a time. Parsing is single-threaded
+Python, so this is the only way to use more than one vCPU. Results are appended in the order given,
+so the packet axis is the same as for an in-process parse.
+
+- Peak memory is the accumulated axis plus one in-flight parse per worker, about 800 MiB for a
+  two-hour NOM-HK file. Memory, not core count, limits a useful worker count.
+- `max_workers` below 1 raises `ValueError`.
+- Workers load the XTCE from its path, because a loaded `XtcePacketDefinition` cannot be pickled.
+  `parse_packets_to_dataset` raises `ValueError` for `max_workers > 1` with a loaded definition
+  and more than one file.
+  A single file is always parsed in process.
+- An exception in a worker is re-raised in the caller. A worker that exits without reporting
+  raises `RuntimeError` with its exit code; `-9` means the container ran out of memory.
+
 ## L1A Product Structure
 
 This varies by packet but there is some consistent behavior:
