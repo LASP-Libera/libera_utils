@@ -4,6 +4,7 @@ import logging
 import multiprocessing as mp
 import warnings
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime
 from os import PathLike
 from typing import cast
@@ -160,8 +161,10 @@ class _PacketAxisAccumulator:
         n = file_ds.sizes[SDC_PACKET_DIMENSION]
         promoted = {name: np.promote_types(buffer.dtype, file_ds[name].dtype) for name, buffer in self._buffers.items()}
         needs_widening = any(promoted[name] != buffer.dtype for name, buffer in self._buffers.items())
-        if self._n + n > self.capacity or needs_widening:
+        if self._n + n > self.capacity:
             self._reallocate(max(self._n + n, self.capacity * 2), promoted)
+        elif needs_widening:
+            self._reallocate(self.capacity, promoted)
 
         for name, buffer in self._buffers.items():
             buffer[self._n : self._n + n] = file_ds[name].values
@@ -246,40 +249,50 @@ def _iter_parsed_files_concurrently(
     assembled in the caller's order because acquisition order is what the downstream image
     stitching and sample-expansion depend on.
 
-    Workers run ``max_workers`` at a time. Each holds its own parsed file until the parent reads
-    it, so peak memory is the accumulated axis plus roughly ``max_workers`` files, which is what
-    bounds a useful worker count rather than the available cores.
+    Workers run ``max_workers`` at a time. Each holds a parse in flight, ``create_dataset``'s
+    per-field Python objects and then the parsed file until the parent reads it, so peak memory is
+    the accumulated axis plus ``max_workers`` in-flight parses, which is what bounds a useful worker
+    count rather than the available cores.
+
+    Closing the generator terminates and joins any worker still running in the current batch.
     """
     context = mp.get_context()
     for start in range(0, len(packet_files), max_workers):
         workers = []
-        for packet_file in packet_files[start : start + max_workers]:
-            receive, send = context.Pipe(duplex=False)
-            process = context.Process(
-                target=_parse_file_in_subprocess,
-                args=(send, str(packet_file), packet_definition_path, apid, generator_kwargs),
-            )
-            process.start()
-            send.close()  # the parent must drop its copy or the pipe never reports EOF
-            workers.append((packet_file, process, receive))
+        # Closing the generator early, on a worker error or a consumer error, must not leave the
+        # rest of the batch running or holding pipe handles.
+        try:
+            for packet_file in packet_files[start : start + max_workers]:
+                receive, send = context.Pipe(duplex=False)
+                process = context.Process(
+                    target=_parse_file_in_subprocess,
+                    args=(send, str(packet_file), packet_definition_path, apid, generator_kwargs),
+                )
+                process.start()
+                send.close()  # the parent must drop its copy or the pipe never reports EOF
+                workers.append((packet_file, process, receive))
 
-        for packet_file, process, receive in workers:
-            try:
-                error, file_ds = receive.recv()
-            except EOFError:
+            for packet_file, process, receive in workers:
+                try:
+                    error, file_ds = receive.recv()
+                except EOFError:
+                    process.join()
+                    raise RuntimeError(
+                        f"Worker parsing {packet_file} for APID {apid} exited without a result "
+                        f"(exit code {process.exitcode}). A negative code is a signal, of which -9 is the "
+                        f"container running out of memory; a positive code means the worker died before it "
+                        f"could report, and its traceback is on stderr."
+                    ) from None
                 process.join()
-                raise RuntimeError(
-                    f"Worker parsing {packet_file} for APID {apid} exited without a result "
-                    f"(exit code {process.exitcode}). A negative code is a signal, of which -9 is the "
-                    f"container running out of memory; a positive code means the worker died before it "
-                    f"could report, and its traceback is on stderr."
-                ) from None
-            finally:
+                if error is not None:
+                    raise error
+                yield packet_file, file_ds
+        finally:
+            for _, process, receive in workers:
                 receive.close()
-            process.join()
-            if error is not None:
-                raise error
-            yield packet_file, file_ds
+                if process.is_alive():
+                    process.terminate()
+                process.join()
 
 
 def parse_packets_to_dataset(
@@ -312,15 +325,16 @@ def parse_packets_to_dataset(
         List of filepaths to packet files.
     packet_definition : str | PathLike | XtcePacketDefinition
         Path to the XTCE packet definition file, or an already loaded definition. Pass a loaded
-        definition to avoid re-parsing the XTCE once per file. ``max_workers`` above 1 requires
-        a path, since a loaded definition cannot cross a process boundary.
+        definition to avoid re-parsing the XTCE once per file. ``max_workers`` above 1 with more
+        than one file requires a path, since a loaded definition cannot cross a process boundary.
     apid : int
         Application Process Identifier to filter for.
     max_workers : int, optional
         Files to parse concurrently, in worker processes. Default 1 (in-process). Parsing is
         CPU-bound single-threaded Python, so concurrency is the only way to use a container
-        sized for more than one vCPU; peak memory rises by roughly one parsed file per worker,
-        which is the practical limit rather than the core count.
+        sized for more than one vCPU. Peak memory rises by one in-flight parse per worker (about
+        800 MiB for a two-hour NOM-HK file), which is the practical limit rather than the core
+        count. Must be at least 1.
     **generator_kwargs
         Additional keyword arguments passed to the packet generator.
 
@@ -334,9 +348,17 @@ def parse_packets_to_dataset(
     ------
     ValueError
         If no file holds any packet of ``apid``, if a file yields an APID other than ``apid``,
-        if the files do not all carry the same set of variables, or if ``max_workers`` above 1
-        is combined with an already-loaded packet definition.
+        if the files do not all carry the same set of variables, if ``max_workers`` is below 1,
+        or if ``max_workers`` above 1 is combined with an already-loaded packet definition and
+        more than one file.
+    RuntimeError
+        If a worker process exits without reporting a result, such as when it is killed for
+        running out of memory.
+    Exception
+        Any exception raised while parsing a file in a worker process is re-raised in the caller.
     """
+    if max_workers < 1:
+        raise ValueError(f"max_workers must be at least 1, got {max_workers}; pass 1 to parse in process.")
     n_workers = max(1, min(max_workers, len(packet_files)))
     logger.info("Parsing packets (APID %d) from %d file(s) with %d worker(s)", apid, len(packet_files), n_workers)
 
@@ -362,28 +384,31 @@ def parse_packets_to_dataset(
     first: tuple[PathLike | str, xr.Dataset] | None = None
     accumulator: _PacketAxisAccumulator | None = None
 
-    for packet_file, file_ds in parsed_files:
-        if file_ds is None:
-            logger.warning("No APID %d packets in %s; excluded from the parsed dataset.", apid, packet_file)
-            continue
+    # Closed explicitly so that an error raised here stops the workers now, rather than when the
+    # traceback that references the generator is released.
+    with closing(parsed_files):
+        for packet_file, file_ds in parsed_files:
+            if file_ds is None:
+                logger.warning("No APID %d packets in %s; excluded from the parsed dataset.", apid, packet_file)
+                continue
 
-        if first is None and accumulator is None:
-            first = (packet_file, file_ds)
-            continue
+            if first is None and accumulator is None:
+                first = (packet_file, file_ds)
+                continue
 
-        if accumulator is None:
-            first_file, first_ds = first
-            accumulator = _PacketAxisAccumulator(
-                first_ds, apid, capacity=first_ds.sizes[SDC_PACKET_DIMENSION] * len(packet_files)
-            )
-            accumulator.append(first_file, first_ds)
-            # Release the first file before the next one is copied in, so the peak is the buffer
-            # plus a single file rather than the buffer plus every file parsed so far.
-            first = None
-            del first_ds
+            if accumulator is None:
+                first_file, first_ds = first
+                accumulator = _PacketAxisAccumulator(
+                    first_ds, apid, capacity=first_ds.sizes[SDC_PACKET_DIMENSION] * len(packet_files)
+                )
+                accumulator.append(first_file, first_ds)
+                # Release the first file before the next one is copied in, so the peak is the buffer
+                # plus a single file rather than the buffer plus every file parsed so far.
+                first = None
+                del first_ds
 
-        accumulator.append(packet_file, file_ds)
-        del file_ds
+            accumulator.append(packet_file, file_ds)
+            del file_ds
 
     if accumulator is not None:
         return accumulator.to_dataset()
@@ -425,8 +450,9 @@ def parse_packets_to_l1a_dataset(
         config (default ``0``, correct for flight PDS and demuxed ground CCSDS; raw ground captures that still
         carry a per-packet record header need ``8``).
     max_workers : int, optional
-        Files to parse concurrently, in worker processes. Default 1 (in-process). See
-        ``parse_packets_to_dataset``; peak memory rises by roughly one parsed file per worker.
+        Files to parse concurrently, in worker processes. Default 1 (in-process); must be at
+        least 1. See ``parse_packets_to_dataset``; peak memory rises by one in-flight parse per
+        worker.
 
     Returns
     -------
@@ -440,9 +466,14 @@ def parse_packets_to_l1a_dataset(
     ------
     ValueError
         If the decoded packets have no ``SRC_SEQ_CTR``; if ``ground_data`` is False and packets with the
-        same ``SRC_SEQ_CTR`` differ; or as ``_drop_duplicates`` raises for samples.
+        same ``SRC_SEQ_CTR`` differ; as ``_drop_duplicates`` raises for samples; or as
+        ``parse_packets_to_dataset`` raises, including for ``max_workers`` below 1.
     OSError
         If a packet file cannot be opened or read.
+    RuntimeError
+        If a worker process exits without reporting a result (``max_workers`` above 1).
+    Exception
+        Any exception raised while parsing a file in a worker process is re-raised in the caller.
 
     Notes
     -----

@@ -1,7 +1,10 @@
 """Integration tests for libera_utils.packets module"""
 
+import multiprocessing as mp
+import time
 import warnings
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -516,3 +519,45 @@ def test_jpss_sc_pos_data_time_range_spans_both_sample_groups(pds_fixture, reque
     for group_first, group_last in group_spans.values():
         assert first <= dt64_to_utc_datetime(group_first)
         assert last >= dt64_to_utc_datetime(group_last)
+
+
+def _scripted_worker(connection, packet_file, packet_definition_path, apid, generator_kwargs):
+    """Stand-in for ``packets._parse_file_in_subprocess`` whose result is chosen by file name.
+
+    ``slow`` never reports, ``dead`` exits without reporting, ``bad`` fails, ``other`` parses to a
+    different variable set, and anything else parses to two packets.
+    """
+    if packet_file == "slow.bin":
+        time.sleep(60)
+    elif packet_file == "bad.bin":
+        connection.send((ValueError(f"bad file {packet_file}"), None))
+    elif packet_file == "other.bin":
+        connection.send((None, xr.Dataset({"OTHER": (("PACKET",), np.zeros(2))})))
+    elif packet_file != "dead.bin":
+        connection.send((None, xr.Dataset({"DATA_FIELD": (("PACKET",), np.zeros(2))})))
+    connection.close()
+
+
+class TestWorkerProcesses:
+    """Worker-process failures reach the caller, and no worker outlives the call."""
+
+    @pytest.mark.parametrize(
+        ("files", "max_workers", "error", "match"),
+        [
+            pytest.param(["bad.bin", "b.bin"], 2, ValueError, "bad file", id="worker-error"),
+            pytest.param(["dead.bin", "b.bin"], 2, RuntimeError, "exited without a result", id="worker-died"),
+            pytest.param(
+                ["bad.bin", "slow.bin", "c.bin"], 2, ValueError, "bad file", id="worker-error-sibling-running"
+            ),
+            pytest.param(
+                ["a.bin", "other.bin", "slow.bin"], 3, ValueError, "do not match the other files", id="consumer-error"
+            ),
+        ],
+    )
+    def test_error_reaches_the_caller_and_no_worker_outlives_it(self, files, max_workers, error, match):
+        with (
+            mock.patch.object(packets, "_parse_file_in_subprocess", _scripted_worker),
+            pytest.raises(error, match=match),
+        ):
+            packets.parse_packets_to_dataset(files, "fake.xml", 1040, max_workers=max_workers)
+        assert mp.active_children() == []

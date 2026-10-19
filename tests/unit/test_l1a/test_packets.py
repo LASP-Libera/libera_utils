@@ -67,9 +67,8 @@ def test_parse_packets_to_dataset_apid_not_found(mock_create_dataset, mock_load_
 def test_parse_packets_to_dataset_parses_one_file_at_a_time(mock_create_dataset, mock_load_xtce):
     """Each file is parsed on its own and the results concatenated in the order given.
 
-    Handing every file to ``create_dataset`` at once is what exhausted an 8 GiB container
-    (LIBSDC-830), so the per-file call pattern is the behavior under test, not an incidental
-    detail.
+    Handing every file to ``create_dataset`` at once exhausts an 8 GiB container on a day of
+    NOM-HK, so the per-file call pattern is the behavior under test, not an incidental detail.
     """
     mock_create_dataset.side_effect = [
         {1048: _packet_dataset(1048, 100)},
@@ -1318,18 +1317,20 @@ class TestPacketAxisAccumulator:
         labels = accumulator.to_dataset()["LABEL"].values
         assert list(labels) == ["MOP", "SOP", "SINGLE"]
 
+    def test_widening_that_fits_keeps_the_capacity(self):
+        # to_dataset returns views onto the buffers, so a doubled capacity would stay allocated.
+        narrow = self._dataset(["MOP", "SOP"], [1, 2])
+        accumulator = libera_packets._PacketAxisAccumulator(narrow, apid=1040, capacity=4)
+        accumulator.append("f", narrow)
+        accumulator.append("g", self._dataset(["SINGLE"], [3]))
+        assert accumulator.capacity == 4
+
     def test_rejects_a_file_with_a_different_variable_set(self):
         first = self._dataset(["MOP"], [1])
         accumulator = libera_packets._PacketAxisAccumulator(first, apid=1040, capacity=2)
         accumulator.append("f", first)
         with pytest.raises(ValueError, match="do not match the other files"):
             accumulator.append("g", xr.Dataset({"LABEL": (("PACKET",), np.array(["SOP"]))}))
-
-
-def _failing_worker(connection, packet_file, packet_definition_path, apid, generator_kwargs):
-    """Stand-in worker that reports a failure instead of parsing."""
-    connection.send((ValueError(f"bad file {packet_file}"), None))
-    connection.close()
 
 
 class TestParallelParsing:
@@ -1354,9 +1355,6 @@ class TestParallelParsing:
             )
         assert parse_one.call_count == 1
 
-    def test_worker_exception_reaches_the_caller(self):
-        with (
-            mock.patch.object(libera_packets, "_parse_file_in_subprocess", _failing_worker),
-            pytest.raises(ValueError, match="bad file"),
-        ):
-            libera_packets.parse_packets_to_dataset(["a.bin", "b.bin"], "fake.xml", 1040, max_workers=2)
+    def test_rejects_max_workers_below_one(self):
+        with pytest.raises(ValueError, match="max_workers must be at least 1"):
+            libera_packets.parse_packets_to_dataset(["a.bin", "b.bin"], "fake.xml", 1040, max_workers=0)

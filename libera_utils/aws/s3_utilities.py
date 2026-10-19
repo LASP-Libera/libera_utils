@@ -144,6 +144,15 @@ def manual_ingest_data_products(
     -------
     list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
         The validated filename objects for the staged files (useful for subsequent verification).
+
+    Raises
+    ------
+    ValueError
+        If a filename is not a valid Libera ingest filename, which is checked before anything is staged, or if
+        the dropbox bucket or the event bus cannot be identified by name.
+    RuntimeError
+        If EventBridge rejects an event. The events before it were already emitted; running the command again
+        with the same files is safe, because the Data Ingester skips files it has already archived.
     """
     # Validate every filename up front so we don't stage a partial set before discovering a bad name.
     libera_filenames = [_validate_filename_for_ingest(path) for path in paths_to_files]
@@ -218,6 +227,13 @@ def put_new_files_available_event(files: list[dict], *, boto_session: boto3.Sess
         ``size``).
     boto_session : boto3.Session
         Boto3 session used to discover the event bus and put the event. The AWS region is derived from this session.
+
+    Raises
+    ------
+    ValueError
+        If the event bus cannot be identified by name.
+    RuntimeError
+        If EventBridge reports the entry as failed.
     """
     event_bus_name = find_event_bus_in_account_by_partial_name(boto_session, SDC_EVENT_BUS_PARTIAL_NAME)
     events_client = boto_session.client("events")
@@ -235,8 +251,9 @@ def put_new_files_available_event(files: list[dict], *, boto_session: boto3.Sess
 
     if response.get("FailedEntryCount", 0) > 0:
         raise RuntimeError(
-            f"Failed to put NewFilesAvailable event to event bus {event_bus_name}. Response entries: "
-            f"{response['Entries']}"
+            f"Failed to put NewFilesAvailable event for {[f['name'] for f in files]} to event bus "
+            f"{event_bus_name}. Response entries: {response['Entries']}. Any earlier events from this run were "
+            f"already emitted; re-run the ingest with the same files, which the Data Ingester skips if archived."
         )
 
     logger.info(f"Put NewFilesAvailable event with {len(files)} file(s) to event bus {event_bus_name}")

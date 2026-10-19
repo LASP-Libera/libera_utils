@@ -51,36 +51,52 @@ class TestManualIngestPut:
         mock_manual_ingest.assert_called_once_with(expected_paths, boto_session=mock_get_session.return_value)
 
     @pytest.mark.parametrize(
-        "file_names",
+        ("file_names", "n_events"),
         [
             # Single L1B data product
-            ["LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"],
+            (["LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc"], 1),
             # SPICE kernels
-            [
-                "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
-                "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
-            ],
+            (
+                [
+                    "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+                    "LIBERA_SPICE_AZROT-CK_V3-14-159_20270101T010203_20270130T010203_R28002112233.bc",
+                ],
+                1,
+            ),
             # L0 PDS (file number 01) and L0 CR (file number 00)
-            [
-                "P1590011SOMESCIENCEAAA99030231459001.PDS",
-                "P1590011SOMESCIENCEAAA99030231459000.PDS",
-            ],
-            # Mixed batch spanning data levels, including L0, CR, SPICE, L1B, and L2
-            [
-                "P1590011SOMESCIENCEAAA99030231459001.PDS",
-                "P1590011SOMESCIENCEAAA99030231459000.PDS",
-                "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
-                "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-                "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
-            ],
+            (
+                [
+                    "P1590011SOMESCIENCEAAA99030231459001.PDS",
+                    "P1590011SOMESCIENCEAAA99030231459000.PDS",
+                ],
+                1,
+            ),
+            # Mixed batch spanning data levels, including L0, CR, SPICE, L1B, and L2: the L0 files
+            # travel in their own event
+            (
+                [
+                    "P1590011SOMESCIENCEAAA99030231459001.PDS",
+                    "P1590011SOMESCIENCEAAA99030231459000.PDS",
+                    "LIBERA_SPICE_JPSS-SPK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bsp",
+                    "LIBERA_L1B_CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                    "LIBERA_L2_CF-CAM_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                ],
+                2,
+            ),
             # Demuxed ground CCSDS basename (single APID, no extension)
-            ["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"],
+            (["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"], 1),
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
-        self, tmp_path, make_ingest_dropbox_bucket, make_sdc_event_bus, make_event_capturing_session, file_names
+        self,
+        tmp_path,
+        make_ingest_dropbox_bucket,
+        make_sdc_event_bus,
+        make_event_capturing_session,
+        file_names,
+        n_events,
     ):
-        """All file types are staged to the dropbox and described in a single NewFilesAvailable event."""
+        """All file types are staged to the dropbox and described in NewFilesAvailable events."""
         dropbox_bucket = make_ingest_dropbox_bucket
 
         # Write dummy files with distinct sizes so we can verify the size field maps to the right file.
@@ -101,7 +117,7 @@ class TestManualIngestPut:
 
         # 2. Every emitted NewFilesAvailable event carries the exact source and detail-type values.
         entries = captured["entries"]
-        assert entries
+        assert len(entries) == n_events
         for entry in entries:
             assert entry["Source"] == "manual-processing"
             assert entry["DetailType"] == "NewFilesAvailableEventDetail"
@@ -215,7 +231,7 @@ class TestManualIngestPut:
         session.client = failing_put_client
 
         files = [{"type": "data", "uri": "s3://bucket/file.nc", "name": "file.nc", "size": 1}]
-        with pytest.raises(RuntimeError, match="Failed to put NewFilesAvailable event"):
+        with pytest.raises(RuntimeError, match=r"Failed to put NewFilesAvailable event for \['file.nc'\].*re-run"):
             s3_utilities.put_new_files_available_event(files, boto_session=session)
 
     @patch("libera_utils.aws.s3_utilities.verify_ingestion")
