@@ -142,7 +142,7 @@ class VIIRSBRDFReader(StaticReader):
         VariableSpec(
             name=name,
             dtype="float32",
-            aggregation="weighted_mean", # Confirm
+            aggregation="weighted_mean",  # Confirm
             required_mode=OperationalMode.CAM,
             n_categories=None,
         )

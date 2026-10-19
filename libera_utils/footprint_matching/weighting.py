@@ -328,7 +328,7 @@ class AngularPSFWeigher(PixelWeigher):
     ---------------
     The projected ``delta`` is anchored at the reported footprint centroid (the
     boresight). Any residual alignment offset to the PSF centroid is
-    :data:`_CENTROID_OFFSET_DEG`, currently assumed 0 (see its TODO).
+    :data:`_CENTROID_OFFSET_DEG`, currently assumed 0 (see its LIBSDC-794 note).
 
     Direct evaluation vs pre-integrated bins
     ----------------------------------------
