@@ -7,8 +7,8 @@ axis and re-opens with only its declared variables.
 import numpy as np
 import xarray as xr
 
-from libera_utils.cloud_fraction.cf_cam import PRODUCT_DEFINITION_PATH
 from libera_utils.cloud_fraction.cloud_fraction import generate_placeholder_cloud_fraction_radiometer
+from libera_utils.cloud_fraction.cloud_fraction_algorithm import CF_CAM_DEFINITION_PATH as PRODUCT_DEFINITION_PATH
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 

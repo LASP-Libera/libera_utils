@@ -8,12 +8,14 @@ radiometer-timescale 1-D record axis.
 import numpy as np
 import pytest
 
-from libera_utils.cloud_fraction.cf_cam_camtime import PRODUCT_DEFINITION_PATH
 from libera_utils.cloud_fraction.cloud_fraction import (
     CLOUD_FRACTION_STANDARD_DEVIATION_VARIABLE,
     CLOUD_FRACTION_VARIABLE,
     generate_placeholder_cloud_fraction_camtime,
     generate_placeholder_cloud_fraction_radiometer,
+)
+from libera_utils.cloud_fraction.cloud_fraction_algorithm import (
+    CF_CAM_CAMTIME_DEFINITION_PATH as PRODUCT_DEFINITION_PATH,
 )
 from libera_utils.footprint_matching._runner_common import load_l1b_camera_dataset
 from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera

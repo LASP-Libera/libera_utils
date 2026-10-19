@@ -9,8 +9,10 @@ identical ``CAMERA_TIME`` / ``PSEUDOFOOTPRINT`` axes and ``camera_pixel_{x,y}_{m
 import numpy as np
 import xarray as xr
 
-from libera_utils.cloud_fraction.cf_cam_camtime import PRODUCT_DEFINITION_PATH
 from libera_utils.cloud_fraction.cloud_fraction import generate_placeholder_cloud_fraction_camtime
+from libera_utils.cloud_fraction.cloud_fraction_algorithm import (
+    CF_CAM_CAMTIME_DEFINITION_PATH as PRODUCT_DEFINITION_PATH,
+)
 from libera_utils.footprint_matching._runner_common import load_l1b_camera_dataset
 from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
 from libera_utils.footprint_matching.product import assemble_fmatch_dataset, pseudofootprints_from_camtime_dataset
@@ -97,33 +99,65 @@ def _synthetic_footprints() -> list[PseudoFootprint]:
     return [
         # image 0, footprint 0 -- ordinary
         PseudoFootprint(
-            time=_T0, slice_x=slice(0, 4), slice_y=slice(0, 4), center_ix=2, center_iy=2,
-            latitude=45.5, longitude=-120.25, altitude=1024.0,
-            solar_zenith_angle=30.5, viewing_zenith_angle=12.25, relative_azimuth_angle=88.0,
+            time=_T0,
+            slice_x=slice(0, 4),
+            slice_y=slice(0, 4),
+            center_ix=2,
+            center_iy=2,
+            latitude=45.5,
+            longitude=-120.25,
+            altitude=1024.0,
+            solar_zenith_angle=30.5,
+            viewing_zenith_angle=12.25,
+            relative_azimuth_angle=88.0,
             bbox=BoundingBox(44.5, 46.5, -121.5, -119.0, False, False, False),
             q_flags=CameraFootprintQualityFlag(0),
         ),
         # image 0, footprint 1 -- dateline-wrapping box (raw lon_max > 180) + partial-coverage flag
         PseudoFootprint(
-            time=_T0, slice_x=slice(4, 8), slice_y=slice(0, 4), center_ix=6, center_iy=2,
-            latitude=-10.0, longitude=179.5, altitude=0.0,
-            solar_zenith_angle=50.0, viewing_zenith_angle=20.0, relative_azimuth_angle=170.0,
+            time=_T0,
+            slice_x=slice(4, 8),
+            slice_y=slice(0, 4),
+            center_ix=6,
+            center_iy=2,
+            latitude=-10.0,
+            longitude=179.5,
+            altitude=0.0,
+            solar_zenith_angle=50.0,
+            viewing_zenith_angle=20.0,
+            relative_azimuth_angle=170.0,
             bbox=BoundingBox(-11.0, -9.0, 170.0, 190.0, True, False, False),
             q_flags=CameraFootprintQualityFlag.PARTIAL_COVERAGE,
         ),
         # image 0, footprint 2 -- polar box + limb-truncated + both q_flags bits set
         PseudoFootprint(
-            time=_T0, slice_x=slice(0, 4), slice_y=slice(4, 8), center_ix=2, center_iy=6,
-            latitude=87.5, longitude=10.0, altitude=250.0,
-            solar_zenith_angle=80.0, viewing_zenith_angle=60.0, relative_azimuth_angle=15.0,
+            time=_T0,
+            slice_x=slice(0, 4),
+            slice_y=slice(4, 8),
+            center_ix=2,
+            center_iy=6,
+            latitude=87.5,
+            longitude=10.0,
+            altitude=250.0,
+            solar_zenith_angle=80.0,
+            viewing_zenith_angle=60.0,
+            relative_azimuth_angle=15.0,
             bbox=BoundingBox(86.0, 89.0, -20.0, 40.0, False, True, True),
             q_flags=CameraFootprintQualityFlag.PARTIAL_COVERAGE | CameraFootprintQualityFlag.CENTER_PIXEL_SUBSTITUTED,
         ),
         # image 1, footprint 0 -- ordinary (narrower image -> the grid pads image 1's trailing columns)
         PseudoFootprint(
-            time=_T1, slice_x=slice(8, 12), slice_y=slice(8, 12), center_ix=10, center_iy=10,
-            latitude=0.5, longitude=0.25, altitude=500.0,
-            solar_zenith_angle=10.0, viewing_zenith_angle=5.0, relative_azimuth_angle=45.0,
+            time=_T1,
+            slice_x=slice(8, 12),
+            slice_y=slice(8, 12),
+            center_ix=10,
+            center_iy=10,
+            latitude=0.5,
+            longitude=0.25,
+            altitude=500.0,
+            solar_zenith_angle=10.0,
+            viewing_zenith_angle=5.0,
+            relative_azimuth_angle=45.0,
             bbox=BoundingBox(-0.5, 1.5, -1.0, 1.5, False, False, False),
             q_flags=CameraFootprintQualityFlag(0),
         ),

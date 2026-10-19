@@ -72,7 +72,6 @@ if TYPE_CHECKING:
 
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
-    NOMINAL_ALTITUDE_KM,
     bounding_box_from_points_batch,
 )
 from libera_utils.footprint_matching.psf import LIBERA_FOV_HALFANGLE_DEG
@@ -102,6 +101,11 @@ ALTITUDE_NAME: str = "Altitude"
 SOLAR_ZENITH_NAME: str = "Solar_Zenith_Surface"
 VIEWING_ZENITH_NAME: str = "Viewing_Zenith_Surface"
 RELATIVE_AZIMUTH_NAME: str = "Relative_Azimuth_Surface"
+
+# Nominal Libera (JPSS) orbit altitude above the surface, km. Camera records carry no
+# ephemeris, so the camera path sizes footprints (and the radial PSF stand-in) for this orbit.
+# TODO[LIBSDC-884]: take the camera record's ephemeris once camera segmentation carries it.
+NOMINAL_ALTITUDE_KM: float = 835.0
 
 # Target on-the-ground diameter of one pseudo-footprint, in km, sized so a pixel block's
 # ground extent approximates a real radiometer footprint. Derived from existing sources of

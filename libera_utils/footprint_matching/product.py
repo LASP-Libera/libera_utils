@@ -55,6 +55,7 @@ from libera_utils.footprint_matching.aggregation import (
     PARTIAL_COVERAGE_THRESHOLD,
     aggregate_tile_variables,
 )
+from libera_utils.footprint_matching.camera_segmentation import NOMINAL_ALTITUDE_KM
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
     WGS84_SEMI_MAJOR_AXIS_KM,
@@ -161,9 +162,8 @@ L1B_SCAN_REFERENCE_VARIABLES: dict[str, str] = {
 }
 
 # Nominal satellite radius for camera pseudo-footprints, which carry no ephemeris. Only the
-# radial stand-in weigher reads it there, to size its PSF ground radius for an ~835 km orbit.
-# TODO[LIBSDC-884]: take the camera record's ephemeris once camera segmentation carries it.
-_CAMERA_NOMINAL_SATELLITE_RADIUS_KM: float = WGS84_SEMI_MAJOR_AXIS_KM + 835.0
+# radial stand-in weigher reads it there, to size its PSF ground radius for the nominal orbit.
+_CAMERA_NOMINAL_SATELLITE_RADIUS_KM: float = WGS84_SEMI_MAJOR_AXIS_KM + NOMINAL_ALTITUDE_KM
 
 # The instrument cone-angle rate (degrees/second) sets the along-scan PSF orientation
 # and flags the stationary-scanner case. Unlike the subsatellite point it is optional:

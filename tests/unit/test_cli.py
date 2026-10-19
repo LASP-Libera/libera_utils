@@ -8,6 +8,7 @@ import pytest
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.cloud_fraction import cloud_fraction_algorithm
 from libera_utils.scene_identification import scene_id_algorithm
 
 
@@ -436,47 +437,20 @@ def test_scene_id_cli_dispatch(variant, monkeypatch):
     assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[variant]
 
 
-@pytest.mark.parametrize(
-    ("cli_args", "parsed"),
-    [
-        (
-            ["cloud-fraction", "cam", "file.manifest"],
-            argparse.Namespace(
-                func=cli.cloud_fraction_cam_cli_handler,
-                manifest="file.manifest",
-            ),
-        ),
-        (
-            ["cloud-fraction", "cam-camtime", "file.manifest"],
-            argparse.Namespace(
-                func=cli.cloud_fraction_cam_camtime_cli_handler,
-                manifest="file.manifest",
-            ),
-        ),
-    ],
-)
-def test_cloud_fraction_parse_cli_args(cli_args, parsed):
-    """Test that cloud-fraction cli args are parsed properly."""
-    assert cli.parse_cli_args(cli_args) == parsed
-
-
-@pytest.mark.parametrize(
-    ("cli_args", "runner_module"),
-    [
-        (["cloud-fraction", "cam", "file.manifest"], "libera_utils.cloud_fraction.cf_cam"),
-        (["cloud-fraction", "cam-camtime", "file.manifest"], "libera_utils.cloud_fraction.cf_cam_camtime"),
-    ],
-)
-def test_cloud_fraction_cli_dispatch(cli_args, runner_module, monkeypatch):
-    """The cloud-fraction subcommands dispatch to the matching runner's ``algorithm`` with the parsed args."""
-    import importlib
-
-    module = importlib.import_module(runner_module)
+@pytest.mark.parametrize("variant", ["cam", "cam-camtime"])
+def test_cloud_fraction_cli_dispatch(variant, monkeypatch):
+    """``cloud-fraction`` runs the variant named by LIBERA_CLOUD_FRACTION_VARIANT, passing ``run_algorithm`` the
+    manifest path."""
     called_with = {}
-    monkeypatch.setattr(module, "algorithm", lambda parsed_args: called_with.setdefault("args", parsed_args))
+    monkeypatch.setattr(
+        cloud_fraction_algorithm,
+        "run_algorithm",
+        lambda manifest_path, config: called_with.update(manifest_path=manifest_path, config=config),
+    )
+    monkeypatch.setenv(cloud_fraction_algorithm.CLOUD_FRACTION_VARIANT_ENV, variant)
 
-    args = cli.parse_cli_args(cli_args)
+    args = cli.parse_cli_args(["cloud-fraction", "file.manifest"])
     args.func(args)
 
-    assert called_with["args"] is args
-    assert called_with["args"].manifest == "file.manifest"
+    assert called_with["manifest_path"] == Path("file.manifest")
+    assert called_with["config"] is cloud_fraction_algorithm.RUNNER_CONFIGS[variant]

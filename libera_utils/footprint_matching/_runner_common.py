@@ -2,7 +2,7 @@
 
 These helpers are used by more than one algorithm's runner -- the FMATCH runners
 (:mod:`libera_utils.footprint_matching._runner`) and the Camera Cloud Fraction runners
-(:mod:`libera_utils.cloud_fraction._runner`) both need to select input files from a manifest,
+(:mod:`libera_utils.cloud_fraction.cloud_fraction_algorithm`) both need to select input files from a manifest,
 materialize a possibly-remote L1B file locally, load the L1B radiometer pass-through inputs or the
 L1B camera dataset, and stamp the running package version onto a product.
 

@@ -1,15 +1,21 @@
-"""Shared manifest-driven runner logic for the CF-CAM (Camera Cloud Fraction) product family.
+"""CF-CAM (Camera Cloud Fraction) algorithm runners.
 
-The two cloud-fraction runners (``cf_cam.py`` radiometer timescale, ``cf_cam_camtime.py`` camera
-timescale) are structurally identical: read an input manifest, keep the L1B input file(s) of a
-particular product, turn each into placeholder cloud-fraction values, write the resulting CF-CAM
-product, and emit an output manifest. They differ only by a handful of parameters captured in
-:class:`CfRunnerConfig`:
+This module is the single home for every cloud-fraction runner. The radiometer-timescale (``CF-CAM``)
+and camera-timescale (``CF-CAM-CAMTIME``) products are structurally identical: read an input manifest,
+keep the L1B input file(s) of a particular product, turn each into placeholder cloud-fraction values,
+write the resulting CF-CAM product, and emit an output manifest. They differ only by a handful of
+parameters captured in :class:`CfRunnerConfig`:
 
 * which L1B product counts as their input (``RAD-4CH`` vs ``CAM``),
 * which CF-CAM product they emit, and
 * whether the input is segmented into camera pseudo-footprints (camera timescale) or read straight as
   radiometer footprints (radiometer timescale).
+
+The concrete runners are the :class:`CfRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed
+by variant name (``"cam"``, ``"cam-camtime"``). Every variant runs from the one
+``libera-utils cloud-fraction <manifest>`` command, and so from one container image:
+:func:`cloud_fraction_cli_handler` selects the config named by the ``LIBERA_CLOUD_FRACTION_VARIANT``
+environment variable, which each processing step sets.
 
 Environment
 -----------
@@ -17,6 +23,8 @@ Environment
     The dropbox directory (or S3 prefix) products and the output manifest are written to. This is the
     standard Libera runner convention. Unlike FMATCH, this runner needs no ancillary tree
     (``FMATCH_ANCILLARY_PATH``): the only input is the L1B file itself.
+``LIBERA_CLOUD_FRACTION_VARIANT``
+    The :data:`RUNNER_CONFIGS` entry the CLI runs (``cam`` or ``cam-camtime``).
 """
 
 from __future__ import annotations
@@ -32,10 +40,12 @@ from typing import TYPE_CHECKING
 
 from cloudpathlib import AnyPath, S3Path
 
+import libera_utils
 from libera_utils.cloud_fraction.cloud_fraction import (
     generate_placeholder_cloud_fraction_camtime,
     generate_placeholder_cloud_fraction_radiometer,
 )
+from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching._runner_common import (
     FMATCH_RADIOMETER_TIME_COORDINATE,
     _as_local_path,
@@ -51,7 +61,6 @@ from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.logutil import configure_task_logging
 
 if TYPE_CHECKING:
-    from libera_utils.constants import DataProductIdentifier
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
 logger = logging.getLogger(__name__)
@@ -99,14 +108,102 @@ class CfRunnerConfig:
     log_prefix: str
 
 
-def run_algorithm(manifest_path: Path | S3Path | argparse.Namespace, config: CfRunnerConfig) -> Path | S3Path:
+_PRODUCT_DEFINITIONS_DIR = Path(libera_utils.__file__).parent / "data" / "product_definitions"
+
+# Path to the CF-CAM (radiometer timescale) product definition shipped as package data.
+CF_CAM_DEFINITION_PATH = _PRODUCT_DEFINITIONS_DIR / "cf_cam.yml"
+
+# Path to the CF-CAM-CAMTIME (camera timescale) product definition shipped as package data.
+CF_CAM_CAMTIME_DEFINITION_PATH = _PRODUCT_DEFINITIONS_DIR / "cf_cam_camtime.yml"
+
+# CF-CAM reads an L1B RAD-4CH file and writes one placeholder cloud fraction per radiometer footprint on
+# RADIOMETER_TIME. It feeds FMATCH-CAM's cloud_fraction_camera input, aligned 1:1 by RADIOMETER_TIME, and
+# performs no camera segmentation: the footprints are the radiometer's own.
+CAM_CONFIG = CfRunnerConfig(
+    output_product_id=DataProductIdentifier.l2_cf_cam,
+    l1b_input_product_id=DataProductIdentifier.l1b_rad,
+    product_definition_path=CF_CAM_DEFINITION_PATH,
+    time_variable="RADIOMETER_TIME",
+    input_kind=CfInputKind.RADIOMETER,
+    log_prefix="cf_cam",
+)
+
+# CF-CAM-CAMTIME reads an L1B CAM file, segments it into pseudo-footprints with the segmentation FMATCH
+# uses, and writes one placeholder cloud fraction per record on the (CAMERA_TIME, PSEUDOFOOTPRINT) grid,
+# with the camera_pixel_{x,y}_{min,max} provenance, so it aligns 1:1 with FMATCH-CAM-CAMTIME.
+CAM_CAMTIME_CONFIG = CfRunnerConfig(
+    output_product_id=DataProductIdentifier.l2_cf_cam_camtime,
+    l1b_input_product_id=DataProductIdentifier.l1b_cam,
+    product_definition_path=CF_CAM_CAMTIME_DEFINITION_PATH,
+    time_variable="CAMERA_TIME",
+    input_kind=CfInputKind.CAMERA,
+    log_prefix="cf_cam_camtime",
+)
+
+# Registry of every cloud-fraction runner, keyed by the variant name the LIBERA_CLOUD_FRACTION_VARIANT
+# environment variable selects. Adding a variant is one config plus one entry.
+RUNNER_CONFIGS: dict[str, CfRunnerConfig] = {
+    "cam": CAM_CONFIG,
+    "cam-camtime": CAM_CAMTIME_CONFIG,
+}
+
+# Environment variable naming the RUNNER_CONFIGS entry to run; set per processing step.
+CLOUD_FRACTION_VARIANT_ENV = "LIBERA_CLOUD_FRACTION_VARIANT"
+
+
+def resolve_runner_config_from_env() -> CfRunnerConfig:
+    """Select the cloud-fraction runner config named by the ``LIBERA_CLOUD_FRACTION_VARIANT`` environment variable.
+
+    Returns
+    -------
+    CfRunnerConfig
+        The :data:`RUNNER_CONFIGS` entry for the named variant.
+
+    Raises
+    ------
+    ValueError
+        If the variable is not set or names no entry in :data:`RUNNER_CONFIGS`.
+    """
+    variant = os.getenv(CLOUD_FRACTION_VARIANT_ENV, "").strip()
+    if not variant:
+        raise ValueError(f"{CLOUD_FRACTION_VARIANT_ENV} environment variable is not set")
+    if variant not in RUNNER_CONFIGS:
+        raise ValueError(
+            f"{CLOUD_FRACTION_VARIANT_ENV}={variant!r} is not a cloud-fraction variant; "
+            f"expected one of {sorted(RUNNER_CONFIGS)}"
+        )
+    return RUNNER_CONFIGS[variant]
+
+
+def cloud_fraction_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
+    """Run the cloud-fraction variant selected by ``LIBERA_CLOUD_FRACTION_VARIANT`` from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+
+    Raises
+    ------
+    ValueError
+        If ``LIBERA_CLOUD_FRACTION_VARIANT`` is not set or names no cloud-fraction variant.
+    """
+    runner_config = resolve_runner_config_from_env()
+    return run_algorithm(AnyPath(parsed_args.manifest), runner_config)
+
+
+def run_algorithm(manifest_path: Path | S3Path, config: CfRunnerConfig) -> Path | S3Path:
     """Run a CF-CAM processing workflow from an input manifest.
 
     Parameters
     ----------
-    manifest_path : Path | S3Path | argparse.Namespace
-        Path to the input manifest file listing the L1B input file(s). An ``argparse.Namespace`` (as
-        produced by the CLI) is also accepted for convenience; its ``manifest`` attribute is used.
+    manifest_path : Path | S3Path
+        Path to the input manifest file listing the L1B input file(s).
     config : CfRunnerConfig
         The per-runner parameters (output product, input product, definition, time variable, input
         kind, log label).
@@ -128,11 +225,7 @@ def run_algorithm(manifest_path: Path | S3Path | argparse.Namespace, config: CfR
 
     # Step 1: Read the input manifest.
     logger.info("Step 1: Reading the input manifest file")
-    if isinstance(manifest_path, argparse.Namespace):
-        manifest = AnyPath(manifest_path.manifest)
-    else:
-        manifest = AnyPath(manifest_path)
-    input_manifest = Manifest.from_file(manifest)
+    input_manifest = Manifest.from_file(AnyPath(manifest_path))
     logger.info(f"Loaded manifest with {len(input_manifest.files)} files")
 
     dropbox_path = os.getenv("PROCESSING_PATH")

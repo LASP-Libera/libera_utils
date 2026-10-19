@@ -190,7 +190,7 @@ class TestHelpers:
 
     def test_target_diameter_matches_fov_derivation(self):
         # Documents the derivation so a change to the constants is caught.
-        from libera_utils.footprint_matching.geometry import NOMINAL_ALTITUDE_KM
+        from libera_utils.footprint_matching.camera_segmentation import NOMINAL_ALTITUDE_KM
         from libera_utils.footprint_matching.psf import LIBERA_FOV_HALFANGLE_DEG
 
         expected = 2.0 * NOMINAL_ALTITUDE_KM * math.tan(math.radians(LIBERA_FOV_HALFANGLE_DEG))

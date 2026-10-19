@@ -5,6 +5,7 @@ import argparse
 from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.cloud_fraction import cloud_fraction_algorithm
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
 from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
@@ -22,42 +23,6 @@ def print_version_info(*args):
         f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}"
         f"\n\tCopyright 2025 University of Colorado\n\tReleased under BSD3 license"  # TODO[LIBSDC-607]: Automate date?
     )
-
-
-def cloud_fraction_cam_cli_handler(parsed_args: argparse.Namespace):
-    """Run the CF-CAM (radiometer-timescale) Camera Cloud Fraction algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.cloud_fraction.cf_cam import algorithm
-
-    return algorithm(parsed_args)
-
-
-def cloud_fraction_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
-    """Run the CF-CAM-CAMTIME (camera-timescale) Camera Cloud Fraction algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.cloud_fraction.cf_cam_camtime import algorithm
-
-    return algorithm(parsed_args)
 
 
 # pylint: disable=too-many-statements
@@ -119,23 +84,12 @@ def parse_cli_args(cli_args: list):
     # CLOUD FRACTION CLI
     # ==================
     cloud_fraction_parser = subparsers.add_parser(
-        "cloud-fraction", help="run a Libera Camera Cloud Fraction algorithm from a manifest file"
+        "cloud-fraction",
+        help="run the Libera Camera Cloud Fraction algorithm variant named by LIBERA_CLOUD_FRACTION_VARIANT "
+        "from a manifest file",
     )
-    cloud_fraction_subparsers = cloud_fraction_parser.add_subparsers(
-        description="sub-commands for cloud-fraction sub-command"
-    )
-
-    cloud_fraction_cam_parser = cloud_fraction_subparsers.add_parser(
-        "cam", help="run the CF-CAM algorithm (radiometer timescale) from a manifest file"
-    )
-    cloud_fraction_cam_parser.set_defaults(func=cloud_fraction_cam_cli_handler)
-    cloud_fraction_cam_parser.add_argument("manifest", type=str, help="path to the input manifest file")
-
-    cloud_fraction_cam_camtime_parser = cloud_fraction_subparsers.add_parser(
-        "cam-camtime", help="run the CF-CAM-CAMTIME algorithm (camera timescale) from a manifest file"
-    )
-    cloud_fraction_cam_camtime_parser.set_defaults(func=cloud_fraction_cam_camtime_cli_handler)
-    cloud_fraction_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+    cloud_fraction_parser.set_defaults(func=cloud_fraction_algorithm.cloud_fraction_cli_handler)
+    cloud_fraction_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
     # AWS CLI TOOLS
