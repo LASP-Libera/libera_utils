@@ -34,6 +34,7 @@ from libera_utils.footprint_matching.product import (
     _CAMTIME_SEGMENTATION_VARIABLES,
     _RADIOMETER_L1B_VARIABLES,
     FMATCH_DEFINITION_FILENAMES,
+    L1B_PASSTHROUGH_VARIABLES,
     _assemble_camtime_dataset,
     _assemble_radiometer_dataset,
     _footprint_geometry,
@@ -424,6 +425,16 @@ class TestRadiometerAssembly:
             np.testing.assert_allclose(dataset[name].values, l1b_inputs[name], rtol=1e-6)
         np.testing.assert_array_equal(dataset["RADIOMETER_TIME"].values, l1b_inputs["RADIOMETER_TIME"])
 
+    @pytest.mark.parametrize("mode", RADIOMETER_MODES)
+    def test_altitude_is_the_l1b_altitude(self, mode):
+        """altitude is copied from L1B ``Altitude``, the boresight surface height in metres, not a placeholder."""
+        assert L1B_PASSTHROUGH_VARIABLES["altitude"] == "Altitude"
+        l1b_inputs = _l1b_passthrough()
+        l1b_inputs["altitude"] = np.array([0.0, 12.5, 150.0, 1200.0, 2500.0, 4000.0], dtype=np.float32)
+        dataset = assemble_fmatch_dataset(mode, l1b_inputs)
+
+        np.testing.assert_array_equal(dataset["altitude"].values, l1b_inputs["altitude"])
+
     def test_cloud_fraction_camera_is_merged_when_declared(self):
         """FMATCH-CAM declares cloud_fraction_camera, so supplied values become real, not placeholder."""
         n = 6
@@ -793,6 +804,7 @@ def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa:
         "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")]),
         "latitude": np.array([lat], dtype=np.float32),
         "longitude": np.array([lon], dtype=np.float32),
+        "altitude": np.array([0.0], dtype=np.float32),
         "solar_zenith_angle": np.array([sza], dtype=np.float32),
         "viewing_zenith_angle": np.array([vza], dtype=np.float32),
         "relative_azimuth_angle": np.array([raa], dtype=np.float32),
