@@ -6,6 +6,7 @@ from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
 
@@ -22,96 +23,6 @@ def print_version_info(*args):
         f"Libera SDC utilities CLI\n\tVersion {libera_utils_version()}"
         f"\n\tCopyright 2025 University of Colorado\n\tReleased under BSD3 license"  # TODO[LIBSDC-607]: Automate date?
     )
-
-
-def fmatch_cam_cli_handler(parsed_args: argparse.Namespace):
-    """Run the FMATCH-CAM (radiometer-timescale) footprint-matching algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam"])
-
-
-def fmatch_cam_camtime_cli_handler(parsed_args: argparse.Namespace):
-    """Run the FMATCH-CAM-CAMTIME (camera-timescale) footprint-matching algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["cam-camtime"])
-
-
-def fmatch_imager_cli_handler(parsed_args: argparse.Namespace):
-    """Run the FMATCH-IMAGER (radiometer-timescale) footprint-matching algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["imager"])
-
-
-def fmatch_imager_camtime_cli_handler(parsed_args: argparse.Namespace):
-    """Run the FMATCH-IMAGER-CAMTIME (camera-timescale) footprint-matching algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["imager-camtime"])
-
-
-def fmatch_imager_flash_cli_handler(parsed_args: argparse.Namespace):
-    """Run the FMATCH-IMAGER-FLASH footprint-matching algorithm from an input manifest.
-
-    Parameters
-    ----------
-    parsed_args : argparse.Namespace
-        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
-
-    Returns
-    -------
-    pathlib.Path | cloudpathlib.S3Path
-        Path to the written output manifest file.
-    """
-    from libera_utils.footprint_matching.footprint_match_algorithm import RUNNER_CONFIGS, run_algorithm
-
-    return run_algorithm(parsed_args, RUNNER_CONFIGS["imager-flash"])
 
 
 # pylint: disable=too-many-statements
@@ -173,39 +84,12 @@ def parse_cli_args(cli_args: list):
     # FOOTPRINT MATCHING (FMATCH)
     # =========================
     fmatch_parser = subparsers.add_parser(
-        "fmatch", help="run a Libera FMATCH footprint-matching algorithm from a manifest file"
+        "fmatch",
+        help="run the Libera FMATCH footprint-matching algorithm variant named by LIBERA_FMATCH_VARIANT "
+        "from a manifest file",
     )
-    fmatch_subparsers = fmatch_parser.add_subparsers(description="sub-commands for fmatch sub-command")
-
-    fmatch_cam_parser = fmatch_subparsers.add_parser(
-        "cam", help="run the FMATCH-CAM algorithm (radiometer timescale) from a manifest file"
-    )
-    fmatch_cam_parser.set_defaults(func=fmatch_cam_cli_handler)
-    fmatch_cam_parser.add_argument("manifest", type=str, help="path to the input manifest file")
-
-    fmatch_cam_camtime_parser = fmatch_subparsers.add_parser(
-        "cam-camtime", help="run the FMATCH-CAM-CAMTIME algorithm (camera timescale) from a manifest file"
-    )
-    fmatch_cam_camtime_parser.set_defaults(func=fmatch_cam_camtime_cli_handler)
-    fmatch_cam_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
-
-    fmatch_imager_parser = fmatch_subparsers.add_parser(
-        "imager", help="run the FMATCH-IMAGER algorithm (radiometer timescale) from a manifest file"
-    )
-    fmatch_imager_parser.set_defaults(func=fmatch_imager_cli_handler)
-    fmatch_imager_parser.add_argument("manifest", type=str, help="path to the input manifest file")
-
-    fmatch_imager_camtime_parser = fmatch_subparsers.add_parser(
-        "imager-camtime", help="run the FMATCH-IMAGER-CAMTIME algorithm (camera timescale) from a manifest file"
-    )
-    fmatch_imager_camtime_parser.set_defaults(func=fmatch_imager_camtime_cli_handler)
-    fmatch_imager_camtime_parser.add_argument("manifest", type=str, help="path to the input manifest file")
-
-    fmatch_imager_flash_parser = fmatch_subparsers.add_parser(
-        "imager-flash", help="run the FMATCH-IMAGER-FLASH algorithm from a manifest file"
-    )
-    fmatch_imager_flash_parser.set_defaults(func=fmatch_imager_flash_cli_handler)
-    fmatch_imager_flash_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+    fmatch_parser.set_defaults(func=footprint_match_algorithm.fmatch_cli_handler)
+    fmatch_parser.add_argument("manifest", type=str, help="path to the input manifest file")
 
     # ==============
     # AWS CLI TOOLS

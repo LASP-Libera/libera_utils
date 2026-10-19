@@ -17,11 +17,13 @@ handful of parameters:
 Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
 :func:`run_algorithm` and is parameterized by a small :class:`FmatchRunnerConfig`. The concrete
 runners are just the five :data:`FmatchRunnerConfig` values collected in :data:`RUNNER_CONFIGS`,
-keyed by their CLI subcommand name (``"cam"``, ``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``,
-``"imager-flash"``). The ``libera-utils fmatch <sub>`` CLI handlers select a config from that registry
-and forward it to :func:`run_algorithm`; a new FMATCH variant is one config plus one registry entry,
-no new module. This mirrors ``libera_utils/scene_identification/scene_id_algorithm.py`` deliberately,
-so the two algorithm families read the same way.
+keyed by variant name (``"cam"``, ``"cam-camtime"``, ``"imager"``, ``"imager-camtime"``,
+``"imager-flash"``). Every variant runs from the one ``libera-utils fmatch <manifest>`` command, and so
+from one container image: :func:`fmatch_cli_handler` selects the config named by the
+``LIBERA_FMATCH_VARIANT`` environment variable, which each processing step sets. A new FMATCH variant
+is one config plus one registry entry, no new module. This mirrors
+``libera_utils/scene_identification/scene_id_algorithm.py`` deliberately, so the algorithm families
+read the same way.
 
 Algorithm-agnostic runner helpers shared with the Camera Cloud Fraction runners (manifest selection,
 L1B loading, local materialization, version stamping) still live in
@@ -30,8 +32,10 @@ dependency cycle.
 
 Environment
 -----------
-Two environment variables are required at run time:
+Three environment variables are required at run time:
 
+``LIBERA_FMATCH_VARIANT``
+    The :data:`RUNNER_CONFIGS` entry the CLI runs (e.g. ``cam``, ``imager-camtime``).
 ``PROCESSING_PATH``
     The dropbox directory (or S3 prefix) products and the output manifest are written
     to. This is the standard Libera runner convention.
@@ -63,7 +67,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 import xarray as xr
@@ -143,8 +147,6 @@ class FmatchRunnerConfig:
         (FMATCH-CAM-CAMTIME's cloud fraction is bundled in ``input_product_id``) and the IMAGER modes.
     log_prefix : str
         Short label used in task-log filenames (e.g. ``fmatch_cam``).
-    description : str
-        Help text describing this runner, used as the CLI ``--help`` description.
     camera_footprint_loader : CameraFootprintLoader or None
         For camera-timescale modes, the callable that turns one local input file into
         ``(pseudo-footprints, cloud_fraction_camera_or_None)``. FMATCH-CAM-CAMTIME uses a loader that
@@ -157,7 +159,6 @@ class FmatchRunnerConfig:
     input_product_id: DataProductIdentifier
     cloud_fraction_product_id: DataProductIdentifier | None
     log_prefix: str
-    description: str
     camera_footprint_loader: CameraFootprintLoader | None = None
 
     @property
@@ -245,7 +246,6 @@ CAM_CONFIG = FmatchRunnerConfig(
     input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=DataProductIdentifier.l2_cf_cam,
     log_prefix="fmatch_cam",
-    description="Run the Libera FMATCH-CAM algorithm from an input manifest.",
 )
 
 # FMATCH-CAM-CAMTIME (camera timescale): the camera-timescale near-real-time product. Its input is CF-CAM-CAMTIME,
@@ -257,7 +257,6 @@ CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
     input_product_id=DataProductIdentifier.l2_cf_cam_camtime,
     cloud_fraction_product_id=None,  # bundled in input_product_id (CF-CAM-CAMTIME)
     log_prefix="fmatch_cam_camtime",
-    description="Run the Libera FMATCH-CAM-CAMTIME algorithm from an input manifest.",
     camera_footprint_loader=_load_cam_camtime_footprints,
 )
 
@@ -270,7 +269,6 @@ IMAGER_CONFIG = FmatchRunnerConfig(
     input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager",
-    description="Run the Libera FMATCH-IMAGER algorithm from an input manifest.",
 )
 
 # FMATCH-IMAGER-CAMTIME (camera timescale): the RBSP Climate Quality camera-timescale product; requires RBSP inputs so
@@ -282,7 +280,6 @@ IMAGER_CAMTIME_CONFIG = FmatchRunnerConfig(
     input_product_id=DataProductIdentifier.l1b_cam,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager_camtime",
-    description="Run the Libera FMATCH-IMAGER-CAMTIME algorithm from an input manifest.",
     camera_footprint_loader=_load_imager_camtime_footprints,
 )
 
@@ -295,11 +292,10 @@ IMAGER_FLASH_CONFIG = FmatchRunnerConfig(
     input_product_id=DataProductIdentifier.l1b_rad,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager_flash",
-    description="Run the Libera FMATCH-IMAGER-FLASH algorithm from an input manifest.",
 )
 
-# Registry of every FMATCH runner, keyed by its ``libera-utils fmatch <sub>`` CLI subcommand name. The CLI handlers
-# look a config up here and forward it to run_algorithm; adding a variant is one config plus one entry.
+# Registry of every FMATCH runner, keyed by the variant name the LIBERA_FMATCH_VARIANT environment variable selects.
+# Adding a variant is one config plus one entry.
 RUNNER_CONFIGS: dict[str, FmatchRunnerConfig] = {
     "cam": CAM_CONFIG,
     "cam-camtime": CAM_CAMTIME_CONFIG,
@@ -308,19 +304,62 @@ RUNNER_CONFIGS: dict[str, FmatchRunnerConfig] = {
     "imager-flash": IMAGER_FLASH_CONFIG,
 }
 
+# Environment variable naming the RUNNER_CONFIGS entry to run; set per processing step.
+FMATCH_VARIANT_ENV = "LIBERA_FMATCH_VARIANT"
 
-def run_algorithm(
-    manifest_path: Path | S3Path | argparse.Namespace,
-    config: FmatchRunnerConfig,
-) -> Path | S3Path:
+
+def resolve_runner_config_from_env() -> FmatchRunnerConfig:
+    """Select the FMATCH runner config named by the ``LIBERA_FMATCH_VARIANT`` environment variable.
+
+    Returns
+    -------
+    FmatchRunnerConfig
+        The :data:`RUNNER_CONFIGS` entry for the named variant.
+
+    Raises
+    ------
+    ValueError
+        If the variable is not set or names no entry in :data:`RUNNER_CONFIGS`.
+    """
+    variant = os.getenv(FMATCH_VARIANT_ENV, "").strip()
+    if not variant:
+        raise ValueError(f"{FMATCH_VARIANT_ENV} environment variable is not set")
+    if variant not in RUNNER_CONFIGS:
+        raise ValueError(
+            f"{FMATCH_VARIANT_ENV}={variant!r} is not a FMATCH variant; expected one of {sorted(RUNNER_CONFIGS)}"
+        )
+    return RUNNER_CONFIGS[variant]
+
+
+def fmatch_cli_handler(parsed_args: argparse.Namespace) -> Path | S3Path:
+    """Run the FMATCH variant selected by ``LIBERA_FMATCH_VARIANT`` from an input manifest.
+
+    Parameters
+    ----------
+    parsed_args : argparse.Namespace
+        Parsed CLI arguments. Uses ``parsed_args.manifest`` (the input manifest path).
+
+    Returns
+    -------
+    pathlib.Path | cloudpathlib.S3Path
+        Path to the written output manifest file.
+
+    Raises
+    ------
+    ValueError
+        If ``LIBERA_FMATCH_VARIANT`` is not set or names no FMATCH variant.
+    """
+    runner_config = resolve_runner_config_from_env()
+    return run_algorithm(AnyPath(parsed_args.manifest), runner_config)
+
+
+def run_algorithm(manifest_path: Path | S3Path, config: FmatchRunnerConfig) -> Path | S3Path:
     """Run a FMATCH processing workflow from an input manifest.
 
     Parameters
     ----------
-    manifest_path : Path | S3Path | argparse.Namespace
-        Path to the input manifest file listing the L1B input file(s). An
-        ``argparse.Namespace`` (as produced by a runner's ``main``) is also accepted
-        for convenience when invoked as a CLI; its ``manifest`` attribute is used.
+    manifest_path : Path | S3Path
+        Path to the input manifest file listing the L1B input file(s).
     config : FmatchRunnerConfig
         The per-runner parameters (mode, input products, log label).
 
@@ -340,8 +379,7 @@ def run_algorithm(
 
     # Step 1: Read the input manifest.
     logger.info("Step 1: Reading the input manifest file")
-    manifest = _resolve_manifest(manifest_path)
-    input_manifest = Manifest.from_file(manifest)
+    input_manifest = Manifest.from_file(AnyPath(manifest_path))
     logger.info(f"Loaded manifest with {len(input_manifest.files)} files")
     logger.info("Running %s", config.mode.value)
 
@@ -398,17 +436,6 @@ def run_algorithm(
     logger.info(f"Output manifest written to: {output_manifest_filepath}")
 
     return output_manifest_filepath
-
-
-def _resolve_manifest(manifest_path: Path | S3Path | argparse.Namespace) -> Path | S3Path:
-    """Normalize the manifest argument to a path.
-
-    Accepting an ``argparse.Namespace`` lets a runner's ``main`` forward its parsed
-    args straight through, which is how the SCENE-ID runners are written too.
-    """
-    if isinstance(manifest_path, argparse.Namespace):
-        return AnyPath(manifest_path.manifest)
-    return AnyPath(manifest_path)
 
 
 def _collect_cloud_fraction_files(input_manifest: Manifest, config: FmatchRunnerConfig) -> list[str]:
@@ -785,47 +812,3 @@ def create_and_write_data_product(
     )
     logger.info(f"Wrote data product to {output_file_path.path}")
     return output_file_path
-
-
-def build_argument_parser(config: FmatchRunnerConfig) -> argparse.ArgumentParser:
-    """Build the CLI argument parser for a FMATCH runner.
-
-    Every runner takes the input manifest positionally.
-
-    Parameters
-    ----------
-    config : FmatchRunnerConfig
-        Runner parameters supplying the help-text description and the L1B input product label.
-
-    Returns
-    -------
-    argparse.ArgumentParser
-        The configured parser.
-    """
-    parser = argparse.ArgumentParser(description=config.description)
-    parser.add_argument(
-        "manifest",
-        type=str,
-        help=f"Path to the input manifest file listing {config.input_product_id.value} input(s).",
-    )
-    return parser
-
-
-def main(config: FmatchRunnerConfig, cli_args: list[str] | None = None) -> Any:
-    """Shared CLI entrypoint body for a FMATCH runner.
-
-    Parameters
-    ----------
-    config : FmatchRunnerConfig
-        The runner's configuration (including its CLI ``--help`` description).
-    cli_args : list[str], optional
-        Command-line arguments (primarily for testing). Defaults to ``sys.argv``.
-
-    Returns
-    -------
-    Path | S3Path
-        Path to the written output manifest file.
-    """
-    parser = build_argument_parser(config)
-    args = parser.parse_args(cli_args)
-    return run_algorithm(args, config)
