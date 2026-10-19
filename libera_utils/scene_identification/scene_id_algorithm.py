@@ -59,7 +59,7 @@ class SceneIdRunnerConfig:
         The SCENE-ID product this runner emits. Used only for documentation/logging; the written filename's product id
         is driven by the product definition's ``ProductID`` attribute.
     reader : Callable[[Path], FootprintData]
-        The :class:`~libera_utils.scene_identification.scene_id.FootprintData` factory that reads one input file (e.g. ``FootprintData.from_ceres_ssf`` or
+        The :class:`~libera_utils.scene_identification.scene_id.FootprintData` factory that reads one input file (e.g. ``FootprintData.from_fmatch_cam`` or
         ``FootprintData.from_fmatch_cam_camtime``).
     product_definition_path : Path
         Path to the SCENE-ID product-definition YAML the output is validated/written against.
@@ -334,7 +334,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
     Parameters
     ----------
     fmatch_file_path : str | pathlib.Path | cloudpathlib.S3Path
-        Path (local or S3) to an input NetCDF file (a CERES SSF placeholder or a FMATCH product).
+        Path (local or S3) to an input FMATCH product NetCDF file.
     config : SceneIdRunnerConfig
         Runner parameters supplying the reader and scene types.
 
@@ -346,7 +346,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
 
     Notes
     -----
-    The reader (:meth:`~libera_utils.scene_identification.scene_id.FootprintData.from_ceres_ssf` / :meth:`~libera_utils.scene_identification.scene_id.FootprintData.from_fmatch_cam_camtime`) opens the file
+    The reader (e.g. :meth:`~libera_utils.scene_identification.scene_id.FootprintData.from_fmatch_cam` / :meth:`~libera_utils.scene_identification.scene_id.FootprintData.from_fmatch_cam_camtime`) opens the file
     through :func:`~libera_utils.io.smart_open.smart_open`, so local and S3 inputs are handled uniformly.
     """
     logger.info("Running scene identification on %s", fmatch_file_path)
