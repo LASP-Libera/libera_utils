@@ -204,7 +204,8 @@ class TestDateline:
     def test_dateline_box_splits_and_merges(self, tmp_path):
         reader = _reader(tmp_path)
         tm = _manager(reader)
-        box = BoundingBox(0.0, 2.0, 179.0, -179.0, wraps_dateline=True)
+        # A dateline-crossing box is given in the [0, 360) form (see BoundingBox).
+        box = BoundingBox(0.0, 2.0, 179.0, 181.0, wraps_dateline=True)
         merged = tm.get_data("_fake_tiling", box)
         # Two sub-requests -> two tile reads.
         assert reader.load_calls == 2
