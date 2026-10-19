@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `write_libera_data_product` takes `worker_compressed_variables`, a tuple of Dask-backed data variables whose chunks are shuffled and deflated on the `dask.distributed` workers instead of one at a time under the HDF5 write lock. The writing process stores the compressed chunks with h5py `write_direct_chunk`, and the file reads back identical to a normal write. A chunk equal to the variable's `_FillValue` throughout is not stored when that value is also the HDF5 fill value, with the same dtype; HDF5 returns the fill value for it. It requires the `h5netcdf` engine and an active `distributed.Client`, and each named variable's Dask chunks must be whole multiples of its on-disk chunk shape, its filters deflate with or without shuffle, and its dtype numeric; otherwise `ValueError` before any data is computed. The default, an empty tuple, writes with `to_netcdf` as before.
-- `h5py` is a declared dependency; `h5netcdf` already required it.
+- `h5py` and `dask[distributed]` are declared dependencies; worker-compressed writes import both, and `h5netcdf` already required `h5py`.
 
 ### Changed
 

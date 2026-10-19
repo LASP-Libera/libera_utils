@@ -41,6 +41,7 @@ classifiers = [
 # These are the dependencies used in the package metadata when building the project
 dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
+    "dask[distributed]>=2026.1.1",  # Worker-compressed product writes run on a dask.distributed Client
     "lasp-curryer >= 0.5.2, <1.0",
     "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
     "h5py>=3.0,<4.0",  # Imported directly by io/netcdf.py for worker-compressed writes; h5netcdf also requires it
@@ -83,7 +84,6 @@ include = [
 # These specs are totally open because they are only needed for developers
 bandit = "*"
 cfchecker = "*"
-dask = {extras = ["distributed"], version = "*"}  # Tests of worker-compressed product writes
 matplotlib = "*"
 memory-profiler = "*"
 moto = {extras = ["s3"], version = "*"}

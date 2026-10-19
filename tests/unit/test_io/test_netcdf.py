@@ -960,6 +960,18 @@ class TestWorkerCompression:
             for name in ("floats", "ints", "frame_flag", "t"):
                 np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
 
+    def test_identically_built_variables_are_each_written(self, tmp_path, distributed_client):
+        """Variables whose blocks share a task key each get the result, as a to_netcdf write does"""
+        dataset = _small_dataset(tmp_path / "calls.log")
+        for name in ("zeros_a", "zeros_b"):
+            dataset[name] = (("t",), da.zeros(6, chunks=2, dtype=np.uint8) + 1)
+        assert dataset["zeros_a"].data.name == dataset["zeros_b"].data.name
+        dataset.to_netcdf(tmp_path / "reference.nc", engine="h5netcdf")
+        _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
+            for name in ("floats", "zeros_a", "zeros_b"):
+                np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
+
     def test_unlimited_dims_named_by_a_string_are_unlimited(self, tmp_path, distributed_client):
         """A string ``unlimited_dims`` encoding marks that one dimension unlimited, as to_netcdf does"""
         dataset = _small_dataset(tmp_path / "calls.log")
@@ -1007,6 +1019,7 @@ class TestWorkerCompression:
         dataset["floats"].encoding = {}
         with pytest.raises(ValueError, match="is not chunked on disk"):
             _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
         assert _calls(counter) == 0
 
     def test_named_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
@@ -1017,6 +1030,7 @@ class TestWorkerCompression:
         dataset["labels"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (3, 2)}
         with pytest.raises(ValueError, match="compress only numeric data"):
             _write_worker_compressed(dataset, tmp_path / "out.nc", ("labels",))
+        assert not (tmp_path / "out.nc").exists()
         assert _calls(counter) == 0
 
     def test_no_distributed_client_raises(self, tmp_path):
@@ -1029,12 +1043,14 @@ class TestWorkerCompression:
         counter = tmp_path / "calls.log"
         with pytest.raises(ValueError, match="the workers apply only deflate"):
             _write_worker_compressed(_small_dataset(counter, fletcher32=True), tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
         assert _calls(counter) == 0
 
     def test_dask_chunks_not_a_multiple_of_the_disk_chunks_raise(self, tmp_path, distributed_client):
         counter = tmp_path / "calls.log"
         with pytest.raises(ValueError, match="each must be a whole multiple"):
             _write_worker_compressed(_small_dataset(counter, chunks=(1, 24, 64)), tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
         assert _calls(counter) == 0
 
     def test_block_that_differs_from_its_declared_dtype_raises(self, tmp_path, distributed_client):
@@ -1044,6 +1060,7 @@ class TestWorkerCompression:
         dataset["values"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (1, 16, 16)}
         with pytest.raises(ValueError, match="A computed block of values has dtype float64"):
             _write_worker_compressed(dataset, tmp_path / "out.nc", ("values",))
+        assert not (tmp_path / "out.nc").exists()
 
     def test_other_dask_variable_that_is_not_numeric_raises(self, tmp_path, distributed_client):
         counter = tmp_path / "calls.log"
@@ -1051,4 +1068,5 @@ class TestWorkerCompression:
         dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
         with pytest.raises(ValueError, match="not numeric or boolean"):
             _write_worker_compressed(dataset, tmp_path / "out.nc", ("floats",))
+        assert not (tmp_path / "out.nc").exists()
         assert _calls(counter) == 0

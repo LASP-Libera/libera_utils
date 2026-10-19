@@ -13,7 +13,11 @@ import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath, CloudPath
 from cloudpathlib.enums import FileCacheMode
+from dask import delayed
+from distributed import as_completed, get_client
 from numpy.typing import NDArray
+from xarray.backends import H5NetCDFStore
+from xarray.backends.common import ArrayWriter
 
 from libera_utils.config import config
 from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
@@ -234,7 +238,7 @@ def _write_worker_compressed(dataset: xr.Dataset, path: Path, variable_names: tu
 
     Name and attribute validation that ``to_netcdf`` runs first is not repeated here; the product
     definition's conformance check has already run on `dataset`. The storage checks run once the
-    file exists, so a call that raises on one leaves a partial file at `path`.
+    file exists, so a call that raises after creating it deletes it before re-raising.
 
     Parameters
     ----------
@@ -250,11 +254,6 @@ def _write_worker_compressed(dataset: xr.Dataset, path: Path, variable_names: tu
     ValueError
         As `write_libera_data_product` documents for `worker_compressed_variables`.
     """
-    from dask import delayed
-    from distributed import as_completed, get_client
-    from xarray.backends import H5NetCDFStore
-    from xarray.backends.common import ArrayWriter
-
     if len(set(variable_names)) != len(variable_names):
         raise ValueError(f"worker_compressed_variables repeats a name: {variable_names}; name each variable once")
     not_dask = [name for name in variable_names if name not in dataset.data_vars or dataset[name].chunks is None]
@@ -275,61 +274,73 @@ def _write_worker_compressed(dataset: xr.Dataset, path: Path, variable_names: tu
     unlimited_dims = dataset.encoding.get("unlimited_dims")
     if isinstance(unlimited_dims, str):
         unlimited_dims = [unlimited_dims]
-    store = H5NetCDFStore.open(os.fspath(path), mode="w")
     try:
-        dataset.dump_to_store(store, writer=writer, unlimited_dims=unlimited_dims)
-    finally:
-        store.close()
-
-    with h5py.File(path, "r+") as h5file:
-        units = []
-        placements = []
-        for source, target in zip(writer.sources, writer.targets, strict=True):
-            name = target.variable_name
-            dset = h5file[name]
-            compressed = name in variable_names
-            if compressed:
-                shuffle, level, fill = _worker_compression_settings(dset, source.chunks)
-            elif dset.dtype.kind not in "iufb":
-                # Written through h5py directly, which skips the enum, string and compound
-                # handling of h5netcdf's Variable.__setitem__; numeric and boolean data need none.
-                raise ValueError(
-                    f"Dask-backed variable {name} has dtype {dset.dtype}, which is not numeric or boolean; "
-                    "load it into memory before writing, or omit worker_compressed_variables"
-                )
-            starts = [np.cumsum((0, *lengths[:-1])) for lengths in source.chunks]
-            blocks = source.to_delayed(optimize_graph=False)
-            for index in np.ndindex(*blocks.shape):
-                origin = tuple(int(axis_starts[i]) for axis_starts, i in zip(starts, index, strict=True))
-                block_shape = tuple(lengths[i] for lengths, i in zip(source.chunks, index, strict=True))
-                if compressed:
-                    units.append(
-                        delayed(_compress_block)(
-                            blocks[index], name, dset.chunks, dset.dtype, block_shape, shuffle, level, fill
-                        )
-                    )
-                else:
-                    units.append(blocks[index])
-                placements.append((dset, name, compressed, origin, block_shape))
-
-        futures = client.compute(units)
-        placement_of = dict(zip(futures, placements, strict=True))
-        stored = 0
+        store = H5NetCDFStore.open(os.fspath(path), mode="w")
         try:
-            for future in as_completed(futures):
-                dset, name, compressed, origin, block_shape = placement_of[future]
-                result = future.result()
+            dataset.dump_to_store(store, writer=writer, unlimited_dims=unlimited_dims)
+        finally:
+            store.close()
+
+        with h5py.File(path, "r+") as h5file:
+            units = []
+            placements = []
+            for source, target in zip(writer.sources, writer.targets, strict=True):
+                name = target.variable_name
+                dset = h5file[name]
+                compressed = name in variable_names
                 if compressed:
-                    for chunk_start, data in result:
-                        dset.id.write_direct_chunk(tuple(o + c for o, c in zip(origin, chunk_start, strict=True)), data)
-                    stored += len(result)
-                else:
-                    _check_block(result, name, dset.dtype, block_shape)
-                    dset[tuple(slice(o, o + n) for o, n in zip(origin, block_shape, strict=True))] = result
-                future.release()
-        except BaseException:
-            client.cancel(futures)
-            raise
+                    shuffle, level, fill = _worker_compression_settings(dset, source.chunks)
+                elif dset.dtype.kind not in "iufb":
+                    # Written through h5py directly, which skips the enum, string and compound
+                    # handling of h5netcdf's Variable.__setitem__; numeric and boolean data need none.
+                    raise ValueError(
+                        f"Dask-backed variable {name} has dtype {dset.dtype}, which is not numeric or boolean; "
+                        "load it into memory before writing, or omit worker_compressed_variables"
+                    )
+                starts = [np.cumsum((0, *lengths[:-1])) for lengths in source.chunks]
+                blocks = source.to_delayed(optimize_graph=False)
+                for index in np.ndindex(*blocks.shape):
+                    origin = tuple(int(axis_starts[i]) for axis_starts, i in zip(starts, index, strict=True))
+                    block_shape = tuple(lengths[i] for lengths, i in zip(source.chunks, index, strict=True))
+                    if compressed:
+                        units.append(
+                            delayed(_compress_block)(
+                                blocks[index], name, dset.chunks, dset.dtype, block_shape, shuffle, level, fill
+                            )
+                        )
+                    else:
+                        units.append(blocks[index])
+                    placements.append((dset, name, compressed, origin, block_shape))
+
+            futures = client.compute(units)
+            # Identically built blocks share a task key, so one result can fill several placements.
+            placements_of: dict[str, list[tuple]] = {}
+            futures_of: dict[str, list] = {}
+            for future, placement in zip(futures, placements, strict=True):
+                placements_of.setdefault(future.key, []).append(placement)
+                futures_of.setdefault(future.key, []).append(future)
+            stored = 0
+            try:
+                for future in as_completed([same_key[0] for same_key in futures_of.values()]):
+                    result = future.result()
+                    for dset, name, compressed, origin, block_shape in placements_of[future.key]:
+                        if compressed:
+                            for chunk_start, data in result:
+                                dset.id.write_direct_chunk(
+                                    tuple(o + c for o, c in zip(origin, chunk_start, strict=True)), data
+                                )
+                            stored += len(result)
+                        else:
+                            _check_block(result, name, dset.dtype, block_shape)
+                            dset[tuple(slice(o, o + n) for o, n in zip(origin, block_shape, strict=True))] = result
+                    for same_key in futures_of[future.key]:
+                        same_key.release()
+            except BaseException:
+                client.cancel(futures)
+                raise
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
     logger.info(f"Stored {stored} worker-compressed chunks for {len(variable_names)} variables")
 
 
