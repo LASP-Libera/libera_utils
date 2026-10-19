@@ -81,7 +81,7 @@ class TestRunnerDispatch:
 
     def test_unknown_variant_raises(self, monkeypatch):
         """A value naming no registry entry is rejected, listing the valid variants."""
-        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, "imager")
+        monkeypatch.setenv(SCENE_ID_VARIANT_ENV, "not-a-variant")
 
-        with pytest.raises(ValueError, match="'imager' is not a SCENE-ID variant"):
+        with pytest.raises(ValueError, match="'not-a-variant' is not a SCENE-ID variant"):
             resolve_runner_config_from_env()
