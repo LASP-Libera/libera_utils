@@ -15,12 +15,9 @@ from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
 from libera_utils.scene_identification.scene_id_algorithm import SCENE_ID_VARIANT_ENV, scene_id_cli_handler
 from libera_utils.version import version
+from tests.test_data.footprint_matching.fixtures import make_fmatch_product_fixture
 
 pytestmark = pytest.mark.integration
-
-
-# Name of the CERES SSF placeholder input that SCENE-ID-CAM currently runs on, relative to the test-data root.
-_SSF_INPUT_RELATIVE_PATH = "scene_id/CER_SSF_NOAA20-FM6-VIIRS_Edition1C_101103.2023010100.nc"
 
 
 class TestSceneIdCamRunnerEndToEnd:
@@ -39,9 +36,12 @@ class TestSceneIdCamRunnerEndToEnd:
     def test_runner_writes_conformant_product_and_output_manifest(
         self, generate_input_manifest_local, tmp_path, monkeypatch
     ):
-        """A manifest referencing a CERES SSF input runs end-to-end and yields a conformant SCENE-ID-CAM product."""
-        # Step 1: build an input manifest pointing at the CERES SSF placeholder input.
-        input_manifest_path = generate_input_manifest_local(_SSF_INPUT_RELATIVE_PATH)
+        """A manifest referencing an FMATCH-CAM input runs end-to-end and yields a conformant SCENE-ID-CAM product."""
+        # Step 1: build an input manifest pointing at a synthetic, conformant FMATCH-CAM product.
+        inputs = tmp_path / "inputs"
+        inputs.mkdir()
+        fmatch_cam_path = make_fmatch_product_fixture(inputs)
+        input_manifest_path = generate_input_manifest_local(fmatch_cam_path)
 
         # Step 2: set the environment a processing step provides: the dropbox the runner writes products and the
         # output manifest into, and the SCENE-ID variant to run.
@@ -66,8 +66,8 @@ class TestSceneIdCamRunnerEndToEnd:
         assert product_filename.data_product_id is DataProductIdentifier.aux_scene_id_cam
 
         product = xr.open_dataset(product_path)
-        # Provenance: InputGranules names the SSF input, algorithm_version comes from the installed package version.
-        assert product.attrs["InputGranules"] == pathlib.Path(_SSF_INPUT_RELATIVE_PATH).name
+        # Provenance: InputGranules names the FMATCH-CAM input, algorithm_version comes from the installed package version.
+        assert product.attrs["InputGranules"] == fmatch_cam_path.name
         assert product.attrs["algorithm_version"] == version()
         # The product carries the time axis plus the CAM classifications (ERBE + unfiltering) and the quality flag.
         assert "RADIOMETER_TIME" in product.coords

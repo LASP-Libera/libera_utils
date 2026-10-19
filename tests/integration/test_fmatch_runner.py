@@ -1,7 +1,7 @@
 """Integration tests for the FMATCH runners and their product write path.
 
-These exercise the manifest/dropbox plumbing in ``libera_utils.footprint_matching._runner`` and the
-concrete per-mode runners, including the actual product write. The happy-path tests in particular are
+These exercise the manifest/dropbox plumbing in ``libera_utils.footprint_matching.footprint_match_algorithm``
+and its per-mode runner configs, including the actual product write. The happy-path tests in particular are
 the guard that the FMATCH product definitions can be written under ``strict=True`` conformance from a
 real L1B input, all the way from an input manifest to an output manifest.
 
@@ -9,22 +9,22 @@ Modelled on ``tests/integration/test_scene_id_runner.py``, which covers the same
 for the SCENE-ID product family.
 """
 
+import argparse
 from datetime import UTC, datetime
 
 import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.cloud_fraction.cf_cam_camtime import algorithm as cf_cam_camtime_algorithm
+from libera_utils.cloud_fraction import cloud_fraction_algorithm
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_PATH_ENV,
+    FMATCH_VARIANT_ENV,
+    fmatch_cli_handler,
 )
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     RUNNER_CONFIGS as FMATCH_RUNNER_CONFIGS,
-)
-from libera_utils.footprint_matching.footprint_match_algorithm import (
-    main as fmatch_main,
 )
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     run_algorithm as fmatch_run_algorithm,
@@ -45,9 +45,8 @@ from tests.test_data.footprint_matching.fixtures import (
     make_l1b_radiometer_fixture,
 )
 
-# The FMATCH runners no longer expose per-module RUNNER_CONFIG/algorithm/main; they live in
-# footprint_match_algorithm's registry. Bind the per-mode configs and thin algorithm/main helpers here
-# so the test bodies below stay readable.
+# The FMATCH runners live in footprint_match_algorithm's registry. Bind the per-mode configs and thin
+# helpers here so the test bodies below stay readable.
 CAM_CONFIG = FMATCH_RUNNER_CONFIGS["cam"]
 CAM_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS["cam-camtime"]
 IMAGER_CAMTIME_CONFIG = FMATCH_RUNNER_CONFIGS["imager-camtime"]
@@ -64,9 +63,10 @@ def cam_camtime_algorithm(manifest_path):
     return fmatch_run_algorithm(manifest_path, CAM_CAMTIME_CONFIG)
 
 
-def imager_main(cli_args=None):
-    """Run the FMATCH-IMAGER runner via the shared CLI ``main`` entrypoint."""
-    return fmatch_main(FMATCH_RUNNER_CONFIGS["imager"], cli_args)
+def imager_cli(manifest_path, monkeypatch):
+    """Run the FMATCH-IMAGER runner the way its container does: the CLI handler with LIBERA_FMATCH_VARIANT=imager."""
+    monkeypatch.setenv(FMATCH_VARIANT_ENV, "imager")
+    return fmatch_cli_handler(argparse.Namespace(manifest=str(manifest_path)))
 
 
 pytestmark = pytest.mark.integration
@@ -178,7 +178,9 @@ class TestCameraRunnerWorkflow:
         """
         l1b_file = make_l1b_camera_fixture(inputs, **camera_kwargs)
         cf_manifest_path = _write_input_manifest(inputs, l1b_file)
-        cf_output_manifest = Manifest.from_file(cf_cam_camtime_algorithm(cf_manifest_path))
+        cf_output_manifest = Manifest.from_file(
+            cloud_fraction_algorithm.run_algorithm(cf_manifest_path, cloud_fraction_algorithm.CAM_CAMTIME_CONFIG)
+        )
         return cf_output_manifest.files[0].filename
 
     def test_full_workflow_writes_product_and_output_manifest(self, tmp_path, dropbox, staged_ancillary):
@@ -230,15 +232,15 @@ class TestCameraRunnerWorkflow:
 class TestImagerProduct:
     """FMATCH-IMAGER writes the RBSP CLDPIX/SSF fields alongside the ERA5 pressure-level fields."""
 
-    def _run(self, tmp_path):
+    def _run(self, tmp_path, monkeypatch):
         inputs = tmp_path / "inputs"
         inputs.mkdir(parents=True)
         l1b_file = make_l1b_radiometer_fixture(inputs, n_footprints=6)
         manifest_path = _write_input_manifest(inputs, l1b_file)
-        return Manifest.from_file(imager_main([manifest_path]))
+        return Manifest.from_file(imager_cli(manifest_path, monkeypatch))
 
-    def test_run_writes_the_rbsp_and_era5_variable_set(self, tmp_path, dropbox, staged_ancillary):
-        output_manifest = self._run(tmp_path)
+    def test_run_writes_the_rbsp_and_era5_variable_set(self, tmp_path, dropbox, staged_ancillary, monkeypatch):
+        output_manifest = self._run(tmp_path, monkeypatch)
 
         with xr.open_dataset(output_manifest.files[0].filename) as product:
             names = set(product.variables)
@@ -247,8 +249,8 @@ class TestImagerProduct:
             # ... alongside the ERA5 pressure-level fields.
             assert any(name.startswith("era5_pressure_") for name in names)
 
-    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, dropbox, staged_ancillary):
-        output_manifest = self._run(tmp_path)
+    def test_run_writes_the_fmatch_imager_product_id(self, tmp_path, dropbox, staged_ancillary, monkeypatch):
+        output_manifest = self._run(tmp_path, monkeypatch)
 
         written = LiberaDataProductFilename.from_file_path(output_manifest.files[0].filename)
         assert written.data_product_id is DataProductIdentifier.aux_fmatch_imager
