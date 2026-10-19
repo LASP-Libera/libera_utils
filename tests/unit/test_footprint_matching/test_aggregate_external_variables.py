@@ -25,7 +25,7 @@ import pytest
 # _map_product_specs lock-in test below).
 import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.footprint_matching.aggregation import _map_product_specs
-from libera_utils.footprint_matching.product import aggregate_external_variables
+from libera_utils.footprint_matching.product import aggregate_external_variables, build_radiometer_footprints
 from libera_utils.footprint_matching.readers.base import GriddedDataReader
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.tiling import TileManager
@@ -109,6 +109,7 @@ class _FakeFootprint:
     # Optional geometry consumed by the angular-frame weigher (ignored by RadialWeigher).
     subsatellite_latitude: float | None = None
     subsatellite_longitude: float | None = None
+    satellite_radius_km: float | None = None
     cone_angle_rate: float | None = None
     viewing_zenith_angle: float = 0.0
 
@@ -208,6 +209,7 @@ class TestAggregateExternalVariables:
                 longitude=0.5,
                 subsatellite_latitude=1.5,
                 subsatellite_longitude=0.5,
+                satellite_radius_km=7213.0,
                 cone_angle_rate=-1.0,
                 viewing_zenith_angle=20.0,
             )
@@ -220,6 +222,50 @@ class TestAggregateExternalVariables:
         np.testing.assert_allclose(result["_fake_agg_mean_field_a"], [5.0])
         np.testing.assert_allclose(result["_fake_agg_mean_field_b"], [2.0])
         np.testing.assert_array_equal(result["_fake_agg_cat_surface"], [3])
+
+    def test_angular_psf_weigher_rejects_footprints_without_ephemeris(self, tmp_path):
+        from libera_utils.footprint_matching.weighting import AngularPSFWeigher
+
+        # A camera-style footprint carries no subsatellite point or satellite radius, so it has
+        # no viewing frame to weight by.
+        with pytest.raises(ValueError, match="ephemeris"):
+            aggregate_external_variables(
+                OperationalMode.CAM, _footprints(), _manager(tmp_path), weigher=AngularPSFWeigher()
+            )
+
+
+class TestBuildRadiometerFootprints:
+    """build_radiometer_footprints ray-traces each L1B record from its ephemeris."""
+
+    @staticmethod
+    def _l1b(**overrides):
+        inputs = {
+            "latitude": np.array([10.0, np.nan]),
+            "longitude": np.array([20.0, np.nan]),
+            "viewing_zenith_angle": np.array([15.0, np.nan]),
+            "subsatellite_latitude": np.array([11.5, 11.5]),
+            "subsatellite_longitude": np.array([20.0, 20.0]),
+            "satellite_radius_km": np.array([7213.0, 7213.0]),
+            "cone_angle_rate": np.array([-1.0, np.nan]),
+        }
+        inputs.update(overrides)
+        return inputs
+
+    def test_carries_ephemeris_and_flags_off_earth_views(self):
+        on_earth, off_earth = build_radiometer_footprints(self._l1b())
+        assert not on_earth.off_limb
+        assert on_earth.bbox.lat_min < 10.0 < on_earth.bbox.lat_max
+        assert on_earth.satellite_radius_km == 7213.0
+        assert on_earth.cone_angle_rate == -1.0
+        # The off-Earth record keeps its index, flagged, with no scan rate.
+        assert off_earth.off_limb
+        assert off_earth.cone_angle_rate is None
+
+    def test_missing_ephemeris_raises(self):
+        inputs = self._l1b()
+        del inputs["satellite_radius_km"]
+        with pytest.raises(ValueError, match="satellite_radius_km"):
+            build_radiometer_footprints(inputs)
 
 
 class TestProductSpecPlaneMapping:
