@@ -1073,7 +1073,7 @@ def make_l1b_radiometer_fixture(
     Contains exactly the variables that
     :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs` reads: the CF-encoded
     ``radiometer_time`` coordinate, the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
-    through verbatim, and the scan-reference geometry (subsatellite point + cone-angle rate) that feeds the
+    through verbatim, and the scan-reference geometry (subsatellite point, satellite radius and cone-angle rate) that feeds the
     ray-traced bounding box and angular PSF weigher. The values are physically plausible but arbitrary; only the
     variable names, dtypes and time encoding are the contract under test.
 
@@ -1120,6 +1120,8 @@ def make_l1b_radiometer_fixture(
         "relative_azimuth_angle": (0.0, 350.0),
         "subsatellite_latitude": (-58.0, 62.0),
         "subsatellite_longitude": (-168.0, 172.0),
+        # Spacecraft distance from Earth's center for an ~835 km orbit over these latitudes.
+        "satellite_radius_km": (7205.0, 7215.0),
     }
     data_vars = {}
     # The pass-through columns are float32 to match the product; the scan-reference geometry is float64.
