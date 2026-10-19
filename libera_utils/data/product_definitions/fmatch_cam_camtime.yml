@@ -81,10 +81,9 @@ variables:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
-      # This value is the center-pixel geolocated SURFACE height taken straight from
-      # the L1B Daily Camera `Altitude` field (camera_segmentation._build_footprint),
-      # i.e. terrain elevation above the WGS84 ellipsoid at the footprint boresight --
-      # NOT the ~835 km spacecraft altitude.
+      # This value is the L1B CAM `Altitude` field at the center pixel: the height above the
+      # WGS84 ellipsoid (EPSG:4979) of that pixel's geolocated point -- NOT the ~835 km
+      # spacecraft altitude.
       long_name: Footprint center-pixel surface height above the WGS84 ellipsoid
       units: meters
   solar_zenith_angle:
@@ -397,12 +396,14 @@ variables:
     attributes:
       long_name: Western longitude bound of PSF bounding box
       units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has psf_bbox_lon_min > psf_bbox_lon_max."
   psf_bbox_lon_max:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Eastern longitude bound of PSF bounding box
       units: degrees_east
+      comment: "In [-180, 180). A box crossing the antimeridian has psf_bbox_lon_min > psf_bbox_lon_max."
   psf_coverage_fraction:
     dtype: float32
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
@@ -415,14 +416,19 @@ variables:
     dimensions: ["CAMERA_TIME", "PSEUDOFOOTPRINT"]
     attributes:
       long_name: Quality flags (bitwise)
-      # CF flag metadata for the bits set by camera_segmentation.CameraFootprintQualityFlag.
+      # CF flag metadata. q_flags ORs CameraFootprintQualityFlag (masks 1, 2) with
+      # FmatchCoverageFlag (masks 1, 4, 8, 16); both enums use mask 1 for partial coverage.
       # flag_masks/flag_meanings let a consumer decode each bit without reading source:
-      #   1 = partial_coverage           (some -- not all -- block corners were off-Earth,
-      #                                    so the bounding box covers only part of the block)
+      #   1 = partial_coverage           (some -- not all -- block corners were off-Earth, or
+      #                                    75% <= PSF-energy coverage < 95%)
       #   2 = center_pixel_substituted   (the geometric center pixel was off-Earth, so the
       #                                    nearest valid pixel was used as the boresight)
-      flag_masks: [1, 2]
-      flag_meanings: "partial_coverage center_pixel_substituted"
+      #   4 = insufficient_coverage      (PSF-energy coverage < 75%; retained but flagged)
+      #   8 = limb_truncated             (bounding box clipped at the Earth's limb)
+      #  16 = off_limb                   (view centroid off the limb; no Earth footprint,
+      #                                    external variables left at fill)
+      flag_masks: [1, 2, 4, 8, 16]
+      flag_meanings: "partial_coverage center_pixel_substituted insufficient_coverage limb_truncated off_limb"
 
   # ---------------------------------------------------------------------------
   # (f) Camera pixel-block provenance.
