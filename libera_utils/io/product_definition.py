@@ -719,20 +719,27 @@ class LiberaDataProductDefinition(BaseModel):
         dataset : Dataset
             The Dataset for which to create a filename. Used to extract algorithm version and start and end times.
         time_variable : str
-            Name of the time dimension to use for determining the start and end time.
+            Name of the time variable whose minimum and maximum are the filename's start and end times.
+            It need not be sorted.
 
         Returns
         -------
         LiberaDataProductFilename
             Properly formatted filename object
+
+        Raises
+        ------
+        ValueError
+            If ``time_variable`` is empty.
         """
         # Convert numpy.datetime64 to Python datetime for filename generation
         with warnings.catch_warnings():
             warnings.filterwarnings(
                 "ignore", category=UserWarning, message=r"Discarding nonzero nanoseconds in conversion"
             )
-            utc_start = pd.Timestamp(dataset[time_variable].values[0]).to_pydatetime()
-            utc_end = pd.Timestamp(dataset[time_variable].values[-1]).to_pydatetime()
+            times = dataset[time_variable].values
+            utc_start = pd.Timestamp(times.min()).to_pydatetime()
+            utc_end = pd.Timestamp(times.max()).to_pydatetime()
 
         return LiberaDataProductFilename.from_filename_parts(
             product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
