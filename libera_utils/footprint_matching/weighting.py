@@ -46,8 +46,8 @@ import numpy as np
 from pyproj import Geod
 
 from libera_utils.footprint_matching.geometry import (
-    NOMINAL_ALTITUDE_KM,
     POLAR_LATITUDE_THRESHOLD_DEG,
+    ViewingFrame,
     project_to_angular,
     psf_ground_radius_km,
     surface_cell_ecef_km,
@@ -168,12 +168,12 @@ class PixelWeigher(abc.ABC):
         boresight_lat_deg: float,
         boresight_lon_deg: float,
         *,
-        altitude_km: float | None = None,
+        subsatellite_lat_deg: float,
+        subsatellite_lon_deg: float,
+        satellite_radius_km: float,
         viewing_zenith_deg: float = 0.0,
-        subsatellite_lat_deg: float | None = None,
-        subsatellite_lon_deg: float | None = None,
         cone_angle_rate: float | None = None,
-        frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
+        frame: ViewingFrame | None = None,
     ) -> WeightField:
         """Return the per-cell PSF :class:`WeightField` for ``tile``.
 
@@ -183,25 +183,27 @@ class PixelWeigher(abc.ABC):
             The merged tile covering the footprint's PSF bounding box.
         boresight_lat_deg, boresight_lon_deg : float
             Footprint boresight centroid, degrees (the PSF centre).
-        altitude_km : float, optional
-            Satellite altitude above the surface, km. Used to convert the PSF's
-            angular extent into a ground radius. Defaults to the nominal orbit
-            altitude when not supplied.
+        subsatellite_lat_deg, subsatellite_lon_deg : float
+            Geodetic spacecraft sub-point (L1B ``Subsatellite_Latitude`` /
+            ``Subsatellite_Longitude``), degrees. Weighers that project cells into the
+            angular frame (:class:`AngularPSFWeigher`) use it to orient the scan plane;
+            weighers that only need the boresight (:class:`RadialWeigher`) ignore it.
+        satellite_radius_km : float
+            Spacecraft distance from Earth's center (L1B
+            ``Radius_of_Satellite_from_Center_of_Earth``), km. Used to convert the PSF's
+            angular extent into a ground radius and, for the angular frame, to place the
+            satellite.
         viewing_zenith_deg : float, optional
             Viewing zenith angle, degrees. Elongates the ground footprint at oblique
             views.
-        subsatellite_lat_deg, subsatellite_lon_deg : float, optional
-            Subsatellite point, degrees. Needed by weighers that project cells into
-            the angular frame (:class:`AngularPSFWeigher`) to orient the scan plane;
-            ignored by weighers that only need the boresight (:class:`RadialWeigher`).
         cone_angle_rate : float, optional
             L1B ``Cone_Angle_Rate`` (deg/s). Its sign sets the scan direction and a
             (near-)zero value marks a stationary scanner. Ignored by weighers that do
             not model the asymmetric along-scan PSF.
-        frame : tuple of np.ndarray, optional
-            A precomputed per-footprint ``(satellite, b_hat, c_hat, n_hat)`` viewing
-            frame (see
-            :func:`~libera_utils.footprint_matching.geometry.compute_viewing_frames`).
+        frame : ViewingFrame, optional
+            A precomputed single-footprint viewing frame (see
+            :func:`~libera_utils.footprint_matching.geometry.compute_viewing_frames` and
+            :meth:`~libera_utils.footprint_matching.geometry.ViewingFrame.for_index`).
             Weighers that project into the angular frame use it to skip the
             per-footprint viewing-geometry reconstruction; weighers that do not need it
             (the radial stand-in) ignore it.
@@ -241,12 +243,12 @@ class RadialWeigher(PixelWeigher):
         boresight_lat_deg: float,
         boresight_lon_deg: float,
         *,
-        altitude_km: float | None = None,
+        subsatellite_lat_deg: float,
+        subsatellite_lon_deg: float,
+        satellite_radius_km: float,
         viewing_zenith_deg: float = 0.0,
-        subsatellite_lat_deg: float | None = None,
-        subsatellite_lon_deg: float | None = None,
         cone_angle_rate: float | None = None,
-        frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
+        frame: ViewingFrame | None = None,
     ) -> WeightField:
         """Compute the radial Gaussian :class:`WeightField` for ``tile``.
 
@@ -259,8 +261,7 @@ class RadialWeigher(PixelWeigher):
         lats = np.asarray(tile.lats, dtype=float)
         lons = np.asarray(tile.lons, dtype=float)
 
-        altitude = altitude_km if (altitude_km is not None and altitude_km > 0.0) else NOMINAL_ALTITUDE_KM
-        max_radius_km = psf_ground_radius_km(altitude, viewing_zenith_deg, self._fov_halfangle_deg)
+        max_radius_km = psf_ground_radius_km(satellite_radius_km, viewing_zenith_deg, self._fov_halfangle_deg)
 
         # Empty tile (failed / missing region): return an empty, zero-energy field.
         if lats.size == 0 or lons.size == 0:
@@ -403,12 +404,12 @@ class AngularPSFWeigher(PixelWeigher):
         boresight_lat_deg: float,
         boresight_lon_deg: float,
         *,
-        altitude_km: float | None = None,
+        subsatellite_lat_deg: float,
+        subsatellite_lon_deg: float,
+        satellite_radius_km: float,
         viewing_zenith_deg: float = 0.0,
-        subsatellite_lat_deg: float | None = None,
-        subsatellite_lon_deg: float | None = None,
         cone_angle_rate: float | None = None,
-        frame: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
+        frame: ViewingFrame | None = None,
     ) -> WeightField:
         """Compute the CERES-PSF :class:`WeightField` for ``tile``. See class docstring.
 
@@ -419,10 +420,9 @@ class AngularPSFWeigher(PixelWeigher):
         lats = np.asarray(tile.lats, dtype=float)
         lons = np.asarray(tile.lons, dtype=float)
 
-        altitude = altitude_km if (altitude_km is not None and altitude_km > 0.0) else NOMINAL_ALTITUDE_KM
         # max_radius_km is diagnostic only (the true contour lives in angle space); we
         # reuse the radial ground-radius estimate so the WeightField field stays populated.
-        max_radius_km = psf_ground_radius_km(altitude, viewing_zenith_deg, self._fov_halfangle_deg)
+        max_radius_km = psf_ground_radius_km(satellite_radius_km, viewing_zenith_deg, self._fov_halfangle_deg)
 
         # Empty tile (failed / missing region): empty, zero-energy field.
         if lats.size == 0 or lons.size == 0:
@@ -432,12 +432,6 @@ class AngularPSFWeigher(PixelWeigher):
                 max_radius_km=max_radius_km,
             )
 
-        # Without a subsatellite point we cannot orient the scan plane; fall back to
-        # the boresight (a nadir-ish frame). This is a degraded mode -- the orchestrator
-        # should supply the L1B subsatellite geolocation whenever available.
-        sub_lat = subsatellite_lat_deg if subsatellite_lat_deg is not None else boresight_lat_deg
-        sub_lon = subsatellite_lon_deg if subsatellite_lon_deg is not None else boresight_lon_deg
-
         lon_grid, lat_grid = np.meshgrid(lons, lats)  # both (n_lat, n_lon)
         # The cells' surface ECEF is frame-independent, so it is memoized per tile and reused
         # across the many consecutive footprints that share this merged tile (see _cell_ecef_km).
@@ -445,13 +439,12 @@ class AngularPSFWeigher(PixelWeigher):
         delta, beta = project_to_angular(
             lat_grid,
             lon_grid,
-            boresight_lat_deg,
-            boresight_lon_deg,
-            sub_lat,
-            sub_lon,
-            viewing_zenith_deg,
-            altitude_km=altitude,
             frame=frame,
+            boresight_lat_deg=boresight_lat_deg,
+            boresight_lon_deg=boresight_lon_deg,
+            subsatellite_lat_deg=subsatellite_lat_deg,
+            subsatellite_lon_deg=subsatellite_lon_deg,
+            satellite_radius_km=satellite_radius_km,
             cell_ecef_km=cell_ecef,
         )
         # Alignment offset between the reported centroid (delta = 0) and the PSF
