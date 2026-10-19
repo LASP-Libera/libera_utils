@@ -57,8 +57,7 @@ from libera_utils.footprint_matching.aggregation import (
 )
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
-    NOMINAL_ALTITUDE_KM,
-    bounding_box_from_boresight,
+    WGS84_SEMI_MAJOR_AXIS_KM,
     compute_footprint_bounding_boxes,
     compute_viewing_frames,
 )
@@ -69,6 +68,7 @@ from libera_utils.footprint_matching.tiling import (
     build_tile_manager,
 )
 from libera_utils.footprint_matching.types import (
+    BoundingBox,
     FmatchCoverageFlag,
     OperationalMode,
     RadiometerFootprint,
@@ -144,17 +144,24 @@ L1B_PASSTHROUGH_VARIABLES: dict[str, str] = {
 # and the CERES-faithful angular PSF weigher. These are NOT written to the product;
 # they feed :func:`build_radiometer_footprints`.
 #
-# The subsatellite point is required to orient the scan plane and locate the satellite,
-# so it is AND-ed into the finite-footprint mask alongside the pass-through variables
-# (a footprint with no valid subsatellite geolocation cannot get a real box). It is read
-# at float64 for geometry precision rather than the float32 the product columns use.
+# The subsatellite point and the satellite's distance from Earth's center are required to
+# orient the scan plane and locate the satellite, so they are AND-ed into the
+# finite-footprint mask alongside the pass-through variables (a footprint without valid
+# ephemeris cannot get a real box). They are read at float64 for geometry precision rather
+# than the float32 the product columns use.
 #
 # Like L1B_PASSTHROUGH_VARIABLES this lives here (not in the runner that reads it) so the
 # assembly path and the runner share one source of truth without a circular import.
 L1B_SCAN_REFERENCE_VARIABLES: dict[str, str] = {
     "subsatellite_latitude": "Subsatellite_Latitude",
     "subsatellite_longitude": "Subsatellite_Longitude",
+    "satellite_radius_km": "Radius_of_Satellite_from_Center_of_Earth",
 }
+
+# Nominal satellite radius for camera pseudo-footprints, which carry no ephemeris. Only the
+# radial stand-in weigher reads it there, to size its PSF ground radius for an ~835 km orbit.
+# TODO[LIBSDC-884]: take the camera record's ephemeris once camera segmentation carries it.
+_CAMERA_NOMINAL_SATELLITE_RADIUS_KM: float = WGS84_SEMI_MAJOR_AXIS_KM + 835.0
 
 # The instrument cone-angle rate (degrees/second) sets the along-scan PSF orientation
 # and flags the stationary-scanner case. Unlike the subsatellite point it is optional:
@@ -269,11 +276,14 @@ class _FootprintGeometry:
 
     boresight_lat_deg: float
     boresight_lon_deg: float
-    altitude_km: float
     viewing_zenith_deg: float
-    subsatellite_lat_deg: float | None
-    subsatellite_lon_deg: float | None
+    subsatellite_lat_deg: float
+    subsatellite_lon_deg: float
+    satellite_radius_km: float
     cone_angle_rate: float | None
+    #: False for a footprint with no L1B ephemeris (a camera pseudo-footprint), whose
+    #: subsatellite point and radius are stand-ins only the radial weigher can use.
+    has_ephemeris: bool
 
 
 def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
@@ -282,10 +292,11 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
     Different footprint objects expose geometry differently (a camera
     ``PseudoFootprint`` has ``latitude``/``longitude``/``viewing_zenith_angle``; a bare
     footprint may only carry a ``bbox``), so we read named attributes when present and
-    fall back sensibly otherwise. The
-    ``subsatellite_*`` and ``cone_angle_rate`` fields are only used by the
-    angular-frame weigher; they are ``None`` when the footprint does not carry them
-    (the radial stand-in ignores them, and the angular weigher degrades gracefully).
+    fall back sensibly otherwise. A :class:`RadiometerFootprint` carries the L1B
+    ephemeris (subsatellite point and satellite radius) the angular-frame weigher needs.
+    A camera pseudo-footprint carries none: it gets the boresight as its subsatellite
+    point and :data:`_CAMERA_NOMINAL_SATELLITE_RADIUS_KM`, which only the radial stand-in
+    can use, and ``has_ephemeris`` is ``False``.
 
     The L1B ``Cone_Angle_Rate`` fill value (``-999``) is normalized to ``None`` so a
     fill never masquerades as a real (near-zero) stationary-scanner rate.
@@ -298,20 +309,18 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
         # lands inside it, which is good enough for the weight kernel.)
         lat = 0.5 * (bbox.lat_min + bbox.lat_max)
         lon = 0.5 * (bbox.lon_min + bbox.lon_max)
-    # Spacecraft altitude in km for the PSF ground-radius scaling. Read only the
-    # dedicated ``spacecraft_altitude_km`` field so we never mistake another quantity
-    # for it -- in particular the camera ``PseudoFootprint`` carries a metres-valued
-    # ``altitude`` that is the center-pixel *surface height* (an output column), not a
-    # spacecraft altitude; using it here would inflate the PSF radius ~1000x and make
-    # near-zero terrain heights collapse to the fallback. Camera footprints expose no
-    # spacecraft altitude, so they correctly fall back to the nominal orbit altitude.
-    altitude = getattr(footprint, "spacecraft_altitude_km", None)
-    if altitude is None or not (altitude > 0.0):
-        altitude = NOMINAL_ALTITUDE_KM
     viewing_zenith = getattr(footprint, "viewing_zenith_angle", 0.0) or 0.0
 
+    # Ephemeris. Read only the dedicated fields so we never mistake another quantity for
+    # them -- in particular the camera ``PseudoFootprint`` carries a metres-valued
+    # ``altitude`` that is the center-pixel *surface height* (an output column), not a
+    # spacecraft position.
     sub_lat = getattr(footprint, "subsatellite_latitude", None)
     sub_lon = getattr(footprint, "subsatellite_longitude", None)
+    radius = getattr(footprint, "satellite_radius_km", None)
+    has_ephemeris = sub_lat is not None and sub_lon is not None and radius is not None
+    if not has_ephemeris:
+        sub_lat, sub_lon, radius = lat, lon, _CAMERA_NOMINAL_SATELLITE_RADIUS_KM
 
     # Scan direction: prefer the L1B Cone_Angle_Rate; accept an ``alpha_dot`` alias.
     cone_rate = getattr(footprint, "cone_angle_rate", None)
@@ -323,24 +332,23 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
     return _FootprintGeometry(
         boresight_lat_deg=float(lat),
         boresight_lon_deg=float(lon),
-        altitude_km=float(altitude),
         viewing_zenith_deg=float(viewing_zenith),
-        subsatellite_lat_deg=None if sub_lat is None else float(sub_lat),
-        subsatellite_lon_deg=None if sub_lon is None else float(sub_lon),
+        subsatellite_lat_deg=float(sub_lat),
+        subsatellite_lon_deg=float(sub_lon),
+        satellite_radius_km=float(radius),
         cone_angle_rate=None if cone_rate is None else float(cone_rate),
+        has_ephemeris=has_ephemeris,
     )
 
 
 def _batch_viewing_frames(geoms: Sequence[_FootprintGeometry]) -> ViewingFrame:
     """Build every footprint's angular-PSF viewing frame in one batched call.
 
-    Mirrors the per-footprint frame construction inside
+    Takes the same ephemeris the per-footprint frame construction inside
     :meth:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher.weight_field`
-    exactly: the effective subsatellite point falls back to the boresight when the L1B
-    subsatellite geolocation is unavailable, and the altitude is the footprint's
-    (already nominal-guarded) satellite altitude. Because the inputs are identical, the
-    batched frame yields the same ``(delta, beta)`` projection as the inline path -- it
-    just amortizes the satellite-location bisection across the whole segment.
+    would, so the batched frame yields the same ``(delta, beta)`` projection as the
+    inline path -- it just builds every frame in one vectorized call. Off-Earth views
+    have no frame, so the caller passes only the on-Earth footprints.
 
     Parameters
     ----------
@@ -354,19 +362,10 @@ def _batch_viewing_frames(geoms: Sequence[_FootprintGeometry]) -> ViewingFrame:
     """
     boresight_lat = np.array([g.boresight_lat_deg for g in geoms], dtype=float)
     boresight_lon = np.array([g.boresight_lon_deg for g in geoms], dtype=float)
-    # The angular weigher falls back to the boresight when a subsatellite point is
-    # missing (a nadir-ish frame); replicate that fallback so the frames match.
-    sub_lat = np.array(
-        [g.subsatellite_lat_deg if g.subsatellite_lat_deg is not None else g.boresight_lat_deg for g in geoms],
-        dtype=float,
-    )
-    sub_lon = np.array(
-        [g.subsatellite_lon_deg if g.subsatellite_lon_deg is not None else g.boresight_lon_deg for g in geoms],
-        dtype=float,
-    )
-    vza = np.array([g.viewing_zenith_deg for g in geoms], dtype=float)
-    altitude = np.array([g.altitude_km for g in geoms], dtype=float)
-    return compute_viewing_frames(boresight_lat, boresight_lon, sub_lat, sub_lon, vza, altitude)
+    sub_lat = np.array([g.subsatellite_lat_deg for g in geoms], dtype=float)
+    sub_lon = np.array([g.subsatellite_lon_deg for g in geoms], dtype=float)
+    radius = np.array([g.satellite_radius_km for g in geoms], dtype=float)
+    return compute_viewing_frames(boresight_lat, boresight_lon, sub_lat, sub_lon, satellite_radius_km=radius)
 
 
 def aggregate_external_variables(
@@ -413,9 +412,10 @@ def aggregate_external_variables(
     as its own generic default, but the radiometer-timescale assembly path defaults to
     the scientifically faithful angular-frame PSF
     (:class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`) now that the
-    L1B scan reference (subsatellite point + cone-angle rate) is read (see
+    L1B ephemeris (subsatellite point + satellite radius) and cone-angle rate are read (see
     :func:`_assemble_radiometer_dataset`). The camera path keeps the radial stand-in
-    until camera segmentation carries a scan reference.
+    until camera segmentation carries ephemeris; a weigher that needs a viewing frame
+    raises ``ValueError`` on footprints without it.
 
     Coverage-based *acceptance* (the CERES 75%/95% discard/flag rule) is not applied
     here -- this function computes each footprint's coverage and, when
@@ -471,7 +471,8 @@ def aggregate_external_variables(
     Raises
     ------
     ValueError
-        If neither ``tile_manager`` nor ``source_file_paths`` is supplied.
+        If neither ``tile_manager`` nor ``source_file_paths`` is supplied, or ``weigher``
+        needs a viewing frame and a footprint carries no L1B ephemeris.
     """
     # Track whether we own the manager: a manager we build here (and its prefetch thread
     # pool) must be shut down before returning; a caller-supplied manager is theirs.
@@ -520,7 +521,19 @@ def _run_aggregation(
     # dominant weighting cost (each frame otherwise repeats the satellite bisection per
     # footprint; see doc/fmatch_vectorization_plan.md Phase 2).
     geoms = [_footprint_geometry(footprint) for footprint in footprints]
-    frames = _batch_viewing_frames(geoms) if (weigher.uses_viewing_frame and n_footprints > 0) else None
+    frames: ViewingFrame | None = None
+    frame_rows: dict[int, int] = {}
+    if weigher.uses_viewing_frame:
+        if not all(geom.has_ephemeris for geom in geoms):
+            raise ValueError(
+                f"{type(weigher).__name__} needs each footprint's L1B ephemeris (subsatellite point and "
+                "satellite radius); camera pseudo-footprints carry none, so weight them with RadialWeigher."
+            )
+        # Off-Earth views have no frame (and are skipped below), so batch only the others.
+        on_earth = [i for i, footprint in enumerate(footprints) if not getattr(footprint, "off_limb", False)]
+        if on_earth:
+            frames = _batch_viewing_frames([geoms[i] for i in on_earth])
+            frame_rows = {i: row for row, i in enumerate(on_earth)}
 
     # Drive the loop off the TileManager's *active sources* rather than re-deriving
     # the registry set for the mode: a manager is constructed with only the readers
@@ -575,7 +588,7 @@ def _run_aggregation(
                 tile_manager.prefetch(fp.bbox for fp in window)
 
         geom = geoms[i]
-        frame = frames.for_index(i) if frames is not None else None
+        frame = frames.for_index(frame_rows[i]) if frames is not None else None
         for key, reader_cls in reader_classes.items():
             # Merged, cached tile covering this footprint's PSF bounding box. The
             # TileManager returns a stable cached object -- for single tiles and, via its
@@ -586,10 +599,10 @@ def _run_aggregation(
                 tile,
                 geom.boresight_lat_deg,
                 geom.boresight_lon_deg,
-                altitude_km=geom.altitude_km,
-                viewing_zenith_deg=geom.viewing_zenith_deg,
                 subsatellite_lat_deg=geom.subsatellite_lat_deg,
                 subsatellite_lon_deg=geom.subsatellite_lon_deg,
+                satellite_radius_km=geom.satellite_radius_km,
+                viewing_zenith_deg=geom.viewing_zenith_deg,
                 cone_angle_rate=geom.cone_angle_rate,
                 frame=frame,
             )
@@ -704,105 +717,82 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     """Build per-footprint :class:`RadiometerFootprint` objects from L1B pass-through arrays.
 
     Gives each radiometer-timescale footprint the geographic bounding box the external
-    aggregation path needs.
+    aggregation path needs: the **true ray-traced footprint** from
+    :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_boxes`
+    (boresight placed from the satellite at the subsatellite point and
+    ``Radius_of_Satellite_from_Center_of_Earth``, projected onto the WGS84 ellipsoid and
+    limb-truncated). The ephemeris and ``cone_angle_rate`` are carried onto the footprint
+    so the CERES-faithful ``AngularPSFWeigher`` can orient the PSF along the real scan
+    plane.
 
-    When the L1B scan reference is present (``subsatellite_latitude`` /
-    ``subsatellite_longitude`` from
-    :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`), the
-    box is the **true ray-traced footprint** from
-    :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_box`
-    (boresight + subsatellite point + viewing zenith projected onto the WGS84
-    ellipsoid, limb-truncated via ``on_limb="flag"``), and the subsatellite point and
-    ``cone_angle_rate`` are carried onto the footprint so the CERES-faithful
-    ``AngularPSFWeigher`` can orient the PSF along the real scan plane.
-
-    When the scan reference is absent (a minimal caller-built dict), the box degrades
-    to the boresight-centred approximation from
-    :func:`~libera_utils.footprint_matching.geometry.bounding_box_from_boresight`,
-    which needs only lat/lon + viewing zenith, and the scan-frame fields stay ``None``.
-
-    Either way exactly one footprint is produced per input record, in input order, so
-    the list stays index-aligned with the product columns: a record whose ray-trace
-    fails the limb check (a space/calibration view that slipped past the reader's finite
-    filter) falls back to the boresight box rather than being dropped. The altitude is
-    the nominal orbit altitude because the L1B pass-through does not carry a
-    per-footprint satellite altitude; the ray-traced box recovers the slant range from
-    the boresight/subsatellite geometry itself.
+    Exactly one footprint is produced per input record, in input order, so the list stays
+    index-aligned with the product columns: an off-Earth view (a space/calibration view
+    that slipped past the reader's finite filter) keeps its index with a zero-size
+    placeholder box at the boresight and ``off_limb=True``, so aggregation leaves it at
+    fill rather than tiling a fabricated region.
 
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
         The arrays from
         :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`
-        (already filtered to finite geolocation). ``latitude``, ``longitude`` and
-        ``viewing_zenith_angle`` are always read; ``subsatellite_latitude`` /
-        ``subsatellite_longitude`` / ``cone_angle_rate`` are read when present.
+        (already filtered to finite geolocation). ``latitude``, ``longitude``,
+        ``viewing_zenith_angle`` and every :data:`L1B_SCAN_REFERENCE_VARIABLES` key are
+        required; ``cone_angle_rate`` is read when present.
 
     Returns
     -------
     list[RadiometerFootprint]
         One footprint per L1B record, in input order.
+
+    Raises
+    ------
+    ValueError
+        If a required key is missing.
+    MissingGeolocationError
+        If any record's ephemeris is unusable or its footprint is not visible from the
+        satellite (see :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_boxes`).
     """
+    required = ("latitude", "longitude", "viewing_zenith_angle", *L1B_SCAN_REFERENCE_VARIABLES)
+    missing = [name for name in required if name not in l1b_inputs]
+    if missing:
+        raise ValueError(f"L1B inputs are missing the key(s) radiometer footprints need: {', '.join(missing)}")
+
     latitudes = np.asarray(l1b_inputs["latitude"], dtype=float)
     longitudes = np.asarray(l1b_inputs["longitude"], dtype=float)
     viewing_zeniths = np.asarray(l1b_inputs["viewing_zenith_angle"], dtype=float)
+    subsatellite_lats = np.asarray(l1b_inputs["subsatellite_latitude"], dtype=float)
+    subsatellite_lons = np.asarray(l1b_inputs["subsatellite_longitude"], dtype=float)
+    satellite_radii = np.asarray(l1b_inputs["satellite_radius_km"], dtype=float)
+    cone_rates = np.asarray(l1b_inputs.get("cone_angle_rate", np.full(latitudes.shape, np.nan)), dtype=float)
 
-    # The scan reference is optional. When it is missing we keep the boresight-box
-    # behaviour so minimal caller-built dicts (and the existing tests) still work.
-    have_scan_ref = "subsatellite_latitude" in l1b_inputs and "subsatellite_longitude" in l1b_inputs
-    if have_scan_ref:
-        subsatellite_lats = np.asarray(l1b_inputs["subsatellite_latitude"], dtype=float)
-        subsatellite_lons = np.asarray(l1b_inputs["subsatellite_longitude"], dtype=float)
-        cone_rates = np.asarray(l1b_inputs.get("cone_angle_rate", np.full(latitudes.shape, np.nan)), dtype=float)
-
-    footprints: list[RadiometerFootprint] = []
-    if not have_scan_ref:
-        for lat, lon, vza in zip(latitudes, longitudes, viewing_zeniths, strict=True):
-            footprints.append(
-                RadiometerFootprint(
-                    bbox=bounding_box_from_boresight(float(lat), float(lon), float(vza)),
-                    latitude=float(lat),
-                    longitude=float(lon),
-                    spacecraft_altitude_km=NOMINAL_ALTITUDE_KM,
-                    viewing_zenith_angle=float(vza),
-                )
-            )
-        return footprints
-
-    # Scan reference present: build every footprint's true ray-traced box in one batched
-    # call (see geometry.compute_footprint_bounding_boxes). A None result marks an off-limb
-    # centroid -- the scalar OffLimbError case -- which falls back to the boresight box so a
-    # space/calibration view that slipped past the reader's finite filter keeps its index
-    # rather than being dropped.
+    # Every footprint's ray-traced box in one batched call. A None result marks an
+    # off-Earth view.
     boxes = compute_footprint_bounding_boxes(
         latitudes,
         longitudes,
         subsatellite_lats,
         subsatellite_lons,
-        viewing_zeniths,
+        satellite_radius_km=satellite_radii,
     )
-    for i in range(latitudes.size):
+    footprints: list[RadiometerFootprint] = []
+    for i, bbox in enumerate(boxes):
         lat = float(latitudes[i])
         lon = float(longitudes[i])
-        vza = float(viewing_zeniths[i])
-        bbox = boxes[i]
-        # A None box marks an off-limb centroid (the batched OffLimbError case): keep the
-        # index aligned with a boresight placeholder box, but flag the record so the
-        # aggregation path leaves its external variables at fill and scores it zero
-        # coverage -- rather than tiling and weighting a fabricated geographic box.
         off_limb = bbox is None
         if off_limb:
-            bbox = bounding_box_from_boresight(lat, lon, vza)
+            # Zero-size placeholder that keeps the index aligned; never tiled or weighted.
+            bbox = BoundingBox(lat, lat, lon, lon)
         cone_rate = float(cone_rates[i])
         footprints.append(
             RadiometerFootprint(
                 bbox=bbox,
                 latitude=lat,
                 longitude=lon,
-                spacecraft_altitude_km=NOMINAL_ALTITUDE_KM,
-                viewing_zenith_angle=vza,
+                viewing_zenith_angle=float(viewing_zeniths[i]),
                 subsatellite_latitude=float(subsatellite_lats[i]),
                 subsatellite_longitude=float(subsatellite_lons[i]),
+                satellite_radius_km=float(satellite_radii[i]),
                 # A fill/NaN cone-angle rate means "unknown scan rate" -> None.
                 cone_angle_rate=None if not np.isfinite(cone_rate) else cone_rate,
                 off_limb=off_limb,
@@ -1478,11 +1468,10 @@ def _assemble_radiometer_dataset(
     footprints: Sequence[Any] = (
         build_radiometer_footprints(l1b_inputs) if (tile_manager is not None or source_file_paths is not None) else []
     )
-    # The radiometer footprints carry the L1B scan reference (subsatellite point +
-    # cone-angle rate), so default this path to the CERES-faithful AngularPSFWeigher
-    # (design-doc section 2.8.1.2), which orients the PSF along the real scan plane. It
-    # degrades to a nadir frame for any footprint missing the scan reference, so it is
-    # safe even for the boresight-box fallback. Callers can still override via `weigher`.
+    # The radiometer footprints carry the L1B ephemeris (subsatellite point + satellite
+    # radius) and cone-angle rate, so default this path to the CERES-faithful
+    # AngularPSFWeigher (design-doc section 2.8.1.2), which orients the PSF along the real
+    # scan plane. Callers can still override via `weigher`.
     if weigher is None:
         weigher = AngularPSFWeigher()
     _merge_computed_variables(
