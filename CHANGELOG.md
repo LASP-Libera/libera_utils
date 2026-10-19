@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `libera_utils.footprint_matching.readers` plugin subsystem: a `GriddedDataReader` template base with auto-registration, a `ReaderRegistry`, and lazy HDF4/HDF5/pyproj I/O helpers. Each reader turns one external ancillary dataset into a uniform gridded tile. This release adds the gridded readers: ERA5 single-level (7 variables) and 37-level pressure fields, VIIRS Deep Blue AOD (`AERDB_D3_VIIRS_NOAA20`) with a categorical `aerosol_type`, VIIRS BRDF, IGBP land cover, and NSIDC NISE sea ice (AMSR-2 provenance).
+- `notebooks/02_readers_gridded.ipynb`, a demonstration of the gridded readers.
+- `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available.
+
 ## [5.12.0] - 2026-10-16
 
 ### Added
