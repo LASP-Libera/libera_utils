@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from libera_utils.footprint_matching.geometry import compute_viewing_frames
 from libera_utils.footprint_matching.types import BoundingBox, GridTile
 from libera_utils.footprint_matching.weighting import (
     AngularPSFWeigher,
@@ -12,6 +13,11 @@ from libera_utils.footprint_matching.weighting import (
     RadialWeigher,
     WeightField,
 )
+
+# Spacecraft distance from Earth's center (~835 km orbit), km.
+_SATELLITE_RADIUS_KM = 7213.0
+# Spacecraft geolocation the radial weigher needs only for its ground radius.
+_GEOM = dict(subsatellite_lat_deg=0.0, subsatellite_lon_deg=0.0, satellite_radius_km=_SATELLITE_RADIUS_KM)
 
 
 def _tile(lats: np.ndarray, lons: np.ndarray) -> GridTile:
@@ -29,7 +35,7 @@ class TestRadialWeigher:
     def test_weight_field_shape_matches_grid(self):
         lats = np.array([0.0, 0.1, 0.2])
         lons = np.array([0.0, 0.1])
-        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.1, 0.05)
+        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.1, 0.05, **_GEOM)
         assert wf.weights.shape == (3, 2)
         assert isinstance(wf, WeightField)
 
@@ -37,7 +43,7 @@ class TestRadialWeigher:
         # Boresight sits on the centre cell; its weight must be the maximum.
         lats = np.array([-0.1, 0.0, 0.1])
         lons = np.array([-0.1, 0.0, 0.1])
-        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0)
+        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0, **_GEOM)
         centre = wf.weights[1, 1]
         assert centre == pytest.approx(wf.weights.max())
         # A corner is farther from the boresight than an edge, so weighs no more.
@@ -46,7 +52,7 @@ class TestRadialWeigher:
     def test_symmetric_about_boresight(self):
         lats = np.array([-0.1, 0.0, 0.1])
         lons = np.array([-0.1, 0.0, 0.1])
-        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0)
+        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0, **_GEOM)
         # Mirror symmetry in latitude and longitude about the centred boresight.
         np.testing.assert_allclose(wf.weights, wf.weights[::-1, :], rtol=1e-6)
         np.testing.assert_allclose(wf.weights, wf.weights[:, ::-1], rtol=1e-6)
@@ -56,26 +62,26 @@ class TestRadialWeigher:
         # and must receive exactly zero weight.
         lats = np.array([0.0, 40.0])
         lons = np.array([0.0])
-        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0)
+        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0, **_GEOM)
         assert wf.weights[1, 0] == 0.0
         assert wf.weights[0, 0] > 0.0
 
     def test_total_energy_is_weight_sum(self):
         lats = np.array([0.0, 0.05])
         lons = np.array([0.0, 0.05])
-        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.025, 0.025)
+        wf = RadialWeigher().weight_field(_tile(lats, lons), 0.025, 0.025, **_GEOM)
         assert wf.total_energy == pytest.approx(float(wf.weights.sum()))
 
     def test_high_vza_elongates_ground_radius(self):
         lats = np.array([-0.1, 0.1])
         lons = np.array([-0.1, 0.1])
-        nadir = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0)
-        oblique = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0, viewing_zenith_deg=70.0)
+        nadir = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0, **_GEOM)
+        oblique = RadialWeigher().weight_field(_tile(lats, lons), 0.0, 0.0, viewing_zenith_deg=70.0, **_GEOM)
         assert oblique.max_radius_km > nadir.max_radius_km
 
     def test_empty_tile_gives_zero_energy(self):
         empty = _tile(np.array([]), np.array([]))
-        wf = RadialWeigher().weight_field(empty, 0.0, 0.0)
+        wf = RadialWeigher().weight_field(empty, 0.0, 0.0, **_GEOM)
         assert wf.total_energy == 0.0
         assert wf.weights.size == 0
 
@@ -88,11 +94,11 @@ class TestRadialWeigher:
         lats = np.linspace(-0.1, 0.1, 7)
         lons = np.linspace(19.9, 20.1, 8)
         tile = _tile(lats, lons)
-        fast = RadialWeigher().weight_field(tile, 0.0, 20.0).weights
+        fast = RadialWeigher().weight_field(tile, 0.0, 20.0, **_GEOM).weights
         # Force the exact ellipsoidal path for the same tile by shrinking the fast-path
         # span window so the box is treated as "large".
         monkeypatch.setattr("libera_utils.footprint_matching.weighting._FAST_DISTANCE_MAX_SPAN_DEG", -1.0)
-        exact = RadialWeigher().weight_field(tile, 0.0, 20.0).weights
+        exact = RadialWeigher().weight_field(tile, 0.0, 20.0, **_GEOM).weights
         np.testing.assert_allclose(fast, exact, atol=1e-4)
 
     def test_polar_tile_uses_exact_path(self, monkeypatch):
@@ -101,9 +107,9 @@ class TestRadialWeigher:
         lats = np.linspace(86.0, 86.2, 6)
         lons = np.linspace(10.0, 10.3, 6)
         tile = _tile(lats, lons)
-        default = RadialWeigher().weight_field(tile, 86.1, 10.15).weights
+        default = RadialWeigher().weight_field(tile, 86.1, 10.15, **_GEOM).weights
         monkeypatch.setattr("libera_utils.footprint_matching.weighting._FAST_DISTANCE_MAX_SPAN_DEG", -1.0)
-        forced_exact = RadialWeigher().weight_field(tile, 86.1, 10.15).weights
+        forced_exact = RadialWeigher().weight_field(tile, 86.1, 10.15, **_GEOM).weights
         np.testing.assert_array_equal(default, forced_exact)
 
 
@@ -127,7 +133,7 @@ class TestAngularPSFWeigher:
             tile,
             self.B_LAT,
             self.B_LON,
-            altitude_km=835.0,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
             viewing_zenith_deg=self.VZA,
             subsatellite_lat_deg=self.S_LAT,
             subsatellite_lon_deg=self.S_LON,
@@ -161,9 +167,7 @@ class TestAngularPSFWeigher:
     def test_differs_from_radial_stand_in(self):
         # Confirms this is genuinely the CERES shape, not the isotropic Gaussian.
         tile, _, _ = self._grid_tile()
-        radial = RadialWeigher().weight_field(
-            tile, self.B_LAT, self.B_LON, altitude_km=835.0, viewing_zenith_deg=self.VZA
-        )
+        radial = RadialWeigher().weight_field(tile, self.B_LAT, self.B_LON, viewing_zenith_deg=self.VZA, **_GEOM)
         angular = self._wf()
         # Normalize both to unit sum before comparing spatial shape.
         r = radial.weights / radial.weights.sum()
@@ -185,6 +189,7 @@ class TestAngularPSFWeigher:
             self.B_LON,
             subsatellite_lat_deg=self.S_LAT,
             subsatellite_lon_deg=self.S_LON,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
         )
         assert wf.total_energy == 0.0
         assert wf.weights.size == 0
@@ -193,7 +198,7 @@ class TestAngularPSFWeigher:
         # The per-tile ECEF cache is pure memoization: cache on must be bit-identical to off.
         tile, _, _ = self._grid_tile()
         kw = dict(
-            altitude_km=835.0,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
             viewing_zenith_deg=self.VZA,
             subsatellite_lat_deg=self.S_LAT,
             subsatellite_lon_deg=self.S_LON,
@@ -203,6 +208,24 @@ class TestAngularPSFWeigher:
         uncached = AngularPSFWeigher(cell_geometry_cache_size=0).weight_field(tile, self.B_LAT, self.B_LON, **kw)
         np.testing.assert_array_equal(cached.weights, uncached.weights)
         assert cached.total_energy == uncached.total_energy
+
+    def test_precomputed_frame_matches_inline_frame(self):
+        # The orchestrator batches the viewing frames and hands each footprint its own; the
+        # weights must equal those from building the frame inline from the geolocation.
+        tile, _, _ = self._grid_tile()
+        kw = dict(
+            subsatellite_lat_deg=self.S_LAT,
+            subsatellite_lon_deg=self.S_LON,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
+            viewing_zenith_deg=self.VZA,
+            cone_angle_rate=-1.0,
+        )
+        frames = compute_viewing_frames(
+            [self.B_LAT], [self.B_LON], [self.S_LAT], [self.S_LON], satellite_radius_km=_SATELLITE_RADIUS_KM
+        )
+        inline = AngularPSFWeigher().weight_field(tile, self.B_LAT, self.B_LON, **kw)
+        batched = AngularPSFWeigher().weight_field(tile, self.B_LAT, self.B_LON, frame=frames.for_index(0), **kw)
+        np.testing.assert_allclose(batched.weights, inline.weights)
 
     def test_repeated_tile_computes_ecef_once(self, monkeypatch):
         # A weigher reused across consecutive footprints on the SAME tile object must compute
@@ -222,7 +245,7 @@ class TestAngularPSFWeigher:
         weigher = AngularPSFWeigher(cell_geometry_cache_size=8)
         tile, _, _ = self._grid_tile()
         kw = dict(
-            altitude_km=835.0,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
             viewing_zenith_deg=self.VZA,
             subsatellite_lat_deg=self.S_LAT,
             subsatellite_lon_deg=self.S_LON,
@@ -252,7 +275,12 @@ class TestAngularPSFWeigher:
         weigher = AngularPSFWeigher(cell_geometry_cache_size=8)
         tile_a, _, _ = self._grid_tile()
         tile_b, _, _ = self._grid_tile()  # same coords, distinct object
-        kw = dict(subsatellite_lat_deg=self.S_LAT, subsatellite_lon_deg=self.S_LON, viewing_zenith_deg=self.VZA)
+        kw = dict(
+            subsatellite_lat_deg=self.S_LAT,
+            subsatellite_lon_deg=self.S_LON,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
+            viewing_zenith_deg=self.VZA,
+        )
         weigher.weight_field(tile_a, self.B_LAT, self.B_LON, **kw)
         weigher.weight_field(tile_b, self.B_LAT, self.B_LON, **kw)
         weigher.weight_field(tile_a, self.B_LAT, self.B_LON, **kw)  # tile_a again -> still cached
