@@ -8,6 +8,7 @@ import pytest
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.footprint_matching import footprint_match_algorithm
 from libera_utils.scene_identification import scene_id_algorithm
 
 
@@ -436,60 +437,19 @@ def test_scene_id_cli_dispatch(variant, monkeypatch):
     assert called_with["config"] is scene_id_algorithm.RUNNER_CONFIGS[variant]
 
 
-@pytest.mark.parametrize(
-    ("cli_args", "parsed"),
-    [
-        (
-            ["fmatch", "cam", "file.manifest"],
-            argparse.Namespace(func=cli.fmatch_cam_cli_handler, manifest="file.manifest"),
-        ),
-        (
-            ["fmatch", "cam-camtime", "file.manifest"],
-            argparse.Namespace(func=cli.fmatch_cam_camtime_cli_handler, manifest="file.manifest"),
-        ),
-        (
-            ["fmatch", "imager", "file.manifest"],
-            argparse.Namespace(func=cli.fmatch_imager_cli_handler, manifest="file.manifest"),
-        ),
-        (
-            ["fmatch", "imager-camtime", "file.manifest"],
-            argparse.Namespace(func=cli.fmatch_imager_camtime_cli_handler, manifest="file.manifest"),
-        ),
-        (
-            ["fmatch", "imager-flash", "file.manifest"],
-            argparse.Namespace(func=cli.fmatch_imager_flash_cli_handler, manifest="file.manifest"),
-        ),
-    ],
-)
-def test_fmatch_parse_cli_args(cli_args, parsed):
-    """Test that fmatch cli args are parsed properly."""
-    assert cli.parse_cli_args(cli_args) == parsed
-
-
-@pytest.mark.parametrize(
-    ("cli_args", "config_key"),
-    [
-        (["fmatch", "cam", "file.manifest"], "cam"),
-        (["fmatch", "cam-camtime", "file.manifest"], "cam-camtime"),
-        (["fmatch", "imager", "file.manifest"], "imager"),
-        (["fmatch", "imager-camtime", "file.manifest"], "imager-camtime"),
-        (["fmatch", "imager-flash", "file.manifest"], "imager-flash"),
-    ],
-)
-def test_fmatch_cli_dispatch(cli_args, config_key, monkeypatch):
-    """Each fmatch subcommand dispatches to ``run_algorithm`` with the parsed args and its registry config."""
-    from libera_utils.footprint_matching import footprint_match_algorithm
-
+@pytest.mark.parametrize("variant", ["cam", "cam-camtime", "imager", "imager-camtime", "imager-flash"])
+def test_fmatch_cli_dispatch(variant, monkeypatch):
+    """``fmatch`` runs the variant named by LIBERA_FMATCH_VARIANT, passing ``run_algorithm`` the manifest path."""
     called_with = {}
     monkeypatch.setattr(
         footprint_match_algorithm,
         "run_algorithm",
-        lambda parsed_args, config: called_with.update(args=parsed_args, config=config),
+        lambda manifest_path, config: called_with.update(manifest_path=manifest_path, config=config),
     )
+    monkeypatch.setenv(footprint_match_algorithm.FMATCH_VARIANT_ENV, variant)
 
-    args = cli.parse_cli_args(cli_args)
+    args = cli.parse_cli_args(["fmatch", "file.manifest"])
     args.func(args)
 
-    assert called_with["args"] is args
-    assert called_with["args"].manifest == "file.manifest"
-    assert called_with["config"] is footprint_match_algorithm.RUNNER_CONFIGS[config_key]
+    assert called_with["manifest_path"] == Path("file.manifest")
+    assert called_with["config"] is footprint_match_algorithm.RUNNER_CONFIGS[variant]

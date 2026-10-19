@@ -28,7 +28,8 @@ import pytest
 # cross-check the product definitions against their VariableSpecs.
 import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.constants import DataLevel, DataProductIdentifier
-from libera_utils.footprint_matching.geometry import NOMINAL_ALTITUDE_KM
+from libera_utils.footprint_matching.camera_segmentation import NOMINAL_ALTITUDE_KM
+from libera_utils.footprint_matching.geometry import WGS84_SEMI_MAJOR_AXIS_KM, MissingGeolocationError
 from libera_utils.footprint_matching.product import (
     _CAMTIME_SEGMENTATION_VARIABLES,
     _RADIOMETER_L1B_VARIABLES,
@@ -344,7 +345,11 @@ class TestFmatchConformance:
         # Sizes for every dimension a coordinate/variable may reference: the radiometer record axis (RADIOMETER_TIME)
         # and the camera-timescale grid axes (CAMERA_TIME, PSEUDOFOOTPRINT). CAMERA_TIME must match the length of the times
         # array below (it is the 1-D camera-timescale dimension coordinate).
-        dimension_sizes = {"RADIOMETER_TIME": n_footprints, "CAMERA_TIME": n_footprints, "PSEUDOFOOTPRINT": n_footprints}
+        dimension_sizes = {
+            "RADIOMETER_TIME": n_footprints,
+            "CAMERA_TIME": n_footprints,
+            "PSEUDOFOOTPRINT": n_footprints,
+        }
 
         def _zeros(var_def):
             return np.zeros(tuple(dimension_sizes[d] for d in var_def.dimensions), dtype=var_def.dtype)
@@ -628,117 +633,148 @@ class TestDerivedViewingGeometry:
         assert np.isnan(glint[1])
 
 
+# Spacecraft distance from Earth's center for an ~835 km orbit, km.
+_SATELLITE_RADIUS_KM = 7213.0
+
+
+def _with_ephemeris(l1b: dict, sub_lat, sub_lon) -> dict:
+    """``l1b`` plus the time and L1B ephemeris build_radiometer_footprints requires."""
+    n = len(l1b["latitude"])
+    return {
+        "RADIOMETER_TIME": np.array([np.datetime64("2026-06-11T00:00:00", "ns")] * n),
+        **l1b,
+        "subsatellite_latitude": np.broadcast_to(np.asarray(sub_lat, dtype=np.float64), (n,)).copy(),
+        "subsatellite_longitude": np.broadcast_to(np.asarray(sub_lon, dtype=np.float64), (n,)).copy(),
+        "satellite_radius_km": np.full(n, _SATELLITE_RADIUS_KM),
+    }
+
+
 class TestBuildRadiometerFootprints:
-    """Radiometer footprints get a bounding box + scan reference from the L1B geometry."""
+    """Radiometer footprints get a ray-traced bounding box + the L1B ephemeris."""
 
     def test_each_footprint_gets_a_box_enclosing_its_boresight(self):
-        """Without a scan reference the box degrades to the boresight-centred approximation."""
-        l1b = {
-            "latitude": np.array([1.0, -30.0], dtype=np.float32),
-            "longitude": np.array([11.0, 100.0], dtype=np.float32),
-            "viewing_zenith_angle": np.array([0.0, 40.0], dtype=np.float32),
-        }
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([1.0, -30.0], dtype=np.float32),
+                "longitude": np.array([11.0, 100.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([0.0, 40.0], dtype=np.float32),
+            },
+            sub_lat=[1.5, -28.0],
+            sub_lon=[11.0, 100.0],
+        )
         footprints = build_radiometer_footprints(l1b)
 
         assert len(footprints) == 2
         for footprint, lat, lon in zip(footprints, l1b["latitude"], l1b["longitude"], strict=True):
             assert footprint.bbox.lat_min <= lat <= footprint.bbox.lat_max
             assert footprint.bbox.lon_min <= lon <= footprint.bbox.lon_max
-            # No scan reference supplied -> the angular weigher would fall back to nadir.
-            assert footprint.subsatellite_latitude is None
+            assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
+            # No Cone_Angle_Rate supplied -> unknown scan rate.
             assert footprint.cone_angle_rate is None
 
     def test_oblique_view_gives_a_larger_box(self):
-        nadir = build_radiometer_footprints(
-            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
-        )[0]
-        oblique = build_radiometer_footprints(
-            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([60.0])}
-        )[0]
+        boresight = {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+        (nadir,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=0.0, sub_lon=0.0))
+        (oblique,) = build_radiometer_footprints(_with_ephemeris(boresight, sub_lat=8.0, sub_lon=0.0))
         assert (oblique.bbox.lat_max - oblique.bbox.lat_min) > (nadir.bbox.lat_max - nadir.bbox.lat_min)
 
-    def test_scan_reference_uses_the_true_ray_traced_box_and_is_carried_onto_the_footprint(self):
-        """With the L1B subsatellite point present, the footprint carries the scan reference."""
-        l1b = {
-            "latitude": np.array([1.0], dtype=np.float32),
-            "longitude": np.array([11.0], dtype=np.float32),
-            "viewing_zenith_angle": np.array([40.0], dtype=np.float32),
-            "subsatellite_latitude": np.array([1.5], dtype=np.float64),
-            "subsatellite_longitude": np.array([11.0], dtype=np.float64),
-            "cone_angle_rate": np.array([12.0], dtype=np.float64),
-        }
+    def test_ephemeris_and_scan_rate_are_carried_onto_the_footprint(self):
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([1.0], dtype=np.float32),
+                "longitude": np.array([11.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([40.0], dtype=np.float32),
+                "cone_angle_rate": np.array([12.0], dtype=np.float64),
+            },
+            sub_lat=1.5,
+            sub_lon=11.0,
+        )
         (footprint,) = build_radiometer_footprints(l1b)
 
-        # The box still encloses the boresight, and the scan reference rode through.
         assert footprint.bbox.lat_min <= 1.0 <= footprint.bbox.lat_max
         assert footprint.subsatellite_latitude == 1.5
         assert footprint.subsatellite_longitude == 11.0
+        assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
         assert footprint.cone_angle_rate == 12.0
 
-    def test_oblique_ray_traced_box_is_asymmetric_unlike_the_radial_box(self):
+    def test_oblique_ray_traced_box_is_not_centred_on_the_boresight(self):
         """A ray-traced oblique footprint is skewed along the scan plane, not centred on the boresight."""
         # Boresight at the equator, satellite offset to the north along the same meridian.
-        scan_inputs = {
-            "latitude": np.array([0.0], dtype=np.float32),
-            "longitude": np.array([0.0], dtype=np.float32),
-            "viewing_zenith_angle": np.array([55.0], dtype=np.float32),
-            "subsatellite_latitude": np.array([10.0], dtype=np.float64),
-            "subsatellite_longitude": np.array([0.0], dtype=np.float64),
-            "cone_angle_rate": np.array([np.nan], dtype=np.float64),
-        }
-        (ray_traced,) = build_radiometer_footprints(scan_inputs)
-        # The boresight-only fallback box (no scan reference) is symmetric about the boresight.
-        (radial,) = build_radiometer_footprints(
-            {k: scan_inputs[k] for k in ("latitude", "longitude", "viewing_zenith_angle")}
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([0.0], dtype=np.float32),
+                "longitude": np.array([0.0], dtype=np.float32),
+                "viewing_zenith_angle": np.array([55.0], dtype=np.float32),
+                "cone_angle_rate": np.array([np.nan], dtype=np.float64),
+            },
+            sub_lat=10.0,
+            sub_lon=0.0,
         )
+        (ray_traced,) = build_radiometer_footprints(l1b)
 
         assert ray_traced.bbox.lat_min <= 0.0 <= ray_traced.bbox.lat_max
-        # The radial box is centred on the boresight (lat 0); the ray-traced box is not.
-        radial_offset = abs(radial.bbox.lat_max + radial.bbox.lat_min)
-        ray_traced_offset = abs(ray_traced.bbox.lat_max + ray_traced.bbox.lat_min)
-        assert radial_offset < 1e-6
-        assert ray_traced_offset > 1e-2
+        assert abs(ray_traced.bbox.lat_max + ray_traced.bbox.lat_min) > 1e-2
         # A fill cone-angle rate is normalized to None.
         assert ray_traced.cone_angle_rate is None
 
-    def test_footprint_count_is_preserved_even_for_a_limb_grazing_record(self):
-        """A record that fails the ray-trace limb check falls back to a box, never dropped."""
-        l1b = {
-            "latitude": np.array([0.0, 10.0], dtype=np.float32),
-            "longitude": np.array([0.0, 0.0], dtype=np.float32),
-            # Second record is past the limb (VZA >= 90) -> OffLimbError -> boresight fallback.
-            "viewing_zenith_angle": np.array([20.0, 90.5], dtype=np.float32),
-            "subsatellite_latitude": np.array([1.0, 11.0], dtype=np.float64),
-            "subsatellite_longitude": np.array([0.0, 0.0], dtype=np.float64),
-            "cone_angle_rate": np.array([5.0, 5.0], dtype=np.float64),
-        }
+    def test_off_earth_record_keeps_its_index_flagged_off_limb(self):
+        """An off-Earth (NaN boresight) record is kept, flagged, never dropped."""
+        l1b = _with_ephemeris(
+            {
+                "latitude": np.array([0.0, np.nan], dtype=np.float32),
+                "longitude": np.array([0.0, np.nan], dtype=np.float32),
+                "viewing_zenith_angle": np.array([20.0, np.nan], dtype=np.float32),
+                "cone_angle_rate": np.array([5.0, 5.0], dtype=np.float64),
+            },
+            sub_lat=1.0,
+            sub_lon=0.0,
+        )
         footprints = build_radiometer_footprints(l1b)
 
         assert len(footprints) == 2
-        for footprint in footprints:
-            assert footprint.bbox.lat_min <= footprint.bbox.lat_max
-        # The on-limb record is a normal observation; the past-the-limb record is marked
-        # off_limb so aggregation skips it (fill + zero coverage) instead of querying and
-        # weighting its boresight placeholder box as a real observation.
+        # The off-Earth record is marked off_limb so aggregation skips it (fill + zero
+        # coverage) instead of querying and weighting its placeholder box.
         assert footprints[0].off_limb is False
         assert footprints[1].off_limb is True
 
-
-class TestFootprintGeometryAltitude:
-    """The PSF geometry reads a spacecraft altitude in km, never a surface height."""
-
-    def test_radiometer_footprint_uses_its_spacecraft_altitude_km(self):
-        (footprint,) = build_radiometer_footprints(
-            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+    def test_footprint_beyond_the_horizon_raises(self):
+        # 30 deg from the subsatellite point is past the horizon of an ~835 km orbit.
+        l1b = _with_ephemeris(
+            {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])},
+            sub_lat=30.0,
+            sub_lon=0.0,
         )
-        assert _footprint_geometry(footprint).altitude_km == pytest.approx(NOMINAL_ALTITUDE_KM)
+        with pytest.raises(MissingGeolocationError):
+            build_radiometer_footprints(l1b)
 
-    def test_camera_surface_height_is_not_read_as_spacecraft_altitude(self):
+    def test_missing_ephemeris_raises(self):
+        with pytest.raises(ValueError, match="subsatellite_latitude"):
+            build_radiometer_footprints(
+                {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])}
+            )
+
+
+class TestFootprintGeometryEphemeris:
+    """The PSF geometry reads the L1B ephemeris, never a camera surface height."""
+
+    def test_radiometer_footprint_uses_its_satellite_radius(self):
+        (footprint,) = build_radiometer_footprints(
+            _with_ephemeris(
+                {"latitude": np.array([0.0]), "longitude": np.array([0.0]), "viewing_zenith_angle": np.array([0.0])},
+                sub_lat=0.5,
+                sub_lon=0.0,
+            )
+        )
+        geom = _footprint_geometry(footprint)
+        assert geom.has_ephemeris
+        assert geom.satellite_radius_km == _SATELLITE_RADIUS_KM
+        assert geom.subsatellite_lat_deg == 0.5
+
+    def test_camera_surface_height_is_not_read_as_spacecraft_position(self):
         # Regression: a camera PseudoFootprint carries ``altitude`` as the center-pixel
-        # *surface height in metres* (an output column), not a spacecraft altitude in km.
-        # The geometry extractor must ignore that field and fall back to the nominal
-        # orbit altitude -- otherwise 835_000 m would be read as 835_000 km, inflating
-        # the PSF ground radius ~1000x.
+        # *surface height in metres* (an output column), not a spacecraft position. With no
+        # ephemeris the extractor must fall back to the nominal orbit -- otherwise 835_000 m
+        # could be read as a radius in km, inflating the PSF ground radius ~100x.
         camera_like = SimpleNamespace(
             bbox=BoundingBox(0.0, 1.0, 0.0, 1.0),
             latitude=0.5,
@@ -747,8 +783,8 @@ class TestFootprintGeometryAltitude:
             viewing_zenith_angle=0.0,
         )
         geom = _footprint_geometry(camera_like)
-        assert geom.altitude_km == pytest.approx(NOMINAL_ALTITUDE_KM)
-        assert geom.altitude_km != pytest.approx(835_000.0)
+        assert not geom.has_ephemeris
+        assert geom.satellite_radius_km == pytest.approx(WGS84_SEMI_MAJOR_AXIS_KM + NOMINAL_ALTITUDE_KM)
 
 
 def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa: float = 90.0) -> dict:
@@ -760,6 +796,10 @@ def _l1b_at(lat: float, lon: float, *, sza: float = 30.0, vza: float = 5.0, raa:
         "solar_zenith_angle": np.array([sza], dtype=np.float32),
         "viewing_zenith_angle": np.array([vza], dtype=np.float32),
         "relative_azimuth_angle": np.array([raa], dtype=np.float32),
+        # The satellite sits just north of the boresight, consistent with a small VZA.
+        "subsatellite_latitude": np.array([lat + 0.5], dtype=np.float64),
+        "subsatellite_longitude": np.array([lon], dtype=np.float64),
+        "satellite_radius_km": np.array([_SATELLITE_RADIUS_KM]),
     }
 
 
