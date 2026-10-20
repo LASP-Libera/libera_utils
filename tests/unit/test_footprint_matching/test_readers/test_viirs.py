@@ -14,8 +14,11 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
 from tests.test_data.footprint_matching.fixtures import make_viirs_cloud_d3_fixture
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+
+_T = np.datetime64("2026-01-01T00:00:00", "ns")
 
 # Grid dimensions used in most tests.
 _N_LAT = 4
@@ -71,9 +74,9 @@ class TestVIIRSCloudReaderClassAttributes:
 
 class TestVIIRSCloudReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
-        # Targets _load_spatial_region output; asserts a 3-D array whose leading axis holds the 2 variables.
+        # Targets samples_in output; asserts a 3-D array whose leading axis holds the 2 variables.
         reader, _ = _make_reader(tmp_path)
-        data, lats, lons = reader._load_spatial_region(_full_bbox())
+        data, lats, lons = _region(reader, _full_bbox(), _T)
         assert data.ndim == 3
         assert data.shape[0] == 2
 
@@ -81,33 +84,33 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
         # Targets variable stacking order; asserts data[0] is cloud_optical_thickness and data[1] is cloud_top_pressure,
         # while the still-written-but-unread Cloud_Fraction group (cf_fill) stays absent from the output.
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.allclose(data[0], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
         assert np.allclose(data[1], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
 
     def test_data_dtype_is_float32(self, tmp_path):
         # Targets output dtype; asserts the loaded data array is float32.
         reader, _ = _make_reader(tmp_path)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         assert data.dtype == np.float32
 
     def test_output_lat_count_matches_n_lat(self, tmp_path):
         # Targets latitude-axis sizing; asserts the returned lats array has _N_LAT entries.
         reader, _ = _make_reader(tmp_path)
-        data, lats, lons = reader._load_spatial_region(_full_bbox())
+        data, lats, lons = _region(reader, _full_bbox(), _T)
         assert lats.size == _N_LAT
 
     def test_output_lon_count_matches_n_lon(self, tmp_path):
         # Targets longitude-axis sizing; asserts the returned lons array has _N_LON entries.
         reader, _ = _make_reader(tmp_path)
-        data, lats, lons = reader._load_spatial_region(_full_bbox())
+        data, lats, lons = _region(reader, _full_bbox(), _T)
         assert lons.size == _N_LON
 
     def test_empty_result_outside_bbox(self, tmp_path):
         # Targets querying a bbox with no data; asserts the data array is empty but keeps its leading 2-variable axis.
         reader, _ = _make_reader(tmp_path)
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
-        data, lats, lons = reader._load_spatial_region(bbox)
+        data, lats, lons = _region(reader, bbox, _T)
         assert data.size == 0
         assert data.shape[0] == 2
 
@@ -124,7 +127,7 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
             ctp_fill=-9999.0,
         )
         reader = VIIRSCloudReader(fixture_path)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         # cloud_top_pressure (index 1) should be all NaN since fill_value = -9999.0
         assert np.all(np.isnan(data[1]))
 
@@ -136,7 +139,7 @@ class TestVIIRSCloudReaderTranspose:
         # The fixture stores data as (n_lon, n_lat); after transpose + subset the
         # output shape must be (3, n_lat, n_lon), NOT (3, n_lon, n_lat).
         reader, _ = _make_reader(tmp_path)
-        data, lats, lons = reader._load_spatial_region(_full_bbox())
+        data, lats, lons = _region(reader, _full_bbox(), _T)
         # With the default 4 lat × 8 lon fixture, axis 1 must be n_lat=4
         # and axis 2 must be n_lon=8.
         n_lat_out, n_lon_out = data.shape[1], data.shape[2]
@@ -149,24 +152,22 @@ class TestVIIRSCloudReaderTranspose:
         reader, _ = _make_reader(tmp_path)
         half_lat = (_LAT_MIN + _LAT_MAX) / 2
         bbox = BoundingBox(_LAT_MIN - 0.1, half_lat, _LON_MIN - 0.1, _LON_MAX + 0.1)
-        data, lats, lons = reader._load_spatial_region(bbox)
+        data, lats, lons = _region(reader, bbox, _T)
         assert lats.size < _N_LAT
         assert lons.size == _N_LON
 
 
-class TestVIIRSCloudReaderLoadTile:
+class TestVIIRSCloudReaderSamples:
     def test_timestamp_source_is_radiometer(self, tmp_path):
-        # Targets tile timestamp provenance; asserts the loaded tile is a GridTile with timestamp_source "radiometer".
+        # Cloud properties are collocated in time with the radiometer observation.
         reader, _ = _make_reader(tmp_path)
-        # TileKey that maps to lat [0, 2°], lon [10, 12°]
-        key = TileKey("viirs_cloud", 45, 95)
-        tile = reader.load_tile(key)
-        assert isinstance(tile, GridTile)
-        assert tile.timestamp_source == "radiometer"
+        samples = reader.samples_in(_full_bbox(), _T)
+        assert samples.timestamp_source == "radiometer"
+        assert samples.source == "viirs_cloud"
 
-    def test_source_is_viirs_cloud(self, tmp_path):
-        # Targets tile provenance labeling; asserts the loaded tile's source is "viirs_cloud".
+    def test_daily_composite_ignores_time(self, tmp_path):
         reader, _ = _make_reader(tmp_path)
-        key = TileKey("viirs_cloud", 45, 95)
-        tile = reader.load_tile(key)
-        assert tile.source == "viirs_cloud"
+        assert VIIRSCloudReader.TIME_MATCH is TimeMatch.DAILY
+        a = reader.samples_in(_full_bbox(), _T)
+        b = reader.samples_in(_full_bbox(), _T + np.timedelta64(23, "h"))
+        np.testing.assert_array_equal(a.values, b.values)
