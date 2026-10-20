@@ -28,7 +28,9 @@ from libera_utils.footprint_matching.readers.nsidc import (
     NISEReader,
     _HemisphereGrid,
 )
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, SampleSet, TimeMatch
+
+_T = np.datetime64("2026-01-01T00:00:00", "ns")
 
 # Expected output variables, in the canonical order the reader stacks them
 # (axis 0 of the returned data array). Kept here so the tests assert the
@@ -89,9 +91,9 @@ class TestNISEReaderClassAttributes:
         # Targets the native NISE grid resolution; asserts RESOLUTION_KM equals 25.0 km.
         assert NISEReader.RESOLUTION_KM == 25.0
 
-    def test_output_cell_deg(self):
-        # Targets the output raster cell size; asserts OUTPUT_CELL_DEG equals 0.25 degrees.
-        assert NISEReader.OUTPUT_CELL_DEG == 0.25
+    def test_time_match_is_daily(self):
+        # The daily granule is the match for the whole staged day.
+        assert NISEReader.TIME_MATCH is TimeMatch.DAILY
 
     def test_variables_has_five_entries(self):
         # Targets the VARIABLES spec count; asserts exactly five coverage layers are defined.
@@ -119,7 +121,7 @@ class TestNISEReaderLayerMapping:
     """Verify each NISE Extent code routes to the correct float32 coverage layer."""
 
     def _run(self, tmp_path: Path, monkeypatch, data: np.ndarray, bbox: BoundingBox | None = None):
-        """Return the full ``(5, n_lat, n_lon)`` stack for an all-``data`` grid."""
+        """Return the full ``(5, n_pixels)`` value rows for an all-``data`` grid."""
         reader = _make_reader(tmp_path)
         monkeypatch.setattr(reader, "_read_extent_sds", lambda token=None: data)
         lats_2d, lons_2d = reader._compute_latlon_grid()
@@ -130,11 +132,10 @@ class TestNISEReaderLayerMapping:
                 float(lons_2d.min()) - 0.1,
                 float(lons_2d.max()) + 0.1,
             )
-        stack, _, _ = reader._load_spatial_region(bbox)
-        return stack
+        return reader.samples_in(bbox, _T).values
 
     def _layer(self, stack: np.ndarray, name: str) -> np.ndarray:
-        """Return the finite (covered) cells of one rasterized layer.
+        """Return the finite values of one layer.
 
         Rasterization leaves uncovered cells as NaN, so the per-code assertions
         below operate on the covered cells only. A uniform input code produces a
@@ -228,9 +229,9 @@ class TestNISEReaderLatLonGrid:
         assert np.sum(lats_2d > 0) >= _TEST_ROWS * _TEST_COLS // 2
 
 
-class TestNISEReaderLoadSpatialRegion:
-    def test_returns_3d_data_and_1d_coords(self, tmp_path, monkeypatch):
-        # Targets the region loader output shape; asserts a 3-D (vars, lat, lon) array with 1-D lat/lon coords.
+class TestNISEReaderSamples:
+    def test_returns_value_rows_and_1d_coords(self, tmp_path, monkeypatch):
+        # Targets the sample layout; asserts (n_var, n) value rows with 1-D per-sample lat/lon coords.
         reader = _make_reader(tmp_path)
         monkeypatch.setattr(
             reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
@@ -242,11 +243,13 @@ class TestNISEReaderLoadSpatialRegion:
             float(lons_2d.min()) - 0.1,
             float(lons_2d.max()) + 0.1,
         )
-        data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
-        assert data_sub.ndim == 3
+        samples = reader.samples_in(bbox, _T)
+        data_sub, lats_sub, lons_sub = samples.values, samples.lats, samples.lons
+        assert isinstance(samples, SampleSet)
+        assert data_sub.ndim == 2
         # Axis 0 is the variable axis and must match the VARIABLES count.
         assert data_sub.shape[0] == len(NISEReader.VARIABLES)
-        assert data_sub.shape[1:] == (lats_sub.size, lons_sub.size)
+        assert data_sub.shape[1] == lats_sub.size == lons_sub.size == _TEST_ROWS * _TEST_COLS
         assert lats_sub.ndim == 1
         assert lons_sub.ndim == 1
 
@@ -257,14 +260,14 @@ class TestNISEReaderLoadSpatialRegion:
         )
         # Bbox in the Southern Hemisphere far from test grid (near pole).
         bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
-        data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
-        # Like the swath readers, an uncovered tile is an all-NaN grid whose
-        # leading axis still reports the variable count.
-        assert data_sub.shape[0] == len(NISEReader.VARIABLES)
-        assert np.all(np.isnan(data_sub))
+        samples = reader.samples_in(bbox, _T)
+        data_sub = samples.values
+        # No pixel in the box: zero samples, the leading axis still reports the variable count.
+        assert data_sub.shape == (len(NISEReader.VARIABLES), 0)
+        assert samples.n_samples == 0
 
     def test_data_dtype_is_float32(self, tmp_path, monkeypatch):
-        # Targets output dtype after rasterization; asserts the loaded region array is float32.
+        # Targets the served dtype; asserts the value rows are float32.
         reader = _make_reader(tmp_path)
         monkeypatch.setattr(
             reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
@@ -276,7 +279,7 @@ class TestNISEReaderLoadSpatialRegion:
             float(lons_2d.min()) - 0.1,
             float(lons_2d.max()) + 0.1,
         )
-        data_sub, _, _ = reader._load_spatial_region(bbox)
+        data_sub = reader.samples_in(bbox, _T).values
         assert data_sub.dtype == np.float32
 
     def test_data_values_in_0_to_1_range(self, tmp_path, monkeypatch):
@@ -291,34 +294,29 @@ class TestNISEReaderLoadSpatialRegion:
             float(lons_2d.min()) - 0.1,
             float(lons_2d.max()) + 0.1,
         )
-        data_sub, _, _ = reader._load_spatial_region(bbox)
-        # Covered cells must be in [0, 1]; uncovered cells are NaN.
+        data_sub = reader.samples_in(bbox, _T).values
+        # Served values must be in [0, 1].
         finite = data_sub[np.isfinite(data_sub)]
         assert finite.size > 0
         assert np.all((finite >= 0.0) & (finite <= 1.0))
 
-    def test_load_tile_returns_grid_tile(self, tmp_path, monkeypatch):
-        # Targets the public load_tile API; asserts it returns a GridTile with source "nise" and one layer per variable.
+    def test_samples_carry_source_and_one_row_per_variable(self, tmp_path, monkeypatch):
+        # Targets the public samples_in API; asserts source "nise", no timestamp source, one row per variable.
         reader = _make_reader(tmp_path)
         monkeypatch.setattr(
             reader, "_read_extent_sds", lambda token=None: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8)
         )
         lats_2d, lons_2d = reader._compute_latlon_grid()
-        # Build a TileKey that overlaps the test grid's geographic extent.
-        lat_center = float(lats_2d.mean())
-        lon_center = float(lons_2d.mean())
-        import math
-
-        from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG
-
-        lat_idx = max(0, min(int(math.floor((lat_center + 90.0) / TILE_SIZE_DEG)), 89))
-        lon_idx = max(0, min(int(math.floor((lon_center + 180.0) / TILE_SIZE_DEG)), 179))
-        key = TileKey("nise", lat_idx, lon_idx)
-        tile = reader.load_tile(key)
-        assert isinstance(tile, GridTile)
-        assert tile.source == "nise"
-        # Tile data carries one layer per NISE variable on the leading axis.
-        assert tile.data.shape[0] == len(NISEReader.VARIABLES)
+        bbox = BoundingBox(
+            float(lats_2d.min()) - 0.1,
+            float(lats_2d.max()) + 0.1,
+            float(lons_2d.min()) - 0.1,
+            float(lons_2d.max()) + 0.1,
+        )
+        samples = reader.samples_in(bbox, _T)
+        assert samples.source == "nise"
+        assert samples.timestamp_source is None
+        assert samples.values.shape[0] == len(NISEReader.VARIABLES)
 
 
 class TestNISEExtentToCategoryMasks:
@@ -409,7 +407,8 @@ class TestNISEReaderBothHemispheres:
             _HEMISPHERE_LABEL_SOUTH: np.full((_TEST_ROWS, _TEST_COLS), 50, dtype=np.uint8),
         }
         monkeypatch.setattr(reader, "_read_extent_sds", lambda token: per_token[token])
-        lats, lons, values = reader._load_points
+        points = reader._load_native()
+        lats, lons, values = points.lats, points.lons, points.values
         # Point cloud spans both hemispheres and keeps every pixel (no code 254 to drop).
         assert np.any(lats > 0)
         assert np.any(lats < 0)
@@ -419,8 +418,8 @@ class TestNISEReaderBothHemispheres:
         assert values.shape == (len(NISEReader.VARIABLES), expected)
 
     def test_southern_tile_is_populated(self, tmp_path, monkeypatch):
-        # Regression for the reported gap: a Southern-hemisphere tile now carries finite
-        # coverage where a North-only reader returned an all-NaN grid.
+        # Regression for the reported gap: a Southern-hemisphere box now carries samples
+        # where a North-only reader served none.
         reader = NISEReader(
             tmp_path / "NISE.HDFEOS",
             hemispheres=(_small_hemi(3409, _HEMISPHERE_LABEL_SOUTH),),
@@ -438,10 +437,10 @@ class TestNISEReaderBothHemispheres:
             float(lons_2d.min()) - 0.1,
             float(lons_2d.max()) + 0.1,
         )
-        data_sub, _, _ = reader._load_spatial_region(bbox)
+        data_sub = reader.samples_in(bbox, _T).values
         finite = data_sub[np.isfinite(data_sub)]
         assert finite.size > 0
-        # Code 50 → 0.5 sea ice concentration across covered cells of that layer.
+        # Code 50 → 0.5 sea ice concentration on every served pixel of that layer.
         sea_ice = data_sub[_layer_index("sea_ice_concentration")]
         assert np.allclose(sea_ice[np.isfinite(sea_ice)], 0.5, atol=1e-5)
 
@@ -453,7 +452,8 @@ class TestNISEReaderBothHemispheres:
         raw[0, 0] = 254
         raw[-1, -1] = 254
         monkeypatch.setattr(reader, "_read_extent_sds", lambda token=None: raw)
-        lats, lons, values = reader._load_points
+        points = reader._load_native()
+        lats, lons, values = points.lats, points.lons, points.values
         expected = _TEST_ROWS * _TEST_COLS - 2  # two 254 pixels dropped
         assert lats.size == expected
         assert lons.size == expected
@@ -513,15 +513,15 @@ class TestNISEReaderRealGranule:
     def test_northern_and_southern_tiles_both_covered(self):
         # Targets both-hemisphere coverage on a real granule; asserts Arctic and Antarctic bboxes each yield finite cells.
         reader = NISEReader(_REAL_NISE)
-        north_tile, _, _ = reader._load_spatial_region(BoundingBox(70.0, 80.0, -10.0, 10.0))
-        south_tile, _, _ = reader._load_spatial_region(BoundingBox(-80.0, -70.0, -10.0, 10.0))
+        north_tile = reader.samples_in(BoundingBox(70.0, 80.0, -10.0, 10.0), _T).values
+        south_tile = reader.samples_in(BoundingBox(-80.0, -70.0, -10.0, 10.0), _T).values
         assert np.isfinite(north_tile).any()
         assert np.isfinite(south_tile).any()
 
     def test_point_cloud_spans_both_hemispheres(self):
         # Targets full-globe point cloud on a real granule; asserts lat max > 60 (Arctic) and min < -60 (Antarctic).
         reader = NISEReader(_REAL_NISE)
-        lats, _, _ = reader._load_points
+        lats = reader._load_native().lats
         finite = lats[np.isfinite(lats)]
         assert finite.max() > 60.0  # Arctic coverage
         assert finite.min() < -60.0  # Antarctic coverage

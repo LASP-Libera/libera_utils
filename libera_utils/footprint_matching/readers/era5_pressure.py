@@ -2,7 +2,7 @@
 
 Data source: ECMWF ERA5 Reanalysis (pressure-level fields)
 - Format: NetCDF4 (.nc), distributed via the Copernicus Climate Data Store
-- Spatial resolution: ~0.25° (~28 km); stored as 25 km in RESOLUTION_KM
+- Spatial resolution: ~0.25° (~28 km), stored as 28 km in RESOLUTION_KM
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90),
   plus a ``pressure_level`` dimension (up to 37 levels, 1–1000 hPa)
 - Temporal resolution: Hourly
@@ -10,16 +10,16 @@ Data source: ECMWF ERA5 Reanalysis (pressure-level fields)
 
 This is a *separate CDS dataset* from the single-level fields, downloaded as a
 separate file, hence a separate reader from
-:class:`~libera_utils.footprint_matching.readers.era5.ERA5Reader` (each
-``GriddedDataReader`` reads exactly one file).
+:class:`~libera_utils.footprint_matching.readers.era5.ERA5Reader` (each reader
+reads one source).
 
 Why per-level variables?
 ------------------------
 FMATCH products are strictly 1-D per footprint (every product variable lives on
-the single time dimension) and ``GridTile.data`` is at most
-``(n_var, n_lat, n_lon)``. So instead of adding a vertical dimension, each
-(variable, pressure level) pair is flattened into its own ``VariableSpec`` —
-e.g. ``temperature_500hPa`` — keeping the tile/aggregation contract and the
+the single time dimension) and a reader's samples carry one value row per
+variable. So instead of adding a vertical dimension, each (variable, pressure
+level) pair is flattened into its own ``VariableSpec`` -- e.g.
+``temperature_500hPa`` -- keeping the sample/aggregation contract and the
 product schema unchanged. The retained levels are the ``_ERA5_PRESSURE_LEVELS``
 module constant — the full ERA5 set of 37 levels; changing the level list is a
 one-line edit there (the specs and product-definition cross-check derive from it).
@@ -48,6 +48,8 @@ Param DB (id): t=130, z=129, o3=203, q=133, r=157
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
@@ -119,8 +121,8 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
     """Generate one VariableSpec per (variable, pressure level) pair.
 
     Variable-major, levels ascending — e.g. ``temperature_10hPa`` ...
-    ``temperature_1000hPa``, then ``geopotential_10hPa`` ... — matching the
-    stacking order in ``ERA5PressureLevelReader._read_native_grid``. Every field
+    ``temperature_1000hPa``, then ``geopotential_10hPa`` ... -- matching the
+    stacking order in ``ERA5PressureLevelReader._read_step_layers``. Every field
     is continuous (weighted-mean aggregated), so each also gains an automatic
     ``_standard_deviation`` companion in ``product_variable_specs()``.
     """
@@ -140,25 +142,27 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
 class ERA5PressureLevelReader(ERA5ReaderBase):
     """Read ERA5 pressure-level fields from a CDS NetCDF4 file.
 
-    Returns a 3-D data array of shape ``(n_specs, n_lat, n_lon)`` where
-    ``n_specs = 5 variables × len(_ERA5_PRESSURE_LEVELS)`` and axis 0 matches
-    the ``VARIABLES`` order (variable-major, levels ascending).
+    Serves one hourly step at a time as a ``(n_specs, n_lat, n_lon)`` grid where
+    ``n_specs = 5 variables x len(_ERA5_PRESSURE_LEVELS)`` and axis 0 matches
+    the ``VARIABLES`` order (variable-major, levels ascending). One step of all 185
+    layers is about 0.8 GB, which is why only the step nearest the footprint time
+    is held.
 
     Class Attributes
     ----------------
     READER_KEY : str
         Registry key ``"era5_pressure"``.
     RESOLUTION_KM : float
-        25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
+        28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
         One continuous float32 spec per (variable, level) pair.
 
     Parameters
     ----------
-    file_path : Path
-        Path to an ERA5 pressure-levels NetCDF4 file containing ``t``, ``z``,
-        ``o3``, ``q``, and ``r`` at (at least) every level in
-        ``_ERA5_PRESSURE_LEVELS``.
+    file_paths : Path or Sequence[Path]
+        The ERA5 pressure-levels NetCDF4 granule(s) covering the processing period,
+        each containing ``t``, ``z``, ``o3``, ``q``, and ``r`` at (at least) every
+        level in ``_ERA5_PRESSURE_LEVELS`` and an hourly time axis.
     """
 
     READER_KEY: str = "era5_pressure"
@@ -166,21 +170,13 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     # provenance tag stays uniform: "Air temperature at 500 hPa (ECMWF)" etc.
     # Variable names are era5_pressure_temperature_500hPa (no instrument token).
     INSTRUMENT: str = "ECMWF"
-    RESOLUTION_KM: float = 25.0
+    # The 0.25 degree grid spacing at the equator. A sample covers a cell of this side in
+    # the coverage measure, so the cells abut and a footprint inside the grid is complete.
+    RESOLUTION_KM: float = 28.0
     VARIABLES: tuple[VariableSpec, ...] = _build_pressure_level_specs()
 
-    def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read every (variable, level) layer from the file into one stacked grid.
-
-        Opens the NetCDF4 file, normalizes longitude to −180..180, drops any
-        time-like dimension (first step only), selects each configured pressure
-        level, and returns the whole global grid with latitudes ASCENDING.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` with ``data`` float32 shape
-            ``(n_specs, n_lat, n_lon)`` — axis 0 in ``VARIABLES`` order.
+    def _read_step_layers(self, step: xr.Dataset, path: Path) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+        """Read every (variable, level) layer from one time step.
 
         Raises
         ------
@@ -188,50 +184,34 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
             If the file is missing any of the expected ERA5 variables.
         ValueError
             If the file does not contain every configured pressure level. A
-            partial download must be fixed at acquisition time — silently
+            partial download must be fixed at acquisition time -- silently
             substituting a neighboring level would corrupt the product.
         """
-        ds = xr.open_dataset(self._file_path, engine="netcdf4")
-        try:
-            ds = self._normalize_longitudes(ds)
+        missing_vars = [nc_name for _, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES if nc_name not in step]
+        if missing_vars:
+            raise KeyError(
+                f"ERA5 pressure-levels file {path} is missing variable(s) {missing_vars}. "
+                f"The CDS download must include every variable in "
+                f"{[nc for _, nc in _ERA5_PRESSURE_LEVEL_VARIABLES]}."
+            )
 
-            missing_vars = [nc_name for _, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES if nc_name not in ds]
-            if missing_vars:
-                raise KeyError(
-                    f"ERA5 pressure-levels file {self._file_path} is missing variable(s) {missing_vars}. "
-                    f"The CDS download must include every variable in "
-                    f"{[nc for _, nc in _ERA5_PRESSURE_LEVEL_VARIABLES]}."
-                )
+        # Validate the level set up front for one clear, complete error message
+        # rather than failing on the first .sel() miss.
+        available_levels = step[_PRESSURE_LEVEL_COORD].values.astype(np.float64)
+        missing_levels = [level for level in _ERA5_PRESSURE_LEVELS if not np.any(available_levels == level)]
+        if missing_levels:
+            raise ValueError(
+                f"ERA5 pressure-levels file {path} is missing configured pressure "
+                f"level(s) {missing_levels} hPa. File contains {sorted(available_levels.tolist())}; "
+                f"FMATCH requires {list(_ERA5_PRESSURE_LEVELS)} (see _ERA5_PRESSURE_LEVELS)."
+            )
 
-            # Validate the level set up front for one clear, complete error message
-            # rather than failing on the first .sel() miss.
-            available_levels = ds[_PRESSURE_LEVEL_COORD].values.astype(np.float64)
-            missing_levels = [level for level in _ERA5_PRESSURE_LEVELS if not np.any(available_levels == level)]
-            if missing_levels:
-                raise ValueError(
-                    f"ERA5 pressure-levels file {self._file_path} is missing configured pressure "
-                    f"level(s) {missing_levels} hPa. File contains {sorted(available_levels.tolist())}; "
-                    f"FMATCH requires {list(_ERA5_PRESSURE_LEVELS)} (see _ERA5_PRESSURE_LEVELS)."
-                )
-
-            layers: list[np.ndarray] = []
-            lats: np.ndarray | None = None
-            lons: np.ndarray | None = None
-            # Variable-major, levels ascending — must mirror _build_pressure_level_specs.
-            for _, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:
-                da = self._first_time_step(ds[nc_name])
-                if lats is None:
-                    # All variables share the same grid; read the coordinates once.
-                    lats = da["latitude"].values.astype(np.float64)
-                    lons = da["longitude"].values.astype(np.float64)
-                for level in _ERA5_PRESSURE_LEVELS:
-                    layers.append(da.sel({_PRESSURE_LEVEL_COORD: level}).values.astype(np.float32))
-
-            lats, layers = self._flip_lats_ascending(lats, layers)
-
-            # Stack into (n_specs, n_lat, n_lon) — axis 0 matches VARIABLES ordering.
-            data = np.stack(layers, axis=0)
-        finally:
-            ds.close()
-
-        return data, lats, lons
+        lats = step["latitude"].values.astype(np.float64)
+        lons = step["longitude"].values.astype(np.float64)
+        layers: list[np.ndarray] = []
+        # Variable-major, levels ascending -- must mirror _build_pressure_level_specs.
+        for _, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:
+            da = step[nc_name]
+            for level in _ERA5_PRESSURE_LEVELS:
+                layers.append(da.sel({_PRESSURE_LEVEL_COORD: level}).values.astype(np.float32))
+        return lats, lons, layers

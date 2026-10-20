@@ -19,14 +19,11 @@ SDS naming:   "LC_Type1" for IGBP classification scheme
 
 from __future__ import annotations
 
-from functools import cached_property
-
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
-from libera_utils.footprint_matching.readers._swath import rasterize_points_to_grid
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
 # IGBP fill / no-data value in the MCD12Q1 HDF4 file.
 # Value 255 is the standard fill for uint8 SDS fields in this product.
@@ -51,8 +48,8 @@ _IGBP_VALID_MAX: int = 17
 _N_IGBP_CATEGORIES: int = 20
 
 
-class IGBPReader(GriddedDataReader):
-    """Read IGBP land cover classification from a MODIS MCD12Q1 HDF4 tile file.
+class IGBPReader(StaticReader):
+    """Read IGBP land cover classification from MODIS MCD12Q1 HDF4 tile files.
 
     The MCD12Q1 product stores IGBP land cover as ``LC_Type1`` (uint8) in
     sinusoidal-projected HDF4 tiles. Geographic coordinates are not stored as SDS
@@ -60,17 +57,18 @@ class IGBPReader(GriddedDataReader):
     metadata via :func:`read_modis_sinusoidal_hdf4`, which returns **2-D
     per-pixel** latitude/longitude grids.
 
-    Geolocation: rasterization, not mean-collapse
+    Geolocation: native pixels, not a regular grid
     ----------------------------------------------
-    The sinusoidal projection is *not* axis-aligned in lat/lon — longitude varies
-    along each row (``lon = X / (R·cos(lat))``), so a single longitude per column
-    (a column mean) places no real pixel and mis-geolocates the data. To carry
-    each pixel's true file-derived position through to footprint matching, this
-    reader flattens the 2-D ``(lat, lon, value)`` pixels to points and bins them
-    onto a regular sub-grid over the requested tile via
-    :func:`~libera_utils.footprint_matching.readers._swath.rasterize_points_to_grid`
-    — exactly like the ``ssf`` and ``cldpix`` swath readers. Every output cell
-    therefore has an exact center lat/lon.
+    The sinusoidal projection is *not* axis-aligned in lat/lon -- longitude varies
+    along each row (``lon = X / (R cos(lat))``), so a single longitude per column
+    (a column mean) places no real pixel and mis-geolocates the data. Every pixel is
+    therefore served at its own file-derived position as a
+    :class:`~libera_utils.footprint_matching.types.PointSamples` point, and the PSF
+    weigher is the first place a pixel is weighted. Several tiles (one file each)
+    staged for a day are concatenated.
+
+    The yearly product has no time axis, so the staged granules are the time match
+    (``TIME_MATCH = DAILY``).
 
     Class Attributes
     ----------------
@@ -79,23 +77,20 @@ class IGBPReader(GriddedDataReader):
     RESOLUTION_KM : float
         Nominal resolution 1.0 km (actual MODIS 500 m native, rounded for PSF
         weighting calculations).
-    OUTPUT_CELL_DEG : float
-        Edge length of the rasterized output cells (degrees). 0.05° matches the
-        ``cldpix`` 1-km reader and gives 40×40 cells per 2° tile.
     VARIABLES : tuple[VariableSpec, ...]
         Single variable: ``"surface_type"`` (categorical, 20 IGBP classes).
 
     Parameters
     ----------
-    file_path : Path
-        Path to a MCD12Q1 HDF4 tile file (e.g., ``MCD12Q1.A2023001.h09v05.061.hdf``).
+    file_paths : Path or Sequence[Path]
+        The MCD12Q1 HDF4 tile file(s) (e.g., ``MCD12Q1.A2023001.h09v05.061.hdf``).
     """
 
     READER_KEY: str = "igbp"
     # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
     INSTRUMENT: str = "MODIS"
     RESOLUTION_KM: float = 1.0
-    OUTPUT_CELL_DEG: float = 0.05
+    TIME_MATCH: TimeMatch = TimeMatch.DAILY
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="surface_type",
@@ -107,9 +102,8 @@ class IGBPReader(GriddedDataReader):
     )
     # A footprint spans several IGBP land-cover classes. ``surface_type`` above is the single
     # aggregated result; these three report the ranked mix (1st/2nd/3rd most-common class by
-    # PSF-weighted area), computed during PSF aggregation from the same rasterized pixels rather
-    # than read from a source field -- hence here rather than in VARIABLES. Not yet implemented
-    # by the aggregation engine (declarations only).
+    # PSF-weighted area), computed during PSF aggregation from the same pixels rather than read
+    # from a source field -- hence here rather than in VARIABLES.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="surface_type_primary",
@@ -134,83 +128,38 @@ class IGBPReader(GriddedDataReader):
         ),
     )
 
-    @cached_property
-    def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read the full tile and flatten it to geolocated land-cover points.
-
-        Cached per reader instance: the HDF4 read and sinusoidal-projection
-        coordinate computation run once, then every tile reuses the result (the
-        file content is static). Without the cache this whole-tile work would
-        repeat on every ``_load_spatial_region`` / tile request.
+    def _load_native(self) -> PointSamples:
+        """Read every staged tile and flatten it to geolocated land-cover points.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_pixels,)`` float64 pixel-center coordinates derived from the
-            sinusoidal projection metadata, and ``values`` is float64 shape
-            ``(1, n_pixels)`` holding the IGBP class code per pixel. Fill pixels
-            (original value 255) and any code outside the valid IGBP domain
-            (``1..17``) are set to ``NaN`` so the ``weighted_mode`` rasterization
-            never selects fill or an out-of-domain code as the modal land-cover class.
+        PointSamples
+            ``lats``/``lons`` are ``(n_pixels,)`` float64 pixel-center coordinates
+            derived from the sinusoidal projection metadata, and ``values`` is float32
+            shape ``(1, n_pixels)`` holding the IGBP class code per pixel. Fill pixels
+            (original value 255) and any code outside the valid IGBP domain (``1..17``)
+            are NaN so the ``weighted_mode`` aggregation never selects fill or an
+            out-of-domain code as the modal land-cover class.
         """
-        data_2d, lats_2d, lons_2d = read_modis_sinusoidal_hdf4(
-            file_path=str(self._file_path),
-            data_sds_name="LC_Type1",
-            fill_value=_IGBP_FILL_VALUE,
+        tile_lats: list[np.ndarray] = []
+        tile_lons: list[np.ndarray] = []
+        tile_values: list[np.ndarray] = []
+        for path in self.file_paths:
+            data_2d, lats_2d, lons_2d = read_modis_sinusoidal_hdf4(
+                file_path=str(path),
+                data_sds_name="LC_Type1",
+                fill_value=_IGBP_FILL_VALUE,
+            )
+            # Mask anything outside the valid IGBP land-cover domain (1..17) -- including
+            # the 255 fill and any stray 0 -- to NaN before flattening, so the mode
+            # aggregation never counts fill as a category and, downstream,
+            # calculate_trmm_surface_type never sees a code it cannot map.
+            in_domain = (data_2d >= _IGBP_VALID_MIN) & (data_2d <= _IGBP_VALID_MAX)
+            tile_values.append(np.where(in_domain, data_2d, np.nan).astype(np.float32).ravel())
+            tile_lats.append(np.asarray(lats_2d, dtype=np.float64).ravel())
+            tile_lons.append(np.asarray(lons_2d, dtype=np.float64).ravel())
+        return PointSamples(
+            lats=np.concatenate(tile_lats),
+            lons=np.concatenate(tile_lons),
+            values=np.concatenate(tile_values)[np.newaxis, :],
         )
-
-        # read_modis_sinusoidal_hdf4 returns the data and coordinates as 2-D
-        # per-pixel grids. Mask anything outside the valid IGBP land-cover domain
-        # (1..17) -- including the 255 fill and any stray 0 -- to NaN *before*
-        # flattening: the rasterizer's mode aggregation counts every finite value as a
-        # category, so leaving fill or an out-of-domain code in would let it win a cell
-        # and, downstream, feed calculate_trmm_surface_type a code it cannot map.
-        in_domain = (data_2d >= _IGBP_VALID_MIN) & (data_2d <= _IGBP_VALID_MAX)
-        values_2d = np.where(in_domain, data_2d, np.nan)
-
-        lats = np.asarray(lats_2d, dtype=np.float64).ravel()
-        lons = np.asarray(lons_2d, dtype=np.float64).ravel()
-        values = values_2d.astype(np.float64).ravel()[np.newaxis, :]  # (1, n_pixels)
-        return lats, lons, values
-
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Rasterize IGBP land-cover pixels within ``bbox`` onto a regular sub-grid.
-
-        Flattens the sinusoidal tile to geolocated points (see
-        :meth:`_load_points`) and bins them onto a regular ``OUTPUT_CELL_DEG``
-        sub-grid covering the tile, taking the modal land-cover class per cell.
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(n_lat, n_lon)`` (single-variable contract), ``lats``/``lons`` are
-            1-D float64 cell-center coordinate arrays, and cells with no pixels
-            are ``NaN``.
-
-        Notes
-        -----
-        The function reads the entire HDF4 tile and bins by coordinate. For the
-        500 m MODIS tile this is acceptable because the TileManager caches the
-        GridTile and does not re-read the file for overlapping footprints.
-        """
-        lats, lons, values = self._load_points
-
-        # rasterize_points_to_grid always returns (n_var, n_lat, n_lon). IGBP is
-        # single-variable, so squeeze axis 0 to honor the 2-D output contract
-        # that single-variable grid readers use.
-        data, lats_out, lons_out = rasterize_points_to_grid(
-            point_lats=lats,
-            point_lons=lons,
-            values=values,
-            bbox=(bbox.lat_min, bbox.lat_max, bbox.lon_min, bbox.lon_max),
-            cell_size_deg=self.OUTPUT_CELL_DEG,
-            aggregations=[self.VARIABLES[0].aggregation],
-        )
-        return data[0], lats_out, lons_out

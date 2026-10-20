@@ -67,12 +67,10 @@ File naming:
 
 from __future__ import annotations
 
-from functools import cached_property
-
 import numpy as np
 
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
 # Root-level coordinate and data variable names in the single-sensor Deep Blue
 # L3 granule. (No group navigation: unlike AERDB_D3_GEOLEO_Merged, this product
@@ -97,13 +95,14 @@ _AOD_VALID_MAX: float = 5.0
 _N_AEROSOL_TYPES: int = 8
 
 
-class VIIRSAODReader(GriddedDataReader):
+class VIIRSAODReader(StaticReader):
     """Read NOAA-20 VIIRS Deep Blue AOD + aerosol type from an AERDB_D3_VIIRS_NOAA20 file.
 
-    Loads two variables — ``aod_550`` (continuous) and ``aerosol_type``
-    (categorical) — from a single-sensor Deep Blue Level-3 daily file and returns
-    a 3-D data array of shape ``(2, n_lat, n_lon)`` stacked in ``VARIABLES``
-    order, matching the multi-variable contract used by ``VIIRSCloudReader``.
+    Loads two variables -- ``aod_550`` (continuous) and ``aerosol_type``
+    (categorical) -- from a single-sensor Deep Blue Level-3 daily file as a
+    ``(2, n_lat, n_lon)`` grid stacked in ``VARIABLES`` order. The file is a daily
+    mean with no time axis, so the staged day is the time match
+    (``TIME_MATCH = DAILY``).
 
     Class Attributes
     ----------------
@@ -120,14 +119,15 @@ class VIIRSAODReader(GriddedDataReader):
 
     Parameters
     ----------
-    file_path : Path
-        Path to an AERDB_D3_VIIRS_NOAA20 NetCDF4 file.
+    file_paths : Path or Sequence[Path]
+        The one AERDB_D3_VIIRS_NOAA20 NetCDF4 file for the processing day.
     """
 
     READER_KEY: str = "viirs_aod"
     # Deep Blue single-sensor product for VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
+    TIME_MATCH: TimeMatch = TimeMatch.DAILY
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="aod_550",
@@ -180,43 +180,39 @@ class VIIRSAODReader(GriddedDataReader):
         ),
     )
 
-    @cached_property
-    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read the full NOAA-20 VIIRS aerosol grid once and cache it on the instance.
+    def _load_native(self) -> GridSamples:
+        """Read the full NOAA-20 VIIRS aerosol grid once.
 
         Opens the NetCDF4 file, reads the root coordinate arrays (ascending
         latitude, no transpose needed) and both the AOD and aerosol-type fields,
         replaces fill / out-of-range values with NaN, and stacks the two fields in
-        ``VARIABLES`` order. Cached per reader instance so the file is opened and
-        read once, then every tile slices these in-memory arrays (see
-        :meth:`_load_spatial_region`) instead of re-reading the file.
+        ``VARIABLES`` order.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(2, n_lat, n_lon)`` with axis 0 = [aod_550, aerosol_type] (fill /
-            out-of-range as NaN) and ``lats`` / ``lons`` are float64 1-D
-            coordinate arrays. The categorical aerosol type is carried as float32
-            with NaN fill here; its ``int16`` product dtype is applied at
-            product-write time (the same convention IGBP uses).
+        GridSamples
+            ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
+            [aod_550, aerosol_type] (fill / out-of-range as NaN). The categorical
+            aerosol type is carried as float32 with NaN fill here; its ``int16``
+            product dtype is applied at product-write time (the same convention
+            IGBP uses).
         """
         import netCDF4  # noqa: PLC0415
 
-        with netCDF4.Dataset(str(self._file_path), "r") as ds:
+        with netCDF4.Dataset(str(self.single_file_path), "r") as ds:
             # Root-level coordinate arrays: (180,) and (360,) respectively.
             lats_full = np.array(ds.variables[_LAT_VAR][:], dtype=np.float64)
             lons_full = np.array(ds.variables[_LON_VAR][:], dtype=np.float64)
 
-            # Both fields are stored (Latitude, Longitude) — no transpose needed.
+            # Both fields are stored (Latitude, Longitude) -- no transpose needed.
             aod = np.array(ds.variables[_AOD_VARIABLE][:], dtype=np.float32)
             aerosol_type = np.array(ds.variables[_AEROSOL_TYPE_VARIABLE][:], dtype=np.float32)
 
-        # AOD: replace fill (−999.0) and out-of-range (>5 or <0) values with NaN.
+        # AOD: replace fill (-999.0) and out-of-range (>5 or <0) values with NaN.
         aod[aod <= _FILL_VALUE] = np.nan
         aod[(aod < 0.0) | (aod > _AOD_VALID_MAX)] = np.nan
 
-        # Aerosol type: replace fill (−999) and anything outside the valid
+        # Aerosol type: replace fill (-999) and anything outside the valid
         # category range [0, 7] with NaN so the weighted_mode aggregation never
         # selects fill as the modal class.
         aerosol_type[aerosol_type <= _FILL_VALUE] = np.nan
@@ -224,43 +220,4 @@ class VIIRSAODReader(GriddedDataReader):
 
         # Stack in VARIABLES order: axis 0 = [aod_550, aerosol_type].
         data = np.stack([aod, aerosol_type], axis=0)  # (2, n_lat_full, n_lon_full)
-        return data, lats_full, lons_full
-
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Slice the cached NOAA-20 VIIRS aerosol grid to ``bbox``.
-
-        Subsets the full grid from :attr:`_native_grid` to the requested bounding
-        box (ascending latitude, no transpose needed).
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(2, n_lat, n_lon)`` with axis 0 = [aod_550, aerosol_type]. Fill
-            pixels (originally −999, or AOD outside [0, 5] / type outside [0, 7])
-            are returned as NaN.
-        """
-        data_full, lats_full, lons_full = self._native_grid
-
-        # Compute bbox index masks on the full coordinate arrays.
-        lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
-        lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
-
-        lat_indices = np.where(lat_mask)[0]
-        lon_indices = np.where(lon_mask)[0]
-
-        if lat_indices.size == 0 or lon_indices.size == 0:
-            n = len(self.VARIABLES)
-            return (
-                np.empty((n, 0, 0), dtype=np.float32),
-                np.empty(0, dtype=np.float64),
-                np.empty(0, dtype=np.float64),
-            )
-
-        data = data_full[:, lat_indices, :][:, :, lon_indices]
-        return data, lats_full[lat_indices], lons_full[lon_indices]
+        return GridSamples(lat_axis=lats_full, lon_axis=lons_full, data=data)

@@ -14,16 +14,15 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
-from libera_utils.footprint_matching.types import (
-    BoundingBox,
-    GridTile,
-    OperationalMode,
-    TileKey,
-)
+from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
 from tests.test_data.footprint_matching.fixtures import (
+    ERA5_FIXTURE_TIME,
     ERA5_SINGLE_LEVEL_FILLS,
     make_era5_netcdf_fixture,
 )
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+
+_T = ERA5_FIXTURE_TIME
 
 # The five additional FMATCH-IMAGER single-level fields alongside the winds.
 # (They sit in the FMATCH-IMAGER product alongside the RBSP fields; they are
@@ -43,8 +42,8 @@ class TestERA5ReaderClassAttributes:
         assert ERA5Reader.READER_KEY == "era5"
 
     def test_resolution_km(self):
-        # Targets the reader's grid resolution attribute; asserts RESOLUTION_KM equals 25.0 km.
-        assert ERA5Reader.RESOLUTION_KM == 25.0
+        # Targets the reader's grid resolution attribute; asserts RESOLUTION_KM equals the 0.25 degree spacing, 28 km.
+        assert ERA5Reader.RESOLUTION_KM == 28.0
 
     def test_variables_has_seven_entries(self):
         # Targets the VARIABLES tuple size; asserts the reader exposes exactly 7 single-level fields.
@@ -79,13 +78,13 @@ class TestERA5ReaderClassAttributes:
 
 class TestERA5ReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
-        # Targets _load_spatial_region output shape; asserts a 3D array whose axis 0 holds the 7 variable layers.
+        # Targets samples_in output shape; asserts a 3D array whose axis 0 holds the 7 variable layers.
         fixture_path = make_era5_netcdf_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
         )
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, lats, lons = reader._load_spatial_region(bbox)
+        data, lats, lons = _region(reader, bbox, _T)
         # 3D: (7 variables, n_lat, n_lon)
         assert data.ndim == 3
         assert data.shape[0] == 7
@@ -94,7 +93,7 @@ class TestERA5ReaderLoadSpatialRegion:
         fixture_path = make_era5_netcdf_fixture(tmp_path, u10_fill=2.5, v10_fill=-1.5, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, _, _ = reader._load_spatial_region(bbox)
+        data, _, _ = _region(reader, bbox, _T)
         # data[0] should be u10 (all 2.5) and data[1] should be v10 (all -1.5);
         # the remaining layers follow the file-variable mapping order with the
         # distinct constant fills the fixture writes for each variable.
@@ -111,15 +110,15 @@ class TestERA5ReaderLoadSpatialRegion:
         )
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        _, lats, _ = reader._load_spatial_region(bbox)
+        _, lats, _ = _region(reader, bbox, _T)
         assert np.all(np.diff(lats) >= 0), f"Lats should be ascending but got: {lats}"
 
     def test_data_dtype_is_float32(self, tmp_path):
-        # Targets the returned data array dtype; asserts _load_spatial_region yields float32 values.
+        # Targets the returned data array dtype; asserts samples_in yields float32 values.
         fixture_path = make_era5_netcdf_fixture(tmp_path, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, _, _ = reader._load_spatial_region(bbox)
+        data, _, _ = _region(reader, bbox, _T)
         assert data.dtype == np.float32
 
     def test_lats_dtype_is_float64(self, tmp_path):
@@ -127,7 +126,7 @@ class TestERA5ReaderLoadSpatialRegion:
         fixture_path = make_era5_netcdf_fixture(tmp_path, n_lat=4, n_lon=4)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        _, lats, lons = reader._load_spatial_region(bbox)
+        _, lats, lons = _region(reader, bbox, _T)
         assert lats.dtype == np.float64
         assert lons.dtype == np.float64
 
@@ -141,53 +140,20 @@ class TestERA5ReaderLoadSpatialRegion:
         reader = ERA5Reader(fixture_path)
         # Only request the upper half of the lat range
         bbox = BoundingBox(2.0, 4.0, 10.0, 12.0)
-        data, lats, _ = reader._load_spatial_region(bbox)
+        data, lats, _ = _region(reader, bbox, _T)
         # All returned lats should be >= 2.0
         assert np.all(lats >= 2.0 - 1e-6)
-
-
-class TestERA5ReaderLoadTile:
-    def test_load_tile_returns_grid_tile(self, tmp_path):
-        # Targets load_tile's return type; asserts it returns a GridTile for the given TileKey.
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        # TileKey(lat_idx=45, lon_idx=90) → lat [0, 2°], lon [0, 2°]
-        key = TileKey("era5", 45, 90)
-        tile = reader.load_tile(key)
-        assert isinstance(tile, GridTile)
-
-    def test_load_tile_source_is_era5(self, tmp_path):
-        # Targets the tile's source label; asserts load_tile stamps tile.source with "era5".
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        key = TileKey("era5", 45, 90)
-        tile = reader.load_tile(key)
-        assert tile.source == "era5"
-
-    def test_load_tile_timestamp_source_is_none(self, tmp_path):
-        # ERA5 is a static reanalysis product; asserts load_tile leaves tile.timestamp_source None (no timestamp).
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        key = TileKey("era5", 45, 90)
-        tile = reader.load_tile(key)
-        assert tile.timestamp_source is None
 
 
 class TestERA5ReaderValidTimeDimension:
     """ERA5 files downloaded via the new CDS API use 'valid_time' as the time dimension name.
 
-    The reader must drop ANY dimension whose name contains the substring 'time',
-    not just the exact name 'time'. This class verifies the fix for that edge case.
+    The reader must find ANY dimension whose name contains the substring 'time',
+    not just the exact name 'time'.
     """
 
-    def test_valid_time_dimension_is_dropped(self, tmp_path):
-        # Targets dropping a 'valid_time' dimension; asserts output stays 3D (time dim collapsed), not 4D.
+    def test_valid_time_dimension_is_the_step_axis(self, tmp_path):
+        # Targets a 'valid_time' step axis; asserts one step serves a (7, n_lat, n_lon) grid.
         from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
 
         fixture_path = make_era5_valid_time_fixture(
@@ -195,7 +161,7 @@ class TestERA5ReaderValidTimeDimension:
         )
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, lats, lons = reader._load_spatial_region(bbox)
+        data, lats, lons = _region(reader, bbox, _T)
         # Without the fix the shape would be (7, 1, n_lat, n_lon); the time dim must be gone.
         assert data.ndim == 3
         assert data.shape[0] == 7
@@ -217,7 +183,7 @@ class TestERA5ReaderValidTimeDimension:
         )
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, _, _ = reader._load_spatial_region(bbox)
+        data, _, _ = _region(reader, bbox, _T)
         assert np.allclose(data[0], 3.0, atol=1e-4)
         assert np.allclose(data[1], -2.0, atol=1e-4)
 
@@ -226,7 +192,7 @@ class TestERA5ReaderMissingVariables:
     """A partial CDS download (missing required variables) must fail loudly."""
 
     def test_file_missing_variables_raises_key_error(self, tmp_path):
-        # Targets loud failure on incomplete files; asserts _load_spatial_region raises KeyError("missing variable").
+        # Targets loud failure on incomplete files; asserts samples_in raises KeyError("missing variable").
         import pytest
         import xarray as xr
 
@@ -236,10 +202,11 @@ class TestERA5ReaderMissingVariables:
         lons = np.linspace(10.0, 12.0, 4)
         ds = xr.Dataset(
             {
-                "u10": xr.DataArray(np.zeros((4, 4), dtype=np.float32), dims=["latitude", "longitude"]),
-                "v10": xr.DataArray(np.zeros((4, 4), dtype=np.float32), dims=["latitude", "longitude"]),
+                "u10": xr.DataArray(np.zeros((1, 4, 4), dtype=np.float32), dims=["time", "latitude", "longitude"]),
+                "v10": xr.DataArray(np.zeros((1, 4, 4), dtype=np.float32), dims=["time", "latitude", "longitude"]),
             },
             coords={
+                "time": xr.DataArray(np.array([ERA5_FIXTURE_TIME]), dims=["time"]),
                 "latitude": xr.DataArray(lats, dims=["latitude"]),
                 "longitude": xr.DataArray(lons, dims=["longitude"]),
             },
@@ -249,4 +216,79 @@ class TestERA5ReaderMissingVariables:
 
         reader = ERA5Reader(path)
         with pytest.raises(KeyError, match="missing variable"):
-            reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+            _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
+
+
+class TestERA5ReaderSamples:
+    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
+        # ERA5 is a reanalysis; its samples carry the reader key and no instrument timestamp source.
+        fixture_path = make_era5_netcdf_fixture(
+            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
+        )
+        samples = ERA5Reader(fixture_path).samples_in(BoundingBox(0.0, 2.0, 0.0, 2.0), _T)
+        assert samples.source == "era5"
+        assert samples.timestamp_source is None
+        assert samples.times is None
+        assert samples.n_samples == 16
+
+
+class TestERA5ReaderTimeSteps:
+    """The hourly step nearest the footprint time is served, one step at a time."""
+
+    @staticmethod
+    def _three_steps(tmp_path, filename="era5_steps.nc"):
+        times = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "h")
+        return make_era5_netcdf_fixture(
+            tmp_path, times=times, u10_per_step=np.array([10.0, 20.0, 30.0]), filename=filename
+        )
+
+    def test_policy_is_nearest_step(self):
+        assert ERA5Reader.TIME_MATCH is TimeMatch.NEAREST_STEP
+        assert ERA5Reader.MAX_TIME_OFFSET == np.timedelta64(1, "h")
+
+    def test_nearest_step_is_served(self, tmp_path):
+        reader = ERA5Reader(self._three_steps(tmp_path))
+        box = BoundingBox(0.0, 2.0, 10.0, 12.0)
+        at_0010 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(10, "m"))
+        at_0150 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(110, "m"))
+        assert np.allclose(at_0010.values[0], 10.0)
+        assert np.allclose(at_0150.values[0], 30.0)
+
+    def test_step_beyond_max_offset_gives_no_samples(self, tmp_path):
+        reader = ERA5Reader(self._three_steps(tmp_path))
+        samples = reader.samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), ERA5_FIXTURE_TIME + np.timedelta64(9, "h"))
+        assert samples.n_samples == 0
+
+    def test_steps_span_several_granules(self, tmp_path):
+        first = make_era5_netcdf_fixture(
+            tmp_path, times=[ERA5_FIXTURE_TIME], u10_per_step=np.array([1.0]), filename="a.nc"
+        )
+        second = make_era5_netcdf_fixture(
+            tmp_path, times=[ERA5_FIXTURE_TIME + np.timedelta64(1, "h")], u10_per_step=np.array([2.0]), filename="b.nc"
+        )
+        # Handed out of time order: the step index sorts them.
+        reader = ERA5Reader([second, first])
+        box = BoundingBox(0.0, 2.0, 10.0, 12.0)
+        assert np.allclose(reader.samples_in(box, ERA5_FIXTURE_TIME).values[0], 1.0)
+        assert np.allclose(reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(1, "h")).values[0], 2.0)
+
+    def test_file_without_time_axis_is_rejected(self, tmp_path):
+        import pytest
+        import xarray as xr
+
+        lats = np.linspace(2.0, 0.0, 4)
+        lons = np.linspace(10.0, 12.0, 4)
+        ds = xr.Dataset(
+            {
+                name: xr.DataArray(np.zeros((4, 4), dtype=np.float32), dims=["latitude", "longitude"])
+                for name in ("u10",)
+            },
+            coords={
+                "latitude": xr.DataArray(lats, dims=["latitude"]),
+                "longitude": xr.DataArray(lons, dims=["longitude"]),
+            },
+        )
+        path = tmp_path / "era5_no_time.nc"
+        ds.to_netcdf(path)
+        with pytest.raises(ValueError, match="time dimension"):
+            ERA5Reader(path).samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), ERA5_FIXTURE_TIME)

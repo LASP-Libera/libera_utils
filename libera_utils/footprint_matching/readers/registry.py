@@ -1,6 +1,6 @@
 """Reader plugin registry for the footprint matching reader plugin system.
 
-Concrete GriddedDataReader subclasses auto-register in this registry via the
+Concrete AncillaryReader subclasses auto-register in this registry via the
 ``__init_subclass__`` hook defined in the base class. Callers should not
 populate ``_registry`` directly.
 
@@ -16,7 +16,7 @@ Import the readers subpackage to trigger registration of all built-in readers::
 
 See Also
 --------
-libera_utils.footprint_matching.readers.base.GriddedDataReader :
+libera_utils.footprint_matching.readers.base.AncillaryReader :
     Abstract base class whose ``__init_subclass__`` performs registration.
 """
 
@@ -31,7 +31,7 @@ from libera_utils.footprint_matching.types import OperationalMode
 
 if TYPE_CHECKING:
     # Avoid a circular import at module load time; only used for type hints
-    from libera_utils.footprint_matching.readers.base import GriddedDataReader
+    from libera_utils.footprint_matching.readers.base import AncillaryReader
 
 
 # ---------------------------------------------------------------------------
@@ -58,11 +58,11 @@ FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
 
 
 class ReaderRegistry:
-    """Plugin registry mapping string keys to GriddedDataReader subclasses.
+    """Plugin registry mapping string keys to AncillaryReader subclasses.
 
     This is a stateless class (all methods are static) that wraps a module-level
     ``_registry`` dict. Readers register themselves automatically when their module
-    is imported via the ``__init_subclass__`` hook in GriddedDataReader. Manual
+    is imported via the ``__init_subclass__`` hook in AncillaryReader. Manual
     registration is neither necessary nor recommended.
 
     Examples
@@ -75,13 +75,13 @@ class ReaderRegistry:
     1.0
     """
 
-    # Shared registry dict. All concrete GriddedDataReader subclasses are added
-    # here by GriddedDataReader.__init_subclass__ at class-definition time
+    # Shared registry dict. All concrete AncillaryReader subclasses are added
+    # here by AncillaryReader.__init_subclass__ at class-definition time
     # (i.e., when their module is first imported).
-    _registry: dict[str, type[GriddedDataReader]] = {}
+    _registry: dict[str, type[AncillaryReader]] = {}
 
     @staticmethod
-    def get(name: str) -> type[GriddedDataReader]:
+    def get(name: str) -> type[AncillaryReader]:
         """Return the reader class registered under ``name``.
 
         Parameters
@@ -91,7 +91,7 @@ class ReaderRegistry:
 
         Returns
         -------
-        type[GriddedDataReader]
+        type[AncillaryReader]
             The registered reader class. Callers can then instantiate it with a
             file path: ``cls(Path("some_file.hdf"))``.
 
@@ -118,7 +118,7 @@ class ReaderRegistry:
         return sorted(ReaderRegistry._registry.keys())
 
     @staticmethod
-    def get_readers_for_mode(mode: OperationalMode) -> dict[str, type[GriddedDataReader]]:
+    def get_readers_for_mode(mode: OperationalMode) -> dict[str, type[AncillaryReader]]:
         """Return the readers that contribute to a product's definition.
 
         Membership is read directly from the per-product reader set
@@ -135,7 +135,7 @@ class ReaderRegistry:
 
         Returns
         -------
-        dict[str, type[GriddedDataReader]]
+        dict[str, type[AncillaryReader]]
             Mapping of registry key to reader class for every reader in the product's
             set. Only production readers named in the sets are returned; throwaway
             readers other code may have registered are not included.

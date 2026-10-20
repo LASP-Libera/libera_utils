@@ -86,6 +86,10 @@ _ERA5_SINGLE_LEVEL_ATTRS: dict[str, dict[str, str]] = {
 }
 
 
+ERA5_FIXTURE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
+"""The single hourly step the default ERA5 fixtures carry; query them at this time."""
+
+
 def _era5_single_level_dataset(
     lat_min: float,
     lat_max: float,
@@ -95,44 +99,45 @@ def _era5_single_level_dataset(
     n_lon: int,
     u10_fill: float,
     v10_fill: float,
-    with_valid_time: bool,
+    time_dim: str,
+    times: np.ndarray | None,
+    u10_per_step: np.ndarray | None = None,
 ) -> xr.Dataset:
     """Build the in-memory Dataset shared by the two single-level fixture makers.
 
     Contains all seven single-level variables the ERA5Reader expects (u10, v10,
     t2m, d2m, sp, z, fal), each a constant-valued grid, with latitudes stored
-    DESCENDING (real ERA5 convention). When ``with_valid_time`` is True, every
-    variable gains a leading length-1 ``valid_time`` dimension, matching files
-    produced by the new CDS API.
+    DESCENDING (real ERA5 convention) and a leading time dimension named
+    ``time_dim`` (``"time"`` as older CDS downloads name it, or ``"valid_time"`` as
+    the new CDS API does). ``times`` are the step times (default: the single
+    :data:`ERA5_FIXTURE_TIME`); ``u10_per_step`` optionally gives u10 one constant per
+    step so a test can tell which step the reader served.
     """
     lats = np.linspace(lat_max, lat_min, n_lat)  # descending, real ERA5 convention
     lons = np.linspace(lon_min, lon_max, n_lon)
+    if times is None:
+        times = np.array([ERA5_FIXTURE_TIME], dtype="datetime64[ns]")
+    times = np.asarray(times).astype("datetime64[ns]")
+    n_time = times.size
 
     fills = {"u10": u10_fill, "v10": v10_fill, **ERA5_SINGLE_LEVEL_FILLS}
-    shape = (1, n_lat, n_lon) if with_valid_time else (n_lat, n_lon)
-    dims = ["valid_time", "latitude", "longitude"] if with_valid_time else ["latitude", "longitude"]
+    shape = (n_time, n_lat, n_lon)
+    dims = [time_dim, "latitude", "longitude"]
 
     coords = {
         "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
         "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
+        time_dim: xr.DataArray(times, dims=[time_dim]),
     }
-    if with_valid_time:
-        coords["valid_time"] = xr.DataArray(
-            np.array(["2026-01-01T00:00:00"], dtype="datetime64[ns]"),
-            dims=["valid_time"],
-        )
 
-    return xr.Dataset(
-        {
-            name: xr.DataArray(
-                np.full(shape, fill, dtype=np.float32),
-                dims=dims,
-                attrs=_ERA5_SINGLE_LEVEL_ATTRS[name],
-            )
-            for name, fill in fills.items()
-        },
-        coords=coords,
-    )
+    data_vars = {}
+    for name, fill in fills.items():
+        data = np.full(shape, fill, dtype=np.float32)
+        if name == "u10" and u10_per_step is not None:
+            for step, value in enumerate(np.asarray(u10_per_step, dtype=np.float32)):
+                data[step] = value
+        data_vars[name] = xr.DataArray(data, dims=dims, attrs=_ERA5_SINGLE_LEVEL_ATTRS[name])
+    return xr.Dataset(data_vars, coords=coords)
 
 
 def make_era5_netcdf_fixture(
@@ -145,14 +150,18 @@ def make_era5_netcdf_fixture(
     n_lon: int = 4,
     u10_fill: float = 2.5,
     v10_fill: float = -1.5,
+    times: np.ndarray | None = None,
+    u10_per_step: np.ndarray | None = None,
+    filename: str = "era5_fixture.nc",
 ) -> Path:
     """Write a synthetic ERA5 single-levels NetCDF4 file to ``tmp_path``.
 
     The real ERA5 files from CDS contain the single-level variables on a global
-    lat/lon grid with the latitude dimension in DESCENDING order (90 → -90).
-    This factory reproduces that convention in a small grid for testing, writing
-    all seven variables the ERA5Reader expects (u10, v10, t2m, d2m, sp, z, fal).
-    The non-wind variables carry the constant ``ERA5_SINGLE_LEVEL_FILLS`` values.
+    lat/lon grid with the latitude dimension in DESCENDING order (90 -> -90) and a
+    leading hourly ``time`` dimension. This factory reproduces that convention in a
+    small grid for testing, writing all seven variables the ERA5Reader expects
+    (u10, v10, t2m, d2m, sp, z, fal). The non-wind variables carry the constant
+    ``ERA5_SINGLE_LEVEL_FILLS`` values.
 
     The real file format reference:
     https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
@@ -163,15 +172,21 @@ def make_era5_netcdf_fixture(
         pytest ``tmp_path`` fixture directory.
     lat_min, lat_max : float
         Latitude range. Latitudes are stored in DESCENDING order in the file
-        (matching real ERA5 convention). Default: 0 → 2° N.
+        (matching real ERA5 convention). Default: 0 -> 2 N.
     lon_min, lon_max : float
-        Longitude range. Default: 10 → 12° E.
+        Longitude range. Default: 10 -> 12 E.
     n_lat, n_lon : int
         Number of grid points in each dimension. Default 4.
     u10_fill : float
         Constant fill value for the u10 variable. Default 2.5 m/s.
     v10_fill : float
         Constant fill value for the v10 variable. Default -1.5 m/s.
+    times : np.ndarray, optional
+        Step times (``datetime64``). Default: one step at :data:`ERA5_FIXTURE_TIME`.
+    u10_per_step : np.ndarray, optional
+        One u10 constant per step, overriding ``u10_fill`` step by step.
+    filename : str, optional
+        Name of the file written under ``tmp_path``.
 
     Returns
     -------
@@ -179,9 +194,9 @@ def make_era5_netcdf_fixture(
         Path to the created NetCDF4 fixture file.
     """
     ds = _era5_single_level_dataset(
-        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, with_valid_time=False
+        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, "time", times, u10_per_step
     )
-    out_path = tmp_path / "era5_fixture.nc"
+    out_path = tmp_path / filename
     ds.to_netcdf(out_path)
     return out_path
 
@@ -199,19 +214,19 @@ def make_era5_valid_time_fixture(
 ) -> Path:
     """Write a synthetic ERA5 single-levels NetCDF4 file with a ``valid_time`` dimension.
 
-    Identical to :func:`make_era5_netcdf_fixture` except that every variable has
-    an extra ``valid_time`` dimension of length 1, matching the format produced
-    by the new CDS API. This exercises the reader's time-dim detection logic
-    which uses a substring match on ``"time"``.
+    Identical to :func:`make_era5_netcdf_fixture` except that the time dimension is
+    named ``valid_time``, matching the format produced by the new CDS API. This
+    exercises the reader's time-dimension detection, which matches on the substring
+    ``"time"``.
 
     Parameters
     ----------
     tmp_path : Path
         pytest ``tmp_path`` fixture directory.
     lat_min, lat_max : float
-        Latitude range (DESCENDING in file). Default: 0 → 2° N.
+        Latitude range (DESCENDING in file). Default: 0 -> 2 N.
     lon_min, lon_max : float
-        Longitude range. Default: 10 → 12° E.
+        Longitude range. Default: 10 -> 12 E.
     n_lat, n_lon : int
         Number of grid points in each dimension. Default 4.
     u10_fill : float
@@ -225,7 +240,7 @@ def make_era5_valid_time_fixture(
         Path to the created NetCDF4 fixture file.
     """
     ds = _era5_single_level_dataset(
-        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, with_valid_time=True
+        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, "valid_time", None
     )
     out_path = tmp_path / "era5_valid_time_fixture.nc"
     ds.to_netcdf(out_path)
@@ -280,7 +295,7 @@ def make_era5_pressure_netcdf_fixture(
     with_valid_time : bool
         Write the leading length-1 ``valid_time`` dimension (new CDS API format).
         Default True; False writes plain (pressure_level, latitude, longitude)
-        variables.
+        variables, which the reader rejects (it needs a time axis to match steps).
 
     Returns
     -------
@@ -328,10 +343,7 @@ def make_era5_pressure_netcdf_fixture(
         "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
     }
     if with_valid_time:
-        coords["valid_time"] = xr.DataArray(
-            np.array(["2026-01-01T00:00:00"], dtype="datetime64[ns]"),
-            dims=["valid_time"],
-        )
+        coords["valid_time"] = xr.DataArray(np.array([ERA5_FIXTURE_TIME], dtype="datetime64[ns]"), dims=["valid_time"])
 
     ds = xr.Dataset(data_vars, coords=coords)
     out_path = tmp_path / "era5_pressure_fixture.nc"
@@ -624,10 +636,22 @@ def make_aod_noaa20_fixture(
     return out_path
 
 
+SWATH_FIXTURE_TIME = np.datetime64("2026-01-01T12:00:00", "ns")
+"""The observation time the default SSF and CLDPIX fixtures carry; query them at this time."""
+_SWATH_TIME_UNITS = "seconds since 2026-01-01 00:00:00"
+
+
+def _seconds_since_fixture_epoch(times: np.ndarray) -> np.ndarray:
+    """Encode ``datetime64`` times in the CF units the swath fixtures write."""
+    epoch = np.datetime64("2026-01-01T00:00:00", "ns")
+    return ((np.asarray(times).astype("datetime64[ns]") - epoch) / np.timedelta64(1, "s")).astype(np.float64)
+
+
 def make_ssf_fixture(
     tmp_path: Path,
     lats: np.ndarray | None = None,
     lons_0360: np.ndarray | None = None,
+    times: np.ndarray | None = None,
     aerosol_optical_depth: np.ndarray | None = None,
     clear_coverage: np.ndarray | None = None,
     cloud_optical_depth_lower: np.ndarray | None = None,
@@ -642,8 +666,11 @@ def make_ssf_fixture(
     Replicates the grouped, per-footprint structure of the real SSF product:
     - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
       ``AeroTypePct`` (7) secondary axis the reader flattens
-    - ``Time_and_Position/instrument_fov_latitude`` and ``…_longitude``
-      (**longitude stored in the 0..360 convention**, matching the real file)
+    - ``Time_and_Position/instrument_fov_latitude`` and ``..._longitude``
+      (**longitude stored in the 0..360 convention**, matching the real file), and
+      ``Time_and_Position/time``, the per-footprint observation time encoded with
+      CF units (``seconds since 2026-01-01``), and ``sample_number``, the position of
+      each footprint within its scan
     - One variable per supported reader field across the corresponding groups,
       with float fill ``3.4028235e38`` and int16 fill ``32767``. This includes the
       FMATCH-IMAGER-only extended fields: the layered cloud fields (both layers,
@@ -665,6 +692,9 @@ def make_ssf_fixture(
         Per-footprint latitudes (−90..90).
     lons_0360 : np.ndarray, optional
         Per-footprint longitudes in the **0..360** convention.
+    times : np.ndarray, optional
+        Per-footprint observation times (``datetime64``). Default: every footprint at
+        :data:`SWATH_FIXTURE_TIME`.
     aerosol_optical_depth, clear_coverage, cloud_optical_depth_lower : np.ndarray, optional
         Per-footprint continuous values. ``cloud_optical_depth_lower`` fills the
         lower (index 0) layer of the 2-D ``cloud_optical_depth_mean`` variable.
@@ -695,6 +725,8 @@ def make_ssf_fixture(
         # −10° in the 0..360 convention is 350°; last point is far away (100°).
         lons_0360 = np.array([350.0, 350.0, 350.0, 350.0, 350.0, 100.0], dtype=np.float32)
     n = lats.size
+    if times is None:
+        times = np.full(n, SWATH_FIXTURE_TIME, dtype="datetime64[ns]")
 
     if aerosol_optical_depth is None:
         aerosol_optical_depth = np.array([0.10, 0.20, 0.30, 0.40, 0.50, 0.60], dtype=np.float32)[:n]
@@ -762,6 +794,14 @@ def make_ssf_fixture(
         tp = ds.createGroup("Time_and_Position")
         _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
         _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
+        time_var = tp.createVariable("time", np.float64, ("Footprints",))
+        time_var[:] = _seconds_since_fixture_epoch(times)
+        time_var.units = _SWATH_TIME_UNITS
+        # One scan: footprints numbered 1..n along it, as the real product numbers them.
+        _add(tp, "sample_number", (np.arange(n) % 660 + 1).astype(np.int16), fill_i, (1, 660))
+        times_ns = np.asarray(times).astype("datetime64[ns]")
+        ds.time_coverage_start = np.datetime_as_string(times_ns.min(), unit="us") + "Z"
+        ds.time_coverage_end = np.datetime_as_string(times_ns.max(), unit="us") + "Z"
 
         aux = ds.createGroup("Auxillary_Properties")
         _add(aux, "aerosol_optical_depth", aerosol_optical_depth.astype(np.float32), fill_f, (0.0, 8.0))
@@ -865,6 +905,8 @@ def make_cldpix_fixture(
     tmp_path: Path,
     lats: np.ndarray | None = None,
     lons_0360: np.ndarray | None = None,
+    times: np.ndarray | None = None,
+    filename: str = "cer_cldpix_fixture.nc",
 ) -> Path:
     """Write a synthetic CERES CLDPIX (imager-pixel swath) NetCDF4 file.
 
@@ -876,6 +918,9 @@ def make_cldpix_fixture(
       is in the **0..360 convention**. The ``lats`` argument below is given as
       an ordinary −90..90 latitude and converted on write, so tests can express
       their expectations in normal latitudes.
+    - ``Observation_Time``, per pixel, in fractional UTC hours of the day (every
+      pixel of a scanline shares its time), dated by the ``time_coverage_start``
+      global attribute as the real product is
     - A minimal set of float cloud variables (fill ``3.4028235e38``) and int8
       categorical variables (fill ``127``)
     - ``Eff_Cld_Pressure`` is written with a **descending** ``valid_range``
@@ -895,6 +940,11 @@ def make_cldpix_fixture(
         true −90..90 latitude (converted to colatitude on write); ``lons_0360``
         is in the 0..360 convention. Defaults place all pixels near lat ≈ 40°,
         lon ≈ −15° (written as colatitude 50° and longitude 345° in the file).
+    times : np.ndarray, optional
+        One observation time per scanline (``datetime64``). Default: every scanline
+        at :data:`SWATH_FIXTURE_TIME`.
+    filename : str, optional
+        Name of the file written under ``tmp_path``.
 
     Returns
     -------
@@ -915,13 +965,26 @@ def make_cldpix_fixture(
         # −15° in the 0..360 convention is 345°.
         lons_0360 = np.full((n_scan, n_pix), 345.0, dtype=np.float32)
     shape = lats.shape
+    if times is None:
+        times = np.full(shape[0], SWATH_FIXTURE_TIME, dtype="datetime64[ns]")
 
-    out_path = tmp_path / "cer_cldpix_fixture.nc"
+    out_path = tmp_path / filename
 
     with netCDF4.Dataset(str(out_path), "w") as ds:
         ds.createDimension("Scanlines", shape[0])
         ds.createDimension("Pixels", shape[1])
         dims = ("Scanlines", "Pixels")
+        # Real CLDPIX: per-pixel fractional UTC hours of the day, dated by the global
+        # time_coverage_start attribute (one hour per granule, so one date serves all).
+        times = np.asarray(times).astype("datetime64[ns]")
+        day = times[0].astype("datetime64[D]")
+        hours = ((times - day.astype("datetime64[ns]")) / np.timedelta64(1, "h")).astype(np.float32)
+        time_var = ds.createVariable("Observation_Time", np.float32, dims, fill_value=fill_f)
+        time_var[:] = np.repeat(hours[:, None], shape[1], axis=1)
+        time_var.units = "hours"
+        time_var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
+        ds.time_coverage_start = np.datetime_as_string(times.min(), unit="us") + "Z"
+        ds.time_coverage_end = np.datetime_as_string(times.max(), unit="us") + "Z"
 
         def _add(name, data, fill, valid_range=None):
             var = ds.createVariable(name, data.dtype, dims, fill_value=fill)

@@ -63,8 +63,8 @@ Design notes
   other. (Earlier revisions of this reader mislabeled code 255 as a "missing"
   layer; 255 is ocean — the single largest class in each polar grid.)
 
-The first axis of the returned data array follows ``VARIABLES`` order exactly
-(the multi-variable reader contract; see ``GridTile`` and ``ERA5Reader``).
+The first axis of the returned ``values`` array follows ``VARIABLES`` order exactly
+(the multi-variable reader contract; see ``PointSamples`` and ``ERA5Reader``).
 
 Two hemispheres in one granule
 ------------------------------
@@ -72,27 +72,24 @@ A NISE granule holds two grids — Northern (EPSG:3408) and Southern (EPSG:3409)
 each with its own ``Extent`` SDS. Both fields are named ``Extent``, so they are
 addressed by their HDF-EOS dimension-name hemisphere label, not by SDS name (see
 ``_read_extent_sds``). This reader reads both, reprojects each with its own CRS,
-and concatenates the results into a single point cloud; a tile request downstream
-keeps only the points inside its bbox, so each hemisphere's tiles draw from the
-correct grid automatically.
+and concatenates the results into a single point cloud; a footprint's box query
+downstream keeps only the points inside its box, so each hemisphere's footprints
+draw from the correct grid automatically.
 
 Each square 721 × 721 grid's corners fall outside the projection's Earth disk and
 reproject into the *opposite* hemisphere; every such corner pixel carries Extent
-code 254. These are dropped before merging (``_load_points``) so they cannot
-contaminate the other hemisphere's tiles.
+code 254. These are dropped before merging (``_load_native``) so they cannot
+contaminate the other hemisphere's footprints.
 
-Geolocation: rasterization, not mean-collapse
+Geolocation: native pixels, not a regular grid
 ----------------------------------------------
-The EASE-Grid projections are azimuthal — both latitude and longitude vary in two
+The EASE-Grid projections are azimuthal -- both latitude and longitude vary in two
 dimensions across the pixel grid, so a 1-D row/column mean of the pixel coordinates
-places no real pixel and mis-geolocates the data. To carry each pixel's true
-file-derived position through to footprint matching, this reader flattens the
-per-pixel ``(lat, lon, value)`` layers to points and bins them onto a regular
-sub-grid over the requested tile via ``rasterize_points_to_grid`` — exactly like the
-``ssf`` and ``cldpix`` swath readers. Every output cell therefore has an exact
-center lat/lon. Pixels whose EASE-Grid → WGS84 transform falls outside the
-projection domain reproject to non-finite coordinates (pyproj yields ``inf``) and
-are dropped by the rasterizer's finite-coordinate filter.
+places no real pixel and mis-geolocates the data. Every pixel is therefore served at
+its own reprojected center as a ``PointSamples`` point, and the PSF weigher is the
+first place a pixel is weighted. Pixels whose EASE-Grid -> WGS84 transform falls
+outside the projection domain reproject to non-finite coordinates (pyproj yields
+``inf``) and are dropped by the reader base class's point index.
 
 References
 ----------
@@ -107,17 +104,16 @@ EASE-Grid ref:   https://nsidc.org/ease
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import cached_property
 from pathlib import Path
 
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import _require_pyhdf
 from libera_utils.footprint_matching.readers._pyproj_io import _require_pyproj
-from libera_utils.footprint_matching.readers._swath import rasterize_points_to_grid
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
 # NISE 25-km EASE-Grid North parameters (EPSG:3408).
 # The 721 × 721 grid covers ±9,036,842.7625 m in both x and y.
@@ -159,9 +155,9 @@ _CODE_OCEAN: int = 255  # ocean (open water, no ice)
 _SEA_ICE_PERCENT_DIVISOR: float = 100.0
 
 # Canonical output-variable order. The first axis of the array returned by
-# ``_load_spatial_region`` / ``_extent_to_category_masks`` MUST match this order,
+# ``_load_native`` / ``_extent_to_category_masks`` MUST match this order,
 # which in turn MUST match the ``VARIABLES`` tuple below (the multi-variable
-# reader contract documented on ``GridTile``).
+# reader contract documented on ``PointSamples``).
 _VARIABLE_ORDER: tuple[str, ...] = (
     "sea_ice_concentration",
     "snow_free_land",
@@ -212,7 +208,7 @@ _DEFAULT_HEMISPHERES: tuple[_HemisphereGrid, ...] = (
 )
 
 
-class NISEReader(GriddedDataReader):
+class NISEReader(StaticReader):
     """Read NISE surface-class coverage layers from an HDF-EOS4 file.
 
     The NISE product (Near-real-time Ice and Snow Extent) distributes a uint8
@@ -220,10 +216,10 @@ class NISEReader(GriddedDataReader):
     snow on land, permanent ice, and ice/snow-free pixels. This reader splits those
     codes into five independent float32 coverage layers (see module docstring),
     reprojects each hemisphere's EASE-Grid pixel centers to WGS84 lat/lon with its own
-    CRS (North EPSG:3408, South EPSG:3409), merges both hemispheres into one point
-    cloud, and rasterizes them onto a regular sub-grid covering the requested bounding
-    box (see the module docstring's geolocation note), returning a 3-D array of
-    shape ``(5, n_lat, n_lon)`` in ``VARIABLES`` order.
+    CRS (North EPSG:3408, South EPSG:3409), and merges both hemispheres into one
+    point cloud of ``(5, n_pixels)`` values in ``VARIABLES`` order (see the module
+    docstring's geolocation note). The daily granule has no time axis, so the staged
+    day is the time match (``TIME_MATCH = DAILY``).
 
     The hemispheres to read are exposed via the ``hemispheres`` constructor keyword
     (defaulting to both), and a legacy single-grid injection path lets a test exercise
@@ -235,9 +231,6 @@ class NISEReader(GriddedDataReader):
         Registry key ``"nise"``.
     RESOLUTION_KM : float
         25 km (NISE EASE-Grid 25-km product).
-    OUTPUT_CELL_DEG : float
-        Edge length of the rasterized output cells (degrees). 0.25° ≈ 25 km,
-        mirroring the ``ssf`` swath reader's cell size.
     VARIABLES : tuple[VariableSpec, ...]
         Five fractional-coverage variables, all continuous float32 with
         ``weighted_mean`` aggregation and range 0.0–1.0:
@@ -246,8 +239,8 @@ class NISEReader(GriddedDataReader):
 
     Parameters
     ----------
-    file_path : Path
-        Path to a NISE HDF-EOS4 file (``*.HDFEOS``).
+    file_paths : Path or Sequence[Path]
+        The one NISE HDF-EOS4 file (``*.HDFEOS``) for the processing day.
     hemispheres : tuple[_HemisphereGrid, ...], optional
         The EASE-Grid hemispheres to read. Defaults to both the Northern
         (EPSG:3408) and Southern (EPSG:3409) grids (:data:`_DEFAULT_HEMISPHERES`).
@@ -266,7 +259,7 @@ class NISEReader(GriddedDataReader):
     # code path (e.g. for regression fixtures); only this provenance label differs.
     INSTRUMENT: str = "AMSR2"
     RESOLUTION_KM: float = 25.0
-    OUTPUT_CELL_DEG: float = 0.25
+    TIME_MATCH: TimeMatch = TimeMatch.DAILY
     # One VariableSpec per Extent code group, in canonical ``_VARIABLE_ORDER``.
     # All five are continuous fractional layers (float32, weighted_mean): the PSF
     # engine averages them to get the fraction of each footprint occupied by the
@@ -312,7 +305,7 @@ class NISEReader(GriddedDataReader):
 
     def __init__(
         self,
-        file_path: Path,
+        file_paths: Path | Sequence[Path],
         *,
         hemispheres: tuple[_HemisphereGrid, ...] | None = None,
         grid_rows: int | None = None,
@@ -321,7 +314,7 @@ class NISEReader(GriddedDataReader):
         x_origin: float | None = None,
         y_origin: float | None = None,
     ) -> None:
-        super().__init__(file_path)
+        super().__init__(file_paths)
         if hemispheres is None:
             legacy_params = (grid_rows, grid_cols, resolution_m, x_origin, y_origin)
             if any(param is not None for param in legacy_params):
@@ -364,31 +357,26 @@ class NISEReader(GriddedDataReader):
             always_xy=True,  # Input: (x=easting, y=northing); Output: (lon, lat)
         )
 
-    @cached_property
-    def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _load_native(self) -> PointSamples:
         """Read every hemisphere's Extent SDS and flatten to one geolocated point cloud.
 
         Reads each configured hemisphere (Northern EPSG:3408, Southern EPSG:3409),
         reprojects its pixel centers to WGS84 with that hemisphere's CRS, drops the
         off-Earth corner pixels (see below), and concatenates the per-hemisphere
-        points into a single cloud. A tile request downstream keeps only the points
-        inside its bbox, so northern and southern tiles each draw from the correct
-        hemisphere automatically.
-
-        Cached per reader instance: the file read and the full reprojection of every
-        pixel run once, then every tile reuses the result (the file content is
-        static). Without the cache this whole-file work would repeat on every
-        ``_load_spatial_region`` / tile request.
+        points into a single cloud. A box query downstream keeps only the points
+        inside its box, so northern and southern footprints each draw from the
+        correct hemisphere automatically. Every pixel is served at its own
+        reprojected center, so the PSF weigher is the first place a pixel is
+        weighted.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_pixels,)`` float64 pixel-center coordinates (WGS84), and ``values``
-            is float64 shape ``(5, n_pixels)`` holding the five coverage layers in
-            ``_VARIABLE_ORDER``. Pixels outside the EASE-Grid domain reproject to
-            non-finite coordinates (pyproj yields ``inf``) and are dropped by the
-            rasterizer's finite-coordinate filter.
+        PointSamples
+            ``lats``/``lons`` are ``(n_pixels,)`` float64 pixel-center coordinates
+            (WGS84), and ``values`` is float32 shape ``(5, n_pixels)`` holding the five
+            coverage layers in ``_VARIABLE_ORDER``. Pixels outside the EASE-Grid domain
+            reproject to non-finite coordinates (pyproj yields ``inf``) and are dropped
+            by the reader base class's point index.
         """
         hemi_lats: list[np.ndarray] = []
         hemi_lons: list[np.ndarray] = []
@@ -396,63 +384,29 @@ class NISEReader(GriddedDataReader):
         for hemi in self._hemispheres:
             raw = self._read_extent_sds(hemi.hemisphere_label)
             lats_2d, lons_2d = self._compute_latlon_grid(hemi)
-
             # Split the Extent SDS into the five per-code coverage layers.
             # Shape: (5, n_rows, n_cols), axis 0 in canonical _VARIABLE_ORDER.
             masks = self._extent_to_category_masks(raw)
-
             lats = np.asarray(lats_2d, dtype=np.float64).ravel()
             lons = np.asarray(lons_2d, dtype=np.float64).ravel()
             # Flatten the lat/lon axes while keeping the variable axis: (5, n_pixels).
-            values = masks.reshape(masks.shape[0], -1).astype(np.float64)
-
+            values = masks.reshape(masks.shape[0], -1).astype(np.float32)
             # Drop off-Earth corner pixels (Extent code 254). Each square 721x721 grid
             # has ~114k corner pixels that fall outside the projection's Earth disk and
             # reproject into the OPPOSITE hemisphere; every one of them carries code 254.
-            # If kept, they would land in the other hemisphere's tiles and drag those
-            # cells' weighted_mean toward zero (254 maps to 0.0 in all five layers) --
-            # a silent corruption. Distinct from code 255 (ocean), which is retained
-            # as the ``open_ocean`` layer.
+            # If kept, they would land in the other hemisphere's footprints and drag the
+            # weighted_mean toward zero (254 maps to 0.0 in all five layers) -- a silent
+            # corruption. Distinct from code 255 (ocean), which is retained as the
+            # ``open_ocean`` layer.
             keep = raw.ravel() != _CODE_OFF_EARTH
             hemi_lats.append(lats[keep])
             hemi_lons.append(lons[keep])
             hemi_values.append(values[:, keep])
-
-        lats = np.concatenate(hemi_lats) if hemi_lats else np.empty(0, dtype=np.float64)
-        lons = np.concatenate(hemi_lons) if hemi_lons else np.empty(0, dtype=np.float64)
         n_vars = len(self.VARIABLES)
-        values = np.concatenate(hemi_values, axis=1) if hemi_values else np.empty((n_vars, 0), dtype=np.float64)
-        return lats, lons, values
-
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Rasterize the five NISE coverage layers within ``bbox`` onto a sub-grid.
-
-        Flattens the EASE-Grid pixels to geolocated points (see
-        :meth:`_load_points`) and bins them onto a regular ``OUTPUT_CELL_DEG``
-        sub-grid covering the tile, taking the per-cell mean of each layer.
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(5, n_lat, n_lon)``. Axis 0 follows ``VARIABLES`` order
-            (``_VARIABLE_ORDER``); covered cells hold values in [0.0, 1.0] and
-            cells with no pixels are ``NaN``. ``lats``/``lons`` are 1-D
-            cell-center coordinate arrays.
-        """
-        lats, lons, values = self._load_points
-        return rasterize_points_to_grid(
-            point_lats=lats,
-            point_lons=lons,
-            values=values,
-            bbox=(bbox.lat_min, bbox.lat_max, bbox.lon_min, bbox.lon_max),
-            cell_size_deg=self.OUTPUT_CELL_DEG,
-            aggregations=[v.aggregation for v in self.VARIABLES],
+        return PointSamples(
+            lats=np.concatenate(hemi_lats) if hemi_lats else np.empty(0, dtype=np.float64),
+            lons=np.concatenate(hemi_lons) if hemi_lons else np.empty(0, dtype=np.float64),
+            values=np.concatenate(hemi_values, axis=1) if hemi_values else np.empty((n_vars, 0), dtype=np.float32),
         )
 
     def _extent_to_category_masks(self, raw: np.ndarray) -> np.ndarray:
@@ -535,7 +489,7 @@ class NISEReader(GriddedDataReader):
             If the file cannot be opened (not found, corrupt header, etc.).
         """
         sd = _require_pyhdf()
-        hdf = sd.SD(str(self._file_path), sd.SDC.READ)
+        hdf = sd.SD(str(self.single_file_path), sd.SDC.READ)
         try:
             # hdf.info()[0] is the true dataset count; iterate indices (not
             # hdf.datasets(), whose name keys collapse the duplicate Extent/Age SDS).
@@ -548,7 +502,7 @@ class NISEReader(GriddedDataReader):
                 dim_name = sds.dim(0).info()[0]
                 if hemisphere_label in dim_name:
                     return np.array(sds.get(), dtype=np.uint8)
-            raise KeyError(f"No 'Extent' SDS for hemisphere {hemisphere_label!r} in {self._file_path}")
+            raise KeyError(f"No 'Extent' SDS for hemisphere {hemisphere_label!r} in {self.single_file_path}")
         finally:
             hdf.end()
 
@@ -579,7 +533,7 @@ class NISEReader(GriddedDataReader):
 
         Pixels whose projected coordinates fall outside the EASE-Grid domain reproject
         to non-finite coordinates (pyproj yields ``inf``); these are excluded by the
-        finite-coordinate filter in :func:`rasterize_points_to_grid`.
+        reader base class's point index.
         """
         if hemi is None:
             hemi = self._hemispheres[0]

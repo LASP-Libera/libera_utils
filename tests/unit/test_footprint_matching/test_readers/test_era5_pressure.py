@@ -20,16 +20,15 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
     _ERA5_PRESSURE_LEVELS,
     ERA5PressureLevelReader,
 )
-from libera_utils.footprint_matching.types import (
-    BoundingBox,
-    GridTile,
-    OperationalMode,
-    TileKey,
-)
+from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
 from tests.test_data.footprint_matching.fixtures import (
+    ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
     make_era5_pressure_netcdf_fixture,
 )
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+
+_T = ERA5_FIXTURE_TIME
 
 # Expected spec count: 5 base variables × 37 configured levels.
 _N_SPECS = len(_ERA5_PRESSURE_LEVEL_VARIABLES) * len(_ERA5_PRESSURE_LEVELS)
@@ -41,8 +40,8 @@ class TestERA5PressureLevelReaderClassAttributes:
         assert ERA5PressureLevelReader.READER_KEY == "era5_pressure"
 
     def test_resolution_km(self):
-        # Targets the reader's grid resolution attribute; asserts RESOLUTION_KM equals 25.0 km.
-        assert ERA5PressureLevelReader.RESOLUTION_KM == 25.0
+        # Targets the reader's grid resolution attribute; asserts RESOLUTION_KM equals the 0.25 degree spacing, 28 km.
+        assert ERA5PressureLevelReader.RESOLUTION_KM == 28.0
 
     def test_variable_count_is_variables_times_levels(self):
         # Targets the VARIABLES count; asserts it equals base variables × pressure levels (_N_SPECS).
@@ -77,10 +76,10 @@ class TestERA5PressureLevelReaderClassAttributes:
 
 class TestERA5PressureLevelReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
-        # Targets _load_spatial_region output shape; asserts a 3D array whose axis 0 holds all _N_SPECS layers.
+        # Targets samples_in output shape; asserts a 3D array whose axis 0 holds all _N_SPECS layers.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
         reader = ERA5PressureLevelReader(fixture_path)
-        data, lats, lons = reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+        data, lats, lons = _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
         assert data.ndim == 3
         assert data.shape[0] == _N_SPECS
 
@@ -89,7 +88,7 @@ class TestERA5PressureLevelReaderLoadSpatialRegion:
         # stacked output layer i must contain exactly the value for VARIABLES[i].
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
         reader = ERA5PressureLevelReader(fixture_path)
-        data, _, _ = reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+        data, _, _ = _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
         layer = 0
         for var_index in range(len(_ERA5_PRESSURE_LEVEL_VARIABLES)):
             for level in _ERA5_PRESSURE_LEVELS:
@@ -98,10 +97,10 @@ class TestERA5PressureLevelReaderLoadSpatialRegion:
                 layer += 1
 
     def test_data_dtype_is_float32(self, tmp_path):
-        # Targets the returned data array dtype; asserts _load_spatial_region yields float32 values.
+        # Targets the returned data array dtype; asserts samples_in yields float32 values.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
         reader = ERA5PressureLevelReader(fixture_path)
-        data, _, _ = reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+        data, _, _ = _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
         assert data.dtype == np.float32
 
     def test_lats_are_ascending_order(self, tmp_path):
@@ -109,14 +108,14 @@ class TestERA5PressureLevelReaderLoadSpatialRegion:
         # so that np.diff(lats) >= 0 (ascending) on output.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
         reader = ERA5PressureLevelReader(fixture_path)
-        _, lats, _ = reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+        _, lats, _ = _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
         assert np.all(np.diff(lats) >= 0), f"Lats should be ascending but got: {lats}"
 
     def test_coordinate_dtypes_are_float64(self, tmp_path):
         # Targets the returned coordinate dtypes; asserts both lats and lons arrays are float64.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path)
         reader = ERA5PressureLevelReader(fixture_path)
-        _, lats, lons = reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+        _, lats, lons = _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
         assert lats.dtype == np.float64
         assert lons.dtype == np.float64
 
@@ -127,17 +126,15 @@ class TestERA5PressureLevelReaderLoadSpatialRegion:
         )
         reader = ERA5PressureLevelReader(fixture_path)
         # Only request the upper half of the lat range.
-        _, lats, _ = reader._load_spatial_region(BoundingBox(2.0, 4.0, 10.0, 12.0))
+        _, lats, _ = _region(reader, BoundingBox(2.0, 4.0, 10.0, 12.0), _T)
         assert np.all(lats >= 2.0 - 1e-6)
 
-    def test_no_time_dimension_variant_supported(self, tmp_path):
-        # Older CDS downloads may lack the valid_time dimension entirely; asserts such a file still loads
-        # to a 3D array with all _N_SPECS layers.
+    def test_no_time_dimension_variant_is_rejected(self, tmp_path):
+        # A download with no time axis cannot be matched to a footprint time; the reader refuses it.
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, with_valid_time=False)
         reader = ERA5PressureLevelReader(fixture_path)
-        data, _, _ = reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
-        assert data.ndim == 3
-        assert data.shape[0] == _N_SPECS
+        with pytest.raises(ValueError, match="time dimension"):
+            reader.samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
 
 class TestERA5PressureLevelReaderErrors:
@@ -148,10 +145,10 @@ class TestERA5PressureLevelReaderErrors:
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, levels=partial_levels)
         reader = ERA5PressureLevelReader(fixture_path)
         with pytest.raises(ValueError, match="missing configured pressure"):
-            reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+            _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
     def test_missing_variable_raises_key_error(self, tmp_path):
-        # Targets loud failure on a missing required variable; asserts _load_spatial_region raises
+        # Targets loud failure on a missing required variable; asserts samples_in raises
         # KeyError("missing variable") when a needed field (o3) is stripped.
         import xarray as xr
 
@@ -164,22 +161,13 @@ class TestERA5PressureLevelReaderErrors:
 
         reader = ERA5PressureLevelReader(stripped_path)
         with pytest.raises(KeyError, match="missing variable"):
-            reader._load_spatial_region(BoundingBox(0.0, 2.0, 10.0, 12.0))
+            _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
 
-class TestERA5PressureLevelReaderLoadTile:
-    def test_load_tile_returns_grid_tile(self, tmp_path):
-        # Targets load_tile's return type and source label; asserts it returns a GridTile with source "era5_pressure".
+class TestERA5PressureLevelReaderSamples:
+    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
         fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0)
-        reader = ERA5PressureLevelReader(fixture_path)
-        # TileKey(lat_idx=45, lon_idx=90) → lat [0, 2°], lon [0, 2°]
-        tile = reader.load_tile(TileKey("era5_pressure", 45, 90))
-        assert isinstance(tile, GridTile)
-        assert tile.source == "era5_pressure"
-
-    def test_load_tile_timestamp_source_is_none(self, tmp_path):
-        # ERA5 is a reanalysis product; asserts load_tile leaves tile.timestamp_source None (no instrument timestamp).
-        fixture_path = make_era5_pressure_netcdf_fixture(tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0)
-        reader = ERA5PressureLevelReader(fixture_path)
-        tile = reader.load_tile(TileKey("era5_pressure", 45, 90))
-        assert tile.timestamp_source is None
+        samples = ERA5PressureLevelReader(fixture_path).samples_in(BoundingBox(0.0, 2.0, 0.0, 2.0), _T)
+        assert samples.source == "era5_pressure"
+        assert samples.timestamp_source is None
+        assert samples.values.shape == (_N_SPECS, 16)
