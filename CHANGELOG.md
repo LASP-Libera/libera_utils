@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** `product.aggregate_external_variables` and the assembly functions take `sources` (an `AncillarySources`) in place of `tile_manager`, drop the `max_cache_bytes` and `prefetch_lookahead` arguments, and `source_file_paths` maps each reader to the list of its staged granules.
 - The `h5netcdf` dependency is declared with its `h5py` extra (`h5netcdf[h5py]`), since `h5netcdf` no longer installs `h5py` by default.
 - SCENE-ID-CAM reads FMATCH-CAM (`FootprintData.from_fmatch_cam`) instead of placeholder CERES SSF files.
+- The SCENE-ID FMATCH readers read FMATCH's integer fill in `igbp_surface_type` (`FMATCH_INTEGER_FILL_VALUE`, written for a footprint with no usable IGBP pixels and for padded camera-timescale cells) as missing, so that footprint is left unmatched (scene ID 0) instead of failing the granule. Its integer columns are written as 0, as for any unmatched footprint.
+- `calculate_trmm_surface_type` returns float, with NaN for a NaN input, and still raises for any other code outside 1-20.
 
 ### Fixed
 
