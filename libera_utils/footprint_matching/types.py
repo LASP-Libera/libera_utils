@@ -52,7 +52,7 @@ class FmatchCoverageFlag(enum.IntFlag):
     the external-variable aggregation has run. The values are OR-combined and tested
     bitwise, and an empty (zero) value means "no coverage issue". The
     ``PARTIAL_COVERAGE`` bit deliberately shares bit 0 with
-    ``CameraFootprintQualityFlag.PARTIAL_COVERAGE`` (``libera_utils.footprint_matching.camera_segmentation``)
+    :class:`CameraFootprintQualityFlag.PARTIAL_COVERAGE`
     so the camera segmentation's own partial-coverage flag and the PSF-energy
     partial-coverage flag OR together into one consistent "partial" bit; the other
     bits use positions the camera flag does not (it uses bit 1 for
@@ -334,6 +334,75 @@ class SampleSet:
         )
 
 
+class CameraFootprintQualityFlag(enum.IntFlag):
+    """Bitwise quality flags for a camera pseudo-footprint.
+
+    Set per footprint by the Camera Cloud Fraction algorithm, which segments the L1B camera
+    image, in the CF-CAM-CAMTIME ``q_flags`` variable; FMATCH-CAM-CAMTIME and
+    FMATCH-IMAGER-CAMTIME carry them forward and OR their own :class:`FmatchCoverageFlag`
+    bits on top. ``IntFlag`` lets the flags be OR-combined and tested bitwise, and an empty
+    (zero) value means "no issues".
+
+    Attributes
+    ----------
+    PARTIAL_COVERAGE
+        At least one -- but not all -- corner pixels of the block were off-Earth
+        (fill), so the bounding box was shrunk to the valid corners and covers only
+        part of the nominal block.
+    CENTER_PIXEL_SUBSTITUTED
+        The geometric center pixel was off-Earth (fill), so the nearest valid pixel
+        in the block was substituted as the footprint boresight.
+    """
+
+    PARTIAL_COVERAGE = 0b0001
+    CENTER_PIXEL_SUBSTITUTED = 0b0010
+
+
+@dataclass(frozen=True)
+class PseudoFootprint:
+    """One camera pseudo-footprint: a block of L1B camera pixels reduced to a footprint record.
+
+    The camera-timescale FMATCH modes are built from these. The pixel blocks are segmented by
+    the Camera Cloud Fraction algorithm and read from its CF-CAM-CAMTIME product.
+
+    Attributes
+    ----------
+    time : np.datetime64
+        The ``CAMERA_TIME`` of the image this footprint came from. All footprints
+        segmented from the same image share this timestamp.
+    slice_x, slice_y : slice
+        The block's half-open extent in the ``CAMERA_PIXEL_COUNT_X`` /
+        ``CAMERA_PIXEL_COUNT_Y`` pixel grid.
+    center_ix, center_iy : int
+        Pixel indices of the footprint's center (the boresight stand-in), after any
+        nearest-valid-pixel substitution.
+    latitude, longitude : float
+        Center-pixel geodetic latitude/longitude, degrees.
+    altitude : float
+        Center-pixel altitude, metres (as stored in L1B).
+    solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : float
+        Center-pixel viewing-geometry angles, degrees.
+    bbox : BoundingBox
+        Geographic box enclosing the block's valid corner pixels.
+    q_flags : CameraFootprintQualityFlag
+        Bitwise quality flags for this footprint (0 == clean).
+    """
+
+    time: np.datetime64
+    slice_x: slice
+    slice_y: slice
+    center_ix: int
+    center_iy: int
+    latitude: float
+    longitude: float
+    altitude: float
+    solar_zenith_angle: float
+    viewing_zenith_angle: float
+    relative_azimuth_angle: float
+    bbox: BoundingBox
+    q_flags: CameraFootprintQualityFlag
+
+
 @dataclass(frozen=True)
 class RadiometerFootprint:
     """One radiometer-timescale footprint, ready for external-variable aggregation.
@@ -343,7 +412,7 @@ class RadiometerFootprint:
     a geographic bounding box (the region the readers serve ancillary samples from)
     plus the boresight geolocation and viewing zenith the PSF weighting reads. It is the
     radiometer-path analog of the camera path's
-    ``libera_utils.footprint_matching.camera_segmentation.PseudoFootprint``, kept
+    :class:`PseudoFootprint`, kept
     deliberately small so it stays dependency-free here.
 
     The subsatellite point and satellite radius are required: L1B RAD populates them
