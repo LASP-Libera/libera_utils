@@ -315,6 +315,11 @@ class TestProcessingStepIdentifier:
         This ensures API compatibility - the names are part of the contract.
         """
         expected_names = [
+            # L1A steps
+            "l1a_rad_sample",
+            "l1a_wfov_sci",
+            "l1a_axis_sample",
+            "l1a_nom_hk",
             # SPICE steps
             "spice_azel",
             "spice_jpss",

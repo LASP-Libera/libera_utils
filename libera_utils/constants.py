@@ -440,6 +440,13 @@ class ProcessingStepIdentifier(StrEnum):
         obj._shared_ecr_name = shared_ecr_name
         return obj
 
+    # L1A processing steps: one per APID, each combining a day of that APID's L0 packets into its decoded L1A
+    # product. Run by the Dagster prototype as SDC-owned algorithms (the libera-utils image).
+    l1a_rad_sample = ("l1a-rad-sample", [DataProductIdentifier.l1a_icie_rad_sample_decoded])
+    l1a_wfov_sci = ("l1a-wfov-sci", [DataProductIdentifier.l1a_icie_wfov_sci_decoded])
+    l1a_axis_sample = ("l1a-axis-sample", [DataProductIdentifier.l1a_icie_axis_sample_decoded])
+    l1a_nom_hk = ("l1a-nom-hk", [DataProductIdentifier.l1a_icie_nom_hk_decoded])
+
     # SPICE processing steps
     spice_azel = ("spice-azel", [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck])
     spice_jpss = ("spice-jpss", [DataProductIdentifier.spice_jpss_ck, DataProductIdentifier.spice_jpss_spk])
