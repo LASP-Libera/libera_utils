@@ -8,6 +8,7 @@ import pytest
 from libera_utils import cli, kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, l1a_combine, s3_utilities
 from libera_utils.aws import manual_processing as mp
+from libera_utils.l1a import l1a_step
 from libera_utils.scene_identification import scene_id_algorithm
 
 
@@ -48,6 +49,24 @@ def test_make_kernel_parse_cli_args(cli_args, parsed):
     """
     print(f"CLI ARGS \n{cli_args}\n")
     print(f"Parsed args: {parsed} \n")
+    assert cli.parse_cli_args(cli_args) == parsed
+
+
+@pytest.mark.parametrize(
+    ("cli_args", "parsed"),
+    [
+        (
+            ["l1a-step", "file.manifest"],
+            argparse.Namespace(func=l1a_step.l1a_step_cli_handler, input_manifest="file.manifest", verbose=False),
+        ),
+        (
+            ["l1a-step", "file.manifest", "--verbose"],
+            argparse.Namespace(func=l1a_step.l1a_step_cli_handler, input_manifest="file.manifest", verbose=True),
+        ),
+    ],
+)
+def test_l1a_step_parse_cli_args(cli_args, parsed):
+    """Test that l1a-step cli args are parsed properly"""
     assert cli.parse_cli_args(cli_args) == parsed
 
 

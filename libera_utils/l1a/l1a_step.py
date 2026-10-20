@@ -11,9 +11,10 @@ the APID that reaches the applicable day or its buffers, and records in the mani
 
 Unless ``force`` is set, the step first applies the APID's coverage gate (``evaluate_day_coverage`` with the APID's
 ``day_coverage`` policy) to ``l0_spans`` and fails when it does not pass: the orchestrator judged the same files
-complete, so a failure means the two disagree. Then it parses the files (``ground_data=True`` for ground-test
-captures, named ``LIBERA_SDC_<apid>_ccsds_...``, not by the L0 PDS convention), trims the dataset to the buffered day
-window, checks its data times, writes the L1A product and writes the output manifest.
+complete, so a failure means the two disagree. Then it parses the files (``ground_data=True`` when they are ground-test
+captures, named ``LIBERA_SDC_<apid>_ccsds_...``, not by the L0 PDS convention; the Manifest Creator never mixes
+ground-test captures and flight files), trims the dataset to the buffered day window, checks its data times, writes
+the L1A product and writes the output manifest.
 """
 
 import argparse
@@ -96,8 +97,9 @@ def run_l1a_step(
     Raises
     ------
     ValueError
-        If the manifest lists no files, mixes ground-test captures and flight files, fails the coverage gate without
-        ``force``, or the written product's applicable date is not the day.
+        If the manifest lists no files, fails the coverage gate without ``force``, or the written product's
+        applicable date is not the day; also if a listed file's checksum does not match the manifest
+        (``Manifest.validate_checksums``).
     """
     manifest = Manifest.from_file(input_manifest)
     manifest.validate_checksums()
@@ -107,10 +109,7 @@ def run_l1a_step(
     files = [str(entry.filename) for entry in manifest.files]
     if not files:
         raise ValueError("Input manifest lists no L0 files")
-    ground = {_is_ground_capture(path) for path in files}
-    if len(ground) > 1:
-        raise ValueError(f"Input manifest mixes ground-test captures and flight L0 files: {files}")
-    ground_data = ground == {True}
+    ground_data = all(_is_ground_capture(path) for path in files)
     force = bool(manifest.configuration.get("force", False))
     logger.info(
         "L1A step %s: APID %d, day %s, %d file(s), ground_data=%s, force=%s",
@@ -167,6 +166,11 @@ def l1a_step_cli_handler(parsed_args: argparse.Namespace) -> Manifest:
     -------
     Manifest
         The output manifest.
+
+    Raises
+    ------
+    KeyError
+        If ``PROCESSING_STEP_NAME`` or ``PROCESSING_PATH`` is not set (the SDC's Batch job definition sets both).
     """
     configure_task_logging(
         f"l1a_step_{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}",

@@ -4,12 +4,14 @@ The L0 input is the demuxed ground-test fixture ``LIBERA_SDC_1057_ccsds_2025_318
 convention, not the L0 PDS one): 55 NOM-HK packets with packet times on 2028-02-15 13:16-13:17 UTC.
 """
 
+import argparse
 from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestType
+from libera_utils.l1a import l1a_step
 from libera_utils.l1a.l1a_step import run_l1a_step, step_apid
 
 DAY = date(2028, 2, 15)
@@ -61,14 +63,39 @@ def test_run_l1a_step_fails_coverage_gate_without_force(tmp_path, test_ditl_demu
         run_l1a_step(manifest_path, "l1a-nom-hk", tmp_path)
 
 
-def test_run_l1a_step_refuses_ground_and_flight_together(tmp_path, test_ditl_demux_path):
-    """A day of L1A comes from ground-test captures or from flight L0 files, not both."""
-    flight = tmp_path / "P1571057AAAAAAAAAAAAAA28046000000001.PDS"
-    flight.write_bytes(b"flight packets")
-    manifest_path = _manifest(tmp_path, [test_ditl_demux_path / NOM_HK_FIXTURE, flight], force=True, spans=FIXTURE_SPAN)
+def test_run_l1a_step_refuses_an_empty_manifest(tmp_path):
+    """A manifest listing no L0 files is not a day to combine."""
+    manifest_path = _manifest(tmp_path, [], force=True, spans=FIXTURE_SPAN)
 
-    with pytest.raises(ValueError, match="mixes ground-test captures and flight L0 files"):
+    with pytest.raises(ValueError, match="lists no L0 files"):
         run_l1a_step(manifest_path, "l1a-nom-hk", tmp_path)
+
+
+def test_run_l1a_step_refuses_a_product_for_another_day(tmp_path, test_ditl_demux_path, monkeypatch):
+    """The written product must be filed under the manifest's day; the step fails rather than misfile it."""
+    other_day = LiberaDataProductFilename(
+        "LIBERA_L1A_NOM-HK-DECODED_V5-11-5_20280216T000000_20280216T235959_R26293000000.nc"
+    )
+    monkeypatch.setattr(l1a_step, "write_libera_data_product", lambda *args, **kwargs: other_day)
+    manifest_path = _manifest(tmp_path, [test_ditl_demux_path / NOM_HK_FIXTURE], force=True, spans=FIXTURE_SPAN)
+
+    with pytest.raises(ValueError, match="whose applicable date 2028-02-16 is not 2028-02-15"):
+        run_l1a_step(manifest_path, "l1a-nom-hk", tmp_path)
+
+
+def test_l1a_step_cli_handler_reads_the_step_and_output_path_from_the_environment(tmp_path, monkeypatch):
+    """The Batch job's PROCESSING_STEP_NAME names the APID and PROCESSING_PATH the output location."""
+    calls = []
+    monkeypatch.setattr(l1a_step, "run_l1a_step", lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(l1a_step, "configure_task_logging", lambda *args, **kwargs: None)
+    monkeypatch.setenv("PROCESSING_STEP_NAME", "l1a-axis-sample")
+    monkeypatch.setenv("PROCESSING_PATH", str(tmp_path))
+    monkeypatch.setenv(l1a_step.MAX_WORKERS_ENV, "3")
+
+    l1a_step.l1a_step_cli_handler(argparse.Namespace(input_manifest="in.json", verbose=False))
+
+    ((args, kwargs),) = calls
+    assert (str(args[0]), args[1], args[2], kwargs) == ("in.json", "l1a-axis-sample", str(tmp_path), {"max_workers": 3})
 
 
 @pytest.mark.parametrize(
