@@ -50,14 +50,14 @@ File naming:
 
 from __future__ import annotations
 
-from functools import cached_property
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf5_io import read_viirs_brdf_hdf5
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
 # HDF5 group path containing the BRDF parameter fields and coordinate arrays.
 _BRDF_DATA_PATH: str = "HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields"
@@ -77,12 +77,13 @@ _BRDF_FIELD_MAP: dict[str, str] = {
 }
 
 
-class VIIRSBRDFReader(GriddedDataReader):
+class VIIRSBRDFReader(StaticReader):
     """Read VIIRS surface BRDF model parameters from a VJ143C1 HDF5 file.
 
-    Loads nine RTLS kernel parameter fields (3 bands × 3 parameters) from a
-    VJ143C1 VIIRS daily BRDF product and returns a 3-D data array of shape
-    ``(9, n_lat, n_lon)`` stacked in ``VARIABLES`` order.
+    Loads nine RTLS kernel parameter fields (3 bands x 3 parameters) from a
+    VJ143C1 VIIRS daily BRDF product as a ``(9, n_lat, n_lon)`` grid stacked in
+    ``VARIABLES`` order. The product is a 16-day composite issued daily with no
+    time axis, so the staged day is the time match (``TIME_MATCH = DAILY``).
 
     Class Attributes
     ----------------
@@ -96,14 +97,15 @@ class VIIRSBRDFReader(GriddedDataReader):
 
     Parameters
     ----------
-    file_path : Path
-        Path to a VJ143C1 HDF5 (HDF-EOS5) file.
+    file_paths : Path or Sequence[Path]
+        The one VJ143C1 HDF5 (HDF-EOS5) file for the processing day.
     """
 
     READER_KEY: str = "viirs_brdf"
     # VJ143C1 BRDF/Albedo is produced from VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
-    RESOLUTION_KM: float = 5.6  # 0.05° ≈ 5.6 km at equator
+    RESOLUTION_KM: float = 5.6  # 0.05 deg is about 5.6 km at the equator
+    TIME_MATCH: TimeMatch = TimeMatch.DAILY
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="brdf_shortwave_fiso",
@@ -170,71 +172,27 @@ class VIIRSBRDFReader(GriddedDataReader):
         ),
     )
 
-    def __init__(self, file_path: Path) -> None:
-        super().__init__(file_path)
+    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+        super().__init__(file_paths)
         # Build ordered field name list matching VARIABLES tuple order.
         self._field_names: list[str] = [_BRDF_FIELD_MAP[v.name] for v in self.VARIABLES]
 
-    @cached_property
-    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read all 9 BRDF fields from the HDF5 file once and cache them.
+    def _load_native(self) -> GridSamples:
+        """Read all 9 BRDF fields from the HDF5 file once.
 
         Reads via
         :func:`~libera_utils.footprint_matching.readers._hdf5_io.read_viirs_brdf_hdf5`,
-        which returns data in ascending latitude order with fill as NaN. Cached per
-        reader instance so the file is opened and read once, then every tile slices
-        these in-memory arrays (see :meth:`_load_spatial_region`).
+        which returns data in ascending latitude order with fill as NaN.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(9, n_lat, n_lon)`` (axis 0 in ``VARIABLES`` order, fill as NaN) and
-            ``lats`` (ascending) / ``lons`` are float64 1-D coordinate arrays.
+        GridSamples
+            ``data`` is float32 shape ``(9, n_lat, n_lon)`` (axis 0 in ``VARIABLES``
+            order, fill as NaN).
         """
-        return read_viirs_brdf_hdf5(
-            file_path=str(self._file_path),
+        data, lats, lons = read_viirs_brdf_hdf5(
+            file_path=str(self.single_file_path),
             field_names=self._field_names,
             hdf5_data_path=_BRDF_DATA_PATH,
         )
-
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Slice the cached VIIRS BRDF kernel-parameter grid to ``bbox``.
-
-        Subsets the full grid from :attr:`_native_grid` to the requested bounding
-        box and returns the stacked array.
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(9, n_lat, n_lon)`` with axis 0 in ``VARIABLES`` order.
-            Fill pixels are NaN.
-        """
-        data_full, lats_full, lons_full = self._native_grid
-
-        # lats_full is already ascending (flipped by read_viirs_brdf_hdf5).
-        lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
-        lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
-
-        lat_indices = np.where(lat_mask)[0]
-        lon_indices = np.where(lon_mask)[0]
-
-        if lat_indices.size == 0 or lon_indices.size == 0:
-            n = len(self.VARIABLES)
-            return (
-                np.empty((n, 0, 0), dtype=np.float32),
-                np.empty(0, dtype=np.float64),
-                np.empty(0, dtype=np.float64),
-            )
-
-        lats_out = lats_full[lat_indices]
-        lons_out = lons_full[lon_indices]
-        data_out = data_full[:, lat_indices, :][:, :, lon_indices]
-
-        return data_out.astype(np.float32), lats_out, lons_out
+        return GridSamples(lat_axis=lats, lon_axis=lons, data=np.asarray(data, dtype=np.float32))

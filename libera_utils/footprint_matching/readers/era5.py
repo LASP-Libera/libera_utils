@@ -2,7 +2,7 @@
 
 Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 - Format: NetCDF4 (.nc), distributed via the Copernicus Climate Data Store
-- Spatial resolution: ~0.25° (~28 km); stored as 25 km in RESOLUTION_KM
+- Spatial resolution: ~0.25° (~28 km), stored as 28 km in RESOLUTION_KM
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90)
 - Temporal resolution: Hourly
 - Temporal coverage: 1940-present. ERA5 final data lags real time by ~5 days
@@ -33,13 +33,14 @@ Param DB (id): u10=165, v10=166, t2m=167, d2m=168, sp=134, z=129, fal=243
 from __future__ import annotations
 
 import abc
-from functools import cached_property
+from collections.abc import Sequence
+from pathlib import Path
 
 import numpy as np
 import xarray as xr
 
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import SteppedGridReader
+from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
 
 # Ordered mapping of FMATCH spec name -> ERA5 variable name as stored in CDS
 # NetCDF4 files. The order here defines axis 0 of the reader's data array and
@@ -62,61 +63,115 @@ _ERA5_SINGLE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
 _ERA5_LAT_DESCENDING: bool = True
 
 
-class ERA5ReaderBase(GriddedDataReader, abc.ABC):
+class ERA5ReaderBase(SteppedGridReader, abc.ABC):
     """Shared machinery for the ERA5 reader family (single-level and pressure-level).
 
-    Both ERA5 CDS datasets share the same file conventions — a regular global
-    lat/lon grid with descending latitudes, longitudes in either −180..180 or
-    0..360 convention, and a time-like leading dimension (``time`` or the newer
-    ``valid_time``). This intermediate class owns:
+    Both ERA5 CDS datasets share the same file conventions: a regular global
+    lat/lon grid with descending latitudes, longitudes in either -180..180 or
+    0..360 convention, and a leading time dimension (``time`` or the newer
+    ``valid_time``) holding hourly steps. This intermediate class owns:
 
-    * the per-instance cache of the full normalized global grid
-      (:attr:`_native_grid`, populated once by the subclass hook
-      :meth:`_read_native_grid`), and
-    * the inclusive bounding-box slicing of that cached grid
-      (:meth:`_load_spatial_region`).
+    * the step index across the staged granules (:meth:`_step_times`), and
+    * loading one step as a :class:`GridSamples` (:meth:`_load_step`), with the
+      longitude normalization and latitude flip both datasets need.
 
-    Subclasses implement :meth:`_read_native_grid` to open their specific CDS
-    file layout and return the whole normalized global grid.
+    A footprint is served the hourly step nearest its time
+    (``TIME_MATCH = NEAREST_STEP``), with no interpolation between steps, and only
+    that step is held in memory. Subclasses implement :meth:`_read_step_layers` to
+    pull their variables out of one time step of an open dataset.
 
-    This class is abstract, so ``GriddedDataReader.__init_subclass__`` skips it
+    This class is abstract, so ``AncillaryReader.__init_subclass__`` skips it
     during reader registration; only the concrete subclasses register.
     """
 
-    @cached_property
-    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read the full ERA5 grid once and cache it on the instance.
+    # The hourly step nearest the footprint time is served; a footprint more than one
+    # step interval from every staged step gets no ERA5 samples (coverage 0, flagged).
+    MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(1, "h")
 
-        Cached per reader instance so the file is opened and read once, then
-        every tile slices these in-memory arrays (see :meth:`_load_spatial_region`)
-        instead of re-opening the file.
+    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+        super().__init__(file_paths)
+        # (granule path, index along that granule's time dimension) per global step,
+        # filled by _step_times in ascending time order.
+        self._step_locations: list[tuple[Path, int]] = []
+
+    @staticmethod
+    def _time_dimension(ds: xr.Dataset, path: Path) -> str:
+        """Return the name of the dataset's time dimension (``time`` or ``valid_time``).
+
+        Raises
+        ------
+        ValueError
+            If the file has no time-like dimension: an ERA5 CDS download always carries
+            one, and without it a step cannot be matched to a footprint time.
+        """
+        time_dims = [d for d in ds.dims if "time" in d]
+        if len(time_dims) != 1:
+            raise ValueError(
+                f"ERA5 file {path} must have exactly one time dimension ('time' or 'valid_time'); "
+                f"found {time_dims or 'none'}. Re-download the period from the CDS with its time axis."
+            )
+        return time_dims[0]
+
+    def _step_times(self) -> np.ndarray:
+        """Collect every hourly step across the staged granules, ascending.
+
+        Also records where each step lives (granule, local index) for
+        :meth:`_load_step`.
+        """
+        located: list[tuple[np.datetime64, Path, int]] = []
+        for path in self.file_paths:
+            with xr.open_dataset(path, engine="netcdf4") as ds:
+                time_dim = self._time_dimension(ds, path)
+                times = np.asarray(ds[time_dim].values).astype("datetime64[ns]")
+            located.extend((t, path, j) for j, t in enumerate(times))
+        located.sort(key=lambda item: item[0])
+        self._step_locations = [(path, j) for _, path, j in located]
+        return np.array([t for t, _, _ in located], dtype="datetime64[ns]")
+
+    def _load_step(self, index: int) -> GridSamples:
+        """Load one hourly step as a global grid, longitudes -180..180, latitudes ascending."""
+        # _steps (the cached step list) populates _step_locations; touch it first so a
+        # direct call on a fresh instance still resolves.
+        _ = self._steps
+        path, local_index = self._step_locations[index]
+        ds = xr.open_dataset(path, engine="netcdf4")
+        try:
+            ds = self._normalize_longitudes(ds)
+            time_dim = self._time_dimension(ds, path)
+            lats, lons, layers = self._read_step_layers(ds.isel({time_dim: local_index}), path)
+        finally:
+            ds.close()
+        lats, layers = self._flip_lats_ascending(lats, layers)
+        data = np.stack(layers, axis=0).astype(np.float32, copy=False)
+        return GridSamples(lat_axis=lats, lon_axis=lons, data=data)
+
+    @abc.abstractmethod
+    def _read_step_layers(self, step: xr.Dataset, path: Path) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+        """Read this dataset's variables from one time step.
+
+        Parameters
+        ----------
+        step : xr.Dataset
+            The open dataset already selected to one time step and with longitudes
+            normalized to -180..180.
+        path : Path
+            The granule being read, for error messages.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(n_specs, n_lat, n_lon)`` — axis 0 in ``VARIABLES`` order — and
-            ``lats`` (ASCENDING) / ``lons`` are float64 1-D coordinate arrays,
-            both sorted ascending.
-        """
-        return self._read_native_grid()
-
-    @abc.abstractmethod
-    def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Open the file and return the whole normalized global grid.
-
-        Implementations must return ``(data, lats, lons)`` with data float32
-        shape ``(n_specs, n_lat, n_lon)`` (axis 0 matching ``VARIABLES`` order),
-        latitudes ASCENDING, and longitudes normalized to −180..180 ascending.
+        tuple[np.ndarray, np.ndarray, list[np.ndarray]]
+            ``(lats, lons, layers)``: the file's latitude axis (as stored, descending),
+            its longitude axis, and one ``(n_lat, n_lon)`` float32 layer per
+            ``VARIABLES`` entry, in order.
         """
 
     @staticmethod
     def _normalize_longitudes(ds: xr.Dataset) -> xr.Dataset:
-        """Normalize a CDS dataset's longitude coordinate to −180..180.
+        """Normalize a CDS dataset's longitude coordinate to -180..180.
 
-        ERA5 files from the CDS can use either −180→180 or 0→360 longitude
+        ERA5 files from the CDS can use either -180..180 or 0..360 longitude
         convention depending on how the download was configured. Normalizing to
-        −180→180 means the bbox slice (which always uses −180→180) works
+        -180..180 means the box query (which always uses -180..180) works
         correctly for both.
         """
         if float(ds["longitude"].min()) >= 0:
@@ -124,67 +179,23 @@ class ERA5ReaderBase(GriddedDataReader, abc.ABC):
         return ds
 
     @staticmethod
-    def _first_time_step(data_array: xr.DataArray) -> xr.DataArray:
-        """Drop any time-like dimension from a DataArray, keeping the first step.
-
-        Covers both ``time`` and ``valid_time`` (which the CDS API uses in newer
-        downloads). Callers that need a specific time slice should pre-filter the
-        file (e.g., via CDO or xarray ``isel``) before passing it to the reader.
-        """
-        time_dims = [d for d in data_array.dims if "time" in d]
-        if time_dims:
-            data_array = data_array.isel({d: 0 for d in time_dims})
-        return data_array
-
-    @staticmethod
     def _flip_lats_ascending(lats: np.ndarray, layers: list[np.ndarray]) -> tuple[np.ndarray, list[np.ndarray]]:
         """Return lats (and each 2-D layer) flipped to ASCENDING latitude order.
 
         ERA5 stores latitudes descending (see ``_ERA5_LAT_DESCENDING``); every
-        other reader in the pipeline emits ascending latitudes, so we flip here
-        for consistency. No-op if the coordinate is already ascending.
+        other reader emits ascending latitudes, so we flip here for consistency.
+        No-op if the coordinate is already ascending.
         """
         if _ERA5_LAT_DESCENDING and lats.size > 1 and lats[0] > lats[-1]:
             lats = lats[::-1]
             layers = [layer[::-1, :] for layer in layers]
         return lats, layers
 
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Slice the cached ERA5 grid to ``bbox``.
-
-        Slices the full ascending-latitude grid from :attr:`_native_grid` with an
-        inclusive bounding-box mask (endpoint-inclusive, matching xarray's ``.sel``
-        slicing semantics).
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where:
-
-            - ``data`` is float32 shape ``(n_specs, n_lat, n_lon)``.
-            - ``lats`` is float64 shape ``(n_lat,)``, ASCENDING order.
-            - ``lons`` is float64 shape ``(n_lon,)``.
-        """
-        data, lats, lons = self._native_grid
-
-        # Inclusive bbox masks on the ascending coordinate arrays select a
-        # contiguous block, reproducing the previous xarray slice() behavior.
-        lat_mask = (lats >= bbox.lat_min) & (lats <= bbox.lat_max)
-        lon_mask = (lons >= bbox.lon_min) & (lons <= bbox.lon_max)
-
-        sub = data[:, lat_mask, :][:, :, lon_mask]
-        return sub, lats[lat_mask], lons[lon_mask]
-
 
 class ERA5Reader(ERA5ReaderBase):
     """Read ERA5 single-level fields from a CDS NetCDF4 file.
 
-    Returns a 3-D data array of shape ``(7, n_lat, n_lon)`` where axis 0
+    Serves one hourly step at a time as a ``(7, n_lat, n_lon)`` grid where axis 0
     corresponds to ``_ERA5_SINGLE_LEVEL_VARIABLES`` / ``VARIABLES`` order.
 
     Class Attributes
@@ -192,7 +203,7 @@ class ERA5Reader(ERA5ReaderBase):
     READER_KEY : str
         Registry key ``"era5"``.
     RESOLUTION_KM : float
-        25 km (ERA5 native ~28 km, rounded to 25 km for PSF calculations).
+        28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
         Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
         are unrestricted (``required_mode=CAM``); the five additional single-level
@@ -203,16 +214,19 @@ class ERA5Reader(ERA5ReaderBase):
 
     Parameters
     ----------
-    file_path : Path
-        Path to an ERA5 single-levels NetCDF4 file containing all the variables
-        in ``_ERA5_SINGLE_LEVEL_VARIABLES``.
+    file_paths : Path or Sequence[Path]
+        The ERA5 single-levels NetCDF4 granule(s) covering the processing period, each
+        containing all the variables in ``_ERA5_SINGLE_LEVEL_VARIABLES`` and an hourly
+        time axis.
     """
 
     READER_KEY: str = "era5"
     # ERA5 is a reanalysis (no single instrument); use the producing center so the
     # long_name provenance tag "... (ECMWF)" stays uniform across every source.
     INSTRUMENT: str = "ECMWF"
-    RESOLUTION_KM: float = 25.0
+    # The 0.25 degree grid spacing at the equator. A sample covers a cell of this side in
+    # the coverage measure, so the cells abut and a footprint inside the grid is complete.
+    RESOLUTION_KM: float = 28.0
     VARIABLES: tuple[VariableSpec, ...] = (
         # --- Wind components: every product, from mission start ---
         VariableSpec(
@@ -270,18 +284,8 @@ class ERA5Reader(ERA5ReaderBase):
         ),
     )
 
-    def _read_native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read every single-level variable from the file into one stacked grid.
-
-        Opens the NetCDF4 file, normalizes longitude to −180..180, drops any
-        time-like dimension (first step only), and returns the whole global grid
-        with latitudes in ASCENDING order.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` with ``data`` float32 shape ``(7, n_lat, n_lon)``
-            — axis 0 in ``_ERA5_SINGLE_LEVEL_VARIABLES`` order.
+    def _read_step_layers(self, step: xr.Dataset, path: Path) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+        """Read every single-level variable from one time step.
 
         Raises
         ------
@@ -289,34 +293,14 @@ class ERA5Reader(ERA5ReaderBase):
             If the file is missing any of the expected ERA5 variables (e.g. a
             download configured with only a subset of the required fields).
         """
-        ds = xr.open_dataset(self._file_path, engine="netcdf4")
-        try:
-            ds = self._normalize_longitudes(ds)
-
-            missing = [nc_name for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES if nc_name not in ds]
-            if missing:
-                raise KeyError(
-                    f"ERA5 single-levels file {self._file_path} is missing variable(s) {missing}. "
-                    f"The CDS download must include every variable in "
-                    f"{[nc for _, nc in _ERA5_SINGLE_LEVEL_VARIABLES]}."
-                )
-
-            layers: list[np.ndarray] = []
-            lats: np.ndarray | None = None
-            lons: np.ndarray | None = None
-            for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES:
-                da = self._first_time_step(ds[nc_name])
-                if lats is None:
-                    # All variables share the same grid; read the coordinates once.
-                    lats = da["latitude"].values.astype(np.float64)
-                    lons = da["longitude"].values.astype(np.float64)
-                layers.append(da.values.astype(np.float32))
-
-            lats, layers = self._flip_lats_ascending(lats, layers)
-
-            # Stack into (n_specs, n_lat, n_lon) — axis 0 matches VARIABLES ordering.
-            data = np.stack(layers, axis=0)
-        finally:
-            ds.close()
-
-        return data, lats, lons
+        missing = [nc_name for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES if nc_name not in step]
+        if missing:
+            raise KeyError(
+                f"ERA5 single-levels file {path} is missing variable(s) {missing}. "
+                f"The CDS download must include every variable in "
+                f"{[nc for _, nc in _ERA5_SINGLE_LEVEL_VARIABLES]}."
+            )
+        lats = step["latitude"].values.astype(np.float64)
+        lons = step["longitude"].values.astype(np.float64)
+        layers = [step[nc_name].values.astype(np.float32) for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES]
+        return lats, lons, layers

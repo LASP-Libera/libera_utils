@@ -11,14 +11,14 @@ root-level ``Aerosol_Optical_Thickness_550_Land_Ocean_Mean`` (AOD) and
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
-from libera_utils.footprint_matching.readers.base import TILE_SIZE_DEG
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, TileKey
+from libera_utils.footprint_matching.types import BoundingBox
 from tests.test_data.footprint_matching.fixtures import make_aod_noaa20_fixture
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+
+_T = np.datetime64("2026-01-01T00:00:00", "ns")
 
 _N_LAT = 4
 _N_LON = 8
@@ -110,9 +110,9 @@ class TestVIIRSAODReaderClassAttributes:
 
 class TestVIIRSAODReaderLoadSpatialRegion:
     def test_returns_3d_data_stacked_in_variables_order(self, tmp_path):
-        # Targets _load_spatial_region output shape; asserts a 3-D float32 array stacked as (2 vars, n_lat, n_lon).
+        # Targets samples_in output shape; asserts a 3-D float32 array stacked as (2 vars, n_lat, n_lon).
         reader = _make_reader(tmp_path, include_fill_pixel=False)
-        data, lats, lons = reader._load_spatial_region(_full_bbox())
+        data, lats, lons = _region(reader, _full_bbox(), _T)
         assert data.ndim == 3
         assert data.shape == (2, _N_LAT, _N_LON)
         assert data.dtype == np.float32
@@ -120,25 +120,25 @@ class TestVIIRSAODReaderLoadSpatialRegion:
     def test_lat_is_ascending(self, tmp_path):
         # Targets latitude ordering in the loaded region; asserts np.diff(lats) stays non-negative (ascending).
         reader = _make_reader(tmp_path)
-        _, lats, _ = reader._load_spatial_region(_full_bbox())
+        _, lats, _ = _region(reader, _full_bbox(), _T)
         assert np.all(np.diff(lats) >= 0)
 
     def test_non_fill_aod_values_preserved(self, tmp_path):
         # Targets AOD passthrough for valid pixels; asserts the AOD axis equals the fixture fill value _AOD_FILL.
         reader = _make_reader(tmp_path, include_fill_pixel=False)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.allclose(data[_AOD_AXIS], _AOD_FILL, atol=1e-5)
 
     def test_non_fill_aerosol_type_values_preserved(self, tmp_path):
         # Targets aerosol-type passthrough for valid pixels; asserts the type axis equals the fixture _AEROSOL_TYPE.
         reader = _make_reader(tmp_path, include_fill_pixel=False)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.allclose(data[_TYPE_AXIS], _AEROSOL_TYPE, atol=1e-5)
 
     def test_fill_pixel_becomes_nan_in_both_fields(self, tmp_path):
         # Targets fill masking; asserts pixel (0,0) is NaN in both fields while all other pixels stay finite.
         reader = _make_reader(tmp_path, include_fill_pixel=True)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.isnan(data[_AOD_AXIS, 0, 0])
         assert np.isnan(data[_TYPE_AXIS, 0, 0])
         # Every other pixel of each field remains valid.
@@ -148,7 +148,7 @@ class TestVIIRSAODReaderLoadSpatialRegion:
     def test_aod_out_of_range_becomes_nan(self, tmp_path):
         # Targets AOD valid-range masking; asserts an out-of-range 99.0 AOD becomes all-NaN while type is preserved.
         reader = _make_reader(tmp_path, aod_fill=99.0, include_fill_pixel=False)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         # AOD valid max is 5.0, so 99.0 must be masked; aerosol type is unaffected.
         assert np.all(np.isnan(data[_AOD_AXIS]))
         assert np.allclose(data[_TYPE_AXIS], _AEROSOL_TYPE, atol=1e-5)
@@ -157,38 +157,22 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         # Category 99 is outside the valid [0, 7] range -> NaN; AOD is unaffected. Asserts the type axis is all NaN
         # while the AOD axis still equals _AOD_FILL.
         reader = _make_reader(tmp_path, aerosol_type_value=99, include_fill_pixel=False)
-        data, _, _ = reader._load_spatial_region(_full_bbox())
+        data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.all(np.isnan(data[_TYPE_AXIS]))
         assert np.allclose(data[_AOD_AXIS], _AOD_FILL, atol=1e-5)
 
     def test_empty_result_outside_bbox(self, tmp_path):
         # Targets querying a bbox with no data; asserts the returned array has shape (2, 0, 0) and zero size.
         reader = _make_reader(tmp_path)
-        data, lats, lons = reader._load_spatial_region(BoundingBox(-60.0, -58.0, 170.0, 172.0))
+        data, lats, lons = _region(reader, BoundingBox(-60.0, -58.0, 170.0, 172.0), _T)
         assert data.shape == (2, 0, 0)
         assert data.size == 0
 
 
-class TestVIIRSAODReaderLoadTile:
-    def _key(self):
-        lat_center = (_LAT_MIN + _LAT_MAX) / 2
-        lon_center = (_LON_MIN + _LON_MAX) / 2
-        lat_idx = max(0, min(int(math.floor((lat_center + 90.0) / TILE_SIZE_DEG)), 89))
-        lon_idx = max(0, min(int(math.floor((lon_center + 180.0) / TILE_SIZE_DEG)), 179))
-        return TileKey("viirs_aod", lat_idx, lon_idx)
-
-    def test_load_tile_returns_grid_tile(self, tmp_path):
-        # Targets load_tile's return type; asserts the result is a GridTile instance.
+class TestVIIRSAODReaderSamples:
+    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
         reader = _make_reader(tmp_path)
-        tile = reader.load_tile(self._key())
-        assert isinstance(tile, GridTile)
-
-    def test_source_is_viirs_aod(self, tmp_path):
-        # Targets tile provenance labeling; asserts the loaded tile's source is "viirs_aod".
-        reader = _make_reader(tmp_path)
-        assert reader.load_tile(self._key()).source == "viirs_aod"
-
-    def test_timestamp_source_is_none(self, tmp_path):
-        # Targets AOD lacking a timestamp source; asserts the loaded tile's timestamp_source is None.
-        reader = _make_reader(tmp_path)
-        assert reader.load_tile(self._key()).timestamp_source is None
+        samples = reader.samples_in(_full_bbox(), _T)
+        assert samples.source == "viirs_aod"
+        assert samples.timestamp_source is None
+        assert samples.values.shape[0] == 2

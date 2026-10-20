@@ -98,7 +98,7 @@ def read_hdf4_lat_lon_grid(
     -----
     HDF4 Scientific Data Sets are accessed via ``pyhdf.SD.SD.select()``.
     The SDS data is read into memory in full; spatial subsetting is left to the
-    caller (``_load_spatial_region``).
+    caller (the reader's ``_load_native``).
 
     References
     ----------

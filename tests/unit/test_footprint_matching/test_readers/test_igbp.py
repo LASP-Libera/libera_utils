@@ -14,7 +14,9 @@ from __future__ import annotations
 import numpy as np
 
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
-from libera_utils.footprint_matching.types import BoundingBox, TileKey
+from libera_utils.footprint_matching.types import BoundingBox, SampleSet, TimeMatch
+
+_T = np.datetime64("2026-01-01T00:00:00", "ns")
 
 # ---------------------------------------------------------------------------
 # Synthetic HDF4 data used in all IGBPReader tests
@@ -26,7 +28,7 @@ def _make_synthetic_igbp_data():
 
     ``read_modis_sinusoidal_hdf4`` returns the data and **2-D per-pixel**
     coordinate grids (the sinusoidal projection has no 1-D lat/lon axes), so the
-    synthetic fixture must do the same for the reader's flatten/rasterize path.
+    synthetic fixture must do the same for the reader's flatten-to-points path.
 
     Grid: 6 rows × 6 cols, lats 0–3°, lons 10–13°. Category values cycle through
     IGBP classes 0–5 along each row for easy assertion.
@@ -60,77 +62,66 @@ class TestIGBPReaderClassAttributes:
         # Targets the categorical variable's class count; asserts n_categories is 20 (IGBP classes).
         assert IGBPReader.VARIABLES[0].n_categories == 20
 
-    def test_output_cell_deg(self):
-        # Targets the output grid cell size; asserts OUTPUT_CELL_DEG is 0.05 degrees.
-        assert IGBPReader.OUTPUT_CELL_DEG == 0.05
+    def test_time_match_is_daily(self):
+        # The yearly land-cover map is the match for the whole staged period.
+        assert IGBPReader.TIME_MATCH is TimeMatch.DAILY
 
 
-class TestIGBPReaderLoadTile:
-    def test_returns_grid_tile_with_correct_source(self, tmp_path, monkeypatch):
-        data, lats, lons = _make_synthetic_igbp_data()
+class TestIGBPReaderSamples:
+    @staticmethod
+    def _patch(monkeypatch, data, lats, lons):
         monkeypatch.setattr(
             "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
             lambda **kwargs: (data, lats, lons),
         )
 
-        reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        # Patch bbox to match our synthetic lat/lon range
-        bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
-        data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
-        # Single-variable contract: 2-D rasterized grid with some covered cells.
-        assert data_sub.ndim == 2
-        assert np.isfinite(data_sub).any()
-
-    def test_subset_within_bbox(self, tmp_path, monkeypatch):
+    def test_returns_samples_with_correct_source(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
-        monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
-            lambda **kwargs: (data, lats, lons),
-        )
-
+        self._patch(monkeypatch, data, lats, lons)
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        # Only request the central portion of the synthetic grid
-        bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
-        data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
+        samples = reader.samples_in(BoundingBox(0.5, 2.5, 10.5, 12.5), _T)
+        assert isinstance(samples, SampleSet)
+        assert samples.source == "igbp"
+        assert samples.timestamp_source is None
+        # Single-variable contract: one value row, every pixel in the box served.
+        assert samples.values.shape == (1, samples.n_samples)
+        assert samples.n_samples > 0
+        assert np.isfinite(samples.values).any()
 
-        # Rasterized cell centers are constructed inside the bbox by definition.
-        assert np.all(lats_sub >= 0.5)
-        assert np.all(lats_sub <= 2.5)
-        assert np.all(lons_sub >= 10.5)
-        assert np.all(lons_sub <= 12.5)
+    def test_every_pixel_in_the_box_is_served_at_its_own_position(self, tmp_path, monkeypatch):
+        data, lats, lons = _make_synthetic_igbp_data()
+        self._patch(monkeypatch, data, lats, lons)
+        reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
+        bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
+        samples = reader.samples_in(bbox, _T)
+        inside = (lats >= 0.5) & (lats <= 2.5) & (lons >= 10.5) & (lons <= 12.5)
+        assert samples.n_samples == int(inside.sum())
+        assert set(zip(samples.lats.tolist(), samples.lons.tolist())) == set(
+            zip(lats[inside].tolist(), lons[inside].tolist())
+        )
+        # Pixel values travel with their positions (no per-cell mode).
+        expected = {(la, lo): v for la, lo, v in zip(lats[inside], lons[inside], data[inside])}
+        for la, lo, v in zip(samples.lats, samples.lons, samples.values[0]):
+            assert v == expected[(la, lo)]
 
     def test_empty_result_when_no_pixels_in_bbox(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
-        monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
-            lambda **kwargs: (data, lats, lons),
-        )
-
+        self._patch(monkeypatch, data, lats, lons)
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        # Request a region completely outside the synthetic data extent.
-        bbox = BoundingBox(50.0, 52.0, 50.0, 52.0)
-        data_sub, lats_sub, lons_sub = reader._load_spatial_region(bbox)
-
-        # Like the swath readers, an uncovered tile is an all-NaN grid (not a
-        # zero-size array): the cell-center coordinate axes still exist.
-        assert np.all(np.isnan(data_sub))
-        assert lats_sub.size > 0
-        assert lons_sub.size > 0
+        samples = reader.samples_in(BoundingBox(50.0, 52.0, 50.0, 52.0), _T)
+        assert samples.n_samples == 0
+        assert samples.values.shape == (1, 0)
 
     def test_fill_value_is_not_a_category(self, tmp_path, monkeypatch):
-        # A tile that is entirely fill (255) must rasterize to all-NaN, never to
-        # a modal class of 255 — fill is masked to NaN before rasterization.
+        # A tile that is entirely fill (255) must serve only NaN values, never 255 as a
+        # class -- fill is masked to NaN at load.
         data, lats, lons = _make_synthetic_igbp_data()
         data = np.full_like(data, 255.0)
-        monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
-            lambda **kwargs: (data, lats, lons),
-        )
-
+        self._patch(monkeypatch, data, lats, lons)
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
-        data_sub, _, _ = reader._load_spatial_region(bbox)
-        assert np.all(np.isnan(data_sub))
+        samples = reader.samples_in(BoundingBox(0.5, 2.5, 10.5, 12.5), _T)
+        assert samples.n_samples > 0
+        assert np.all(np.isnan(samples.values))
 
     def test_out_of_domain_codes_are_masked_to_nan(self, tmp_path, monkeypatch):
         # Regression: MCD12Q1 LC_Type1 valid IGBP codes are 1..17 (17 = Water Bodies),
@@ -142,57 +133,23 @@ class TestIGBPReaderLoadTile:
         # 255 (fill), 1 (valid). Shape (6, 6) to match the coordinate grids.
         rows = np.array([0.0, 17.0, 18.0, 5.0, 255.0, 1.0], dtype=np.float32)
         data = np.repeat(rows[:, np.newaxis], 6, axis=1)
-        monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
-            lambda **kwargs: (data, lats, lons),
-        )
-
+        self._patch(monkeypatch, data, lats, lons)
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        _, _, values = reader._load_points  # cached_property -> (lats, lons, values)
+        values = reader._load_native().values
         finite = values[np.isfinite(values)]
         # Only the in-domain codes survive; 0, 18, and 255 are gone.
         assert set(np.unique(finite).tolist()) == {1.0, 5.0, 17.0}
 
-    def test_data_dtype_is_float32(self, tmp_path, monkeypatch):
+    def test_values_dtype_is_float32(self, tmp_path, monkeypatch):
         data, lats, lons = _make_synthetic_igbp_data()
-        monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
-            lambda **kwargs: (data, lats, lons),
-        )
-
-        # Targets the output dtype contract; asserts the rasterized subset is float32.
+        self._patch(monkeypatch, data, lats, lons)
         reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        bbox = BoundingBox(0.5, 2.5, 10.5, 12.5)
-        data_sub, _, _ = reader._load_spatial_region(bbox)
+        samples = reader.samples_in(BoundingBox(0.5, 2.5, 10.5, 12.5), _T)
+        assert samples.values.dtype == np.float32
 
-        assert data_sub.dtype == np.float32
-
-    def test_load_tile_via_base_returns_grid_tile(self, tmp_path, monkeypatch):
-        """Full end-to-end test through load_tile() template method."""
-        # Targets the base load_tile() template wrapping _load_spatial_region; asserts it returns a
-        # GridTile tagged source="igbp" with no timestamp_source (IGBP is static, non-temporal).
-        from libera_utils.footprint_matching.types import GridTile
-
+    def test_several_tiles_are_concatenated(self, tmp_path, monkeypatch):
+        # Two staged MODIS tiles (one file each) form one point cloud.
         data, lats, lons = _make_synthetic_igbp_data()
-        monkeypatch.setattr(
-            "libera_utils.footprint_matching.readers.igbp.read_modis_sinusoidal_hdf4",
-            lambda **kwargs: (data, lats, lons),
-        )
-
-        reader = IGBPReader(tmp_path / "MCD12Q1.hdf")
-        # TileKey(lat_idx=45, lon_idx=90) → lat [0, 2°], lon [0, 2°]
-        # Our synthetic data is at lat 0–3°, lon 10–13°, so the bbox won't
-        # overlap; we use monkeypatching at the _load_spatial_region level instead.
-        key = TileKey("igbp", 45, 90)
-
-        # Patch _load_spatial_region directly so we don't depend on coordinate math
-        monkeypatch.setattr(
-            reader,
-            "_load_spatial_region",
-            lambda bbox: (data[:2, :2], lats[:2], lons[:2]),
-        )
-
-        tile = reader.load_tile(key)
-        assert isinstance(tile, GridTile)
-        assert tile.source == "igbp"
-        assert tile.timestamp_source is None
+        self._patch(monkeypatch, data, lats, lons)
+        reader = IGBPReader([tmp_path / "h09v05.hdf", tmp_path / "h10v05.hdf"])
+        assert reader._load_native().lats.size == 2 * lats.size
