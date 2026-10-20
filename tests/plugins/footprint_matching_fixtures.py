@@ -52,6 +52,7 @@ CERES CLDPIX (NetCDF4, imager-pixel swath):
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -1418,14 +1419,14 @@ def make_l1b_radiometer_fixture(
     """Write a synthetic L1B RAD-4CH NetCDF file (input to the radiometer-timescale FMATCH runners).
 
     Contains exactly the variables that
-    :func:`libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs` reads: the CF-encoded
+    :func:`libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs` reads: the CF-encoded
     ``radiometer_time`` coordinate, the geolocation and Sun-surface-sensor viewing angles that FMATCH passes
     through verbatim, and the scan-reference geometry (subsatellite point, satellite radius and cone-angle rate) that feeds the
     ray-traced bounding box and angular PSF weigher. The values are physically plausible but arbitrary; only the
     variable names, dtypes and time encoding are the contract under test.
 
     The file is written under a proper Libera ``L1B RAD-4CH`` filename so that the manifest-driven runners select it
-    with :func:`libera_utils.footprint_matching._runner_common.select_manifest_files_by_product_id`.
+    with :func:`libera_utils.footprint_matching.footprint_match_algorithm.select_manifest_files_by_product_id`.
 
     Parameters
     ----------
@@ -1444,7 +1445,7 @@ def make_l1b_radiometer_fixture(
         Path to the written L1B RAD-4CH NetCDF file.
     """
     from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
-    from libera_utils.footprint_matching._runner import L1B_TIME_VARIABLE  # noqa: PLC0415
+    from libera_utils.footprint_matching.footprint_match_algorithm import L1B_TIME_VARIABLE  # noqa: PLC0415
     from libera_utils.footprint_matching.product import (  # noqa: PLC0415
         L1B_CONE_ANGLE_RATE_VARIABLE,
         L1B_PASSTHROUGH_VARIABLES,
@@ -1501,6 +1502,134 @@ def make_l1b_radiometer_fixture(
 
     filename = LiberaDataProductFilename.from_filename_parts(
         product_name=DataProductIdentifier.l1b_rad,
+        version="V1-0-0",
+        utc_start=_as_utc_datetime(times[0]),
+        utc_end=_as_utc_datetime(times[-1]),
+    ).path.name
+    out_path = Path(directory) / filename
+    dataset.to_netcdf(out_path)
+    return out_path
+
+
+def make_cf_cam_camtime_dataset(
+    n_images: int = 2,
+    n_pixels_x: int = 3,
+    n_pixels_y: int = 3,
+    *,
+    n_padded: int = 0,
+    with_cloud_fraction: bool = True,
+) -> xr.Dataset:
+    """Build a synthetic CF-CAM-CAMTIME dataset carrying the variables FMATCH reads its pseudo-footprints from.
+
+    Each L1B camera pixel is its own pseudo-footprint (a 1 x 1 pixel block on a ~0.5 degree grid), so a full image has
+    ``n_pixels_x * n_pixels_y`` footprints laid out row-major along ``PSEUDOFOOTPRINT``. Each image is offset in
+    latitude so the images do not overlap.
+
+    Parameters
+    ----------
+    n_images : int, optional
+        Number of camera images (length of the ``CAMERA_TIME`` axis). Defaults to 2.
+    n_pixels_x, n_pixels_y : int, optional
+        Pixel-grid dimensions of each image. Default to 3 x 3.
+    n_padded : int, optional
+        How many trailing cells of the last image are padding (fill) rather than real footprints, as when an image
+        is segmented into fewer subsections than the widest one. Defaults to 0.
+    with_cloud_fraction : bool, optional
+        Whether to include the ``cloud_fraction`` variable (percent). Defaults to True.
+
+    Returns
+    -------
+    xarray.Dataset
+        The dataset, with ``n_images * n_pixels_x * n_pixels_y - n_padded`` real footprint cells.
+    """
+    n_cells = n_pixels_x * n_pixels_y
+    shape = (n_images, n_cells)
+    dims = ("CAMERA_TIME", "PSEUDOFOOTPRINT")
+    times = np.datetime64("2026-06-11T00:00:00", "ns") + np.arange(n_images, dtype="int64") * np.timedelta64(1, "s")
+
+    # Row-major pixel indices of each cell within its image.
+    pixel_x = np.broadcast_to(np.repeat(np.arange(n_pixels_x), n_pixels_y), shape).copy()
+    pixel_y = np.broadcast_to(np.tile(np.arange(n_pixels_y), n_pixels_x), shape).copy()
+    image_offset = 5.0 * np.arange(n_images)[:, None]
+    lat = 10.0 + image_offset + 0.5 * pixel_x
+    lon = 20.0 + 0.5 * pixel_y
+
+    def const(value: float) -> np.ndarray:
+        return np.full(shape, value, dtype=float)
+
+    floats = {
+        "latitude": lat,
+        "longitude": lon,
+        "altitude": const(835_000.0),
+        "solar_zenith_angle": const(30.0),
+        "viewing_zenith_angle": const(10.0),
+        "relative_azimuth_angle": const(120.0),
+        "psf_bbox_lat_min": lat - 0.25,
+        "psf_bbox_lat_max": lat + 0.25,
+        "psf_bbox_lon_min": lon - 0.25,
+        "psf_bbox_lon_max": lon + 0.25,
+    }
+    if with_cloud_fraction:
+        floats["cloud_fraction"] = np.linspace(0.0, 100.0, n_images * n_cells).reshape(shape)
+    ints = {
+        "center_pixel_x": pixel_x,
+        "center_pixel_y": pixel_y,
+        "psf_bbox_flags": np.zeros(shape, dtype=np.int32),
+        "q_flags": np.zeros(shape, dtype=np.int32),
+    }
+    pixel_bounds = {
+        "camera_pixel_x_min": pixel_x,
+        "camera_pixel_x_max": pixel_x.copy(),
+        "camera_pixel_y_min": pixel_y,
+        "camera_pixel_y_max": pixel_y.copy(),
+    }
+    if n_padded:
+        for values in floats.values():
+            values[-1, -n_padded:] = np.nan
+        for values in (*ints.values(), *pixel_bounds.values()):
+            values[-1, -n_padded:] = -1
+
+    dataset = xr.Dataset(
+        {name: (dims, values) for name, values in {**floats, **ints}.items()},
+        coords={
+            "CAMERA_TIME": times,
+            "PSEUDOFOOTPRINT": np.arange(n_cells, dtype=np.int32),
+            **{name: (dims, values.astype(np.int32)) for name, values in pixel_bounds.items()},
+        },
+    )
+    dataset["CAMERA_TIME"].encoding = {
+        "units": "nanoseconds since 1958-01-01",
+        "calendar": "standard",
+        "dtype": "int64",
+    }
+    return dataset
+
+
+def make_cf_cam_camtime_fixture(directory: Path, **dataset_kwargs: Any) -> Path:
+    """Write a synthetic CF-CAM-CAMTIME NetCDF file (input to the camera-timescale FMATCH runners).
+
+    The file is written under a proper Libera ``CF-CAM-CAMTIME`` filename so that the manifest-driven runners select
+    it with :func:`libera_utils.footprint_matching.footprint_match_algorithm.select_manifest_files_by_product_id`.
+
+    Parameters
+    ----------
+    directory : Path
+        Directory to write the file into (e.g. pytest ``tmp_path``).
+    **dataset_kwargs
+        Passed to :func:`make_cf_cam_camtime_dataset`.
+
+    Returns
+    -------
+    Path
+        Path to the written CF-CAM-CAMTIME NetCDF file.
+    """
+    from libera_utils.constants import DataProductIdentifier  # noqa: PLC0415
+    from libera_utils.io.filenaming import LiberaDataProductFilename  # noqa: PLC0415
+
+    dataset = make_cf_cam_camtime_dataset(**dataset_kwargs)
+    times = dataset["CAMERA_TIME"].values
+    filename = LiberaDataProductFilename.from_filename_parts(
+        product_name=DataProductIdentifier.l2_cf_cam_camtime,
         version="V1-0-0",
         utc_start=_as_utc_datetime(times[0]),
         utc_end=_as_utc_datetime(times[-1]),

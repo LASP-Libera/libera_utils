@@ -27,13 +27,6 @@ services:
       context: .
       target: libera-utils-scene-id
 
-  cloud-fraction:
-    platform: linux/amd64
-    image: libera-utils-cloud-fraction:latest
-    build:
-      context: .
-      target: libera-utils-cloud-fraction
-
   fmatch:
     platform: linux/amd64
     image: libera-utils-fmatch:latest
