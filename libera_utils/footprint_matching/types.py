@@ -369,7 +369,8 @@ class PseudoFootprint:
     ----------
     time : np.datetime64
         The ``CAMERA_TIME`` of the image this footprint came from. All footprints
-        segmented from the same image share this timestamp.
+        segmented from the same image share this timestamp. The readers' time
+        selection (:class:`TimeMatch`) matches ancillary samples to it.
     slice_x, slice_y : slice
         The block's half-open extent in the ``CAMERA_PIXEL_COUNT_X`` /
         ``CAMERA_PIXEL_COUNT_Y`` pixel grid.
