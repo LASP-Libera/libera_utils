@@ -96,6 +96,14 @@ FROM libera-utils AS libera-utils-make-kernel-azel
 ENTRYPOINT ["libera-utils", "make-kernel", "azel"]
 
 
+# CLI for the L1A processing steps (one per APID) from a manifest file. PROCESSING_STEP_NAME, set per processing
+# step, selects the APID.
+# ---------------------------------------------------------------------------------------------------------------
+FROM libera-utils AS libera-utils-l1a
+
+ENTRYPOINT ["libera-utils", "l1a-step"]
+
+
 # CLI for the SCENE-ID algorithms from a manifest file. The LIBERA_SCENE_ID_VARIANT environment variable, set per
 # processing step, selects the variant (e.g. "cam", "cam-camtime").
 # -----------------------------------------------------------------------------------------------------------------

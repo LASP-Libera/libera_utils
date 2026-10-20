@@ -6,6 +6,7 @@ from libera_utils import kernel_maker
 from libera_utils.aws import algorithm_registration, ecr_upload, l1a_combine, s3_utilities
 from libera_utils.aws import manual_processing as mp
 from libera_utils.constants import DataProductIdentifier, ProcessingStepIdentifier
+from libera_utils.l1a import l1a_step
 from libera_utils.l1a.l1a_packet_configs import configured_apids
 from libera_utils.scene_identification import scene_id_algorithm
 from libera_utils.version import version as libera_utils_version
@@ -79,6 +80,18 @@ def parse_cli_args(cli_args: list):
     )
     scene_id_parser.set_defaults(func=scene_id_algorithm.scene_id_cli_handler)
     scene_id_parser.add_argument("manifest", type=str, help="path to the input manifest file")
+
+    # =========
+    # L1A step
+    # =========
+    l1a_step_parser = subparsers.add_parser(
+        "l1a-step",
+        help="combine a day of one APID's L0 packet files into its L1A product, for the processing step named by "
+        "PROCESSING_STEP_NAME, from a manifest file",
+    )
+    l1a_step_parser.set_defaults(func=l1a_step.l1a_step_cli_handler)
+    l1a_step_parser.add_argument("input_manifest", type=str, help="path to input manifest file")
+    l1a_step_parser.add_argument("-v", "--verbose", action="store_true", help="set DEBUG level logging output")
 
     # ==============
     # AWS CLI TOOLS

@@ -20,6 +20,13 @@ services:
       context: .
       target: libera-utils-make-kernel-azel
 
+  l1a:
+    platform: linux/amd64
+    image: libera-utils-l1a:latest
+    build:
+      context: .
+      target: libera-utils-l1a
+
   scene-id:
     platform: linux/amd64
     image: libera-utils-scene-id:latest
