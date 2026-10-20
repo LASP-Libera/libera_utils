@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.cloud_fraction import cloud_fraction_algorithm
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.footprint_matching.footprint_match_algorithm import (
     ANCILLARY_PATH_ENV,
@@ -40,8 +39,8 @@ from libera_utils.scene_identification.scene_id_algorithm import (
     run_scene_identification,
 )
 from tests.test_data.footprint_matching.fixtures import (
+    make_cf_cam_camtime_fixture,
     make_fmatch_product_fixture,
-    make_l1b_camera_fixture,
     make_l1b_radiometer_fixture,
 )
 
@@ -166,22 +165,12 @@ class TestRadiometerRunnerWorkflow:
 
 
 class TestCameraRunnerWorkflow:
-    """The FMATCH-CAM-CAMTIME runner ingests CF-CAM-CAMTIME (segmentation happens upstream in cloud fraction)."""
+    """The FMATCH-CAM-CAMTIME runner ingests CF-CAM-CAMTIME, written by the Camera Cloud Fraction algorithm."""
 
     @staticmethod
     def _cf_cam_camtime_input(inputs, **camera_kwargs) -> str:
-        """Produce a CF-CAM-CAMTIME product from a synthetic L1B camera file (the camera runner's real input).
-
-        Camera segmentation and cloud fraction are computed once upstream by the CF-CAM-CAMTIME runner;
-        FMATCH-CAM-CAMTIME consumes that product (which carries the pseudo-footprint record) rather than the raw
-        L1B camera file, so the integration path runs the CF runner first and feeds its output to FMATCH.
-        """
-        l1b_file = make_l1b_camera_fixture(inputs, **camera_kwargs)
-        cf_manifest_path = _write_input_manifest(inputs, l1b_file)
-        cf_output_manifest = Manifest.from_file(
-            cloud_fraction_algorithm.run_algorithm(cf_manifest_path, cloud_fraction_algorithm.CAM_CAMTIME_CONFIG)
-        )
-        return cf_output_manifest.files[0].filename
+        """Write a synthetic CF-CAM-CAMTIME product, the camera runner's real input, one footprint per pixel."""
+        return str(make_cf_cam_camtime_fixture(inputs, **camera_kwargs))
 
     def test_full_workflow_writes_product_and_output_manifest(self, tmp_path, dropbox, staged_ancillary):
         inputs = tmp_path / "inputs"
@@ -345,10 +334,10 @@ class TestRunnerErrorHandling:
             cam_algorithm(manifest_path)
 
     def test_manifest_without_the_expected_l1b_product_raises(self, tmp_path, dropbox, staged_ancillary):
-        """A CAM (radiometer) runner handed only camera L1B files has nothing to process."""
+        """A CAM (radiometer) runner handed only a camera-timescale CF-CAM-CAMTIME file has nothing to process."""
         inputs = tmp_path / "inputs"
         inputs.mkdir()
-        manifest_path = _write_input_manifest(inputs, make_l1b_camera_fixture(inputs, n_images=1))
+        manifest_path = _write_input_manifest(inputs, make_cf_cam_camtime_fixture(inputs, n_images=1))
 
         with pytest.raises(ValueError, match="No RAD-4CH input files"):
             cam_algorithm(manifest_path)
@@ -373,8 +362,8 @@ class TestRunnerConfiguration:
         [
             # Radiometer-timescale modes take an L1B RAD-4CH primary input; CAM additionally merges an optional CF-CAM.
             (CAM_CONFIG, OperationalMode.CAM, DataProductIdentifier.l1b_rad, DataProductIdentifier.l2_cf_cam),
-            # CAM-CAMTIME's primary input is CF-CAM-CAMTIME (segmentation + cloud fraction bundled upstream), so it
-            # declares no separate cloud-fraction product.
+            # Both camera-timescale modes read CF-CAM-CAMTIME (pseudo-footprints, and for CAM-CAMTIME the cloud
+            # fraction, bundled upstream), so neither declares a separate cloud-fraction product.
             (
                 CAM_CAMTIME_CONFIG,
                 OperationalMode.CAM_CAMTIME,
@@ -382,7 +371,7 @@ class TestRunnerConfiguration:
                 None,
             ),
             (IMAGER_FLASH_CONFIG, OperationalMode.IMAGER_FLASH, DataProductIdentifier.l1b_rad, None),
-            (IMAGER_CAMTIME_CONFIG, OperationalMode.IMAGER_CAMTIME, DataProductIdentifier.l1b_cam, None),
+            (IMAGER_CAMTIME_CONFIG, OperationalMode.IMAGER_CAMTIME, DataProductIdentifier.l2_cf_cam_camtime, None),
         ],
     )
     def test_runner_config(self, config, mode, input_product, cloud_fraction_product):
