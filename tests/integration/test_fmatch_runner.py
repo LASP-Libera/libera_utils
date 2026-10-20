@@ -380,30 +380,16 @@ class TestRunnerConfiguration:
         assert config.cloud_fraction_product_id is cloud_fraction_product
 
 
-class TestRunnerOutputNotYetConsumableBySceneId:
-    """Runner output is intentionally non-operational end-to-end until the aggregation engine lands.
+class TestRunnerOutputThroughSceneId:
+    """Runner output classifies through SCENE-ID while its classification inputs are still placeholders.
 
-    The runners write only the L1B-derived columns with real values; the external-reader classification
-    inputs (``igbp_surface_type``, ...) are placeholders (``TODO[LIBSDC-785]``). This tripwire pins that
-    boundary: a *runner-written* FMATCH product is not yet consumable by SCENE-ID. It is the counterpart
-    to the SCENE-ID integration tests, which use the synthetic ``make_fmatch_product_fixture`` with valid
-    classification inputs.
+    The runners write the external-reader classification inputs (``igbp_surface_type``, ...) as fill values until the
+    aggregation engine lands (``TODO[LIBSDC-785]``). SCENE-ID reads those fills as missing inputs, so every footprint
+    is left unmatched rather than the granule failing. The SCENE-ID integration tests cover real classification with
+    the synthetic ``make_fmatch_product_fixture``, which carries valid inputs.
     """
 
-    @pytest.mark.xfail(
-        raises=ValueError,
-        strict=True,
-        reason="TODO[LIBSDC-785]: the runner writes placeholder igbp_surface_type=0, which "
-        "calculate_trmm_surface_type rejects. Real reader-derived classification inputs are not aggregated "
-        "yet, so runner output is not consumable by SCENE-ID. Remove this marker when the engine lands.",
-    )
-    def test_runner_written_product_is_consumable_by_scene_id(self, tmp_path, dropbox, staged_ancillary):
-        """A runner-written FMATCH-CAM product should classify through SCENE-ID once aggregation exists.
-
-        Today ``run_scene_identification`` (CAM config) raises ``ValueError`` in ``calculate_trmm_surface_type`` on the
-        placeholder ``igbp_surface_type=0``; when ``TODO[LIBSDC-785]`` fills real classification inputs this
-        test xpasses and (strict xfail) fails, forcing the marker's removal.
-        """
+    def test_placeholder_inputs_leave_every_footprint_unmatched(self, tmp_path, dropbox, staged_ancillary):
         inputs = tmp_path / "inputs"
         inputs.mkdir()
         manifest_path = _write_input_manifest(inputs, make_l1b_radiometer_fixture(inputs, n_footprints=8))
@@ -413,5 +399,7 @@ class TestRunnerOutputNotYetConsumableBySceneId:
 
         footprint_data = run_scene_identification(fmatch_product_path, SCENE_ID_RUNNER_CONFIGS["cam"])
 
+        for name in ("scene_id_erbe", "scene_id_unfiltering"):
+            assert (footprint_data._data[name].values == 0).all(), name
         scene_product = footprint_data.to_time_product("RADIOMETER_TIME")
         assert "Quality_Flag" in scene_product.data_vars
