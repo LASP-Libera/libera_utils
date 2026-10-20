@@ -200,6 +200,18 @@ class TestFootprintDataCalculations:
         result = calculate_trmm_surface_type(igbp_types)
         np.testing.assert_array_equal(result, expected)
 
+    def test_calculate_trmm_surface_type_passes_missing_codes_through(self):
+        """A missing IGBP code (NaN) gives a missing surface type rather than failing the granule."""
+        result = calculate_trmm_surface_type(np.array([1.0, np.nan, 17.0]))
+
+        np.testing.assert_array_equal(result[[0, 2]], [TRMMSurfaceType.HI_SHRUB, TRMMSurfaceType.OCEAN])
+        assert np.isnan(result[1])
+
+    def test_calculate_trmm_surface_type_error_names_the_raw_code(self):
+        """An invalid code next to a missing one is still rejected, and the error names the code as read."""
+        with pytest.raises(ValueError, match=r"TRMM surface type: \[99\]"):
+            calculate_trmm_surface_type(np.array([1.0, np.nan, 99.0]))
+
     def test_calculate_trmm_surface_type_invalid_values(self):
         """Test TRMM surface type conversion with invalid values."""
         # Test invalid scalar
