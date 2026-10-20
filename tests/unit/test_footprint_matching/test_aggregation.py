@@ -2,8 +2,8 @@
 
 These exercise the pure strategy functions against hand-computed values, the
 NaN / zero-weight exclusion rules, the categorical mode / ranked-mode logic, the
-coverage bookkeeping, and the dispatcher's error handling. They do not touch the
-TileManager or readers -- those are covered by the integration test.
+coverage bookkeeping, and the dispatcher's error handling. They do not query a reader
+or read data -- that is covered by the integration test.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ import pytest
 from libera_utils.footprint_matching import aggregation as agg
 from libera_utils.footprint_matching.types import (
     BoundingBox,
-    GridTile,
     OperationalMode,
+    SampleSet,
     VariableSpec,
     with_standard_deviation_companions,
 )
@@ -217,12 +217,12 @@ class TestDispatcher:
 
 
 class _ParityReader:
-    """Reader stand-in exercising every shared-plane case aggregate_tile_variables optimizes.
+    """Reader stand-in exercising every shared-plane case aggregate_sample_variables optimizes.
 
     ``field_a``/``field_b`` are continuous (each gains a ``_standard_deviation`` companion
     sharing its plane), and ``surface`` is categorical with three ranked-mode extras that
     all derive from the one ``surface`` plane. Only the attributes
-    ``aggregate_tile_variables`` / ``_map_product_specs`` touch are defined.
+    ``aggregate_sample_variables`` / ``_map_product_specs`` touch are defined.
     """
 
     __name__ = "_ParityReader"
@@ -268,15 +268,13 @@ class _ParityReader:
         return with_standard_deviation_companions(cls.VARIABLES) + cls.ADDITIONAL_PRODUCT_VARIABLES
 
 
-def _reference_tile_variables(reader_cls, tile: GridTile, weight_field: WeightField) -> dict[str, float]:
-    """Per-variable reference: what aggregate_tile_variables did before the shared-plane refactor.
+def _reference_sample_variables(reader_cls, samples: SampleSet, weight_field: WeightField) -> dict[str, float]:
+    """Per-variable reference: the public dispatcher called once per product spec.
 
-    Calls the public dispatcher once per product spec (no per-plane sharing), so any
-    divergence in the optimized path shows up as a value mismatch here.
+    No per-plane sharing, so any divergence in the optimized path shows up as a value
+    mismatch here.
     """
-    data = np.asarray(tile.data)
-    data_3d = data[np.newaxis, ...] if data.ndim == 2 else data
-    planes = [data_3d[i].ravel() for i in range(data_3d.shape[0])]
+    planes = [samples.values[i] for i in range(samples.values.shape[0])]
     weights = np.asarray(weight_field.weights, dtype=float).ravel()
     out: dict[str, float] = {}
     for spec, read_index in agg._map_product_specs(reader_cls):
@@ -291,34 +289,40 @@ def _reference_tile_variables(reader_cls, tile: GridTile, weight_field: WeightFi
     return out
 
 
-class TestAggregateTileVariablesParity:
-    """The shared-plane aggregate_tile_variables must match the per-variable reference exactly."""
+class TestAggregateSampleVariablesParity:
+    """The shared-plane aggregate_sample_variables must match the per-variable reference exactly."""
 
-    def _tile_and_weights(self, rng: np.random.Generator) -> tuple[GridTile, WeightField]:
-        n_lat, n_lon = 5, 6
-        field_a = rng.normal(10.0, 3.0, size=(n_lat, n_lon))
-        field_b = np.abs(rng.normal(4.0, 2.0, size=(n_lat, n_lon))) + 0.01  # positive-ish for log_mean
-        surface = rng.integers(0, 5, size=(n_lat, n_lon)).astype(float)
+    def _samples_and_weights(self, rng: np.random.Generator) -> tuple[SampleSet, WeightField]:
+        n = 30
+        field_a = rng.normal(10.0, 3.0, size=n)
+        field_b = np.abs(rng.normal(4.0, 2.0, size=n)) + 0.01  # positive-ish for log_mean
+        surface = rng.integers(0, 5, size=n).astype(float)
         # Sprinkle NaNs / a non-positive log value so the usable + positive masks bite.
-        field_a[0, 0] = np.nan
-        field_b[1, 2] = -1.0
-        field_b[2, 3] = np.nan
-        data = np.stack([field_a, field_b, surface])
+        field_a[0] = np.nan
+        field_b[8] = -1.0
+        field_b[15] = np.nan
+        values = np.stack([field_a, field_b, surface]).astype(np.float32)
 
-        lats = np.linspace(0.2, 0.8, n_lat)
-        lons = np.linspace(0.2, 0.9, n_lon)
-        weights = rng.random(size=(n_lat, n_lon))
-        weights[weights < 0.15] = 0.0  # zero-weight cells (outside the contour)
-        weights[4, 5] = np.nan
-        tile = GridTile(data=data, lats=lats, lons=lons, bounds=BoundingBox(0.0, 1.0, 0.0, 1.0), source="_parity")
-        return tile, WeightField(weights=weights, total_energy=float(np.nansum(weights)), max_radius_km=100.0)
+        weights = rng.random(size=n)
+        weights[weights < 0.15] = 0.0  # zero-weight samples (outside the contour)
+        weights[29] = np.nan
+        samples = SampleSet(
+            lats=rng.uniform(0.2, 0.8, n),
+            lons=rng.uniform(0.2, 0.9, n),
+            values=values,
+            times=None,
+            source="_parity",
+            bounds=BoundingBox(0.0, 1.0, 0.0, 1.0),
+        )
+        field = WeightField(weights=weights, total_energy=float(np.nansum(weights)), max_radius_km=100.0, coverage=1.0)
+        return samples, field
 
     def test_matches_per_variable_reference(self):
         rng = np.random.default_rng(20260826)
         for _ in range(20):
-            tile, weight_field = self._tile_and_weights(rng)
-            got = agg.aggregate_tile_variables(_ParityReader, tile, weight_field)
-            expected = _reference_tile_variables(_ParityReader, tile, weight_field)
+            samples, weight_field = self._samples_and_weights(rng)
+            got = agg.aggregate_sample_variables(_ParityReader, samples, weight_field)
+            expected = _reference_sample_variables(_ParityReader, samples, weight_field)
             assert got.keys() == expected.keys()
             for name in expected:
                 g, e = got[name], expected[name]
@@ -328,16 +332,9 @@ class TestAggregateTileVariablesParity:
                     # Same operations in the same order -> bit-for-bit identical.
                     assert g == e, name
 
-    def test_empty_tile_yields_nan_everywhere(self):
-        # A failed/missing region arrives as a zero-cell tile -> NaN for every variable.
-        data = np.empty((3, 0, 0), dtype=np.float64)
-        tile = GridTile(
-            data=data,
-            lats=np.empty(0),
-            lons=np.empty(0),
-            bounds=BoundingBox(0.0, 1.0, 0.0, 1.0),
-            source="_parity",
-        )
-        weight_field = WeightField(weights=np.empty((0, 0)), total_energy=0.0, max_radius_km=100.0)
-        got = agg.aggregate_tile_variables(_ParityReader, tile, weight_field)
+    def test_empty_samples_yield_nan_everywhere(self):
+        # A region the source does not cover arrives as a zero-sample set -> NaN for every variable.
+        samples = SampleSet.empty("_parity", BoundingBox(0.0, 1.0, 0.0, 1.0), 3)
+        weight_field = WeightField(weights=np.empty(0), total_energy=0.0, max_radius_km=100.0, coverage=0.0)
+        got = agg.aggregate_sample_variables(_ParityReader, samples, weight_field)
         assert all(math.isnan(v) for v in got.values())
