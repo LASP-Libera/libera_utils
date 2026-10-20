@@ -1,7 +1,7 @@
 """Unit tests for reading the L1B Daily inputs that FMATCH is built on.
 
 These cover the pass-through contract read by
-``libera_utils.footprint_matching._runner_common.load_l1b_radiometer_inputs``: which variables are read,
+``libera_utils.footprint_matching.footprint_match_algorithm.load_l1b_radiometer_inputs``: which variables are read,
 the dtypes they are cast to, and the dropping of footprints whose boresight had no valid Earth
 intersection.
 """
@@ -10,9 +10,8 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.footprint_matching._runner_common import (
+from libera_utils.footprint_matching.footprint_match_algorithm import (
     FMATCH_RADIOMETER_TIME_COORDINATE,
-    load_l1b_camera_dataset,
     load_l1b_radiometer_inputs,
 )
 from libera_utils.footprint_matching.product import (
@@ -20,10 +19,7 @@ from libera_utils.footprint_matching.product import (
     L1B_PASSTHROUGH_VARIABLES,
     L1B_SCAN_REFERENCE_VARIABLES,
 )
-from tests.test_data.footprint_matching.fixtures import (
-    make_l1b_camera_fixture,
-    make_l1b_radiometer_fixture,
-)
+from tests.test_data.footprint_matching.fixtures import make_l1b_radiometer_fixture
 
 
 class TestRadiometerPassthrough:
@@ -136,35 +132,3 @@ class TestNonFiniteFootprints:
 
         with pytest.raises(ValueError, match="No usable footprints"):
             load_l1b_radiometer_inputs(l1b_file)
-
-
-class TestCameraDataset:
-    """The camera reader hands segmentation a fully-loaded dataset."""
-
-    def test_contains_the_segmentation_grids(self, tmp_path):
-        from libera_utils.footprint_matching import camera_segmentation as seg
-
-        l1b_file = make_l1b_camera_fixture(tmp_path, n_images=2, n_pixels_x=4, n_pixels_y=4)
-
-        dataset = load_l1b_camera_dataset(l1b_file)
-
-        for name in (
-            seg.LATITUDE_NAME,
-            seg.LONGITUDE_NAME,
-            seg.ALTITUDE_NAME,
-            seg.SOLAR_ZENITH_NAME,
-            seg.VIEWING_ZENITH_NAME,
-            seg.RELATIVE_AZIMUTH_NAME,
-        ):
-            assert name in dataset, name
-        assert dataset.sizes[seg.CAMERA_TIME_NAME] == 2
-
-    def test_usable_after_the_source_file_is_deleted(self, tmp_path):
-        """The dataset is loaded eagerly, so an S3 input materialized into a temp dir stays readable."""
-        from libera_utils.footprint_matching import camera_segmentation as seg
-
-        l1b_file = make_l1b_camera_fixture(tmp_path, n_images=1, n_pixels_x=3, n_pixels_y=3)
-        dataset = load_l1b_camera_dataset(l1b_file)
-        l1b_file.unlink()
-
-        assert np.isfinite(dataset[seg.LATITUDE_NAME].values).all()

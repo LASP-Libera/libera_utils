@@ -9,10 +9,10 @@ handful of parameters:
 * which :class:`~libera_utils.footprint_matching.types.OperationalMode` they produce
   (which in turn drives the product definition, the time coordinate, and the active
   reader set),
-* which L1B (or CF-CAM-CAMTIME) product counts as their input (``RAD-4CH`` vs ``CAM`` vs the bundled
-  camera product),
+* which product counts as their input (L1B ``RAD-4CH`` for the radiometer-timescale modes,
+  CF-CAM-CAMTIME for the camera-timescale modes),
 * whether they consume the optional Camera Cloud Fraction product, and
-* for camera-timescale modes, how their pseudo-footprints are loaded.
+* for camera-timescale modes, whether they carry the cloud fraction read with the pseudo-footprints.
 
 Rather than duplicate the manifest/dropbox plumbing per runner, the shared body lives here in
 :func:`run_algorithm` and is parameterized by a small :class:`FmatchRunnerConfig`. The concrete
@@ -25,10 +25,9 @@ is one config plus one registry entry, no new module. This mirrors
 ``libera_utils/scene_identification/scene_id_algorithm.py`` deliberately, so the algorithm families
 read the same way.
 
-Algorithm-agnostic runner helpers shared with the Camera Cloud Fraction runners (manifest selection,
-L1B loading, local materialization, version stamping) still live in
-``libera_utils/footprint_matching/_runner_common.py`` so both algorithms can reuse them without a
-dependency cycle.
+The camera pseudo-footprints are segmented by the Camera Cloud Fraction algorithm, which is maintained
+outside this package; both camera-timescale runners rebuild them from its CF-CAM-CAMTIME product
+(:func:`~libera_utils.footprint_matching.product.pseudofootprints_from_camtime_dataset`).
 
 Environment
 -----------
@@ -64,8 +63,10 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -79,15 +80,11 @@ from cloudpathlib import AnyPath, S3Path
 # registry would be empty and every mode would resolve to zero readers.
 import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching._runner_common import (
-    _as_local_path,
-    algorithm_version,
-    load_l1b_camera_dataset,
-    load_l1b_radiometer_inputs,
-    select_manifest_files_by_product_id,
-)
-from libera_utils.footprint_matching.camera_segmentation import segment_l1b_camera
 from libera_utils.footprint_matching.product import (
+    FMATCH_CONE_ANGLE_RATE_KEY,
+    L1B_CONE_ANGLE_RATE_VARIABLE,
+    L1B_PASSTHROUGH_VARIABLES,
+    L1B_SCAN_REFERENCE_VARIABLES,
     camtime_real_cell_mask,
     fmatch_time_variable,
     is_camera_timescale_mode,
@@ -98,7 +95,7 @@ from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest
-from libera_utils.io.smart_open import is_s3
+from libera_utils.io.smart_open import is_s3, smart_copy_file
 from libera_utils.logutil import configure_task_logging
 
 if TYPE_CHECKING:
@@ -106,12 +103,8 @@ if TYPE_CHECKING:
 
     from libera_utils.footprint_matching.types import PseudoFootprint
 
-    # A camera-timescale footprint loader turns one local input file into this mode's pseudo-footprints
-    # and (for modes that carry it) the per-footprint Camera Cloud Fraction. Each camera runner injects
-    # its own so the shared runner never has to know *how* footprints are produced -- FMATCH-CAM-CAMTIME
-    # reconstructs them from its CF-CAM-CAMTIME input, while FMATCH-IMAGER-CAMTIME segments an L1B camera
-    # file in its own module. Keeping this out of the shared runner is what lets camera segmentation live
-    # solely in the modules that actually perform it.
+    # A camera-timescale footprint loader turns one local CF-CAM-CAMTIME file into this mode's
+    # pseudo-footprints and, for modes that carry it, the per-footprint Camera Cloud Fraction.
     CameraFootprintLoader = Callable[[Path], tuple[list[PseudoFootprint], np.ndarray | None]]
 
 logger = logging.getLogger(__name__)
@@ -119,6 +112,15 @@ logger = logging.getLogger(__name__)
 # Environment variable naming the root of the staged ancillary tree. Mirrors the
 # PROCESSING_PATH convention used for the output dropbox.
 ANCILLARY_PATH_ENV: str = "FMATCH_ANCILLARY_PATH"
+
+# Name of the time coordinate variable inside the L1B radiometer file. xarray decodes
+# its CF "nanoseconds since 1958-01-01" units into datetime64[ns], which is exactly
+# the dtype the FMATCH RADIOMETER_TIME coordinate declares.
+L1B_TIME_VARIABLE: str = "radiometer_time"
+
+# Name of the FMATCH product's radiometer time coordinate (the key the L1B reader
+# returns the decoded L1B times under).
+FMATCH_RADIOMETER_TIME_COORDINATE: str = "RADIOMETER_TIME"
 
 
 @dataclass(frozen=True)
@@ -138,9 +140,9 @@ class FmatchRunnerConfig:
     input_product_id : DataProductIdentifier
         The product that counts as this runner's primary input: ``l1b_rad`` (``RAD-4CH``) for
         radiometer-timescale modes, and the CF-CAM-CAMTIME product (``l2_cf_cam_camtime``) for
-        camera-timescale modes -- which now read their pseudo-footprints (and, for CAM-CAMTIME, the
-        cloud fraction) from that product rather than segmenting an L1B camera file. Manifest files
-        with any other product id (or unparsable names) are skipped.
+        camera-timescale modes, which read their pseudo-footprints (and, for CAM-CAMTIME, the
+        cloud fraction) from that product. Manifest files with any other product id (or
+        unparsable names) are skipped.
     cloud_fraction_product_id : DataProductIdentifier or None
         The optional SEPARATE Camera Cloud Fraction product merged for radiometer-timescale
         ``cloud_fraction_camera`` (CF-CAM, ``l2_cf_cam``). ``None`` for the camera-timescale modes
@@ -149,9 +151,9 @@ class FmatchRunnerConfig:
         Short label used in task-log filenames (e.g. ``fmatch_cam``).
     camera_footprint_loader : CameraFootprintLoader or None
         For camera-timescale modes, the callable that turns one local input file into
-        ``(pseudo-footprints, cloud_fraction_camera_or_None)``. FMATCH-CAM-CAMTIME uses a loader that
-        reconstructs footprints from its CF-CAM-CAMTIME input; FMATCH-IMAGER-CAMTIME one that segments
-        an L1B camera file. ``None`` (and unused) for radiometer-timescale modes.
+        ``(pseudo-footprints, cloud_fraction_camera_or_None)``. Both read CF-CAM-CAMTIME;
+        FMATCH-CAM-CAMTIME's also returns the cloud fraction. ``None`` (and unused) for
+        radiometer-timescale modes.
     """
 
     mode: OperationalMode
@@ -174,18 +176,15 @@ class FmatchRunnerConfig:
 
 # --- Camera-timescale footprint loaders ----------------------------------------------------------------------------
 #
-# Each camera-timescale config points its camera_footprint_loader at one of these. They turn a single local input
-# file into that mode's pseudo-footprints (and, for CAM-CAMTIME, the per-footprint Camera Cloud Fraction). The two
-# modes obtain their footprints differently, which is exactly what the loader abstraction captures.
+# Each camera-timescale config points its camera_footprint_loader at one of these. Both rebuild the pseudo-footprints
+# from a CF-CAM-CAMTIME file; they differ only in whether the mode carries the Camera Cloud Fraction.
 
 
 def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFootprint], np.ndarray | None]:
-    """Reconstruct pseudo-footprints and cloud fraction from a local CF-CAM-CAMTIME file.
+    """Rebuild pseudo-footprints and cloud fraction from a local CF-CAM-CAMTIME file.
 
-    The camera-timescale footprint loader for FMATCH-CAM-CAMTIME. No segmentation happens here -- the
-    footprints were produced once by the cloud-fraction algorithm and are simply rebuilt from the
-    product, and the cloud fraction is flattened with the identical real-cell mask so it aligns 1:1
-    with them.
+    The camera-timescale footprint loader for FMATCH-CAM-CAMTIME. The cloud fraction is flattened with
+    the same real-cell mask as the footprints, so it aligns 1:1 with them.
 
     Parameters
     ----------
@@ -195,7 +194,13 @@ def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFoo
     Returns
     -------
     tuple[list[PseudoFootprint], numpy.ndarray | None]
-        The reconstructed pseudo-footprints and their per-footprint ``cloud_fraction_camera`` values.
+        The pseudo-footprints and their per-footprint ``cloud_fraction_camera`` values, or ``None``
+        when the file carries no ``cloud_fraction``.
+
+    Raises
+    ------
+    MissingCamtimeVariablesError
+        If the file lacks a variable needed to rebuild the pseudo-footprints.
     """
     with xr.open_dataset(local_input_path) as cf_dataset:
         cf_dataset = cf_dataset.load()
@@ -209,25 +214,28 @@ def _load_cam_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFoo
 
 
 def _load_imager_camtime_footprints(local_input_path: Path) -> tuple[list[PseudoFootprint], None]:
-    """Segment a local L1B Daily Camera file into pseudo-footprints.
+    """Rebuild pseudo-footprints from a local CF-CAM-CAMTIME file, without its cloud fraction.
 
-    The camera-timescale footprint loader for FMATCH-IMAGER-CAMTIME. IMAGER-CAMTIME carries no cloud
-    fraction, so it does not read CF-CAM-CAMTIME; it runs the same segmentation the cloud-fraction
-    algorithm uses (:func:`segment_l1b_camera`). The second tuple element is always ``None`` because
-    this mode emits no ``cloud_fraction_camera``.
+    The camera-timescale footprint loader for FMATCH-IMAGER-CAMTIME, which takes its cloud information
+    from the imager readers and declares no ``cloud_fraction_camera``.
 
     Parameters
     ----------
     local_input_path : pathlib.Path
-        Local path to an L1B Daily Camera (``CAM``) NetCDF file.
+        Local path to a CF-CAM-CAMTIME NetCDF file.
 
     Returns
     -------
     tuple[list[PseudoFootprint], None]
-        The segmented pseudo-footprints and ``None`` (no cloud fraction).
+        The pseudo-footprints and ``None`` (no cloud fraction).
+
+    Raises
+    ------
+    MissingCamtimeVariablesError
+        If the file lacks a variable needed to rebuild the pseudo-footprints.
     """
-    dataset = load_l1b_camera_dataset(local_input_path)
-    footprints = segment_l1b_camera(dataset, log=logger)
+    with xr.open_dataset(local_input_path) as cf_dataset:
+        footprints = pseudofootprints_from_camtime_dataset(cf_dataset.load())
     return footprints, None
 
 
@@ -249,8 +257,7 @@ CAM_CONFIG = FmatchRunnerConfig(
 )
 
 # FMATCH-CAM-CAMTIME (camera timescale): the camera-timescale near-real-time product. Its input is CF-CAM-CAMTIME,
-# which already carries the segmentation-derived pseudo-footprints and the cloud fraction, so this runner does not
-# segment anything -- _load_cam_camtime_footprints reconstructs footprints and reads cloud fraction from that product.
+# which carries the pseudo-footprints and the cloud fraction; _load_cam_camtime_footprints reads both.
 CAM_CAMTIME_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.CAM_CAMTIME,
     output_product_id=DataProductIdentifier.aux_fmatch_cam_camtime,
@@ -272,12 +279,13 @@ IMAGER_CONFIG = FmatchRunnerConfig(
 )
 
 # FMATCH-IMAGER-CAMTIME (camera timescale): the RBSP Climate Quality camera-timescale product; requires RBSP inputs so
-# it does not run during the first operational year. Unlike CAM-CAMTIME it produces its own footprints -- it carries no
-# cloud fraction, so there is no CF-CAM-CAMTIME to read -- via _load_imager_camtime_footprints (segment_l1b_camera).
+# it does not run during the first operational year. Like CAM-CAMTIME it reads its pseudo-footprints from
+# CF-CAM-CAMTIME, but it declares no cloud_fraction_camera (cloud info comes from the imager readers), so
+# _load_imager_camtime_footprints leaves the cloud fraction unread.
 IMAGER_CAMTIME_CONFIG = FmatchRunnerConfig(
     mode=OperationalMode.IMAGER_CAMTIME,
     output_product_id=DataProductIdentifier.aux_fmatch_imager_camtime,
-    input_product_id=DataProductIdentifier.l1b_cam,
+    input_product_id=DataProductIdentifier.l2_cf_cam_camtime,
     cloud_fraction_product_id=None,
     log_prefix="fmatch_imager_camtime",
     camera_footprint_loader=_load_imager_camtime_footprints,
@@ -628,10 +636,9 @@ def run_footprint_matching(
     first element of the returned tuple is a union:
 
     * **camera-timescale** modes read the CF-CAM-CAMTIME product (their sole camera input) and
-      reconstruct the list of
+      rebuild the list of
       :class:`~libera_utils.footprint_matching.types.PseudoFootprint` objects from it via
-      :func:`~libera_utils.footprint_matching.product.pseudofootprints_from_camtime_dataset` -
-      the camera segmentation itself now happens once, upstream, in the cloud-fraction algorithm.
+      :func:`~libera_utils.footprint_matching.product.pseudofootprints_from_camtime_dataset`.
       The per-footprint Camera Cloud Fraction is read from the same product and returned as the
       second element (``None`` for modes whose output does not declare ``cloud_fraction_camera``,
       e.g. IMAGER-CAMTIME);
@@ -653,6 +660,13 @@ def run_footprint_matching(
         The mode's assembly inputs (footprints or L1B pass-through dict) and the per-footprint
         ``cloud_fraction_camera`` values (or ``None``), ready to hand to
         :func:`~libera_utils.footprint_matching.product.write_fmatch_product`.
+
+    Raises
+    ------
+    ValueError
+        If a camera-timescale mode has no ``camera_footprint_loader`` configured.
+    MissingCamtimeVariablesError
+        If a camera-timescale input lacks a variable needed to rebuild the pseudo-footprints.
 
     Notes
     -----
@@ -769,7 +783,7 @@ def create_and_write_data_product(
     aggregates (``igbp_surface_type``, ``era5_*``, ``ssf_*``, ``cldpix_*``, ...) and the
     camera cloud-fraction values are **not** supplied here - the aggregation engine that
     computes them is still ``TODO[LIBSDC-785]`` - so ``write_fmatch_product`` writes them as
-    conformant placeholders (integers as ``0``, floats as ``NaN``). A product written by this
+    conformant fill values. A product written by this
     function is therefore **not yet consumable by SCENE-ID**: its placeholder
     ``igbp_surface_type=0`` makes
     :func:`~libera_utils.scene_identification.scene_id.calculate_trmm_surface_type` raise.
@@ -808,7 +822,226 @@ def create_and_write_data_product(
         input_files=",".join(provenance),
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
+        # Ancillary staging is non-strict (see the module "Ancillary inputs" note): with nothing usable staged,
+        # the external and coverage columns are written as fill values rather than failing the product.
+        allow_placeholders=source_file_paths is None,
         strict=True,
     )
     logger.info(f"Wrote data product to {output_file_path.path}")
     return output_file_path
+
+
+def select_manifest_files_by_product_id(manifest: Manifest, *product_ids: DataProductIdentifier) -> list[str]:
+    """Select the files referenced by a manifest that belong to the given Libera data product(s).
+
+    A runner receives one manifest listing every file staged for the processing step, which in
+    general contains more than the runner consumes (an L1B input, an optional cloud-fraction product,
+    ancillary granules, sibling products). This helper keeps exactly the records whose parsed Libera
+    product id is one of ``product_ids``, in manifest order.
+
+    Files whose names do not parse as a :class:`~libera_utils.io.filenaming.LiberaDataProductFilename`
+    are skipped rather than raising: manifests legitimately carry non-Libera files (for example the
+    externally-sourced ancillary granules the readers consume), and a runner should ignore them, not
+    fail on them.
+
+    This lives in the runner, alongside its callers, so that ``libera_utils.io`` stays a generic I/O
+    package with no dependency on Libera product identifiers. The SCENE-ID runner keeps its own
+    single-product equivalent (``collect_input_files``) for the same reason.
+
+    Parameters
+    ----------
+    manifest : Manifest
+        The manifest to inspect.
+    *product_ids : DataProductIdentifier
+        One or more Libera product ids to keep. Passing several is useful when a runner takes more
+        than one Libera input from the same manifest (e.g. FMATCH-CAM reads both an L1B product and an
+        optional cloud-fraction one).
+
+    Returns
+    -------
+    list[str]
+        The matching manifest filenames, in manifest order. Empty when the manifest references none of
+        the products.
+
+    Raises
+    ------
+    ValueError
+        If no ``product_ids`` are given, which would silently match nothing and is always a caller bug.
+    """
+    if not product_ids:
+        raise ValueError("At least one DataProductIdentifier must be given to select manifest files.")
+
+    wanted = set(product_ids)
+    wanted_labels = ", ".join(sorted(product_id.value for product_id in wanted))
+    selected: list[str] = []
+    for file_record in manifest.files:
+        filename = file_record.filename
+        try:
+            libera_filename = LiberaDataProductFilename.from_file_path(filename)
+        except Exception:
+            # Not a Libera product name, so it cannot be one of the requested products.
+            logger.info("Skipping non-Libera-product file (not a %s input): %s", wanted_labels, filename)
+            continue
+        # Parsed as a Libera product; keep it only if it is one of the requested products.
+        if libera_filename.data_product_id in wanted:
+            logger.info("Recording %s input file: %s", libera_filename.data_product_id.value, filename)
+            selected.append(filename)
+        else:
+            logger.info(
+                "Skipping Libera product '%s' (not %s): %s",
+                libera_filename.data_product_id.value,
+                wanted_labels,
+                filename,
+            )
+    return selected
+
+
+def load_l1b_radiometer_inputs(l1b_file: Path) -> dict[str, np.ndarray]:
+    """Read the per-footprint L1B inputs that FMATCH passes through verbatim.
+
+    Pulls every quantity the FMATCH product contract takes straight from L1B Daily:
+    the ``RADIOMETER_TIME`` coordinate plus all variables in
+    :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
+    (footprint ``latitude``/``longitude`` and the solar/viewing zenith and
+    relative-azimuth angles).
+
+    Footprints with non-finite values are dropped. The L1B geolocation and angles are
+    NaN wherever the boresight has no valid Earth intersection (e.g. the first samples
+    of a file, and any gaps), and such rows carry no usable values. We keep only
+    footprints where *every* pass-through variable is finite - a logical AND of the
+    per-variable finite masks. In practice the geolocation and the "_Surface" angles
+    share the same gaps, but AND-ing all of them is robust if they ever diverge.
+
+    Parameters
+    ----------
+    l1b_file : pathlib.Path
+        Path to a local L1B RAD-4CH NetCDF file. Remote inputs must be materialized
+        locally first (see :class:`_as_local_path`), because
+        :func:`xarray.open_dataset` seeks within the file.
+
+    Returns
+    -------
+    dict[str, np.ndarray]
+        Mapping keyed by FMATCH variable name: ``"RADIOMETER_TIME"`` (datetime64[ns])
+        plus each key of :data:`~libera_utils.footprint_matching.product.L1B_PASSTHROUGH_VARIABLES`
+        (float32). It additionally carries the scan-reference geometry used to build
+        footprints (not product columns): each key of
+        :data:`~libera_utils.footprint_matching.product.L1B_SCAN_REFERENCE_VARIABLES` and
+        :data:`~libera_utils.footprint_matching.product.FMATCH_CONE_ANGLE_RATE_KEY`
+        (float64). All arrays are 1-D and the same length.
+
+    Raises
+    ------
+    ValueError
+        If no footprint has finite values for every pass-through / subsatellite
+        variable, which would leave nothing to build a product from.
+    """
+    # Open with default decoding so the CF-encoded time coordinate ("nanoseconds since
+    # 1958-01-01") is decoded into datetime64[ns] for us, and _FillValue-tagged fields
+    # (the L1B fills are -999 / -9999) are masked to NaN so the finite check below works.
+    with xr.open_dataset(l1b_file) as l1b:
+        radiometer_time = l1b[L1B_TIME_VARIABLE].values
+        # Read every pass-through variable, keyed by its FMATCH (output) name.
+        passthrough = {fmatch_name: l1b[l1b_name].values for fmatch_name, l1b_name in L1B_PASSTHROUGH_VARIABLES.items()}
+        # Scan-reference geometry (subsatellite point + cone-angle rate), read at
+        # float64 for the ray-trace. Not written to the product; feeds footprint build.
+        scan_reference = {
+            fmatch_name: np.asarray(l1b[l1b_name].values, dtype=np.float64)
+            for fmatch_name, l1b_name in L1B_SCAN_REFERENCE_VARIABLES.items()
+        }
+        cone_angle_rate = np.asarray(l1b[L1B_CONE_ANGLE_RATE_VARIABLE].values, dtype=np.float64)
+
+    # Keep only footprints where every pass-through variable AND the subsatellite point
+    # are finite. Start from an all-True mask and AND in each variable's finite mask, so
+    # a NaN in ANY of them drops that footprint. The cone-angle rate is intentionally
+    # excluded: an unknown scan rate must not discard an otherwise-good footprint.
+    finite = np.ones(radiometer_time.shape, dtype=bool)
+    for values in (*passthrough.values(), *scan_reference.values()):
+        finite &= np.isfinite(values)
+
+    n_finite = int(finite.sum())
+    if n_finite == 0:
+        raise ValueError(
+            f"No usable footprints in L1B file {l1b_file}: every record has a non-finite value in at least one of "
+            f"the pass-through or subsatellite variables "
+            f"({', '.join(sorted({*L1B_PASSTHROUGH_VARIABLES, *L1B_SCAN_REFERENCE_VARIABLES}))})."
+        )
+    if n_finite < finite.size:
+        logger.info(
+            "Dropped %d of %d L1B footprints with non-finite geolocation/viewing angles",
+            finite.size - n_finite,
+            finite.size,
+        )
+
+    radiometer_time = radiometer_time[finite]
+    passthrough = {name: values[finite] for name, values in passthrough.items()}
+    scan_reference = {name: values[finite] for name, values in scan_reference.items()}
+    cone_angle_rate = cone_angle_rate[finite]
+
+    # This loader is the input boundary, so it is where the FMATCH dtypes are allocated:
+    # cast every pass-through variable to the float32 the definition declares (L1B may store
+    # them at wider precision) and the time coordinate to datetime64[ns]. Typing here means
+    # everything downstream inherits the right dtypes and conformance passes without an auto-cast.
+    result: dict[str, np.ndarray] = {
+        FMATCH_RADIOMETER_TIME_COORDINATE: radiometer_time.astype("datetime64[ns]"),
+    }
+    result.update({name: values.astype(np.float32) for name, values in passthrough.items()})
+    result.update(scan_reference)
+    result[FMATCH_CONE_ANGLE_RATE_KEY] = cone_angle_rate
+    return result
+
+
+def algorithm_version() -> str:
+    """Return the version recorded in a product's ``algorithm_version`` attribute.
+
+    Sourced from the installed ``libera_utils`` package metadata, so a written product
+    always names the exact release that produced it. Falls back to ``"0.0.0"`` only
+    when the package is not installed (e.g. running from a source tree without an
+    editable install), which should not happen inside the algorithm container.
+
+    Returns
+    -------
+    str
+        The installed ``libera_utils`` version.
+    """
+    try:
+        return version("libera_utils")
+    except PackageNotFoundError:  # pragma: no cover - not reachable in an installed environment
+        logger.warning("libera_utils package metadata not found; recording algorithm_version as 0.0.0")
+        return "0.0.0"
+
+
+class _as_local_path:
+    """Context manager yielding a real local filesystem path for a possibly-remote input file.
+
+    Reading an L1B product with :func:`xarray.open_dataset` (and the HDF4/HDF5 libraries underneath it)
+    requires a real file on a local filesystem, because those libraries seek within the file rather
+    than streaming it. A runner's manifest, however, may reference either local paths or S3 object
+    urls. For S3 inputs this downloads the object to a temporary directory that is removed on exit;
+    local inputs are yielded unchanged with no copy.
+
+    Kept in the runner so that ``libera_utils.io`` stays free of runner-specific plumbing; the SCENE-ID runner keeps its own identical helper for the same reason.
+
+    Parameters
+    ----------
+    source_path : str | pathlib.Path | cloudpathlib.S3Path
+        Path to the input file, local or in S3.
+    """
+
+    def __init__(self, source_path: str | Path | S3Path):
+        self._source_path = AnyPath(source_path)
+        self._tempdir: tempfile.TemporaryDirectory | None = None
+
+    def __enter__(self) -> Path:
+        if is_s3(self._source_path):
+            # Materialize the S3 object locally so file-based readers (netCDF4, HDF4/HDF5) can open it.
+            self._tempdir = tempfile.TemporaryDirectory()
+            local_path = Path(self._tempdir.name) / self._source_path.name
+            smart_copy_file(self._source_path, local_path)
+            return local_path
+        # Already local; hand back a plain pathlib.Path.
+        return Path(str(self._source_path))
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        if self._tempdir is not None:
+            self._tempdir.cleanup()

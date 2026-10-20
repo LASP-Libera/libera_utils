@@ -113,14 +113,6 @@ FROM libera-utils AS libera-utils-scene-id
 ENTRYPOINT ["libera-utils", "scene-id"]
 
 
-# CLI for the Camera Cloud Fraction algorithms from a manifest file. The LIBERA_CLOUD_FRACTION_VARIANT environment
-# variable, set per processing step, selects the variant (e.g. "cam", "cam-camtime").
-# ---------------------------------------------------------------------------------------------------------------------
-FROM libera-utils AS libera-utils-cloud-fraction
-
-ENTRYPOINT ["libera-utils", "cloud-fraction"]
-
-
 # CLI for the FMATCH algorithms from a manifest file. The LIBERA_FMATCH_VARIANT environment variable, set per
 # processing step, selects the variant (e.g. "cam", "imager-camtime").
 # -------------------------------------------------------------------------------------------------------------
