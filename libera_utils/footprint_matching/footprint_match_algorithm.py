@@ -46,9 +46,13 @@ Three environment variables are required at run time:
     below). ``TODO[LIBSDC-785]``: enforce strict availability once production
     staging is guaranteed.
 
+One optional variable tunes the run: ``FMATCH_WORKERS`` (also a ``config.json`` key,
+default 1) is the number of worker processes the external aggregation runs the
+footprints on; see :func:`~libera_utils.footprint_matching.product.aggregate_external_variables`.
+
 Ancillary inputs
 ----------------
-When a full ancillary tree is staged under ``FMATCH_ANCILLARY_PATH`` (one local
+When a full ancillary tree is staged under ``FMATCH_ANCILLARY_PATH`` (at least one local
 granule per active reader; see :func:`resolve_ancillary_inputs`), the
 runner hands those files to the product assembly so the external variables and the
 coverage/QA columns are computed by the PSF aggregation engine. When the tree is
@@ -75,7 +79,7 @@ import xarray as xr
 from cloudpathlib import AnyPath, S3Path
 
 # Importing the readers subpackage is what populates ReaderRegistry: every concrete
-# reader self-registers at class-definition time via GriddedDataReader.__init_subclass__,
+# reader self-registers at class-definition time via AncillaryReader.__init_subclass__,
 # which only happens once its module has been imported. Without this import the
 # registry would be empty and every mode would resolve to zero readers.
 import libera_utils.footprint_matching.readers  # noqa: F401  (imported for its registration side effect)
@@ -691,19 +695,17 @@ def run_footprint_matching(
 
 def _ancillary_source_file_paths(
     ancillary_inputs: dict[str, list[Path | S3Path]] | None,
-) -> dict[str, Path] | None:
-    """Reduce the resolved ancillary inventory to the one-file-per-reader map assembly needs.
+) -> dict[str, list[Path]] | None:
+    """Reduce the resolved ancillary inventory to the per-reader granule lists assembly needs.
 
     :func:`~libera_utils.footprint_matching.footprint_match_algorithm.resolve_ancillary_inputs` returns
-    a *list* of staged granules per reader, but the readers (and
-    :func:`~libera_utils.footprint_matching.tiling.build_tile_manager`) each take a
-    single ``file_path``. This collapses the inventory to one local file per reader,
-    returning ``None`` (so assembly falls back to placeholders) whenever the tree is
-    not usable as-is:
+    a *list* of staged granules per reader, and each reader takes the granule(s) of its
+    source for the period (a reader that reads one granule per period raises when handed
+    more). This keeps every staged granule, returning ``None`` (so assembly falls back to
+    placeholders) whenever the tree is not usable as-is:
 
     * no inventory at all (``FMATCH_ANCILLARY_PATH`` unset / nothing staged),
-    * any active reader with zero or more than one staged granule (multi-granule
-      readers are a follow-up; see the module ``TODO[LIBSDC-785]``), or
+    * any active reader with zero staged granules, or
     * any granule in S3 (readers need a real local file; S3 materialization for
       ancillary inputs is not implemented yet -- ``TODO[LIBSDC-785]``).
 
@@ -714,31 +716,30 @@ def _ancillary_source_file_paths(
 
     Returns
     -------
-    dict[str, pathlib.Path] or None
-        Reader-key -> single local file, or ``None`` when the tree is unusable.
+    dict[str, list[pathlib.Path]] or None
+        Reader-key -> local granule(s), or ``None`` when the tree is unusable.
     """
     if not ancillary_inputs:
         return None
-    source_file_paths: dict[str, Path] = {}
+    source_file_paths: dict[str, list[Path]] = {}
     for reader_key, files in ancillary_inputs.items():
-        if len(files) != 1:
+        if not files:
             logger.warning(
-                "Ancillary source %r has %d staged granule(s); expected exactly 1. Writing external variables as "
-                "placeholders for this product.",
+                "Ancillary source %r has no staged granule. Writing external variables as placeholders for this "
+                "product.",
                 reader_key,
-                len(files),
             )
             return None
-        only_file = files[0]
-        if is_s3(only_file):
+        remote = [f for f in files if is_s3(f)]
+        if remote:
             logger.warning(
                 "Ancillary source %r is staged in S3 (%s); local materialization of ancillary granules is not "
                 "implemented yet. Writing external variables as placeholders.",
                 reader_key,
-                only_file,
+                remote[0],
             )
             return None
-        source_file_paths[reader_key] = Path(str(only_file))
+        source_file_paths[reader_key] = [Path(str(f)) for f in files]
     return source_file_paths
 
 
@@ -810,7 +811,7 @@ def create_and_write_data_product(
     # aggregation path needs; None means "aggregate nothing, placeholder those columns".
     source_file_paths = _ancillary_source_file_paths(ancillary_inputs)
     if source_file_paths is not None:
-        provenance.extend(path.name for path in source_file_paths.values())
+        provenance.extend(path.name for paths in source_file_paths.values() for path in paths)
         logger.info("Aggregating external variables from %d staged ancillary source(s)", len(source_file_paths))
 
     logger.info("Writing %s data product for input %s", config.output_product_id.value, input_file_name)
