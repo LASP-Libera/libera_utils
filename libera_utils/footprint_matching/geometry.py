@@ -763,11 +763,41 @@ def psf_ground_radius_km(
     # picks the larger of the asymmetric front/back along-scan reaches.
     angular_deg = max(math.hypot(conservative_along_scan_extent(extent), extent.beta_max_deg), fov_halfangle_deg)
     vza_rad = math.radians(min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG))
+    return (
+        slant_range_km(satellite_radius_km, viewing_zenith_deg)
+        * math.tan(math.radians(angular_deg))
+        / math.cos(vza_rad)
+    )
+
+
+def slant_range_km(satellite_radius_km: float, viewing_zenith_deg: float) -> float:
+    """Distance from the satellite to the ground point seen at a viewing zenith, in km.
+
+    On a sphere of the WGS84 equatorial radius ``R`` (:data:`WGS84_SEMI_MAJOR_AXIS_KM`),
+    a satellite at distance ``R_s`` from Earth's center sees a point at viewing zenith
+    ``v`` from ``rho = sqrt(R_s^2 - (R sin v)^2) - R cos v``. The viewing zenith is
+    clamped at :data:`_MAX_VZA_FOR_ELONGATION_DEG`, as in :func:`psf_ground_radius_km`.
+    The PSF weighers use it to turn a source's ground sample spacing into an angular
+    bin size for the coverage reference grid.
+
+    Parameters
+    ----------
+    satellite_radius_km : float
+        Spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+    viewing_zenith_deg : float
+        Viewing zenith angle, degrees.
+
+    Returns
+    -------
+    float
+        Slant range in km.
+    """
+    vza_rad = math.radians(min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG))
     earth_radius_km = WGS84_SEMI_MAJOR_AXIS_KM
-    slant_range_km = math.sqrt(
-        satellite_radius_km**2 - (earth_radius_km * math.sin(vza_rad)) ** 2
-    ) - earth_radius_km * math.cos(vza_rad)
-    return slant_range_km * math.tan(math.radians(angular_deg)) / math.cos(vza_rad)
+    return math.sqrt(satellite_radius_km**2 - (earth_radius_km * math.sin(vza_rad)) ** 2) - earth_radius_km * math.cos(
+        vza_rad
+    )
 
 
 # ---------------------------------------------------------------------------

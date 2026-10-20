@@ -114,7 +114,7 @@ class BoundingBox(NamedTuple):
         spans the full ``-180`` to ``180``.
     wraps_dateline : bool
         True when the box crosses the antimeridian, i.e. it is given in the [0, 360)
-        form with ``lon_max > 180``. The TileManager issues two sub-requests.
+        form with ``lon_max > 180``. The reader base class queries both halves.
     is_polar : bool
         True when the box reaches 85° latitude or beyond, or encloses a pole (then
         latitude is pinned to +/-90 and longitude spans -180 to 180). Advisory: a
@@ -144,66 +144,200 @@ class BoundingBox(NamedTuple):
         )
 
 
-class TileKey(NamedTuple):
-    """Immutable, hashable cache key for a spatial tile.
+class TimeMatch(enum.Enum):
+    """How a reader selects, in time, the samples it serves for one footprint.
 
-    A three-element tuple of (source, lat_idx, lon_idx) used by the TileManager
-    as a dict key in the LRU cache and by readers to determine which geographic
-    region to load.
+    A staged 24 h period can hold several observations of the same ground location: a
+    swath product sees it on two or more passes, a reanalysis holds 24 hourly steps.
+    Each reader declares one policy, applied after the geographic (bounding box) query.
+    Time selection is a *selection*, never an average or an interpolation, so it does
+    not change any value a sample carries.
 
     Attributes
     ----------
-    source : str
-        Registry key of the reader that owns this tile (e.g., ``"igbp"``).
-    lat_idx : int
-        Tile row index in the global tile grid (0-based).
-    lon_idx : int
-        Tile column index in the global tile grid (0-based).
+    DAILY
+        The staged granule is a daily composite, climatology or static map (IGBP land
+        cover, NISE snow/ice, VIIRS BRDF, VIIRS Deep Blue AOD, VIIRS L3 cloud). No
+        per-sample selection; every sample in the box is served regardless of time.
+    NEAREST_STEP
+        The source is a time series of global grids (ERA5 hourly steps). The single
+        step whose time is nearest the footprint time is served, with no interpolation
+        between steps. A footprint farther than ``MAX_TIME_OFFSET`` from every step gets
+        no samples.
+    NEAREST_PASS
+        The source is swath or point data with a time per sample (CERES SSF, CLDPIX).
+        Of the samples in the box, those within ``PASS_WINDOW`` of the smallest
+        |sample time - footprint time| are served: the nearest pass, whole, and no
+        other pass. A footprint whose nearest sample is farther than
+        ``MAX_TIME_OFFSET`` gets no samples.
     """
 
-    source: str
-    lat_idx: int
-    lon_idx: int
+    DAILY = "daily"
+    NEAREST_STEP = "nearest_step"
+    NEAREST_PASS = "nearest_pass"  # noqa: S105 - an enum label (a satellite pass), not a credential
 
 
-@dataclass
-class GridTile:
-    """Rectangular region of gridded data with coordinate arrays.
+@dataclass(frozen=True)
+class GridSamples:
+    """A reader's native data on a regular latitude/longitude grid.
 
-    The data array is 2-D (n_lats, n_lons) for single-variable readers and
-    3-D (n_variables, n_lats, n_lons) for multi-variable readers (ERA5, VIIRS).
-    The variable ordering in the first axis of a 3-D tile matches the order
-    of ``VariableSpec`` entries in the reader's ``VARIABLES`` class attribute.
+    The native form of a gridded source (ERA5, VIIRS L3 products). The reader base class
+    answers a bounding-box query by slicing the axes, so the array is never flattened
+    to per-sample coordinates until a query selects a (small) region.
 
     Attributes
     ----------
+    lat_axis : np.ndarray
+        1-D ascending latitudes of the rows, degrees.
+    lon_axis : np.ndarray
+        1-D ascending longitudes of the columns, degrees, in [-180, 180].
     data : np.ndarray
-        Gridded values. Shape (n_lat, n_lon) or (n_var, n_lat, n_lon).
-    lats : np.ndarray
-        1-D latitude coordinate array in degrees for the row axis of ``data``.
-    lons : np.ndarray
-        1-D longitude coordinate array in degrees for the column axis of ``data``.
-    bounds : BoundingBox
-        Geographic extent of this tile.
-    source : str
-        Reader registry key that produced this tile.
-    timestamp_source : str or None
-        For cloud-property products: ``'radiometer'`` or ``'camera'``, indicating
-        which instrument's observation time governs the data. ``None`` for surface
-        and static ancillary products.
+        ``(n_var, n_lat, n_lon)`` float32 values, NaN where the source has no value.
+        Axis 0 follows the reader's ``VARIABLES`` order.
     """
 
+    lat_axis: np.ndarray
+    lon_axis: np.ndarray
     data: np.ndarray
+
+    def __post_init__(self) -> None:
+        if self.data.ndim != 3:
+            raise ValueError(f"GridSamples.data must be (n_var, n_lat, n_lon); got shape {self.data.shape}.")
+        if self.data.shape[1:] != (self.lat_axis.size, self.lon_axis.size):
+            raise ValueError(
+                f"GridSamples.data shape {self.data.shape} does not match the axes "
+                f"({self.lat_axis.size} latitudes, {self.lon_axis.size} longitudes)."
+            )
+        for name, axis in (("lat_axis", self.lat_axis), ("lon_axis", self.lon_axis)):
+            if axis.size > 1 and np.any(np.diff(axis) <= 0):
+                raise ValueError(f"GridSamples.{name} must be strictly ascending.")
+
+
+@dataclass(frozen=True)
+class PointSamples:
+    """A reader's native data as geolocated points.
+
+    The native form of swath, footprint and projected-grid sources (CERES SSF and
+    CLDPIX, MODIS sinusoidal IGBP tiles, NISE EASE-Grid pixels): each sample carries its
+    own latitude and longitude, and for a ``NEAREST_PASS`` source its own time.
+
+    Attributes
+    ----------
+    lats, lons : np.ndarray
+        1-D ``(n,)`` float64 sample coordinates, degrees; longitude in [-180, 180].
+        Samples with a non-finite coordinate are dropped by the reader base class.
+    values : np.ndarray
+        ``(n_var, n)`` float32 values, NaN where the source has no value. Axis 0 follows
+        the reader's ``VARIABLES`` order.
+    times : np.ndarray or None
+        1-D ``(n,)`` ``datetime64[ns]`` observation time per sample. Required for a
+        ``NEAREST_PASS`` reader; ``None`` otherwise.
+    spacing_km : float or None
+        The samples' native spacing, km, measured on this body of data (see
+        :func:`~libera_utils.footprint_matching.readers._points.neighbour_spacing_km`).
+        ``None`` means the reader's declared ``RESOLUTION_KM`` applies. A swath that is
+        subsampled on delivery is served with its true spacing, so the coverage measure
+        credits each sample with the cell it really stands for.
+    """
+
     lats: np.ndarray
     lons: np.ndarray
-    bounds: BoundingBox
+    values: np.ndarray
+    times: np.ndarray | None = None
+    spacing_km: float | None = None
+
+    def __post_init__(self) -> None:
+        n = self.lats.size
+        if self.lons.shape != (n,) or self.lats.ndim != 1:
+            raise ValueError(f"PointSamples.lats {self.lats.shape} and lons {self.lons.shape} must both be (n,).")
+        if self.values.ndim != 2 or self.values.shape[1] != n:
+            raise ValueError(f"PointSamples.values must be (n_var, {n}); got shape {self.values.shape}.")
+        if self.times is not None and self.times.shape != (n,):
+            raise ValueError(f"PointSamples.times must be ({n},); got shape {self.times.shape}.")
+
+
+@dataclass(frozen=True)
+class SampleSet:
+    """The native samples of one source that fall in one footprint's query.
+
+    What a reader hands the PSF weigher: every sample inside the footprint's bounding
+    box that also passes the reader's :class:`TimeMatch` selection, at its own native
+    location, with no averaging, binning or interpolation applied. The weigher assigns
+    each sample a PSF weight and the aggregation engine reduces the weighted samples to
+    one value per variable.
+
+    Attributes
+    ----------
+    lats, lons : np.ndarray
+        1-D ``(n,)`` float64 sample coordinates, degrees.
+    values : np.ndarray
+        ``(n_var, n)`` float32 values in the reader's ``VARIABLES`` order, NaN where the
+        source has no value at that sample.
+    times : np.ndarray or None
+        1-D ``(n,)`` ``datetime64[ns]`` per-sample observation times for a
+        ``NEAREST_PASS`` source; ``None`` for the others.
+    source : str
+        Reader registry key that produced the samples.
+    bounds : BoundingBox
+        The query box the samples were selected for.
+    timestamp_source : str or None
+        For cloud-property products: ``'radiometer'`` or ``'camera'``, the instrument
+        whose observation time governs the data. ``None`` for surface and static
+        ancillary products.
+    resolution_km : float
+        The native cell size the samples stand for, km: the reader's declared
+        ``RESOLUTION_KM``, or the spacing measured on the granule when the reader
+        measures it. The weigher sizes its coverage measure from it.
+    """
+
+    lats: np.ndarray
+    lons: np.ndarray
+    values: np.ndarray
+    times: np.ndarray | None
     source: str
+    bounds: BoundingBox
     timestamp_source: str | None = None
+    resolution_km: float = float("nan")
 
     @property
-    def nbytes(self) -> int:
-        """Estimated memory footprint in bytes, used for LRU cache eviction decisions."""
-        return int(self.data.nbytes + self.lats.nbytes + self.lons.nbytes)
+    def n_samples(self) -> int:
+        """Number of samples in the set (zero for an empty query)."""
+        return int(self.lats.size)
+
+    @classmethod
+    def empty(
+        cls,
+        source: str,
+        bounds: BoundingBox,
+        n_var: int,
+        timestamp_source: str | None = None,
+        resolution_km: float = float("nan"),
+    ) -> SampleSet:
+        """Return a zero-sample set, the result of a query that selected nothing.
+
+        Parameters
+        ----------
+        source : str
+            Reader registry key.
+        bounds : BoundingBox
+            The query box.
+        n_var : int
+            Number of variables the reader serves, so ``values`` keeps its first axis.
+        timestamp_source : str, optional
+            See the class attributes.
+        resolution_km : float, optional
+            See the class attributes.
+        """
+        return cls(
+            lats=np.empty(0, dtype=np.float64),
+            lons=np.empty(0, dtype=np.float64),
+            values=np.empty((n_var, 0), dtype=np.float32),
+            times=None,
+            source=source,
+            bounds=bounds,
+            timestamp_source=timestamp_source,
+            resolution_km=resolution_km,
+        )
 
 
 @dataclass(frozen=True)
@@ -228,6 +362,9 @@ class RadiometerFootprint:
     ----------
     bbox : BoundingBox
         Geographic box enclosing the footprint's PSF ground contour.
+    time : np.datetime64
+        Radiometer observation time (L1B ``RADIOMETER_TIME``). The readers' time
+        selection (:class:`TimeMatch`) matches ancillary samples to it.
     latitude, longitude : float
         Boresight centroid (L1B ``Latitude``/``Longitude``), degrees.
     viewing_zenith_angle : float
@@ -255,6 +392,7 @@ class RadiometerFootprint:
     """
 
     bbox: BoundingBox
+    time: np.datetime64
     latitude: float
     longitude: float
     viewing_zenith_angle: float
@@ -269,8 +407,8 @@ class RadiometerFootprint:
 class VariableSpec:
     """Metadata describing a single output variable provided by a reader.
 
-    Used by the TileManager and aggregation engine to know what data a reader
-    supplies, how to aggregate it, and in which operational modes it is active.
+    Used by the reader base class and the aggregation engine to know what data a
+    reader supplies, how to aggregate it, and in which operational modes it is active.
 
     Attributes
     ----------

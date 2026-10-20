@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `footprint_matching.types.SampleSet`, `GridSamples`, `PointSamples` and `TimeMatch`: a reader's native samples inside a footprint's box (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), the two native forms a reader loads, and the policy by which a reader selects samples in time (`DAILY`, `NEAREST_STEP`, `NEAREST_PASS`).
+- `footprint_matching.geometry.slant_range_km`, the satellite-to-ground distance at a viewing zenith.
+
+### Changed
+
+- **BREAKING:** `footprint_matching.types` no longer defines `TileKey` and `GridTile`. `RadiometerFootprint` carries a required `time`, which the readers match ancillary samples to.
+
 ## [5.12.0] - 2026-10-16
 
 ### Added
