@@ -2,8 +2,9 @@
 
 These exercise the pure strategy functions against hand-computed values, the
 NaN / zero-weight exclusion rules, the categorical mode / ranked-mode logic, the
-coverage bookkeeping, and the dispatcher's error handling. They do not query a reader
-or read data -- that is covered by the integration test.
+coverage bookkeeping, the dispatcher's error handling, and how
+``_map_product_specs`` maps the registered readers' product specs to read planes. They
+do not query a reader or read data -- that is covered by the integration test.
 """
 
 from __future__ import annotations
@@ -13,7 +14,11 @@ import math
 import numpy as np
 import pytest
 
+# Importing the readers subpackage registers the built-in readers that
+# TestProductSpecPlaneMapping looks up.
+import libera_utils.footprint_matching.readers  # noqa: F401
 from libera_utils.footprint_matching import aggregation as agg
+from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     OperationalMode,
@@ -338,3 +343,27 @@ class TestAggregateSampleVariablesParity:
         weight_field = WeightField(weights=np.empty(0), total_energy=0.0, max_radius_km=100.0, coverage=0.0)
         got = agg.aggregate_sample_variables(_ParityReader, samples, weight_field)
         assert all(math.isnan(v) for v in got.values())
+
+
+class TestProductSpecPlaneMapping:
+    """_map_product_specs must associate every product spec with a read plane."""
+
+    def test_igbp_ranked_scenes_map_to_the_surface_type_plane(self):
+        igbp = ReaderRegistry.get("igbp")
+        mapping = dict(agg._map_product_specs(igbp))
+        # IGBP reads a single plane (surface_type at index 0); every product spec
+        # (surface_type + its ranked primary/secondary/tertiary extras) maps to it.
+        by_name = {spec.name: idx for spec, idx in mapping.items()}
+        assert by_name["surface_type"] == 0
+        assert by_name["surface_type_primary"] == 0
+        assert by_name["surface_type_secondary"] == 0
+        assert by_name["surface_type_tertiary"] == 0
+
+    def test_std_companions_map_to_their_parent_plane(self):
+        era5 = ReaderRegistry.get("era5")
+        mapping = {spec.name: idx for spec, idx in agg._map_product_specs(era5)}
+        # wind_u10 is read plane 0, wind_v10 is read plane 1; each std companion
+        # shares its parent's plane.
+        assert mapping["wind_u10"] == mapping["wind_u10_standard_deviation"]
+        assert mapping["wind_v10"] == mapping["wind_v10_standard_deviation"]
+        assert mapping["wind_u10"] != mapping["wind_v10"]
