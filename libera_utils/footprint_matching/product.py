@@ -26,7 +26,7 @@ variable is filled by one of three routes:
 
 A placeholder is *structurally* correct (declared dtype, shape and attributes)
 but numerically meaningless. Floating-point placeholders are filled with ``NaN``
-and integer placeholders with :data:`_INTEGER_FILL_VALUE` (``-1``), or ``0`` for a
+and integer placeholders with :data:`FMATCH_INTEGER_FILL_VALUE` (``-1``), or ``0`` for a
 bitmask; see
 :func:`_fill_placeholder_variables`.
 
@@ -199,8 +199,9 @@ _CAMERA_TIMESCALE_MODES = frozenset({OperationalMode.CAM_CAMTIME, OperationalMod
 # value in each of them (IGBP surface types 1-17, VIIRS Deep Blue aerosol types 0-7, CLDPIX cloud
 # mask 0-3 and phase 1-5, as the igbp, aod and cldpix readers define them, and camera pixel
 # indices from 0), so the fill sits below every domain. Integer bitmasks are filled with 0 instead,
-# meaning no flag set (see :func:`_fill_value_for`).
-_INTEGER_FILL_VALUE: int = -1
+# meaning no flag set (see :func:`_fill_value_for`). Public because readers of the FMATCH products
+# (e.g. SCENE-ID) must recognize it: the product definitions declare no _FillValue for these columns.
+FMATCH_INTEGER_FILL_VALUE: int = -1
 
 
 def fmatch_time_variable(mode: OperationalMode) -> str:
@@ -1098,7 +1099,7 @@ def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
     The fill is the definition's declared ``_FillValue`` when present, and otherwise ``NaN``
     for floating-point definitions. An integer bitmask (a definition declaring
     ``flag_masks``, such as ``q_flags``) takes ``0``, meaning no flag set. Any other integer
-    takes :data:`_INTEGER_FILL_VALUE`, because 0 is a real category or pixel index there.
+    takes :data:`FMATCH_INTEGER_FILL_VALUE`, because 0 is a real category or pixel index there.
     Used both for not-yet-computed placeholder variables and for the padded cells of the
     camera-timescale grid (images segmented into fewer subsections than the widest image).
 
@@ -1120,7 +1121,7 @@ def _fill_value_for(variable_definition: Any) -> tuple[np.dtype, Any]:
         return dtype, np.nan
     if "flag_masks" in variable_definition.attributes:
         return dtype, 0
-    return dtype, _INTEGER_FILL_VALUE
+    return dtype, FMATCH_INTEGER_FILL_VALUE
 
 
 def _placeholder_variable_array(variable_definition: Any, shape: int | tuple[int, ...]) -> np.ndarray:
