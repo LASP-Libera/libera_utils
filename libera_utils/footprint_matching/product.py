@@ -18,8 +18,7 @@ variable is filled by one of three routes:
   :func:`compute_derived_viewing_geometry`) is always calculated, and the external
   aggregated variables (:func:`aggregate_external_variables`) plus the coverage/QA
   columns (``psf_coverage_fraction`` / ``q_flags``) are calculated whenever staged
-  ancillary inputs are supplied - the PSF aggregation over
-  tiling/weighting/geometry.
+  ancillary inputs are supplied - the PSF aggregation of each source's native samples.
 * **Placeholders** - a declared variable no input produced: the external columns
   when the caller opts in with ``allow_placeholders=True`` rather than staging
   ancillary data, or a source such as FLASHFlux that has no reader.
@@ -46,6 +45,8 @@ libera_utils.footprint_matching._runner : Manifest-driven runners that call into
 from __future__ import annotations
 
 import logging
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -56,7 +57,7 @@ from libera_utils.config import config
 from libera_utils.footprint_matching.aggregation import (
     ACCEPT_COVERAGE_THRESHOLD,
     PARTIAL_COVERAGE_THRESHOLD,
-    aggregate_tile_variables,
+    aggregate_sample_variables,
 )
 from libera_utils.footprint_matching.geometry import (
     L1B_FILL_VALUE,
@@ -65,11 +66,7 @@ from libera_utils.footprint_matching.geometry import (
     compute_viewing_frames,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
-from libera_utils.footprint_matching.tiling import (
-    DEFAULT_MAX_CACHE_BYTES,
-    TileManager,
-    build_tile_manager,
-)
+from libera_utils.footprint_matching.sources import AncillarySources, build_sources
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     FmatchCoverageFlag,
@@ -81,7 +78,6 @@ from libera_utils.footprint_matching.weighting import (
     AngularPSFWeigher,
     PixelWeigher,
     RadialWeigher,
-    WeightField,
 )
 from libera_utils.io.netcdf import write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -93,7 +89,7 @@ if TYPE_CHECKING:
     from xarray import Dataset
 
     from libera_utils.footprint_matching.geometry import ViewingFrame
-    from libera_utils.footprint_matching.types import GridTile, PseudoFootprint
+    from libera_utils.footprint_matching.types import PseudoFootprint
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
 logger = logging.getLogger(__name__)
@@ -173,6 +169,27 @@ _CAMERA_NOMINAL_SATELLITE_RADIUS_KM: float = WGS84_SEMI_MAJOR_AXIS_KM + 835.0
 # must not drop an otherwise-good Earth-viewing footprint).
 L1B_CONE_ANGLE_RATE_VARIABLE: str = "Cone_Angle_Rate"
 FMATCH_CONE_ANGLE_RATE_KEY: str = "cone_angle_rate"
+# Key of the radiometer observation time in the L1B input map (and the product's time
+# coordinate for the radiometer-timescale modes). Each footprint carries it so the readers
+# can match ancillary samples to it in time.
+RADIOMETER_TIME_KEY: str = "RADIOMETER_TIME"
+# Configuration key for the number of worker processes the external aggregation runs on.
+# ``1`` (the default in ``config.json``) keeps everything in the calling process.
+FMATCH_WORKERS_CONFIG_KEY: str = "FMATCH_WORKERS"
+# Chunks per worker: footprints are split into this many contiguous ranges per worker so
+# a slow chunk (a stepped source reloading, a dense swath) does not idle the others.
+_CHUNKS_PER_WORKER: int = 4
+# Below this many footprints the pool's start-up costs more than it saves.
+_MIN_FOOTPRINTS_PER_WORKER: int = 50
+
+# The sources a forked worker inherits from its parent (copy-on-write): set by
+# _aggregate_in_parallel right before the pool starts, cleared after. A worker started by
+# spawn sees None here and builds its own sources from the staged paths (see
+# _worker_sources).
+_FORK_SOURCES: AncillarySources | None = None
+# Sources a spawned worker built, kept for the next chunk it is handed. Keyed by the mode
+# and the staged paths so a worker reused for another run never serves stale readers.
+_WORKER_SOURCES_CACHE: dict[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], AncillarySources] = {}
 
 # The radiometer-timescale counterpart of _CAMTIME_SEGMENTATION_VARIABLES: the product columns copied straight from L1B.
 _RADIOMETER_L1B_VARIABLES: frozenset[str] = frozenset(L1B_PASSTHROUGH_VARIABLES)
@@ -374,26 +391,26 @@ def _batch_viewing_frames(geoms: Sequence[_FootprintGeometry]) -> ViewingFrame:
 def aggregate_external_variables(
     mode: OperationalMode,
     footprints: Sequence[Any],
-    tile_manager: TileManager | None = None,
+    sources: AncillarySources | None = None,
     *,
-    source_file_paths: dict[str, Path] | None = None,
-    max_cache_bytes: int = DEFAULT_MAX_CACHE_BYTES,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
     weigher: PixelWeigher | None = None,
     return_coverage: bool = False,
-    prefetch_lookahead: int = 1,
+    n_workers: int | None = None,
 ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
-    """Aggregate every active reader's gridded data to one value per footprint.
+    """Aggregate every active reader's native samples to one value per footprint.
 
     For the given operational mode this selects the active readers via
-    ``ReaderRegistry.get_readers_for_mode(mode)``, and for each footprint loads the
-    merged tile overlapping it **through the caching**
-    :class:`~libera_utils.footprint_matching.tiling.TileManager`, weights each grid
-    cell with the PSF ``weigher``, and applies each variable's aggregation strategy
-    (weighted mean / mode / log-mean / std / ranked scene) to collapse the
-    fine-resolution pixels to a single value per footprint. The active reader set -
-    and therefore the keys of the returned dict - grows with the mode's latency
-    (e.g. CAM has era5, igbp, nise, viirs_brdf, viirs_cloud; IMAGER additionally has
-    era5_pressure, viirs_aod, and the RBSP ssf and cldpix fields).
+    ``ReaderRegistry.get_readers_for_mode(mode)``, and for each footprint asks each
+    source (:class:`~libera_utils.footprint_matching.sources.AncillarySources`) for
+    the native samples inside the footprint's bounding box matched to its time,
+    weights each sample with the PSF ``weigher`` at the sample's own location, and
+    applies each variable's aggregation strategy (weighted mean / mode / log-mean /
+    std / ranked scene) to collapse the samples to a single value per footprint. No
+    sample is averaged, binned or interpolated before the weigher sees it. The active
+    reader set - and therefore the keys of the returned dict - grows with the mode's
+    latency (e.g. CAM has era5, igbp, nise, viirs_brdf, viirs_cloud; IMAGER
+    additionally has era5_pressure, viirs_aod, and the RBSP ssf and cldpix fields).
     Per-spec gating also applies (see below).
 
     Every output variable is named ``<source_key>_<spec_name>`` (e.g.
@@ -404,10 +421,14 @@ def aggregate_external_variables(
     ``required_mode`` rank rule, or an exact ``only_modes`` pin (e.g. the extended
     SSF cloud/aerosol/albedo fields are aggregated for FMATCH-IMAGER only).
 
-    Processing is done **one footprint at a time** (rather than gathering every
-    footprint's tiles up front) so only the current footprint's merged tiles are
-    held in memory -- the LRU cache still serves the shared tiles adjacent
-    footprints reuse, keeping the working set bounded.
+    Processing is done one footprint at a time, so only the current footprint's
+    samples are held beyond what each reader holds of its source. With ``n_workers``
+    above one the footprints are split into contiguous along-track chunks and the chunks
+    run in a process pool; the result is identical to the single-process run (every
+    footprint is still processed in time order within its chunk, and a stepped source
+    reloads its step at most once per chunk boundary). On Linux the pool is forked after
+    the sources are loaded, so the workers share one copy of every source; where
+    forking is unavailable each worker builds its own sources from ``source_file_paths``.
 
     The PSF weigher is swappable via ``weigher``. This function keeps the boresight
     **radial stand-in** (:class:`~libera_utils.footprint_matching.weighting.RadialWeigher`)
@@ -424,41 +445,39 @@ def aggregate_external_variables(
     ``return_coverage`` is set, returns it alongside the values, but turning coverage
     into QA flags (or discarding a footprint) is the caller's job (see
     :func:`_merge_coverage_qa`). Per-footprint coverage is the fraction of the PSF's
-    total in-contour weight backed by usable data, taken as the **minimum** across the
-    active sources so a footprint is scored no better than its worst-covered input.
+    in-contour energy backed by a usable sample, measured by the weigher on its
+    reference grid (see :class:`~libera_utils.footprint_matching.weighting.WeightField`),
+    taken as the **minimum** across the active sources so a footprint is scored no
+    better than its worst-covered input.
 
     Parameters
     ----------
     mode : OperationalMode
         Operational mode selecting the active readers and product variables.
     footprints : Sequence[Any]
-        Footprints to aggregate over, each exposing a ``bbox`` BoundingBox (and,
-        when available, ``latitude``/``longitude``/``altitude``/
-        ``viewing_zenith_angle`` for the weigher). For cache locality the caller
-        should pass them sorted along-track (the orchestrator's responsibility).
-    tile_manager : TileManager, optional
-        A pre-built manager to fetch tiles from. If ``None``, one is constructed from
-        ``source_file_paths`` via :func:`build_tile_manager`.
-    source_file_paths : dict[str, Path], optional
-        Reader-key → file-path map used to build a TileManager when one is not
+        Footprints to aggregate over, each exposing a ``bbox`` BoundingBox, a ``time``
+        (``np.datetime64``) and the geometry the weigher reads (``latitude``,
+        ``longitude``, ``viewing_zenith_angle`` and, for the angular weigher, the
+        ephemeris). Pass them in time order: a stepped source reloads its grid
+        whenever the nearest step changes.
+    sources : AncillarySources, optional
+        Pre-built sources to query. If ``None``, they are constructed from
+        ``source_file_paths`` via :func:`~libera_utils.footprint_matching.sources.build_sources`.
+    source_file_paths : dict[str, Sequence[Path] | Path], optional
+        Reader-key -> staged granule(s) map used to build the sources when none are
         supplied. Required in that case.
-    max_cache_bytes : int, optional
-        Byte budget for the constructed cache. Defaults to
-        :data:`~libera_utils.footprint_matching.tiling.DEFAULT_MAX_CACHE_BYTES`.
     weigher : PixelWeigher, optional
-        The per-cell PSF weight provider. Defaults to a fresh
+        The per-sample PSF weight provider. Defaults to a fresh
         :class:`~libera_utils.footprint_matching.weighting.RadialWeigher`.
     return_coverage : bool, optional
         When ``True``, also return a per-footprint coverage array. Defaults to
         ``False`` (return only the values dict).
-    prefetch_lookahead : int, optional
-        When a ``tile_manager`` is built here (i.e. from ``source_file_paths``), enable
-        background look-ahead tile prefetch with this many footprints of look-ahead, so
-        reader I/O overlaps the weighting/aggregation compute (see
-        :class:`~libera_utils.footprint_matching.tiling.TileManager`). Defaults to ``1``
-        (prefetch on); pass ``0`` to keep the single-threaded behaviour. Ignored when a
-        ``tile_manager`` is supplied -- that manager's own ``prefetch_lookahead`` setting
-        governs instead. The prefetch is a pure cache warm-up and never changes the result.
+    n_workers : int, optional
+        Worker processes to run the footprints on. ``None`` (the default) reads the
+        ``FMATCH_WORKERS`` configuration key (``config.json``, overridable through the
+        environment variable of the same name); ``1`` runs in the calling process. Fewer
+        than :data:`_MIN_FOOTPRINTS_PER_WORKER` footprints per worker also runs in the
+        calling process, since the pool would cost more than it saves.
 
     Returns
     -------
@@ -471,56 +490,47 @@ def aggregate_external_variables(
         written. With
         ``return_coverage=True``: a ``(values, coverage)`` tuple, where
         ``coverage`` is a 1-D float array in ``[0, 1]`` indexed by footprint (the
-        minimum source coverage; ``0`` where the footprint had no covered weight).
+        minimum source coverage; ``0`` where the footprint had no covered energy).
 
     Raises
     ------
     ValueError
-        If neither ``tile_manager`` nor ``source_file_paths`` is supplied; if ``weigher``
+        If neither ``sources`` nor ``source_file_paths`` is supplied; if ``weigher``
         needs a viewing frame and a footprint carries no L1B ephemeris; if a footprint
-        has no finite viewing zenith angle; or if a weight field's shape does not match
-        its tile's data grid.
+        has no finite viewing zenith angle; if a footprint's time is NaT and a
+        source selects by time; if ``n_workers`` is below one; or if the pool must be
+        spawned (no fork on this platform) and ``source_file_paths`` was not given, so a
+        worker cannot build its sources.
     """
-    # Track whether we own the manager: a manager we build here (and its prefetch thread
-    # pool) must be shut down before returning; a caller-supplied manager is theirs.
-    created_here = tile_manager is None
-    if tile_manager is None:
+    if sources is None:
         if source_file_paths is None:
-            raise ValueError("aggregate_external_variables requires either a tile_manager or source_file_paths.")
-        tile_manager = build_tile_manager(
-            mode, source_file_paths, max_cache_bytes=max_cache_bytes, prefetch_lookahead=prefetch_lookahead
-        )
+            raise ValueError("aggregate_external_variables requires either sources or source_file_paths.")
+        sources = build_sources(mode, source_file_paths)
 
-    try:
-        return _run_aggregation(mode, footprints, tile_manager, weigher, return_coverage)
-    finally:
-        if created_here:
-            # Stop the background prefetch pool (no-op when prefetch is disabled).
-            tile_manager.shutdown()
-
-
-def _run_aggregation(
-    mode: OperationalMode,
-    footprints: Sequence[Any],
-    tile_manager: TileManager,
-    weigher: PixelWeigher | None,
-    return_coverage: bool,
-) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
-    """Body of :func:`aggregate_external_variables` (see it for semantics).
-
-    Split out so the caller can own the ``tile_manager`` lifecycle (shutting down the
-    prefetch pool of a manager it constructed) in a single ``try/finally`` regardless of
-    which return branch runs.
-    """
     if weigher is None:
         weigher = RadialWeigher()
 
     footprints = list(footprints)
     n_footprints = len(footprints)
 
-    # Prefetch the next `lookahead` footprints' tiles in the background so reader I/O
-    # overlaps this segment's compute (no-op / 0 when the manager has prefetch disabled).
-    lookahead = tile_manager.prefetch_lookahead
+    if n_workers is None:
+        n_workers = int(config.get(FMATCH_WORKERS_CONFIG_KEY))
+    if n_workers < 1:
+        raise ValueError(f"n_workers must be at least 1, got {n_workers}.")
+    if n_workers > 1 and n_footprints >= _MIN_FOOTPRINTS_PER_WORKER * n_workers:
+        return _aggregate_in_parallel(mode, footprints, sources, source_file_paths, weigher, return_coverage, n_workers)
+    return _aggregate_footprints(mode, footprints, sources, weigher, return_coverage)
+
+
+def _aggregate_footprints(
+    mode: OperationalMode,
+    footprints: list[Any],
+    sources: AncillarySources,
+    weigher: PixelWeigher,
+    return_coverage: bool,
+) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
+    """Run the per-footprint loop of :func:`aggregate_external_variables` in this process."""
+    n_footprints = len(footprints)
 
     # Extract each footprint's viewing geometry once (attribute reads, cheap) rather than
     # inside the per-source loop. Build every on-Earth footprint's viewing frame in one
@@ -540,13 +550,12 @@ def _run_aggregation(
             frames = _batch_viewing_frames([geoms[i] for i in on_earth])
             frame_rows = {i: row for row, i in enumerate(on_earth)}
 
-    # Drive the loop off the TileManager's *active sources* rather than re-deriving
-    # the registry set for the mode: a manager is constructed with only the readers
-    # active for its mode, and this also lets a caller pass a manager holding a
-    # subset of sources. Each source's reader *class* (needed for
-    # product_variable_specs() and the INSTRUMENT token) is resolved from the
-    # registry by key.
-    reader_classes = {key: ReaderRegistry.get(key) for key in tile_manager.sources}
+    # Drive the loop off the sources' *active* readers rather than re-deriving the
+    # registry set for the mode: the sources are constructed with only the readers
+    # active for their mode, and this also lets a caller pass a subset of sources. Each
+    # source's reader *class* (needed for product_variable_specs() and the INSTRUMENT
+    # token) is resolved from the registry by key.
+    reader_classes = {key: ReaderRegistry.get(key) for key in sources.sources}
 
     # Pre-allocate one NaN-filled output array per product variable. Integer
     # (categorical) variables are held as float64 so a footprint with no usable data
@@ -574,7 +583,7 @@ def _run_aggregation(
         plan[key] = entries
 
     # Per-footprint coverage accumulator: track the minimum across sources. Start at
-    # +inf so the first source sets it; a footprint with no covered weight ends at 0.
+    # +inf so the first source sets it; a footprint with no covered energy ends at 0.
     coverage_min = np.full(n_footprints, np.inf, dtype=float)
 
     for i, footprint in enumerate(footprints):
@@ -585,89 +594,149 @@ def _run_aggregation(
             # the boresight placeholder box -- that would hand a space record valid-
             # looking external values and nonzero coverage.
             continue
-        # Kick off background loads for the upcoming footprints' tiles so their reader
-        # I/O overlaps this footprint's weighting/aggregation compute. Advisory only:
-        # any tile not prefetched in time is loaded synchronously by get_data below.
-        if lookahead:
-            window = footprints[i + 1 : i + 1 + lookahead]
-            if window:
-                tile_manager.prefetch(fp.bbox for fp in window)
 
         geom = geoms[i]
         frame = frames.for_index(frame_rows[i]) if frames is not None else None
         for key, reader_cls in reader_classes.items():
-            # Merged, cached tile covering this footprint's PSF bounding box. The
-            # TileManager returns a stable cached object -- for single tiles and, via its
-            # merge cache, for multi-tile merges -- so consecutive along-track footprints
-            # reuse both the merged data and its per-cell geometry (the weigher's ECEF cache).
-            tile = tile_manager.get_data(key, footprint.bbox)
+            # The source's native samples inside this footprint's PSF bounding box,
+            # matched to the footprint time by the reader's TimeMatch policy.
+            samples = sources.query(key, footprint.bbox, footprint.time)
             weight_field = weigher.weight_field(
-                tile,
+                samples,
                 geom.boresight_lat_deg,
                 geom.boresight_lon_deg,
                 subsatellite_lat_deg=geom.subsatellite_lat_deg,
                 subsatellite_lon_deg=geom.subsatellite_lon_deg,
                 satellite_radius_km=geom.satellite_radius_km,
+                sample_resolution_km=samples.resolution_km,
                 viewing_zenith_deg=geom.viewing_zenith_deg,
                 cone_angle_rate=geom.cone_angle_rate,
                 frame=frame,
             )
             if return_coverage:
-                coverage_min[i] = min(coverage_min[i], _tile_coverage(tile, weight_field))
+                coverage_min[i] = min(coverage_min[i], weight_field.coverage)
             # One scalar per product variable, keyed by the bare spec name.
-            scalars = aggregate_tile_variables(reader_cls, tile, weight_field)
+            scalars = aggregate_sample_variables(reader_cls, samples, weight_field)
             for product_name, spec_name in plan[key]:
                 outputs[product_name][i] = scalars[spec_name]
 
     if not return_coverage:
         return outputs
-    # +inf survives only for footprints that saw no source at all (an empty manager);
-    # score those as zero coverage.
+    # +inf survives only for footprints that saw no source at all (empty sources) or
+    # were off-limb; score those as zero coverage.
     coverage = np.where(np.isinf(coverage_min), 0.0, coverage_min)
     return outputs, coverage
 
 
-def _tile_coverage(tile: GridTile, weight_field: WeightField) -> float:
-    """Fraction of a footprint's PSF weight backed by usable data in one source's tile.
+def _source_paths_key(
+    mode: OperationalMode, source_file_paths: dict[str, Sequence[Path] | Path]
+) -> tuple[str, tuple[tuple[str, tuple[str, ...]], ...]]:
+    """A hashable identity of a run's staged inputs, for the spawned workers' source cache."""
+    entries = []
+    for key in sorted(source_file_paths):
+        paths = source_file_paths[key]
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+        entries.append((key, tuple(str(p) for p in paths)))
+    return mode.value, tuple(entries)
 
-    The coverage numerator is the PSF weight summed over cells whose data is finite
-    (a cell is "covered" when the reader supplied a value there rather than a NaN /
-    uncovered gap); the denominator is the weigher's total in-contour energy. An empty
-    tile (failed / missing region) has zero total energy and returns ``0.0``, exactly
-    the CERES partial-coverage signal. For a multi-variable tile a cell counts as
-    covered when *any* of its variable planes is finite.
 
-    Parameters
-    ----------
-    tile : GridTile
-        The merged tile for this footprint/source.
-    weight_field : WeightField
-        Per-cell PSF weights aligned to ``tile.lats`` x ``tile.lons``.
+def _worker_sources(
+    mode: OperationalMode, source_file_paths: dict[str, Sequence[Path] | Path] | None
+) -> AncillarySources:
+    """The sources a worker process aggregates with.
 
-    Returns
-    -------
-    float
-        Coverage fraction in ``[0, 1]``.
-
-    Raises
-    ------
-    ValueError
-        If the weight field and the tile's data grid have different shapes, which means
-        the weigher and the tile disagree about the grid.
+    A forked worker inherits the parent's loaded sources through :data:`_FORK_SOURCES`
+    (copy-on-write, no reload). A spawned worker builds its own from the staged paths
+    once and keeps them in :data:`_WORKER_SOURCES_CACHE` for the chunks that follow.
     """
-    total = weight_field.total_energy
-    if total <= 0.0:
-        return 0.0
-    data = np.asarray(tile.data)
-    valid = np.any(np.isfinite(data), axis=0) if data.ndim == 3 else np.isfinite(data)
-    weights = np.asarray(weight_field.weights, dtype=float)
-    if valid.shape != weights.shape:
+    if _FORK_SOURCES is not None:
+        return _FORK_SOURCES
+    if source_file_paths is None:
         raise ValueError(
-            f"PSF weight field shape {weights.shape} does not match the {tile.source!r} tile's data grid "
-            f"{valid.shape}; the weigher and the tile disagree about the grid, so the weigher must be built "
-            "from this tile's lats and lons."
+            "A spawned worker has no sources to aggregate with: pass source_file_paths to "
+            "aggregate_external_variables when n_workers > 1 on a platform without fork."
         )
-    return float(np.sum(weights[valid])) / total
+    key = _source_paths_key(mode, source_file_paths)
+    sources = _WORKER_SOURCES_CACHE.get(key)
+    if sources is None:
+        _WORKER_SOURCES_CACHE.clear()
+        sources = build_sources(mode, source_file_paths)
+        _WORKER_SOURCES_CACHE[key] = sources
+    return sources
+
+
+def _aggregate_chunk(
+    mode: OperationalMode,
+    footprints: list[Any],
+    source_file_paths: dict[str, Sequence[Path] | Path] | None,
+    weigher: PixelWeigher,
+    return_coverage: bool,
+) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
+    """Worker entry point: aggregate one contiguous chunk of footprints."""
+    sources = _worker_sources(mode, source_file_paths)
+    return _aggregate_footprints(mode, footprints, sources, weigher, return_coverage)
+
+
+def _aggregate_in_parallel(
+    mode: OperationalMode,
+    footprints: list[Any],
+    sources: AncillarySources,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None,
+    weigher: PixelWeigher,
+    return_coverage: bool,
+    n_workers: int,
+) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], np.ndarray]:
+    """Run :func:`_aggregate_footprints` over contiguous chunks on a process pool.
+
+    The footprints are cut into ``_CHUNKS_PER_WORKER * n_workers`` contiguous ranges, in
+    order, so each chunk is a time-ordered along-track segment. Where the platform forks,
+    the pool is forked after every source is loaded and the workers read the parent's
+    sources through copy-on-write memory; otherwise the workers are spawned and each
+    builds its own sources from ``source_file_paths``. Chunk results come back in order
+    and are concatenated, so the output is exactly the single-process output.
+    """
+    global _FORK_SOURCES  # noqa: PLW0603 - the pool's workers inherit the loaded sources through this name.
+
+    n_chunks = min(len(footprints), _CHUNKS_PER_WORKER * n_workers)
+    bounds = np.linspace(0, len(footprints), n_chunks + 1).astype(int)
+    chunks = [footprints[start:stop] for start, stop in zip(bounds[:-1], bounds[1:], strict=True) if stop > start]
+
+    start_method = "fork" if "fork" in multiprocessing.get_all_start_methods() else "spawn"
+    if start_method == "spawn" and source_file_paths is None:
+        raise ValueError(
+            "n_workers > 1 needs source_file_paths on a platform without fork, so each worker can build its "
+            "own sources."
+        )
+    context = multiprocessing.get_context(start_method)
+    if start_method == "fork":
+        # Load every static source now, so the workers inherit the indexed data rather than
+        # each loading it; a stepped source loads its first step on its first query.
+        for key in sources.sources:
+            reader = sources.reader(key)
+            if hasattr(reader, "_native"):
+                _ = reader._native  # noqa: SLF001 - warming the reader's own cache before the fork.
+        _FORK_SOURCES = sources
+    try:
+        with ProcessPoolExecutor(max_workers=n_workers, mp_context=context) as pool:
+            results = list(
+                pool.map(
+                    _aggregate_chunk,
+                    *zip(
+                        *[(mode, chunk, source_file_paths, weigher, return_coverage) for chunk in chunks], strict=True
+                    ),
+                )
+            )
+    finally:
+        _FORK_SOURCES = None
+
+    if return_coverage:
+        values = [r[0] for r in results]
+        coverage = np.concatenate([r[1] for r in results])
+    else:
+        values = results
+    merged = {name: np.concatenate([chunk[name] for chunk in values]) for name in values[0]}
+    return (merged, coverage) if return_coverage else merged
 
 
 def compute_derived_viewing_geometry(
@@ -737,16 +806,17 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
     index-aligned with the product columns: an off-Earth view (a space/calibration view
     that slipped past the reader's finite filter) keeps its index with a zero-size
     placeholder box at the boresight and ``off_limb=True``, so aggregation leaves it at
-    fill rather than tiling a fabricated region.
+    fill rather than querying and weighting a fabricated region.
 
     Parameters
     ----------
     l1b_inputs : dict[str, np.ndarray]
         The arrays from
         :func:`libera_utils.footprint_matching._runner.load_l1b_radiometer_inputs`
-        (already filtered to finite geolocation). ``latitude``, ``longitude``,
-        ``viewing_zenith_angle`` and every :data:`L1B_SCAN_REFERENCE_VARIABLES` key are
-        required; :data:`FMATCH_CONE_ANGLE_RATE_KEY` is read when present.
+        (already filtered to finite geolocation). ``RADIOMETER_TIME``, ``latitude``,
+        ``longitude``, ``viewing_zenith_angle`` and every
+        :data:`L1B_SCAN_REFERENCE_VARIABLES` key are required;
+        :data:`FMATCH_CONE_ANGLE_RATE_KEY` is read when present.
 
     Returns
     -------
@@ -761,11 +831,12 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
         If any record's ephemeris is unusable or its footprint is not visible from the
         satellite (see :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_boxes`).
     """
-    required = ("latitude", "longitude", "viewing_zenith_angle", *L1B_SCAN_REFERENCE_VARIABLES)
+    required = (RADIOMETER_TIME_KEY, "latitude", "longitude", "viewing_zenith_angle", *L1B_SCAN_REFERENCE_VARIABLES)
     missing = [name for name in required if name not in l1b_inputs]
     if missing:
         raise ValueError(f"L1B inputs are missing the key(s) radiometer footprints need: {', '.join(missing)}")
 
+    times = np.asarray(l1b_inputs[RADIOMETER_TIME_KEY]).astype("datetime64[ns]")
     latitudes = np.asarray(l1b_inputs["latitude"], dtype=float)
     longitudes = np.asarray(l1b_inputs["longitude"], dtype=float)
     viewing_zeniths = np.asarray(l1b_inputs["viewing_zenith_angle"], dtype=float)
@@ -789,12 +860,13 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
         lon = float(longitudes[i])
         off_limb = bbox is None
         if off_limb:
-            # Zero-size placeholder that keeps the index aligned; never tiled or weighted.
+            # Zero-size placeholder that keeps the index aligned; never queried or weighted.
             bbox = BoundingBox(lat, lat, lon, lon)
         cone_rate = float(cone_rates[i])
         footprints.append(
             RadiometerFootprint(
                 bbox=bbox,
+                time=times[i],
                 latitude=lat,
                 longitude=lon,
                 viewing_zenith_angle=float(viewing_zeniths[i]),
@@ -818,8 +890,8 @@ def _merge_computed_variables(
     solar_zenith_angle: np.ndarray,
     viewing_zenith_angle: np.ndarray,
     relative_azimuth_angle: np.ndarray,
-    source_file_paths: dict[str, Path] | None,
-    tile_manager: TileManager | None,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None,
+    sources: AncillarySources | None,
     weigher: PixelWeigher | None,
     allow_placeholders: bool = False,
     to_grid: Callable[[Any, np.dtype, Any], np.ndarray] | None = None,
@@ -833,7 +905,7 @@ def _merge_computed_variables(
       real per-footprint geolocation angles (:func:`compute_derived_viewing_geometry`).
     * **External aggregated variables** and the **coverage/QA** columns
       (``psf_coverage_fraction``, ``q_flags``) -- computed from the ancillary inputs
-      (a ``tile_manager`` or ``source_file_paths``). Without them this raises, unless
+      (``sources`` or ``source_file_paths``). Without them this raises, unless
       the caller passes ``allow_placeholders=True``, in which case those columns are
       left for :func:`_fill_placeholder_variables`.
 
@@ -854,16 +926,16 @@ def _merge_computed_variables(
         exposing ``bbox`` and the geometry the weigher reads.
     solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : np.ndarray
         Per-footprint geolocation angles (degrees) for the sun-glint calculation.
-    source_file_paths : dict[str, Path] or None
-        Reader-key -> file map used to build a TileManager when ``tile_manager`` is not
+    source_file_paths : dict[str, Sequence[Path] | Path] or None
+        Reader-key -> staged granule(s) map used to build the sources when ``sources`` is not
         given.
-    tile_manager : TileManager or None
+    sources : AncillarySources or None
         A pre-built manager to aggregate from. Takes precedence over
         ``source_file_paths``.
     weigher : PixelWeigher or None
         PSF weigher for the aggregation (defaults to the radial stand-in downstream).
     allow_placeholders : bool, optional
-        When ``True`` and neither ``tile_manager`` nor ``source_file_paths`` is given,
+        When ``True`` and neither ``sources`` nor ``source_file_paths`` is given,
         skip the external aggregation and leave those columns as placeholders. Defaults
         to ``False``.
     to_grid : callable, optional
@@ -874,7 +946,7 @@ def _merge_computed_variables(
     Raises
     ------
     ValueError
-        If neither ``tile_manager`` nor ``source_file_paths`` is given and
+        If neither ``sources`` nor ``source_file_paths`` is given and
         ``allow_placeholders`` is ``False``.
     """
 
@@ -898,19 +970,19 @@ def _merge_computed_variables(
     # External aggregation needs staged ancillary data. Without it the product would carry
     # placeholder external columns and an unflagged q_flags, so only an explicit opt-in
     # leaves them as placeholders.
-    if tile_manager is None and source_file_paths is None:
+    if sources is None and source_file_paths is None:
         if allow_placeholders:
             return
         raise ValueError(
             f"No ancillary inputs were supplied for {mode.value}, so its external variables, psf_coverage_fraction "
-            "and q_flags cannot be computed. Pass tile_manager or source_file_paths, or pass "
+            "and q_flags cannot be computed. Pass sources or source_file_paths, or pass "
             "allow_placeholders=True to write those columns as fill values."
         )
 
     aggregated, coverage = aggregate_external_variables(
         mode,
         footprints,
-        tile_manager,
+        sources,
         source_file_paths=source_file_paths,
         weigher=weigher,
         return_coverage=True,
@@ -987,8 +1059,8 @@ def assemble_fmatch_dataset(
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Path] | None = None,
-    tile_manager: TileManager | None = None,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
+    sources: AncillarySources | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
 ) -> Dataset:
@@ -1017,7 +1089,7 @@ def assemble_fmatch_dataset(
 
     In both cases the derived viewing geometry (``sunglint_angle``) is always computed
     from the real geolocation angles. The external aggregated variables and the
-    coverage/QA columns are computed from the ancillary inputs (``tile_manager`` or
+    coverage/QA columns are computed from the ancillary inputs (``sources`` or
     ``source_file_paths``, forwarded to :func:`aggregate_external_variables`). Without
     them assembly raises, unless ``allow_placeholders=True`` asks for those columns to
     be written as conformant placeholders.
@@ -1046,17 +1118,17 @@ def assemble_fmatch_dataset(
         variable rather than going through :func:`aggregate_external_variables`.
         Only the CAM modes (``CAM``, ``CAM_CAMTIME``) declare this variable; it is
         ``None`` for the IMAGER modes.
-    source_file_paths : dict[str, Path], optional
-        Reader-key -> staged ancillary file map, used to build a TileManager when
-        ``tile_manager`` is not given.
-    tile_manager : TileManager, optional
+    source_file_paths : dict[str, Sequence[Path] | Path], optional
+        Reader-key -> staged ancillary granule(s) map, used to build the sources when
+        ``sources`` is not given.
+    sources : AncillarySources, optional
         A pre-built manager to aggregate from. Takes precedence over
         ``source_file_paths``.
     weigher : PixelWeigher, optional
         PSF weigher for the aggregation. The radiometer-timescale modes default to
         :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`.
     allow_placeholders : bool, optional
-        When ``True``, a call with neither ``tile_manager`` nor ``source_file_paths``
+        When ``True``, a call with neither ``sources`` nor ``source_file_paths``
         writes the external, ``psf_coverage_fraction`` and ``q_flags`` columns as
         placeholders instead of raising. Defaults to ``False``.
 
@@ -1070,10 +1142,10 @@ def assemble_fmatch_dataset(
     ValueError
         If ``inputs`` is empty; if the radiometer-timescale ``inputs`` dict is missing
         a required pass-through key or its arrays have inconsistent lengths; if neither
-        ``tile_manager`` nor ``source_file_paths`` is given and ``allow_placeholders``
+        ``sources`` nor ``source_file_paths`` is given and ``allow_placeholders``
         is ``False``; if a footprint has no finite viewing zenith angle; if ``weigher``
         needs a viewing frame and a footprint carries no L1B ephemeris; if a weight
-        field's shape does not match its tile's data grid.
+        time is NaT and a source selects by time.
     MissingGeolocationError
         If a radiometer record's ephemeris is unusable or its footprint is not visible
         from the satellite (see :func:`build_radiometer_footprints`).
@@ -1087,7 +1159,7 @@ def assemble_fmatch_dataset(
         input_files=input_files,
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
-        tile_manager=tile_manager,
+        sources=sources,
         weigher=weigher,
         allow_placeholders=allow_placeholders,
     )
@@ -1242,8 +1314,8 @@ def _assemble_camtime_dataset(
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Path] | None = None,
-    tile_manager: TileManager | None = None,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
+    sources: AncillarySources | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
 ) -> Dataset:
@@ -1259,7 +1331,7 @@ def _assemble_camtime_dataset(
     bounding box, and the QA flags come straight from the pseudo-footprints
     (:data:`_CAMTIME_SEGMENTATION_VARIABLES`). The derived ``sunglint_angle`` is
     computed from the geolocation angles, and (when ``source_file_paths`` or
-    ``tile_manager`` is supplied) the external aggregated variables and coverage/QA
+    ``sources`` is supplied) the external aggregated variables and coverage/QA
     columns are computed via :func:`_merge_computed_variables`; any remaining declared
     variable is a conformant placeholder.
 
@@ -1280,7 +1352,7 @@ def _assemble_camtime_dataset(
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
         CAM modes declare this variable; for ``IMAGER_CAMTIME`` it is ignored. When
         omitted (or undeclared) the variable is written as a placeholder.
-    source_file_paths, tile_manager, weigher, allow_placeholders
+    source_file_paths, sources, weigher, allow_placeholders
         Aggregation inputs, as in :func:`assemble_fmatch_dataset`.
 
     Returns
@@ -1404,7 +1476,7 @@ def _assemble_camtime_dataset(
         viewing_zenith_angle=np.asarray(real_columns["viewing_zenith_angle"], dtype=float),
         relative_azimuth_angle=np.asarray(real_columns["relative_azimuth_angle"], dtype=float),
         source_file_paths=source_file_paths,
-        tile_manager=tile_manager,
+        sources=sources,
         weigher=weigher,
         allow_placeholders=allow_placeholders,
         to_grid=to_grid,
@@ -1464,8 +1536,8 @@ def _assemble_radiometer_dataset(
     algorithm_version: str | None = None,
     input_files: str | None = None,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Path] | None = None,
-    tile_manager: TileManager | None = None,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
+    sources: AncillarySources | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
 ) -> Dataset:
@@ -1476,7 +1548,7 @@ def _assemble_radiometer_dataset(
     the time coordinate and the geolocation/viewing-angle columns
     (:data:`_RADIOMETER_L1B_VARIABLES`) are carried through verbatim from L1B. The
     derived ``sunglint_angle`` is computed from those angles, and (when
-    ``source_file_paths`` or ``tile_manager`` is supplied) the external aggregated
+    ``source_file_paths`` or ``sources`` is supplied) the external aggregated
     variables and coverage/QA columns are computed from bounding boxes built for each
     footprint via :func:`build_radiometer_footprints`; any remaining declared variable
     is a conformant placeholder.
@@ -1500,7 +1572,7 @@ def _assemble_radiometer_dataset(
     cloud_fraction_camera : np.ndarray, optional
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV), in the same
         footprint order as the time coordinate. Only ``CAM`` declares this variable.
-    source_file_paths, tile_manager, weigher, allow_placeholders
+    source_file_paths, sources, weigher, allow_placeholders
         Aggregation inputs, as in :func:`assemble_fmatch_dataset`.
 
     Returns
@@ -1560,7 +1632,7 @@ def _assemble_radiometer_dataset(
     # footprints (with their PSF bounding boxes) are built only when aggregation will
     # actually run, so the pass-through-only path stays allocation-light.
     footprints: Sequence[Any] = (
-        build_radiometer_footprints(l1b_inputs) if (tile_manager is not None or source_file_paths is not None) else []
+        build_radiometer_footprints(l1b_inputs) if (sources is not None or source_file_paths is not None) else []
     )
     # The radiometer footprints carry the L1B ephemeris (subsatellite point + satellite
     # radius) and cone-angle rate, so default this path to the CERES-faithful
@@ -1577,7 +1649,7 @@ def _assemble_radiometer_dataset(
         viewing_zenith_angle=np.asarray(l1b_inputs["viewing_zenith_angle"], dtype=float),
         relative_azimuth_angle=np.asarray(l1b_inputs["relative_azimuth_angle"], dtype=float),
         source_file_paths=source_file_paths,
-        tile_manager=tile_manager,
+        sources=sources,
         weigher=weigher,
         allow_placeholders=allow_placeholders,
     )
@@ -1601,8 +1673,8 @@ def write_fmatch_product(
     algorithm_version: str,
     input_files: str,
     cloud_fraction_camera: np.ndarray | None = None,
-    source_file_paths: dict[str, Path] | None = None,
-    tile_manager: TileManager | None = None,
+    source_file_paths: dict[str, Sequence[Path] | Path] | None = None,
+    sources: AncillarySources | None = None,
     weigher: PixelWeigher | None = None,
     allow_placeholders: bool = False,
     strict: bool = True,
@@ -1632,16 +1704,16 @@ def write_fmatch_product(
     cloud_fraction_camera : np.ndarray, optional
         Optional per-footprint Camera Cloud Fraction values (Libera WFOV). Only the
         CAM modes declare this variable.
-    source_file_paths : dict[str, Path], optional
-        Reader-key -> staged ancillary file map, used to build a TileManager when
-        ``tile_manager`` is not given.
-    tile_manager : TileManager, optional
+    source_file_paths : dict[str, Sequence[Path] | Path], optional
+        Reader-key -> staged ancillary granule(s) map, used to build the sources when
+        ``sources`` is not given.
+    sources : AncillarySources, optional
         A pre-built manager to aggregate from. Takes precedence over
         ``source_file_paths``.
     weigher : PixelWeigher, optional
         PSF weigher used by the aggregation path (defaults to the radial stand-in).
     allow_placeholders : bool, optional
-        When ``True``, a call with neither ``tile_manager`` nor ``source_file_paths``
+        When ``True``, a call with neither ``sources`` nor ``source_file_paths``
         writes the external, ``psf_coverage_fraction`` and ``q_flags`` columns as
         placeholders instead of raising. Defaults to ``False``.
     strict : bool, optional
@@ -1658,7 +1730,7 @@ def write_fmatch_product(
         As :func:`assemble_fmatch_dataset` raises (empty or inconsistent inputs, no
         ancillary inputs without ``allow_placeholders``, a footprint with no viewing
         zenith angle, a viewing-frame weigher without ephemeris, a weight field that does
-        not match its tile's grid), or, with ``strict``, if the assembled Dataset does not conform to
+        time is NaT and a source selects by time), or, with ``strict``, if the assembled Dataset does not conform to
         the product definition.
     MissingGeolocationError
         If a radiometer record's ephemeris is unusable (see
@@ -1673,7 +1745,7 @@ def write_fmatch_product(
         input_files=input_files,
         cloud_fraction_camera=cloud_fraction_camera,
         source_file_paths=source_file_paths,
-        tile_manager=tile_manager,
+        sources=sources,
         weigher=weigher,
         allow_placeholders=allow_placeholders,
     )

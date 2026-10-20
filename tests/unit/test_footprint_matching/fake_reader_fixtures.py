@@ -1,7 +1,7 @@
-"""Fake gridded readers, a fake footprint and a TileManager over them, shared by the product tests.
+"""Fake readers, a fake footprint and the ancillary sources over them, shared by the product tests.
 
 The fake readers register themselves in ``ReaderRegistry`` when this module is imported, so they are
-defined once here and imported by every test module that needs them. They return *uniform* grids, so
+defined once here and imported by every test module that needs them. They serve *uniform* grids, so
 an aggregated value is independent of the PSF weight kernel and can be asserted exactly:
 
 * a weighted mean of a constant field is that constant (weights cancel);
@@ -10,51 +10,62 @@ an aggregated value is independent of the PSF weight kernel and can be asserted 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.tiling import TileManager
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.sources import AncillarySources
+from libera_utils.footprint_matching.types import (
+    BoundingBox,
+    GridSamples,
+    OperationalMode,
+    TimeMatch,
+    VariableSpec,
+)
 
-# A small uniform grid returned by every fake reader, sitting inside the footprint
-# bounding boxes the tests use so the weighers give its cells positive weight.
-GRID_LATS = np.array([0.3, 0.5, 0.7], dtype=np.float64)
-GRID_LONS = np.array([0.3, 0.5, 0.7], dtype=np.float64)
+# A small uniform grid served by every fake reader, sitting inside the footprint
+# bounding boxes the tests use so the weighers give its samples positive weight. Its
+# 0.2 degree spacing (~22 km) is within the 25 km native cell the fakes declare, so the
+# grid counts as complete coverage.
+GRID_LATS = np.array([0.1, 0.3, 0.5, 0.7, 0.9], dtype=np.float64)
+GRID_LONS = np.array([0.1, 0.3, 0.5, 0.7, 0.9], dtype=np.float64)
+
+# The footprint time the fake footprints carry; the fake readers are DAILY and ignore it.
+FAKE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 
 
-class FakeMeanReader(GriddedDataReader):
+class FakeMeanReader(StaticReader):
     """Multi-variable reader: two continuous fields with constant values 5 and 2."""
 
     READER_KEY = "_fake_agg_mean"
     INSTRUMENT = "TEST"
-    RESOLUTION_KM = 10.0
-    REQUIRED_MODE = OperationalMode.CAM
+    RESOLUTION_KM = 25.0
+    TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (
         VariableSpec(name="field_a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
         VariableSpec(name="field_b", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
     )
 
-    def _load_spatial_region(self, bbox: BoundingBox):
-        # 3-D (n_var, n_lat, n_lon): plane 0 == 5.0 everywhere, plane 1 == 2.0.
+    def _load_native(self) -> GridSamples:
+        # (n_var, n_lat, n_lon): plane 0 == 5.0 everywhere, plane 1 == 2.0.
         data = np.stack(
             [
                 np.full((GRID_LATS.size, GRID_LONS.size), 5.0, dtype=np.float32),
                 np.full((GRID_LATS.size, GRID_LONS.size), 2.0, dtype=np.float32),
             ]
         )
-        return data, GRID_LATS, GRID_LONS
+        return GridSamples(lat_axis=GRID_LATS, lon_axis=GRID_LONS, data=data)
 
 
-class FakeCatReader(GriddedDataReader):
-    """Single-variable categorical reader: every cell is class 3, plus ranked extras."""
+class FakeCatReader(StaticReader):
+    """Single-variable categorical reader: every sample is class 3, plus ranked extras."""
 
     READER_KEY = "_fake_agg_cat"
     INSTRUMENT = "TEST"
-    RESOLUTION_KM = 10.0
-    REQUIRED_MODE = OperationalMode.CAM
+    RESOLUTION_KM = 25.0
+    TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (
         VariableSpec(
             name="surface",
@@ -81,15 +92,14 @@ class FakeCatReader(GriddedDataReader):
         ),
     )
 
-    def _load_spatial_region(self, bbox: BoundingBox):
-        # 2-D single-variable grid, all class 3.
-        data = np.full((GRID_LATS.size, GRID_LONS.size), 3.0, dtype=np.float32)
-        return data, GRID_LATS, GRID_LONS
+    def _load_native(self) -> GridSamples:
+        data = np.full((1, GRID_LATS.size, GRID_LONS.size), 3.0, dtype=np.float32)
+        return GridSamples(lat_axis=GRID_LATS, lon_axis=GRID_LONS, data=data)
 
 
 @dataclass
 class FakeFootprint:
-    """Minimal footprint exposing what the weigher and TileManager need."""
+    """Minimal footprint exposing what the weigher and the sources need."""
 
     bbox: BoundingBox
     latitude: float
@@ -101,12 +111,13 @@ class FakeFootprint:
     cone_angle_rate: float | None = None
     viewing_zenith_angle: float | None = 0.0
     off_limb: bool = False
+    time: np.datetime64 = field(default_factory=lambda: FAKE_TIME)
 
 
-def make_manager(tmp_path: Path) -> TileManager:
-    """Return a TileManager holding just the two fake readers, in CAM mode."""
+def make_sources(tmp_path: Path) -> AncillarySources:
+    """Return the AncillarySources holding just the two fake readers, in CAM mode."""
     readers = {
         FakeMeanReader.READER_KEY: FakeMeanReader(tmp_path / "mean.bin"),
         FakeCatReader.READER_KEY: FakeCatReader(tmp_path / "cat.bin"),
     }
-    return TileManager(readers, OperationalMode.CAM)
+    return AncillarySources(readers, OperationalMode.CAM)
