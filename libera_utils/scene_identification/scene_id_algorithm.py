@@ -29,6 +29,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
+import xarray as xr
 from cloudpathlib import AnyPath, S3Path
 
 from libera_utils import Manifest
@@ -358,6 +359,32 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
     return footprint_data
 
 
+def _fill_missing_integer_values(product_dataset: xr.Dataset, definition: LiberaDataProductDefinition) -> xr.Dataset:
+    """Cast float-held integer variables to their declared dtype, writing 0 where they are NaN.
+
+    Classification carries integer categories such as ``surface_type`` as float so a footprint with a missing input
+    can hold NaN, and such a footprint is unmatched. SCENE-ID products declare no ``_FillValue``: ``scene_id == 0``
+    flags an unmatched footprint, and its integer columns carry 0, as its ``uint8`` bin bounds already do.
+
+    Parameters
+    ----------
+    product_dataset : xarray.Dataset
+        The product variables, as built from the footprint data.
+    definition : LiberaDataProductDefinition
+        The SCENE-ID product definition.
+
+    Returns
+    -------
+    xarray.Dataset
+        ``product_dataset`` with every integer-declared variable in its declared dtype.
+    """
+    for name, variable_definition in definition.variables.items():
+        dtype = np.dtype(variable_definition.dtype)
+        if dtype.kind in "iu" and name in product_dataset and product_dataset[name].dtype.kind == "f":
+            product_dataset[name] = product_dataset[name].fillna(0).astype(dtype)
+    return product_dataset
+
+
 def create_and_write_data_product(
     footprint_data: FootprintData,
     input_file_name: str,
@@ -401,7 +428,7 @@ def create_and_write_data_product(
     definition = LiberaDataProductDefinition.from_yaml(config.product_definition_path)
     declared = set(definition.coordinates) | set(definition.variables)
     keep = [name for name in product_dataset.variables if name in declared]
-    product_dataset = product_dataset[keep]
+    product_dataset = _fill_missing_integer_values(product_dataset[keep], definition)
 
     # Materialize any declared coordinate not yet present in .coords so the written product passes the coordinate
     # conformance check.

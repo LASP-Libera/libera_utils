@@ -13,7 +13,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.footprint_matching.product import OperationalMode
+from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE, OperationalMode
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import Manifest, ManifestFileRecord, ManifestType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -532,3 +532,68 @@ class TestSceneIdImagerCamtimeWrite:
         )
         selected = collect_fmatch_imager_camtime_input_files(manifest)
         assert selected == [f"{input_dir}/{wanted}"]
+
+
+def _with_missing_igbp(fmatch_path, tmp_path, cell):
+    """Copy an FMATCH fixture with FMATCH's integer fill written into ``igbp_surface_type`` at ``cell``."""
+    with xr.open_dataset(fmatch_path) as opened:
+        dataset = opened.load()
+    dataset["igbp_surface_type"].values[cell] = FMATCH_INTEGER_FILL_VALUE
+    edited_dir = tmp_path / "edited"
+    edited_dir.mkdir()
+    edited_path = edited_dir / fmatch_path.name
+    dataset.to_netcdf(edited_path)
+    return edited_path
+
+
+class TestMissingIgbpCode:
+    """A footprint FMATCH has no IGBP code for is left unmatched; the rest of the granule still classifies.
+
+    FMATCH writes its integer fill for a footprint with no usable IGBP pixels and for every padded cell of a
+    camera-timescale grid, so a granule routinely contains some.
+    """
+
+    @pytest.mark.parametrize(
+        ("mode", "variant"),
+        [
+            (OperationalMode.CAM, "cam"),
+            (OperationalMode.IMAGER, "imager"),
+            (OperationalMode.IMAGER_FLASH, "imager-flash"),
+        ],
+    )
+    def test_radiometer_footprint_is_unmatched_and_the_rest_classify(self, tmp_path, mode, variant):
+        input_path = _with_missing_igbp(make_fmatch_product_fixture(tmp_path, mode, n_footprints=4), tmp_path, 1)
+
+        dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
+
+        assert np.isnan(dataset["surface_type"].values[1])
+        for name in (n for n in dataset.data_vars if n.startswith("scene_id_")):
+            assert dataset[name].values[1] == 0, name
+        assert (dataset["scene_id_erbe"].values[[0, 2, 3]] > 0).all()
+
+    @pytest.mark.parametrize(("mode", "variant"), [(OperationalMode.CAM_CAMTIME, "cam-camtime")])
+    def test_padded_camera_cell_is_unmatched(self, tmp_path, mode, variant):
+        input_path = _with_missing_igbp(make_fmatch_product_fixture(tmp_path, mode, n_footprints=3), tmp_path, (2, -1))
+
+        dataset = run_scene_identification(input_path, RUNNER_CONFIGS[variant])._data
+
+        assert dataset["scene_id_erbe"].values[2, -1] == 0
+        assert (dataset["scene_id_erbe"].values[0] > 0).all()
+
+    def test_written_product_carries_zero_for_the_unmatched_footprint(self, tmp_path):
+        """SCENE-ID products declare no _FillValue: scene_id 0 flags the footprint, and its integer columns hold 0."""
+        input_path = _with_missing_igbp(
+            make_fmatch_product_fixture(tmp_path, OperationalMode.IMAGER, n_footprints=4), tmp_path, 1
+        )
+        footprint_data = run_scene_identification(input_path, RUNNER_CONFIGS["imager"])
+        output_dir = tmp_path / "out"
+        output_dir.mkdir()
+
+        written = create_and_write_data_product(footprint_data, input_path.name, output_dir, RUNNER_CONFIGS["imager"])
+
+        with xr.open_dataset(written.path, mask_and_scale=False) as product:
+            for name in ("igbp_surface_type", "surface_type"):
+                assert product[name].dtype == np.uint8
+                assert product[name].values[1] == 0
+            assert product["scene_id_trmm"].values[1] == 0
+            assert (product["igbp_surface_type"].values[[0, 2, 3]] > 0).all()

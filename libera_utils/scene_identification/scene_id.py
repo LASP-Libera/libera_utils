@@ -18,6 +18,7 @@ from cloudpathlib import S3Path
 from numpy.typing import NDArray
 
 from libera_utils.config import config
+from libera_utils.footprint_matching.product import FMATCH_INTEGER_FILL_VALUE
 from libera_utils.io.smart_open import smart_open
 from libera_utils.scene_identification.scene_definitions import SceneDefinition
 
@@ -405,70 +406,58 @@ def calculate_surface_wind(
     return surface_wind
 
 
-def calculate_trmm_surface_type(igbp_surface_type: int | NDArray[np.integer]) -> int | NDArray[np.integer]:
+def calculate_trmm_surface_type(igbp_surface_type: float | NDArray[np.number]) -> float | NDArray[np.floating]:
     """Convert an IGBP surface type code to its TRMM surface type classification.
 
     This maps IGBP -> TRMM (the direction used by scene identification): each IGBP land-cover code (1-20) is
     collapsed onto one of the six coarser TRMM surface types via :meth:`IGBPSurfaceType.trmm_surface_type`.
+    A missing code (``NaN``, e.g. a footprint FMATCH found no IGBP pixels for) gives a missing surface type, which
+    leaves that footprint unmatched (scene ID 0) for every scene that bounds the surface type.
 
     Parameters
     ----------
-    igbp_surface_type : int or ndarray of int
-        IGBP surface type codes (valid range 1-20)
+    igbp_surface_type : float or ndarray of numbers
+        IGBP surface type codes (valid range 1-20), with ``NaN`` where the code is missing.
 
     Returns
     -------
-    int or ndarray of int
-        TRMM surface type codes (0=ocean ... 5=snow), emitted as uint8
+    float or ndarray of float
+        TRMM surface type codes (0=ocean ... 5=snow), with ``NaN`` where the input is missing.
 
     Raises
     ------
     ValueError
-        If any input value is not a valid IGBP surface type (outside 1-20)
+        If any non-missing input value is not a valid IGBP surface type (outside 1-20, or not a whole number).
 
     Notes
     -----
     The conversion uses a lookup table derived from the IGBP->TRMM map on :class:`IGBPSurfaceType`.
-    Values that don't correspond to a valid IGBP surface type will raise a ValueError.
 
     Examples
     --------
     >>> calculate_trmm_surface_type(1)  # IGBP EVERGREEN_NEEDLELEAF_FOREST -> TRMM HI_SHRUB (1)
-    1
-    >>> calculate_trmm_surface_type(np.array([1, 17]))  # 17 = WATER_BODIES -> OCEAN (0)
-    array([1, 0])
+    1.0
+    >>> calculate_trmm_surface_type(np.array([1, 17, np.nan]))  # 17 = WATER_BODIES -> OCEAN (0)
+    array([ 1.,  0., nan])
     >>> calculate_trmm_surface_type(999)
     ValueError: Cannot convert IGBP surface type value to TRMM surface type: [999]
     """
-    all_surfaces = list()
-    for igbp_surface_enum in IGBPSurfaceType:
-        all_surfaces.append(igbp_surface_enum)
-    max_igbp = max(surface.value for surface in all_surfaces) if all_surfaces else 0
-    lookup = np.full(max_igbp + 1, -1, dtype=int)
-
-    for surface_type in all_surfaces:
+    max_igbp = max(surface.value for surface in IGBPSurfaceType)
+    lookup = np.full(max_igbp + 1, np.nan)
+    for surface_type in IGBPSurfaceType:
         lookup[surface_type.value] = surface_type.trmm_surface_type
 
-    # Vectorized lookup with bounds checking
-    result = np.where(
-        (igbp_surface_type > 0) & (igbp_surface_type <= max_igbp),
-        lookup[np.clip(igbp_surface_type, 0, max_igbp)],
-        -1,
-    )
-
-    # Check for failed conversions and raise ValueError
-    failed_mask = result == -1
-    if np.any(failed_mask):
-        # Extract the specific failed values
-        if np.isscalar(igbp_surface_type):
-            failed_values = [igbp_surface_type]
-        else:
-            failed_values = igbp_surface_type[failed_mask].tolist()
+    igbp = np.asarray(igbp_surface_type, dtype=np.float64)
+    missing = np.isnan(igbp)
+    valid = ~missing & (igbp >= 1) & (igbp <= max_igbp) & (igbp == np.round(igbp))
+    invalid = ~missing & ~valid
+    if np.any(invalid):
+        failed_values = np.atleast_1d(igbp)[np.atleast_1d(invalid)]
+        failed_values = [int(value) if value == np.round(value) else float(value) for value in failed_values]
         raise ValueError(f"Cannot convert IGBP surface type value to TRMM surface type: {failed_values}")
 
-    # Emit the declared uint8 dtype directly (the six TRMM categories, 0-5, are naturally uint8). The -1 "invalid"
-    # sentinel is validated above in signed-int space, so it can never survive into this narrowing cast.
-    return result.astype(np.uint8)
+    result = np.where(valid, lookup[np.where(valid, igbp, 0).astype(int)], np.nan)
+    return float(result) if np.ndim(result) == 0 else result
 
 
 def calculate_cloud_fraction_weighted_optical_depth(
@@ -728,7 +717,7 @@ _CALCULATED_VARIABLE_MAP = {
         output_var=FootprintVariables.SURFACE_TYPE,
         function=calculate_trmm_surface_type,
         input_vars=[FootprintVariables.IGBP_SURFACE_TYPE],
-        output_datatype=np.uint8,
+        output_datatype=float,
     ),
     FootprintVariables.OPTICAL_DEPTH: CalculationSpec(
         output_var=FootprintVariables.OPTICAL_DEPTH,
@@ -761,6 +750,26 @@ _CALCULATED_VARIABLE_MAP = {
 }
 
 # Scene Identification Data Processing
+
+
+def _fmatch_integer_fill_to_nan(values: NDArray[np.integer]) -> NDArray[np.floating]:
+    """Map FMATCH's integer fill to ``NaN`` in an integer category column read from an FMATCH product.
+
+    FMATCH writes :data:`~libera_utils.footprint_matching.product.FMATCH_INTEGER_FILL_VALUE` for a footprint with no
+    usable ancillary data and for the padded cells of a camera-timescale grid; its product definitions declare no
+    ``_FillValue`` for these columns, so the reader recognizes the value explicitly.
+
+    Parameters
+    ----------
+    values : numpy.ndarray of int
+        The column as read from the FMATCH product.
+
+    Returns
+    -------
+    numpy.ndarray of float
+        The column as float, ``NaN`` where FMATCH wrote its fill.
+    """
+    return np.where(values == FMATCH_INTEGER_FILL_VALUE, np.nan, values.astype(np.float64))
 
 
 @dataclass(frozen=True)
@@ -798,7 +807,9 @@ class _FmatchColumn:
 # scene-definition bins and the SCENE-ID "cloud_fraction" variable, so it is ingested as-is (no rescale).
 # cloud_fraction is injected directly (there is no CERES "clear_area" on the CAM products to derive it from).
 _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
-    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
+    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn(
+        "igbp_surface_type", np.float32, transform=_fmatch_integer_fill_to_nan
+    ),
     FootprintVariables.CLOUD_FRACTION: _FmatchColumn("cloud_fraction_camera", np.float32),
     FootprintVariables.SOLAR_ZENITH_ANGLE: _FmatchColumn("solar_zenith_angle", np.float32),
     FootprintVariables.VIEWING_ZENITH_ANGLE: _FmatchColumn("viewing_zenith_angle", np.float32),
@@ -814,11 +825,13 @@ _FMATCH_CAM_COLUMN_MAP: dict[FootprintVariables, _FmatchColumn] = {
 #     sqrt(u^2 + v^2) (calculate_surface_wind).
 # surface_type is likewise derived from igbp_surface_type via calculate_trmm_surface_type. The IGBP reader
 # masks LC_Type1 to its valid 1..17 domain (17 = Water Bodies), which aligns 1:1 with the low IGBPSurfaceType
-# members, so a valid modal class maps straight through; igbp_surface_type == 0 only occurs as the no-data
-# sentinel (a footprint with no usable IGBP pixels) and is intentionally rejected by the calculator. The three
-# viewing angles are read straight through.
+# members, so a valid modal class maps straight through. A footprint with no usable IGBP pixels (and every padded
+# cell of a camera-timescale grid) carries FMATCH's integer fill, which is read as NaN and leaves that footprint
+# unmatched for the surface-bounded scenes. The three viewing angles are read straight through.
 _FMATCH_IMAGER_COMMON_COLUMNS: dict[FootprintVariables, _FmatchColumn] = {
-    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn("igbp_surface_type", np.uint8),
+    FootprintVariables.IGBP_SURFACE_TYPE: _FmatchColumn(
+        "igbp_surface_type", np.float32, transform=_fmatch_integer_fill_to_nan
+    ),
     FootprintVariables.CLEAR_AREA: _FmatchColumn("ssf_clear_coverage", np.float32),
     FootprintVariables.SURFACE_WIND_U: _FmatchColumn("era5_wind_u10", np.float32),
     FootprintVariables.SURFACE_WIND_V: _FmatchColumn("era5_wind_v10", np.float32),
