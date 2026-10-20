@@ -2,13 +2,13 @@
 
 Where this sits in the pipeline
 -------------------------------
-This is the last core-processing stage of footprint matching. Upstream, the
-:class:`~libera_utils.footprint_matching.tiling.TileManager` has already served a
-single merged :class:`~libera_utils.footprint_matching.types.GridTile` covering a
-footprint's PSF bounding box, and the
-:mod:`~libera_utils.footprint_matching.weighting` module has assigned each grid
-cell a PSF weight. This module takes those (values, weights) and produces a single
+This is the last core-processing stage of footprint matching. Upstream, a reader
+has served the native :class:`~libera_utils.footprint_matching.types.SampleSet`
+inside a footprint's PSF bounding box, and the
+:mod:`~libera_utils.footprint_matching.weighting` module has assigned each sample
+a PSF weight. This module takes those (values, weights) and produces a single
 statistic per variable -- the number that lands in the SSF-style output product.
+It is the only place a sample's value is combined with another's.
 
 Two layers
 ----------
@@ -18,8 +18,8 @@ Two layers
    doc section 2.8.1.4. These are reusable by scientists directly and are what the
    unit tests exercise. NaN values are excluded from every computation (doc: "NaN
    values are excluded from all computations").
-2. **A product-facing projection** (:func:`aggregate_tile_variables`) that walks a
-   reader's *product* variable specifications, picks the right data plane for each,
+2. **A product-facing projection** (:func:`aggregate_sample_variables`) that walks a
+   reader's *product* variable specifications, picks the right value row for each,
    dispatches to the correct strategy, and returns the single scalar the product
    definition stores for that variable. This is the bit
    :func:`libera_utils.footprint_matching.product.aggregate_external_variables`
@@ -47,7 +47,7 @@ from libera_utils.footprint_matching.types import STANDARD_DEVIATION_SUFFIX
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from libera_utils.footprint_matching.types import GridTile, VariableSpec
+    from libera_utils.footprint_matching.types import SampleSet, VariableSpec
     from libera_utils.footprint_matching.weighting import WeightField
 
 # CERES coverage thresholds (design doc section 2.4.2.7 / 2.8.1.1.3). The coverage
@@ -79,9 +79,9 @@ class AggregationResult:
         Fraction of the PSF's total in-contour weight backed by usable data, in
         ``[0, 1]``. ``0.0`` when there was no data or no PSF weight.
     n_valid : int
-        Number of grid cells that contributed (finite value, positive weight).
+        Number of samples that contributed (finite value, positive weight).
     n_total : int
-        Number of grid cells considered (the merged tile's cell count).
+        Number of samples considered (the sample set's size).
     partial_flag : bool
         ``True`` when ``0.75 <= coverage < 0.95`` (CERES partial-coverage band).
     """
@@ -105,7 +105,7 @@ def check_coverage(
     Parameters
     ----------
     sampled_weight : float
-        Sum of PSF weights over cells that had usable data.
+        Sum of PSF weights over samples that had usable data.
     total_energy : float
         Total PSF weight within the 95%-energy contour (the full-coverage
         denominator). ``<= 0`` means the footprint had no PSF weight at all.
@@ -134,12 +134,11 @@ def check_coverage(
 
 
 def _usable(values: np.ndarray, weights: np.ndarray) -> np.ndarray:
-    """Boolean mask of grid cells usable for a weighted statistic.
+    """Boolean mask of samples usable for a weighted statistic.
 
-    A cell is usable when its value is finite (NaN cells are excluded -- both the
-    reader fill convention and uncovered merged-tile cells arrive as NaN) and its
-    PSF weight is finite and strictly positive (a zero-weight cell lies outside the
-    energy contour and must not contribute).
+    A sample is usable when its value is finite (NaN samples are excluded -- the
+    reader fill convention) and its PSF weight is finite and strictly positive (a
+    zero-weight sample lies outside the energy contour and must not contribute).
     """
     values = np.asarray(values, dtype=float)
     weights = np.asarray(weights, dtype=float)
@@ -156,7 +155,7 @@ class _WeightedPartials:
     derive from the *same* data plane -- e.g. a variable and its
     ``<name>_standard_deviation`` companion -- that mask (and the array copy it drives)
     is identical across them. :func:`_prepare` computes it once and the ``*_from_partials``
-    cores consume the result, so :func:`aggregate_tile_variables` pays the masking cost
+    cores consume the result, so :func:`aggregate_sample_variables` pays the masking cost
     once per plane rather than once per variable. The public strategy functions are thin
     wrappers over the same cores, so the shared and the standalone paths are numerically
     identical by construction.
@@ -186,7 +185,7 @@ def _prepare(values: np.ndarray, weights: np.ndarray) -> _WeightedPartials:
 # ---------------------------------------------------------------------------
 #
 # Each public strategy is a thin wrapper that masks the plane via _prepare and then
-# calls its ``*_from_partials`` core. The core is what aggregate_tile_variables calls
+# calls its ``*_from_partials`` core. The core is what aggregate_sample_variables calls
 # directly with a plane's shared partials, so the two paths cannot numerically diverge.
 
 
@@ -320,7 +319,7 @@ def _order_categories(categories: np.ndarray, category_weight: np.ndarray) -> np
 
     Consumes a precomputed ``(categories, category_weight)`` histogram (see
     :func:`_weighted_category_weights`) so the ranked-mode variants and
-    :func:`aggregate_tile_variables` can share one histogram per plane. Ties are
+    :func:`aggregate_sample_variables` can share one histogram per plane. Ties are
     broken by the ``np.argsort`` stable order (ascending category index), giving a
     deterministic result -- the same policy the doc's "CERES majority-rule" tie
     handling implies.
@@ -549,7 +548,7 @@ _SCALAR_KEY: dict[str, str] = {
 }
 
 # Cores that consume a single plane's shared partials, keyed by strategy name.
-# :func:`aggregate_tile_variables` dispatches through these so several product
+# :func:`aggregate_sample_variables` dispatches through these so several product
 # variables derived from one data plane (e.g. a mean-aggregated variable and its
 # ``_standard_deviation`` companion) reuse a single :func:`_usable` mask instead of
 # recomputing it per variable. Each core returns the same result dict as its public
@@ -648,7 +647,7 @@ def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
 
     Cached per reader class (:func:`functools.lru_cache`): the spec-to-plane mapping is a
     static property of the reader, so it is computed once rather than rebuilt for every
-    footprint by :func:`aggregate_tile_variables`. Callers only iterate the returned list
+    footprint by :func:`aggregate_sample_variables`. Callers only iterate the returned list
     (never mutate it), so sharing one instance across calls is safe.
 
     A reader's *product* variables (``product_variable_specs()``) are a superset of
@@ -656,7 +655,7 @@ def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
     ``<name>_standard_deviation`` companion for continuous ones, plus reader-specific
     derived extras (IGBP's ranked scenes). All of those are computed from the *same*
     source data plane as their parent read variable, whose position on axis 0 of a
-    multi-variable :class:`GridTile` we need in order to slice out its values.
+    multi-variable ``values`` array we need in order to pick out its row.
 
     This resolves each product spec to that axis-0 index by name:
 
@@ -703,27 +702,27 @@ def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
     return mapping
 
 
-def aggregate_tile_variables(reader_cls: Any, tile: GridTile, weight_field: WeightField) -> dict[str, float]:
-    """Aggregate one footprint's merged tile to one scalar per product variable.
+def aggregate_sample_variables(reader_cls: Any, samples: SampleSet, weight_field: WeightField) -> dict[str, float]:
+    """Aggregate one footprint's samples from one source to one scalar per product variable.
 
-    For the given reader, this slices the correct data plane for each product
+    For the given reader, this picks the correct value row for each product
     variable (see :func:`_map_product_specs`), dispatches to that variable's
     aggregation strategy with the PSF ``weight_field``, and returns the single scalar
     the product stores -- keyed by the *bare* spec name (the caller prefixes it with
-    ``<source>_<instrument>_`` to form the product variable name).
+    ``<source>_`` to form the product variable name).
 
-    An empty or all-NaN tile yields NaN for every variable (the aggregation strategies
-    return NaN when nothing is usable), which is exactly the partial-coverage signal
-    the TileManager produces for a failed/missing region.
+    An empty or all-NaN sample set yields NaN for every variable (the aggregation
+    strategies return NaN when nothing is usable), which is the signal for a region
+    the source does not cover.
 
     Parameters
     ----------
-    reader_cls : type[GriddedDataReader]
+    reader_cls : type[AncillaryReader]
         The reader class whose product variables to compute.
-    tile : GridTile
-        The merged tile covering this footprint's PSF bounding box.
+    samples : SampleSet
+        The native samples inside this footprint's PSF bounding box.
     weight_field : WeightField
-        Per-cell PSF weights aligned to ``tile.lats`` x ``tile.lons``.
+        Per-sample PSF weights aligned to ``samples.lats`` / ``samples.lons``.
 
     Returns
     -------
@@ -734,20 +733,18 @@ def aggregate_tile_variables(reader_cls: Any, tile: GridTile, weight_field: Weig
     Notes
     -----
     Only the scalar each strategy yields is returned; the coverage bookkeeping that
-    :func:`aggregate` computes is not needed here (the orchestrator derives coverage
-    separately via :func:`~libera_utils.footprint_matching.product._tile_coverage`), so
-    this dispatches to the strategy cores directly rather than through :func:`aggregate`.
+    :func:`aggregate` computes is not needed here (the weigher reports coverage on its
+    reference grid, see :class:`~libera_utils.footprint_matching.weighting.WeightField`),
+    so this dispatches to the strategy cores directly rather than through :func:`aggregate`.
     Because many product variables derive from the same data plane -- a variable and its
     ``_standard_deviation`` companion, or IGBP's four ranked-mode scenes off one
     ``surface_type`` plane -- the per-plane :func:`_usable` mask (continuous) and category
     histogram (categorical) are computed once and reused across those variables.
     """
-    # Normalize to a 3-D (n_var, n_lat, n_lon) view so single- and multi-variable
-    # readers share one code path. Axis 0 order matches VARIABLES (the reader
-    # contract), which is what _map_product_specs indexes into.
-    data = np.asarray(tile.data)
-    data_3d = data[np.newaxis, ...] if data.ndim == 2 else data
-    n_planes = data_3d.shape[0]
+    # (n_var, n) value rows; axis 0 order matches VARIABLES (the reader contract),
+    # which is what _map_product_specs indexes into.
+    data_rows = np.asarray(samples.values)
+    n_planes = data_rows.shape[0]
 
     weights = np.asarray(weight_field.weights, dtype=float).ravel()
 
@@ -756,7 +753,7 @@ def aggregate_tile_variables(reader_cls: Any, tile: GridTile, weight_field: Weig
     # n_categories) (reused by a plane's mode + ranked-mode variants). Cached within this
     # call only -- weights differ per footprint, so nothing survives across footprints.
     def plane(read_index: int) -> np.ndarray:
-        return data_3d[read_index].ravel() if read_index < n_planes else np.empty(0, dtype=float)
+        return data_rows[read_index] if read_index < n_planes else np.empty(0, dtype=float)
 
     partials_cache: dict[int, _WeightedPartials] = {}
 

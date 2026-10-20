@@ -1,32 +1,43 @@
-"""Per-pixel PSF weighting for footprint aggregation.
+"""Per-sample PSF weighting and coverage for footprint aggregation.
 
 What this module provides
 -------------------------
-The aggregation engine needs, for every grid cell of a footprint's merged tile, a
-*weight* proportional to how strongly that ground location contributes to what the
-radiometer measured -- i.e. the instrument Point Spread Function (PSF) sampled at
-that cell. This module defines the interface for producing those weights
-(:class:`PixelWeigher`) and two implementations:
+The aggregation engine needs, for every native sample a reader served for a
+footprint, a *weight* proportional to how strongly that ground location contributes
+to what the radiometer measured -- i.e. the instrument Point Spread Function (PSF)
+evaluated at that sample. This module defines the interface for producing those
+weights (:class:`PixelWeigher`) and two implementations:
 
-* :class:`AngularPSFWeigher` -- the CERES-faithful weigher. It projects each grid
-  cell into the radiometer's along-scan/cross-scan angular frame ``(delta, beta)``
-  (via :func:`~libera_utils.footprint_matching.geometry.project_to_angular`) and
-  evaluates the analytic CERES PSF
-  :func:`~libera_utils.footprint_matching.psf.psf_weight` there, honouring the
-  asymmetric along-scan response, the scan direction (L1B ``Cone_Angle_Rate``), and
-  the stationary-scanner static FOV (design doc sections 2.4.2.5-2.4.2.7, 2.8.1.1).
-* :class:`RadialWeigher` -- a simple, boresight-centred Gaussian stand-in kept as a
-  dependency-light fallback (it needs only the boresight, not the full viewing
-  geometry).
+* :class:`AngularPSFWeigher` -- the CERES-faithful weigher. It projects each sample
+  into the radiometer's along-scan/cross-scan angular frame ``(delta, beta)`` (via
+  :func:`~libera_utils.footprint_matching.geometry.project_to_angular`) and evaluates
+  the analytic CERES PSF :func:`~libera_utils.footprint_matching.psf.psf_weight` there,
+  honouring the asymmetric along-scan response, the scan direction (L1B
+  ``Cone_Angle_Rate``), and the stationary-scanner static FOV (design doc sections
+  2.4.2.5-2.4.2.7, 2.8.1.1).
+* :class:`RadialWeigher` -- a boresight-centred Gaussian stand-in kept as a
+  dependency-light fallback for footprints with no ephemeris (the camera
+  pseudo-footprints).
 
-Why the interface matters
--------------------------
-Everything the aggregation engine sees is the :class:`WeightField` returned here, so
-the two weighers are interchangeable with **no change to**
-:mod:`~libera_utils.footprint_matching.aggregation`. Both make the *coverage* metric
-meaningful -- uncovered cells (NaN data inside the contour) drop out of the numerator
-while still counting toward the denominator, exactly as the CERES 75%/95% rule
-expects.
+The weight is evaluated at the sample's own location: no sample is averaged, binned
+or interpolated before it is weighted, and the aggregation engine is the only place
+the weighted samples are combined.
+
+Coverage
+--------
+Each :class:`WeightField` also carries the footprint's *coverage*: the fraction of
+the PSF's energy that is backed by a usable sample. Because a swath gap simply has
+no samples, coverage cannot be read off the samples alone. Each weigher therefore
+lays a fine reference grid over the PSF contour in its own frame (angular for the
+angular weigher, ground-plane for the radial one) holding the PSF energy of every
+cell, and treats each finite sample as covering the square centred on it whose half-width
+is the circumradius of the source's native cell (``RESOLUTION_KM / sqrt(2)``), so a regular
+lattice of cells leaves no gap at any rotation relative to the reference axes. Coverage is
+the share of the reference energy inside at least one such square. A complete source
+scores 1.0; a source missing half the contour scores about 0.5; a source with no samples
+scores 0.0 -- exactly the quantity the CERES 75 % / 95 % rule is applied to. A source whose cell
+is wider than the contour (the 1 degree VIIRS composites) is complete as soon as one
+sample lies inside it.
 
 References
 ----------
@@ -39,8 +50,9 @@ References
 from __future__ import annotations
 
 import abc
-from collections import OrderedDict
+import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 from pyproj import Geod
@@ -50,14 +62,15 @@ from libera_utils.footprint_matching.geometry import (
     ViewingFrame,
     project_to_angular,
     psf_ground_radius_km,
-    surface_cell_ecef_km,
+    slant_range_km,
 )
 from libera_utils.footprint_matching.psf import (
     LIBERA_FOV_HALFANGLE_DEG,
+    PSFAngularExtent,
     psf_95_energy_extent,
     psf_weight,
 )
-from libera_utils.footprint_matching.types import GridTile
+from libera_utils.footprint_matching.types import SampleSet
 
 # Sigma of the radial Gaussian kernel as a fraction of the truncation radius. With
 # sigma = r_max / 2 the kernel falls to ~13.5% of its peak at the truncation radius,
@@ -69,27 +82,36 @@ _SIGMA_FRACTION_OF_RMAX: float = 0.5
 _WGS84_SEMI_MAJOR_KM: float = 6378.137
 _WGS84_ECCENTRICITY_SQ: float = 6.694379990141316e-3  # first eccentricity squared, e^2
 
-# Coordinate span (deg) above which a tile is treated as "large" and the RadialWeigher
-# falls back to the exact ellipsoidal Geod.inv distance instead of the local-tangent-plane
-# fast path. A normal footprint box spans well under a degree; this threshold also catches
-# the wide lon axis a dateline-merged tile produces, so those and polar tiles keep the
-# exact distance where the flat-Earth approximation would drift.
+# Coordinate span (deg) above which a sample set is treated as "large" and the
+# RadialWeigher falls back to the exact ellipsoidal Geod.inv distance instead of the
+# local-tangent-plane fast path. A normal footprint box spans well under a degree; this
+# threshold also catches the wide lon span of a dateline-crossing box, so those and
+# polar boxes keep the exact distance where the flat-Earth approximation would drift.
 _FAST_DISTANCE_MAX_SPAN_DEG: float = 10.0
+
+# Step of the angular coverage reference grid, degrees of angle at the satellite. Matches
+# the step psf_95_energy_extent resolves the contour with; a finer step would only add cost.
+_COVERAGE_STEP_DEG: float = 0.02
+# Step of the ground-plane coverage reference grid (km) for the radial weigher.
+_COVERAGE_STEP_KM: float = 0.25
+# Radii are rounded to this many decimals so the radial reference grids (which depend only
+# on the truncation radius) are shared through a small cache.
+_COVERAGE_RADIUS_DECIMALS: int = 3
 
 
 def _local_tangent_plane_km(
     origin_lat_deg: float, origin_lon_deg: float, lat_deg: np.ndarray, lon_deg: np.ndarray
-) -> np.ndarray:
-    """Distance (km) from one point to an array of points on the WGS84 local tangent plane.
+) -> tuple[np.ndarray, np.ndarray]:
+    """North and east offsets (km) from one point to an array of points on the WGS84 local tangent plane.
 
-    A closed-form, pyproj-free distance used by :class:`RadialWeigher`'s fast path. It
-    projects each cell's ``(dlat, dlon)`` offset from the boresight onto the local
+    A closed-form, pyproj-free offset used by :class:`RadialWeigher`'s fast path. It
+    projects each sample's ``(dlat, dlon)`` offset from the boresight onto the local
     north/east plane using the ellipsoid's meridional (M) and prime-vertical (N) radii of
-    curvature evaluated at the boresight latitude, then takes the planar hypotenuse. Over a
-    footprint's ~tens-of-km span at non-polar latitudes this agrees with the WGS84 geodesic
-    to sub-metre -- far below the Gaussian stand-in's own approximation -- while avoiding
-    pyproj's iterative :meth:`pyproj.Geod.inv` once per footprint. Polar / large boxes fall
-    back to Geod.inv (see :data:`_FAST_DISTANCE_MAX_SPAN_DEG`), where the flat-plane model
+    curvature evaluated at the boresight latitude. Over a footprint's ~tens-of-km span at
+    non-polar latitudes the hypotenuse agrees with the WGS84 geodesic to sub-metre --
+    far below the Gaussian stand-in's own approximation -- while avoiding pyproj's
+    iterative :meth:`pyproj.Geod.inv` once per footprint. Polar / large boxes fall back
+    to Geod.inv (see :data:`_FAST_DISTANCE_MAX_SPAN_DEG`), where the flat-plane model
     and the constant-``cos(lat)`` east scaling break down.
     """
     lat0 = np.radians(origin_lat_deg)
@@ -102,7 +124,7 @@ def _local_tangent_plane_km(
 
     north_km = meridional_km * np.radians(np.asarray(lat_deg, dtype=float) - origin_lat_deg)
     east_km = prime_vertical_km * np.cos(lat0) * np.radians(np.asarray(lon_deg, dtype=float) - origin_lon_deg)
-    return np.hypot(north_km, east_km)
+    return north_km, east_km
 
 
 # Alignment offset (degrees) between the reported L1B footprint centroid -- which we
@@ -125,34 +147,88 @@ _STATIC_CONE_RATE_EPS_DEG_PER_S: float = 1.0e-3
 
 @dataclass(frozen=True)
 class WeightField:
-    """Per-cell PSF weights for one footprint's merged tile.
+    """Per-sample PSF weights and coverage for one footprint and one source.
 
     Attributes
     ----------
     weights : np.ndarray
-        2-D array aligned to the tile's ``(lats, lons)`` grid. Each entry is the PSF
-        weight of that cell; cells outside the PSF ground contour are ``0``.
+        1-D array aligned to the sample set's ``lats`` / ``lons``. Each entry is the
+        PSF weight of that sample; samples outside the PSF contour are ``0``.
     total_energy : float
-        Sum of ``weights`` over every cell in the covered region -- the denominator
-        of the coverage metric. Because uncovered cells (NaN data) still carry PSF
-        weight here but contribute no *data*, coverage = sampled/total naturally
-        drops for partially-covered footprints.
+        Sum of ``weights`` over every sample in the set.
     max_radius_km : float
         Ground radius (km) at which the kernel was truncated, for diagnostics.
+    coverage : float
+        Fraction in ``[0, 1]`` of the PSF's in-contour energy backed by a finite
+        sample, measured on the weigher's reference grid (see the module docstring).
     """
 
     weights: np.ndarray
     total_energy: float
     max_radius_km: float
+    coverage: float
+
+
+def _finite_sample_mask(samples: SampleSet) -> np.ndarray:
+    """Boolean mask of samples carrying a finite value on any variable plane."""
+    values = np.asarray(samples.values)
+    if values.ndim == 1:
+        return np.isfinite(values)
+    return np.any(np.isfinite(values), axis=0)
+
+
+def _covered_fraction(reference: np.ndarray, row: np.ndarray, col: np.ndarray, radius: int) -> float:
+    """Share of ``reference`` energy within ``radius`` cells of a marked ``(row, col)`` cell.
+
+    Each marked cell is dilated into the ``(2 * radius + 1)`` square around it (a box
+    filter over the mark grid, computed with a 2-D cumulative sum), which is the square
+    the sample's native cell covers in the reference frame. Marks may lie up to
+    ``radius`` cells outside the grid: a sample just outside the contour still covers
+    the part of its cell that is inside. Marks farther out are ignored.
+    """
+    total = float(reference.sum())
+    if total <= 0.0 or row.size == 0:
+        return 0.0
+    n_row, n_col = reference.shape
+    keep = (row >= -radius) & (row < n_row + radius) & (col >= -radius) & (col < n_col + radius)
+    if not np.any(keep):
+        return 0.0
+    marks = np.zeros((n_row + 2 * radius, n_col + 2 * radius), dtype=np.int64)
+    marks[row[keep] + radius, col[keep] + radius] = 1
+    if radius > 0:
+        p_row, p_col = marks.shape
+        padded = np.zeros((p_row + 1, p_col + 1), dtype=np.int64)
+        padded[1:, 1:] = np.cumsum(np.cumsum(marks, axis=0), axis=1)
+        rows = np.arange(radius, radius + n_row)
+        cols = np.arange(radius, radius + n_col)
+        r0, r1 = rows - radius, rows + radius + 1
+        c0, c1 = cols - radius, cols + radius + 1
+        box = padded[r1[:, None], c1[None, :]] - padded[r0[:, None], c1[None, :]]
+        box -= padded[r1[:, None], c0[None, :]] - padded[r0[:, None], c0[None, :]]
+        covered = box > 0
+    else:
+        covered = marks > 0
+    return float(reference[covered].sum()) / total
+
+
+# A sample covers the square of half-width ``resolution * _COVER_HALF_WIDTH_FACTOR``: the
+# circumradius of its native cell, so a lattice of cells rotated at any angle to the
+# reference axes is covered without gaps (a lattice of spacing s needs radius s / sqrt(2)).
+_COVER_HALF_WIDTH_FACTOR: float = 0.5 * math.sqrt(2.0)
+
+
+def _dilation_cells(half_width: float, step: float) -> int:
+    """Number of reference cells a sample's covering half-width spans (rounded up, never negative)."""
+    return max(0, int(math.ceil(half_width / step - 1e-9)))
 
 
 class PixelWeigher(abc.ABC):
-    """Interface: turn a footprint's tile + viewing geometry into per-cell PSF weights.
+    """Interface: turn a footprint's samples + viewing geometry into per-sample PSF weights.
 
     Implementations return a :class:`WeightField` whose ``weights`` array is aligned
-    to ``tile.lats`` x ``tile.lons``. Keeping this a narrow ABC is the whole point:
-    the aggregation engine depends only on this contract, so the radial stand-in and
-    the future angular-frame weigher are interchangeable.
+    to the samples. Keeping this a narrow ABC is the whole point: the aggregation
+    engine depends only on this contract, so the radial stand-in and the angular-frame
+    weigher are interchangeable.
     """
 
     #: Whether this weigher consumes a precomputed per-footprint viewing frame (the
@@ -164,35 +240,40 @@ class PixelWeigher(abc.ABC):
     @abc.abstractmethod
     def weight_field(
         self,
-        tile: GridTile,
+        samples: SampleSet,
         boresight_lat_deg: float,
         boresight_lon_deg: float,
         *,
         subsatellite_lat_deg: float,
         subsatellite_lon_deg: float,
         satellite_radius_km: float,
+        sample_resolution_km: float,
         viewing_zenith_deg: float = 0.0,
         cone_angle_rate: float | None = None,
         frame: ViewingFrame | None = None,
     ) -> WeightField:
-        """Return the per-cell PSF :class:`WeightField` for ``tile``.
+        """Return the per-sample PSF :class:`WeightField` for ``samples``.
 
         Parameters
         ----------
-        tile : GridTile
-            The merged tile covering the footprint's PSF bounding box.
+        samples : SampleSet
+            The native samples a reader served for the footprint's bounding box.
         boresight_lat_deg, boresight_lon_deg : float
             Footprint boresight centroid, degrees (the PSF centre).
         subsatellite_lat_deg, subsatellite_lon_deg : float
             Geodetic spacecraft sub-point (L1B ``Subsatellite_Latitude`` /
-            ``Subsatellite_Longitude``), degrees. Weighers that project cells into the
-            angular frame (:class:`AngularPSFWeigher`) use it to orient the scan plane;
-            weighers that only need the boresight (:class:`RadialWeigher`) ignore it.
+            ``Subsatellite_Longitude``), degrees. Weighers that project samples into
+            the angular frame (:class:`AngularPSFWeigher`) use it to orient the scan
+            plane; weighers that only need the boresight (:class:`RadialWeigher`)
+            ignore it.
         satellite_radius_km : float
             Spacecraft distance from Earth's center (L1B
             ``Radius_of_Satellite_from_Center_of_Earth``), km. Used to convert the PSF's
             angular extent into a ground radius and, for the angular frame, to place the
             satellite.
+        sample_resolution_km : float
+            The source's native sample spacing (the reader's ``RESOLUTION_KM``). Sets
+            the coverage reference bin so one native sample marks about one bin.
         viewing_zenith_deg : float, optional
             Viewing zenith angle, degrees. Elongates the ground footprint at oblique
             views.
@@ -210,20 +291,43 @@ class PixelWeigher(abc.ABC):
         """
 
 
+@lru_cache(maxsize=64)
+def _radial_reference(max_radius_km: float) -> np.ndarray:
+    """Gaussian kernel energy on the ground-plane reference grid of :data:`_COVERAGE_STEP_KM` cells.
+
+    Square grid over ``[-max_radius_km, max_radius_km]`` in north and east, kernel
+    truncated at ``max_radius_km`` exactly as :class:`RadialWeigher` truncates its
+    sample weights. Cached on the (rounded) radius.
+    """
+    n = max(1, int(math.ceil(2.0 * max_radius_km / _COVERAGE_STEP_KM)))
+    centres = -max_radius_km + (np.arange(n) + 0.5) * _COVERAGE_STEP_KM
+    east, north = np.meshgrid(centres, centres)
+    distance = np.hypot(north, east)
+    sigma = max(max_radius_km * _SIGMA_FRACTION_OF_RMAX, 1.0e-6)
+    energy = np.exp(-0.5 * (distance / sigma) ** 2)
+    energy[distance > max_radius_km] = 0.0
+    return energy
+
+
 class RadialWeigher(PixelWeigher):
     """Boresight-centred radial Gaussian PSF weight -- the swappable stand-in.
 
-    The weight of a cell is a Gaussian in its great-circle distance from the
-    boresight, truncated to zero beyond the PSF's ground radius. This is *not* the
-    true asymmetric CERES PSF; it is a smooth, centrally-peaked placeholder that lets
-    the aggregation path run end to end while the angular-frame PSF projection is
-    built (see the module docstring and :class:`AngularPSFWeigher`).
+    The weight of a sample is a Gaussian in its distance from the boresight,
+    truncated to zero beyond the PSF's ground radius. This is *not* the true
+    asymmetric CERES PSF; it is a smooth, centrally-peaked placeholder for footprints
+    that carry no ephemeris (the camera pseudo-footprints), where the angular frame
+    cannot be built (see :class:`AngularPSFWeigher`).
 
     Distances from the boresight use a fast local-tangent-plane formula
     (:func:`_local_tangent_plane_km`) for normal footprint boxes -- within sub-metre of
     the WGS84 geodesic over a footprint's span -- and fall back to the exact ellipsoidal
-    :class:`pyproj.Geod` distance for polar or large / dateline-merged tiles, where the
+    :class:`pyproj.Geod` distance for polar or large / dateline-crossing boxes, where the
     flat-plane approximation would drift.
+
+    Coverage is measured on a ground-plane reference grid over the truncation disc, each
+    finite sample covering the square of half-width ``RESOLUTION_KM / sqrt(2)`` around
+    it (see the module
+    docstring).
 
     Parameters
     ----------
@@ -239,79 +343,123 @@ class RadialWeigher(PixelWeigher):
 
     def weight_field(
         self,
-        tile: GridTile,
+        samples: SampleSet,
         boresight_lat_deg: float,
         boresight_lon_deg: float,
         *,
         subsatellite_lat_deg: float,
         subsatellite_lon_deg: float,
         satellite_radius_km: float,
+        sample_resolution_km: float,
         viewing_zenith_deg: float = 0.0,
         cone_angle_rate: float | None = None,
         frame: ViewingFrame | None = None,
     ) -> WeightField:
-        """Compute the radial Gaussian :class:`WeightField` for ``tile``.
+        """Compute the radial Gaussian :class:`WeightField` for ``samples``.
 
         See :meth:`PixelWeigher.weight_field`. ``subsatellite_*``, ``cone_angle_rate``
         and ``frame`` are accepted for interface compatibility but unused -- the radial
-        stand-in only needs the boresight. An empty tile (no coordinate cells) yields an
-        empty weight array and zero total energy, which the aggregation strategies read
-        as "no coverage".
+        stand-in only needs the boresight. An empty sample set yields an empty weight
+        array, zero total energy and zero coverage.
         """
-        lats = np.asarray(tile.lats, dtype=float)
-        lons = np.asarray(tile.lons, dtype=float)
+        lats = np.asarray(samples.lats, dtype=float)
+        lons = np.asarray(samples.lons, dtype=float)
 
         max_radius_km = psf_ground_radius_km(satellite_radius_km, viewing_zenith_deg, self._fov_halfangle_deg)
 
-        # Empty tile (failed / missing region): return an empty, zero-energy field.
-        if lats.size == 0 or lons.size == 0:
-            shape = (lats.size, lons.size)
-            return WeightField(weights=np.zeros(shape, dtype=float), total_energy=0.0, max_radius_km=max_radius_km)
+        if lats.size == 0:
+            return WeightField(
+                weights=np.zeros(0, dtype=float), total_energy=0.0, max_radius_km=max_radius_km, coverage=0.0
+            )
 
-        # Full 2-D mesh of cell centres, then distance from the boresight to every cell.
-        lon_grid, lat_grid = np.meshgrid(lons, lats)  # both shape (n_lat, n_lon)
-        flat_lat = lat_grid.ravel()
-        flat_lon = lon_grid.ravel()
-
-        # Fast path: a local-tangent-plane distance (pure numpy) is within sub-metre of
+        # Fast path: a local-tangent-plane offset (pure numpy) is within sub-metre of
         # the WGS84 geodesic over a normal footprint's span and avoids pyproj's iterative
-        # Geod.inv per footprint. Polar or unusually large / dateline-merged tiles keep
-        # the exact ellipsoidal distance, where the flat-plane approximation would drift.
+        # Geod.inv per footprint. Polar or unusually large / dateline boxes keep the
+        # exact ellipsoidal distance, where the flat-plane approximation would drift.
         lat_span = float(lats.max() - lats.min())
         lon_span = float(lons.max() - lons.min())
         near_pole = float(np.max(np.abs(lats))) >= POLAR_LATITUDE_THRESHOLD_DEG
         if near_pole or lat_span > _FAST_DISTANCE_MAX_SPAN_DEG or lon_span > _FAST_DISTANCE_MAX_SPAN_DEG:
-            # Geod.inv needs equal-length arrays, so broadcast the scalar boresight.
-            boresight_lats = np.full(flat_lat.shape, boresight_lat_deg, dtype=float)
-            boresight_lons = np.full(flat_lon.shape, boresight_lon_deg, dtype=float)
-            _, _, distance_m = self._geod.inv(boresight_lons, boresight_lats, flat_lon, flat_lat)
+            # Geod.inv needs equal-length arrays, so broadcast the scalar boresight. The
+            # forward azimuth splits the geodesic distance into north/east components
+            # for the coverage grid.
+            boresight_lats = np.full(lats.shape, boresight_lat_deg, dtype=float)
+            boresight_lons = np.full(lons.shape, boresight_lon_deg, dtype=float)
+            azimuth_deg, _, distance_m = self._geod.inv(boresight_lons, boresight_lats, lons, lats)
             distance_km = np.asarray(distance_m, dtype=float) / 1000.0
+            azimuth = np.radians(np.asarray(azimuth_deg, dtype=float))
+            north_km = distance_km * np.cos(azimuth)
+            east_km = distance_km * np.sin(azimuth)
         else:
-            distance_km = _local_tangent_plane_km(boresight_lat_deg, boresight_lon_deg, flat_lat, flat_lon)
+            north_km, east_km = _local_tangent_plane_km(boresight_lat_deg, boresight_lon_deg, lats, lons)
+            distance_km = np.hypot(north_km, east_km)
 
         # Gaussian kernel, truncated at the PSF ground radius.
         sigma_km = max(max_radius_km * _SIGMA_FRACTION_OF_RMAX, 1.0e-6)
-        weights_flat = np.exp(-0.5 * (distance_km / sigma_km) ** 2)
-        weights_flat[distance_km > max_radius_km] = 0.0
+        weights = np.exp(-0.5 * (distance_km / sigma_km) ** 2)
+        weights[distance_km > max_radius_km] = 0.0
 
-        weights = weights_flat.reshape(lat_grid.shape)
+        # Coverage on a ground-plane reference grid: each finite sample covers the square of
+        # the source's native cell centred on it.
+        radius_key = round(float(max_radius_km), _COVERAGE_RADIUS_DECIMALS)
+        reference = _radial_reference(radius_key)
+        finite = _finite_sample_mask(samples)
+        row = np.floor((north_km[finite] + radius_key) / _COVERAGE_STEP_KM).astype(int)
+        col = np.floor((east_km[finite] + radius_key) / _COVERAGE_STEP_KM).astype(int)
+        coverage = _covered_fraction(
+            reference,
+            row,
+            col,
+            _dilation_cells(_COVER_HALF_WIDTH_FACTOR * float(sample_resolution_km), _COVERAGE_STEP_KM),
+        )
+
         return WeightField(
             weights=weights,
             total_energy=float(np.sum(weights)),
             max_radius_km=max_radius_km,
+            coverage=coverage,
         )
+
+
+@lru_cache(maxsize=8)
+def _angular_reference(extent: PSFAngularExtent, stationary: bool) -> np.ndarray:
+    """PSF energy on the angular reference grid of :data:`_COVERAGE_STEP_DEG` cells over ``extent``.
+
+    Rows run over beta from ``-beta_max`` and columns over delta from
+    ``-delta_back``. The energy is ``psf_weight * cos(beta)`` (the solid-angle
+    Jacobian, as in :func:`~libera_utils.footprint_matching.psf.psf_95_energy_extent`)
+    inside the contour and zero outside; the stationary scanner uses the uniform disc
+    response instead. A static instrument property, cached per extent.
+    """
+    span_delta = extent.delta_back_deg + extent.delta_front_deg
+    span_beta = 2.0 * extent.beta_max_deg
+    n_delta = max(1, int(math.ceil(span_delta / _COVERAGE_STEP_DEG)))
+    n_beta = max(1, int(math.ceil(span_beta / _COVERAGE_STEP_DEG)))
+    delta_centres = -extent.delta_back_deg + (np.arange(n_delta) + 0.5) * _COVERAGE_STEP_DEG
+    beta_centres = -extent.beta_max_deg + (np.arange(n_beta) + 0.5) * _COVERAGE_STEP_DEG
+    delta_grid, beta_grid = np.meshgrid(delta_centres, beta_centres)
+    if stationary:
+        energy = (np.hypot(delta_grid, beta_grid) <= extent.beta_max_deg).astype(float)
+    else:
+        inside = (
+            (delta_grid >= -extent.delta_back_deg)
+            & (delta_grid <= extent.delta_front_deg)
+            & (np.abs(beta_grid) <= extent.beta_max_deg)
+        )
+        energy = np.where(inside, psf_weight(delta_grid, beta_grid) * np.cos(np.radians(beta_grid)), 0.0)
+    return np.clip(energy, 0.0, None)
 
 
 class AngularPSFWeigher(PixelWeigher):
     """Science-accurate PSF weighting via the radiometer angular frame.
 
-    This is the CERES-faithful replacement for :class:`RadialWeigher`. For each
-    footprint it projects every merged-tile cell's ``(lat, lon)`` into the
-    along-scan/cross-scan angular frame ``(delta, beta)`` (via
+    This is the CERES-faithful weigher. For each footprint it projects every
+    sample's ``(lat, lon)`` into the along-scan/cross-scan angular frame
+    ``(delta, beta)`` (via
     :func:`libera_utils.footprint_matching.geometry.project_to_angular`, the inverse
     of the bounding-box ray-trace) and evaluates the analytic CERES PSF
-    :func:`libera_utils.footprint_matching.psf.psf_weight` at each cell -- so the
-    weight a cell receives is the real, asymmetric instrument response, not a
+    :func:`libera_utils.footprint_matching.psf.psf_weight` at each sample -- so the
+    weight a sample receives is the real, asymmetric instrument response, not a
     boresight-distance kernel. Because it returns the same :class:`WeightField`, the
     aggregation engine is unchanged.
 
@@ -330,10 +478,19 @@ class AngularPSFWeigher(PixelWeigher):
     boresight). Any residual alignment offset to the PSF centroid is
     :data:`_CENTROID_OFFSET_DEG`, currently assumed 0 (see its LIBSDC-794 note).
 
+    Coverage
+    --------
+    Measured on a fine angular reference grid over the 95 %-energy contour: each
+    finite sample covers a square seen from the satellite,
+    ``atan(RESOLUTION_KM / sqrt(2) / slant range)`` to each side -- the circumradius of
+    its native cell
+    (see the module docstring). A source whose cell is wider than the contour (the
+    1 degree VIIRS composites) therefore scores 1.0 as soon as one sample lies in it.
+
     Direct evaluation vs pre-integrated bins
     ----------------------------------------
-    This uses *direct per-cell* PSF evaluation, which yields one weight per cell that
-    plugs straight into :class:`WeightField`. The CERES pre-integrated angular-bin
+    This uses *direct per-sample* PSF evaluation, which yields one weight per sample
+    that plugs straight into :class:`WeightField`. The CERES pre-integrated angular-bin
     scheme (ATBD Eq. 4.4-18) is a possible later optimization but needs a bin-aware
     aggregation path, so it is intentionally out of scope here.
 
@@ -346,15 +503,6 @@ class AngularPSFWeigher(PixelWeigher):
     energy_fraction : float, optional
         PSF energy fraction defining the truncation contour. Default 0.95 (CERES
         heritage).
-    cell_geometry_cache_size : int, optional
-        Number of tiles whose per-cell surface ECEF is memoized (default 32). A tile's
-        cell geometry is independent of the viewing frame, and because footprints are
-        processed in along-track order the same merged tile is reused by many consecutive
-        footprints (~18x in a realistic segment); caching the closed-form geodetic->ECEF
-        transform per tile turns the dominant weighting cost into one computation per
-        distinct tile instead of one per footprint. The cache is a small identity-keyed LRU
-        (holding a reference to each cached tile), so a handful of entries covers the active
-        working set across all sources. Pass ``0`` to disable it (always recompute).
     """
 
     # Consumes the precomputed per-footprint viewing frame (see project_to_angular).
@@ -364,88 +512,57 @@ class AngularPSFWeigher(PixelWeigher):
         self,
         fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
         energy_fraction: float = 0.95,
-        cell_geometry_cache_size: int = 32,
     ) -> None:
         self._fov_halfangle_deg = fov_halfangle_deg
         # 95%-energy angular half-extents (delta_back, delta_front, beta_max), a
         # static instrument property computed once and cached inside psf.
         self._extent = psf_95_energy_extent(energy_fraction)
-        # Identity-keyed LRU of per-tile cell ECEF (see _cell_ecef_km). Keyed by id(tile)
-        # with the tile kept alive by the stored reference, so ids never collide among
-        # cached entries. Bounded by cell_geometry_cache_size (0 disables caching).
-        self._cell_geometry_cache_size = max(0, int(cell_geometry_cache_size))
-        self._cell_ecef_cache: OrderedDict[int, tuple[GridTile, np.ndarray]] = OrderedDict()
-
-    def _cell_ecef_km(self, tile: GridTile, lat_grid: np.ndarray, lon_grid: np.ndarray) -> np.ndarray:
-        """Return the tile cells' surface ECEF (km), memoized per tile.
-
-        The value is byte-identical to what :func:`project_to_angular` computes inline (both
-        go through :func:`surface_cell_ecef_km`); caching only skips recomputing it for the
-        many consecutive footprints that reuse the same merged tile. The ``is tile`` check
-        guards against the (harmless) possibility of an ``id`` reused after eviction.
-        """
-        if self._cell_geometry_cache_size == 0:
-            return surface_cell_ecef_km(lat_grid, lon_grid)
-        key = id(tile)
-        cached = self._cell_ecef_cache.get(key)
-        if cached is not None and cached[0] is tile:
-            self._cell_ecef_cache.move_to_end(key)
-            return cached[1]
-        ecef = surface_cell_ecef_km(lat_grid, lon_grid)
-        self._cell_ecef_cache[key] = (tile, ecef)
-        self._cell_ecef_cache.move_to_end(key)
-        while len(self._cell_ecef_cache) > self._cell_geometry_cache_size:
-            self._cell_ecef_cache.popitem(last=False)
-        return ecef
+        # The stationary scanner's uniform disc of the FOV half-angle.
+        self._static_extent = PSFAngularExtent(
+            delta_back_deg=fov_halfangle_deg, delta_front_deg=fov_halfangle_deg, beta_max_deg=fov_halfangle_deg
+        )
 
     def weight_field(
         self,
-        tile: GridTile,
+        samples: SampleSet,
         boresight_lat_deg: float,
         boresight_lon_deg: float,
         *,
         subsatellite_lat_deg: float,
         subsatellite_lon_deg: float,
         satellite_radius_km: float,
+        sample_resolution_km: float,
         viewing_zenith_deg: float = 0.0,
         cone_angle_rate: float | None = None,
         frame: ViewingFrame | None = None,
     ) -> WeightField:
-        """Compute the CERES-PSF :class:`WeightField` for ``tile``. See class docstring.
+        """Compute the CERES-PSF :class:`WeightField` for ``samples``. See class docstring.
 
         When ``frame`` is supplied (the orchestrator batched the viewing frames up
         front), it is passed straight to :func:`project_to_angular`, skipping the
         per-footprint viewing-geometry reconstruction; the result is identical.
         """
-        lats = np.asarray(tile.lats, dtype=float)
-        lons = np.asarray(tile.lons, dtype=float)
+        lats = np.asarray(samples.lats, dtype=float)
+        lons = np.asarray(samples.lons, dtype=float)
 
         # max_radius_km is diagnostic only (the true contour lives in angle space); we
         # reuse the radial ground-radius estimate so the WeightField field stays populated.
         max_radius_km = psf_ground_radius_km(satellite_radius_km, viewing_zenith_deg, self._fov_halfangle_deg)
 
-        # Empty tile (failed / missing region): empty, zero-energy field.
-        if lats.size == 0 or lons.size == 0:
+        if lats.size == 0:
             return WeightField(
-                weights=np.zeros((lats.size, lons.size), dtype=float),
-                total_energy=0.0,
-                max_radius_km=max_radius_km,
+                weights=np.zeros(0, dtype=float), total_energy=0.0, max_radius_km=max_radius_km, coverage=0.0
             )
 
-        lon_grid, lat_grid = np.meshgrid(lons, lats)  # both (n_lat, n_lon)
-        # The cells' surface ECEF is frame-independent, so it is memoized per tile and reused
-        # across the many consecutive footprints that share this merged tile (see _cell_ecef_km).
-        cell_ecef = self._cell_ecef_km(tile, lat_grid, lon_grid)
         delta, beta = project_to_angular(
-            lat_grid,
-            lon_grid,
+            lats,
+            lons,
             frame=frame,
             boresight_lat_deg=boresight_lat_deg,
             boresight_lon_deg=boresight_lon_deg,
             subsatellite_lat_deg=subsatellite_lat_deg,
             subsatellite_lon_deg=subsatellite_lon_deg,
             satellite_radius_km=satellite_radius_km,
-            cell_ecef_km=cell_ecef,
         )
         # Alignment offset between the reported centroid (delta = 0) and the PSF
         # centroid. Currently 0 -- see _CENTROID_OFFSET_DEG.
@@ -455,27 +572,46 @@ class AngularPSFWeigher(PixelWeigher):
         if stationary:
             # Scan turnaround: uniform response inside the circular optical FOV, zero
             # outside (design doc section 2.4.2.2). Scan direction is irrelevant.
-            angular_radius = np.hypot(delta, beta)
-            weights = (angular_radius <= self._fov_halfangle_deg).astype(float)
+            delta_psf = delta
+            extent = self._static_extent
+            inside = np.hypot(delta, beta) <= self._fov_halfangle_deg
+            weights = inside.astype(float)
         else:
             # Outward scan (positive cone-angle rate) reverses the along-scan axis so
             # the PSF's trailing tail points the correct way (design doc 2.8.1.2 step 5).
             delta_psf = -delta if (cone_angle_rate is not None and cone_angle_rate > 0.0) else delta
-            weights = psf_weight(delta_psf, beta)
-            # Truncate at the 95%-energy contour: zero any cell outside the PSF's
+            extent = self._extent
+            # Truncate at the 95%-energy contour: zero any sample outside the PSF's
             # angular half-extents (evaluated in psf_weight's own input-delta frame,
             # which is the frame delta_psf lives in).
             inside = (
-                (delta_psf >= -self._extent.delta_back_deg)
-                & (delta_psf <= self._extent.delta_front_deg)
-                & (np.abs(beta) <= self._extent.beta_max_deg)
+                (delta_psf >= -extent.delta_back_deg)
+                & (delta_psf <= extent.delta_front_deg)
+                & (np.abs(beta) <= extent.beta_max_deg)
             )
-            weights = np.where(inside, weights, 0.0)
+            weights = np.where(inside, psf_weight(delta_psf, beta), 0.0)
 
         # PSF response is non-negative; clip guards against tiny negative round-off.
         weights = np.clip(weights, 0.0, None)
+
+        # Coverage: each finite sample inside the contour covers the square of the source's
+        # native cell, seen from the satellite, centred on its (delta, beta).
+        half_cell_deg = math.degrees(
+            math.atan(
+                _COVER_HALF_WIDTH_FACTOR
+                * float(sample_resolution_km)
+                / slant_range_km(satellite_radius_km, viewing_zenith_deg)
+            )
+        )
+        reference = _angular_reference(extent, stationary)
+        finite = _finite_sample_mask(samples)
+        row = np.floor((beta[finite] + extent.beta_max_deg) / _COVERAGE_STEP_DEG).astype(int)
+        col = np.floor((delta_psf[finite] + extent.delta_back_deg) / _COVERAGE_STEP_DEG).astype(int)
+        coverage = _covered_fraction(reference, row, col, _dilation_cells(half_cell_deg, _COVERAGE_STEP_DEG))
+
         return WeightField(
             weights=weights,
             total_energy=float(np.sum(weights)),
             max_radius_km=max_radius_km,
+            coverage=coverage,
         )
