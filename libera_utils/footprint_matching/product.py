@@ -92,9 +92,8 @@ if TYPE_CHECKING:
 
     from xarray import Dataset
 
-    from libera_utils.footprint_matching.camera_segmentation import PseudoFootprint
     from libera_utils.footprint_matching.geometry import ViewingFrame
-    from libera_utils.footprint_matching.types import GridTile
+    from libera_utils.footprint_matching.types import GridTile, PseudoFootprint
     from libera_utils.io.filenaming import LiberaDataProductFilename
 
 logger = logging.getLogger(__name__)
@@ -1006,8 +1005,8 @@ def assemble_fmatch_dataset(
     *from*:
 
     * **Camera-timescale** (``CAM_CAMTIME``, ``IMAGER_CAMTIME``) - assembled from
-      the camera pseudo-footprints produced by
-      :func:`libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`.
+      the camera pseudo-footprints segmented by the Camera Cloud Fraction algorithm
+      and read from its CF-CAM-CAMTIME product.
       ``inputs`` is that sequence of :class:`PseudoFootprint` objects. See
       :func:`_assemble_camtime_dataset`.
     * **Radiometer-timescale** (``CAM``, ``IMAGER_FLASH``, ``IMAGER``) - assembled
@@ -1266,8 +1265,7 @@ def _assemble_camtime_dataset(
     Parameters
     ----------
     footprints : Sequence[PseudoFootprint]
-        Camera pseudo-footprints in write order, as returned by
-        :func:`~libera_utils.footprint_matching.camera_segmentation.segment_l1b_camera`.
+        Camera pseudo-footprints in write order, as read from CF-CAM-CAMTIME.
     mode : OperationalMode, optional
         Which camera-timescale mode to assemble. Defaults to ``CAM_CAMTIME``.
     definition : LiberaDataProductDefinition, optional
