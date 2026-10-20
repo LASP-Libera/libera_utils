@@ -37,12 +37,10 @@ File naming:
 
 from __future__ import annotations
 
-from functools import cached_property
-
 import numpy as np
 
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, GridTile, OperationalMode, TileKey, VariableSpec
+from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
 # Map each VariableSpec name to its (group_name, variable_name_within_group)
 # path inside the CLDPROP_D3 NetCDF4 file.
@@ -55,12 +53,13 @@ _D3_GROUP_MAP: dict[str, tuple[str, str]] = {
 _D3_FILL_VALUE: float = -9999.0
 
 
-class VIIRSCloudReader(GriddedDataReader):
+class VIIRSCloudReader(StaticReader):
     """Read VIIRS daily cloud properties from a CLDPROP_D3 NetCDF4 file.
 
     Loads two cloud variables (cloud_optical_thickness, cloud_top_pressure)
-    from a CLDPROP_D3 VIIRS Level-3 daily file and returns a 3-D data array of
-    shape ``(2, n_lat, n_lon)`` stacked in ``VARIABLES`` order.
+    from a CLDPROP_D3 VIIRS Level-3 daily file as a ``(2, n_lat, n_lon)`` grid
+    stacked in ``VARIABLES`` order. The file is a daily composite with no time
+    axis, so the staged day is the time match (``TIME_MATCH = DAILY``).
 
     The CLDPROP_D3 product stores data with a non-standard ``(longitude,
     latitude)`` dimension order. This reader transposes each variable to
@@ -77,14 +76,17 @@ class VIIRSCloudReader(GriddedDataReader):
 
     Parameters
     ----------
-    file_path : Path
-        Path to a CLDPROP_D3 NetCDF4 file.
+    file_paths : Path or Sequence[Path]
+        The one CLDPROP_D3 NetCDF4 file for the processing day.
     """
 
     READER_KEY: str = "viirs_cloud"
     # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
+    TIME_MATCH: TimeMatch = TimeMatch.DAILY
+    # Cloud properties are collocated in time with the radiometer observation.
+    TIMESTAMP_SOURCE: str | None = "radiometer"
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="cloud_optical_thickness",
@@ -102,54 +104,22 @@ class VIIRSCloudReader(GriddedDataReader):
         ),
     )
 
-    def load_tile(self, key: TileKey) -> GridTile:
-        """Load a VIIRS cloud tile and set ``timestamp_source='radiometer'``.
-
-        Overrides the base ``load_tile`` to set ``timestamp_source`` on the
-        returned GridTile, since VIIRS cloud properties are collocated in time
-        with the radiometer observation.
-
-        Parameters
-        ----------
-        key : TileKey
-            Tile cache key.
-
-        Returns
-        -------
-        GridTile
-            Tile with ``timestamp_source='radiometer'``.
-        """
-        tile = super().load_tile(key)
-        return GridTile(
-            data=tile.data,
-            lats=tile.lats,
-            lons=tile.lons,
-            bounds=tile.bounds,
-            source=tile.source,
-            timestamp_source="radiometer",
-        )
-
-    @cached_property
-    def _native_grid(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Read the full VIIRS cloud-property grid once and cache it on the instance.
+    def _load_native(self) -> GridSamples:
+        """Read the full VIIRS cloud-property grid once.
 
         Opens the NetCDF4 file, navigates to each variable's group, transposes
         from (longitude, latitude) to (latitude, longitude) storage order, and
-        replaces fill values with NaN. Cached per reader instance so the file is
-        opened and read once, then every tile slices these in-memory arrays
-        (see :meth:`_load_spatial_region`) instead of re-reading the file.
+        replaces fill values with NaN.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(2, n_lat, n_lon)`` with axis 0 = [cloud_optical_thickness,
-            cloud_top_pressure] (fill as NaN), and ``lats`` / ``lons`` are float64
-            1-D coordinate arrays.
+        GridSamples
+            ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
+            [cloud_optical_thickness, cloud_top_pressure] (fill as NaN).
         """
         import netCDF4  # noqa: PLC0415
 
-        with netCDF4.Dataset(str(self._file_path), "r") as ds:
+        with netCDF4.Dataset(str(self.single_file_path), "r") as ds:
             # Root-level coordinate arrays: (180,) and (360,) respectively
             lats_full = np.array(ds.variables["latitude"][:], dtype=np.float64)
             lons_full = np.array(ds.variables["longitude"][:], dtype=np.float64)
@@ -158,49 +128,11 @@ class VIIRSCloudReader(GriddedDataReader):
             for var_spec in self.VARIABLES:
                 group_name, var_name = _D3_GROUP_MAP[var_spec.name]
                 group = ds.groups[group_name]
-                # Data shape is (n_lon, n_lat) in the file — transpose to (n_lat, n_lon).
+                # Data shape is (n_lon, n_lat) in the file -- transpose to (n_lat, n_lon).
                 raw = np.array(group.variables[var_name][:], dtype=np.float32).T
                 # Replace fill values with NaN.
                 raw[raw <= _D3_FILL_VALUE] = np.nan
                 variable_arrays.append(raw)
 
         data = np.stack(variable_arrays, axis=0)  # (2, n_lat_full, n_lon_full)
-        return data, lats_full, lons_full
-
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Slice the cached VIIRS cloud-property grid to ``bbox``.
-
-        Subsets the full grid from :attr:`_native_grid` to the requested bounding box.
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(2, n_lat, n_lon)`` with axis 0 = [cloud_optical_thickness,
-            cloud_top_pressure]. Fill pixels (originally ≤ −9999.0) are
-            returned as NaN.
-        """
-        data_full, lats_full, lons_full = self._native_grid
-
-        # Compute bbox index masks on the full coordinate arrays.
-        lat_mask = (lats_full >= bbox.lat_min) & (lats_full <= bbox.lat_max)
-        lon_mask = (lons_full >= bbox.lon_min) & (lons_full <= bbox.lon_max)
-
-        lat_indices = np.where(lat_mask)[0]
-        lon_indices = np.where(lon_mask)[0]
-
-        if lat_indices.size == 0 or lon_indices.size == 0:
-            n = len(self.VARIABLES)
-            return (
-                np.empty((n, 0, 0), dtype=np.float32),
-                np.empty(0, dtype=np.float64),
-                np.empty(0, dtype=np.float64),
-            )
-
-        data = data_full[:, lat_indices, :][:, :, lon_indices]
-        return data, lats_full[lat_indices], lons_full[lon_indices]
+        return GridSamples(lat_axis=lats_full, lon_axis=lons_full, data=data)

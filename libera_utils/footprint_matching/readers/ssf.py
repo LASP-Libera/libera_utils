@@ -17,13 +17,17 @@ serves both. The two differ only in latency / processing stream
 appropriate file for the active mode. This reader belongs to the Flash, Imager, and
 Imager-camera-time product sets, declared in ``readers/registry.py``.
 
-Why rasterize?
---------------
-SSF is footprint (point) data, not a regular grid. To stay within the
-``GriddedDataReader`` / ``GridTile`` contract used by every other reader, this
-class bins its footprints onto a regular sub-grid covering each requested 2°
-tile (see :mod:`libera_utils.footprint_matching.readers._swath`). The whole
-file is parsed once and cached on the instance, then re-sliced per tile.
+Native footprints, matched by time
+----------------------------------
+SSF is footprint (point) data, not a regular grid. Each CERES footprint is served
+at its own position and observation time as a
+:class:`~libera_utils.footprint_matching.types.PointSamples` point, so the Libera
+PSF weigher is the first place a value is weighted. A day of SSF sees a ground
+location on more than one pass, so the reader serves the pass nearest the Libera
+footprint time (``TIME_MATCH = NEAREST_PASS``): every footprint within
+``PASS_WINDOW`` of the smallest time offset, and none beyond ``MAX_TIME_OFFSET``.
+Granules are hourly; only those whose ``time_coverage_start``/``time_coverage_end``
+lie within ``MAX_TIME_OFFSET`` of the current footprint time are held in memory.
 
 Variable set
 ------------
@@ -60,22 +64,32 @@ from typing import NamedTuple
 
 import numpy as np
 
-from libera_utils.footprint_matching.readers._swath import (
+from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
+    decode_cf_times,
+    granule_time_coverage,
+    neighbour_spacing_km,
     normalize_longitude,
-    rasterize_points_to_grid,
+    scan_to_scan_spacing_km,
 )
-from libera_utils.footprint_matching.readers.base import GriddedDataReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, VariableSpec
+from libera_utils.footprint_matching.readers.base import PassReader
+from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
 # Float and integer fill sentinels used across SSF groups.
 _FILL_FLOAT: float = 3.4028235e38  # float32 max, the CERES float fill
 _FILL_INT16: int = 32767
 
-# Group paths to the per-footprint geolocation variables.
+# Group paths to the per-footprint geolocation and time variables.
 _TIME_POS_GROUP: str = "Time_and_Position"
 _FOV_LAT_VAR: str = "instrument_fov_latitude"
 _FOV_LON_VAR: str = "instrument_fov_longitude"
+# Per-footprint observation time in the same group, decoded through its CF ``units``
+# (``days since 1970-01-01 00:00:00``, gregorian), as found in the CER_SSF_NOAA20-FM6-VIIRS
+# granules. A granule covers one hour.
+_TIME_VAR: str = "time"
+# Position of a footprint within its scan (1..660), used to pair consecutive scans and
+# measure the along-track footprint spacing.
+_SAMPLE_NUMBER_VAR: str = "sample_number"
 
 # Cloudy layer to read for the layered (Footprints, LowerUpper) variables.
 # 0 = lower layer, 1 = upper layer. TODO[LIBSDC-785]: confirm the correct
@@ -97,7 +111,7 @@ class _SSFField(NamedTuple):
     var : str
         Source variable name within ``group``.
     aggregation : str
-        Spatial aggregation strategy (passed to the rasterizer).
+        PSF aggregation strategy for the emitted spec.
     fill : float or int
         Fill sentinel for the source variable.
     valid_range : tuple of (float, float) or None
@@ -119,10 +133,6 @@ class _SSFField(NamedTuple):
         When set, pins the emitted spec to exactly these products (bypassing the
         ``required_mode`` rank rule). Used to keep the extended cloud/aerosol/albedo
         fields in FMATCH-IMAGER only. ``None`` (default) uses the rank rule.
-    log_floor : float or None
-        Detection-limit floor for ``weighted_log_mean`` fields, passed to the
-        rasterizer so valid zeros are retained rather than dropped. ``None``
-        (default) uses the rasterizer's default floor; ignored for other aggregations.
     """
 
     out_name: str
@@ -135,7 +145,6 @@ class _SSFField(NamedTuple):
     n_categories: int | None
     required_mode: OperationalMode = OperationalMode.IMAGER_FLASH
     only_modes: tuple[OperationalMode, ...] | None = None
-    log_floor: float | None = None
 
 
 # Minimal starter field set (refine later — see module docstring).
@@ -410,35 +419,40 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
 _SSF_FIELDS = _SSF_FIELDS + _build_imager_only_ssf_fields()
 
 
-class SSFReader(GriddedDataReader):
-    """Read CERES SSF / FLASHFlux footprints and rasterize them onto the tile grid.
+class SSFReader(PassReader):
+    """Read CERES SSF / FLASHFlux footprints as time-stamped native points.
 
-    Parses the per-footprint geolocation and a minimal set of cloud / aerosol /
-    scene variables, then bins them onto a regular sub-grid covering each
-    requested 2° tile.
+    Parses the per-footprint geolocation, observation time and a minimal set of
+    cloud / aerosol / scene variables from every staged granule.
 
     Class Attributes
     ----------------
     READER_KEY : str
         Registry key ``"ssf"``.
     RESOLUTION_KM : float
-        ~20 km (CERES footprint scale at nadir).
-    OUTPUT_CELL_DEG : float
-        Edge length of the rasterized output cells (degrees).
+        ~20 km (CERES footprint scale at nadir), the fallback when a granule's own
+        footprint spacing cannot be measured.
     VARIABLES : tuple[VariableSpec, ...]
         Minimal starter set (see module docstring).
 
     Parameters
     ----------
-    file_path : Path
-        Path to a CERES SSF or FLASHFlux NetCDF4 file.
+    file_paths : Path or Sequence[Path]
+        The CERES SSF or FLASHFlux NetCDF4 granule(s) covering the processing period.
     """
 
     READER_KEY: str = "ssf"
     # The SSF/FLASHFlux products read here are the NOAA-20 stream (CER_SSF_NOAA20-FM6-VIIRS).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 20.0
-    OUTPUT_CELL_DEG: float = 0.2
+    TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
+    # One CERES pass crosses a footprint box in seconds; consecutive polar passes are
+    # about 100 min apart and the opposite pass about 12 h. 15 min keeps one pass
+    # together and never admits a second. Libera and the CERES host are different
+    # spacecraft, so the nearest pass can be tens of minutes away; 3 h is the largest
+    # offset accepted before the footprint is scored as having no SSF match.
+    PASS_WINDOW: np.timedelta64 | None = np.timedelta64(15, "m")
+    MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(3, "h")
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,
@@ -451,29 +465,40 @@ class SSFReader(GriddedDataReader):
         for f in _SSF_FIELDS
     )
 
-    def __init__(self, file_path: Path) -> None:
-        super().__init__(file_path)
-        # Lazily populated point cache: (lats, lons, values (n_var, n_pts)).
-        # The SSF file is parsed once and reused across all tile requests.
-        self._points: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
+    def _granule_span(self, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """The granule's ``time_coverage_start`` / ``time_coverage_end`` global attributes.
 
-    def _load_points(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Parse and cache the per-footprint coordinates and variable values.
+        Raises
+        ------
+        ValueError
+            If either attribute is missing or is not an ISO 8601 instant.
+        """
+        import netCDF4  # noqa: PLC0415
+
+        with netCDF4.Dataset(str(path), "r") as ds:
+            return granule_time_coverage(ds, source=f"ssf {path.name}")
+
+    def _load_granule(self, path: Path) -> PointSamples:
+        """Parse one granule into a time-stamped point cloud.
 
         Returns
         -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(lats, lons, values)`` where ``lats``/``lons`` are 1-D
-            ``(n_footprints,)`` (longitude normalized to −180..180) and
-            ``values`` is ``(n_var, n_footprints)`` float64 with fill /
-            out-of-range entries as NaN.
-        """
-        if self._points is not None:
-            return self._points
+        PointSamples
+            ``lats``/``lons`` are ``(n_footprints,)`` (longitude normalized to
+            -180..180), ``values`` is ``(n_var, n_footprints)`` float32 with fill /
+            out-of-range entries as NaN, ``times`` is ``datetime64[ns]`` per
+            footprint (NaT where the file holds fill), and ``spacing_km`` the footprint
+            spacing measured on this granule (the larger of along-scan and along-track).
 
+        Raises
+        ------
+        ValueError
+            If the granule's time variable cannot be decoded (see
+            :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`).
+        """
         import netCDF4  # noqa: PLC0415
 
-        with netCDF4.Dataset(str(self._file_path), "r") as ds:
+        with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
             # apply_fill_and_valid_range (which normalizes descending
             # ``valid_range`` attributes that would otherwise make netCDF4 mask
@@ -488,44 +513,27 @@ class SSFReader(GriddedDataReader):
                 tp.variables[_FOV_LON_VAR][:], fill_value=_FILL_FLOAT, valid_range=(0.0, 360.0)
             )
             lons = normalize_longitude(lons_raw)
+            times = decode_cf_times(tp.variables[_TIME_VAR], source=f"ssf {path.name} {_TIME_POS_GROUP}/{_TIME_VAR}")
+            sample_number = np.asarray(tp.variables[_SAMPLE_NUMBER_VAR][:])
 
             value_rows: list[np.ndarray] = []
             for f in _SSF_FIELDS:
                 raw = ds.groups[f.group].variables[f.var][:]
                 if f.layer_index is not None:
-                    # 2-D (Footprints, LowerUpper) — pick one layer.
+                    # 2-D (Footprints, LowerUpper) -- pick one layer.
                     raw = raw[:, f.layer_index]
                 value_rows.append(apply_fill_and_valid_range(raw, fill_value=f.fill, valid_range=f.valid_range))
 
-            values = np.stack(value_rows, axis=0)
-
-        self._points = (lats, lons, values)
-        return self._points
-
-    def _load_spatial_region(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Rasterize SSF footprints within ``bbox`` onto a regular sub-grid.
-
-        Parameters
-        ----------
-        bbox : BoundingBox
-            Geographic region to extract.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, np.ndarray]
-            ``(data, lats, lons)`` where ``data`` is float32 shape
-            ``(n_var, n_lat, n_lon)`` in ``VARIABLES`` order. Cells with no
-            footprints are NaN.
-        """
-        lats, lons, values = self._load_points()
-        aggregations = [f.aggregation for f in _SSF_FIELDS]
-        log_floors = [f.log_floor for f in _SSF_FIELDS]
-        return rasterize_points_to_grid(
-            point_lats=lats,
-            point_lons=lons,
-            values=values,
-            bbox=(bbox.lat_min, bbox.lat_max, bbox.lon_min, bbox.lon_max),
-            cell_size_deg=self.OUTPUT_CELL_DEG,
-            aggregations=aggregations,
-            log_floors=log_floors,
+        return PointSamples(
+            lats=lats,
+            lons=lons,
+            values=np.stack(value_rows, axis=0).astype(np.float32),
+            times=times,
+            # The granule's own footprint spacing: the larger of the along-scan spacing
+            # (consecutive footprints) and the along-track one (the same scan position on
+            # consecutive scans, about 44 km), so a complete swath covers a Libera footprint
+            # completely in both directions.
+            spacing_km=np.nanmax(
+                [neighbour_spacing_km(lats, lons), scan_to_scan_spacing_km(lats, lons, times, sample_number)]
+            ),
         )
