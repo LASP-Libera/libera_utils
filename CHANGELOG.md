@@ -27,9 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `libera_utils.footprint_matching.aggregation.aggregate_sample_variables`, one scalar per product variable from a footprint's weighted samples.
 - `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
 - `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
+- `aggregate_external_variables` runs the footprints on a process pool when the `FMATCH_WORKERS` configuration key (or environment variable) is above one: contiguous along-track chunks, forked after the sources are loaded so the workers share one copy of every static source, with the same output as the single-process run.
+- `doc/source/developer-docs/footprint_matching_design_decisions.md`, the design decisions behind the native-sample path, with their consequences for product interpretation.
 
 ### Changed
 
+- **BREAKING:** `product.aggregate_external_variables` and the assembly functions take `sources` (an `AncillarySources`) in place of `tile_manager`, drop the `max_cache_bytes` and `prefetch_lookahead` arguments, and `source_file_paths` maps each reader to the list of its staged granules.
 - The `h5netcdf` dependency is declared with its `h5py` extra (`h5netcdf[h5py]`), since `h5netcdf` no longer installs `h5py` by default.
 
 ## [5.12.0] - 2026-10-21
