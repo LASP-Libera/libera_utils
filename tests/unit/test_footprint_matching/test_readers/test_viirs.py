@@ -12,11 +12,13 @@ Real CLDPROP_D3 files can be downloaded from:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
 from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
 from tests.test_data.footprint_matching.fixtures import make_viirs_cloud_d3_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
@@ -171,3 +173,38 @@ class TestVIIRSCloudReaderSamples:
         a = reader.samples_in(_full_bbox(), _T)
         b = reader.samples_in(_full_bbox(), _T + np.timedelta64(23, "h"))
         np.testing.assert_array_equal(a.values, b.values)
+
+
+class TestVIIRSCloudReaderRealSubset:
+    """The full 1 degree grid of a real CLDPROP_D3_VIIRS_NOAA20 granule (2026-05-27).
+
+    Only the coordinates and the two Mean fields the reader reads are kept, stored as
+    in the product with dimensions (longitude, latitude). Pinned values are the source
+    granule's own.
+    """
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return VIIRSCloudReader(fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc")
+
+    def test_grid_is_transposed_to_latitude_by_longitude(self, reader):
+        native = reader._load_native()
+        assert native.data.shape == (2, 180, 360)
+        assert (native.lat_axis[0], native.lat_axis[-1]) == (-89.5, 89.5)
+        assert (native.lon_axis[0], native.lon_axis[-1]) == (-179.5, 179.5)
+
+    def test_fill_cells_are_nan(self, reader):
+        cot, ctp = reader._load_native().data
+        # -9999 fill: 16 035 of the 64 800 cells have no optical thickness, 885 no top pressure.
+        assert np.isnan(cot).sum() == 16035
+        assert np.isnan(ctp).sum() == 885
+
+    def test_values_at_cells_are_the_granules(self, reader):
+        samples = reader.samples_in(BoundingBox(-30.0, -29.0, 120.0, 121.0), _T)
+        cot, ctp = sample_at(samples, -29.5, 120.5)
+        assert cot == pytest.approx(9.74419, abs=1e-4)
+        assert ctp == pytest.approx(332.3532, abs=1e-3)
+        samples = reader.samples_in(BoundingBox(30.0, 31.0, 20.0, 21.0), _T)
+        cot, ctp = sample_at(samples, 30.5, 20.5)
+        assert np.isnan(cot)
+        assert ctp == pytest.approx(849.7842, abs=1e-3)
