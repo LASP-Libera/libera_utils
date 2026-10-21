@@ -68,7 +68,7 @@ from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_cf_times,
     granule_time_coverage,
-    neighbour_spacing_km,
+    neighbor_spacing_km,
     normalize_longitude,
     scan_to_scan_spacing_km,
 )
@@ -534,6 +534,6 @@ class SSFReader(PassReader):
             # consecutive scans, about 44 km), so a complete swath covers a Libera footprint
             # completely in both directions.
             spacing_km=np.nanmax(
-                [neighbour_spacing_km(lats, lons), scan_to_scan_spacing_km(lats, lons, times, sample_number)]
+                [neighbor_spacing_km(lats, lons), scan_to_scan_spacing_km(lats, lons, times, sample_number)]
             ),
         )
