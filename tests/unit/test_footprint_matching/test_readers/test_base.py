@@ -15,7 +15,6 @@ import pytest
 
 from libera_utils.footprint_matching.readers.base import (
     AncillaryReader,
-    PassReader,
     StaticReader,
     SteppedGridReader,
     _PointIndex,
@@ -91,30 +90,6 @@ class _PassReader(StaticReader):
         return self._points
 
 
-class _GranuleReader(PassReader):
-    """Hourly granules handed in as ``{path: (start, end, PointSamples)}``; counts loads."""
-
-    READER_KEY = "_base_test_granules"
-    INSTRUMENT = "FAKE"
-    RESOLUTION_KM = 1.0
-    PASS_WINDOW = np.timedelta64(15, "m")
-    MAX_TIME_OFFSET = np.timedelta64(3, "h")
-    VARIABLES = (_SPEC,)
-
-    def __init__(self, granules: dict) -> None:
-        super().__init__(list(granules))
-        self._granules = granules
-        self.loads: list = []
-
-    def _granule_span(self, path):
-        start, end, _ = self._granules[path]
-        return start, end
-
-    def _load_granule(self, path):
-        self.loads.append(path)
-        return self._granules[path][2]
-
-
 class _StepReader(SteppedGridReader):
     """Hourly steps whose grid value is the step index; counts loads."""
 
@@ -124,17 +99,69 @@ class _StepReader(SteppedGridReader):
     MAX_TIME_OFFSET = np.timedelta64(1, "h")
     VARIABLES = (_SPEC,)
 
-    def __init__(self) -> None:
+    def __init__(self, planes: int = 1, times: np.ndarray | None = None) -> None:
         super().__init__("unused.nc")
         self.loads: list[int] = []
+        self._planes = planes
+        self._times = _T0 + np.arange(4) * np.timedelta64(1, "h") if times is None else times
 
     def _step_times(self) -> np.ndarray:
-        return _T0 + np.arange(4) * np.timedelta64(1, "h")
+        return self._times
 
     def _load_step(self, index: int) -> GridSamples:
         self.loads.append(index)
         axis = np.array([0.0, 1.0])
-        return GridSamples(lat_axis=axis, lon_axis=axis, data=np.full((1, 2, 2), float(index), dtype=np.float32))
+        data = np.full((self._planes, 2, 2), float(index), dtype=np.float32)
+        return GridSamples(lat_axis=axis, lon_axis=axis, data=data)
+
+
+class _WrongPlanesGridReader(StaticReader):
+    """A daily grid reader that loads two planes for its one declared variable."""
+
+    READER_KEY = "_base_test_wrong_planes"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 111.0
+    TIME_MATCH = TimeMatch.DAILY
+    VARIABLES = (_SPEC,)
+
+    def _load_native(self) -> GridSamples:
+        axis = np.array([0.0, 1.0])
+        return GridSamples(lat_axis=axis, lon_axis=axis, data=np.zeros((2, 2, 2), dtype=np.float32))
+
+
+class _BoxHolder:
+    """A box-queried native: samples on a 0.5 degree lattice, generated per query."""
+
+    def __init__(self, n_variables: int = 1) -> None:
+        self.n_variables = n_variables
+        self.queries: list[BoundingBox] = []
+
+    def query_box(self, bbox: BoundingBox):
+        self.queries.append(bbox)
+        lat_axis = np.arange(-89.75, 90.0, 0.5)
+        lon_axis = np.arange(-179.75, 180.0, 0.5)
+        lats = lat_axis[(lat_axis >= bbox.lat_min) & (lat_axis <= bbox.lat_max)]
+        lons = lon_axis[(lon_axis >= bbox.lon_min) & (lon_axis <= bbox.lon_max)]
+        lon_grid, lat_grid = np.meshgrid(lons, lats)
+        values = np.tile(lon_grid.ravel().astype(np.float32), (self.n_variables, 1))
+        return lat_grid.ravel(), lon_grid.ravel(), values, None
+
+
+class _BoxReader(StaticReader):
+    """A daily reader whose native data answers box queries itself."""
+
+    READER_KEY = "_base_test_box"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 1.0
+    TIME_MATCH = TimeMatch.DAILY
+    VARIABLES = (_SPEC,)
+
+    def __init__(self, native: object) -> None:
+        super().__init__("unused.hdf")
+        self._held = native
+
+    def _load_native(self):
+        return self._held
 
 
 def _random_points(rng: np.random.Generator, n: int, with_times: bool = False) -> PointSamples:
@@ -273,6 +300,42 @@ class TestGridQuery:
         np.testing.assert_array_equal(a.values, c.values)
 
 
+class TestBoxQueriedNative:
+    def test_served_through_samples_in_padded_and_split(self):
+        holder = _BoxHolder()
+        reader = _BoxReader(holder)
+        samples = reader.samples_in(BoundingBox(0.0, 1.0, 179.0, 181.0, wraps_dateline=True), _T0)
+        # Two halves queried, each inside [-180, 180] and padded by half a 1 km cell.
+        assert len(holder.queries) == 2
+        assert all(-180.0 <= q.lon_min <= q.lon_max <= 180.0 for q in holder.queries)
+        assert holder.queries[0].lat_min < 0.0 < 1.0 < holder.queries[0].lat_max
+        assert set(samples.lons.tolist()) == {179.25, 179.75, -179.75, -179.25}
+        np.testing.assert_array_equal(samples.values[0], samples.lons.astype(np.float32))
+        assert samples.resolution_km == 1.0
+
+    def test_native_is_held_once(self):
+        holder = _BoxHolder()
+        reader = _BoxReader(holder)
+        reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+        reader.samples_in(BoundingBox(5.0, 6.0, 5.0, 6.0), _T0)
+        assert reader._native is holder
+
+    def test_wrong_variable_count_raises(self):
+        with pytest.raises(ValueError, match="box-queried native with 2 variables"):
+            _BoxReader(_BoxHolder(n_variables=2)).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+
+    def test_unknown_native_type_raises(self):
+        with pytest.raises(TypeError, match="native data of type dict"):
+            _BoxReader({}).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+
+    def test_unknown_native_type_from_native_for_raises(self, monkeypatch):
+        # A reader whose _native_for hands the query an unrecognised object.
+        reader = _BoxReader(_BoxHolder())
+        monkeypatch.setattr(reader, "_native_for", lambda time: (object(),))
+        with pytest.raises(TypeError, match="native data of type object"):
+            reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+
+
 class TestNearestPass:
     @staticmethod
     def _two_passes() -> PointSamples:
@@ -340,6 +403,24 @@ class TestNearestStep:
         assert samples.n_samples == 0
         assert reader.loads == []
 
+    def test_step_with_wrong_plane_count_raises(self):
+        reader = _StepReader(planes=2)
+        with pytest.raises(ValueError, match="for step"):
+            reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+
+    @pytest.mark.parametrize(
+        ("times", "match"),
+        [
+            (np.array([], dtype="datetime64[ns]"), "no time steps"),
+            (np.array([_T0, np.datetime64("NaT")], dtype="datetime64[ns]"), "missing value"),
+            (np.array([_T0, _T0 + np.timedelta64(1, "h"), _T0 + np.timedelta64(1, "h")]), "strictly ascending"),
+        ],
+    )
+    def test_invalid_step_times_raise(self, times, match):
+        reader = _StepReader(times=times)
+        with pytest.raises(ValueError, match=match):
+            reader.nearest_step_index(_T0)
+
     def test_nearest_step_index_picks_the_closer_neighbor(self):
         reader = _StepReader()
         assert reader.nearest_step_index(_T0 + np.timedelta64(29, "m")) == 0
@@ -364,6 +445,33 @@ class TestRegistrationValidation:
                 VARIABLES = (_SPEC,)
 
                 def _load_native(self):
+                    raise NotImplementedError
+
+    def test_missing_instrument_is_rejected_at_import(self):
+        with pytest.raises(TypeError, match="INSTRUMENT"):
+
+            class _NoInstrument(StaticReader):
+                READER_KEY = "_base_test_no_instrument"
+                RESOLUTION_KM = 1.0
+                TIME_MATCH = TimeMatch.DAILY
+                VARIABLES = (_SPEC,)
+
+                def _load_native(self):
+                    raise NotImplementedError
+
+    def test_nearest_step_without_max_offset_is_rejected(self):
+        with pytest.raises(TypeError, match="MAX_TIME_OFFSET"):
+
+            class _NoOffset(SteppedGridReader):
+                READER_KEY = "_base_test_no_offset"
+                INSTRUMENT = "FAKE"
+                RESOLUTION_KM = 1.0
+                VARIABLES = (_SPEC,)
+
+                def _step_times(self):
+                    raise NotImplementedError
+
+                def _load_step(self, index):
                     raise NotImplementedError
 
     def test_nearest_pass_without_window_is_rejected(self):
@@ -395,6 +503,17 @@ class TestRegistrationValidation:
                     raise NotImplementedError
 
 
+class TestLoadedShapeValidation:
+    def test_point_cloud_with_wrong_variable_rows_raises(self):
+        points = PointSamples(lats=np.array([0.5]), lons=np.array([0.5]), values=np.zeros((2, 1), dtype=np.float32))
+        with pytest.raises(ValueError, match="variable rows"):
+            _PointReader(points).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+
+    def test_grid_with_wrong_variable_planes_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="variable planes"):
+            _WrongPlanesGridReader(tmp_path / "unused.nc").samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+
+
 class TestFilePaths:
     def test_file_paths_and_single_file_path(self, tmp_path):
         one = _GridReader(tmp_path / "a.nc")
@@ -408,53 +527,6 @@ class TestFilePaths:
     def test_no_file_raises(self):
         with pytest.raises(ValueError, match="at least one"):
             _GridReader([])
-
-
-class TestPassReaderWindow:
-    """A pass reader holds only the granules within MAX_TIME_OFFSET of the footprint time."""
-
-    @staticmethod
-    def _granules(tmp_path):
-        granules = {}
-        for hour in range(6):
-            start = _T0 + np.timedelta64(hour, "h")
-            end = start + np.timedelta64(59, "m")
-            times = start + np.arange(4) * np.timedelta64(10, "m")
-            points = PointSamples(
-                lats=np.full(4, 10.5),
-                lons=np.full(4, 20.5),
-                values=np.full((1, 4), float(hour), dtype=np.float32),
-                times=times,
-            )
-            granules[tmp_path / f"granule_{hour:02d}.nc"] = (start, end, points)
-        return granules
-
-    def test_only_granules_in_the_window_are_loaded(self, tmp_path):
-        reader = _GranuleReader(self._granules(tmp_path))
-        box = BoundingBox(10.0, 11.0, 20.0, 21.0)
-        # Footprint at hour 0 + 5 min: granules 0..3 lie within +-3 h; 4 and 5 do not.
-        samples = reader.samples_in(box, _T0 + np.timedelta64(5, "m"))
-        assert sorted(p.name for p in reader.loads) == [f"granule_0{h}.nc" for h in range(4)]
-        assert set(samples.values[0].tolist()) == {0.0}  # the nearest pass is hour 0's
-        # Moving to hour 5 loads 4 and 5, releases 0 and 1, and never reloads 2 and 3.
-        samples = reader.samples_in(box, _T0 + np.timedelta64(5, "h") + np.timedelta64(5, "m"))
-        assert sorted(p.name for p in reader.loads) == [f"granule_0{h}.nc" for h in range(6)]
-        assert sorted(p.name for p in reader._loaded) == [f"granule_0{h}.nc" for h in range(2, 6)]
-        assert set(samples.values[0].tolist()) == {5.0}
-
-    def test_no_granule_in_window_gives_no_samples(self, tmp_path):
-        reader = _GranuleReader(self._granules(tmp_path))
-        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0 + np.timedelta64(20, "h"))
-        assert samples.n_samples == 0
-        assert reader.loads == []
-
-    def test_invalid_span_raises(self, tmp_path):
-        granules = self._granules(tmp_path)
-        path = next(iter(granules))
-        start, end, points = granules[path]
-        granules[path] = (end, start, points)
-        with pytest.raises(ValueError, match="invalid time span"):
-            _GranuleReader(granules).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
 
 
 class TestResolutionOfServedSamples:

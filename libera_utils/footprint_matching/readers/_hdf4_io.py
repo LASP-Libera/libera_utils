@@ -1,7 +1,8 @@
 """Shared HDF4 I/O helper for the footprint matching reader plugin system.
 
-HDF4 files are used by the IGBP land cover reader (MCD12Q1) and the VIIRS
-cloud property reader. Both use pyhdf, which wraps the HDF4 C library.
+HDF4 files are used by the IGBP land cover reader (MCD12Q1 sinusoidal tiles) and the
+NSIDC NISE sea-ice reader (HDF-EOS4). Both read them with pyhdf, which wraps the HDF4
+C library.
 
 Why lazy import?
 ----------------
@@ -17,8 +18,13 @@ I/O calls themselves fail with a clear, actionable error message.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 import numpy as np
+
+# How much of StructMetadata.0 an error message quotes, so a reader can see what the file
+# does carry without the message reproducing the whole (tens of kB) attribute.
+_STRUCT_METADATA_EXCERPT_CHARS: int = 400
 
 
 def _require_pyhdf() -> object:
@@ -41,7 +47,7 @@ def _require_pyhdf() -> object:
         return sd
     except ImportError as exc:
         raise ImportError(
-            "pyhdf is required to read HDF4 files (IGBP MCD12Q1 and VIIRS cloud products). "
+            "pyhdf is required to read HDF4 files (IGBP MCD12Q1 and NSIDC NISE). "
             "Install instructions:\n"
             "  conda: conda install -c conda-forge pyhdf\n"
             "  pip:   sudo apt-get install libhdf4-dev && pip install pyhdf\n"
@@ -49,122 +55,65 @@ def _require_pyhdf() -> object:
         ) from exc
 
 
-def read_hdf4_lat_lon_grid(
-    file_path: str,
-    data_sds_name: str,
-    lat_sds_name: str,
-    lon_sds_name: str,
-    fill_value: float = 255.0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Open an HDF4 file and extract a named data variable plus lat/lon grids.
+@dataclass(frozen=True)
+class _SinusoidalGeometry:
+    """Pixel geometry of one MODIS sinusoidal tile, from its HDF-EOS ``StructMetadata.0``.
 
-    This function is shared by IGBPReader and VIIRSL2L3Reader. It opens the
-    file, reads three named Scientific Data Sets (SDS), casts fill values to
-    NaN (or the caller-specified sentinel), and returns numpy arrays.
+    Pixel ``(r, c)`` has its centre at sinusoidal ``x = x_ul + (c + 0.5) * dx``,
+    ``y = y_ul + (r + 0.5) * dy`` metres, which is latitude ``y / radius_m`` and
+    longitude ``x / (radius_m * cos(latitude))``, both in radians.
 
-    Parameters
+    Attributes
     ----------
-    file_path : str
-        Absolute path to the HDF4 (.hdf) file.
-    data_sds_name : str
-        Name of the SDS holding the primary data variable (e.g., for VIIRS the
-        caller iterates per-variable).
-    lat_sds_name : str
-        Name of the latitude SDS (e.g., ``"latitude"``).
-    lon_sds_name : str
-        Name of the longitude SDS (e.g., ``"longitude"``).
-    fill_value : float, optional
-        Pixel value used as the HDF4 fill/missing sentinel. These pixels are
-        returned as-is in the data array; the caller is responsible for masking.
-        Default is 255 (used by IGBP MCD12Q1).
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray, np.ndarray]
-        ``(data, lats, lons)`` with dtypes matching the on-disk representation.
-        No coordinate trimming is applied — the returned arrays cover the full
-        extent stored in the HDF4 file.
-
-    Raises
-    ------
-    ImportError
-        If pyhdf is not installed (see :func:`_require_pyhdf`).
-    KeyError
-        If any of the three SDS names is not found in the file.
-    OSError
-        If the file cannot be opened (file not found, corrupt HDF4 header, etc.).
-
-    Notes
-    -----
-    HDF4 Scientific Data Sets are accessed via ``pyhdf.SD.SD.select()``.
-    The SDS data is read into memory in full; spatial subsetting is left to the
-    caller (the reader's ``_load_native``).
-
-    References
-    ----------
-    pyhdf documentation: https://fhs.github.io/pyhdf/
-    HDF4 format spec: https://support.hdfgroup.org/products/hdf4/
+    x_ul, y_ul : float
+        Upper-left corner of the tile in sinusoidal metres (``UpperLeftPointMtrs``).
+    dx, dy : float
+        Pixel size in metres along columns and rows; ``dy`` is negative (rows run
+        north to south).
+    radius_m : float
+        Sphere radius of the projection, metres (``ProjParams`` first value).
     """
-    sd = _require_pyhdf()
-    # Open the HDF4 file in read-only mode (sd.SDC.READ = 1).
-    hdf = sd.SD(str(file_path), sd.SDC.READ)
-    try:
-        data_sds = hdf.select(data_sds_name)
-        lat_sds = hdf.select(lat_sds_name)
-        lon_sds = hdf.select(lon_sds_name)
 
-        # Read the full arrays into memory.
-        # pyhdf .get() returns Python lists; numpy converts them efficiently.
-        data_arr = np.array(data_sds.get(), dtype=np.float32)
-        lats_arr = np.array(lat_sds.get(), dtype=np.float64)
-        lons_arr = np.array(lon_sds.get(), dtype=np.float64)
-    finally:
-        # Closing the SD object also closes all its SDS handles.
-        hdf.end()
-
-    return data_arr, lats_arr, lons_arr
+    x_ul: float
+    y_ul: float
+    dx: float
+    dy: float
+    radius_m: float
 
 
-def read_modis_sinusoidal_hdf4(
-    file_path: str,
-    data_sds_name: str,
-    fill_value: float = 255.0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Read a MODIS sinusoidal-projection HDF4 tile, computing lat/lon from StructMetadata.
+def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.ndarray, _SinusoidalGeometry]:
+    """Read one MODIS sinusoidal-projection HDF4 tile and its pixel geometry.
 
-    MODIS gridded products (e.g., MCD12Q1) do not store latitude/longitude as
-    SDS arrays. Instead, the tile geometry is encoded in the HDF-EOS
-    ``StructMetadata.0`` attribute as upper-left/lower-right corners in
-    sinusoidal-projection meters. This function parses those corners, derives
-    pixel-center coordinates, and converts them to geographic degrees.
+    MODIS gridded products (e.g., MCD12Q1) do not store latitude/longitude as SDS
+    arrays: the tile geometry is the HDF-EOS ``StructMetadata.0`` attribute's
+    upper-left/lower-right corners in sinusoidal metres, its ``XDim``/``YDim``, and
+    its projection and sphere radius. This function returns the data as stored and
+    that geometry; it computes no per-pixel coordinates, so a caller can geolocate
+    only the pixels it needs.
 
     Parameters
     ----------
     file_path : str
-        Absolute path to the MODIS HDF4 tile file.
+        Path to the MODIS HDF4 tile file.
     data_sds_name : str
         Name of the SDS to read (e.g., ``"LC_Type1"`` for MCD12Q1 IGBP).
-    fill_value : float, optional
-        Fill/missing sentinel value in the data SDS. Returned as-is; the caller
-        is responsible for masking. Default is 255 (MCD12Q1 standard).
 
     Returns
     -------
-    tuple[np.ndarray, np.ndarray, np.ndarray]
-        ``(data, lats, lons)`` where:
-
-        - ``data`` is float32, shape ``(nrows, ncols)``.
-        - ``lats`` is float64, shape ``(nrows, ncols)`` — pixel-center latitudes.
-        - ``lons`` is float64, shape ``(nrows, ncols)`` — pixel-center longitudes.
+    tuple[np.ndarray, _SinusoidalGeometry]
+        ``(data, geometry)``: ``data`` is the SDS in its stored dtype, shape
+        ``(n_rows, n_cols)``; ``geometry`` locates every pixel.
 
     Raises
     ------
     ImportError
         If pyhdf is not installed (see :func:`_require_pyhdf`).
-    KeyError
-        If ``data_sds_name`` is not found in the file.
+    pyhdf.error.HDF4Error
+        If the file cannot be opened or has no SDS named ``data_sds_name``.
     ValueError
-        If ``StructMetadata.0`` cannot be parsed (missing tile geometry fields).
+        If ``StructMetadata.0`` lacks a tile geometry field, names a projection other
+        than ``GCTP_SNSOID``, carries no positive sphere radius in ``ProjParams``, or
+        its ``XDim``/``YDim`` do not match the SDS shape.
 
     Notes
     -----
@@ -175,46 +124,51 @@ def read_modis_sinusoidal_hdf4(
         lat = Y / R
         lon = X / (R * cos(lat))
 
-    where ``R`` is the sphere radius from ``ProjParams`` (default 6 371 007.181 m,
-    the MODIS standard). Both ``lats`` and ``lons`` are returned as 2-D arrays so
-    the caller can perform pixel-level bounding-box tests without special-casing the
-    non-rectangular sinusoidal footprint.
+    where ``R`` is the sphere radius from ``ProjParams`` (6 371 007.181 m for MODIS).
     """
     sd = _require_pyhdf()
     hdf = sd.SD(str(file_path), sd.SDC.READ)
     try:
-        data_arr = np.array(hdf.select(data_sds_name).get(), dtype=np.float32)
+        data = np.array(hdf.select(data_sds_name).get())
         struct_meta: str = hdf.attributes().get("StructMetadata.0", "")
     finally:
         hdf.end()
 
-    # --- parse tile geometry from HDF-EOS StructMetadata ---
-    def _parse(pattern: str, text: str) -> re.Match:  # type: ignore[type-arg]
-        m = re.search(pattern, text)
+    def _fail(what: str) -> ValueError:
+        excerpt = struct_meta[:_STRUCT_METADATA_EXCERPT_CHARS]
+        return ValueError(
+            f"{file_path}: StructMetadata.0 {what}. A MODIS sinusoidal tile (e.g. MCD12Q1) carries its grid "
+            f"geometry there; check that the file is an unmodified HDF-EOS2 MODIS tile. "
+            f"StructMetadata.0 begins: {excerpt!r}"
+        )
+
+    def _parse(pattern: str, field: str) -> re.Match:  # type: ignore[type-arg]
+        m = re.search(pattern, struct_meta)
         if m is None:
-            raise ValueError(f"Cannot parse '{pattern}' from StructMetadata.0 in {file_path}")
+            raise _fail(f"has no {field} field")
         return m
 
-    xdim = int(_parse(r"\bXDim\s*=\s*(\d+)", struct_meta).group(1))
-    ydim = int(_parse(r"\bYDim\s*=\s*(\d+)", struct_meta).group(1))
-    ul = _parse(r"UpperLeftPointMtrs\s*=\s*\(([^,]+),([^)]+)\)", struct_meta)
-    lr = _parse(r"LowerRightMtrs\s*=\s*\(([^,]+),([^)]+)\)", struct_meta)
+    xdim = int(_parse(r"\bXDim\s*=\s*(\d+)", "XDim").group(1))
+    ydim = int(_parse(r"\bYDim\s*=\s*(\d+)", "YDim").group(1))
+    ul = _parse(r"UpperLeftPointMtrs\s*=\s*\(([^,]+),([^)]+)\)", "UpperLeftPointMtrs")
+    lr = _parse(r"LowerRightMtrs\s*=\s*\(([^,]+),([^)]+)\)", "LowerRightMtrs")
+    projection = _parse(r"\bProjection\s*=\s*(\w+)", "Projection").group(1)
+    if projection != "GCTP_SNSOID":
+        raise _fail(f"names Projection={projection}, not the sinusoidal GCTP_SNSOID this reader geolocates")
+    radius_match = _parse(r"ProjParams\s*=\s*\(\s*([^,)]+)", "ProjParams")
+    radius_m = float(radius_match.group(1))
+    if not np.isfinite(radius_m) or radius_m <= 0.0:
+        raise _fail(f"gives ProjParams sphere radius {radius_match.group(1)!r}, which is not a positive length")
+    if data.shape != (ydim, xdim):
+        raise _fail(f"gives YDim={ydim}, XDim={xdim} but the {data_sds_name} SDS has shape {data.shape}")
+
     x_ul, y_ul = float(ul.group(1)), float(ul.group(2))
     x_lr, y_lr = float(lr.group(1)), float(lr.group(2))
-
-    r_match = re.search(r"ProjParams\s*=\s*\(\s*([^,)]+)", struct_meta)
-    sphere_radius: float = float(r_match.group(1)) if r_match and float(r_match.group(1)) > 0 else 6371007.181
-
-    # --- pixel-center coordinates in sinusoidal meters ---
-    xs = x_ul + (np.arange(xdim) + 0.5) * ((x_lr - x_ul) / xdim)  # (xdim,)
-    ys = y_ul + (np.arange(ydim) + 0.5) * ((y_lr - y_ul) / ydim)  # (ydim,)
-
-    # --- sinusoidal → geographic (degrees) ---
-    lat_rad = ys / sphere_radius
-    # Broadcast to 2-D (ydim, xdim) for pixel-level lon computation
-    lats_2d = np.degrees(np.broadcast_to(lat_rad[:, np.newaxis], (ydim, xdim)))
-    lons_2d = np.degrees(
-        np.broadcast_to(xs[np.newaxis, :], (ydim, xdim)) / (sphere_radius * np.cos(lat_rad[:, np.newaxis]))
+    geometry = _SinusoidalGeometry(
+        x_ul=x_ul,
+        y_ul=y_ul,
+        dx=(x_lr - x_ul) / xdim,
+        dy=(y_lr - y_ul) / ydim,
+        radius_m=radius_m,
     )
-
-    return data_arr, np.array(lats_2d, dtype=np.float64), np.array(lons_2d, dtype=np.float64)
+    return data, geometry

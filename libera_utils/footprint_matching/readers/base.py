@@ -6,26 +6,26 @@ or interpolation applied. The PSF weigher then weights every sample where it lie
 the aggregation engine reduces the weighted samples to one value per variable, so a
 value is transformed exactly once on its way into a FMATCH product.
 
-Three concrete contracts
-------------------------
+Two concrete contracts
+----------------------
 * :class:`StaticReader` -- the source is one body of data for the staged period: a
   daily composite, a yearly map, or swath data carrying a time per sample. The reader
-  loads it once (:meth:`StaticReader._load_native`) as :class:`GridSamples` or
-  :class:`PointSamples`; the base class indexes it and answers every query from memory.
+  loads it once (:meth:`StaticReader._load_native`) as :class:`GridSamples`,
+  :class:`PointSamples`, or a native that answers box queries itself (see
+  :class:`_BoxNative`); the base class indexes a point cloud and answers every query
+  from memory.
 * :class:`SteppedGridReader` -- the source is a time series of global grids (ERA5
   hourly steps). The reader lists the step times (:meth:`SteppedGridReader._step_times`)
   and loads one step on demand (:meth:`SteppedGridReader._load_step`); the base class
   keeps only the step nearest the footprint time in memory.
-* :class:`PassReader` -- the source is swath data in hourly granules, each with a time
-  per sample (CERES SSF, CLDPIX). The reader reads a granule's time span
-  (:meth:`PassReader._granule_span`) and loads one granule as points
-  (:meth:`PassReader._load_granule`); the base class holds only the granules whose span
-  lies within ``MAX_TIME_OFFSET`` of the current footprint time.
 
 Geographic query
 ----------------
 :meth:`AncillaryReader.samples_in` takes a footprint's :class:`BoundingBox` and time.
-A grid is sliced on its axes with ``searchsorted``. A point cloud is sorted once, at
+A grid is sliced on its axes with ``searchsorted``. A source whose pixels are regular
+in a projection, not in latitude/longitude (the MODIS sinusoidal tiles), is held in its
+projected form and geolocates only the block a box selects (:class:`_BoxNative`). A
+point cloud is sorted once, at
 load, into 1 degree latitude/longitude bins held as offset ranges (one permuted copy
 of the data, the unsorted one released), so a box query touches only the bins the box
 overlaps before applying the exact box mask. A box that crosses the antimeridian is
@@ -54,6 +54,7 @@ import abc
 from collections.abc import Sequence
 from functools import cached_property
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -122,22 +123,20 @@ class _PointIndex:
         keep = np.isfinite(lats) & np.isfinite(lons)
         times = points.times
         if times is not None:
-            times = np.asarray(times).astype("datetime64[ns]")
+            times = np.asarray(times, dtype="datetime64[ns]")
             keep &= ~np.isnat(times)
-        lats = lats[keep]
-        lons = lons[keep]
-        values = np.asarray(points.values, dtype=np.float32)[:, keep]
-        if times is not None:
-            times = times[keep]
+        kept = np.flatnonzero(keep)
 
-        lat_bin = np.clip(np.floor((lats + 90.0) / POINT_INDEX_BIN_DEG).astype(np.int64), 0, _N_LAT_BINS - 1)
-        lon_bin = np.clip(np.floor((lons + 180.0) / POINT_INDEX_BIN_DEG).astype(np.int64), 0, _N_LON_BINS - 1)
+        lat_bin = np.clip(np.floor((lats[kept] + 90.0) / POINT_INDEX_BIN_DEG).astype(np.int64), 0, _N_LAT_BINS - 1)
+        lon_bin = np.clip(np.floor((lons[kept] + 180.0) / POINT_INDEX_BIN_DEG).astype(np.int64), 0, _N_LON_BINS - 1)
         cell = lat_bin * _N_LON_BINS + lon_bin
         order = np.argsort(cell, kind="stable")
-        self.lats = lats[order]
-        self.lons = lons[order]
-        self.values = values[:, order]
-        self.times = times[order] if times is not None else None
+        # One gather per array: the kept samples, in bin order.
+        idx = kept[order]
+        self.lats = lats[idx]
+        self.lons = lons[idx]
+        self.values = np.asarray(points.values, dtype=np.float32)[:, idx]
+        self.times = times[idx] if times is not None else None
         self.spacing_km = points.spacing_km
         # offsets[c] .. offsets[c + 1] is the index range of bin c in the sorted arrays.
         self._offsets = np.searchsorted(cell[order], np.arange(_N_LAT_BINS * _N_LON_BINS + 1))
@@ -177,6 +176,42 @@ class _PointIndex:
         lons = self.lons[candidates]
         inside = (lats >= bbox.lat_min) & (lats <= bbox.lat_max) & (lons >= bbox.lon_min) & (lons <= bbox.lon_max)
         return candidates[inside]
+
+
+@runtime_checkable
+class _BoxNative(Protocol):
+    """A native body of data that answers a box query itself.
+
+    For a source held in a projected form (MODIS sinusoidal tiles), where flattening
+    every pixel to a latitude/longitude point would multiply its size. The holder
+    geolocates only the block a query selects.
+
+    Attributes
+    ----------
+    n_variables : int
+        Number of variables in every ``values`` array it returns.
+    """
+
+    n_variables: int
+
+    def query_box(self, bbox: BoundingBox) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
+        """Return ``(lats, lons, values, times)`` of the samples inside one plain box.
+
+        Parameters
+        ----------
+        bbox : BoundingBox
+            A non-wrapping box inside [-180, 180] (callers split wrapping boxes first).
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray or None]
+            ``(n,)`` float64 latitudes and longitudes, ``(n_variables, n)`` float32
+            values (inclusive box edges), and ``(n,)`` times or ``None``.
+        """
+        ...
+
+
+_Native = GridSamples | _PointIndex | _BoxNative
 
 
 class AncillaryReader(abc.ABC):
@@ -251,13 +286,16 @@ class AncillaryReader(abc.ABC):
         Abstract intermediates (classes that still have ``abc.abstractmethod`` members)
         are skipped. A concrete reader missing ``INSTRUMENT``, ``TIME_MATCH``, or the
         time-window attributes its policy needs fails here, at import, rather than on
-        the first footprint.
+        the first footprint. So does a second class registering a ``READER_KEY`` that
+        another class already holds; re-executing a reader module (``importlib.reload``,
+        IPython ``%autoreload``) defines a new class under the same key and raises too.
 
         Raises
         ------
         TypeError
-            If a concrete subclass lacks a required class attribute or declares a
-            window attribute inconsistent with its ``TIME_MATCH``.
+            If a concrete subclass lacks a required class attribute, declares a window
+            attribute inconsistent with its ``TIME_MATCH``, or reuses a ``READER_KEY``
+            registered to a different class.
         """
         super().__init_subclass__(**kwargs)
         if getattr(cls, "__abstractmethods__", None):
@@ -296,6 +334,12 @@ class AncillaryReader(abc.ABC):
 
         from libera_utils.footprint_matching.readers.registry import ReaderRegistry  # noqa: PLC0415
 
+        registered = ReaderRegistry._registry.get(key)
+        if registered is not None and registered is not cls:
+            raise TypeError(
+                f"Reader {cls.__module__}.{cls.__qualname__} uses READER_KEY={key!r}, which is already registered "
+                f"to {registered.__module__}.{registered.__qualname__}. Give each reader a unique READER_KEY."
+            )
         ReaderRegistry._registry[key] = cls
 
     @classmethod
@@ -415,7 +459,7 @@ class AncillaryReader(abc.ABC):
             resolution_km=resolution_km,
         )
 
-    def _resolution_km(self, natives: tuple[GridSamples | _PointIndex, ...]) -> float:
+    def _resolution_km(self, natives: tuple[_Native, ...]) -> float:
         """The native cell size the served samples stand for, km.
 
         The largest spacing a loaded point cloud measured on itself, else the reader's
@@ -449,8 +493,7 @@ class AncillaryReader(abc.ABC):
         wraps = bbox.wraps_dateline
         if not wraps and lon_max > 180.0:
             # The padding pushed a plain box across the antimeridian: use the [0, 360) form.
-            lon_min, lon_max, wraps = lon_min % 360.0, lon_max % 360.0 + 360.0 * (lon_max >= 360.0), True
-            lon_max = bbox.lon_max + lon_pad
+            lon_min, wraps = lon_min % 360.0, True
         elif not wraps and lon_min < -180.0:
             lon_min, lon_max, wraps = bbox.lon_min - lon_pad + 360.0, bbox.lon_max + lon_pad + 360.0, True
         return BoundingBox(lat_min, lat_max, lon_min, lon_max, wraps, bbox.is_polar, bbox.truncated)
@@ -468,11 +511,16 @@ class AncillaryReader(abc.ABC):
             return np.zeros(times.shape, dtype=bool)
         return offsets <= nearest + self.PASS_WINDOW
 
-    @staticmethod
     def _box_samples(
-        native: GridSamples | _PointIndex, bbox: BoundingBox
+        self, native: _Native, bbox: BoundingBox
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None]:
-        """Return ``(lats, lons, values, times)`` of the native samples inside one plain box."""
+        """Return ``(lats, lons, values, times)`` of the native samples inside one plain box.
+
+        Raises
+        ------
+        TypeError
+            If ``native`` is none of the three native forms.
+        """
         if isinstance(native, GridSamples):
             lat0 = int(np.searchsorted(native.lat_axis, bbox.lat_min, side="left"))
             lat1 = int(np.searchsorted(native.lat_axis, bbox.lat_max, side="right"))
@@ -484,18 +532,27 @@ class AncillaryReader(abc.ABC):
             lon_grid, lat_grid = np.meshgrid(lon_axis, lat_axis)
             values = np.ascontiguousarray(block.reshape(block.shape[0], -1), dtype=np.float32)
             return lat_grid.ravel().astype(np.float64), lon_grid.ravel().astype(np.float64), values, None
-        idx = native.query(bbox)
-        times = native.times[idx] if native.times is not None else None
-        return native.lats[idx], native.lons[idx], native.values[:, idx], times
+        if isinstance(native, _PointIndex):
+            idx = native.query(bbox)
+            times = native.times[idx] if native.times is not None else None
+            return native.lats[idx], native.lons[idx], native.values[:, idx], times
+        if isinstance(native, _BoxNative):
+            return native.query_box(bbox)
+        raise TypeError(self._unknown_native_message(native))
+
+    def _unknown_native_message(self, native: object) -> str:
+        return (
+            f"Reader {self.READER_KEY!r} holds native data of type {type(native).__name__}; a reader's native data "
+            "must be GridSamples, PointSamples, or an object with n_variables and query_box(bbox)."
+        )
 
     @abc.abstractmethod
-    def _native_for(self, time: np.datetime64) -> tuple[GridSamples | _PointIndex, ...]:
+    def _native_for(self, time: np.datetime64) -> tuple[_Native, ...]:
         """Return the native data a query at ``time`` draws from; empty for no match.
 
         :class:`StaticReader` returns its one indexed body of data regardless of
         ``time``; :class:`SteppedGridReader` the step nearest ``time``, or nothing when
-        that step is farther than ``MAX_TIME_OFFSET``; :class:`PassReader` the indexed
-        granules whose time span lies within ``MAX_TIME_OFFSET`` of ``time``.
+        that step is farther than ``MAX_TIME_OFFSET``.
         """
 
     def _index_points(self, native: PointSamples) -> _PointIndex:
@@ -517,15 +574,22 @@ class StaticReader(AncillaryReader):
     """A reader whose source is one body of data for the staged period.
 
     Covers the ``DAILY`` sources (one composite or map per period), and a
-    ``NEAREST_PASS`` source small enough to hold whole (a swath reader that reads
-    hourly granules uses :class:`PassReader` instead). The subclass loads the whole
+    ``NEAREST_PASS`` source small enough to hold whole. The subclass loads the whole
     source once in :meth:`_load_native`; this class indexes it (a point cloud into 1
     degree bins) and serves every query from memory.
     """
 
     @cached_property
-    def _native(self) -> GridSamples | _PointIndex:
-        """The loaded, indexed native data (loaded on first access, then held)."""
+    def _native(self) -> _Native:
+        """The loaded, indexed native data (loaded on first access, then held).
+
+        Raises
+        ------
+        ValueError
+            If the loaded data carries a different number of variables than ``VARIABLES``.
+        TypeError
+            If :meth:`_load_native` returned none of the three native forms.
+        """
         native = self._load_native()
         if isinstance(native, GridSamples):
             if native.data.shape[0] != self.n_variables:
@@ -534,13 +598,22 @@ class StaticReader(AncillaryReader):
                     f"{self.n_variables} VARIABLES."
                 )
             return native
-        return self._index_points(native)
+        if isinstance(native, PointSamples):
+            return self._index_points(native)
+        if isinstance(native, _BoxNative):
+            if native.n_variables != self.n_variables:
+                raise ValueError(
+                    f"Reader {self.READER_KEY!r} loaded a box-queried native with {native.n_variables} variables "
+                    f"but declares {self.n_variables} VARIABLES."
+                )
+            return native
+        raise TypeError(self._unknown_native_message(native))
 
-    def _native_for(self, time: np.datetime64) -> tuple[GridSamples | _PointIndex, ...]:
+    def _native_for(self, time: np.datetime64) -> tuple[_Native, ...]:
         return (self._native,)
 
     @abc.abstractmethod
-    def _load_native(self) -> GridSamples | PointSamples:
+    def _load_native(self) -> GridSamples | PointSamples | _BoxNative:
         """Open the staged granule(s) and return the whole source as native samples.
 
         Called once per reader instance. Implementers handle the source's own fill and
@@ -549,9 +622,11 @@ class StaticReader(AncillaryReader):
 
         Returns
         -------
-        GridSamples or PointSamples
-            ``GridSamples`` for a regular latitude/longitude grid, ``PointSamples``
-            for anything else (with ``times`` for a ``NEAREST_PASS`` reader).
+        GridSamples or PointSamples or _BoxNative
+            ``GridSamples`` for a regular latitude/longitude grid, a :class:`_BoxNative`
+            for a source held in a projected form that geolocates the block a query
+            selects, ``PointSamples`` for anything else (with ``times`` for a
+            ``NEAREST_PASS`` reader).
         """
 
 
@@ -574,7 +649,10 @@ class SteppedGridReader(AncillaryReader):
         if steps.size == 0:
             raise ValueError(f"Reader {self.READER_KEY!r} found no time steps in {[p.name for p in self.file_paths]}.")
         if np.any(np.isnat(steps)):
-            raise ValueError(f"Reader {self.READER_KEY!r} found a NaT time step in its granules.")
+            raise ValueError(
+                f"Reader {self.READER_KEY!r} found a NaT time step in {[p.name for p in self.file_paths]}: "
+                "the granule's time axis has a missing value; re-download that period."
+            )
         if steps.size > 1 and np.any(np.diff(steps) <= np.timedelta64(0, "ns")):
             raise ValueError(
                 f"Reader {self.READER_KEY!r}: step times must be strictly ascending across the staged granules; "
@@ -593,6 +671,18 @@ class SteppedGridReader(AncillaryReader):
         ----------
         time : np.datetime64
             A footprint time.
+
+        Returns
+        -------
+        int or None
+            The index into the step times of the step nearest ``time``, or ``None`` when
+            that step is farther than ``MAX_TIME_OFFSET``.
+
+        Raises
+        ------
+        ValueError
+            If the staged granules hold no time steps, a NaT step, or step times that
+            are not strictly ascending.
         """
         steps = self._steps
         pos = int(np.searchsorted(steps, time))
@@ -624,75 +714,3 @@ class SteppedGridReader(AncillaryReader):
     @abc.abstractmethod
     def _load_step(self, index: int) -> GridSamples:
         """Load the grid of step ``index`` (an index into :meth:`_step_times`)."""
-
-
-class PassReader(AncillaryReader):
-    """A reader whose source is swath data in time-spanning granules, served by time window.
-
-    CERES SSF and CLDPIX come as hourly granules, and a CLDPIX hour alone is several
-    million pixels, so a day cannot be held at once. The subclass reports each granule's
-    time span (:meth:`_granule_span`) and loads one granule as time-stamped points
-    (:meth:`_load_granule`); this class keeps indexed only the granules whose span lies
-    within ``MAX_TIME_OFFSET`` of the current footprint time, loading a granule when the
-    footprints reach its window and releasing it when they leave. Footprints arrive in
-    time order, so the window slides forward and each granule is loaded once.
-
-    The nearest-pass selection then runs over every sample the loaded granules hold in
-    the box, so a pass is found whichever granule it falls in.
-    """
-
-    TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
-
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
-        super().__init__(file_paths)
-        # Granule path -> its indexed points, for the granules inside the current window.
-        self._loaded: dict[Path, _PointIndex] = {}
-
-    @cached_property
-    def _spans(self) -> list[tuple[np.datetime64, np.datetime64, Path]]:
-        """``(start, end, path)`` per staged granule, ascending by start."""
-        spans = []
-        for path in self.file_paths:
-            start, end = self._granule_span(path)
-            start, end = np.datetime64(start, "ns"), np.datetime64(end, "ns")
-            if np.isnat(start) or np.isnat(end) or end < start:
-                raise ValueError(
-                    f"Reader {self.READER_KEY!r}: granule {path.name} has an invalid time span {start}..{end}."
-                )
-            spans.append((start, end, path))
-        spans.sort(key=lambda item: item[0])
-        return spans
-
-    def granules_in_window(self, time: np.datetime64) -> list[Path]:
-        """The staged granules whose span lies within ``MAX_TIME_OFFSET`` of ``time``.
-
-        Parameters
-        ----------
-        time : np.datetime64
-            A footprint time.
-        """
-        low, high = time - self.MAX_TIME_OFFSET, time + self.MAX_TIME_OFFSET
-        return [path for start, end, path in self._spans if end >= low and start <= high]
-
-    def _native_for(self, time: np.datetime64) -> tuple[_PointIndex, ...]:
-        wanted = self.granules_in_window(time)
-        for path in list(self._loaded):
-            if path not in wanted:
-                # Release a granule the footprints have moved past.
-                del self._loaded[path]
-        for path in wanted:
-            if path not in self._loaded:
-                self._loaded[path] = self._index_points(self._load_granule(path))
-        return tuple(self._loaded[path] for path in wanted)
-
-    @abc.abstractmethod
-    def _granule_span(self, path: Path) -> tuple[np.datetime64, np.datetime64]:
-        """Return the ``(start, end)`` observation times a granule covers, from its metadata."""
-
-    @abc.abstractmethod
-    def _load_granule(self, path: Path) -> PointSamples:
-        """Open one granule and return its samples as time-stamped points.
-
-        Implementers handle the granule's own fill and valid-range conventions, returning
-        NaN where it has no value, longitudes in [-180, 180], and a time per sample.
-        """

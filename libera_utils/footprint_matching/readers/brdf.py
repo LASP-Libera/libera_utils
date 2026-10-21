@@ -4,9 +4,11 @@ Data source: VIIRS/NOAA-20 BRDF/Albedo Model Parameters Daily L3 Global 0.05° C
 - Product: VJ143C1 (Collection 002)
 - Format: HDF5/HDF-EOS5 (.h5), opened via h5py
 - Spatial resolution: 0.05° (~5.6 km at equator)
-- Grid: 3600 × 7200 global Climate Model Grid (CMG), ascending lat (−90 → 90)
-  NOTE: the file stores latitude in DESCENDING order (90 → −90); this reader
-  flips it to ascending order for consistency with all other readers.
+- Grid: 3600 × 7200 global Climate Model Grid (CMG). The file's ``lat``/``lon``
+  hold each cell's upper-left edge, latitude DESCENDING (90 → −89.95, longitude
+  −180 → 179.95); this reader serves cell centres (±89.975, ±179.975) with
+  latitude ascending, like every other reader, after checking the axes against
+  the grid's HDF-EOS5 ``StructMetadata.0`` corners.
 - Temporal resolution: Daily (using 16 days of accumulated observations)
 - Parameters: 3 RossThick-LiSparse (RTLS) kernel coefficients × 3 broadbands
   (shortwave, visible, near-infrared) = 9 output variables
@@ -20,7 +22,8 @@ RTLS decomposition: R = f_iso + f_vol * k_vol + f_geo * k_geo
   fgeo  — geometric (Li-Sparse) scattering weight
 
 These are dimensionless; values range from 0.0 to ~3.0 for fiso and ~1.0 for
-fvol/fgeo. Stored as int16 with scale_factor = 0.001; fill = 32767.
+fvol/fgeo. Stored as int16; each field's own ``_FillValue`` (32767), ``valid_range``
+(0..32766), ``scale_factor`` (0.001) and ``add_offset`` (0) are applied.
 
 Output variable naming: ``brdf_{band}_{param}``
 
@@ -53,16 +56,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-import numpy as np
-
 from libera_utils.footprint_matching.readers._hdf5_io import read_viirs_brdf_hdf5
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
-# HDF5 group path containing the BRDF parameter fields and coordinate arrays.
-_BRDF_DATA_PATH: str = "HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields"
+# The HDF-EOS5 grid holding the BRDF parameter fields and coordinate arrays.
+_BRDF_GRID_NAME: str = "VIIRS_CMG_BRDF"
 
-# Mapping from VariableSpec name → HDF5 field name inside _BRDF_DATA_PATH.
+# Mapping from VariableSpec name → HDF5 field name in the grid's Data Fields group.
 # Order here must match VARIABLES tuple order (used for indexing data axis 0).
 _BRDF_FIELD_MAP: dict[str, str] = {
     "brdf_shortwave_fiso": "BRDF_Albedo_Parameter1_shortwave",
@@ -182,17 +183,24 @@ class VIIRSBRDFReader(StaticReader):
 
         Reads via
         :func:`~libera_utils.footprint_matching.readers._hdf5_io.read_viirs_brdf_hdf5`,
-        which returns data in ascending latitude order with fill as NaN.
+        which returns cell-centre axes in ascending latitude order with fill and
+        out-of-range pixels as NaN.
 
         Returns
         -------
         GridSamples
             ``data`` is float32 shape ``(9, n_lat, n_lon)`` (axis 0 in ``VARIABLES``
             order, fill as NaN).
+
+        Raises
+        ------
+        ValueError
+            If the granule's fields or grid metadata are not those of a VJ143C1
+            granule (see :func:`read_viirs_brdf_hdf5`).
         """
         data, lats, lons = read_viirs_brdf_hdf5(
             file_path=str(self.single_file_path),
             field_names=self._field_names,
-            hdf5_data_path=_BRDF_DATA_PATH,
+            grid_name=_BRDF_GRID_NAME,
         )
-        return GridSamples(lat_axis=lats, lon_axis=lons, data=np.asarray(data, dtype=np.float32))
+        return GridSamples(lat_axis=lats, lon_axis=lons, data=data)

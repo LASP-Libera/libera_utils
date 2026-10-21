@@ -12,6 +12,7 @@ root-level ``Aerosol_Optical_Thickness_550_Land_Ocean_Mean`` (AOD) and
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.types import BoundingBox
@@ -149,9 +150,32 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         # Targets AOD valid-range masking; asserts an out-of-range 99.0 AOD becomes all-NaN while type is preserved.
         reader = _make_reader(tmp_path, aod_fill=99.0, include_fill_pixel=False)
         data, _, _ = _region(reader, _full_bbox(), _T)
-        # AOD valid max is 5.0, so 99.0 must be masked; aerosol type is unaffected.
+        # The file's AOD valid_range is [0, 10], so 99.0 must be masked; aerosol type is unaffected.
         assert np.all(np.isnan(data[_AOD_AXIS]))
         assert np.allclose(data[_TYPE_AXIS], _AEROSOL_TYPE, atol=1e-5)
+
+    def test_aod_inside_the_files_valid_range_is_served(self, tmp_path):
+        # Heavy-smoke AOD between 5 and 10 lies inside the file's valid_range and is kept.
+        reader = _make_reader(tmp_path, aod_fill=7.0, include_fill_pixel=False)
+        data, _, _ = _region(reader, _full_bbox(), _T)
+        assert np.allclose(data[_AOD_AXIS], 7.0, atol=1e-5)
+
+    def test_valid_range_comes_from_the_file(self, tmp_path):
+        # A narrower valid_range in the file masks a value the default range keeps.
+        reader = _make_reader(tmp_path, aod_fill=3.0, include_fill_pixel=False, aod_valid_range=(0.0, 2.0))
+        data, _, _ = _region(reader, _full_bbox(), _T)
+        assert np.all(np.isnan(data[_AOD_AXIS]))
+
+    @pytest.mark.parametrize("field", ["aod_valid_range", "aerosol_type_valid_range"])
+    def test_field_without_valid_range_raises(self, tmp_path, field):
+        reader = _make_reader(tmp_path, **{field: None})
+        with pytest.raises(ValueError, match="has no valid_range attribute"):
+            reader.samples_in(_full_bbox(), _T)
+
+    def test_aerosol_type_range_beyond_the_categories_raises(self, tmp_path):
+        reader = _make_reader(tmp_path, aerosol_type_valid_range=(0, 9))
+        with pytest.raises(ValueError, match=r"valid_range is \[0, 9\].*aerosol types 0..7"):
+            reader.samples_in(_full_bbox(), _T)
 
     def test_out_of_range_aerosol_type_becomes_nan(self, tmp_path):
         # Category 99 is outside the valid [0, 7] range -> NaN; AOD is unaffected. Asserts the type axis is all NaN

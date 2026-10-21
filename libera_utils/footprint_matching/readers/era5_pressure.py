@@ -122,7 +122,7 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
 
     Variable-major, levels ascending — e.g. ``temperature_10hPa`` ...
     ``temperature_1000hPa``, then ``geopotential_10hPa`` ... -- matching the
-    stacking order in ``ERA5PressureLevelReader._read_step_layers``. Every field
+    plane order in ``ERA5PressureLevelReader._read_step_layers``. Every field
     is continuous (weighted-mean aggregated), so each also gains an automatic
     ``_standard_deviation`` companion in ``product_variable_specs()``.
     """
@@ -175,8 +175,8 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
     RESOLUTION_KM: float = 28.0
     VARIABLES: tuple[VariableSpec, ...] = _build_pressure_level_specs()
 
-    def _read_step_layers(self, step: xr.Dataset, path: Path) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
-        """Read every (variable, level) layer from one time step.
+    def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
+        """Read every (variable, level) layer from one time step into ``out``.
 
         Raises
         ------
@@ -206,12 +206,10 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
                 f"FMATCH requires {list(_ERA5_PRESSURE_LEVELS)} (see _ERA5_PRESSURE_LEVELS)."
             )
 
-        lats = step["latitude"].values.astype(np.float64)
-        lons = step["longitude"].values.astype(np.float64)
-        layers: list[np.ndarray] = []
         # Variable-major, levels ascending -- must mirror _build_pressure_level_specs.
+        plane = 0
         for _, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:
             da = step[nc_name]
             for level in _ERA5_PRESSURE_LEVELS:
-                layers.append(da.sel({_PRESSURE_LEVEL_COORD: level}).values.astype(np.float32))
-        return lats, lons, layers
+                out[plane] = da.sel({_PRESSURE_LEVEL_COORD: level}).values
+                plane += 1
