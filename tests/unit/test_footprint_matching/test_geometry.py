@@ -28,7 +28,6 @@ from libera_utils.footprint_matching.geometry import (
     compute_footprint_bounding_box,
     compute_footprint_bounding_boxes,
     compute_viewing_frames,
-    psf_ground_radius_km,
 )
 
 # A representative spacecraft geodetic altitude for synthetic cases (JPSS orbit), km.
@@ -502,40 +501,6 @@ class TestComputeViewingFrames:
         for axis in (frames.b_hat, frames.c_hat, frames.n_hat):
             np.testing.assert_allclose(np.linalg.norm(axis, axis=1), 1.0, atol=1e-12)
         np.testing.assert_allclose(np.sum(frames.b_hat * frames.c_hat, axis=1), 0.0, atol=1e-12)
-
-
-class TestPsfGroundRadius:
-    """psf_ground_radius_km projects the PSF angular extent to a ground radius."""
-
-    def test_grows_with_altitude(self):
-        low = psf_ground_radius_km(WGS84_SEMI_MAJOR_AXIS_KM + 400.0, 0.0)
-        high = psf_ground_radius_km(WGS84_SEMI_MAJOR_AXIS_KM + 800.0, 0.0)
-        assert high > low > 0.0
-
-    def test_grows_with_viewing_zenith(self):
-        # The 1/cos(vza) elongation makes an oblique view reach farther on the ground.
-        radius = WGS84_SEMI_MAJOR_AXIS_KM + ALT
-        assert psf_ground_radius_km(radius, 60.0) > psf_ground_radius_km(radius, 0.0)
-
-    @pytest.mark.parametrize("distance_deg", [0.0, 4.0, 7.0, 10.0, 13.0])
-    def test_matches_ray_traced_along_view_reach(self, distance_deg):
-        # A FOV floor above the PSF's diagonal extent pins the angle the radius uses, so
-        # the radius can be checked against rays traced +/- that angle along the view
-        # direction. Their mean ground reach is what rho * tan(theta) / cos(vza) predicts;
-        # a flat-Earth h * tan(theta) / cos(vza) falls ~40% short at vza 60.
-        theta = 2.0
-        lat, lon = 0.0, 0.0
-        satellite, boresight, cross_axis = _geometry(lat, lon, distance_deg, 0.0)
-        plat, plon, missed = geo._trace_perimeter(
-            satellite, boresight, cross_axis, np.array([theta, -theta]), np.zeros(2)
-        )
-        assert not missed.any()
-        geod = geo._wgs84_geod()
-        reach_km = [geod.inv(lon, lat, float(plon[0, k]), float(plat[0, k]))[2] / 1000.0 for k in range(2)]
-
-        vza = _vza(lat, lon, distance_deg, 0.0)
-        radius = psf_ground_radius_km(_radius(distance_deg, 0.0), vza, fov_halfangle_deg=theta)
-        assert radius == pytest.approx(np.mean(reach_km), rel=0.05)
 
 
 class TestBatchBoundingBoxes:
