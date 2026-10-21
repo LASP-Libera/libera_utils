@@ -140,8 +140,28 @@ class TestBuildRadiometerFootprints:
         assert on_earth.time == np.datetime64("2026-06-11T00:00:00", "ns")
         # The off-Earth record keeps its index, flagged, with no scan rate.
         assert off_earth.off_limb
+        assert off_earth.bbox is None
         assert off_earth.cone_angle_rate is None
         assert off_earth.time == np.datetime64("2026-06-11T00:00:01", "ns")
+
+    def test_off_earth_view_aggregates_to_fill(self, tmp_path):
+        from libera_utils.footprint_matching.weighting import AngularPSFWeigher
+
+        # An L1B space view has no box and a NaN viewing zenith; aggregation leaves it at
+        # fill with zero coverage instead of building its geometry.
+        footprints = build_radiometer_footprints(
+            self._l1b(
+                latitude=np.array([0.5, np.nan]),
+                longitude=np.array([0.5, np.nan]),
+                subsatellite_latitude=np.array([1.5, 1.5]),
+                subsatellite_longitude=np.array([0.5, 0.5]),
+            )
+        )
+        values, coverage = aggregate_external_variables(
+            OperationalMode.CAM, footprints, make_sources(tmp_path), weigher=AngularPSFWeigher(), return_coverage=True
+        )
+        np.testing.assert_allclose(values["_fake_agg_mean_field_a"], [5.0, np.nan])
+        assert coverage[1] == 0.0
 
     def test_missing_ephemeris_raises(self):
         inputs = self._l1b()

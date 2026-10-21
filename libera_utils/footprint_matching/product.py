@@ -68,7 +68,6 @@ from libera_utils.footprint_matching.geometry import (
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.sources import AncillarySources, build_sources
 from libera_utils.footprint_matching.types import (
-    BoundingBox,
     FmatchCoverageFlag,
     OperationalMode,
     RadiometerFootprint,
@@ -299,7 +298,7 @@ class _FootprintGeometry:
 def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
     """Extract the viewing geometry a PSF weigher needs from a footprint object.
 
-    Every footprint carries a ``bbox`` and a ``viewing_zenith_angle``; the boresight is
+    Every on-Earth footprint carries a ``bbox`` and a ``viewing_zenith_angle``; the boresight is
     read from ``latitude``/``longitude`` when present and otherwise taken as the box
     centre. A :class:`RadiometerFootprint` carries the L1B
     ephemeris (subsatellite point and satellite radius) the angular-frame weigher needs.
@@ -455,7 +454,7 @@ def aggregate_external_variables(
     mode : OperationalMode
         Operational mode selecting the active readers and product variables.
     footprints : Sequence[Any]
-        Footprints to aggregate over, each exposing a ``bbox`` BoundingBox, a ``time``
+        Footprints to aggregate over, each exposing a ``bbox`` (``None`` for an off-limb view), a ``time``
         (``np.datetime64``) and the geometry the weigher reads (``latitude``,
         ``longitude``, ``viewing_zenith_angle`` and, for the angular weigher, the
         ephemeris). Pass them in time order: a stepped source reloads its grid
@@ -532,20 +531,21 @@ def _aggregate_footprints(
     """Run the per-footprint loop of :func:`aggregate_external_variables` in this process."""
     n_footprints = len(footprints)
 
-    # Extract each footprint's viewing geometry once (attribute reads, cheap) rather than
-    # inside the per-source loop. Build every on-Earth footprint's viewing frame in one
-    # batched call; the frame is the dominant weighting cost.
-    geoms = [_footprint_geometry(footprint) for footprint in footprints]
+    # Extract each on-Earth footprint's viewing geometry once (attribute reads, cheap)
+    # rather than inside the per-source loop. Off-limb views are skipped below and carry
+    # no box and, in L1B, no finite viewing zenith, so they get no geometry. Build every
+    # on-Earth footprint's viewing frame in one batched call; the frame is the dominant
+    # weighting cost.
+    on_earth = [i for i, footprint in enumerate(footprints) if not getattr(footprint, "off_limb", False)]
+    geoms = {i: _footprint_geometry(footprints[i]) for i in on_earth}
     frames: ViewingFrame | None = None
     frame_rows: dict[int, int] = {}
     if weigher.uses_viewing_frame:
-        if not all(geom.has_ephemeris for geom in geoms):
+        if not all(geom.has_ephemeris for geom in geoms.values()):
             raise ValueError(
                 f"{type(weigher).__name__} needs each footprint's L1B ephemeris (subsatellite point and "
                 "satellite radius); camera pseudo-footprints carry none, so weight them with RadialWeigher."
             )
-        # Off-Earth views have no frame (and are skipped below), so batch only the others.
-        on_earth = [i for i, footprint in enumerate(footprints) if not getattr(footprint, "off_limb", False)]
         if on_earth:
             frames = _batch_viewing_frames([geoms[i] for i in on_earth])
             frame_rows = {i: row for row, i in enumerate(on_earth)}
@@ -590,9 +590,9 @@ def _aggregate_footprints(
         if getattr(footprint, "off_limb", False):
             # Space/calibration view with no Earth footprint: leave every external
             # variable at its fill sentinel and force zero coverage (coverage_min[i]
-            # stays +inf, mapped to 0.0 below). Never aggregate ancillary data against
-            # the boresight placeholder box -- that would hand a space record valid-
-            # looking external values and nonzero coverage.
+            # stays +inf, mapped to 0.0 below). An off-limb record has no box to query,
+            # and aggregating anything for it would hand a space record valid-looking
+            # external values and nonzero coverage.
             continue
 
         geom = geoms[i]
@@ -804,9 +804,9 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
 
     Exactly one footprint is produced per input record, in input order, so the list stays
     index-aligned with the product columns: an off-Earth view (a space/calibration view
-    that slipped past the reader's finite filter) keeps its index with a zero-size
-    placeholder box at the boresight and ``off_limb=True``, so aggregation leaves it at
-    fill rather than querying and weighting a fabricated region.
+    that slipped past the reader's finite filter) keeps its index with ``bbox=None`` and
+    ``off_limb=True``, so aggregation leaves it at fill rather than querying and
+    weighting a region the instrument did not see.
 
     Parameters
     ----------
@@ -859,9 +859,6 @@ def build_radiometer_footprints(l1b_inputs: dict[str, np.ndarray]) -> list[Radio
         lat = float(latitudes[i])
         lon = float(longitudes[i])
         off_limb = bbox is None
-        if off_limb:
-            # Zero-size placeholder that keeps the index aligned; never queried or weighted.
-            bbox = BoundingBox(lat, lat, lon, lon)
         cone_rate = float(cone_rates[i])
         footprints.append(
             RadiometerFootprint(
@@ -1021,7 +1018,8 @@ def _merge_coverage_qa(
     coverage : np.ndarray
         Per-footprint coverage fraction in ``[0, 1]``.
     footprints : Sequence[Any]
-        Footprints, read only for each ``bbox.truncated`` flag.
+        Footprints, read only for each ``off_limb`` flag and, where ``bbox`` is not
+        ``None``, its ``truncated`` flag.
     """
     if "psf_coverage_fraction" in definition.variables:
         dtype, fill_value = _fill_value_for(definition.variables["psf_coverage_fraction"])
@@ -1035,7 +1033,7 @@ def _merge_coverage_qa(
     qbits = np.zeros(coverage.shape, dtype=np.int64)
     partial = (coverage >= ACCEPT_COVERAGE_THRESHOLD) & (coverage < PARTIAL_COVERAGE_THRESHOLD)
     insufficient = coverage < ACCEPT_COVERAGE_THRESHOLD
-    truncated = np.array([bool(getattr(f.bbox, "truncated", False)) for f in footprints], dtype=bool)
+    truncated = np.array([f.bbox is not None and f.bbox.truncated for f in footprints], dtype=bool)
     off_limb = np.array([bool(getattr(f, "off_limb", False)) for f in footprints], dtype=bool)
     qbits[partial] |= int(FmatchCoverageFlag.PARTIAL_COVERAGE)
     qbits[insufficient] |= int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
@@ -1297,7 +1295,8 @@ def _normalize_longitude(longitude_deg: float) -> float:
     """Wrap a bounding-box longitude past the antimeridian back into [-180, 180].
 
     Corner-derived bounding boxes that straddle the antimeridian can report a
-    ``lon_max`` greater than 180 (the :class:`BoundingBox` dateline convention).
+    ``lon_max`` greater than 180 (the
+    :class:`~libera_utils.footprint_matching.types.BoundingBox` dateline convention).
     The product definition's ``psf_bbox_lon_*`` variables declare a [-180, 180]
     valid range, so only values above 180 are wrapped; 180 itself is kept, so a
     full-span ``(-180, 180)`` box stays full-span. Downstream consumers can still
