@@ -234,7 +234,7 @@ class PointSamples:
         ``NEAREST_PASS`` reader; ``None`` otherwise.
     spacing_km : float or None
         The samples' native spacing, km, measured on this body of data (see
-        :func:`~libera_utils.footprint_matching.readers._points.neighbour_spacing_km`).
+        :func:`~libera_utils.footprint_matching.readers._points.neighbor_spacing_km`).
         ``None`` means the reader's declared ``RESOLUTION_KM`` applies. A swath that is
         subsampled on delivery is served with its true spacing, so the coverage measure
         credits each sample with the cell it really stands for.
