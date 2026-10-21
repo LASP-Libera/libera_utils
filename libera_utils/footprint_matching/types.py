@@ -360,8 +360,9 @@ class RadiometerFootprint:
 
     Attributes
     ----------
-    bbox : BoundingBox
-        Geographic box enclosing the footprint's PSF ground contour.
+    bbox : BoundingBox or None
+        Geographic box enclosing the footprint's PSF ground contour, or ``None`` exactly
+        when ``off_limb`` (an off-Earth view has no ground contour).
     time : np.datetime64
         Radiometer observation time (L1B ``RADIOMETER_TIME``). The readers' time
         selection (:class:`TimeMatch`) matches ancillary samples to it.
@@ -385,13 +386,18 @@ class RadiometerFootprint:
         stated way: kept, weighted direction-independently, and QA-flagged.
     off_limb : bool
         ``True`` for a space / calibration view whose centroid is off the Earth's limb,
-        i.e. one with no Earth footprint (:class:`OffLimbError`). ``bbox`` is then only a
-        boresight placeholder kept for index alignment; the aggregation path skips these
-        records (fill values, zero coverage) and flags them ``OFF_LIMB`` rather than
-        aggregating ancillary data against a fabricated geographic box.
+        i.e. one with no Earth footprint (:class:`OffLimbError`). ``bbox`` is then
+        ``None``; the aggregation path skips these records (fill values, zero coverage)
+        and flags them ``OFF_LIMB``.
+
+    Raises
+    ------
+    ValueError
+        If ``bbox`` is ``None`` while ``off_limb`` is ``False``, or a ``bbox`` is given
+        while ``off_limb`` is ``True``.
     """
 
-    bbox: BoundingBox
+    bbox: BoundingBox | None
     time: np.datetime64
     latitude: float
     longitude: float
@@ -401,6 +407,19 @@ class RadiometerFootprint:
     satellite_radius_km: float
     cone_angle_rate: float | None = None
     off_limb: bool = False
+
+    def __post_init__(self) -> None:
+        if self.bbox is None and not self.off_limb:
+            raise ValueError(
+                "RadiometerFootprint has no bbox but off_limb is False: pass the BoundingBox from "
+                "compute_footprint_bounding_boxes, or set off_limb=True for a space/calibration view "
+                "(whose entry there is None)."
+            )
+        if self.bbox is not None and self.off_limb:
+            raise ValueError(
+                "RadiometerFootprint is off_limb but was given a bbox: an off-limb view has no Earth "
+                "footprint, so pass bbox=None."
+            )
 
 
 @dataclass(frozen=True)
