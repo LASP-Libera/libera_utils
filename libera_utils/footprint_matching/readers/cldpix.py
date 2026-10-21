@@ -78,7 +78,7 @@ from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_hours_of_day,
     granule_time_coverage,
-    neighbour_spacing_km,
+    neighbor_spacing_km,
     normalize_longitude,
 )
 from libera_utils.footprint_matching.readers.base import PassReader
@@ -270,7 +270,7 @@ class CLDPIXReader(PassReader):
             # The granule's own pixel spacing: the delivered swath may be subsampled (the
             # CERES test granules carry 400 of the 3200 VIIRS pixels per scanline), and the
             # coverage measure must credit each pixel with the cell it really stands for.
-            spacing_km = neighbour_spacing_km(lats_2d, lons_2d)
+            spacing_km = neighbor_spacing_km(lats_2d, lons_2d)
             lats = lats_2d.ravel()
             lons = lons_2d.ravel()
 
