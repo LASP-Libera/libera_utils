@@ -1325,7 +1325,7 @@ def make_l1b_radiometer_fixture(
     ranges = {
         "latitude": (-60.0, 60.0),
         "longitude": (-170.0, 170.0),
-        # Surface height of the boresight point above the WGS84 ellipsoid, metres.
+        # Surface height of the boresight point above the WGS84 ellipsoid, meters.
         "altitude": (0.0, 4000.0),
         "solar_zenith_angle": (10.0, 80.0),
         "viewing_zenith_angle": (0.0, 45.0),

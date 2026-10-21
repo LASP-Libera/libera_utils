@@ -426,7 +426,7 @@ class TestRadiometerAssembly:
 
     @pytest.mark.parametrize("mode", RADIOMETER_MODES)
     def test_altitude_is_the_l1b_altitude(self, mode):
-        """altitude is copied from L1B ``Altitude``, the boresight surface height in metres, not a placeholder."""
+        """altitude is copied from L1B ``Altitude``, the boresight surface height in meters, not a placeholder."""
         assert L1B_PASSTHROUGH_VARIABLES["altitude"] == "Altitude"
         l1b_inputs = _l1b_passthrough()
         l1b_inputs["altitude"] = np.array([0.0, 12.5, 150.0, 1200.0, 2500.0, 4000.0], dtype=np.float32)
@@ -713,8 +713,8 @@ class TestBuildRadiometerFootprints:
         assert footprint.satellite_radius_km == _SATELLITE_RADIUS_KM
         assert footprint.cone_angle_rate == 12.0
 
-    def test_oblique_ray_traced_box_is_not_centred_on_the_boresight(self):
-        """A ray-traced oblique footprint is skewed along the scan plane, not centred on the boresight."""
+    def test_oblique_ray_traced_box_is_not_centered_on_the_boresight(self):
+        """A ray-traced oblique footprint is skewed along the scan plane, not centered on the boresight."""
         # Boresight at the equator, satellite offset to the north along the same meridian.
         l1b = _with_ephemeris(
             {
@@ -789,14 +789,14 @@ class TestFootprintGeometryEphemeris:
 
     def test_camera_surface_height_is_not_read_as_spacecraft_position(self):
         # Regression: a camera PseudoFootprint carries ``altitude`` as the center-pixel
-        # *surface height in metres* (an output column), not a spacecraft position. With no
+        # *surface height in meters* (an output column), not a spacecraft position. With no
         # ephemeris the extractor must fall back to the nominal orbit -- otherwise 835_000 m
         # could be read as a radius in km, inflating the PSF ground radius ~100x.
         camera_like = SimpleNamespace(
             bbox=BoundingBox(0.0, 1.0, 0.0, 1.0),
             latitude=0.5,
             longitude=0.5,
-            altitude=835_000.0,  # metres of surface height
+            altitude=835_000.0,  # meters of surface height
             viewing_zenith_angle=0.0,
         )
         geom = _footprint_geometry(camera_like)

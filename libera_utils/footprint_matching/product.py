@@ -97,7 +97,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Product-definition variable names that the camera pseudo-footprints (read from
-# CF-CAM-CAMTIME) fill with *real* per-footprint values (centre-pixel geolocation/geometry, the corner-derived
+# CF-CAM-CAMTIME) fill with *real* per-footprint values (center-pixel geolocation/geometry, the corner-derived
 # PSF bounding box, and the QA flags). Every other declared variable is filled by the
 # derived-geometry engine (:func:`compute_derived_viewing_geometry`, always) or the
 # external aggregation engine (:func:`aggregate_external_variables`, when ancillary
@@ -1319,7 +1319,7 @@ CAMTIME_BBOX_TRUNCATED_BIT: int = 0b100
 
 # Every CF-CAM-CAMTIME variable and coordinate :func:`pseudofootprints_from_camtime_dataset` reads to
 # rebuild the camera pseudo-footprints. The bounding-box longitudes are raw (they may exceed +/-180 for a
-# dateline-crossing box), ``altitude`` is in metres as in L1B, and ``q_flags`` holds only the
+# dateline-crossing box), ``altitude`` is in meters as in L1B, and ``q_flags`` holds only the
 # :class:`~libera_utils.footprint_matching.types.CameraFootprintQualityFlag` bits.
 CAMTIME_PSEUDOFOOTPRINT_VARIABLES: tuple[str, ...] = (
     "CAMERA_TIME",
