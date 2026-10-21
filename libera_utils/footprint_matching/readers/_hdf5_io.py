@@ -132,12 +132,12 @@ def _parse_he5_grid_metadata(struct_metadata: str, grid_name: str, source: str) 
     }
 
 
-def _cell_centres(edges: np.ndarray, first_edge: float, last_edge: float, axis_name: str, source: str) -> np.ndarray:
-    """Turn a VJ143C1 coordinate axis of leading cell edges into cell centres.
+def _cell_centers(edges: np.ndarray, first_edge: float, last_edge: float, axis_name: str, source: str) -> np.ndarray:
+    """Turn a VJ143C1 coordinate axis of leading cell edges into cell centers.
 
     The file's ``lat``/``lon`` hold each cell's edge on the side the axis starts from
     (the grid's upper-left corner): ``lat`` 90 -> -89.95 and ``lon`` -180 -> 179.95 for
-    the 0.05 degree CMG. The centre is half a cell further along the axis.
+    the 0.05 degree CMG. The center is half a cell further along the axis.
 
     Raises
     ------
@@ -172,7 +172,7 @@ def read_viirs_brdf_hdf5(
     The VJ143C1 product stores BRDF kernel parameters as int16, each field with its
     own ``_FillValue``, ``valid_range``, ``scale_factor`` and ``add_offset``. This
     function reads the requested fields, replaces fill and out-of-range pixels with
-    NaN, applies the scale and offset, and returns the cell-centre coordinates in
+    NaN, applies the scale and offset, and returns the cell-center coordinates in
     ascending latitude order.
 
     Parameters
@@ -196,8 +196,8 @@ def read_viirs_brdf_hdf5(
         - ``data`` is float32, shape ``(n_fields, n_lat, n_lon)``.  Fill and
           out-of-range pixels are NaN.  Latitude axis is in **ascending** order
           (flipped from the file's descending storage).
-        - ``lats`` is float64, shape ``(n_lat,)``, cell centres, **ascending**.
-        - ``lons`` is float64, shape ``(n_lon,)``, cell centres, ascending.
+        - ``lats`` is float64, shape ``(n_lat,)``, cell centers, **ascending**.
+        - ``lons`` is float64, shape ``(n_lon,)``, cell centers, ascending.
 
     Raises
     ------
@@ -249,8 +249,8 @@ def read_viirs_brdf_hdf5(
                 f"gives grid {grid_name!r} YDim={grid['ydim']}, XDim={grid['xdim']}. Check that the file is an "
                 "unmodified VJ143C1 granule."
             )
-        lats = _cell_centres(lat_edges, grid["ul_lat"], grid["lr_lat"], "lat", source)
-        lons = _cell_centres(lon_edges, grid["ul_lon"], grid["lr_lon"], "lon", source)
+        lats = _cell_centers(lat_edges, grid["ul_lat"], grid["lr_lat"], "lat", source)
+        lons = _cell_centers(lon_edges, grid["ul_lon"], grid["lr_lon"], "lon", source)
 
         # One array for every field, filled in place (nine global fields are ~0.9 GB).
         data = np.empty((len(field_names), lats.size, lons.size), dtype=np.float32)

@@ -329,7 +329,7 @@ class TestBoxQueriedNative:
             _BoxReader({}).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
 
     def test_unknown_native_type_from_native_for_raises(self, monkeypatch):
-        # A reader whose _native_for hands the query an unrecognised object.
+        # A reader whose _native_for hands the query an unrecognized object.
         reader = _BoxReader(_BoxHolder())
         monkeypatch.setattr(reader, "_native_for", lambda time: (object(),))
         with pytest.raises(TypeError, match="native data of type object"):

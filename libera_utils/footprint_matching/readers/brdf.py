@@ -6,7 +6,7 @@ Data source: VIIRS/NOAA-20 BRDF/Albedo Model Parameters Daily L3 Global 0.05° C
 - Spatial resolution: 0.05° (~5.6 km at equator)
 - Grid: 3600 × 7200 global Climate Model Grid (CMG). The file's ``lat``/``lon``
   hold each cell's upper-left edge, latitude DESCENDING (90 → −89.95, longitude
-  −180 → 179.95); this reader serves cell centres (±89.975, ±179.975) with
+  −180 → 179.95); this reader serves cell centers (±89.975, ±179.975) with
   latitude ascending, like every other reader, after checking the axes against
   the grid's HDF-EOS5 ``StructMetadata.0`` corners.
 - Temporal resolution: Daily (using 16 days of accumulated observations)
@@ -183,7 +183,7 @@ class VIIRSBRDFReader(StaticReader):
 
         Reads via
         :func:`~libera_utils.footprint_matching.readers._hdf5_io.read_viirs_brdf_hdf5`,
-        which returns cell-centre axes in ascending latitude order with fill and
+        which returns cell-center axes in ascending latitude order with fill and
         out-of-range pixels as NaN.
 
         Returns
