@@ -7,7 +7,7 @@ Every value in a file is copied unchanged from its source granule. Only the exte
 the variable list are reduced. Where a reader checks a file's grid metadata against its
 arrays, that metadata is rewritten to describe the window. Each file was checked when it
 was cut: its reader serves the same samples from it as from the source granule. The
-exception is cell-centre coordinates recomputed from rewritten sinusoidal corners, which
+exception is cell-center coordinates recomputed from rewritten sinusoidal corners, which
 agree to 1e-9 degrees. The swath granules (CLDPIX, SSF) keep three contiguous blocks at
 the start, middle and end of the hour, so a granule still spans the hour; every kept
 point is served as from the source, and the sample spacing the reader measures on the
