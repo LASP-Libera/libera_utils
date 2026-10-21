@@ -21,7 +21,7 @@ SSM/I-SSMIS (NISE v5) products:
   0        Snow-free land
   1–100    Sea ice concentration in percent (1 = 1%, 100 = 100%)
   101      Permanent ice (Greenland Ice Sheet, Antarctic ice shelves)
-  102      Not used (belongs to no class — maps to 0.0 in every layer)
+  102      Not used (belongs to no class — missing, NaN, in every layer)
   103      Dry snow on land
   104      Wet snow on land
   105–251  Not used
@@ -51,17 +51,17 @@ turns into a footprint-level *fraction* via ``weighted_mean``;
 
 Design notes
 ~~~~~~~~~~~~
-- Codes that belong to no surface class map to 0.0 in *all five* layers: 102 and
-  105–251 ("not used"), plus the quality flags 252 (coastline mixed pixels) and
-  253 (suspect ice value). Code 254 (off-Earth corners) is dropped from the point
-  cloud entirely (see below), not zeroed.
+- Codes that belong to no surface class are missing (NaN) in *all five* layers: 102
+  and 105–251 ("not used"), plus the quality flags 252 (coastline mixed pixels) and
+  253 (suspect ice value). The weigher counts such a pixel as missing, so it lowers a
+  footprint's coverage rather than pulling every class fraction toward zero. Code 254
+  (off-Earth corners) is dropped from the point cloud entirely (see below).
 - The five layers do **not** sum to exactly 1.0: ``sea_ice_concentration`` holds
   a fractional concentration (intended), while the other four are 0/1 indicators.
   This is by design — four surface-class fractions plus a mean ice concentration.
 - ``snow_free_land`` (code 0) and ``open_ocean`` (code 255) are distinct classes:
   the granule separates snow-free land from open water, so neither subsumes the
-  other. (Earlier revisions of this reader mislabeled code 255 as a "missing"
-  layer; 255 is ocean — the single largest class in each polar grid.)
+  other. Code 255 is ocean, the single largest class in each polar grid.
 
 The first axis of the returned ``values`` array follows ``VARIABLES`` order exactly
 (the multi-variable reader contract; see ``PointSamples`` and ``ERA5Reader``).
@@ -148,6 +148,9 @@ _SEA_ICE_CODE_MAX: int = 100  # 100 % sea ice concentration
 _CODE_PERMANENT_ICE: int = 101  # Greenland / Antarctic ice sheets
 _SNOW_CODE_MIN: int = 103  # snow on land: dry snow (lower bound)
 _SNOW_CODE_MAX: int = 104  # snow on land: wet snow (upper bound)
+_CODE_NOT_USED: int = 102  # not used; belongs to no class
+_NO_CLASS_CODE_MIN: int = 105  # 105-251 not used, 252 coastline mixed pixels, 253 suspect ice
+_NO_CLASS_CODE_MAX: int = 253
 _CODE_OFF_EARTH: int = 254  # off-Earth corner fill (square-grid corners outside the projection disk)
 _CODE_OCEAN: int = 255  # ocean (open water, no ice)
 
@@ -200,8 +203,7 @@ class _HemisphereGrid:
     y_origin: float = _DEFAULT_Y_ORIGIN
 
 
-# The default: read both hemispheres from the single granule. Northern first so a
-# single-hemisphere default (e.g. the test shim) matches the historical behavior.
+# The default: read both hemispheres from the single granule, Northern first.
 _DEFAULT_HEMISPHERES: tuple[_HemisphereGrid, ...] = (
     _HemisphereGrid(epsg=_DEFAULT_EPSG_NORTH, hemisphere_label=_HEMISPHERE_LABEL_NORTH),
     _HemisphereGrid(epsg=_DEFAULT_EPSG_SOUTH, hemisphere_label=_HEMISPHERE_LABEL_SOUTH),
@@ -221,9 +223,8 @@ class NISEReader(StaticReader):
     docstring's geolocation note). The daily granule has no time axis, so the staged
     day is the time match (``TIME_MATCH = DAILY``).
 
-    The hemispheres to read are exposed via the ``hemispheres`` constructor keyword
-    (defaulting to both), and a legacy single-grid injection path lets a test exercise
-    one small synthetic grid without building a full 721 × 721 fixture.
+    The hemispheres to read are the ``hemispheres`` constructor keyword, defaulting to
+    both.
 
     Class Attributes
     ----------------
@@ -244,12 +245,6 @@ class NISEReader(StaticReader):
     hemispheres : tuple[_HemisphereGrid, ...], optional
         The EASE-Grid hemispheres to read. Defaults to both the Northern
         (EPSG:3408) and Southern (EPSG:3409) grids (:data:`_DEFAULT_HEMISPHERES`).
-    grid_rows, grid_cols, resolution_m, x_origin, y_origin : optional
-        Legacy single-grid injection. When any is supplied and ``hemispheres`` is
-        not, the reader builds a single Northern-hemisphere grid from these values
-        (defaulting the rest). Retained so a test can exercise one small synthetic
-        grid without constructing a :class:`_HemisphereGrid`; prefer ``hemispheres``
-        for anything reading both hemispheres.
     """
 
     READER_KEY: str = "nise"
@@ -307,43 +302,18 @@ class NISEReader(StaticReader):
         self,
         file_paths: Path | Sequence[Path],
         *,
-        hemispheres: tuple[_HemisphereGrid, ...] | None = None,
-        grid_rows: int | None = None,
-        grid_cols: int | None = None,
-        resolution_m: float | None = None,
-        x_origin: float | None = None,
-        y_origin: float | None = None,
+        hemispheres: tuple[_HemisphereGrid, ...] = _DEFAULT_HEMISPHERES,
     ) -> None:
         super().__init__(file_paths)
-        if hemispheres is None:
-            legacy_params = (grid_rows, grid_cols, resolution_m, x_origin, y_origin)
-            if any(param is not None for param in legacy_params):
-                # Legacy single-grid injection: build one Northern-hemisphere grid,
-                # defaulting any param not supplied.
-                hemispheres = (
-                    _HemisphereGrid(
-                        epsg=_DEFAULT_EPSG_NORTH,
-                        hemisphere_label=_HEMISPHERE_LABEL_NORTH,
-                        grid_rows=grid_rows if grid_rows is not None else _DEFAULT_GRID_ROWS,
-                        grid_cols=grid_cols if grid_cols is not None else _DEFAULT_GRID_COLS,
-                        resolution_m=resolution_m if resolution_m is not None else _DEFAULT_RESOLUTION_M,
-                        x_origin=x_origin if x_origin is not None else _DEFAULT_X_ORIGIN,
-                        y_origin=y_origin if y_origin is not None else _DEFAULT_Y_ORIGIN,
-                    ),
-                )
-            else:
-                hemispheres = _DEFAULT_HEMISPHERES
         self._hemispheres = hemispheres
 
     def _build_transformer(self, epsg: int) -> object:
         """Build an ``epsg`` → WGS84 transformer for one hemisphere's pixel centers.
 
-        pyproj is an optional ('fmatch' extra) dependency imported lazily via
-        :func:`_require_pyproj`, so construction stays import-free for a core-only
-        install. Called once per hemisphere from within the cached
-        :meth:`_load_points`, so no additional caching is needed. Always use CRS
-        objects (not bare EPSG strings) to suppress the pyproj FutureWarning about
-        authority-based CRS construction.
+        Called once per hemisphere from :meth:`_load_native`, which the base class
+        runs once per reader, so no additional caching is needed. CRS objects (not
+        bare EPSG strings) avoid the pyproj FutureWarning about authority-based CRS
+        construction.
 
         Parameters
         ----------
@@ -377,12 +347,23 @@ class NISEReader(StaticReader):
             coverage layers in ``_VARIABLE_ORDER``. Pixels outside the EASE-Grid domain
             reproject to non-finite coordinates (pyproj yields ``inf``) and are dropped
             by the reader base class's point index.
+
+        Raises
+        ------
+        ValueError
+            If a hemisphere's ``Extent`` SDS is not the shape its grid declares.
         """
         hemi_lats: list[np.ndarray] = []
         hemi_lons: list[np.ndarray] = []
         hemi_values: list[np.ndarray] = []
         for hemi in self._hemispheres:
             raw = self._read_extent_sds(hemi.hemisphere_label)
+            if raw.shape != (hemi.grid_rows, hemi.grid_cols):
+                raise ValueError(
+                    f"{self.single_file_path}: the {hemi.hemisphere_label} Extent SDS has shape {raw.shape}, but the "
+                    f"EASE-Grid it is geolocated on is {hemi.grid_rows} x {hemi.grid_cols}. Stage a NISE or NISE_A2 "
+                    "25 km granule."
+                )
             lats_2d, lons_2d = self._compute_latlon_grid(hemi)
             # Split the Extent SDS into the five per-code coverage layers.
             # Shape: (5, n_rows, n_cols), axis 0 in canonical _VARIABLE_ORDER.
@@ -416,7 +397,7 @@ class NISEReader(StaticReader):
         for the full encoding). ``sea_ice_concentration`` keeps the fractional
         concentration from codes 1–100; the other four layers are 0/1 indicators.
         Codes that belong to no surface class (102, 105–251, and the 252/253
-        quality flags) are intentionally absent from every layer.
+        quality flags) are NaN in every layer, so the weigher counts them as missing.
 
         Parameters
         ----------
@@ -445,7 +426,7 @@ class NISEReader(StaticReader):
 
         # Stack in canonical order. Keep this list aligned with _VARIABLE_ORDER /
         # VARIABLES — the aggregation engine indexes layers by that position.
-        return np.stack(
+        layers = np.stack(
             [
                 sea_ice_concentration,
                 snow_free_land,
@@ -455,6 +436,9 @@ class NISEReader(StaticReader):
             ],
             axis=0,
         ).astype(np.float32)
+        no_class = (raw == _CODE_NOT_USED) | ((raw >= _NO_CLASS_CODE_MIN) & (raw <= _NO_CLASS_CODE_MAX))
+        layers[:, no_class] = np.nan
+        return layers
 
     def _read_extent_sds(self, hemisphere_label: str) -> np.ndarray:
         """Open the NISE HDF-EOS4 file and return one hemisphere's Extent SDS.
@@ -485,8 +469,8 @@ class NISEReader(StaticReader):
             If pyhdf is not installed (see :func:`_require_pyhdf`).
         KeyError
             If the file has no ``Extent`` SDS for the requested hemisphere.
-        OSError
-            If the file cannot be opened (not found, corrupt header, etc.).
+        pyhdf.error.HDF4Error
+            If the file cannot be opened (not found, not HDF4, corrupt header).
         """
         sd = _require_pyhdf()
         hdf = sd.SD(str(self.single_file_path), sd.SDC.READ)
@@ -502,11 +486,15 @@ class NISEReader(StaticReader):
                 dim_name = sds.dim(0).info()[0]
                 if hemisphere_label in dim_name:
                     return np.array(sds.get(), dtype=np.uint8)
-            raise KeyError(f"No 'Extent' SDS for hemisphere {hemisphere_label!r} in {self.single_file_path}")
+            raise KeyError(
+                f"No 'Extent' SDS for hemisphere {hemisphere_label!r} in {self.single_file_path}. Check that the "
+                "staged file is a NISE or NISE_A2 HDF-EOS granule carrying both the Northern and Southern "
+                "Hemisphere grids."
+            )
         finally:
             hdf.end()
 
-    def _compute_latlon_grid(self, hemi: _HemisphereGrid | None = None) -> tuple[np.ndarray, np.ndarray]:
+    def _compute_latlon_grid(self, hemi: _HemisphereGrid) -> tuple[np.ndarray, np.ndarray]:
         """Compute geographic lat/lon coordinates for every pixel in one hemisphere grid.
 
         Uses pyproj to transform the EASE-Grid pixel centers (``hemi.epsg``: 3408 for
@@ -514,10 +502,8 @@ class NISEReader(StaticReader):
 
         Parameters
         ----------
-        hemi : _HemisphereGrid, optional
-            The hemisphere grid to reproject. Defaults to the reader's first
-            configured hemisphere -- convenient for the single-hemisphere case
-            (and the test shim), where there is only one.
+        hemi : _HemisphereGrid
+            The hemisphere grid to reproject.
 
         Returns
         -------
@@ -535,9 +521,6 @@ class NISEReader(StaticReader):
         to non-finite coordinates (pyproj yields ``inf``); these are excluded by the
         reader base class's point index.
         """
-        if hemi is None:
-            hemi = self._hemispheres[0]
-
         col_indices = np.arange(hemi.grid_cols, dtype=np.float64)
         row_indices = np.arange(hemi.grid_rows, dtype=np.float64)
 

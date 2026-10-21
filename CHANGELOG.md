@@ -9,15 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- The `libera_utils.footprint_matching.readers` plugin subsystem: an `AncillaryReader` base with auto-registration (`StaticReader` for a daily composite, map or time-stamped swath held in memory; `SteppedGridReader` for a time series of global grids served one step at a time), a `ReaderRegistry`, and HDF4/HDF5/pyproj I/O helpers. A reader serves the _native samples_ of its source inside a footprint's bounding box as a `SampleSet` (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), matched to the footprint time by its `TimeMatch` policy: `DAILY` (IGBP, NISE, VIIRS BRDF and AOD) or `NEAREST_STEP` (ERA5, the hourly step nearest the footprint time). This release adds the gridded readers: ERA5 single-level (7 variables) and 37-level pressure fields, VIIRS Deep Blue AOD (`AERDB_D3_VIIRS_NOAA20`) with a categorical `aerosol_type`, VIIRS BRDF, IGBP land cover, and NSIDC NISE sea ice (AMSR-2 provenance).
+- The `libera_utils.footprint_matching.readers` plugin subsystem: an `AncillaryReader` base with auto-registration (`StaticReader` for a daily composite, map or time-stamped swath held in memory; `SteppedGridReader` for a time series of global grids served one step at a time), a `ReaderRegistry`, and HDF4/HDF5/pyproj I/O helpers. A reader serves the _native samples_ of its source inside a footprint's bounding box as a `SampleSet` (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), matched to the footprint time by its `TimeMatch` policy: `DAILY` (IGBP, NISE, VIIRS BRDF and AOD) or `NEAREST_STEP` (ERA5). A reader whose `READER_KEY` is already registered to another class is rejected when its module is imported. This release adds the gridded readers:
+  - ERA5 single-level (7 variables) and 37-level pressure fields, serving the hourly step nearest each footprint's time (none beyond 1 h), rejecting a file with no time axis, and declaring `RESOLUTION_KM = 28.0`, the 0.25 degree grid spacing.
+  - VIIRS Deep Blue AOD (`AERDB_D3_VIIRS_NOAA20`) with a categorical `aerosol_type`, applying each field's own `_FillValue` and `valid_range` (AOD 0 to 10).
+  - VIIRS BRDF (`VJ143C1`), served at the 0.05 degree cell centres (the file's `lat`/`lon` are cell edges, checked against the grid's HDF-EOS5 `StructMetadata.0` corners), applying each field's own `_FillValue`, `valid_range`, `scale_factor` and `add_offset`.
+  - IGBP land cover (MCD12Q1), held as its uint8 sinusoidal tiles and geolocated per query, declaring `RESOLUTION_KM = 0.463`, the 463.3 m sinusoidal cell.
+  - NSIDC NISE sea ice (AMSR-2 provenance), with the unused Extent codes (102, 105-251) and the coastline and suspect-ice quality codes (252, 253) missing (NaN) in every layer.
 - `notebooks/02_readers_gridded.ipynb`, a demonstration of the gridded readers.
 - `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available.
-
-### Changed
-
-- The ERA5 readers serve the hourly step nearest each footprint's time instead of the first step of the file, and reject a file with no time axis.
-- `ERA5Reader` and `ERA5PressureLevelReader` declare `RESOLUTION_KM = 28.0`, the 0.25 degree grid spacing.
-- The point readers' shared helpers live in `readers._points`; `apply_fill_and_valid_range` compares the fill sentinel in the raw dtype before any cast, `decode_cf_times` decodes a CF time variable, and `neighbor_spacing_km` measures a swath's or track's sample spacing.
 
 ## [5.12.0] - 2026-10-21
 

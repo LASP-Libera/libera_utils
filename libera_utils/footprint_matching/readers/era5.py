@@ -39,6 +39,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
+from libera_utils.footprint_matching.readers._points import normalize_longitude
 from libera_utils.footprint_matching.readers.base import SteppedGridReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
 
@@ -54,13 +55,6 @@ _ERA5_SINGLE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
     ("surface_geopotential", "z"),
     ("forecast_albedo", "fal"),
 )
-
-# The ERA5 latitude dimension is stored in DESCENDING order (90° → -90°) in
-# files downloaded from the CDS. xarray.sel() works correctly regardless of
-# direction when using slice(max_lat, min_lat) ordering, but we must be careful
-# to reverse the output lats array so that it is ASCENDING for downstream callers.
-# This constant documents the known direction of the ERA5 lat coordinate.
-_ERA5_LAT_DESCENDING: bool = True
 
 
 class ERA5ReaderBase(SteppedGridReader, abc.ABC):
@@ -138,16 +132,24 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
         try:
             ds = self._normalize_longitudes(ds)
             time_dim = self._time_dimension(ds, path)
-            lats, lons, layers = self._read_step_layers(ds.isel({time_dim: local_index}), path)
+            step = ds.isel({time_dim: local_index})
+            lats = step["latitude"].values.astype(np.float64)
+            lons = step["longitude"].values.astype(np.float64)
+            # One step-sized array, filled plane by plane (a 185-plane pressure step is
+            # ~0.8 GB, so it is never built twice).
+            data = np.empty((self.n_variables, lats.size, lons.size), dtype=np.float32)
+            self._read_step_layers(step, path, data)
         finally:
             ds.close()
-        lats, layers = self._flip_lats_ascending(lats, layers)
-        data = np.stack(layers, axis=0).astype(np.float32, copy=False)
+        # ERA5 stores latitude descending (90 -> -90); serve it ascending, as a view.
+        if lats.size > 1 and lats[0] > lats[-1]:
+            lats = lats[::-1]
+            data = data[:, ::-1, :]
         return GridSamples(lat_axis=lats, lon_axis=lons, data=data)
 
     @abc.abstractmethod
-    def _read_step_layers(self, step: xr.Dataset, path: Path) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
-        """Read this dataset's variables from one time step.
+    def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
+        """Read this dataset's variables from one time step into ``out``.
 
         Parameters
         ----------
@@ -156,13 +158,9 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
             normalized to -180..180.
         path : Path
             The granule being read, for error messages.
-
-        Returns
-        -------
-        tuple[np.ndarray, np.ndarray, list[np.ndarray]]
-            ``(lats, lons, layers)``: the file's latitude axis (as stored, descending),
-            its longitude axis, and one ``(n_lat, n_lon)`` float32 layer per
-            ``VARIABLES`` entry, in order.
+        out : np.ndarray
+            float32 array of shape ``(n_variables, n_lat, n_lon)``, latitude as stored
+            in the file (descending). Plane ``i`` receives ``VARIABLES[i]``.
         """
 
     @staticmethod
@@ -175,21 +173,8 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
         correctly for both.
         """
         if float(ds["longitude"].min()) >= 0:
-            ds = ds.assign_coords(longitude=((ds["longitude"] + 180) % 360) - 180).sortby("longitude")
+            ds = ds.assign_coords(longitude=normalize_longitude(ds["longitude"].values)).sortby("longitude")
         return ds
-
-    @staticmethod
-    def _flip_lats_ascending(lats: np.ndarray, layers: list[np.ndarray]) -> tuple[np.ndarray, list[np.ndarray]]:
-        """Return lats (and each 2-D layer) flipped to ASCENDING latitude order.
-
-        ERA5 stores latitudes descending (see ``_ERA5_LAT_DESCENDING``); every
-        other reader emits ascending latitudes, so we flip here for consistency.
-        No-op if the coordinate is already ascending.
-        """
-        if _ERA5_LAT_DESCENDING and lats.size > 1 and lats[0] > lats[-1]:
-            lats = lats[::-1]
-            layers = [layer[::-1, :] for layer in layers]
-        return lats, layers
 
 
 class ERA5Reader(ERA5ReaderBase):
@@ -284,8 +269,8 @@ class ERA5Reader(ERA5ReaderBase):
         ),
     )
 
-    def _read_step_layers(self, step: xr.Dataset, path: Path) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
-        """Read every single-level variable from one time step.
+    def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
+        """Read every single-level variable from one time step into ``out``.
 
         Raises
         ------
@@ -300,7 +285,5 @@ class ERA5Reader(ERA5ReaderBase):
                 f"The CDS download must include every variable in "
                 f"{[nc for _, nc in _ERA5_SINGLE_LEVEL_VARIABLES]}."
             )
-        lats = step["latitude"].values.astype(np.float64)
-        lons = step["longitude"].values.astype(np.float64)
-        layers = [step[nc_name].values.astype(np.float32) for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES]
-        return lats, lons, layers
+        for i, (_, nc_name) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES):
+            out[i] = step[nc_name].values

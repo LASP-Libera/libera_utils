@@ -12,9 +12,8 @@ Data source: Deep Blue single-sensor daily Level-3 aerosol product
 
 What this reader exposes
 ------------------------
-FMATCH-IMAGER depends on both **AOD** and **aerosol type** (DPI / data_products.md:
-"AOD (NOAA-21 initially; NOAA-22 VIIRS when available)" plus aerosol type). The
-single-sensor Deep Blue granule carries both, so this one reader serves both:
+FMATCH-IMAGER carries both **AOD** and **aerosol type**. The single-sensor Deep
+Blue granule carries both, so this one reader serves both:
 
 1. ``aod_550`` — the daily-mean NOAA-20 VIIRS Deep Blue AOD at 550 nm over land
    and ocean (continuous, ``weighted_log_mean``).
@@ -48,12 +47,11 @@ Root (no groups):
   Longitude_1D (360,)  — 1° bin centers, −179.5 → 179.5
   Aerosol_Optical_Thickness_550_Land_Ocean_Mean (180, 360)  — daily-mean AOD @ 550 nm
   Aerosol_Type_Land_Ocean_Mode                  (180, 360)  — modal aerosol type (0..7)
-  Aerosol_Type_Land_Ocean_Histogram    (8, 180, 360)  — per-type counts (future rank
-                                                        source; not read here)
+  Aerosol_Type_Land_Ocean_Histogram    (8, 180, 360)  — per-type counts (not read here)
 
-Fill value: −999 for every field (replaced with NaN). AOD ``valid_range`` in the
-file is ``[0, 10]``; this reader retains the tighter ``[0, 5]`` clamp of the
-``aod_550`` product contract. Aerosol-type ``valid_range`` is ``[0, 7]``.
+Each field's own ``_FillValue`` (−999) and ``valid_range`` (AOD ``[0, 10]``, aerosol
+type ``[0, 7]``) are read from the file and applied once; values outside them are
+NaN. A field without either attribute is rejected.
 
 References
 ----------
@@ -67,10 +65,16 @@ File naming:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 
+from libera_utils.footprint_matching.readers._points import apply_fill_and_valid_range
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
+
+if TYPE_CHECKING:
+    import netCDF4
 
 # Root-level coordinate and data variable names in the single-sensor Deep Blue
 # L3 granule. (No group navigation: unlike AERDB_D3_GEOLEO_Merged, this product
@@ -84,11 +88,6 @@ _AOD_VARIABLE: str = "Aerosol_Optical_Thickness_550_Land_Ocean_Mean"
 # Modal (most-common) aerosol type per 1° cell over land and ocean combined.
 _AEROSOL_TYPE_VARIABLE: str = "Aerosol_Type_Land_Ocean_Mode"
 
-# Shared fill / missing sentinel for both fields in this product.
-_FILL_VALUE: float = -999.0
-# Physically valid AOD max. The file declares valid_range [0, 10], but we keep
-# the tighter [0, 5] clamp that the aod_550 product contract already uses.
-_AOD_VALID_MAX: float = 5.0
 # Aerosol type has 8 categories, coded 0..7 (see module docstring). Stored in the
 # VariableSpec so the PSF aggregation engine knows how many category bins to
 # allocate for the modal / ranked-type histograms.
@@ -133,8 +132,7 @@ class VIIRSAODReader(StaticReader):
             name="aod_550",
             dtype="float32",
             # AOD is approximately log-normally distributed, so a geometric
-            # (log) mean is the appropriate spatial aggregation — matching how
-            # cloud optical thickness is treated in VIIRSCloudReader.
+            # (log) mean is the appropriate spatial aggregation.
             aggregation="weighted_log_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
@@ -154,8 +152,7 @@ class VIIRSAODReader(StaticReader):
     # aggregated result; these three report the ranked mix (1st/2nd/3rd most common by
     # PSF-weighted area), computed during PSF aggregation from the same modal field rather
     # than read from a source field -- hence here rather than in VARIABLES, mirroring the
-    # IGBP reader's ranked surface types. Not yet implemented by the aggregation engine
-    # (declarations only). Future ranking source: ``Aerosol_Type_Land_Ocean_Histogram``.
+    # IGBP reader's ranked surface types.
     ADDITIONAL_PRODUCT_VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="aerosol_type_primary",
@@ -185,8 +182,8 @@ class VIIRSAODReader(StaticReader):
 
         Opens the NetCDF4 file, reads the root coordinate arrays (ascending
         latitude, no transpose needed) and both the AOD and aerosol-type fields,
-        replaces fill / out-of-range values with NaN, and stacks the two fields in
-        ``VARIABLES`` order.
+        replaces each field's fill and out-of-``valid_range`` values with NaN, and
+        stacks the two fields in ``VARIABLES`` order.
 
         Returns
         -------
@@ -196,28 +193,56 @@ class VIIRSAODReader(StaticReader):
             aerosol type is carried as float32 with NaN fill here; its ``int16``
             product dtype is applied at product-write time (the same convention
             IGBP uses).
+
+        Raises
+        ------
+        ValueError
+            If either field lacks a ``_FillValue`` or ``valid_range`` attribute, or the
+            aerosol-type ``valid_range`` admits a code outside the 8 categories (0..7).
         """
         import netCDF4  # noqa: PLC0415
 
         with netCDF4.Dataset(str(self.single_file_path), "r") as ds:
+            # Each field's fill and valid range are applied once, below, rather than also
+            # by netCDF4's automatic masking.
+            ds.set_auto_mask(False)
             # Root-level coordinate arrays: (180,) and (360,) respectively.
             lats_full = np.array(ds.variables[_LAT_VAR][:], dtype=np.float64)
             lons_full = np.array(ds.variables[_LON_VAR][:], dtype=np.float64)
 
             # Both fields are stored (Latitude, Longitude) -- no transpose needed.
-            aod = np.array(ds.variables[_AOD_VARIABLE][:], dtype=np.float32)
-            aerosol_type = np.array(ds.variables[_AEROSOL_TYPE_VARIABLE][:], dtype=np.float32)
+            aod = self._valid_values(ds.variables[_AOD_VARIABLE])
+            type_variable = ds.variables[_AEROSOL_TYPE_VARIABLE]
+            aerosol_type = self._valid_values(type_variable)
+            type_range = np.asarray(type_variable.valid_range)
 
-        # AOD: replace fill (-999.0) and out-of-range (>5 or <0) values with NaN.
-        aod[aod <= _FILL_VALUE] = np.nan
-        aod[(aod < 0.0) | (aod > _AOD_VALID_MAX)] = np.nan
-
-        # Aerosol type: replace fill (-999) and anything outside the valid
-        # category range [0, 7] with NaN so the weighted_mode aggregation never
-        # selects fill as the modal class.
-        aerosol_type[aerosol_type <= _FILL_VALUE] = np.nan
-        aerosol_type[(aerosol_type < 0.0) | (aerosol_type > _N_AEROSOL_TYPES - 1)] = np.nan
+        # The modal / ranked-type histograms have one bin per category, so a code the
+        # file calls valid must still be one of the 8 types.
+        if type_range.min() < 0 or type_range.max() > _N_AEROSOL_TYPES - 1:
+            raise ValueError(
+                f"{self.single_file_path}: {_AEROSOL_TYPE_VARIABLE} valid_range is {type_range.tolist()}, but this "
+                f"reader maps aerosol types 0..{_N_AEROSOL_TYPES - 1}. The product's category set has changed; "
+                "update the reader's aerosol-type categories before reading it."
+            )
 
         # Stack in VARIABLES order: axis 0 = [aod_550, aerosol_type].
         data = np.stack([aod, aerosol_type], axis=0)  # (2, n_lat_full, n_lon_full)
         return GridSamples(lat_axis=lats_full, lon_axis=lons_full, data=data)
+
+    def _valid_values(self, variable: netCDF4.Variable) -> np.ndarray:
+        """Return one field as float32 with its own fill and out-of-range values as NaN.
+
+        Raises
+        ------
+        ValueError
+            If the field lacks a ``_FillValue`` or ``valid_range`` attribute.
+        """
+        missing = [attr for attr in ("_FillValue", "valid_range") if not hasattr(variable, attr)]
+        if missing:
+            raise ValueError(
+                f"{self.single_file_path}: {variable.name} has no {' or '.join(missing)} attribute. The Deep Blue "
+                "AERDB_D3_VIIRS_NOAA20 granule carries both on every field; stage the granule as distributed."
+            )
+        valid_range = np.asarray(variable.valid_range)
+        values = apply_fill_and_valid_range(variable[:], variable._FillValue, (valid_range[0], valid_range[1]))
+        return values.astype(np.float32)

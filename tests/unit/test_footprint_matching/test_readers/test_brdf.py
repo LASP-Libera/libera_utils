@@ -1,9 +1,9 @@
-"""Unit tests for VIIRSBRDFReader.
+"""Unit tests for VIIRSBRDFReader and the VJ143C1 HDF5 read.
 
 Uses synthetic VJ143C1 HDF5 fixture files created by
-``make_viirs_brdf_hdf5_fixture``. h5py is a project dependency, so these
-tests can write and read real HDF5 files without any system C library caveat
-(the HDF5 C library ships bundled with h5py on most platforms).
+``make_viirs_brdf_hdf5_fixture``, laid out like a real granule: cell-edge
+``lat``/``lon`` axes, an HDF-EOS5 ``StructMetadata.0`` grid definition and the
+per-field fill, valid-range, scale and offset attributes.
 
 Real VJ143C1 files can be downloaded from:
     LP DAAC: https://e4ftl01.cr.usgs.gov/VIIRS/VJ143C1.002/
@@ -13,8 +13,11 @@ Real VJ143C1 files can be downloaded from:
 
 from __future__ import annotations
 
+import h5py
 import numpy as np
+import pytest
 
+from libera_utils.footprint_matching.readers._hdf5_io import _parse_he5_grid_metadata
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
 from libera_utils.footprint_matching.types import BoundingBox
 from tests.test_data.footprint_matching.fixtures import make_viirs_brdf_hdf5_fixture
@@ -22,19 +25,20 @@ from tests.unit.test_footprint_matching.test_readers.grid_helpers import region 
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
-# Default fixture grid covers a tiny region to keep tests fast.
+# Default fixture grid: a tiny region of 0.05 degree cells, given by its outer cell edges.
 _N_LAT = 4
 _N_LON = 8
-_LAT_MIN = 0.05
+_LAT_MIN = 0.0
 _LAT_MAX = 0.20
-_LON_MIN = 10.05
+_LON_MIN = 10.0
 _LON_MAX = 10.40
+_HALF_CELL = 0.025
 _PARAM_FILL = 200  # raw int16 → 0.200 after scale_factor=0.001
 _FILL_SENTINEL = 32767  # last pixel; should become NaN
 
 
-def _make_reader(tmp_path, **kwargs) -> VIIRSBRDFReader:
-    fixture_path = make_viirs_brdf_hdf5_fixture(
+def _fixture(tmp_path, **kwargs):
+    return make_viirs_brdf_hdf5_fixture(
         tmp_path,
         n_lat=_N_LAT,
         n_lon=_N_LON,
@@ -46,7 +50,10 @@ def _make_reader(tmp_path, **kwargs) -> VIIRSBRDFReader:
         fill_sentinel=_FILL_SENTINEL,
         **kwargs,
     )
-    return VIIRSBRDFReader(fixture_path)
+
+
+def _make_reader(tmp_path, **kwargs) -> VIIRSBRDFReader:
+    return VIIRSBRDFReader(_fixture(tmp_path, **kwargs))
 
 
 def _full_bbox() -> BoundingBox:
@@ -126,12 +133,12 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
 
     def test_lat_is_ascending(self, tmp_path):
         # The fixture stores lats in DESCENDING order; read_viirs_brdf_hdf5 must flip them
-        # to ascending, so output row 0 corresponds to lat_min.
+        # to ascending, so output row 0 is the southernmost cell centre.
         reader = _make_reader(tmp_path)
         _, lats, _ = _region(reader, _full_bbox(), _T)
         assert lats.size > 1
         assert np.all(np.diff(lats) >= 0), f"lats not ascending: {lats}"
-        assert np.isclose(lats[0], _LAT_MIN), f"row 0 should be lat_min after flip: {lats}"
+        assert np.isclose(lats[0], _LAT_MIN + _HALF_CELL), f"row 0 should be the southern cell centre: {lats}"
 
     def test_spatial_shape_matches_fixture(self, tmp_path):
         # Targets spatial dimensions of the load; asserts lat/lon axes match the fixture's _N_LAT x _N_LON grid.
@@ -166,3 +173,108 @@ class TestVIIRSBRDFReaderSamples:
         assert samples.source == "viirs_brdf"
         assert samples.timestamp_source is None
         assert samples.values.shape[0] == 9
+
+
+class TestVIIRSBRDFCellCentres:
+    """The file's lat/lon are cell edges; samples are served at cell centres."""
+
+    def test_axes_are_cell_centres(self, tmp_path):
+        native = _make_reader(tmp_path)._native
+        np.testing.assert_allclose(native.lat_axis, [0.025, 0.075, 0.125, 0.175])
+        np.testing.assert_allclose(native.lon_axis, 10.025 + 0.05 * np.arange(_N_LON))
+
+    def test_global_cmg_edges_become_the_expected_centres(self, tmp_path):
+        # A coarse global CMG laid out as the real file stores it: lat 90 -> -89, lon -180 -> 179.
+        path = make_viirs_brdf_hdf5_fixture(
+            tmp_path, n_lat=180, n_lon=360, lat_min=-90.0, lat_max=90.0, lon_min=-180.0, lon_max=180.0
+        )
+        with h5py.File(path, "r") as f:
+            assert f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/lat"][0] == 90.0
+            assert f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/lon"][0] == -180.0
+        native = VIIRSBRDFReader(path)._native
+        assert native.lat_axis[0] == pytest.approx(-89.5)
+        assert native.lat_axis[-1] == pytest.approx(89.5)
+        assert native.lon_axis[0] == pytest.approx(-179.5)
+        assert native.lon_axis[-1] == pytest.approx(179.5)
+
+
+class TestVIIRSBRDFFieldAttributes:
+    @pytest.mark.parametrize("attribute", ["_FillValue", "valid_range", "scale_factor", "add_offset"])
+    def test_missing_field_attribute_raises(self, tmp_path, attribute):
+        reader = _make_reader(tmp_path, omit_attributes=(attribute,))
+        with pytest.raises(ValueError, match=f"has no {attribute} attribute"):
+            _ = reader._native
+
+    @pytest.mark.parametrize("valid_range", [(0, 100), (300, 400)])
+    def test_values_outside_the_valid_range_are_nan(self, tmp_path, valid_range):
+        # The fixture's raw value 200 lies above the first range and below the second.
+        reader = _make_reader(tmp_path, valid_range=valid_range)
+        assert np.all(np.isnan(reader._native.data))
+
+    def test_add_offset_is_applied(self, tmp_path):
+        path = _fixture(tmp_path)
+        with h5py.File(path, "r+") as f:
+            f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/BRDF_Albedo_Parameter1_shortwave"].attrs["add_offset"] = [0.5]
+        data = VIIRSBRDFReader(path)._native.data
+        assert np.allclose(data[0][np.isfinite(data[0])], 0.7)
+        assert np.allclose(data[1][np.isfinite(data[1])], 0.2)
+
+
+class TestVIIRSBRDFGridMetadata:
+    def test_real_cmg_corners_decode_from_packed_dms(self):
+        text = (
+            'GROUP=GridStructure\n\tGROUP=GRID_1\n\t\tGridName="VIIRS_CMG_BRDF"\n\t\tXDim=7200\n\t\tYDim=3600\n'
+            "\t\tUpperLeftPointMtrs=(-180000000.000000,90000000.000000)\n"
+            "\t\tLowerRightMtrs=(180000000.000000,-90000000.000000)\n"
+            "\t\tProjection=HE5_GCTP_GEO\n\tEND_GROUP=GRID_1\nEND_GROUP=GridStructure\n"
+        )
+        grid = _parse_he5_grid_metadata(text, "VIIRS_CMG_BRDF", "granule.h5")
+        assert (grid["xdim"], grid["ydim"]) == (7200, 3600)
+        assert (grid["ul_lon"], grid["ul_lat"], grid["lr_lon"], grid["lr_lat"]) == (-180.0, 90.0, 180.0, -90.0)
+
+    def test_missing_grid_raises(self):
+        with pytest.raises(ValueError, match="has no grid named 'VIIRS_CMG_BRDF'"):
+            _parse_he5_grid_metadata("GROUP=GridStructure\nEND_GROUP=GridStructure\n", "VIIRS_CMG_BRDF", "g.h5")
+
+    def test_missing_field_raises(self):
+        text = 'GridName="VIIRS_CMG_BRDF"\n\t\tXDim=8\n\t\tProjection=HE5_GCTP_GEO\n\tEND_GROUP=GRID_1\n'
+        with pytest.raises(ValueError, match="has no YDim field"):
+            _parse_he5_grid_metadata(text, "VIIRS_CMG_BRDF", "g.h5")
+
+    def test_non_geographic_projection_raises(self, tmp_path):
+        reader = _make_reader(tmp_path, projection="HE5_GCTP_SNSOID")
+        with pytest.raises(ValueError, match="not the geographic HE5_GCTP_GEO"):
+            _ = reader._native
+
+    def test_axes_not_spanning_the_corners_raise(self, tmp_path):
+        # Axes written as cell centres (the corners say the region starts half a cell earlier).
+        reader = _make_reader(
+            tmp_path, metadata_corners=(_LON_MIN - _HALF_CELL, _LAT_MAX + _HALF_CELL, _LON_MAX, _LAT_MIN)
+        )
+        with pytest.raises(ValueError, match="does not span the StructMetadata corners"):
+            _ = reader._native
+
+    def test_non_uniform_axis_raises(self, tmp_path):
+        path = _fixture(tmp_path)
+        with h5py.File(path, "r+") as f:
+            lat = f["HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields/lat"]
+            lat[1] = lat[1] + 0.01
+        with pytest.raises(ValueError, match="lat axis is not uniformly spaced"):
+            _ = VIIRSBRDFReader(path)._native
+
+    def test_axis_length_not_matching_the_grid_raises(self, tmp_path):
+        path = _fixture(tmp_path)
+        with h5py.File(path, "r+") as f:
+            meta = f["HDFEOS INFORMATION/StructMetadata.0"][()].decode().replace("XDim=8", "XDim=9")
+            del f["HDFEOS INFORMATION/StructMetadata.0"]
+            f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.bytes_(meta))
+        with pytest.raises(ValueError, match="XDim=9"):
+            _ = VIIRSBRDFReader(path)._native
+
+    def test_non_string_struct_metadata_raises(self, tmp_path):
+        path = _fixture(tmp_path)
+        with h5py.File(path, "r+") as f:
+            del f["HDFEOS INFORMATION/StructMetadata.0"]
+            f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.arange(3))
+        with pytest.raises(ValueError, match="not the fixed-length string"):
+            _ = VIIRSBRDFReader(path)._native

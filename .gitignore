@@ -20,6 +20,8 @@ analysis
 coverage_report
 corbertura_report.xml
 tests/test_data/hidden
+# Real ancillary granules staged for the integration tests (hundreds of MB each).
+external_data/
 prof
 
 # Local Installation Artifacts #
