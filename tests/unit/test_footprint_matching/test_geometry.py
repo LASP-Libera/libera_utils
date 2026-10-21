@@ -461,7 +461,7 @@ class TestProjectToAngular:
 
     def test_frame_must_hold_one_footprint(self):
         frames = compute_viewing_frames(
-            [10.0, 11.0], [20.0, 20.0], [12.0, 12.0], [20.0, 20.0], satellite_radius_km=_radius(12.0, 20.0)
+            [10.0, 11.0], [20.0, 20.0], [12.0, 12.0], [20.0, 20.0], satellite_radius_km=np.full(2, _radius(12.0, 20.0))
         )
         with pytest.raises(ValueError, match="exactly one footprint"):
             geo.project_to_angular(np.array([10.0]), np.array([20.0]), frame=frames)
@@ -488,8 +488,13 @@ class TestComputeViewingFrames:
                 np.array([20.0, 0.0]),
                 np.array([10.0, 10.0]),
                 np.array([20.0, 20.0]),
-                satellite_radius_km=_radius(10.0, 20.0),
+                satellite_radius_km=np.full(2, _radius(10.0, 20.0)),
             )
+
+    @pytest.mark.parametrize("radius", [7200.0, np.array([7200.0])], ids=["scalar", "length-1"])
+    def test_requires_one_radius_per_footprint(self, radius):
+        with pytest.raises(ValueError, match="one radius per footprint"):
+            compute_viewing_frames([10.0, 0.0], [20.0, 0.0], [12.0, 0.0], [20.0, 0.0], satellite_radius_km=radius)
 
     def test_rejects_multidimensional_input(self):
         grid = np.full((2, 2), 10.0)
@@ -497,7 +502,9 @@ class TestComputeViewingFrames:
             compute_viewing_frames(grid, grid, grid, grid, satellite_radius_km=_radius(10.0, 10.0))
 
     def test_axes_are_orthonormal(self):
-        frames = compute_viewing_frames([10.0, 0.0], [20.0, 0.0], [12.0, 0.0], [20.0, 0.0], satellite_radius_km=7200.0)
+        frames = compute_viewing_frames(
+            [10.0, 0.0], [20.0, 0.0], [12.0, 0.0], [20.0, 0.0], satellite_radius_km=np.full(2, 7200.0)
+        )
         for axis in (frames.b_hat, frames.c_hat, frames.n_hat):
             np.testing.assert_allclose(np.linalg.norm(axis, axis=1), 1.0, atol=1e-12)
         np.testing.assert_allclose(np.sum(frames.b_hat * frames.c_hat, axis=1), 0.0, atol=1e-12)
@@ -537,7 +544,7 @@ class TestBatchBoundingBoxes:
 
         for i in range(n):
             (alone,) = compute_footprint_bounding_boxes(
-                lat[i], lon[i], sub_lat[i], sub_lon[i], satellite_radius_km=radius[i]
+                lat[i], lon[i], sub_lat[i], sub_lon[i], satellite_radius_km=radius[i : i + 1]
             )
             if alone is None:
                 assert batch[i] is None
@@ -595,13 +602,18 @@ class TestBatchBoundingBoxes:
                 satellite_radius_km=_radius(np.array([30.0, 5.0]), np.array([0.0, 0.0])),
             )
 
-    def test_scalar_radius_broadcasts(self):
-        lat, lon = np.array([0.0, 1.0]), np.array([0.0, 1.0])
-        sub_lat, sub_lon = np.array([2.0, 3.0]), np.array([0.0, 1.0])
+    @pytest.mark.parametrize("as_array", [False, True], ids=["scalar", "length-1"])
+    def test_requires_one_radius_per_footprint(self, as_array):
+        # One nominal radius must not stand in for the per-record L1B ephemeris.
         radius = _radius(2.0, 0.0)
-        broadcast = compute_footprint_bounding_boxes(lat, lon, sub_lat, sub_lon, satellite_radius_km=radius)
-        explicit = compute_footprint_bounding_boxes(lat, lon, sub_lat, sub_lon, satellite_radius_km=np.full(2, radius))
-        assert broadcast == explicit
+        with pytest.raises(ValueError, match="one radius per footprint"):
+            compute_footprint_bounding_boxes(
+                np.array([0.0, 1.0]),
+                np.array([0.0, 1.0]),
+                np.array([2.0, 3.0]),
+                np.array([0.0, 1.0]),
+                satellite_radius_km=np.array([radius]) if as_array else radius,
+            )
 
     def test_rejects_multidimensional_input(self):
         grid = np.array([[10.0, 11.0], [12.0, 13.0]])

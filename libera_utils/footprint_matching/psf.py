@@ -297,12 +297,11 @@ def psf_95_energy_extent(
 def static_fov_extent(fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG) -> PSFAngularExtent:
     """Angular extent of the uniform "static" FOV, the response of a stationary scanner.
 
-    When the cone-angle rate is zero (scan turnarounds), there is no time-response
-    tail -- the instrument simply integrates uniformly over its circular optical
-    field of view (design doc section 2.4.2.2). The extent is then just the FOV
-    half-angle in every direction. The bounding box does not take the cone-angle rate,
-    so it applies the FOV half-angle as a floor on the PSF extent instead of switching to
-    this extent.
+    When the cone-angle rate is zero (scan turnarounds), there is no time-response tail
+    -- the instrument simply integrates uniformly over its circular optical field of
+    view. The extent is then just the FOV half-angle in every direction. The bounding
+    box does not take the cone-angle rate, so it applies the FOV half-angle as a floor
+    on the PSF extent instead of switching to this extent.
 
     Parameters
     ----------

@@ -89,8 +89,7 @@ from libera_utils.footprint_matching.types import BoundingBox
 BBOX_MARGIN_FRACTION: float = 0.05
 
 # Latitude beyond which we flag the box as "polar" so downstream code knows the
-# rectangular lat/lon box is a coarse over-approximation (meridians converge). This
-# mirrors the design doc's 85 deg threshold.
+# rectangular lat/lon box is a coarse over-approximation (meridians converge).
 POLAR_LATITUDE_THRESHOLD_DEG: float = 85.0
 
 # How far (km) the boresight ray's first ground intersection may fall from the reported
@@ -292,7 +291,7 @@ def _ray_ellipsoid_intersection(origin_km: np.ndarray, direction: np.ndarray) ->
 def _footprint_arrays(*arrays: ArrayLike) -> list[np.ndarray]:
     """Per-footprint inputs as float arrays of one common 1-D shape.
 
-    Scalars broadcast against the arrays (e.g. one satellite radius for a whole batch).
+    Scalars broadcast against the arrays.
 
     Raises
     ------
@@ -310,6 +309,25 @@ def _footprint_arrays(*arrays: ArrayLike) -> list[np.ndarray]:
         raise ValueError(
             f"Per-footprint inputs must share one length, got shapes {[a.shape for a in converted]}."
         ) from err
+
+
+def _require_radius_per_footprint(satellite_radius_km: np.ndarray, n_footprints: int) -> None:
+    """Require one satellite radius per footprint, as L1B provides.
+
+    Raises
+    ------
+    ValueError
+        If ``satellite_radius_km`` is not a 1-D array of length ``n_footprints``. A scalar,
+        or a length-1 array broadcast over several footprints, is rejected so one nominal
+        radius cannot stand in for the per-record ephemeris.
+    """
+    shape = np.shape(satellite_radius_km)
+    if shape != (n_footprints,):
+        raise ValueError(
+            f"satellite_radius_km must hold one radius per footprint ({n_footprints}), got shape {shape}: "
+            "pass the per-record L1B Radius_of_Satellite_from_Center_of_Earth array. For one footprint use "
+            "compute_footprint_bounding_box or project_to_angular."
+        )
 
 
 def _usable(lat_deg: ArrayLike, *others: ArrayLike) -> np.ndarray:
@@ -723,7 +741,7 @@ def compute_footprint_bounding_boxes(
     subsatellite_lat_deg: ArrayLike,
     subsatellite_lon_deg: ArrayLike,
     *,
-    satellite_radius_km: ArrayLike,
+    satellite_radius_km: np.ndarray,
     fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
     n_samples: int = _N_PERIMETER_SAMPLES,
 ) -> list[BoundingBox | None]:
@@ -753,9 +771,9 @@ def compute_footprint_bounding_boxes(
     subsatellite_lat_deg, subsatellite_lon_deg : array_like
         Per-footprint geodetic spacecraft sub-points (L1B ``Subsatellite_Latitude`` /
         ``Subsatellite_Longitude``), degrees.
-    satellite_radius_km : array_like
-        Per-footprint spacecraft distance from Earth's center (L1B
-        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+    satellite_radius_km : np.ndarray
+        1-D array of each footprint's spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km, one per footprint.
     fov_halfangle_deg : float, optional
         Instrument FOV half-angle, degrees. Used as a floor on the PSF extent so the
         box is never smaller than the optical field of view. Defaults to
@@ -771,8 +789,8 @@ def compute_footprint_bounding_boxes(
     Raises
     ------
     ValueError
-        If an input is more than 1-D, or the inputs do not share a length (scalars
-        broadcast).
+        If an input is more than 1-D, the inputs do not share a length, or
+        ``satellite_radius_km`` does not hold one radius per footprint.
     MissingGeolocationError
         If any footprint's subsatellite point or radius is unusable, or any footprint is
         not visible from its satellite.
@@ -780,6 +798,7 @@ def compute_footprint_bounding_boxes(
     lat, lon, sub_lat, sub_lon, radius = _footprint_arrays(
         boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km
     )
+    _require_radius_per_footprint(satellite_radius_km, lat.size)
     # Missing ephemeris is bad input, not an off-Earth view: fail loudly rather than hide
     # it among the Nones. A missing boresight with the spacecraft present is a
     # space/calibration view: no Earth intersection.
@@ -875,7 +894,7 @@ def compute_footprint_bounding_box(
         boresight_lon_deg,
         subsatellite_lat_deg,
         subsatellite_lon_deg,
-        satellite_radius_km=satellite_radius_km,
+        satellite_radius_km=np.array([satellite_radius_km], dtype=float),
         fov_halfangle_deg=fov_halfangle_deg,
     )
     if box is None:
@@ -935,7 +954,7 @@ def compute_viewing_frames(
     subsatellite_lat_deg: ArrayLike,
     subsatellite_lon_deg: ArrayLike,
     *,
-    satellite_radius_km: ArrayLike,
+    satellite_radius_km: np.ndarray,
 ) -> ViewingFrame:
     """Build every footprint's viewing frame in one batched call.
 
@@ -951,9 +970,9 @@ def compute_viewing_frames(
     subsatellite_lat_deg, subsatellite_lon_deg : array_like
         Per-footprint geodetic spacecraft sub-points (L1B ``Subsatellite_Latitude`` /
         ``Subsatellite_Longitude``), degrees.
-    satellite_radius_km : array_like
-        Per-footprint spacecraft distance from Earth's center (L1B
-        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+    satellite_radius_km : np.ndarray
+        1-D array of each footprint's spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km, one per footprint.
 
     Returns
     -------
@@ -963,7 +982,8 @@ def compute_viewing_frames(
     Raises
     ------
     ValueError
-        If an input is more than 1-D, or the inputs do not share a length.
+        If an input is more than 1-D, the inputs do not share a length, or
+        ``satellite_radius_km`` does not hold one radius per footprint.
     MissingGeolocationError
         If any footprint's ephemeris fields are unusable or the footprint is not visible
         from its satellite.
@@ -974,6 +994,7 @@ def compute_viewing_frames(
     lat, lon, sub_lat, sub_lon, radius = _footprint_arrays(
         boresight_lat_deg, boresight_lon_deg, subsatellite_lat_deg, subsatellite_lon_deg, satellite_radius_km
     )
+    _require_radius_per_footprint(satellite_radius_km, lat.size)
     _require_spacecraft(sub_lat, sub_lon, radius)
     off_earth = ~_valid_boresight(lat, lon)
     if np.any(off_earth):
@@ -1129,7 +1150,7 @@ def project_to_angular(
             boresight_lon_deg,
             subsatellite_lat_deg,
             subsatellite_lon_deg,
-            satellite_radius_km=satellite_radius_km,
+            satellite_radius_km=np.array([satellite_radius_km], dtype=float),
         )
     if len(frame) != 1:
         raise ValueError(f"frame must hold exactly one footprint (use ViewingFrame.for_index), got {len(frame)}.")

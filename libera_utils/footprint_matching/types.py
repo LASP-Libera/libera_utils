@@ -61,10 +61,10 @@ class OperationalMode(enum.Enum):
 class FmatchCoverageFlag(enum.IntFlag):
     """Bitwise coverage/QA flags folded into a footprint's ``q_flags`` variable.
 
-    Set by the product orchestrator from the CERES 75%/95% PSF-energy coverage rule
-    (design doc section 2.4.2.7) once the external-variable aggregation has run. The
-    values are OR-combined and tested bitwise, and an empty (zero) value means "no
-    coverage issue". The ``PARTIAL_COVERAGE`` bit deliberately shares bit 0 with
+    Set by the product orchestrator from the CERES 75%/95% PSF-energy coverage rule once
+    the external-variable aggregation has run. The values are OR-combined and tested
+    bitwise, and an empty (zero) value means "no coverage issue". The
+    ``PARTIAL_COVERAGE`` bit deliberately shares bit 0 with
     :class:`~libera_utils.footprint_matching.camera_segmentation.CameraFootprintQualityFlag.PARTIAL_COVERAGE`
     so the camera segmentation's own partial-coverage flag and the PSF-energy
     partial-coverage flag OR together into one consistent "partial" bit; the other
