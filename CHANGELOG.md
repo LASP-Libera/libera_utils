@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.12.0] - 2026-10-21
+
+### Added
+
+- The `libera_utils.footprint_matching` package, the foundation of the FMATCH (footprint matching) algorithm:
+  - `footprint_matching.types` holds the shared data classes and enumerations: `OperationalMode` (the five FMATCH modes, ordered by latency), `FmatchCoverageFlag`, `BoundingBox`, `RadiometerFootprint` and `VariableSpec`, with `spec_active_in_mode` and `with_standard_deviation_companions`. `SampleSet`, `GridSamples`, `PointSamples` and `TimeMatch` describe a reader's native samples inside a footprint's box (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), the two native forms a reader loads, and the policy by which a reader selects samples in time (`DAILY`, `NEAREST_STEP`, `NEAREST_PASS`). A `RadiometerFootprint` carries its observation `time`, which the readers match ancillary samples to, and its `bbox` is `None` exactly when it is an off-limb view.
+  - `footprint_matching.psf` evaluates the point spread function (`psf_weight`) and its 95%-energy angular extent (`psf_95_energy_extent`), plus `static_fov_extent` and `conservative_along_scan_extent`. The Libera PSF has not been delivered, so the module uses the heritage CERES analytic PSF (CERES ATBD 4.4) as a stand-in; its CERES constants are isolated in one block so that swapping in the Libera PSF changes only that file.
+  - `footprint_matching.geometry` turns L1B footprint geolocation and viewing geometry into the latitude/longitude bounding box of the ground the radiometer senses (`compute_footprint_bounding_box`, and `compute_footprint_bounding_boxes` for a batch). It ray-traces the PSF extent onto the WGS84 ellipsoid using curryer's spatial tools, rounds the box outward so it always encloses the footprint, and handles dateline crossings and footprints that enclose a pole. A boresight that misses the Earth raises `OffLimbError`, a footprint whose box corners run off the limb raises `PartialFootprintError`, and unusable geolocation or ephemeris raises `MissingGeolocationError`. The module also provides `compute_viewing_frames` / `ViewingFrame`, `surface_cell_ecef_km` and `project_to_angular`, which project ground grid cells into the radiometer's angular frame for PSF weighting.
+- `notebooks/01_geometry_psf.ipynb`, a demonstration of the PSF model and footprint geometry.
+- `pyproj` is a runtime dependency, used for WGS84 geodesic distances.
+
 ## [5.11.5] - 2026-10-14
 
 ### Added
@@ -796,7 +807,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...HEAD
+[5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0
 [5.11.5]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...5.11.5
 [5.11.4]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...5.11.4
 [5.11.3]: https://github.com/LASP-Libera/libera_utils/compare/5.11.2...5.11.3
