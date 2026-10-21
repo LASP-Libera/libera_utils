@@ -6,8 +6,8 @@ or interpolation applied. The PSF weigher then weights every sample where it lie
 the aggregation engine reduces the weighted samples to one value per variable, so a
 value is transformed exactly once on its way into a FMATCH product.
 
-Two concrete contracts
-----------------------
+Three concrete contracts
+------------------------
 * :class:`StaticReader` -- the source is one body of data for the staged period: a
   daily composite, a yearly map, or swath data carrying a time per sample. The reader
   loads it once (:meth:`StaticReader._load_native`) as :class:`~libera_utils.footprint_matching.types.GridSamples`,
@@ -18,6 +18,11 @@ Two concrete contracts
   hourly steps). The reader lists the step times (:meth:`SteppedGridReader._step_times`)
   and loads one step on demand (:meth:`SteppedGridReader._load_step`); the base class
   keeps only the step nearest the footprint time in memory.
+* :class:`PassReader` -- the source is swath data in hourly granules, each with a time
+  per sample (CERES SSF, CLDPIX). The reader reads a granule's time span
+  (:meth:`PassReader._granule_span`) and loads one granule as points
+  (:meth:`PassReader._load_granule`); the base class holds only the granules whose span
+  lies within ``MAX_TIME_OFFSET`` of the current footprint time.
 
 Geographic query
 ----------------
@@ -758,3 +763,87 @@ class SteppedGridReader(AncillaryReader):
     @abc.abstractmethod
     def _load_step(self, index: int) -> GridSamples:
         """Load the grid of step ``index`` (an index into :meth:`_step_times`)."""
+
+
+class PassReader(AncillaryReader):
+    """A reader whose source is swath data in time-spanning granules, served by time window.
+
+    CERES SSF and CLDPIX come as hourly granules, and a CLDPIX hour alone is several
+    million pixels, so a day cannot be held at once. The subclass reports each granule's
+    time span (:meth:`_granule_span`) and loads one granule as time-stamped points
+    (:meth:`_load_granule`); this class keeps indexed only the granules whose span lies
+    within ``MAX_TIME_OFFSET`` of the current footprint time, loading a granule when the
+    footprints reach its window and releasing it when they leave. Footprints arrive in
+    time order, so the window slides forward and each granule is loaded once.
+
+    The nearest-pass selection then runs over every sample the loaded granules hold in
+    the box, so a pass is found whichever granule it falls in.
+    """
+
+    TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
+
+    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+        super().__init__(file_paths)
+        # Granule path -> its indexed points, for the granules inside the current window.
+        self._loaded: dict[Path, _PointIndex] = {}
+
+    @cached_property
+    def _spans(self) -> list[tuple[np.datetime64, np.datetime64, Path]]:
+        """``(start, end, path)`` per staged granule, ascending by start."""
+        spans = []
+        for path in self.file_paths:
+            start, end = self._granule_span(path)
+            start, end = np.datetime64(start, "ns"), np.datetime64(end, "ns")
+            if np.isnat(start) or np.isnat(end) or end < start:
+                raise ValueError(
+                    f"Reader {self.READER_KEY!r}: granule {path.name} has an invalid time span {start}..{end}."
+                )
+            spans.append((start, end, path))
+        spans.sort(key=lambda item: item[0])
+        return spans
+
+    def granules_in_window(self, time: np.datetime64) -> list[Path]:
+        """The staged granules whose span lies within ``MAX_TIME_OFFSET`` of ``time``.
+
+        Parameters
+        ----------
+        time : np.datetime64
+            A footprint time.
+
+        Returns
+        -------
+        list[Path]
+            The granules whose ``(start, end)`` span overlaps ``time`` +/- ``MAX_TIME_OFFSET``,
+            ascending by start; empty when none does.
+
+        Raises
+        ------
+        ValueError
+            If a staged granule's span is invalid: a start or end that is NaT, or an end
+            before its start.
+        """
+        low, high = time - self.MAX_TIME_OFFSET, time + self.MAX_TIME_OFFSET
+        return [path for start, end, path in self._spans if end >= low and start <= high]
+
+    def _native_for(self, time: np.datetime64) -> tuple[_PointIndex, ...]:
+        wanted = self.granules_in_window(time)
+        for path in list(self._loaded):
+            if path not in wanted:
+                # Release a granule the footprints have moved past.
+                del self._loaded[path]
+        for path in wanted:
+            if path not in self._loaded:
+                self._loaded[path] = self._index_points(self._load_granule(path))
+        return tuple(self._loaded[path] for path in wanted)
+
+    @abc.abstractmethod
+    def _granule_span(self, path: Path) -> tuple[np.datetime64, np.datetime64]:
+        """Return the ``(start, end)`` observation times a granule covers, from its metadata."""
+
+    @abc.abstractmethod
+    def _load_granule(self, path: Path) -> PointSamples:
+        """Open one granule and return its samples as time-stamped points.
+
+        Implementers handle the granule's own fill and valid-range conventions, returning
+        NaN where it has no value, longitudes in [-180, 180], and a time per sample.
+        """
