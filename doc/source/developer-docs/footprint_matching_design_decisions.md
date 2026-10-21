@@ -222,7 +222,7 @@ opt-in, when no ancillary data is staged at all.
 Readers take the list of granules staged for their source. Stepped and pass readers
 index them (hourly ERA5 files by step, hourly SSF and CLDPIX granules by time span); a
 daily-composite reader reads exactly one and raises on more. IGBP concatenates its MODIS
-tiles, so the staged tiles should be those under the day's orbits, not the global set. Staging must include the neighbouring day's
+tiles, so the staged tiles should be those under the day's orbits, not the global set. Staging must include the neighboring day's
 granules for footprints near 00:00 UTC, or those footprints will match a pass up to a day
 away or none; that is a staging concern outside this package.
 
