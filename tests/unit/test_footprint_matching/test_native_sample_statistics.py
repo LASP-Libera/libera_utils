@@ -128,7 +128,7 @@ def test_minority_class_survives_as_secondary_scene(pixel_run):
     assert ranked == [1, 17]
     assert result["_native_stats_scene"][0] == 1
     assert result["_native_stats_scene_primary"][0] == 1
-    # 40 % of every square kilometre is water: a per-cell mode would never show it.
+    # 40 % of every square kilometer is water: a per-cell mode would never show it.
     assert result["_native_stats_scene_secondary"][0] == 17
 
 

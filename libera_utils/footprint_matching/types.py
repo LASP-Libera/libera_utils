@@ -386,7 +386,7 @@ class PseudoFootprint:
     latitude, longitude : float
         Center-pixel geodetic latitude/longitude, degrees.
     altitude : float
-        Center-pixel altitude, metres (as stored in L1B).
+        Center-pixel altitude, meters (as stored in L1B).
     solar_zenith_angle, viewing_zenith_angle, relative_azimuth_angle : float
         Center-pixel viewing-geometry angles, degrees.
     bbox : BoundingBox

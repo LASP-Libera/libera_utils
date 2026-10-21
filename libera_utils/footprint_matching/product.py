@@ -94,7 +94,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Product-definition variable names that the camera-segmentation tool fills with
-# *real* per-footprint values (centre-pixel geolocation/geometry, the corner-derived
+# *real* per-footprint values (center-pixel geolocation/geometry, the corner-derived
 # PSF bounding box, and the QA flags). Every other declared variable is filled by the
 # derived-geometry engine (:func:`compute_derived_viewing_geometry`, always) or the
 # external aggregation engine (:func:`aggregate_external_variables`, when ancillary
@@ -114,7 +114,7 @@ _CAMTIME_SEGMENTATION_VARIABLES: frozenset[str] = frozenset(
         "psf_bbox_lon_min",
         "psf_bbox_lon_max",
         "q_flags",
-        # Boresight (centre) pixel provenance: which L1B camera pixel this pseudo-footprint's
+        # Boresight (center) pixel provenance: which L1B camera pixel this pseudo-footprint's
         # boresight stand-in falls on. Real per-footprint integers straight off the
         # PseudoFootprint. The block's inclusive pixel extent is emitted separately as the four
         # camera_pixel_{x,y}_{min,max} COORDINATES, which this set (real data *variables*)
@@ -300,7 +300,7 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
 
     Every on-Earth footprint carries a ``bbox`` and a ``viewing_zenith_angle``; the boresight is
     read from ``latitude``/``longitude`` when present and otherwise taken as the box
-    centre. A :class:`RadiometerFootprint` carries the L1B
+    center. A :class:`RadiometerFootprint` carries the L1B
     ephemeris (subsatellite point and satellite radius) the angular-frame weigher needs.
     A camera pseudo-footprint carries none: it gets the boresight as its subsatellite
     point and :data:`_CAMERA_NOMINAL_SATELLITE_RADIUS_KM`, which only the radial stand-in
@@ -319,7 +319,7 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
     lat = getattr(footprint, "latitude", None)
     lon = getattr(footprint, "longitude", None)
     if lat is None or lon is None:
-        # Box centre. (A dateline-wrapping box reports lon_max > 180; the mean still
+        # Box center. (A dateline-wrapping box reports lon_max > 180; the mean still
         # lands inside it, which is good enough for the weight kernel.)
         lat = 0.5 * (bbox.lat_min + bbox.lat_max)
         lon = 0.5 * (bbox.lon_min + bbox.lon_max)
@@ -331,7 +331,7 @@ def _footprint_geometry(footprint: Any) -> _FootprintGeometry:
         )
 
     # Ephemeris. Read only the dedicated fields so we never mistake another quantity for
-    # them -- in particular the camera ``PseudoFootprint`` carries a metres-valued
+    # them -- in particular the camera ``PseudoFootprint`` carries a meters-valued
     # ``altitude`` that is the center-pixel *surface height* (an output column), not a
     # spacecraft position.
     sub_lat = getattr(footprint, "subsatellite_latitude", None)
@@ -1326,7 +1326,7 @@ def _assemble_camtime_dataset(
     which the computed-and-placeholder fill handles generically.
 
     Builds the per-footprint variable arrays declared by the mode's product
-    definition. The centre-pixel geolocation/geometry, the corner-derived PSF
+    definition. The center-pixel geolocation/geometry, the corner-derived PSF
     bounding box, and the QA flags come straight from the pseudo-footprints
     (:data:`_CAMTIME_SEGMENTATION_VARIABLES`). The derived ``sunglint_angle`` is
     computed from the geolocation angles, and (when ``source_file_paths`` or

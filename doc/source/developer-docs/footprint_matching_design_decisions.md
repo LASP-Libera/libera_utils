@@ -88,13 +88,13 @@ concatenate. A fill or out-of-range time decodes to NaT and that sample is dropp
 
 **Decision.** The weigher lays a fine reference grid over the PSF contour in its own frame
 (angular for the CERES-faithful weigher, ground-plane for the radial stand-in) holding the
-PSF energy of every cell. Each finite sample covers the square centred on it whose
+PSF energy of every cell. Each finite sample covers the square centered on it whose
 half-width is the circumradius of the source's native cell, `RESOLUTION_KM / sqrt(2)`, so
 a regular lattice of cells leaves no gap at any rotation relative to the reference axes.
 Coverage is the share of the reference energy inside at least one such square. The
 footprint's `psf_coverage_fraction` is the minimum over the active sources and drives the
 CERES 75 / 95 percent flags. The reader's box query is widened by half a native cell so a
-sample whose cell overlaps the contour's rim is served even when its centre lies outside
+sample whose cell overlaps the contour's rim is served even when its center lies outside
 the box; the PSF weight of such a sample is zero, so only the coverage changes.
 
 The pass readers measure the cell size on each granule rather than trusting the
@@ -138,10 +138,10 @@ and absent for regular grids.
 **To change.** Multiply the weights by a per-sample area in the weigher. The reader would
 have to serve a per-sample area, which no source currently provides.
 
-## 5. Coarse grids are point-sampled at their cell centres
+## 5. Coarse grids are point-sampled at their cell centers
 
 **Decision.** A gridded source contributes the grid points inside the box, each weighted
-by the PSF at its centre. No area integration of the PSF over the cell and no spatial
+by the PSF at its center. No area integration of the PSF over the cell and no spatial
 interpolation of the field.
 
 **Consequence for interpretation.** For ERA5 and the 1 degree VIIRS composites the
