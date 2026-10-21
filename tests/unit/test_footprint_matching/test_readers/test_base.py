@@ -340,7 +340,7 @@ class TestNearestStep:
         assert samples.n_samples == 0
         assert reader.loads == []
 
-    def test_nearest_step_index_picks_the_closer_neighbour(self):
+    def test_nearest_step_index_picks_the_closer_neighbor(self):
         reader = _StepReader()
         assert reader.nearest_step_index(_T0 + np.timedelta64(29, "m")) == 0
         assert reader.nearest_step_index(_T0 + np.timedelta64(31, "m")) == 1

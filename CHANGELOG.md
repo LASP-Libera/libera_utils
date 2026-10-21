@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The ERA5 readers serve the hourly step nearest each footprint's time instead of the first step of the file, and reject a file with no time axis.
 - `ERA5Reader` and `ERA5PressureLevelReader` declare `RESOLUTION_KM = 28.0`, the 0.25 degree grid spacing.
-- The point readers' shared helpers live in `readers._points`; `apply_fill_and_valid_range` compares the fill sentinel in the raw dtype before any cast, `decode_cf_times` decodes a CF time variable, and `neighbour_spacing_km` measures a swath's or track's sample spacing.
+- The point readers' shared helpers live in `readers._points`; `apply_fill_and_valid_range` compares the fill sentinel in the raw dtype before any cast, `decode_cf_times` decodes a CF time variable, and `neighbor_spacing_km` measures a swath's or track's sample spacing.
 
 ## [5.14.0] - 2026-10-27
 

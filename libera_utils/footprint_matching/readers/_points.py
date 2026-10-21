@@ -21,7 +21,7 @@ This module holds the format-agnostic decoding pieces those readers share:
   CLDPIX) into ``datetime64[ns]`` sample times given the granule's date.
 - :func:`granule_time_coverage` -- read the span a granule covers from its
   ``time_coverage_start`` / ``time_coverage_end`` attributes.
-- :func:`neighbour_spacing_km` and :func:`scan_to_scan_spacing_km` -- measure a swath's
+- :func:`neighbor_spacing_km` and :func:`scan_to_scan_spacing_km` -- measure a swath's
   or track's native sample spacing, which the coverage measure credits each sample with.
 """
 
@@ -279,11 +279,11 @@ def _great_circle_km(lat1: np.ndarray, lon1: np.ndarray, lat2: np.ndarray, lon2:
     return 2.0 * _EARTH_RADIUS_KM * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
 
 
-def neighbour_spacing_km(lats: np.ndarray, lons: np.ndarray, *, max_rows: int = 500) -> float:
-    """Median distance between neighbouring samples of a swath or a track, km.
+def neighbor_spacing_km(lats: np.ndarray, lons: np.ndarray, *, max_rows: int = 500) -> float:
+    """Median distance between neighboring samples of a swath or a track, km.
 
     For a 2-D ``(scanlines, pixels)`` swath this is the larger of the median across-track
-    neighbour distance (pixel to next pixel on a scanline) and the median along-track
+    neighbor distance (pixel to next pixel on a scanline) and the median along-track
     one (scanline to next scanline at a pixel), so a swath that is subsampled on delivery
     reports the spacing it really has. For a 1-D track it is the median distance between
     consecutive samples, with jumps larger than ten times the median (scan turnarounds,
@@ -300,7 +300,7 @@ def neighbour_spacing_km(lats: np.ndarray, lons: np.ndarray, *, max_rows: int = 
     Returns
     -------
     float
-        Spacing in km, or NaN when fewer than two finite neighbours exist.
+        Spacing in km, or NaN when fewer than two finite neighbors exist.
     """
     lats = np.asarray(lats, dtype=np.float64)
     lons = np.asarray(lons, dtype=np.float64)

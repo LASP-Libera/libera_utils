@@ -15,7 +15,7 @@ from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_cf_times,
     decode_hours_of_day,
-    neighbour_spacing_km,
+    neighbor_spacing_km,
     normalize_longitude,
     scan_to_scan_spacing_km,
 )
@@ -215,23 +215,23 @@ class TestDecodeHoursOfDay:
             ds.close()
 
 
-class TestNeighbourSpacing:
+class TestNeighborSpacing:
     def test_swath_reports_the_larger_of_across_and_along(self):
         # 2 km along-track rows, 7 km across-track pixels at the equator (0.063 deg).
         lats = np.arange(0.0, 0.18, 0.018)[:, None] + np.zeros((1, 5))
         lons = np.zeros((10, 1)) + np.arange(0.0, 0.315, 0.063)[None, :]
-        spacing = neighbour_spacing_km(lats, lons)
+        spacing = neighbor_spacing_km(lats, lons)
         assert spacing == pytest.approx(7.0, rel=0.03)
 
     def test_track_ignores_large_jumps(self):
         # 12 km steps with one 500 km jump (a scan turnaround) that must not inflate the median.
         lats = np.concatenate([np.arange(0.0, 0.54, 0.108), np.arange(5.0, 5.54, 0.108)])
         lons = np.zeros_like(lats)
-        assert neighbour_spacing_km(lats, lons) == pytest.approx(12.0, rel=0.03)
+        assert neighbor_spacing_km(lats, lons) == pytest.approx(12.0, rel=0.03)
 
     def test_non_finite_and_degenerate_inputs(self):
-        assert np.isnan(neighbour_spacing_km(np.array([0.0]), np.array([0.0])))
-        assert np.isnan(neighbour_spacing_km(np.array([np.nan, np.nan]), np.array([0.0, 0.0])))
+        assert np.isnan(neighbor_spacing_km(np.array([0.0]), np.array([0.0])))
+        assert np.isnan(neighbor_spacing_km(np.array([np.nan, np.nan]), np.array([0.0, 0.0])))
 
 
 class TestScanToScanSpacing:
@@ -242,7 +242,7 @@ class TestScanToScanSpacing:
         lons = (np.zeros((n_scan, 1)) + np.arange(n_pos)[None, :] * 0.108).ravel()
         times = np.repeat(np.arange(n_scan), n_pos).astype(float)
         sample_number = np.tile(np.arange(1, n_pos + 1), n_scan)
-        assert neighbour_spacing_km(lats, lons) == pytest.approx(12.0, rel=0.05)
+        assert neighbor_spacing_km(lats, lons) == pytest.approx(12.0, rel=0.05)
         assert scan_to_scan_spacing_km(lats, lons, times, sample_number) == pytest.approx(44.0, rel=0.03)
 
     def test_single_scan_is_nan(self):
