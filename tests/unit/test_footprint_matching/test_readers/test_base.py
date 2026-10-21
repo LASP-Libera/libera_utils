@@ -14,6 +14,7 @@ import pytest
 
 from libera_utils.footprint_matching.readers.base import (
     AncillaryReader,
+    PassReader,
     StaticReader,
     SteppedGridReader,
     _PointIndex,
@@ -107,6 +108,30 @@ class _PassNativeReader(StaticReader):
 
     def _load_native(self):
         return self._held
+
+
+class _GranuleReader(PassReader):
+    """Hourly granules handed in as ``{path: (start, end, PointSamples)}``; counts loads."""
+
+    READER_KEY = "_base_test_granules"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 1.0
+    PASS_WINDOW = np.timedelta64(15, "m")
+    MAX_TIME_OFFSET = np.timedelta64(3, "h")
+    VARIABLES = (_SPEC,)
+
+    def __init__(self, granules: dict) -> None:
+        super().__init__(list(granules))
+        self._granules = granules
+        self.loads: list = []
+
+    def _granule_span(self, path):
+        start, end, _ = self._granules[path]
+        return start, end
+
+    def _load_granule(self, path):
+        self.loads.append(path)
+        return self._granules[path][2]
 
 
 class _StepReader(SteppedGridReader):
@@ -977,6 +1002,53 @@ class TestFilePaths:
         """
         with pytest.raises(ValueError, match="at least one"):
             _GridReader([])
+
+
+class TestPassReaderWindow:
+    """A pass reader holds only the granules within MAX_TIME_OFFSET of the footprint time."""
+
+    @staticmethod
+    def _granules(tmp_path):
+        granules = {}
+        for hour in range(6):
+            start = _T0 + np.timedelta64(hour, "h")
+            end = start + np.timedelta64(59, "m")
+            times = start + np.arange(4) * np.timedelta64(10, "m")
+            points = PointSamples(
+                lats=np.full(4, 10.5),
+                lons=np.full(4, 20.5),
+                values=np.full((1, 4), float(hour), dtype=np.float32),
+                times=times,
+            )
+            granules[tmp_path / f"granule_{hour:02d}.nc"] = (start, end, points)
+        return granules
+
+    def test_only_granules_in_the_window_are_loaded(self, tmp_path):
+        reader = _GranuleReader(self._granules(tmp_path))
+        box = BoundingBox(10.0, 11.0, 20.0, 21.0)
+        # Footprint at hour 0 + 5 min: granules 0..3 lie within +-3 h; 4 and 5 do not.
+        samples = reader.samples_in(box, _T0 + np.timedelta64(5, "m"))
+        assert sorted(p.name for p in reader.loads) == [f"granule_0{h}.nc" for h in range(4)]
+        assert set(samples.values[0].tolist()) == {0.0}  # the nearest pass is hour 0's
+        # Moving to hour 5 loads 4 and 5, releases 0 and 1, and never reloads 2 and 3.
+        samples = reader.samples_in(box, _T0 + np.timedelta64(5, "h") + np.timedelta64(5, "m"))
+        assert sorted(p.name for p in reader.loads) == [f"granule_0{h}.nc" for h in range(6)]
+        assert sorted(p.name for p in reader._loaded) == [f"granule_0{h}.nc" for h in range(2, 6)]
+        assert set(samples.values[0].tolist()) == {5.0}
+
+    def test_no_granule_in_window_gives_no_samples(self, tmp_path):
+        reader = _GranuleReader(self._granules(tmp_path))
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0 + np.timedelta64(20, "h"))
+        assert samples.n_samples == 0
+        assert reader.loads == []
+
+    def test_invalid_span_raises(self, tmp_path):
+        granules = self._granules(tmp_path)
+        path = next(iter(granules))
+        start, end, points = granules[path]
+        granules[path] = (end, start, points)
+        with pytest.raises(ValueError, match="invalid time span"):
+            _GranuleReader(granules).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
 
 
 class TestResolutionOfServedSamples:
