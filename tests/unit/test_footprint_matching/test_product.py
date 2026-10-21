@@ -216,7 +216,7 @@ class TestMergeCoverageQa:
 
     @staticmethod
     def _footprint(*, truncated: bool = False, off_limb: bool = False) -> FakeFootprint:
-        bbox = BoundingBox(0.2, 0.8, 0.2, 0.8, truncated=truncated)
+        bbox = None if off_limb else BoundingBox(0.2, 0.8, 0.2, 0.8, truncated=truncated)
         return FakeFootprint(bbox, 0.5, 0.5, off_limb=off_limb)
 
     def test_coverage_bits(self):
