@@ -297,3 +297,42 @@ class TestIGBPTileHolder:
         path, _ = _tile(tmp_path, 18, 4, codes=np.ones((_N, _N), dtype=np.int16))
         with pytest.raises(ValueError, match="LC_Type1 is int16"):
             _ = IGBPReader(path)._native
+
+
+class TestIGBPReaderRealSubset:
+    """A real MCD12Q1 h21v07 tile (2024) cut to 120 x 120 pixels in the Ethiopian highlands, near 12N, 38E.
+
+    The cut keeps ``LC_Type1`` and rewrites the tile's ``StructMetadata.0`` corners and
+    dimensions to the window, so the sinusoidal geolocation runs on it unchanged. The
+    window holds eleven IGBP classes, mostly croplands (12), with a few water pixels (17).
+    """
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return IGBPReader(fmatch_real_data_path / "MCD12Q1.A2024001.h21v07.061.2025205222320_subset.hdf")
+
+    def test_window_codes_are_the_granules(self, reader):
+        codes, counts = np.unique(reader._native.data, return_counts=True)
+        assert dict(zip(codes.tolist(), counts.tolist(), strict=True)) == {
+            1: 2,
+            2: 8,
+            5: 1,
+            9: 26,
+            10: 1292,
+            11: 27,
+            12: 13022,
+            13: 12,
+            14: 3,
+            16: 1,
+            17: 6,
+        }
+
+    def test_a_box_in_the_window_is_geolocated_and_served(self, reader):
+        bbox = BoundingBox(11.9, 12.1, 38.0, 38.2)
+        samples = reader.samples_in(bbox, _T)
+        assert samples.n_samples > 0
+        assert np.all((samples.lats >= bbox.lat_min - 0.05) & (samples.lats <= bbox.lat_max + 0.05))
+        assert np.all((samples.lons >= bbox.lon_min - 0.05) & (samples.lons <= bbox.lon_max + 0.05))
+        served, counts = np.unique(samples.values[0], return_counts=True)
+        assert set(served.tolist()) <= {1, 2, 5, 9, 10, 11, 12, 13, 14, 16, 17}
+        assert served[np.argmax(counts)] == 12

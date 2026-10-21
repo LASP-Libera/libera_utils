@@ -27,6 +27,7 @@ from tests.test_data.footprint_matching.fixtures import (
     make_era5_pressure_netcdf_fixture,
 )
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
 _T = ERA5_FIXTURE_TIME
 
@@ -171,3 +172,32 @@ class TestERA5PressureLevelReaderSamples:
         assert samples.source == "era5_pressure"
         assert samples.timestamp_source is None
         assert samples.values.shape == (_N_SPECS, 16)
+
+
+class TestERA5PressureLevelReaderRealSubset:
+    """A real 37-level ERA5 pressure-level download cut to 50N..40N, 110W..100W at 2025-01-01T00.
+
+    Unlike the single-level download, this one already stores longitude -180..180, so
+    the window is served without a longitude shift. Pinned values are the source
+    granule's own at 45N, 105W, 500 hPa.
+    """
+
+    _TIME = np.datetime64("2025-01-01T00:00:00", "ns")
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return ERA5PressureLevelReader(fmatch_real_data_path / "era5_pressure_levels_20250101T00_subset.nc")
+
+    def test_every_level_of_the_window_is_served(self, reader):
+        grid = reader._load_step(0)
+        assert (grid.lat_axis[0], grid.lat_axis[-1]) == (40.0, 50.0)
+        assert (grid.lon_axis[0], grid.lon_axis[-1]) == (-110.0, -100.0)
+        assert grid.data.shape == (_N_SPECS, 41, 41)
+        assert np.isfinite(grid.data).all()
+
+    def test_values_at_a_grid_point_are_the_granules(self, reader):
+        samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
+        names = [v.name for v in ERA5PressureLevelReader.VARIABLES]
+        values = sample_at(samples, 45.0, -105.0)
+        assert values[names.index("temperature_500hPa")] == pytest.approx(240.2764, abs=1e-3)
+        assert values[names.index("geopotential_500hPa")] == pytest.approx(53364.29, abs=0.1)

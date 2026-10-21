@@ -22,6 +22,7 @@ from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
 from libera_utils.footprint_matching.types import BoundingBox
 from tests.test_data.footprint_matching.fixtures import make_viirs_brdf_hdf5_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
@@ -278,3 +279,41 @@ class TestVIIRSBRDFGridMetadata:
             f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.arange(3))
         with pytest.raises(ValueError, match="not the fixed-length string"):
             _ = VIIRSBRDFReader(path)._native
+
+
+class TestVIIRSBRDFReaderRealSubset:
+    """A real VJ143C1 granule (2026-06-02) cut to 37N..35N, 123W..121W, the Monterey Bay coast.
+
+    The cut keeps the nine fields the reader reads and rewrites the grid's
+    ``StructMetadata.0`` corners and dimensions to the window, so the reader's grid
+    checks run on it unchanged. About 69% of the window is ocean fill. Pinned values are
+    the source granule's own.
+    """
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return VIIRSBRDFReader(fmatch_real_data_path / "VJ143C1.A2026153.002.2026161161054_subset.h5")
+
+    def test_axes_are_the_window_cell_centres(self, reader):
+        native = reader._native
+        assert native.data.shape == (len(VIIRSBRDFReader.VARIABLES), 40, 40)
+        assert native.lat_axis[0] == pytest.approx(35.025)
+        assert native.lat_axis[-1] == pytest.approx(36.975)
+        assert native.lon_axis[0] == pytest.approx(-122.975)
+        assert native.lon_axis[-1] == pytest.approx(-121.025)
+
+    def test_land_is_scaled_and_ocean_fill_is_nan(self, reader):
+        fiso = reader._native.data[0]
+        assert np.isnan(fiso).mean() == pytest.approx(0.694375)
+        finite = fiso[np.isfinite(fiso)]
+        # Scaled by 0.001 from int16 counts in valid_range 0..32766; no 32.767 fill survives.
+        assert finite.min() >= 0.0
+        assert finite.max() < 32.767
+
+    def test_values_at_a_land_and_an_ocean_cell_are_the_granules(self, reader):
+        land = reader.samples_in(BoundingBox(36.4, 36.45, -121.95, -121.9), _T)
+        values = sample_at(land, 36.425, -121.925)
+        assert values[0] == pytest.approx(0.069)  # brdf_shortwave_fiso
+        assert values[3] == pytest.approx(0.062)  # brdf_vis_fiso
+        ocean = reader.samples_in(BoundingBox(36.95, 37.0, -123.0, -122.95), _T)
+        assert np.isnan(sample_at(ocean, 36.975, -122.975)).all()

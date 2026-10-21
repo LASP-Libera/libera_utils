@@ -18,6 +18,7 @@ from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.types import BoundingBox
 from tests.test_data.footprint_matching.fixtures import make_aod_noaa20_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
@@ -200,3 +201,34 @@ class TestVIIRSAODReaderSamples:
         assert samples.source == "viirs_aod"
         assert samples.timestamp_source is None
         assert samples.values.shape[0] == 2
+
+
+class TestVIIRSAODReaderRealSubset:
+    """The full 1 degree grid of a real AERDB_D3_VIIRS_NOAA20 granule (2026-09-27).
+
+    Only the coordinates and the two fields the reader reads are kept. Pinned values
+    are the source granule's own.
+    """
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return VIIRSAODReader(fmatch_real_data_path / "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc")
+
+    def test_axes_are_the_global_one_degree_cell_centres(self, reader):
+        native = reader._native
+        assert (native.lat_axis.size, native.lon_axis.size) == (180, 360)
+        assert (native.lat_axis[0], native.lat_axis[-1]) == (-89.5, 89.5)
+        assert (native.lon_axis[0], native.lon_axis[-1]) == (-179.5, 179.5)
+
+    def test_fill_and_out_of_range_cells_are_nan(self, reader):
+        aod, aerosol_type = reader._native.data[_AOD_AXIS], reader._native.data[_TYPE_AXIS]
+        # 26 960 of the 64 800 cells hold an AOD inside valid_range 0..10; the rest are -999 fill.
+        assert np.isfinite(aod).sum() == 26960
+        assert np.nanmin(aod) >= 0.0
+        assert set(np.unique(aerosol_type[np.isfinite(aerosol_type)])) <= set(range(8))
+
+    def test_values_at_a_cell_are_the_granules(self, reader):
+        samples = reader.samples_in(BoundingBox(-16.0, -15.0, 21.0, 22.0), _T)
+        aod, aerosol_type = sample_at(samples, -15.5, 21.5)
+        assert aod == pytest.approx(0.69888, abs=1e-5)
+        assert aerosol_type == 4

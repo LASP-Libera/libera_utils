@@ -303,3 +303,48 @@ class TestNISEReaderBothHemispheres:
         expected = _TEST_ROWS * _TEST_COLS - 2
         assert points.lats.size == points.lons.size == expected
         assert points.values.shape == (len(NISEReader.VARIABLES), expected)
+
+
+class TestNISEReaderRealSubset:
+    """A real NISE_A2 (AMSR-2) granule for 2026-06-10, with both full hemisphere grids.
+
+    The reader fixes the 721 x 721 EASE-Grid geometry, so the grids are not cut; only
+    the ``Age`` fields are dropped. Northern ``Extent`` stays the first SDS and Southern
+    the second, so the selection by dimension label runs as on the distributed file.
+    Pinned values are the source granule's own.
+    """
+
+    _TIME = np.datetime64("2026-06-10T00:00:00", "ns")
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return NISEReader(fmatch_real_data_path / "NISE_AMSR2_20260610_subset.HDFEOS")
+
+    def test_reads_both_extent_sds_by_hemisphere(self, reader):
+        north = reader._read_extent_sds(_HEMISPHERE_LABEL_NORTH)
+        south = reader._read_extent_sds(_HEMISPHERE_LABEL_SOUTH)
+        assert north.shape == south.shape == (721, 721)
+        # Two genuinely different grids, not the same SDS resolved twice.
+        assert not np.array_equal(north, south)
+
+    def test_point_cloud_spans_both_hemispheres_without_corner_fill(self, reader):
+        points = reader._load_native()
+        # 2 x 721 x 721 pixels less the off-Earth corners (code 254).
+        assert points.lats.size == 811786
+        assert points.lats.max() > 89.9
+        assert points.lats.min() < -89.9
+
+    def test_surface_classes_at_known_places(self, reader):
+        layer = {name: _layer_index(name) for name in _EXPECTED_VARIABLES}
+        south_pole = reader.samples_in(BoundingBox(-90.0, -89.5, -180.0, 180.0), self._TIME).values
+        assert np.all(south_pole[layer["permanent_ice"]] == 1.0)
+        arctic = reader.samples_in(BoundingBox(84.9, 85.1, -0.3, 0.3), self._TIME).values
+        assert np.allclose(arctic[layer["sea_ice_concentration"]], 0.93)
+        boulder = reader.samples_in(BoundingBox(39.9, 40.1, -105.3, -104.7), self._TIME).values
+        assert np.all(boulder[layer["snow_free_land"]] == 1.0)
+
+    def test_suspect_ice_at_the_north_pole_is_missing_in_every_layer(self, reader):
+        # The AMSR-2 pole hole is coded 253 (suspect ice value), which belongs to no class.
+        north_pole = reader.samples_in(BoundingBox(89.5, 90.0, -180.0, 180.0), self._TIME).values
+        assert north_pole.size > 0
+        assert np.isnan(north_pole).all()

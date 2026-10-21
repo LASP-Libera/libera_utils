@@ -12,6 +12,7 @@ Real ERA5 files can be downloaded from:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
@@ -21,6 +22,7 @@ from tests.test_data.footprint_matching.fixtures import (
     make_era5_netcdf_fixture,
 )
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
+from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
 _T = ERA5_FIXTURE_TIME
 
@@ -292,3 +294,35 @@ class TestERA5ReaderTimeSteps:
         ds.to_netcdf(path)
         with pytest.raises(ValueError, match="time dimension"):
             ERA5Reader(path).samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), ERA5_FIXTURE_TIME)
+
+
+class TestERA5ReaderRealSubset:
+    """A real ERA5 single-level download cut to 50N..40N, 110W..100W at 2025-01-01T00.
+
+    The download stores longitude 0..359.75, so serving it runs the normalization to
+    -180..180. Pinned values are the source granule's own at 45N, 105W.
+    """
+
+    _TIME = np.datetime64("2025-01-01T00:00:00", "ns")
+
+    @pytest.fixture
+    def reader(self, fmatch_real_data_path):
+        return ERA5Reader(fmatch_real_data_path / "era5_single_levels_20250101T00_subset.nc")
+
+    def test_window_is_served_on_normalized_longitudes(self, reader):
+        grid = reader._load_step(0)
+        assert (grid.lat_axis[0], grid.lat_axis[-1]) == (40.0, 50.0)
+        assert (grid.lon_axis[0], grid.lon_axis[-1]) == (-110.0, -100.0)
+        assert grid.data.shape == (len(ERA5Reader.VARIABLES), 41, 41)
+        assert np.isfinite(grid.data).all()
+
+    def test_values_at_a_grid_point_are_the_granules(self, reader):
+        samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
+        values = dict(zip([v.name for v in ERA5Reader.VARIABLES], sample_at(samples, 45.0, -105.0), strict=True))
+        assert values["temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
+        assert values["surface_pressure"] == pytest.approx(88917.95, abs=0.1)
+        assert values["wind_u10"] == pytest.approx(1.84288, abs=1e-4)
+
+    def test_a_time_beyond_the_offset_serves_nothing(self, reader):
+        samples = reader.samples_in(BoundingBox(44.0, 46.0, -106.0, -104.0), self._TIME + np.timedelta64(2, "h"))
+        assert samples.n_samples == 0
