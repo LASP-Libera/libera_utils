@@ -46,7 +46,7 @@ def _grid_samples(lats: np.ndarray, lons: np.ndarray, values: np.ndarray | None 
     )
 
 
-def _centre_index(lats: np.ndarray, lons: np.ndarray) -> int:
+def _center_index(lats: np.ndarray, lons: np.ndarray) -> int:
     """Flat index of the central grid point of a row-major (lats x lons) sample set."""
     return (lats.size // 2) * lons.size + lons.size // 2
 
@@ -60,12 +60,12 @@ class TestRadialWeigher:
         assert isinstance(wf, WeightField)
 
     def test_peak_at_boresight_and_decreasing_outward(self):
-        # Boresight sits on the centre sample; its weight must be the maximum.
+        # Boresight sits on the center sample; its weight must be the maximum.
         lats = np.array([-0.1, 0.0, 0.1])
         lons = np.array([-0.1, 0.0, 0.1])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
-        centre = wf.weights[_centre_index(lats, lons)]
-        assert centre == pytest.approx(wf.weights.max())
+        center = wf.weights[_center_index(lats, lons)]
+        assert center == pytest.approx(wf.weights.max())
         # A corner is farther from the boresight than an edge, so weighs no more.
         assert wf.weights[0] <= wf.weights[1] + 1e-12
 
@@ -74,7 +74,7 @@ class TestRadialWeigher:
         lons = np.array([-0.1, 0.0, 0.1])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
         grid = wf.weights.reshape(3, 3)
-        # Mirror symmetry in latitude and longitude about the centred boresight.
+        # Mirror symmetry in latitude and longitude about the centered boresight.
         np.testing.assert_allclose(grid, grid[::-1, :], rtol=1e-6)
         np.testing.assert_allclose(grid, grid[:, ::-1], rtol=1e-6)
 
@@ -213,7 +213,7 @@ class TestAngularPSFWeigher:
         samples, lats, lons = self._grid()
         wf = self._wf()
         assert wf.weights.shape == (lats.size * lons.size,)
-        assert wf.weights[_centre_index(lats, lons)] > 0.0
+        assert wf.weights[_center_index(lats, lons)] > 0.0
         assert wf.weights[0] == 0.0  # far corner is outside the PSF contour
         assert np.all(wf.weights >= 0.0)
 
@@ -245,7 +245,7 @@ class TestAngularPSFWeigher:
         unique = np.unique(wf.weights)
         assert set(unique.tolist()) <= {0.0, 1.0}
         _, lats, lons = self._grid()
-        assert wf.weights[_centre_index(lats, lons)] == 1.0
+        assert wf.weights[_center_index(lats, lons)] == 1.0
 
     def test_empty_samples_give_zero_energy_and_coverage(self):
         wf = AngularPSFWeigher().weight_field(

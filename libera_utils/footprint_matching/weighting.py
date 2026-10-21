@@ -15,7 +15,7 @@ weights (:class:`PixelWeigher`) and two implementations:
   honouring the asymmetric along-scan response, the scan direction (L1B
   ``Cone_Angle_Rate``), and the stationary-scanner static FOV (design doc sections
   2.4.2.5-2.4.2.7, 2.8.1.1).
-* :class:`RadialWeigher` -- a boresight-centred Gaussian stand-in kept as a
+* :class:`RadialWeigher` -- a boresight-centered Gaussian stand-in kept as a
   dependency-light fallback for footprints with no ephemeris (the camera
   pseudo-footprints).
 
@@ -30,7 +30,7 @@ the PSF's energy that is backed by a usable sample. Because a swath gap simply h
 no samples, coverage cannot be read off the samples alone. Each weigher therefore
 lays a fine reference grid over the PSF contour in its own frame (angular for the
 angular weigher, ground-plane for the radial one) holding the PSF energy of every
-cell, and treats each finite sample as covering the square centred on it whose half-width
+cell, and treats each finite sample as covering the square centered on it whose half-width
 is the circumradius of the source's native cell (``RESOLUTION_KM / sqrt(2)``), so a regular
 lattice of cells leaves no gap at any rotation relative to the reference axes. Coverage is
 the share of the reference energy inside at least one such square. A complete source
@@ -108,7 +108,7 @@ def _local_tangent_plane_km(
     projects each sample's ``(dlat, dlon)`` offset from the boresight onto the local
     north/east plane using the ellipsoid's meridional (M) and prime-vertical (N) radii of
     curvature evaluated at the boresight latitude. Over a footprint's ~tens-of-km span at
-    non-polar latitudes the hypotenuse agrees with the WGS84 geodesic to sub-metre --
+    non-polar latitudes the hypotenuse agrees with the WGS84 geodesic to sub-meter --
     far below the Gaussian stand-in's own approximation -- while avoiding pyproj's
     iterative :meth:`pyproj.Geod.inv` once per footprint. Polar / large boxes fall back
     to Geod.inv (see :data:`_FAST_DISTANCE_MAX_SPAN_DEG`), where the flat-plane model
@@ -259,7 +259,7 @@ class PixelWeigher(abc.ABC):
         samples : SampleSet
             The native samples a reader served for the footprint's bounding box.
         boresight_lat_deg, boresight_lon_deg : float
-            Footprint boresight centroid, degrees (the PSF centre).
+            Footprint boresight centroid, degrees (the PSF center).
         subsatellite_lat_deg, subsatellite_lon_deg : float
             Geodetic spacecraft sub-point (L1B ``Subsatellite_Latitude`` /
             ``Subsatellite_Longitude``), degrees. Weighers that project samples into
@@ -300,8 +300,8 @@ def _radial_reference(max_radius_km: float) -> np.ndarray:
     sample weights. Cached on the (rounded) radius.
     """
     n = max(1, int(math.ceil(2.0 * max_radius_km / _COVERAGE_STEP_KM)))
-    centres = -max_radius_km + (np.arange(n) + 0.5) * _COVERAGE_STEP_KM
-    east, north = np.meshgrid(centres, centres)
+    centers = -max_radius_km + (np.arange(n) + 0.5) * _COVERAGE_STEP_KM
+    east, north = np.meshgrid(centers, centers)
     distance = np.hypot(north, east)
     sigma = max(max_radius_km * _SIGMA_FRACTION_OF_RMAX, 1.0e-6)
     energy = np.exp(-0.5 * (distance / sigma) ** 2)
@@ -310,7 +310,7 @@ def _radial_reference(max_radius_km: float) -> np.ndarray:
 
 
 class RadialWeigher(PixelWeigher):
-    """Boresight-centred radial Gaussian PSF weight -- the swappable stand-in.
+    """Boresight-centered radial Gaussian PSF weight -- the swappable stand-in.
 
     The weight of a sample is a Gaussian in its distance from the boresight,
     truncated to zero beyond the PSF's ground radius. This is *not* the true
@@ -319,7 +319,7 @@ class RadialWeigher(PixelWeigher):
     cannot be built (see :class:`AngularPSFWeigher`).
 
     Distances from the boresight use a fast local-tangent-plane formula
-    (:func:`_local_tangent_plane_km`) for normal footprint boxes -- within sub-metre of
+    (:func:`_local_tangent_plane_km`) for normal footprint boxes -- within sub-meter of
     the WGS84 geodesic over a footprint's span -- and fall back to the exact ellipsoidal
     :class:`pyproj.Geod` distance for polar or large / dateline-crossing boxes, where the
     flat-plane approximation would drift.
@@ -372,7 +372,7 @@ class RadialWeigher(PixelWeigher):
                 weights=np.zeros(0, dtype=float), total_energy=0.0, max_radius_km=max_radius_km, coverage=0.0
             )
 
-        # Fast path: a local-tangent-plane offset (pure numpy) is within sub-metre of
+        # Fast path: a local-tangent-plane offset (pure numpy) is within sub-meter of
         # the WGS84 geodesic over a normal footprint's span and avoids pyproj's iterative
         # Geod.inv per footprint. Polar or unusually large / dateline boxes keep the
         # exact ellipsoidal distance, where the flat-plane approximation would drift.
@@ -400,7 +400,7 @@ class RadialWeigher(PixelWeigher):
         weights[distance_km > max_radius_km] = 0.0
 
         # Coverage on a ground-plane reference grid: each finite sample covers the square of
-        # the source's native cell centred on it.
+        # the source's native cell centered on it.
         radius_key = round(float(max_radius_km), _COVERAGE_RADIUS_DECIMALS)
         reference = _radial_reference(radius_key)
         finite = _finite_sample_mask(samples)
@@ -435,9 +435,9 @@ def _angular_reference(extent: PSFAngularExtent, stationary: bool) -> np.ndarray
     span_beta = 2.0 * extent.beta_max_deg
     n_delta = max(1, int(math.ceil(span_delta / _COVERAGE_STEP_DEG)))
     n_beta = max(1, int(math.ceil(span_beta / _COVERAGE_STEP_DEG)))
-    delta_centres = -extent.delta_back_deg + (np.arange(n_delta) + 0.5) * _COVERAGE_STEP_DEG
-    beta_centres = -extent.beta_max_deg + (np.arange(n_beta) + 0.5) * _COVERAGE_STEP_DEG
-    delta_grid, beta_grid = np.meshgrid(delta_centres, beta_centres)
+    delta_centers = -extent.delta_back_deg + (np.arange(n_delta) + 0.5) * _COVERAGE_STEP_DEG
+    beta_centers = -extent.beta_max_deg + (np.arange(n_beta) + 0.5) * _COVERAGE_STEP_DEG
+    delta_grid, beta_grid = np.meshgrid(delta_centers, beta_centers)
     if stationary:
         energy = (np.hypot(delta_grid, beta_grid) <= extent.beta_max_deg).astype(float)
     else:
@@ -595,7 +595,7 @@ class AngularPSFWeigher(PixelWeigher):
         weights = np.clip(weights, 0.0, None)
 
         # Coverage: each finite sample inside the contour covers the square of the source's
-        # native cell, seen from the satellite, centred on its (delta, beta).
+        # native cell, seen from the satellite, centered on its (delta, beta).
         half_cell_deg = math.degrees(
             math.atan(
                 _COVER_HALF_WIDTH_FACTOR
