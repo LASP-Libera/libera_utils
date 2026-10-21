@@ -687,7 +687,7 @@ variables:
   #     (camera_segmentation.PseudoFootprint). The block's inclusive (min, max) extent
   #     on each pixel axis is carried by the camera_pixel_{x,y}_{min,max}
   #     COORDINATES declared above (dims CAMERA_TIME x PSEUDOFOOTPRINT), identical to
-  #     fmatch_cam_camtime.yml. The centre-pixel indices below point at the boresight
+  #     fmatch_cam_camtime.yml. The center-pixel indices below point at the boresight
   #     stand-in, after any nearest-valid substitution (see the center_pixel_substituted
   #     q_flags bit); they are FMATCH-only provenance and are not carried downstream.
   # ---------------------------------------------------------------------------
