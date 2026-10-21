@@ -581,6 +581,11 @@ def _trace_perimeter(
 # ---------------------------------------------------------------------------
 # Bounding-box assembly (perimeter lat/lon samples -> lat/lon box)
 # ---------------------------------------------------------------------------
+#
+# TODO[LIBSDC-882]: the pole-enclosure test treats the footprint as a circle of geodesic
+# reach. On the radiometer path, test instead whether the pole's look direction from the
+# satellite falls inside the angular rectangle the box traces, and move the camera path's
+# test off pyproj as well.
 
 
 def bounding_box_from_points_batch(
