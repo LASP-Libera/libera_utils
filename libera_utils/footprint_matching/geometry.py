@@ -4,10 +4,10 @@ Purpose
 -------
 Given a footprint's geolocation and viewing geometry from an L1B file,
 compute the geographic (latitude/longitude) bounding box of the patch of Earth the
-radiometer is sensing. Downstream, that box tells the tile manager which
-ancillary-data tiles to load for this footprint. The box is therefore a *safe
-superset*: it must always enclose the footprint, and over-covering slightly is fine
-(a few extra tiles) while under-covering is not (dropped data). We deliberately
+radiometer is sensing. Downstream, that box selects the ancillary-data samples
+the readers serve for this footprint. The box is therefore a *safe superset*: it
+must always enclose the footprint, and over-covering slightly is fine (a few extra
+samples) while under-covering is not (dropped data). We deliberately
 round outward for this reason.
 
 The footprint is not a fixed shape -- at large viewing zenith angles it stretches
@@ -909,7 +909,7 @@ def compute_footprint_bounding_box(
 
 
 # ---------------------------------------------------------------------------
-# Viewing frame: computed once per footprint, reused by the PSF weigher
+# Viewing frame: computed once per footprint, reused by the PSF weighting
 # ---------------------------------------------------------------------------
 
 
@@ -1019,12 +1019,10 @@ def surface_cell_ecef_km(cell_lats_deg: np.ndarray, cell_lons_deg: np.ndarray) -
     """ECEF (km) of surface grid cells, raveled to ``(N, 3)`` in the input's row-major order.
 
     Thin public wrapper over curryer's closed-form ``geodetic_to_ecef`` that flattens the (possibly
-    2-D) cell coordinate grids the same way :func:`project_to_angular` does. It is the single
-    source of truth for a tile's per-cell surface ECEF so the value
-    :class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher` caches per tile is
-    byte-identical to the one :func:`project_to_angular` would compute inline. Because a tile's
-    cell geometry is independent of the viewing frame, the result can be reused across every
-    footprint that shares the tile.
+    2-D) cell coordinate grids the same way :func:`project_to_angular` does, so a surface ECEF
+    computed once with it is byte-identical to the one :func:`project_to_angular` would compute
+    inline. Because the cells' geometry is independent of the viewing frame, the result can be
+    reused across every footprint that sees the same cells.
 
     Parameters
     ----------
@@ -1107,11 +1105,10 @@ def project_to_angular(
         ``Radius_of_Satellite_from_Center_of_Earth``), km.
     cell_ecef_km : np.ndarray, optional
         Precomputed surface ECEF (km) of the cells, ``(N, 3)`` in ``cell_lats_deg.ravel()``
-        order (i.e. exactly :func:`surface_cell_ecef_km`). A tile's cell geometry is
-        independent of the viewing frame, so when several footprints share a tile the caller
-        (:class:`~libera_utils.footprint_matching.weighting.AngularPSFWeigher`) computes this
-        once and passes it in, skipping the per-footprint closed-form geodetic->ECEF transform
-        (the dominant weighting cost). When omitted it is computed from the cell coordinates;
+        order (i.e. exactly :func:`surface_cell_ecef_km`). The cells' geometry is independent
+        of the viewing frame, so when several footprints see the same cells the caller can
+        compute this once and pass it in, skipping the per-footprint closed-form
+        geodetic->ECEF transform. When omitted it is computed from the cell coordinates;
         the result is identical either way.
 
     Returns
@@ -1158,7 +1155,7 @@ def project_to_angular(
 
     # Geodetic -> ECEF (km) for every cell center (cells sit on the ellipsoid). This
     # depends only on the cell coordinates, not the frame, so an already-computed value
-    # (shared across footprints on the same tile) is used when supplied.
+    # (shared across footprints that see the same cells) is used when supplied.
     cells_km = cell_ecef_km if cell_ecef_km is not None else surface_cell_ecef_km(lats, lons)  # (M, 3)
 
     # Unit look vector from the satellite toward each cell.

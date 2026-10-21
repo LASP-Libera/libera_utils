@@ -323,12 +323,13 @@ def static_fov_extent(fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG) -> PS
 def conservative_along_scan_extent(extent: PSFAngularExtent) -> float:
     """Return a single, scan-direction-independent along-scan half-extent.
 
-    The true along-scan footprint is asymmetric and which side is "leading" depends
-    on the scan direction: the sign of L1B RAD ``Cone_Angle_Rate``, negative when
-    scanning toward nadir and positive away from it, with a rate of 0 marking a
-    stationary scanner. For a *bounding box* (a safe superset used only to decide which
-    data tiles to load) we do not need the exact asymmetry. Taking the larger of the two
-    half-extents guarantees the box encloses the footprint regardless of scan direction.
+    The true along-scan footprint is asymmetric and which side is "leading" depends on
+    the scan direction: the sign of L1B RAD ``Cone_Angle_Rate``, negative when scanning
+    toward nadir and positive away from it, with a rate of 0 marking a stationary
+    scanner. For a *bounding box* (a safe superset used only to select which ancillary
+    samples the readers serve) we do not need the exact asymmetry. Taking the larger of
+    the two half-extents guarantees the box encloses the footprint regardless of scan
+    direction.
 
     The PSF weighting, which needs the exact footprint rather than a superset, uses the
     true (asymmetric) front/back extents for the scan direction and the static FOV for a

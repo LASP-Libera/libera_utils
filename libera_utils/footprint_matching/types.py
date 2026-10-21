@@ -124,7 +124,7 @@ class BoundingBox(NamedTuple):
         ran partly off the edge of the Earth at a severe viewing angle (see
         ``geometry.compute_footprint_bounding_box``). The footprint therefore has
         only **partial coverage**, and the orchestrator should set the
-        corresponding QA flag. Always ``False`` for tile bounding boxes.
+        corresponding QA flag.
     """
 
     lat_min: float
@@ -260,9 +260,9 @@ class PointSamples:
 class SampleSet:
     """The native samples of one source that fall in one footprint's query.
 
-    What a reader hands the PSF weigher: every sample inside the footprint's bounding
+    What a reader hands the PSF weighting: every sample inside the footprint's bounding
     box that also passes the reader's :class:`TimeMatch` selection, at its own native
-    location, with no averaging, binning or interpolation applied. The weigher assigns
+    location, with no averaging, binning or interpolation applied. The weighting assigns
     each sample a PSF weight and the aggregation engine reduces the weighted samples to
     one value per variable.
 
@@ -287,7 +287,7 @@ class SampleSet:
     resolution_km : float
         The native cell size the samples stand for, km: the reader's declared
         ``RESOLUTION_KM``, or the spacing measured on the granule when the reader
-        measures it. The weigher sizes its coverage measure from it.
+        measures it. The weighting sizes its coverage measure from it.
     """
 
     lats: np.ndarray
@@ -346,17 +346,17 @@ class RadiometerFootprint:
 
     The radiometer-timescale FMATCH modes take their footprints straight from the L1B
     Daily radiometer product. This is the minimal object the aggregation path needs:
-    a geographic bounding box (which ancillary tiles to load) plus the boresight
-    geolocation and viewing zenith the PSF weigher reads. It is the radiometer-path
-    analogue of the camera path's
-    :class:`~libera_utils.footprint_matching.camera_segmentation.PseudoFootprint`,
-    kept deliberately small so it stays dependency-free here.
+    a geographic bounding box (the region the readers serve ancillary samples from)
+    plus the boresight geolocation and viewing zenith the PSF weighting reads. It is the
+    radiometer-path analogue of the camera path's
+    :class:`~libera_utils.footprint_matching.camera_segmentation.PseudoFootprint`, kept
+    deliberately small so it stays dependency-free here.
 
     The subsatellite point and satellite radius are required: L1B RAD populates them
     from the ephemeris for every record, and together with the boresight they fix the
     satellite viewing frame the ray-traced bounding box
     (:func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_box`) and
-    the CERES-faithful ``AngularPSFWeigher`` are built on.
+    the PSF weighting are built on.
 
     Attributes
     ----------
