@@ -59,19 +59,19 @@ def _require_pyhdf() -> object:
 class _SinusoidalGeometry:
     """Pixel geometry of one MODIS sinusoidal tile, from its HDF-EOS ``StructMetadata.0``.
 
-    Pixel ``(r, c)`` has its centre at sinusoidal ``x = x_ul + (c + 0.5) * dx``,
-    ``y = y_ul + (r + 0.5) * dy`` metres, which is latitude ``y / radius_m`` and
+    Pixel ``(r, c)`` has its center at sinusoidal ``x = x_ul + (c + 0.5) * dx``,
+    ``y = y_ul + (r + 0.5) * dy`` meters, which is latitude ``y / radius_m`` and
     longitude ``x / (radius_m * cos(latitude))``, both in radians.
 
     Attributes
     ----------
     x_ul, y_ul : float
-        Upper-left corner of the tile in sinusoidal metres (``UpperLeftPointMtrs``).
+        Upper-left corner of the tile in sinusoidal meters (``UpperLeftPointMtrs``).
     dx, dy : float
-        Pixel size in metres along columns and rows; ``dy`` is negative (rows run
+        Pixel size in meters along columns and rows; ``dy`` is negative (rows run
         north to south).
     radius_m : float
-        Sphere radius of the projection, metres (``ProjParams`` first value).
+        Sphere radius of the projection, meters (``ProjParams`` first value).
     """
 
     x_ul: float
@@ -86,7 +86,7 @@ def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.n
 
     MODIS gridded products (e.g., MCD12Q1) do not store latitude/longitude as SDS
     arrays: the tile geometry is the HDF-EOS ``StructMetadata.0`` attribute's
-    upper-left/lower-right corners in sinusoidal metres, its ``XDim``/``YDim``, and
+    upper-left/lower-right corners in sinusoidal meters, its ``XDim``/``YDim``, and
     its projection and sphere radius. This function returns the data as stored and
     that geometry; it computes no per-pixel coordinates, so a caller can geolocate
     only the pixels it needs.

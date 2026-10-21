@@ -134,12 +134,12 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
 
     def test_lat_is_ascending(self, tmp_path):
         # The fixture stores lats in DESCENDING order; read_viirs_brdf_hdf5 must flip them
-        # to ascending, so output row 0 is the southernmost cell centre.
+        # to ascending, so output row 0 is the southernmost cell center.
         reader = _make_reader(tmp_path)
         _, lats, _ = _region(reader, _full_bbox(), _T)
         assert lats.size > 1
         assert np.all(np.diff(lats) >= 0), f"lats not ascending: {lats}"
-        assert np.isclose(lats[0], _LAT_MIN + _HALF_CELL), f"row 0 should be the southern cell centre: {lats}"
+        assert np.isclose(lats[0], _LAT_MIN + _HALF_CELL), f"row 0 should be the southern cell center: {lats}"
 
     def test_spatial_shape_matches_fixture(self, tmp_path):
         # Targets spatial dimensions of the load; asserts lat/lon axes match the fixture's _N_LAT x _N_LON grid.
@@ -176,15 +176,15 @@ class TestVIIRSBRDFReaderSamples:
         assert samples.values.shape[0] == 9
 
 
-class TestVIIRSBRDFCellCentres:
-    """The file's lat/lon are cell edges; samples are served at cell centres."""
+class TestVIIRSBRDFCellCenters:
+    """The file's lat/lon are cell edges; samples are served at cell centers."""
 
-    def test_axes_are_cell_centres(self, tmp_path):
+    def test_axes_are_cell_centers(self, tmp_path):
         native = _make_reader(tmp_path)._native
         np.testing.assert_allclose(native.lat_axis, [0.025, 0.075, 0.125, 0.175])
         np.testing.assert_allclose(native.lon_axis, 10.025 + 0.05 * np.arange(_N_LON))
 
-    def test_global_cmg_edges_become_the_expected_centres(self, tmp_path):
+    def test_global_cmg_edges_become_the_expected_centers(self, tmp_path):
         # A coarse global CMG laid out as the real file stores it: lat 90 -> -89, lon -180 -> 179.
         path = make_viirs_brdf_hdf5_fixture(
             tmp_path, n_lat=180, n_lon=360, lat_min=-90.0, lat_max=90.0, lon_min=-180.0, lon_max=180.0
@@ -248,7 +248,7 @@ class TestVIIRSBRDFGridMetadata:
             _ = reader._native
 
     def test_axes_not_spanning_the_corners_raise(self, tmp_path):
-        # Axes written as cell centres (the corners say the region starts half a cell earlier).
+        # Axes written as cell centers (the corners say the region starts half a cell earlier).
         reader = _make_reader(
             tmp_path, metadata_corners=(_LON_MIN - _HALF_CELL, _LAT_MAX + _HALF_CELL, _LON_MAX, _LAT_MIN)
         )
@@ -294,7 +294,7 @@ class TestVIIRSBRDFReaderRealSubset:
     def reader(self, fmatch_real_data_path):
         return VIIRSBRDFReader(fmatch_real_data_path / "VJ143C1.A2026153.002.2026161161054_subset.h5")
 
-    def test_axes_are_the_window_cell_centres(self, reader):
+    def test_axes_are_the_window_cell_centers(self, reader):
         native = reader._native
         assert native.data.shape == (len(VIIRSBRDFReader.VARIABLES), 40, 40)
         assert native.lat_axis[0] == pytest.approx(35.025)

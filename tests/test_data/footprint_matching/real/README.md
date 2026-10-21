@@ -7,7 +7,7 @@ Every value in a file is copied unchanged from its source granule. Only the exte
 the variable list are reduced. Where a reader checks a file's grid metadata against its
 arrays, that metadata is rewritten to describe the window. Each file was checked when it
 was cut: its reader serves the same samples from it as from the source granule. The
-exception is cell-centre coordinates recomputed from rewritten sinusoidal corners, which
+exception is cell-center coordinates recomputed from rewritten sinusoidal corners, which
 agree to 1e-9 degrees.
 
 | File | Reader | Source granule | Kept |

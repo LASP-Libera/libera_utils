@@ -334,7 +334,7 @@ def make_era5_pressure_netcdf_fixture(
 
 # MODIS sinusoidal tile grid: 36 x 18 tiles of 1111950.519667 m on a 6371007.181 m sphere
 # (MCD12Q1 v061 User Guide). Tile (h, v) has its upper-left corner at
-# (-20015109.354 + h * size, 10007554.677 - v * size) metres.
+# (-20015109.354 + h * size, 10007554.677 - v * size) meters.
 MODIS_SPHERE_RADIUS_M: float = 6371007.181
 MODIS_TILE_SIZE_M: float = 1111950.519667
 _MODIS_X_MIN_M: float = -20015109.354
@@ -342,7 +342,7 @@ _MODIS_Y_MAX_M: float = 10007554.677
 
 
 def modis_tile_corners(h: int, v: int) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Return the ``(upper_left, lower_right)`` corners of MODIS tile ``h``, ``v``, sinusoidal metres.
+    """Return the ``(upper_left, lower_right)`` corners of MODIS tile ``h``, ``v``, sinusoidal meters.
 
     Parameters
     ----------
@@ -383,7 +383,7 @@ def make_modis_sinusoidal_hdf4_fixture(
     data : np.ndarray
         ``(n_rows, n_cols)`` codes, written in their own dtype (uint8 for ``LC_Type1``).
     ul_m, lr_m : tuple[float, float]
-        Upper-left and lower-right corners, sinusoidal metres (see :func:`modis_tile_corners`).
+        Upper-left and lower-right corners, sinusoidal meters (see :func:`modis_tile_corners`).
     projection : str, optional
         The ``Projection`` value written.
     proj_params : str, optional

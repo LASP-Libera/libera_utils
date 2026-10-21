@@ -3,7 +3,7 @@
 The tests write small MODIS sinusoidal tiles with pyhdf (real tile corners, coarse
 pixels) and read them back, so the HDF-EOS2 ``StructMetadata.0`` parsing, the tile
 holder and its per-query geolocation all run on real HDF4 files. Served samples are
-checked against every pixel centre computed in the test from the sinusoidal formula.
+checked against every pixel center computed in the test from the sinusoidal formula.
 
 Real MCD12Q1 files can be downloaded from:
     LP DAAC AppEEARS: https://appeears.earthdatacloud.nasa.gov/
@@ -50,7 +50,7 @@ def _tile(tmp_path, h: int, v: int, codes: np.ndarray | None = None, **kwargs):
 
 
 def _brute_force(tiles, bbox: BoundingBox) -> np.ndarray:
-    """Every pixel centre inside ``bbox``, as sorted ``(lat, lon, code)`` rows."""
+    """Every pixel center inside ``bbox``, as sorted ``(lat, lon, code)`` rows."""
     rows = []
     for (h, v), data in tiles.items():
         (x_ul, y_ul), (x_lr, y_lr) = modis_tile_corners(h, v)
@@ -111,7 +111,7 @@ class TestReadModisSinusoidal:
         np.testing.assert_array_equal(codes, data)
         assert codes.dtype == np.uint8
         (x_ul, y_ul), _ = modis_tile_corners(18, 4)
-        # Corners are written to the micrometre, as MODIS StructMetadata stores them.
+        # Corners are written to the micrometer, as MODIS StructMetadata stores them.
         assert geometry.x_ul == pytest.approx(x_ul, abs=1e-5)
         assert geometry.y_ul == pytest.approx(y_ul, abs=1e-5)
         assert geometry.dx == pytest.approx(MODIS_TILE_SIZE_M / _N)
@@ -168,7 +168,7 @@ class TestIGBPTiles:
         return IGBPReader(paths), tiles
 
     @pytest.mark.parametrize("seed", [1, 2, 3])
-    def test_random_boxes_match_every_pixel_centre(self, tmp_path, seed):
+    def test_random_boxes_match_every_pixel_center(self, tmp_path, seed):
         reader, tiles = self._reader(tmp_path, [(17, 3), (18, 3), (19, 3), (17, 4), (18, 4), (19, 4)])
         rng = np.random.default_rng(seed)
         for _ in range(20):

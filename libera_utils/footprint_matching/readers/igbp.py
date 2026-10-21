@@ -176,19 +176,19 @@ class _SinusoidalTiles:
     """MODIS sinusoidal tiles held as their codes, geolocated per box query.
 
     Holds 1 byte per pixel; a query geolocates only the block of each tile its box can
-    reach. Pixel ``(r, c)`` of tile ``t`` has its centre at
+    reach. Pixel ``(r, c)`` of tile ``t`` has its center at
     ``x = x_ul[t] + (c + 0.5) * dx[t]``, ``y = y_ul[t] + (r + 0.5) * dy[t]`` sinusoidal
-    metres, i.e. latitude ``y / R`` and longitude ``x / (R cos(latitude))`` (radians).
+    meters, i.e. latitude ``y / R`` and longitude ``x / (R cos(latitude))`` (radians).
 
     Attributes
     ----------
     data : np.ndarray
         uint8 ``LC_Type1`` codes, ``(n_tiles, n_rows, n_cols)``.
     x_ul, y_ul, dx, dy : np.ndarray
-        ``(n_tiles,)`` upper-left corners and pixel sizes, sinusoidal metres
+        ``(n_tiles,)`` upper-left corners and pixel sizes, sinusoidal meters
         (``dy < 0``).
     radius_m : float
-        The projection's sphere radius, metres, shared by every tile.
+        The projection's sphere radius, meters, shared by every tile.
     n_variables : int
         1: the IGBP class code.
     """
@@ -213,13 +213,13 @@ class _SinusoidalTiles:
         Returns
         -------
         tuple[np.ndarray, np.ndarray, np.ndarray, None]
-            ``(n,)`` float64 pixel-centre latitudes and longitudes inside the box
+            ``(n,)`` float64 pixel-center latitudes and longitudes inside the box
             (inclusive edges), ``(1, n)`` float32 IGBP codes with codes outside 1..17
             as NaN, and no times.
         """
         n_tiles, n_rows, n_cols = self.data.shape
         radius = self.radius_m
-        # Pixel-centre latitude (degrees) of each tile's first and last row.
+        # Pixel-center latitude (degrees) of each tile's first and last row.
         lat_first = np.degrees((self.y_ul + 0.5 * self.dy) / radius)
         lat_last = np.degrees((self.y_ul + (n_rows - 0.5) * self.dy) / radius)
         band_hi = np.minimum(bbox.lat_max, np.maximum(lat_first, lat_last))
@@ -271,7 +271,7 @@ class _SinusoidalTiles:
 def _box_x_range(
     bbox: BoundingBox, band_lo: np.ndarray | float, band_hi: np.ndarray | float, radius: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Sinusoidal x-range (metres) of the box's longitudes over a latitude band.
+    """Sinusoidal x-range (meters) of the box's longitudes over a latitude band.
 
     At latitude ``phi`` a pixel is in the box when ``x`` lies in
     ``[lon_min, lon_max] * cos(phi) * R`` (longitudes in radians). Over the band, the

@@ -33,7 +33,7 @@ def native():
 
 @pytest.mark.skipif(not _GRANULES, reason="no real VJ143C1 granule staged under external_data/VIIRS/VJ143C1/")
 class TestVIIRSBRDFReaderRealGranule:
-    def test_axes_are_the_global_cmg_cell_centres(self, native):
+    def test_axes_are_the_global_cmg_cell_centers(self, native):
         assert native.lat_axis.size == 3600
         assert native.lon_axis.size == 7200
         assert native.lat_axis[0] == pytest.approx(-89.975)

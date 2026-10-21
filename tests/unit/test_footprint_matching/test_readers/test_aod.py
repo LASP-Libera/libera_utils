@@ -214,7 +214,7 @@ class TestVIIRSAODReaderRealSubset:
     def reader(self, fmatch_real_data_path):
         return VIIRSAODReader(fmatch_real_data_path / "AERDB_D3_VIIRS_NOAA20.A2026270.021.2026274001051_subset.nc")
 
-    def test_axes_are_the_global_one_degree_cell_centres(self, reader):
+    def test_axes_are_the_global_one_degree_cell_centers(self, reader):
         native = reader._native
         assert (native.lat_axis.size, native.lon_axis.size) == (180, 360)
         assert (native.lat_axis[0], native.lat_axis[-1]) == (-89.5, 89.5)

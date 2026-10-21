@@ -72,7 +72,7 @@ from libera_utils.footprint_matching.types import (
 # 1 degree keeps the bin table small (180 x 360 offsets) while a footprint box, at most a
 # few degrees across, touches only a handful of bins.
 POINT_INDEX_BIN_DEG: float = 1.0
-# Kilometres per degree of latitude, for turning a native cell size into query padding.
+# Kilometers per degree of latitude, for turning a native cell size into query padding.
 _KM_PER_DEG: float = 111.0
 _N_LAT_BINS: int = int(round(180.0 / POINT_INDEX_BIN_DEG))
 _N_LON_BINS: int = int(round(360.0 / POINT_INDEX_BIN_DEG))
@@ -475,7 +475,7 @@ class AncillaryReader(abc.ABC):
         """Widen ``bbox`` by half a native cell (``resolution_km``) on every side.
 
         A sample whose cell overlaps the footprint's box belongs to the footprint even when
-        its centre lies just outside: without the padding a coarse grid (ERA5 at 0.25
+        its center lies just outside: without the padding a coarse grid (ERA5 at 0.25
         degree) never serves the points whose cells cover the rim of the contour, and the
         weigher scores the rim as missing. The PSF weight of a sample outside the contour
         is zero, so padding changes no aggregated value, only the coverage.
