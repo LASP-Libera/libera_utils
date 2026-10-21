@@ -748,10 +748,11 @@ class TestBuildRadiometerFootprints:
         footprints = build_radiometer_footprints(l1b)
 
         assert len(footprints) == 2
-        # The off-Earth record is marked off_limb so aggregation skips it (fill + zero
-        # coverage) instead of querying and weighting its placeholder box.
+        # The off-Earth record is marked off_limb, with no box, so aggregation skips it
+        # (fill + zero coverage).
         assert footprints[0].off_limb is False
         assert footprints[1].off_limb is True
+        assert footprints[1].bbox is None
 
     def test_footprint_beyond_the_horizon_raises(self):
         # 30 deg from the subsatellite point is past the horizon of an ~835 km orbit.
