@@ -101,7 +101,7 @@ class FakeCatReader(StaticReader):
 class FakeFootprint:
     """Minimal footprint exposing what the weigher and the sources need."""
 
-    bbox: BoundingBox
+    bbox: BoundingBox | None
     latitude: float
     longitude: float
     # Optional geometry consumed by the angular-frame weigher (ignored by RadialWeigher).
