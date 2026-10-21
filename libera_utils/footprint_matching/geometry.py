@@ -40,13 +40,6 @@ whose box *corner* rays miss the ellipsoid is partial coverage (truncated/flagge
 raised as :class:`PartialFootprintError`). Unusable ephemeris fields, or a footprint the
 satellite could not have seen, raise :class:`MissingGeolocationError`.
 
-Batched implementation
-----------------------
-Every helper operates on arrays of footprints. :func:`compute_footprint_bounding_boxes`
-and :func:`compute_viewing_frames` are the implementations; the single-footprint
-:func:`compute_footprint_bounding_box` and :func:`project_to_angular` run them on a
-batch of one.
-
 The geodetic<->ECEF transforms and the ray-ellipsoid intersection are curryer's
 (:mod:`curryer.compute.spatial`); :mod:`pyproj` is used only for the surface distances in
 the pole-enclosure test (``pyproj.Geod``).
@@ -94,15 +87,13 @@ POLAR_LATITUDE_THRESHOLD_DEG: float = 85.0
 
 # How far (km) the boresight ray's first ground intersection may fall from the reported
 # footprint before the footprint counts as not visible from the satellite. L1B
-# Latitude/Longitude is that intersection to float32 precision (~metres), so a larger
+# Latitude/Longitude is that intersection to float32 precision (~meters), so a larger
 # miss means the footprint lies beyond the satellite's horizon: inconsistent geolocation.
 _VISIBILITY_TOLERANCE_KM: float = 1.0
 
 # L1B fill value. Footprints (or camera pixels) that did not intersect the Earth
 # (space/cal views) are stored as this sentinel; we treat such inputs as "no
-# footprint" / "off-Earth pixel". Public because the camera-segmentation tool
-# (which reads the same L1B fill convention) shares it -- keeping a single source of
-# truth so a change to the L1B fill value propagates to both call sites.
+# footprint" / "off-Earth pixel".
 L1B_FILL_VALUE: float = -999.0
 
 # A box that does not cross 0 or 180 deg has the same longitude span in [-180, 180) and

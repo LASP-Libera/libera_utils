@@ -348,7 +348,7 @@ class RadiometerFootprint:
     Daily radiometer product. This is the minimal object the aggregation path needs:
     a geographic bounding box (the region the readers serve ancillary samples from)
     plus the boresight geolocation and viewing zenith the PSF weighting reads. It is the
-    radiometer-path analogue of the camera path's
+    radiometer-path analog of the camera path's
     :class:`~libera_utils.footprint_matching.camera_segmentation.PseudoFootprint`, kept
     deliberately small so it stays dependency-free here.
 
