@@ -267,7 +267,7 @@ class TestAngularPSFWeigher:
         samples, _, _ = self._grid()
         kw = self._kw()
         frames = compute_viewing_frames(
-            [self.B_LAT], [self.B_LON], [self.S_LAT], [self.S_LON], satellite_radius_km=_SATELLITE_RADIUS_KM
+            [self.B_LAT], [self.B_LON], [self.S_LAT], [self.S_LON], satellite_radius_km=[_SATELLITE_RADIUS_KM]
         )
         inline = AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **kw)
         batched = AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, frame=frames.for_index(0), **kw)
