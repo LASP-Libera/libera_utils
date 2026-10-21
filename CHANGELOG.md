@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `libera_utils.footprint_matching.weighting`: `RadialWeigher` and `AngularPSFWeigher` weight each native sample where it lies, and each `WeightField` carries the footprint's `coverage`: the share of the PSF's energy inside the native cell of at least one finite sample (each sample covers the square of half-width `RESOLUTION_KM / sqrt(2)`, measured on a reference grid in the weigher's own frame), so a swath gap or a source beyond its time window reads as missing coverage.
 - `libera_utils.footprint_matching.aggregation.aggregate_sample_variables`, one scalar per product variable from a footprint's weighted samples.
 - `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
+- `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
 
 ### Changed
 

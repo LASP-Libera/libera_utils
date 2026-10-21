@@ -108,6 +108,12 @@ _N_PERIMETER_SAMPLES: int = 72
 # Bisection steps that pull a limb-missing perimeter ray back to the grazing direction.
 _LIMB_BISECTION_STEPS: int = 40
 
+# Viewing-zenith angle (deg) past which the ground-footprint elongation factor is
+# clamped. At grazing angles ``1/cos(vza)`` diverges; clamping keeps the projected
+# ground radius finite and bounded. Real limb handling is the ray-trace's job
+# (:class:`OffLimbError`); this only bounds the analytic radius estimate.
+_MAX_VZA_FOR_ELONGATION_DEG: float = 80.0
+
 
 class GeometryError(Exception):
     """Base class for geometry errors raised by this module."""
@@ -719,6 +725,93 @@ def bounding_box_from_points(
         np.asarray(lons, dtype=float)[None, :],
         np.array([truncated]),
     )[0]
+
+
+def psf_ground_radius_km(
+    satellite_radius_km: float,
+    viewing_zenith_deg: float,
+    fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG,
+) -> float:
+    """Project the PSF angular half-extent to an isotropic ground radius, in km.
+
+    A small angular offset ``theta`` at the satellite spans ``rho * tan(theta)``
+    perpendicular to the line of sight, where ``rho`` is the slant range. On a spherical
+    Earth of radius ``R``, a satellite at distance ``R_s`` from Earth's center sees a
+    point at viewing zenith ``v`` from ``rho = sqrt(R_s^2 - (R sin v)^2) - R cos v``. Along
+    the view direction the line of sight strikes the surface obliquely, stretching that
+    span by a further ``1/cos(v)``; across it there is no stretch. We return the
+    along-view (larger) value so the radius bounds the footprint in every direction. At
+    nadir this reduces to ``(R_s - R) * tan(theta)``.
+
+    Unlike the rest of this module, which ray-traces the WGS84 ellipsoid, this is an
+    analytic estimate on a sphere of the WGS84 equatorial radius
+    (:data:`WGS84_SEMI_MAJOR_AXIS_KM`).
+
+    The angular half-extent is the diagonal of the PSF's along-scan and cross-scan
+    95%-energy half-extents, because the energy contour reaches toward the corners of
+    that rectangle (see :func:`_perimeter_angles`). It is floored at the optical FOV
+    half-angle so the radius is never smaller than the field of view.
+
+    This is the single home for the angular-extent -> ground-radius projection, used by
+    the per-cell PSF weighers (:mod:`libera_utils.footprint_matching.weighting`).
+
+    Parameters
+    ----------
+    satellite_radius_km : float
+        Spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+    viewing_zenith_deg : float
+        Viewing zenith angle, degrees (clamped at
+        :data:`_MAX_VZA_FOR_ELONGATION_DEG` for the elongation factor).
+    fov_halfangle_deg : float, optional
+        Instrument FOV half-angle, degrees -- the floor on the angular extent.
+        Defaults to :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
+
+    Returns
+    -------
+    float
+        Ground radius in km.
+    """
+    extent = psf_95_energy_extent()
+    # Diagonal angular half-extent -> isotropic radius. conservative_along_scan_extent
+    # picks the larger of the asymmetric front/back along-scan reaches.
+    angular_deg = max(math.hypot(conservative_along_scan_extent(extent), extent.beta_max_deg), fov_halfangle_deg)
+    vza_rad = math.radians(min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG))
+    return (
+        slant_range_km(satellite_radius_km, viewing_zenith_deg)
+        * math.tan(math.radians(angular_deg))
+        / math.cos(vza_rad)
+    )
+
+
+def slant_range_km(satellite_radius_km: float, viewing_zenith_deg: float) -> float:
+    """Distance from the satellite to the ground point seen at a viewing zenith, in km.
+
+    On a sphere of the WGS84 equatorial radius ``R`` (:data:`WGS84_SEMI_MAJOR_AXIS_KM`),
+    a satellite at distance ``R_s`` from Earth's center sees a point at viewing zenith
+    ``v`` from ``rho = sqrt(R_s^2 - (R sin v)^2) - R cos v``. The viewing zenith is
+    clamped at :data:`_MAX_VZA_FOR_ELONGATION_DEG`, as in :func:`psf_ground_radius_km`.
+    The PSF weighers use it to turn a source's ground sample spacing into an angular
+    bin size for the coverage reference grid.
+
+    Parameters
+    ----------
+    satellite_radius_km : float
+        Spacecraft distance from Earth's center (L1B
+        ``Radius_of_Satellite_from_Center_of_Earth``), km.
+    viewing_zenith_deg : float
+        Viewing zenith angle, degrees.
+
+    Returns
+    -------
+    float
+        Slant range in km.
+    """
+    vza_rad = math.radians(min(abs(viewing_zenith_deg), _MAX_VZA_FOR_ELONGATION_DEG))
+    earth_radius_km = WGS84_SEMI_MAJOR_AXIS_KM
+    return math.sqrt(satellite_radius_km**2 - (earth_radius_km * math.sin(vza_rad)) ** 2) - earth_radius_km * math.cos(
+        vza_rad
+    )
 
 
 # ---------------------------------------------------------------------------
