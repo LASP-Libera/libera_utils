@@ -822,7 +822,7 @@ class TestProductSpecPlaneMapping:
         assert by_name["surface_type_tertiary"] == 0
 
     def test_std_companions_map_to_their_parent_plane(self):
-        era5 = ReaderRegistry.get("era5")
+        era5 = ReaderRegistry.get("era5_single_level")
         mapping = {spec.name: idx for spec, idx in agg._map_product_specs(era5)}
         # wind_u10 is read plane 0, wind_v10 is read plane 1; each std companion
         # shares its parent's plane.
