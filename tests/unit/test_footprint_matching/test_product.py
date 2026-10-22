@@ -11,7 +11,7 @@ imager fields. These tests confirm, for every shipped definition, that:
   on the correct (radiometer vs camera) time dimension.
 - The external (reader-sourced) variables stay in sync with the reader plugins'
   VariableSpec definitions for the mode. Every reader-sourced variable is named
-  `<source_key>_<spec_name>` (e.g. era5_wind_u10, igbp_surface_type,
+  `<source_key>_<spec_name>` (e.g. era5_single_level_wind_u10, igbp_surface_type,
   cldpix_cloud_mask); the reader's instrument is recorded in each variable's
   ``long_name`` instead (e.g. "... (ECMWF)").
 - A small dummy dataset round-trips through create/enforce/check conformance.
@@ -68,7 +68,17 @@ from tests.test_data.footprint_matching.fixtures import make_cf_cam_camtime_data
 # against throwaway readers other tests register into the shared ReaderRegistry
 # (e.g. _FakeReader in test_base.py).
 PRODUCTION_READER_KEYS = frozenset(
-    {"era5", "era5_pressure", "igbp", "nise", "viirs_brdf", "viirs_cloud", "ssf", "cldpix", "viirs_aod"}
+    {
+        "era5_single_level",
+        "era5_pressure",
+        "igbp",
+        "nise",
+        "viirs_brdf",
+        "viirs_cldprop_d3",
+        "ssf",
+        "cldpix",
+        "viirs_aod",
+    }
 )
 
 # Variables that always appear regardless of mode.
@@ -95,7 +105,7 @@ def _expected_external_variables(mode: OperationalMode) -> dict[str, str]:
     """{output_variable_name: dtype} for every active production reader variable.
 
     Mirrors the product-definition naming rule: every reader-sourced variable is
-    named `<source_key>_<spec_name>` (e.g. era5_wind_u10, igbp_surface_type). The
+    named `<source_key>_<spec_name>` (e.g. era5_single_level_wind_u10, igbp_surface_type). The
     reader's instrument is not part of the name -- it is recorded in the
     variable's ``long_name`` instead (see
     ``test_reader_instrument_is_recorded_in_long_name``). Specs are gated by
@@ -150,9 +160,9 @@ class TestImagerContent:
         # fields all sit in the FMATCH-IMAGER product alongside the RBSP fields
         # (spot-check one per family; full sync is covered by
         # test_external_variables_match_readers).
-        assert "era5_wind_u10" in definition.variables
-        assert "era5_temperature_2m" in definition.variables
-        assert "era5_forecast_albedo" in definition.variables
+        assert "era5_single_level_wind_u10" in definition.variables
+        assert "era5_single_level_temperature_2m" in definition.variables
+        assert "era5_single_level_forecast_albedo" in definition.variables
         assert "era5_pressure_temperature_500hPa" in definition.variables
         assert "era5_pressure_relative_humidity_1000hPa_standard_deviation" in definition.variables
 
@@ -217,7 +227,7 @@ class TestFmatchDefinitions:
     @pytest.mark.parametrize("mode", ALL_MODES)
     def test_reader_instrument_is_recorded_in_long_name(self, mode, definitions):
         # The instrument token is carried in the variable's long_name rather than the
-        # variable name (e.g. era5_wind_u10 has long_name "... (ECMWF)"). Guard that every
+        # variable name (e.g. era5_single_level_wind_u10 has long_name "... (ECMWF)"). Guard that every
         # reader-sourced variable's long_name carries its reader's INSTRUMENT, so
         # provenance is not silently lost from the ~hundreds of hand-written long_names.
         definition = definitions[mode]
@@ -266,7 +276,7 @@ class TestDerivedProductVariables:
     def test_continuous_variable_gets_standard_deviation_companion(self):
         # ERA5 winds are mean-aggregated (continuous), so each must gain a
         # `<name>_standard_deviation` companion in the product variable list.
-        era5 = ReaderRegistry.get("era5")
+        era5 = ReaderRegistry.get("era5_single_level")
         names = {spec.name for spec in era5.product_variable_specs()}
         assert "wind_u10" in names
         assert "wind_u10_standard_deviation" in names
@@ -832,7 +842,7 @@ class TestAssemblyWithAggregation:
         PSF-weighted mean is exactly those constants regardless of the weight kernel. The
         fixture's one hourly step is the L1B time of ``_l1b_at``, so the step matches.
         """
-        era5_cls = ReaderRegistry.get("era5")
+        era5_cls = ReaderRegistry.get("era5_single_level")
         era5_file = make_era5_netcdf_fixture(
             tmp_path,
             lat_min=0.0,
@@ -843,7 +853,7 @@ class TestAssemblyWithAggregation:
             n_lon=21,
             times=[np.datetime64("2026-06-11T00:00:00", "ns")],
         )
-        return AncillarySources({"era5": era5_cls(era5_file)}, OperationalMode.CAM)
+        return AncillarySources({"era5_single_level": era5_cls(era5_file)}, OperationalMode.CAM)
 
     def test_radiometer_assembly_carries_real_era5_values(self, tmp_path):
         # Footprint sits inside the ERA5 grid so every PSF cell has data.
@@ -857,10 +867,10 @@ class TestAssemblyWithAggregation:
         )
 
         # Weighted mean of a constant field is that constant.
-        np.testing.assert_allclose(dataset["era5_wind_u10"].values, [2.5], rtol=1e-4)
-        np.testing.assert_allclose(dataset["era5_wind_v10"].values, [-1.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset["era5_single_level_wind_u10"].values, [2.5], rtol=1e-4)
+        np.testing.assert_allclose(dataset["era5_single_level_wind_v10"].values, [-1.5], rtol=1e-4)
         # A constant field has zero within-footprint spread.
-        np.testing.assert_allclose(dataset["era5_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
+        np.testing.assert_allclose(dataset["era5_single_level_wind_u10_standard_deviation"].values, [0.0], atol=1e-4)
         # Fully covered -> coverage ~1 and no coverage QA bits set.
         assert dataset["psf_coverage_fraction"].values[0] > 0.99
         assert int(dataset["q_flags"].values[0]) == 0
@@ -874,7 +884,7 @@ class TestAssemblyWithAggregation:
         l1b = _l1b_at(lat=1.0, lon=100.0)
         dataset = assemble_fmatch_dataset(OperationalMode.CAM, l1b, sources=self._era5_sources(tmp_path))
 
-        assert np.isnan(dataset["era5_wind_u10"].values[0])
+        assert np.isnan(dataset["era5_single_level_wind_u10"].values[0])
         np.testing.assert_allclose(dataset["psf_coverage_fraction"].values, [0.0])
         assert int(dataset["q_flags"].values[0]) & int(FmatchCoverageFlag.INSUFFICIENT_COVERAGE)
 
