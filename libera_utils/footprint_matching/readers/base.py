@@ -113,6 +113,11 @@ class _PointIndex:
     ----------
     points : PointSamples
         The reader's native points.
+
+    Raises
+    ------
+    ValueError
+        If a kept point lies outside latitude [-90, 90] or longitude [-180, 180].
     """
 
     def __init__(self, points: PointSamples) -> None:
@@ -124,7 +129,16 @@ class _PointIndex:
             times = np.asarray(times, dtype="datetime64[ns]")
             keep &= ~np.isnat(times)
         kept = np.flatnonzero(keep)
+        outside = (np.abs(lats[kept]) > 90.0) | (np.abs(lons[kept]) > 180.0)
+        if np.any(outside):
+            first = kept[np.flatnonzero(outside)[0]]
+            raise ValueError(
+                f"{int(outside.sum())} of {kept.size} points lie outside latitude [-90, 90] or longitude "
+                f"[-180, 180], the first at lat {lats[first]}, lon {lons[first]}. A reader's _load_native must "
+                "return longitudes in [-180, 180]: convert a 0..360 source with normalize_longitude first."
+            )
 
+        # The clip files the upper edges, latitude 90 and longitude 180, in the last bin.
         lat_bin = np.clip(np.floor((lats[kept] + 90.0) / POINT_INDEX_BIN_DEG).astype(np.int64), 0, _N_LAT_BINS - 1)
         lon_bin = np.clip(np.floor((lons[kept] + 180.0) / POINT_INDEX_BIN_DEG).astype(np.int64), 0, _N_LON_BINS - 1)
         cell = lat_bin * _N_LON_BINS + lon_bin
@@ -422,14 +436,18 @@ class AncillaryReader(abc.ABC):
         Raises
         ------
         ValueError
-            If ``time`` is NaT and this reader selects in time.
+            If ``time`` is NaT and this reader selects in time; if more than one granule
+            is staged for a reader that reads one per period; if the loaded data carries
+            a different number of variables than ``VARIABLES``; if a stepped reader's
+            step times are empty, hold a NaT or are not strictly ascending; or if a
+            ``NEAREST_PASS`` reader serves samples without per-sample times.
+        TypeError
+            If the reader's native data is none of ``GridSamples``, ``PointSamples`` or
+            a box-queried native.
         """
         time = np.datetime64(time, "ns")
-        if self.TIME_MATCH is not TimeMatch.DAILY and np.isnat(time):
-            raise ValueError(
-                f"Reader {self.READER_KEY!r} selects samples by time ({self.TIME_MATCH.value}) but the footprint "
-                "time is NaT. Every footprint handed to this reader needs a valid observation time."
-            )
+        if self.TIME_MATCH is not TimeMatch.DAILY:
+            self._require_valid_time(time)
         natives = self._native_for(time)
         resolution_km = self._resolution_km(natives)
         if not natives:
@@ -444,9 +462,16 @@ class AncillaryReader(abc.ABC):
         if parts[0][3] is not None:
             times = np.concatenate([p[3] for p in parts])
 
-        if self.TIME_MATCH is TimeMatch.NEAREST_PASS and times is not None and times.size:
-            keep = self._nearest_pass_mask(times, time)
-            lats, lons, values, times = lats[keep], lons[keep], values[:, keep], times[keep]
+        if self.TIME_MATCH is TimeMatch.NEAREST_PASS:
+            if times is None:
+                raise ValueError(
+                    f"Reader {self.READER_KEY!r} uses TIME_MATCH='nearest_pass' but its native data served no "
+                    "per-sample times, so no pass can be selected. A nearest-pass reader must load PointSamples "
+                    "with a times array, or a box-queried native whose query_box returns times."
+                )
+            if times.size:
+                keep = self._nearest_pass_mask(times, time)
+                lats, lons, values, times = lats[keep], lons[keep], values[:, keep], times[keep]
 
         return SampleSet(
             lats=lats,
@@ -458,6 +483,20 @@ class AncillaryReader(abc.ABC):
             timestamp_source=self.TIMESTAMP_SOURCE,
             resolution_km=resolution_km,
         )
+
+    def _require_valid_time(self, time: np.datetime64) -> None:
+        """Raise when a footprint time a time-selecting query needs is NaT.
+
+        Raises
+        ------
+        ValueError
+            If ``time`` is NaT.
+        """
+        if np.isnat(time):
+            raise ValueError(
+                f"Reader {self.READER_KEY!r} selects samples by time ({self.TIME_MATCH.value}) but the footprint "
+                "time is NaT. Every footprint handed to this reader needs a valid observation time."
+            )
 
     def _resolution_km(self, natives: tuple[_Native, ...]) -> float:
         """The native cell size the served samples stand for, km.
@@ -681,9 +720,11 @@ class SteppedGridReader(AncillaryReader):
         Raises
         ------
         ValueError
-            If the staged granules hold no time steps, a NaT step, or step times that
-            are not strictly ascending.
+            If ``time`` is NaT, or the staged granules hold no time steps, a NaT step, or
+            step times that are not strictly ascending.
         """
+        time = np.datetime64(time, "ns")
+        self._require_valid_time(time)
         steps = self._steps
         pos = int(np.searchsorted(steps, time))
         candidates = [i for i in (pos - 1, pos) if 0 <= i < steps.size]

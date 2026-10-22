@@ -90,6 +90,25 @@ class _PassReader(StaticReader):
         return self._points
 
 
+class _PassNativeReader(StaticReader):
+    """A nearest-pass reader whose native data, handed in at construction, is served as returned."""
+
+    READER_KEY = "_base_test_pass_native"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 1.0
+    TIME_MATCH = TimeMatch.NEAREST_PASS
+    PASS_WINDOW = np.timedelta64(15, "m")
+    MAX_TIME_OFFSET = np.timedelta64(3, "h")
+    VARIABLES = (_SPEC,)
+
+    def __init__(self, native: object) -> None:
+        super().__init__("unused.bin")
+        self._held = native
+
+    def _load_native(self):
+        return self._held
+
+
 class _StepReader(SteppedGridReader):
     """Hourly steps whose grid value is the step index; counts loads."""
 
@@ -254,6 +273,38 @@ class TestPointIndex:
             times=np.array([_T0, np.datetime64("NaT")], dtype="datetime64[ns]"),
         )
         assert _PointIndex(points).n_points == 1
+
+    @pytest.mark.parametrize(("lat", "lon"), [(0.5, 200.0), (95.0, 0.5), (0.5, -180.5)])
+    def test_out_of_range_coordinates_raise(self, lat, lon):
+        """``_PointIndex`` raises ``ValueError`` for a point outside latitude [-90, 90] or longitude [-180, 180].
+
+        The bins clip a coordinate into the edge bin, but the query masks on the coordinate itself, so a point
+        a reader returned on a 0..360 axis would be indexed and then never served, and the footprints over it
+        would lose their samples with no error.
+
+        The parameters place one point east of 180 (a 0..360 longitude), one north of the pole and one west of
+        -180; building the index must raise a message pointing at the reader's [-180, 180] contract.
+        """
+        points = PointSamples(
+            lats=np.array([10.0, lat]), lons=np.array([20.0, lon]), values=np.array([[1.0, 2.0]], dtype=np.float32)
+        )
+        with pytest.raises(ValueError, match=r"1 of 2 points lie outside .*\[-180, 180\]"):
+            _PointIndex(points)
+
+    def test_points_on_the_upper_edges_are_indexed_and_served(self):
+        """``_PointIndex`` keeps a point at latitude 90 or longitude 180 and serves it to a box reaching that edge.
+
+        Both values are valid coordinates that fall one past the last bin; the range check must accept them and the
+        bin clip file them in the last bin, or the pole and the antimeridian would lose their samples.
+
+        Points at the North Pole and on the antimeridian are indexed, and a box touching each edge serves it.
+        """
+        points = PointSamples(
+            lats=np.array([90.0, 10.0]), lons=np.array([0.0, 180.0]), values=np.array([[1.0, 2.0]], dtype=np.float32)
+        )
+        index = _PointIndex(points)
+        assert index.values[0, index.query(BoundingBox(89.5, 90.0, -1.0, 1.0))].tolist() == [1.0]
+        assert index.values[0, index.query(BoundingBox(9.5, 10.5, 179.0, 180.0))].tolist() == [2.0]
 
     def test_empty_query(self):
         """``_PointIndex.query`` returns an empty index array for a box that holds no points.
@@ -589,6 +640,32 @@ class TestNearestPass:
         with pytest.raises(ValueError, match="per-sample times"):
             _PassReader(points).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
 
+    @pytest.mark.parametrize(
+        "native",
+        [
+            pytest.param(_BoxHolder(), id="box-queried"),
+            pytest.param(
+                GridSamples(
+                    lat_axis=np.array([10.0, 11.0]),
+                    lon_axis=np.array([20.0, 21.0]),
+                    data=np.ones((1, 2, 2), np.float32),
+                ),
+                id="grid",
+            ),
+        ],
+    )
+    def test_pass_reader_serving_no_times_raises(self, native):
+        """A ``NEAREST_PASS`` reader whose grid or box-queried native serves no times raises ``ValueError``.
+
+        Only a point cloud is checked for times at load; a grid carries none and a box-queried native may return
+        none, and without times the query would serve every pass in the box as if it were one.
+
+        The parameters hand a pass reader a box-queried native returning ``times=None`` and a grid; a query over
+        data must raise a message about per-sample times.
+        """
+        with pytest.raises(ValueError, match="served no per-sample times"):
+            _PassNativeReader(native).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+
 
 class TestNearestStep:
     def test_serves_nearest_step_and_reloads_on_change(self):
@@ -672,6 +749,20 @@ class TestNearestStep:
         assert reader.nearest_step_index(_T0 + np.timedelta64(29, "m")) == 0
         assert reader.nearest_step_index(_T0 + np.timedelta64(31, "m")) == 1
         assert reader.nearest_step_index(_T0 - np.timedelta64(2, "h")) is None
+
+    def test_nearest_step_index_of_nat_raises(self):
+        """``nearest_step_index`` raises ``ValueError`` for a NaT time instead of returning a step.
+
+        Every comparison with NaT is false, so the offset check would pass and a missing time would be paired with
+        a real step; ``samples_in`` guards this, but the method is public.
+
+        The hourly test reader is asked for the step nearest NaT and must raise a message mentioning NaT, loading
+        no step.
+        """
+        reader = _StepReader()
+        with pytest.raises(ValueError, match="NaT"):
+            reader.nearest_step_index(np.datetime64("NaT"))
+        assert reader.loads == []
 
 
 _ABSTRACT_CASES = [
