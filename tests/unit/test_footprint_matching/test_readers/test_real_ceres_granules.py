@@ -8,8 +8,6 @@ encodings, the geolocation conventions, the hourly granule span, and that a foot
 query at a footprint's own time serves its pass.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 
