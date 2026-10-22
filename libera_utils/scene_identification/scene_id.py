@@ -56,7 +56,7 @@ def standard_scene_definitions(scene_types: list[str] | None = None) -> list[Sce
     Parameters
     ----------
     scene_types : list of str or None
-        Scene types to include, drawn from the keys of :data:`STANDARD_SCENE_DEFINITION_CONFIG_KEYS`
+        Scene types to include, drawn from the keys of ``STANDARD_SCENE_DEFINITION_CONFIG_KEYS``
         (``"trmm"``, ``"erbe"``, ``"unfiltering"``). If None (default), all standard definitions are returned in
         that dictionary's insertion order.
 

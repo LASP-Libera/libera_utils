@@ -3,7 +3,7 @@
 What this module is (and is not)
 --------------------------------
 This is a **partial** PSF module. It implements only the slice of PSF behavior
-that the geographic bounding-box calculation in :mod:`geometry` actually needs:
+that the geographic bounding-box calculation in :mod:`~libera_utils.footprint_matching.geometry` actually needs:
 
 1. the analytic CERES PSF value :func:`psf_weight` (ATBD Eq. 4.4-1/4.4-2), and
 2. the **95%-energy angular extent** of that PSF (:func:`psf_95_energy_extent`),
@@ -159,7 +159,7 @@ def psf_weight(delta_deg: np.ndarray, beta_deg: np.ndarray) -> np.ndarray:
     PSF is evaluated at delta'.
 
     The PSF has a flat-ish "core" region (set by the optical FOV half-width ``a``)
-    convolved with the detector time response :func:`_f_response`, which produces a
+    convolved with the detector time response ``_f_response``, which produces a
     sharp leading edge and a long trailing tail. Cross-scan symmetry
     P(delta, beta) = P(delta, -beta) is enforced by taking ``abs(beta)``.
 
@@ -306,7 +306,7 @@ def static_fov_extent(fov_halfangle_deg: float = LIBERA_FOV_HALFANGLE_DEG) -> PS
     Parameters
     ----------
     fov_halfangle_deg : float, optional
-        FOV half-angle in degrees. Defaults to :data:`LIBERA_FOV_HALFANGLE_DEG`.
+        FOV half-angle in degrees. Defaults to ``LIBERA_FOV_HALFANGLE_DEG``.
 
     Returns
     -------

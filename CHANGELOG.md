@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fix the docstring, markdown and Sphinx config defects behind the docs build's 9841 warnings, including cross-references to private or renamed targets (`create_l1a_dataset` is now `parse_packets_to_l1a_dataset`).
+- Fix the docs build warnings and errors in the `footprint_matching` and `scene_identification` docstrings and the `write_libera_data_product` and `LiberaVariableDefinition` `Raises` sections, which the build now treats as failures.
 
 ## [5.12.0] - 2026-10-21
 

@@ -156,6 +156,7 @@ nitpick_ignore_regex = [
     # prose, not real targets.
     (r"py:class", r"(np|npt|pd|xr)\..*"),
     (r"py:class", r"(optional|Path|PathLike|PathType|S3Path|CloudPath|Dataset|DataArray|ndarray|datetime|ULID|str)"),
+    (r"py:class", r"(array_like|sequence)"),
     (r"py:class", r"(AngleLike|ulid\.ULID|boto3\.Session|filenaming\.PathType|LiberaDataProductFilename)"),
     # pydantic internals that surface in model signatures and validator descriptors.
     (r"py:class", r"(PydanticUndefined|FieldValidatorDecoratorInfo)"),

@@ -61,7 +61,7 @@ class LiberaVariableDefinition(BaseModel):
 
     Raises
     ------
-    ValidationError
+    pydantic_core.ValidationError
         If ``dimensions`` names a dimension the standard dimension set does not define, if
         ``dtype`` is not a recognized NumPy dtype, or if ``encoding['chunksizes']`` is not a list
         of positive integers with as many entries as ``dimensions``.
