@@ -102,16 +102,14 @@ EPSG:3408 desc:  https://epsg.io/3408  (North)  /  https://epsg.io/3409  (South)
 EASE-Grid ref:   https://nsidc.org/ease
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pyhdf.SD as sd
+import pyproj
 
-from libera_utils.footprint_matching.readers._hdf4_io import _require_pyhdf
-from libera_utils.footprint_matching.readers._pyproj_io import _require_pyproj
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
@@ -320,7 +318,6 @@ class NISEReader(StaticReader):
         epsg : int
             Source CRS EPSG code (3408 for EASE-Grid North, 3409 for South).
         """
-        pyproj = _require_pyproj()
         return pyproj.Transformer.from_crs(
             pyproj.CRS.from_epsg(epsg),  # NSIDC EASE-Grid (azimuthal equal-area)
             pyproj.CRS.from_epsg(4326),
@@ -465,14 +462,11 @@ class NISEReader(StaticReader):
 
         Raises
         ------
-        ImportError
-            If pyhdf is not installed (see :func:`_require_pyhdf`).
         KeyError
             If the file has no ``Extent`` SDS for the requested hemisphere.
         pyhdf.error.HDF4Error
             If the file cannot be opened (not found, not HDF4, corrupt header).
         """
-        sd = _require_pyhdf()
         hdf = sd.SD(str(self.single_file_path), sd.SDC.READ)
         try:
             # hdf.info()[0] is the true dataset count; iterate indices (not

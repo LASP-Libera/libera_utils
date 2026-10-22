@@ -11,8 +11,6 @@ Real VJ143C1 files can be downloaded from:
     EarthData login required: https://urs.earthdata.nasa.gov/
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

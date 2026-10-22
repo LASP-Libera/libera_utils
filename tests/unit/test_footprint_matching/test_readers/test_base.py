@@ -6,9 +6,8 @@ Tests confirm:
 - antimeridian and polar boxes are served whole
 - ``DAILY`` ignores time, ``NEAREST_PASS`` keeps one pass, ``NEAREST_STEP`` serves one step
 - the registration hook rejects a reader whose time attributes do not match its policy
+- a reader missing any one abstract method cannot be instantiated, and is never registered
 """
-
-from __future__ import annotations
 
 import numpy as np
 import pytest
@@ -20,6 +19,7 @@ from libera_utils.footprint_matching.readers.base import (
     _PointIndex,
     split_dateline,
 )
+from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     GridSamples,
@@ -428,12 +428,40 @@ class TestNearestStep:
         assert reader.nearest_step_index(_T0 - np.timedelta64(2, "h")) is None
 
 
+_ABSTRACT_CASES = [
+    pytest.param(base, policy, name, id=f"{base.__name__}-{name}")
+    for base, policy in (
+        (StaticReader, {"TIME_MATCH": TimeMatch.DAILY}),
+        (SteppedGridReader, {"MAX_TIME_OFFSET": np.timedelta64(1, "h")}),
+    )
+    for name in sorted(base.__abstractmethods__)
+]
+
+
 class TestRegistrationValidation:
     def test_cannot_instantiate_abstract_classes(self):
         with pytest.raises(TypeError):
             AncillaryReader("anything")  # type: ignore[abstract]
         with pytest.raises(TypeError):
             StaticReader("anything")  # type: ignore[abstract]
+
+    @pytest.mark.parametrize(("base", "policy", "missing"), _ABSTRACT_CASES)
+    def test_reader_missing_one_abstract_method_cannot_be_instantiated(self, base, policy, missing):
+        """A reader that omits any one abstract method fails at instantiation, before the method could be called."""
+        namespace = {
+            "READER_KEY": f"_base_test_missing{missing}",
+            "INSTRUMENT": "FAKE",
+            "RESOLUTION_KM": 1.0,
+            "VARIABLES": (_SPEC,),
+            **policy,
+            **{name: lambda self, *args: None for name in base.__abstractmethods__ if name != missing},
+        }
+        incomplete = type(base)(f"_Missing{missing}", (base,), namespace)
+
+        assert incomplete.__abstractmethods__ == frozenset({missing})
+        assert namespace["READER_KEY"] not in ReaderRegistry.list_readers()
+        with pytest.raises(TypeError, match=missing):
+            incomplete("unused.nc")
 
     def test_missing_time_match_is_rejected_at_import(self):
         with pytest.raises(TypeError, match="TIME_MATCH"):

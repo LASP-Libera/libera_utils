@@ -23,6 +23,7 @@ RUN apt-get update && \
     ca-certificates \
     libudunits2-dev \
     libgdal-dev \
+    libhdf4-dev \
     libhdf5-dev \
     libnetcdf-dev \
     python3-dev \

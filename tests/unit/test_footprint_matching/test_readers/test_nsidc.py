@@ -12,8 +12,6 @@ Real NISE files can be downloaded from:
     Earthdata login required: https://urs.earthdata.nasa.gov/
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +19,7 @@ import pytest
 from pyhdf.error import HDF4Error
 
 from libera_utils.footprint_matching.readers.nsidc import (
+    _DEFAULT_HEMISPHERES,
     _HEMISPHERE_LABEL_NORTH,
     _HEMISPHERE_LABEL_SOUTH,
     NISEReader,
@@ -193,6 +192,13 @@ class TestNISEReaderLatLonGrid:
         lats_2d, _ = NISEReader("unused.HDFEOS")._compute_latlon_grid(_TEST_HEMI_SOUTH)
         assert np.all(lats_2d < 0)
 
+    @pytest.mark.parametrize("hemi", _DEFAULT_HEMISPHERES, ids=lambda h: h.hemisphere_label)
+    def test_full_grid_has_twelve_non_finite_corner_pixels(self, hemi):
+        # Of the 721 x 721 EASE-Grid, only 12 corner pixels lie outside the projection's domain.
+        lats_2d, lons_2d = NISEReader("unused.HDFEOS")._compute_latlon_grid(hemi)
+        assert (~np.isfinite(lats_2d)).sum() == 12
+        assert np.array_equal(np.isfinite(lats_2d), np.isfinite(lons_2d))
+
 
 class TestNISEReaderSamples:
     def test_returns_value_rows_and_1d_coords(self, tmp_path):
@@ -333,6 +339,13 @@ class TestNISEReaderRealSubset:
         assert points.lats.size == 811786
         assert points.lats.max() > 89.9
         assert points.lats.min() < -89.9
+
+    @pytest.mark.parametrize("hemi", _DEFAULT_HEMISPHERES, ids=lambda h: h.hemisphere_label)
+    def test_every_non_finite_pixel_is_off_earth(self, reader, hemi):
+        # The reader drops off-Earth pixels by their code, which covers every non-finite one.
+        raw = reader._read_extent_sds(hemi.hemisphere_label)
+        lats_2d, _ = reader._compute_latlon_grid(hemi)
+        assert np.all(raw[~np.isfinite(lats_2d)] == 254)
 
     def test_surface_classes_at_known_places(self, reader):
         layer = {name: _layer_index(name) for name in _EXPECTED_VARIABLES}

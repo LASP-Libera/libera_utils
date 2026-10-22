@@ -3,56 +3,17 @@
 HDF4 files are used by the IGBP land cover reader (MCD12Q1 sinusoidal tiles) and the
 NSIDC NISE sea-ice reader (HDF-EOS4). Both read them with pyhdf, which wraps the HDF4
 C library.
-
-Why lazy import?
-----------------
-pyhdf requires the HDF4 C library (``libhdf4-dev`` on Debian/Ubuntu) to be
-installed as a system package before pip/poetry can build its wheel. In
-environments where the library is absent (e.g., the CI container without HDF4),
-importing ``pyhdf`` at module load time would make the *entire* footprint_matching
-package un-importable. By deferring the import to function call time via
-``_require_pyhdf()``, the rest of the package stays importable and only the HDF4
-I/O calls themselves fail with a clear, actionable error message.
 """
-
-from __future__ import annotations
 
 import re
 from dataclasses import dataclass
 
 import numpy as np
+import pyhdf.SD as sd
 
 # How much of StructMetadata.0 an error message quotes, so a reader can see what the file
 # does carry without the message reproducing the whole (tens of kB) attribute.
 _STRUCT_METADATA_EXCERPT_CHARS: int = 400
-
-
-def _require_pyhdf() -> object:
-    """Import pyhdf.SD and return the module, raising ImportError with clear instructions if absent.
-
-    Returns
-    -------
-    module
-        The ``pyhdf.SD`` module.
-
-    Raises
-    ------
-    ImportError
-        If pyhdf is not installed or the HDF4 C library is missing, with
-        instructions for installing both.
-    """
-    try:
-        import pyhdf.SD as sd  # noqa: PLC0415
-
-        return sd
-    except ImportError as exc:
-        raise ImportError(
-            "pyhdf is required to read HDF4 files (IGBP MCD12Q1 and NSIDC NISE). "
-            "Install instructions:\n"
-            "  conda: conda install -c conda-forge pyhdf\n"
-            "  pip:   sudo apt-get install libhdf4-dev && pip install pyhdf\n"
-            "See https://fhs.github.io/pyhdf/ for details."
-        ) from exc
 
 
 @dataclass(frozen=True)
@@ -106,8 +67,6 @@ def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.n
 
     Raises
     ------
-    ImportError
-        If pyhdf is not installed (see :func:`_require_pyhdf`).
     pyhdf.error.HDF4Error
         If the file cannot be opened or has no SDS named ``data_sds_name``.
     ValueError
@@ -126,7 +85,6 @@ def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.n
 
     where ``R`` is the sphere radius from ``ProjParams`` (6 371 007.181 m for MODIS).
     """
-    sd = _require_pyhdf()
     hdf = sd.SD(str(file_path), sd.SDC.READ)
     try:
         data = np.array(hdf.select(data_sds_name).get())

@@ -4,8 +4,6 @@ These cover :mod:`libera_utils.footprint_matching.readers._points`: longitude
 normalization and fill / valid-range masking.
 """
 
-from __future__ import annotations
-
 import numpy as np
 
 from libera_utils.footprint_matching.readers._points import apply_fill_and_valid_range, normalize_longitude
@@ -80,9 +78,11 @@ class TestApplyFillAndValidRange:
 
     def test_int32_extreme_fill_matches_exactly(self):
         # An int32 sentinel float32 cannot represent exactly still matches, because the
-        # comparison is made before any cast.
+        # comparison is made before any cast. sentinel - 1 rounds to the same float32, so it
+        # survives only if the comparison is made in the raw dtype.
         sentinel = np.iinfo(np.int32).max
-        raw = np.array([1, sentinel, 2], dtype=np.int32)
+        raw = np.array([1, sentinel, 2, sentinel - 1], dtype=np.int32)
         out = apply_fill_and_valid_range(raw, fill_value=sentinel)
         assert np.isnan(out[1])
         assert np.allclose(out[[0, 2]], [1.0, 2.0])
+        assert np.isfinite(out[3])

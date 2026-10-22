@@ -9,8 +9,6 @@ root-level ``Aerosol_Optical_Thickness_550_Land_Ocean_Mean`` (AOD) and
 ``Aerosol_Type_Land_Ocean_Mode`` (aerosol type) fields.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 
@@ -166,6 +164,26 @@ class TestVIIRSAODReaderLoadSpatialRegion:
         reader = _make_reader(tmp_path, aod_fill=3.0, include_fill_pixel=False, aod_valid_range=(0.0, 2.0))
         data, _, _ = _region(reader, _full_bbox(), _T)
         assert np.all(np.isnan(data[_AOD_AXIS]))
+
+    @pytest.mark.parametrize(
+        ("fill_values", "masked_axis", "kept_axis"),
+        [
+            ({"aod_fill_value": _AOD_FILL}, _AOD_AXIS, _TYPE_AXIS),
+            ({"aerosol_type_fill_value": _AEROSOL_TYPE}, _TYPE_AXIS, _AOD_AXIS),
+        ],
+    )
+    def test_fill_value_comes_from_each_field(self, tmp_path, fill_values, masked_axis, kept_axis):
+        # A field whose own _FillValue equals the fixture's constant is masked; the other field is not.
+        reader = _make_reader(tmp_path, include_fill_pixel=False, **fill_values)
+        data, _, _ = _region(reader, _full_bbox(), _T)
+        assert np.all(np.isnan(data[masked_axis]))
+        assert np.all(np.isfinite(data[kept_axis]))
+
+    @pytest.mark.parametrize("field", ["aod_fill_value", "aerosol_type_fill_value"])
+    def test_field_without_fill_value_raises(self, tmp_path, field):
+        reader = _make_reader(tmp_path, include_fill_pixel=False, **{field: None})
+        with pytest.raises(ValueError, match="has no _FillValue attribute"):
+            reader.samples_in(_full_bbox(), _T)
 
     @pytest.mark.parametrize("field", ["aod_valid_range", "aerosol_type_valid_range"])
     def test_field_without_valid_range_raises(self, tmp_path, field):

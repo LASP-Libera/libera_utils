@@ -3,11 +3,9 @@
 - :func:`normalize_longitude` -- convert a 0..360 longitude convention to -180..180
   (the ERA5 readers' grids arrive on 0..360).
 - :func:`apply_fill_and_valid_range` -- convert a raw masked/integer array to a float
-  array with fill values and out-of-range values replaced by ``NaN`` (the VIIRS Deep
-  Blue aerosol reader applies each variable's own ``_FillValue`` and ``valid_range``).
+  array with fill values and out-of-range values replaced by ``NaN``, compared in the
+  raw dtype before the cast.
 """
-
-from __future__ import annotations
 
 import numpy as np
 

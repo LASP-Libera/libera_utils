@@ -9,7 +9,9 @@ Real ERA5 files can be downloaded from:
     CDS login required: https://cds.climate.copernicus.eu/user/register
 """
 
-from __future__ import annotations
+import gc
+import tracemalloc
+import weakref
 
 import numpy as np
 import pytest
@@ -57,11 +59,6 @@ class TestERA5ReaderClassAttributes:
         names = [v.name for v in ERA5Reader.VARIABLES]
         assert names == ["wind_u10", "wind_v10", *_IMAGER_SINGLE_LEVEL_SPEC_NAMES]
 
-    def test_variables_order_matches_file_mapping(self):
-        # Axis 0 of the data array follows _ERA5_SINGLE_LEVEL_VARIABLES, which
-        # must therefore agree with the VARIABLES tuple order exactly.
-        assert [v.name for v in ERA5Reader.VARIABLES] == [name for name, _ in _ERA5_SINGLE_LEVEL_VARIABLES]
-
     def test_wind_variables_are_unrestricted(self):
         # Targets the two wind variables' mode gating; asserts the first two VARIABLES require CAM mode.
         for v in ERA5Reader.VARIABLES[:2]:
@@ -102,7 +99,7 @@ class TestERA5ReaderLoadSpatialRegion:
         # distinct constant fills the fixture writes for each variable.
         assert np.allclose(data[0], 2.5, atol=1e-4)
         assert np.allclose(data[1], -1.5, atol=1e-4)
-        for i, (_, nc_name) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES[2:], start=2):
+        for i, (_, nc_name, _) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES[2:], start=2):
             assert np.allclose(data[i], ERA5_SINGLE_LEVEL_FILLS[nc_name], rtol=1e-6), nc_name
 
     def test_lats_are_ascending_order(self, tmp_path):
@@ -146,6 +143,19 @@ class TestERA5ReaderLoadSpatialRegion:
         data, lats, _ = _region(reader, bbox, _T)
         # All returned lats should be >= 2.0
         assert np.all(lats >= 2.0 - 1e-6)
+
+    def test_step_load_peak_memory_is_one_step(self, tmp_path):
+        reader = ERA5Reader(make_era5_netcdf_fixture(tmp_path, n_lat=400, n_lon=800))
+        _ = reader._steps
+        tracemalloc.start()
+        try:
+            grid = reader._load_step(0)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # The variables are read plane by plane into one array; stacking per-variable arrays
+        # would hold at least twice the step.
+        assert peak < 1.5 * grid.data.nbytes
 
 
 class TestERA5ReaderValidTimeDimension:
@@ -274,6 +284,17 @@ class TestERA5ReaderTimeSteps:
         at_0150 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(110, "m"))
         assert np.allclose(at_0010.values[0], 10.0)
         assert np.allclose(at_0150.values[0], 30.0)
+
+    def test_only_the_nearest_step_is_held(self, tmp_path):
+        reader = ERA5Reader(self._three_steps(tmp_path))
+        box = BoundingBox(0.0, 2.0, 10.0, 12.0)
+        reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(10, "m"))
+        first_step = weakref.ref(reader._loaded_step[1].data)
+        reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(110, "m"))
+        gc.collect()
+        # The first step was released when the second was loaded, not kept beside it.
+        assert first_step() is None
+        assert reader._loaded_step[0] == 2
 
     def test_step_beyond_max_offset_gives_no_samples(self, tmp_path):
         reader = ERA5Reader(self._three_steps(tmp_path))

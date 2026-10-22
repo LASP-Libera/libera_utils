@@ -11,7 +11,7 @@ Real VJ143C1 files can be downloaded from:
     Example: VJ143C1.A2026153.002.2026161161054.h5
 """
 
-from __future__ import annotations
+import tracemalloc
 
 import h5py
 import numpy as np
@@ -36,6 +36,7 @@ _LON_MAX = 10.40
 _HALF_CELL = 0.025
 _PARAM_FILL = 200  # raw int16 → 0.200 after scale_factor=0.001
 _FILL_SENTINEL = 32767  # last pixel; should become NaN
+_FIELDS = "HDFEOS/GRIDS/VIIRS_CMG_BRDF/Data Fields"
 
 
 def _fixture(tmp_path, **kwargs):
@@ -133,7 +134,7 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         assert data.dtype == np.float32
 
     def test_lat_is_ascending(self, tmp_path):
-        # The fixture stores lats in DESCENDING order; read_viirs_brdf_hdf5 must flip them
+        # The fixture stores lats in DESCENDING order; the reader must flip them
         # to ascending, so output row 0 is the southernmost cell center.
         reader = _make_reader(tmp_path)
         _, lats, _ = _region(reader, _full_bbox(), _T)
@@ -165,6 +166,21 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         data, lats, lons = _region(reader, bbox, _T)
         assert lons.size < _N_LON
 
+    def test_load_peak_memory_is_the_held_fields(self, tmp_path):
+        path = make_viirs_brdf_hdf5_fixture(
+            tmp_path, n_lat=400, n_lon=800, lat_min=0.0, lat_max=20.0, lon_min=10.0, lon_max=50.0
+        )
+        reader = VIIRSBRDFReader(path)
+        tracemalloc.start()
+        try:
+            native = reader._native
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # The nine fields are read into one preallocated array; stacking per-field arrays would
+        # hold at least twice the result.
+        assert peak < 1.5 * native.data.nbytes
+
 
 class TestVIIRSBRDFReaderSamples:
     def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
@@ -174,6 +190,19 @@ class TestVIIRSBRDFReaderSamples:
         assert samples.source == "viirs_brdf"
         assert samples.timestamp_source is None
         assert samples.values.shape[0] == 9
+
+    def test_granule_is_read_once_for_every_box(self, tmp_path):
+        path = _fixture(tmp_path)
+        reader = VIIRSBRDFReader(path)
+        first = reader.samples_in(BoundingBox(0.0, 0.1, 10.0, 10.1), _T)
+        native = reader._native
+        # With the file gone, a second box can only be served from what the first load holds.
+        path.unlink()
+        second = reader.samples_in(BoundingBox(0.1, 0.2, 10.2, 10.4), _T)
+        assert first.n_samples > 0
+        assert second.n_samples > 0
+        assert np.allclose(second.values[np.isfinite(second.values)], 0.2)
+        assert reader._native is native
 
 
 class TestVIIRSBRDFCellCenters:
@@ -219,6 +248,16 @@ class TestVIIRSBRDFFieldAttributes:
         data = VIIRSBRDFReader(path)._native.data
         assert np.allclose(data[0][np.isfinite(data[0])], 0.7)
         assert np.allclose(data[1][np.isfinite(data[1])], 0.2)
+
+    def test_each_field_uses_its_own_attribute(self, tmp_path):
+        path = _fixture(tmp_path)
+        with h5py.File(path, "r+") as f:
+            f[f"{_FIELDS}/BRDF_Albedo_Parameter1_shortwave"].attrs["_FillValue"] = np.array([_PARAM_FILL], np.int16)
+            f[f"{_FIELDS}/BRDF_Albedo_Parameter2_shortwave"].attrs["scale_factor"] = [0.01]
+        data = VIIRSBRDFReader(path)._native.data
+        assert np.isnan(data[0]).all()
+        assert np.allclose(data[1][np.isfinite(data[1])], 2.0)
+        assert np.allclose(data[2][np.isfinite(data[2])], 0.2)
 
 
 class TestVIIRSBRDFGridMetadata:
@@ -278,6 +317,30 @@ class TestVIIRSBRDFGridMetadata:
             del f["HDFEOS INFORMATION/StructMetadata.0"]
             f.create_dataset("HDFEOS INFORMATION/StructMetadata.0", data=np.arange(3))
         with pytest.raises(ValueError, match="not the fixed-length string"):
+            _ = VIIRSBRDFReader(path)._native
+
+
+class TestVIIRSBRDFFileErrors:
+    """h5py's own errors reach the caller: FileNotFoundError (an OSError) for a missing file, KeyError for a missing object."""
+
+    def test_missing_file_raises_file_not_found_error(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            _ = VIIRSBRDFReader(tmp_path / "absent.h5")._native
+
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            "HDFEOS INFORMATION/StructMetadata.0",
+            _FIELDS,
+            f"{_FIELDS}/lat",
+            f"{_FIELDS}/BRDF_Albedo_Parameter3_nir",
+        ],
+    )
+    def test_missing_dataset_raises_key_error(self, tmp_path, missing):
+        path = _fixture(tmp_path)
+        with h5py.File(path, "r+") as f:
+            del f[missing]
+        with pytest.raises(KeyError):
             _ = VIIRSBRDFReader(path)._native
 
 

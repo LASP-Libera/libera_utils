@@ -48,8 +48,6 @@ Every concrete subclass of :class:`AncillaryReader` is added to
 no manual registration call is needed. Abstract intermediates are skipped.
 """
 
-from __future__ import annotations
-
 import abc
 from collections.abc import Sequence
 from functools import cached_property
@@ -226,7 +224,7 @@ class AncillaryReader(abc.ABC):
     -------------------------------------------------------------
     READER_KEY : str
         Unique string key used to register the reader in ``ReaderRegistry``.
-        Examples: ``"igbp"``, ``"nise"``, ``"era5"``, ``"viirs_cloud"``.
+        Examples: ``"igbp"``, ``"nise"``, ``"era5"``, ``"viirs_aod"``.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
         for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable
@@ -298,7 +296,9 @@ class AncillaryReader(abc.ABC):
             registered to a different class.
         """
         super().__init_subclass__(**kwargs)
-        if getattr(cls, "__abstractmethods__", None):
+        # ABCMeta sets __abstractmethods__ only after type.__new__ returns, and this hook runs inside
+        # type.__new__, so abstractness is read from the members, as ABCMeta itself computes it.
+        if any(getattr(getattr(cls, name, None), "__isabstractmethod__", False) for name in dir(cls)):
             return
         if getattr(cls, "READER_KEY", None) is None:
             return
@@ -464,7 +464,7 @@ class AncillaryReader(abc.ABC):
 
         The largest spacing a loaded point cloud measured on itself, else the reader's
         declared ``RESOLUTION_KM``. A measured spacing wins because a swath subsampled
-        on delivery (CLDPIX test granules carry every eighth pixel) must be credited
+        on delivery (e.g. every eighth pixel) must be credited
         with the cell it really stands for, not the instrument's nominal one.
         """
         measured = [n.spacing_km for n in natives if isinstance(n, _PointIndex) and n.spacing_km is not None]
