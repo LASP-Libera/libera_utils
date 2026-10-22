@@ -32,7 +32,9 @@ lays a fine reference grid over the PSF contour in its own frame (angular for th
 angular weigher, ground-plane for the radial one) holding the PSF energy of every
 cell, and treats each finite sample as covering the square centered on it whose half-width
 is the circumradius of the source's native cell (``RESOLUTION_KM / sqrt(2)``), so a regular
-lattice of cells leaves no gap at any rotation relative to the reference axes. Coverage is
+lattice of cells leaves no gap at any rotation relative to the reference axes. In the
+angular frame the square is foreshortened along-scan by ``cos(VZA)``, as the ground cell
+is when seen at an oblique view. Coverage is
 the share of the reference energy inside at least one such square. A complete source
 scores 1.0; a source missing half the contour scores about 0.5; a source with no samples
 scores 0.0 -- exactly the quantity the CERES 75 % / 95 % rule is applied to. A source whose cell
@@ -55,6 +57,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
+from curryer.compute.constants import WGS84_ECCENTRICITY2, WGS84_SEMI_MAJOR_AXIS_KM
 from pyproj import Geod
 
 from libera_utils.footprint_matching.geometry import (
@@ -77,10 +80,6 @@ from libera_utils.footprint_matching.types import SampleSet
 # i.e. the bulk of the weight sits well inside the PSF's 95%-energy ground radius --
 # a reasonable stand-in shape for a centrally-peaked response.
 _SIGMA_FRACTION_OF_RMAX: float = 0.5
-
-# WGS84 ellipsoid parameters (km) for the local-tangent-plane distance fast path.
-_WGS84_SEMI_MAJOR_KM: float = 6378.137
-_WGS84_ECCENTRICITY_SQ: float = 6.694379990141316e-3  # first eccentricity squared, e^2
 
 # Coordinate span (deg) above which a sample set is treated as "large" and the
 # RadialWeigher falls back to the exact ellipsoidal Geod.inv distance instead of the
@@ -116,14 +115,17 @@ def _local_tangent_plane_km(
     """
     lat0 = np.radians(origin_lat_deg)
     sin_lat0_sq = np.sin(lat0) ** 2
-    denom = 1.0 - _WGS84_ECCENTRICITY_SQ * sin_lat0_sq
+    denom = 1.0 - WGS84_ECCENTRICITY2 * sin_lat0_sq
     # Meridional (north-south) and prime-vertical (east-west) radii of curvature at the
     # boresight latitude, km.
-    meridional_km = _WGS84_SEMI_MAJOR_KM * (1.0 - _WGS84_ECCENTRICITY_SQ) / denom**1.5
-    prime_vertical_km = _WGS84_SEMI_MAJOR_KM / np.sqrt(denom)
+    meridional_km = WGS84_SEMI_MAJOR_AXIS_KM * (1.0 - WGS84_ECCENTRICITY2) / denom**1.5
+    prime_vertical_km = WGS84_SEMI_MAJOR_AXIS_KM / np.sqrt(denom)
 
     north_km = meridional_km * np.radians(np.asarray(lat_deg, dtype=float) - origin_lat_deg)
-    east_km = prime_vertical_km * np.cos(lat0) * np.radians(np.asarray(lon_deg, dtype=float) - origin_lon_deg)
+    # Wrap the longitude offset to [-180, 180) so samples across the antimeridian from the
+    # boresight (or given in another longitude convention) land at their true short offset.
+    dlon_deg = (np.asarray(lon_deg, dtype=float) - origin_lon_deg + 180.0) % 360.0 - 180.0
+    east_km = prime_vertical_km * np.cos(lat0) * np.radians(dlon_deg)
     return north_km, east_km
 
 
@@ -177,38 +179,36 @@ def _finite_sample_mask(samples: SampleSet) -> np.ndarray:
     return np.any(np.isfinite(values), axis=0)
 
 
-def _covered_fraction(reference: np.ndarray, row: np.ndarray, col: np.ndarray, radius: int) -> float:
-    """Share of ``reference`` energy within ``radius`` cells of a marked ``(row, col)`` cell.
+def _covered_fraction(
+    reference: np.ndarray, row: np.ndarray, col: np.ndarray, row_radius: int, col_radius: int
+) -> float:
+    """Share of ``reference`` energy within the box of a marked ``(row, col)`` cell.
 
-    Each marked cell is dilated into the ``(2 * radius + 1)`` square around it (a box
-    filter over the mark grid, computed with a 2-D cumulative sum), which is the square
-    the sample's native cell covers in the reference frame. Marks may lie up to
-    ``radius`` cells outside the grid: a sample just outside the contour still covers
-    the part of its cell that is inside. Marks farther out are ignored.
+    Each marked cell is dilated into the ``(2 * row_radius + 1) x (2 * col_radius + 1)``
+    box around it (a box filter over the mark grid, computed with a 2-D cumulative sum),
+    which is the rectangle the sample's native cell covers in the reference frame. Marks
+    may lie up to the radius outside the grid: a sample just outside the contour still
+    covers the part of its cell that is inside. Marks farther out are ignored.
     """
     total = float(reference.sum())
     if total <= 0.0 or row.size == 0:
         return 0.0
     n_row, n_col = reference.shape
-    keep = (row >= -radius) & (row < n_row + radius) & (col >= -radius) & (col < n_col + radius)
+    keep = (row >= -row_radius) & (row < n_row + row_radius) & (col >= -col_radius) & (col < n_col + col_radius)
     if not np.any(keep):
         return 0.0
-    marks = np.zeros((n_row + 2 * radius, n_col + 2 * radius), dtype=np.int64)
-    marks[row[keep] + radius, col[keep] + radius] = 1
-    if radius > 0:
-        p_row, p_col = marks.shape
-        padded = np.zeros((p_row + 1, p_col + 1), dtype=np.int64)
-        padded[1:, 1:] = np.cumsum(np.cumsum(marks, axis=0), axis=1)
-        rows = np.arange(radius, radius + n_row)
-        cols = np.arange(radius, radius + n_col)
-        r0, r1 = rows - radius, rows + radius + 1
-        c0, c1 = cols - radius, cols + radius + 1
-        box = padded[r1[:, None], c1[None, :]] - padded[r0[:, None], c1[None, :]]
-        box -= padded[r1[:, None], c0[None, :]] - padded[r0[:, None], c0[None, :]]
-        covered = box > 0
-    else:
-        covered = marks > 0
-    return float(reference[covered].sum()) / total
+    marks = np.zeros((n_row + 2 * row_radius, n_col + 2 * col_radius), dtype=np.int64)
+    marks[row[keep] + row_radius, col[keep] + col_radius] = 1
+    p_row, p_col = marks.shape
+    padded = np.zeros((p_row + 1, p_col + 1), dtype=np.int64)
+    padded[1:, 1:] = np.cumsum(np.cumsum(marks, axis=0), axis=1)
+    rows = np.arange(row_radius, row_radius + n_row)
+    cols = np.arange(col_radius, col_radius + n_col)
+    r0, r1 = rows - row_radius, rows + row_radius + 1
+    c0, c1 = cols - col_radius, cols + col_radius + 1
+    box = padded[r1[:, None], c1[None, :]] - padded[r0[:, None], c1[None, :]]
+    box -= padded[r1[:, None], c0[None, :]] - padded[r0[:, None], c0[None, :]]
+    return float(reference[box > 0].sum()) / total
 
 
 # A sample covers the square of half-width ``resolution * _COVER_HALF_WIDTH_FACTOR``: the
@@ -279,8 +279,9 @@ class PixelWeigher(abc.ABC):
             views.
         cone_angle_rate : float, optional
             L1B ``Cone_Angle_Rate`` (deg/s). Its sign sets the scan direction and a
-            (near-)zero value marks a stationary scanner. Ignored by weighers that do
-            not model the asymmetric along-scan PSF.
+            (near-)zero value marks a stationary scanner. Required by
+            :class:`AngularPSFWeigher`; ignored by weighers that do not model the
+            asymmetric along-scan PSF.
         frame : ViewingFrame, optional
             A precomputed single-footprint viewing frame (see
             :func:`~libera_utils.footprint_matching.geometry.compute_viewing_frames` and
@@ -406,12 +407,8 @@ class RadialWeigher(PixelWeigher):
         finite = _finite_sample_mask(samples)
         row = np.floor((north_km[finite] + radius_key) / _COVERAGE_STEP_KM).astype(int)
         col = np.floor((east_km[finite] + radius_key) / _COVERAGE_STEP_KM).astype(int)
-        coverage = _covered_fraction(
-            reference,
-            row,
-            col,
-            _dilation_cells(_COVER_HALF_WIDTH_FACTOR * float(sample_resolution_km), _COVERAGE_STEP_KM),
-        )
+        radius = _dilation_cells(_COVER_HALF_WIDTH_FACTOR * float(sample_resolution_km), _COVERAGE_STEP_KM)
+        coverage = _covered_fraction(reference, row, col, radius, radius)
 
         return WeightField(
             weights=weights,
@@ -470,7 +467,9 @@ class AngularPSFWeigher(PixelWeigher):
     ``Cone_Angle_Rate`` (``cone_angle_rate``): positive means scanning *away* from
     nadir (outward), which reverses the sign of ``delta`` (design doc section
     2.8.1.2 step 5); a (near-)zero rate means the scanner is stationary at a scan
-    turnaround, so the uniform static FOV is used instead of the dynamic PSF.
+    turnaround, so the uniform static FOV is used instead of the dynamic PSF. The rate
+    is therefore required, and :meth:`weight_field` raises ``ValueError`` without a
+    finite one or with a non-finite viewing zenith.
 
     Centroid offset
     ---------------
@@ -481,11 +480,12 @@ class AngularPSFWeigher(PixelWeigher):
     Coverage
     --------
     Measured on a fine angular reference grid over the 95 %-energy contour: each
-    finite sample covers a square seen from the satellite,
-    ``atan(RESOLUTION_KM / sqrt(2) / slant range)`` to each side -- the circumradius of
-    its native cell
-    (see the module docstring). A source whose cell is wider than the contour (the
-    1 degree VIIRS composites) therefore scores 1.0 as soon as one sample lies in it.
+    finite sample covers a rectangle seen from the satellite,
+    ``atan(RESOLUTION_KM / sqrt(2) / slant range)`` to each side cross-scan -- the
+    circumradius of its native cell (see the module docstring) -- and ``cos(VZA)`` of
+    that along-scan, where the scan plane holds the view direction and the ground cell
+    is foreshortened. A source whose cell is wider than the contour (the 1 degree VIIRS
+    composites) therefore scores 1.0 as soon as one sample lies in it.
 
     Direct evaluation vs pre-integrated bins
     ----------------------------------------
@@ -541,7 +541,25 @@ class AngularPSFWeigher(PixelWeigher):
         When ``frame`` is supplied (the orchestrator batched the viewing frames up
         front), it is passed straight to :func:`project_to_angular`, skipping the
         per-footprint viewing-geometry reconstruction; the result is identical.
+
+        Raises
+        ------
+        ValueError
+            If ``cone_angle_rate`` is ``None`` or not finite (the scan direction, and so
+            the side the PSF's trailing tail lies on, is unknown), or if
+            ``viewing_zenith_deg`` is not finite.
         """
+        if cone_angle_rate is None or not math.isfinite(cone_angle_rate):
+            raise ValueError(
+                f"AngularPSFWeigher needs the footprint's L1B Cone_Angle_Rate to orient the asymmetric PSF; "
+                f"got {cone_angle_rate!r}. Pass the rate from the L1B record, or use RadialWeigher for a "
+                f"footprint without one."
+            )
+        if not math.isfinite(viewing_zenith_deg):
+            raise ValueError(
+                f"AngularPSFWeigher needs a finite viewing zenith angle; got {viewing_zenith_deg!r}. "
+                f"Pass the footprint's L1B viewing zenith in degrees."
+            )
         lats = np.asarray(samples.lats, dtype=float)
         lons = np.asarray(samples.lons, dtype=float)
 
@@ -568,7 +586,7 @@ class AngularPSFWeigher(PixelWeigher):
         # centroid. Currently 0 -- see _CENTROID_OFFSET_DEG.
         delta = delta + _CENTROID_OFFSET_DEG
 
-        stationary = cone_angle_rate is not None and abs(cone_angle_rate) <= _STATIC_CONE_RATE_EPS_DEG_PER_S
+        stationary = abs(cone_angle_rate) <= _STATIC_CONE_RATE_EPS_DEG_PER_S
         if stationary:
             # Scan turnaround: uniform response inside the circular optical FOV, zero
             # outside (design doc section 2.4.2.2). Scan direction is irrelevant.
@@ -579,7 +597,7 @@ class AngularPSFWeigher(PixelWeigher):
         else:
             # Outward scan (positive cone-angle rate) reverses the along-scan axis so
             # the PSF's trailing tail points the correct way (design doc 2.8.1.2 step 5).
-            delta_psf = -delta if (cone_angle_rate is not None and cone_angle_rate > 0.0) else delta
+            delta_psf = -delta if cone_angle_rate > 0.0 else delta
             extent = self._extent
             # Truncate at the 95%-energy contour: zero any sample outside the PSF's
             # angular half-extents (evaluated in psf_weight's own input-delta frame,
@@ -594,20 +612,28 @@ class AngularPSFWeigher(PixelWeigher):
         # PSF response is non-negative; clip guards against tiny negative round-off.
         weights = np.clip(weights, 0.0, None)
 
-        # Coverage: each finite sample inside the contour covers the square of the source's
-        # native cell, seen from the satellite, centered on its (delta, beta).
-        half_cell_deg = math.degrees(
-            math.atan(
-                _COVER_HALF_WIDTH_FACTOR
-                * float(sample_resolution_km)
-                / slant_range_km(satellite_radius_km, viewing_zenith_deg)
-            )
+        # Coverage: each finite sample inside the contour covers its source's native cell as
+        # seen from the satellite, centered on its (delta, beta). The scan plane holds the
+        # view direction, so along-scan (delta) the cell is foreshortened by cos(VZA);
+        # cross-scan (beta) it is not.
+        half_cell_rad = (
+            _COVER_HALF_WIDTH_FACTOR
+            * float(sample_resolution_km)
+            / slant_range_km(satellite_radius_km, viewing_zenith_deg)
         )
+        half_beta_deg = math.degrees(math.atan(half_cell_rad))
+        half_delta_deg = math.degrees(math.atan(half_cell_rad * math.cos(math.radians(viewing_zenith_deg))))
         reference = _angular_reference(extent, stationary)
         finite = _finite_sample_mask(samples)
         row = np.floor((beta[finite] + extent.beta_max_deg) / _COVERAGE_STEP_DEG).astype(int)
         col = np.floor((delta_psf[finite] + extent.delta_back_deg) / _COVERAGE_STEP_DEG).astype(int)
-        coverage = _covered_fraction(reference, row, col, _dilation_cells(half_cell_deg, _COVERAGE_STEP_DEG))
+        coverage = _covered_fraction(
+            reference,
+            row,
+            col,
+            _dilation_cells(half_beta_deg, _COVERAGE_STEP_DEG),
+            _dilation_cells(half_delta_deg, _COVERAGE_STEP_DEG),
+        )
 
         return WeightField(
             weights=weights,

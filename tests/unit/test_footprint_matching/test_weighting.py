@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from libera_utils.footprint_matching.geometry import compute_viewing_frames
+from libera_utils.footprint_matching.geometry import compute_viewing_frames, project_to_angular
+from libera_utils.footprint_matching.psf import psf_95_energy_extent, psf_weight
 from libera_utils.footprint_matching.types import BoundingBox, SampleSet
 from libera_utils.footprint_matching.weighting import (
     AngularPSFWeigher,
@@ -119,8 +120,8 @@ class TestRadialWeigher:
     def test_total_energy_is_weight_sum(self):
         """``WeightField.total_energy`` from ``RadialWeigher`` is the sum of its sample weights.
 
-        ``total_energy`` is the denominator of coverage when results go through ``aggregate``. If it disagreed with the
-        weights, coverage would be reported wrong even with full data.
+        ``total_energy`` is the PSF energy the served samples carry. If it disagreed with the weights, a caller reading
+        it would see a different footprint from the one that was aggregated.
 
         Weighs a 2 x 2 grid and asserts ``total_energy`` equals ``weights.sum()``.
         """
@@ -206,6 +207,26 @@ class TestRadialWeigher:
         monkeypatch.setattr("libera_utils.footprint_matching.weighting._FAST_DISTANCE_MAX_SPAN_DEG", -1.0)
         forced_exact = RadialWeigher().weight_field(samples, 86.1, 10.15, **_GEOM).weights
         np.testing.assert_array_equal(default, forced_exact)
+
+    def test_fast_path_across_the_antimeridian(self, monkeypatch):
+        """``RadialWeigher``'s fast path measures the short way across the antimeridian.
+
+        When every served sample lies on the far side of the antimeridian from the boresight, the samples' own span
+        is small, so the fast path runs. An unwrapped longitude offset would put them 359 degrees away: zero weight
+        and zero coverage, with no error.
+
+        Puts the boresight at -179.99 and the samples at 179.6 to 179.99. Asserts some weight is positive and the
+        weights and coverage match the exact geodesic path.
+        """
+        lats = np.linspace(-0.1, 0.1, 7)
+        lons = np.linspace(179.6, 179.99, 8)
+        samples = _grid_samples(lats, lons)
+        fast = RadialWeigher().weight_field(samples, 0.0, -179.99, **_GEOM)
+        monkeypatch.setattr("libera_utils.footprint_matching.weighting._FAST_DISTANCE_MAX_SPAN_DEG", -1.0)
+        exact = RadialWeigher().weight_field(samples, 0.0, -179.99, **_GEOM)
+        assert fast.weights.max() > 0.0
+        np.testing.assert_allclose(fast.weights, exact.weights, atol=1e-4)
+        assert fast.coverage == pytest.approx(exact.coverage, abs=1e-6)
 
 
 class TestRadialCoverage:
@@ -336,8 +357,8 @@ class TestAngularPSFWeigher:
     def test_total_energy_is_weight_sum(self):
         """``WeightField.total_energy`` from ``AngularPSFWeigher`` is the sum of its sample weights and is positive.
 
-        ``total_energy`` is the coverage denominator in ``aggregate``. A zero value for a footprint that clearly has
-        samples inside the PSF would make every such footprint fail the coverage rule.
+        ``total_energy`` is the PSF energy the served samples carry. A zero value for a footprint that clearly has
+        samples inside the PSF would mean the weights were lost.
 
         Weighs the standard grid and asserts ``total_energy`` equals ``weights.sum()`` and is greater than 0.
         """
@@ -345,19 +366,65 @@ class TestAngularPSFWeigher:
         assert wf.total_energy == pytest.approx(float(wf.weights.sum()))
         assert wf.total_energy > 0.0
 
-    def test_scan_direction_changes_the_field(self):
-        """``AngularPSFWeigher`` produces a different weight field when the sign of ``cone_angle_rate`` flips.
+    def test_scan_direction_sets_the_tail_side(self):
+        """``AngularPSFWeigher`` puts the PSF's weight centroid on the side the scan direction calls for.
 
         The CERES PSF has a trailing tail along the scan, from the detector's lagging response, so it points one way
-        when the scanner moves outward and the other way when it moves inward. Ignoring the scan direction would weight
-        the wrong side of every footprint.
+        when the scanner moves outward and the other way when it moves inward. A field that merely differs between the
+        two directions would still pass with the tail on the wrong side.
 
-        Weighs the same grid with ``cone_angle_rate`` set to +1 (outward) and to -1 (inward) and asserts the two weight
-        arrays are not equal.
+        Projects the grid into the angular frame and takes the weight centroid in ``delta``. Asserts the inward scan
+        (rate -1, ``delta`` used as is) puts it on the same side as the PSF's own centroid, and the outward scan
+        (rate +1, ``delta`` reversed) on the opposite side.
         """
-        outward = self._wf(cone_angle_rate=+1.0)
-        inward = self._wf(cone_angle_rate=-1.0)
-        assert not np.allclose(outward.weights, inward.weights)
+        samples, _, _ = self._grid()
+        delta, _ = project_to_angular(
+            samples.lats,
+            samples.lons,
+            boresight_lat_deg=self.B_LAT,
+            boresight_lon_deg=self.B_LON,
+            subsatellite_lat_deg=self.S_LAT,
+            subsatellite_lon_deg=self.S_LON,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
+        )
+        extent = psf_95_energy_extent(0.95)
+        grid_delta, grid_beta = np.meshgrid(
+            np.linspace(-extent.delta_back_deg, extent.delta_front_deg, 201),
+            np.linspace(-extent.beta_max_deg, extent.beta_max_deg, 201),
+        )
+        psf = psf_weight(grid_delta, grid_beta)
+        psf_side = np.sign(np.sum(psf * grid_delta))
+        assert psf_side != 0.0
+
+        inward = self._wf(cone_angle_rate=-1.0).weights
+        outward = self._wf(cone_angle_rate=+1.0).weights
+        assert np.sign(np.sum(inward * delta)) == psf_side
+        assert np.sign(np.sum(outward * delta)) == -psf_side
+
+    def test_missing_cone_angle_rate_raises(self):
+        """``AngularPSFWeigher`` raises ``ValueError`` when ``cone_angle_rate`` is missing or not finite.
+
+        The rate's sign sets which side of the footprint the PSF's tail weights. Without it the weigher would have to
+        guess a scan direction, and a wrong guess weights the wrong side silently.
+
+        Asserts a ``ValueError`` matching "Cone_Angle_Rate" for ``None`` and for NaN.
+        """
+        samples, _, _ = self._grid()
+        for rate in (None, float("nan")):
+            with pytest.raises(ValueError, match="Cone_Angle_Rate"):
+                AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **self._kw(cone_angle_rate=rate))
+
+    def test_non_finite_viewing_zenith_raises(self):
+        """``AngularPSFWeigher`` raises ``ValueError`` for a NaN viewing zenith.
+
+        The viewing zenith sizes each sample's covering cell, so a NaN would turn the coverage into nonsense.
+
+        Asserts a ``ValueError`` matching "viewing zenith" for ``viewing_zenith_deg=nan``.
+        """
+        samples, _, _ = self._grid()
+        kw = {**self._kw(), "viewing_zenith_deg": float("nan")}
+        with pytest.raises(ValueError, match="viewing zenith"):
+            AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **kw)
 
     def test_differs_from_radial_stand_in(self):
         """``AngularPSFWeigher`` weights differ in shape from ``RadialWeigher`` weights for the same footprint.
@@ -408,6 +475,7 @@ class TestAngularPSFWeigher:
             subsatellite_lon_deg=self.S_LON,
             satellite_radius_km=_SATELLITE_RADIUS_KM,
             sample_resolution_km=1.0,
+            cone_angle_rate=-1.0,
         )
         assert wf.total_energy == 0.0
         assert wf.weights.size == 0
@@ -484,3 +552,30 @@ class TestAngularPSFWeigher:
         samples = _grid_samples(np.array([self.B_LAT - 0.05, self.B_LAT + 0.05]), np.array([self.B_LON]))
         wf = AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **self._kw(resolution_km=111.0))
         assert wf.coverage == pytest.approx(1.0)
+
+    def test_oblique_view_does_not_cover_a_missing_row(self):
+        """``AngularPSFWeigher`` coverage drops below 1.0 for a one-row gap at a 60 degree viewing zenith.
+
+        Along the scan plane an oblique view foreshortens each ground cell by ``cos(VZA)``. A covering square sized as
+        if seen face-on would be twice as tall as the cell at 60 degrees and bridge a missing row of samples, so a
+        footprint with a real gap would pass the coverage rule.
+
+        Places the sub-satellite point 10 degrees north of the boresight (a 60 degree view, the scan plane north-south)
+        and weighs a 5 km grid. Asserts the complete grid covers 1.0 and the same grid missing the boresight's row of
+        latitude covers less than 0.995.
+        """
+        kw = dict(
+            subsatellite_lat_deg=self.B_LAT + 10.0,
+            subsatellite_lon_deg=self.B_LON,
+            satellite_radius_km=_SATELLITE_RADIUS_KM,
+            viewing_zenith_deg=60.0,
+            cone_angle_rate=-1.0,
+            sample_resolution_km=5.0,
+        )
+        lats = np.arange(self.B_LAT - 1.5, self.B_LAT + 1.5 + 1e-9, 0.045)
+        lons = np.arange(self.B_LON - 1.0, self.B_LON + 1.0 + 1e-9, 0.0457)
+        gapped_lats = np.delete(lats, np.argmin(np.abs(lats - self.B_LAT)))
+        full = AngularPSFWeigher().weight_field(_grid_samples(lats, lons), self.B_LAT, self.B_LON, **kw)
+        gapped = AngularPSFWeigher().weight_field(_grid_samples(gapped_lats, lons), self.B_LAT, self.B_LON, **kw)
+        assert full.coverage == pytest.approx(1.0, abs=0.01)
+        assert gapped.coverage < 0.995
