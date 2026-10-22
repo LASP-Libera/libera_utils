@@ -446,6 +446,8 @@ class ProcessingStepIdentifier(StrEnum):
     l1a_wfov_sci = ("l1a-wfov-sci", [DataProductIdentifier.l1a_icie_wfov_sci_decoded])
     l1a_axis_sample = ("l1a-axis-sample", [DataProductIdentifier.l1a_icie_axis_sample_decoded])
     l1a_nom_hk = ("l1a-nom-hk", [DataProductIdentifier.l1a_icie_nom_hk_decoded])
+    # The JPSS spacecraft position packet (APID 11): spacecraft data, not Libera instrument data.
+    l1a_sc_pos = ("l1a-sc-pos", [DataProductIdentifier.l1a_jpss_sc_pos_decoded])
 
     # SPICE processing steps
     spice_azel = ("spice-azel", [DataProductIdentifier.spice_az_ck, DataProductIdentifier.spice_el_ck])

@@ -320,6 +320,7 @@ class TestProcessingStepIdentifier:
             "l1a_wfov_sci",
             "l1a_axis_sample",
             "l1a_nom_hk",
+            "l1a_sc_pos",
             # SPICE steps
             "spice_azel",
             "spice_jpss",

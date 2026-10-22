@@ -100,7 +100,13 @@ def test_l1a_step_cli_handler_reads_the_step_and_output_path_from_the_environmen
 
 @pytest.mark.parametrize(
     ("step_name", "apid"),
-    [("l1a-rad-sample", 1036), ("l1a-wfov-sci", 1040), ("l1a-axis-sample", 1048), ("l1a-nom-hk", 1057)],
+    [
+        ("l1a-rad-sample", 1036),
+        ("l1a-wfov-sci", 1040),
+        ("l1a-axis-sample", 1048),
+        ("l1a-nom-hk", 1057),
+        ("l1a-sc-pos", 11),
+    ],
 )
 def test_step_apid(step_name, apid):
     """Each L1A step decodes the APID of its product."""
