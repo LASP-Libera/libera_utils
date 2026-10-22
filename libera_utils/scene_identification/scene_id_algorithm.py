@@ -6,13 +6,13 @@ input files of a particular product, run scene identification on each footprint,
 product, and emit an output manifest. They differ only by a handful of parameters:
 
 * which product id counts as an input (``FMATCH-CAM-CAMTIME``, or ``None`` for the CERES SSF placeholder CAM uses),
-* which :class:`~libera_utils.scene_identification.FootprintData` factory reads it,
+* which :class:`~libera_utils.scene_identification.scene_id.FootprintData` factory reads it,
 * which product-definition YAML / time variable the output is written against,
 * which scene classifications are run, and
 * logging labels.
 
 :func:`run_algorithm` is parameterized by a small :class:`SceneIdRunnerConfig`. The concrete runners are just
-the :data:`SceneIdRunnerConfig` values collected in :data:`RUNNER_CONFIGS`, keyed by variant name (``"cam"``,
+the :data:`SceneIdRunnerConfig` values collected in ``RUNNER_CONFIGS``, keyed by variant name (``"cam"``,
 ``"cam-camtime"``). Every variant runs from the one ``libera-utils scene-id <manifest>`` command, and so from one
 container image: :func:`scene_id_cli_handler` selects the config named by the ``LIBERA_SCENE_ID_VARIANT`` environment
 variable, which each processing step sets.
@@ -59,7 +59,7 @@ class SceneIdRunnerConfig:
         The SCENE-ID product this runner emits. Used only for documentation/logging; the written filename's product id
         is driven by the product definition's ``ProductID`` attribute.
     reader : Callable[[Path], FootprintData]
-        The :class:`FootprintData` factory that reads one input file (e.g. ``FootprintData.from_ceres_ssf`` or
+        The :class:`~libera_utils.scene_identification.scene_id.FootprintData` factory that reads one input file (e.g. ``FootprintData.from_ceres_ssf`` or
         ``FootprintData.from_fmatch_cam_camtime``).
     product_definition_path : Path
         Path to the SCENE-ID product-definition YAML the output is validated/written against.
@@ -133,12 +133,12 @@ def resolve_runner_config_from_env() -> SceneIdRunnerConfig:
     Returns
     -------
     SceneIdRunnerConfig
-        The :data:`RUNNER_CONFIGS` entry for the named variant.
+        The ``RUNNER_CONFIGS`` entry for the named variant.
 
     Raises
     ------
     ValueError
-        If the variable is not set or names no entry in :data:`RUNNER_CONFIGS`.
+        If the variable is not set or names no entry in ``RUNNER_CONFIGS``.
     """
     variant = os.getenv(SCENE_ID_VARIANT_ENV, "").strip()
     if not variant:
@@ -321,7 +321,7 @@ def run_scene_identification(fmatch_file_path: str | Path | S3Path, config: Scen
 
     Notes
     -----
-    The reader (:meth:`FootprintData.from_ceres_ssf` / :meth:`FootprintData.from_fmatch_cam_camtime`) opens the file
+    The reader (:meth:`~libera_utils.scene_identification.scene_id.FootprintData.from_ceres_ssf` / :meth:`~libera_utils.scene_identification.scene_id.FootprintData.from_fmatch_cam_camtime`) opens the file
     through :func:`~libera_utils.io.smart_open.smart_open`, so local and S3 inputs are handled uniformly.
     """
     logger.info("Running scene identification on %s", fmatch_file_path)

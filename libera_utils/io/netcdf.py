@@ -63,7 +63,7 @@ def write_libera_data_product(
     ----------
     data_product_definition : str | PathType | LiberaDataProductDefinition
         Path to the data product definition against which to verify conformance
-    data : dict[str, NDarray] | xr.Dataset
+    data : dict[str, np.ndarray] | xr.Dataset
         Data mapping variable names to numpy data arrays or a fully formed L1A xarray Dataset.
     output_path : str | PathType
         Base path (directory or S3 prefix) at which to write the product file
@@ -89,7 +89,7 @@ def write_libera_data_product(
         If `dynamic_product_attributes` is passed alongside a Dataset, if `time_variable` does
         not have a datetime64 dtype, or, when `strict` is True, if the Dataset does not conform
         to the product definition.
-    pydantic.ValidationError
+    pydantic_core.ValidationError
         If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
         a list of positive integers with as many entries as its ``dimensions``.
     """

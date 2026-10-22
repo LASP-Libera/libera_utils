@@ -7,9 +7,9 @@ footprint observed.
 Modules
 -------
 scene_id
-    The :class:`FootprintData` container plus the derived-variable calculations and extraction logic.
+    The :class:`~libera_utils.scene_identification.scene_id.FootprintData` container plus the derived-variable calculations and extraction logic.
 scene_definitions
-    :class:`Scene` and :class:`SceneDefinition` — the CSV-backed classification rules (TRMM, ERBE, custom).
+    :class:`~libera_utils.scene_identification.scene_definitions.Scene` and :class:`~libera_utils.scene_identification.scene_definitions.SceneDefinition` — the CSV-backed classification rules (TRMM, ERBE, custom).
 
 The most commonly used symbols are re-exported here so that callers (for example the SCENE-ID product runners in
 ``scene_id_algorithm``) can simply do ``from libera_utils.scene_identification import FootprintData``. Code that

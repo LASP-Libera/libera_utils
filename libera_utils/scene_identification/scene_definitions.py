@@ -29,15 +29,10 @@ class Scene:
     ----------
     scene_id : int
         Unique identifier for this scene
-    variable_ranges : dict of str to tuple of (float, float)
+    variable_ranges : dict[str, tuple[float, float]]
         Dictionary mapping variable names to (min, max) tuples defining
         the acceptable range for each variable. None values indicate
         unbounded ranges (no min or no max constraint).
-
-    Methods
-    -------
-    matches(data_point)
-        Check if a data point belongs to this scene
 
     Examples
     --------
@@ -260,7 +255,7 @@ class SceneDefinition:
 
         Returns
         -------
-        dict of str to tuple of (float or None, float or None)
+        dict[str, tuple[float | None, float | None]]
             Dictionary mapping variable names to (min, max) tuples.
             None values indicate unbounded ranges (no constraint).
 
@@ -361,7 +356,7 @@ class SceneDefinition:
 
         Returns
         -------
-        dict of str to tuple of (float or None, float or None)
+        dict[str, tuple[float | None, float | None]]
             Mapping of each classification variable to its (min, max) bounds for
             the requested scene. ``None`` indicates an unbounded side.
 
@@ -391,7 +386,7 @@ class SceneDefinition:
 
         Returns
         -------
-        dict of str to np.ndarray
+        dict[str, np.ndarray]
             Mapping of output variable name (``scene_bin_{type}_{variable}_min``
             / ``_max``) to an array the same shape as ``scene_ids``. Continuous
             variables use ``float32`` with ``NaN`` marking an unbounded bin side
@@ -876,7 +871,7 @@ class SceneDefinition:
 
         Returns
         -------
-        dict of str to tuple of (float or None, float or None)
+        dict[str, tuple[float | None, float | None]]
             Global bounds for each variable
 
         Notes

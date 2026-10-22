@@ -65,7 +65,7 @@ class FmatchCoverageFlag(enum.IntFlag):
     the external-variable aggregation has run. The values are OR-combined and tested
     bitwise, and an empty (zero) value means "no coverage issue". The
     ``PARTIAL_COVERAGE`` bit deliberately shares bit 0 with
-    :class:`~libera_utils.footprint_matching.camera_segmentation.CameraFootprintQualityFlag.PARTIAL_COVERAGE`
+    ``CameraFootprintQualityFlag.PARTIAL_COVERAGE`` (``libera_utils.footprint_matching.camera_segmentation``)
     so the camera segmentation's own partial-coverage flag and the PSF-energy
     partial-coverage flag OR together into one consistent "partial" bit; the other
     bits use positions the camera flag does not (it uses bit 1 for
@@ -84,7 +84,7 @@ class FmatchCoverageFlag(enum.IntFlag):
         (``BoundingBox.truncated``), so it only ever had partial ground coverage. Bit 3.
     OFF_LIMB
         The view's centroid is off the Earth's limb (a space / calibration look), so
-        :func:`compute_footprint_bounding_box` reports *no* Earth footprint at all. The
+        :func:`~libera_utils.footprint_matching.geometry.compute_footprint_bounding_box` reports *no* Earth footprint at all. The
         record is retained for index alignment but its external variables are left at
         their fill sentinel and its coverage is forced to zero -- it must never be
         scored as a real observation. Bit 4.
@@ -104,14 +104,18 @@ class BoundingBox(NamedTuple):
 
     Attributes
     ----------
-    lat_min, lat_max : float
-        Latitude extent in degrees. ``lat_min < lat_max``.
-    lon_min, lon_max : float
-        Longitude extent in degrees, always with ``lon_min <= lon_max``. A box that
+    lat_min : float
+        Lower latitude bound in degrees. ``lat_min < lat_max``.
+    lat_max : float
+        Upper latitude bound in degrees.
+    lon_min : float
+        Lower longitude bound in degrees, always with ``lon_min <= lon_max``. A box that
         does not cross the antimeridian is in [-180, 180]. A box that crosses it is
         given in [0, 360), so ``lon_max > 180`` (e.g. ``179.9`` to ``180.2``); subtract
         360 from the part above 180 to get signed longitudes. A box enclosing a pole
         spans the full ``-180`` to ``180``.
+    lon_max : float
+        Upper longitude bound in degrees.
     wraps_dateline : bool
         True when the box crosses the antimeridian, i.e. it is given in the [0, 360)
         form with ``lon_max > 180``. The reader base class queries both halves.
@@ -167,7 +171,7 @@ class TimeMatch(enum.Enum):
     NEAREST_PASS
         The source is swath or point data with a time per sample (CERES SSF, CLDPIX).
         Of the samples in the box, those within ``PASS_WINDOW`` of the smallest
-        |sample time - footprint time| are served: the nearest pass, whole, and no
+        ``|sample time - footprint time|`` are served: the nearest pass, whole, and no
         other pass. A footprint whose nearest sample is farther than
         ``MAX_TIME_OFFSET`` gets no samples.
     """
@@ -223,8 +227,10 @@ class PointSamples:
 
     Attributes
     ----------
-    lats, lons : np.ndarray
-        1-D ``(n,)`` float64 sample coordinates, degrees; longitude in [-180, 180].
+    lats : np.ndarray
+        1-D ``(n,)`` float64 sample latitudes, degrees.
+    lons : np.ndarray
+        1-D ``(n,)`` float64 sample longitudes, degrees, in [-180, 180].
         Samples with a non-finite coordinate are dropped by the reader base class.
     values : np.ndarray
         ``(n_var, n)`` float32 values, NaN where the source has no value. Axis 0 follows
@@ -234,7 +240,7 @@ class PointSamples:
         ``NEAREST_PASS`` reader; ``None`` otherwise.
     spacing_km : float or None
         The samples' native spacing, km, measured on this body of data (see
-        :func:`~libera_utils.footprint_matching.readers._points.neighbor_spacing_km`).
+        ``libera_utils.footprint_matching.readers._points.neighbor_spacing_km``).
         ``None`` means the reader's declared ``RESOLUTION_KM`` applies. A swath that is
         subsampled on delivery is served with its true spacing, so the coverage measure
         credits each sample with the cell it really stands for.
@@ -268,8 +274,10 @@ class SampleSet:
 
     Attributes
     ----------
-    lats, lons : np.ndarray
-        1-D ``(n,)`` float64 sample coordinates, degrees.
+    lats : np.ndarray
+        1-D ``(n,)`` float64 sample latitudes, degrees.
+    lons : np.ndarray
+        1-D ``(n,)`` float64 sample longitudes, degrees.
     values : np.ndarray
         ``(n_var, n)`` float32 values in the reader's ``VARIABLES`` order, NaN where the
         source has no value at that sample.
@@ -349,7 +357,7 @@ class RadiometerFootprint:
     a geographic bounding box (the region the readers serve ancillary samples from)
     plus the boresight geolocation and viewing zenith the PSF weighting reads. It is the
     radiometer-path analog of the camera path's
-    :class:`~libera_utils.footprint_matching.camera_segmentation.PseudoFootprint`, kept
+    ``libera_utils.footprint_matching.camera_segmentation.PseudoFootprint``, kept
     deliberately small so it stays dependency-free here.
 
     The subsatellite point and satellite radius are required: L1B RAD populates them
@@ -366,13 +374,16 @@ class RadiometerFootprint:
     time : np.datetime64
         Radiometer observation time (L1B ``RADIOMETER_TIME``). The readers' time
         selection (:class:`TimeMatch`) matches ancillary samples to it.
-    latitude, longitude : float
-        Boresight centroid (L1B ``Latitude``/``Longitude``), degrees.
+    latitude : float
+        Boresight centroid latitude (L1B ``Latitude``), degrees.
+    longitude : float
+        Boresight centroid longitude (L1B ``Longitude``), degrees.
     viewing_zenith_angle : float
         Viewing zenith angle (L1B ``Viewing_Zenith_Surface``), degrees.
-    subsatellite_latitude, subsatellite_longitude : float
-        Geodetic sub-point of the spacecraft (L1B ``Subsatellite_Latitude`` /
-        ``Subsatellite_Longitude``), degrees.
+    subsatellite_latitude : float
+        Geodetic sub-point latitude of the spacecraft (L1B ``Subsatellite_Latitude``), degrees.
+    subsatellite_longitude : float
+        Geodetic sub-point longitude of the spacecraft (L1B ``Subsatellite_Longitude``), degrees.
     satellite_radius_km : float
         Spacecraft distance from Earth's center (L1B
         ``Radius_of_Satellite_from_Center_of_Earth``), km. Not L1B ``Altitude``, which is
@@ -386,7 +397,7 @@ class RadiometerFootprint:
         stated way: kept, weighted direction-independently, and QA-flagged.
     off_limb : bool
         ``True`` for a space / calibration view whose centroid is off the Earth's limb,
-        i.e. one with no Earth footprint (:class:`OffLimbError`). ``bbox`` is then
+        i.e. one with no Earth footprint (:class:`~libera_utils.footprint_matching.geometry.OffLimbError`). ``bbox`` is then
         ``None``; the aggregation path skips these records (fill values, zero coverage)
         and flags them ``OFF_LIMB``.
 

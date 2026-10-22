@@ -49,8 +49,9 @@ class LiberaVariableDefinition(BaseModel):
     ----------
     dtype: str
         The data type of the variable's data array, specified as a string
-    attributes: VariableAttributes
-        The attribute metadata for the variable, containing specific key value pairs for CF metadata compliance
+    attributes: dict
+        The attribute metadata for the variable, mapping attribute name to value. Contains the
+        specific key value pairs required for CF metadata compliance.
     dimensions: list[str]
         A list of dimension names that the variable's data array references.
     encoding: dict
@@ -60,7 +61,7 @@ class LiberaVariableDefinition(BaseModel):
 
     Raises
     ------
-    ValidationError
+    pydantic_core.ValidationError
         If ``dimensions`` names a dimension the standard dimension set does not define, if
         ``dtype`` is not a recognized NumPy dtype, or if ``encoding['chunksizes']`` is not a list
         of positive integers with as many entries as ``dimensions``.
@@ -566,10 +567,13 @@ class LiberaDataProductDefinition(BaseModel):
 
     Attributes
     ----------
-    data_variables: dict[str, LiberaVariable]
-        A dictionary of variable names and their corresponding LiberaVariable objects, which contain metadata and data.
-    product_metadata: ProductMetadata | None
-        The metadata associated with the data product, including dynamic metadata and spatio-temporal metadata.
+    coordinates: dict
+        Coordinate variable names mapped to their :class:`LiberaVariableDefinition`.
+    variables: dict
+        Data variable names mapped to their :class:`LiberaVariableDefinition`, which carry
+        metadata and encoding.
+    attributes: dict
+        Product level attribute metadata, including dynamic and spatio-temporal metadata.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -689,7 +693,7 @@ class LiberaDataProductDefinition(BaseModel):
 
         Returns
         -------
-        DataProductDefinition
+        LiberaDataProductDefinition
             Configured instance with loaded metadata and optional data
         """
         _path = cast(PathType, AnyPath(product_definition_filepath))
