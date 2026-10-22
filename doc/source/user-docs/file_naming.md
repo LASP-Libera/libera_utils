@@ -26,11 +26,6 @@ LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456
 | `revision`     | `R20270103T080910123456` | UTC creation time of the file, `R` + `YYYYMMDDTHHMMSS` + microseconds (`ffffff`) |
 | `extension`    | `nc`                     | `nc` for NetCDF-4 products, `bsp` for SPKs, `bc` for CKs                         |
 
-Names with the earlier second-resolution revision, `R` + `YYDDDHHMMSS` (e.g. `R25005112233`), still parse.
-Rebuilding such a name from its parts writes the microsecond form. The two revision forms do not sort correctly
-against each other as strings, so order files by `filename_parts.revision`, which is a timezone-aware UTC
-`datetime` for both forms.
-
 Build filenames with `LiberaDataProductFilename.from_filename_parts` rather than hand-crafting strings. Only the
 product, version, and time range are required; the revision defaults to the current UTC time at the call:
 
