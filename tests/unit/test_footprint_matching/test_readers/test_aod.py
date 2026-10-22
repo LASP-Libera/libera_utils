@@ -70,6 +70,8 @@ class TestVIIRSAODReaderClassAttributes:
 
         The PSF weigher sizes each sample's coverage from this value and every query box is padded by half a cell of
         it, so a wrong value misstates footprint coverage and can drop cells at a box's edge.
+
+        Asserts the ``RESOLUTION_KM`` class attribute equals ``111.0``.
         """
         assert VIIRSAODReader.RESOLUTION_KM == 111.0
 
@@ -371,7 +373,7 @@ class TestVIIRSAODReaderRealSubset:
         assert (native.lon_axis[0], native.lon_axis[-1]) == (-179.5, 179.5)
 
     def test_fill_and_out_of_range_cells_are_nan(self, reader):
-        """On a real granule, fill cells are NaN and every remaining value lies in its field's valid range.
+        """On a real granule, ``VIIRSAODReader`` serves fill as NaN, leaving no negative AOD and only type codes 0 to 7.
 
         This checks the masking against the provider's own attributes rather than the synthetic fixture's: an unmasked
         -999 fill would show up as a negative AOD or an unknown aerosol code.

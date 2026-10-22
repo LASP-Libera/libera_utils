@@ -20,7 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `notebooks/03_readers_swath.ipynb`, a demonstration of the swath readers.
 - `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available, as on aarch64; the Docker image installs it.
 - `libera_utils.footprint_matching.sources`: `AncillarySources` (the readers active for a mode, queried per footprint with a box and a time) and `build_sources`. Each reader holds its source once (a static reader its whole indexed body of data, a stepped reader the one hourly step nearest the current footprint, a pass reader the granules in its time window) and every query is answered from that.
-- `notebooks/04_sources_query.ipynb`, a demonstration of the box query and time matching.
+- `notebooks/04_sources_query.ipynb`, a demonstration of the box query, time matching and coverage.
+- `libera_utils.footprint_matching.weighting`: `RadialWeigher` and `AngularPSFWeigher` weight each native sample where it lies, and each `WeightField` carries the footprint's `coverage`: the share of the PSF's energy inside the native cell of at least one finite sample (each sample covers the square of half-width `RESOLUTION_KM / sqrt(2)`, measured on a reference grid in the weigher's own frame), so a swath gap or a source beyond its time window reads as missing coverage.
+- `libera_utils.footprint_matching.aggregation.aggregate_sample_variables`, one scalar per product variable from a footprint's weighted samples.
+- `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
+- `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
 
 ### Changed
 

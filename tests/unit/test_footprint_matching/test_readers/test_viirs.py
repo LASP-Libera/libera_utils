@@ -285,8 +285,8 @@ class TestVIIRSCldpropD3ReaderTranspose:
         transposed grid would cut columns instead of rows or serve another row's values.
 
         Writes ``100 * latitude + longitude`` into every cell, queries a box over the lower half of the fixture's
-        latitudes and the full longitude range, and asserts the top row (3.5°, beyond the box and its one-cell padding)
-        is not served while all 8 longitudes are, each sample holding the code of its own location.
+        latitudes and the full longitude range, and asserts the top row (3.5°, beyond the box and its half-cell, 0.5°,
+        padding) is not served while all 8 longitudes are, each sample holding the code of its own location.
         """
         reader, path = _make_reader(tmp_path)
         _write_position_coded_means(path)

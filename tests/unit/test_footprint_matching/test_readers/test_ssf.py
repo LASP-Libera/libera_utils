@@ -84,8 +84,9 @@ class TestSSFReaderClassAttributes:
         would drop or duplicate an aerosol type.
 
         Asserts representative extended names are present, including the 1-D ``surface_albedo`` and
-        ``toa_incoming_solar_radiation``, that every one of them has ``only_modes == (IMAGER,)``, that seven
-        ``aerosol_type_percentage_typeN`` fields exist and that each 1-D field appears exactly once.
+        ``toa_incoming_solar_radiation``; that every spec with ``only_modes`` set has ``only_modes == (IMAGER,)``; and
+        that seven ``aerosol_type_percentage_typeN`` names exist. The names are collected into a set, so the
+        exactly-once counts for the 1-D fields confirm presence but cannot detect a duplicate.
         """
         names = {v.name for v in SSFReader.VARIABLES}
         for name in (
@@ -111,8 +112,9 @@ class TestSSFReaderClassAttributes:
     def test_weighted_mode_variables_are_int16(self):
         """``SSFReader.VARIABLES`` declares the mode-aggregated fields as int16 and every other field as float32.
 
-        The scene and ADM type fields are encoded CERES integer codes; written as float they would no longer match the
-        source codes exactly, and a continuous field written as an integer would lose its fraction.
+        The scene and ADM type fields are encoded CERES integer codes, stored as integers like the source's int16
+        fields; a float dtype would present a code as a measured quantity, and a continuous field written as an integer
+        would lose its fraction.
 
         Asserts, for every spec, ``dtype`` is ``"int16"`` when ``aggregation`` is ``"weighted_mode"`` and ``"float32"``
         otherwise.
@@ -177,8 +179,8 @@ class TestSSFReaderSamples:
     def test_points_absent_from_unrelated_tile(self, tmp_path):
         """``SSFReader.samples_in`` serves nothing in a box at +170 degrees for footprints stored at 350 degrees.
 
-        If longitude were not converted, or were converted wrongly, footprints could be served at the wrong place on
-        Earth and attributed to unrelated Libera footprints.
+        A wrong conversion, for example subtracting 180 instead of wrapping, would move footprints stored at 350° to
+        170° and attribute them to unrelated Libera footprints on the far side of the Earth.
 
         Reads the default fixture over a box at 169..171 degrees longitude and asserts no footprint is served.
         """
@@ -482,8 +484,8 @@ class TestSSFReaderGeolocationChecks:
         The reader assumes a true -90..90 latitude; a granule using another convention, such as a colatitude, would
         place every footprint at the wrong latitude without an error.
 
-        Parametrized over a ``"degrees"`` units attribute and no units attribute; asserts the error names
-        ``instrument_fov_latitude`` and its units.
+        Parametrized over a ``"degrees"`` units attribute and no units attribute; asserts the error matches
+        ``"instrument_fov_latitude has units"``.
         """
         path = make_ssf_fixture(tmp_path, latitude_units=units)
         with pytest.raises(ValueError, match="instrument_fov_latitude has units"):

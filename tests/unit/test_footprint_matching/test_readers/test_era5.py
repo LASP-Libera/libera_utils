@@ -279,7 +279,8 @@ class TestERA5ReaderValidTimeDimension:
     def test_valid_time_values_correct(self, tmp_path):
         """``ERA5Reader`` serves the stored wind values from a file with a ``valid_time`` dimension.
 
-        Finding the step axis is not enough: the planes read from that step must carry the file's values.
+        ERA5 files from the CDS may name their time axis ``valid_time`` instead of ``time``; a reader that found that
+        axis but read the wrong slice of it would publish winds that were never in the file.
 
         Writes a ``valid_time`` file with ``u10`` 3.0 and ``v10`` -2.0 and asserts the first two served planes hold
         those constants.
@@ -313,8 +314,8 @@ class TestERA5ReaderMissingVariables:
         A CDS download configured with only some of the fields would otherwise leave planes unfilled, and the product
         would carry values that were never read.
 
-        Writes a file holding only ``u10`` and ``v10`` and asserts a query raises ``KeyError`` naming the missing
-        variables.
+        Writes a file holding only ``u10`` and ``v10`` and asserts a query raises ``KeyError`` whose message says a
+        variable is missing.
         """
         import pytest
         import xarray as xr
