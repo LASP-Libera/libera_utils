@@ -408,12 +408,12 @@ def aggregate_external_variables(
     std / ranked scene) to collapse the samples to a single value per footprint. No
     sample is averaged, binned or interpolated before the weigher sees it. The active
     reader set - and therefore the keys of the returned dict - grows with the mode's
-    latency (e.g. CAM has era5, igbp, nise, viirs_brdf, viirs_cloud; IMAGER
+    latency (e.g. CAM has era5_single_level, igbp, nise, viirs_brdf, viirs_cldprop_d3; IMAGER
     additionally has era5_pressure, viirs_aod, and the RBSP ssf and cldpix fields).
     Per-spec gating also applies (see below).
 
     Every output variable is named ``<source_key>_<spec_name>`` (e.g.
-    ``era5_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
+    ``era5_single_level_wind_u10``, ``igbp_surface_type``, ``cldpix_cloud_mask``), matching the
     product definition variable names. The reader's ``INSTRUMENT`` is recorded in
     each variable's ``long_name`` rather than in the name. Per-spec gating uses
     :func:`~libera_utils.footprint_matching.types.spec_active_in_mode`: a spec's
