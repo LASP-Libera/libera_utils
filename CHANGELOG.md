@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
 - `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
 - `aggregate_external_variables` runs the footprints on a process pool when the `FMATCH_WORKERS` configuration key (or environment variable) is above one: contiguous along-track chunks, forked after the sources are loaded so the workers share one copy of every static source, with the same output as the single-process run.
-- `doc/source/developer-docs/footprint_matching_design_decisions.md`, the design decisions behind the native-sample path, with their consequences for product interpretation.
+- `doc/source/developer-docs/footprint_matching_design_decisions.md`, the design decisions behind the native-sample path, with their consequences for product interpretation, and where to change the reader configuration when a source satellite is swapped or a variable or reader is added.
 
 ### Changed
 
