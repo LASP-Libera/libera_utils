@@ -4,7 +4,7 @@ Importing this package triggers the registration of all built-in reader
 subclasses via the ``__init_subclass__`` hook defined in
 :class:`~libera_utils.footprint_matching.readers.base.AncillaryReader`.
 After this import, :class:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry`
-lists the gridded readers: ``era5``, ``era5_pressure``, ``igbp``, ``nise``,
+lists the gridded readers: ``era5_pressure``, ``era5_single_level``, ``igbp``, ``nise``,
 ``viirs_aod``, ``viirs_brdf``.
 
 Public API

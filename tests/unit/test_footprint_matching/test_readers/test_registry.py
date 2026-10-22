@@ -22,7 +22,7 @@ from libera_utils.footprint_matching.readers import (
 from libera_utils.footprint_matching.types import OperationalMode, TimeMatch, VariableSpec
 
 _GRIDDED = {
-    "era5": ERA5Reader,
+    "era5_single_level": ERA5Reader,
     "era5_pressure": ERA5PressureLevelReader,
     "igbp": IGBPReader,
     "nise": NISEReader,
@@ -56,7 +56,7 @@ class TestLookup:
         with pytest.raises(KeyError, match="No reader registered with name 'nope'") as excinfo:
             ReaderRegistry.get("nope")
         assert "Available readers:" in str(excinfo.value)
-        assert "'era5'" in str(excinfo.value)
+        assert "'era5_single_level'" in str(excinfo.value)
 
     def test_list_readers_is_sorted_and_holds_the_gridded_readers(self):
         """``ReaderRegistry.list_readers`` returns the registered keys sorted, including every built-in gridded reader.
