@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
@@ -232,6 +233,24 @@ class TestERA5ReaderSamples:
         assert samples.timestamp_source is None
         assert samples.times is None
         assert samples.n_samples == 16
+
+    def test_dateline_box_on_a_0_to_360_file_serves_both_ends(self, tmp_path):
+        # A 0..360 file is put on an ascending -180..180 axis, so the two halves of a split box
+        # query both ends of one axis. u10 carries each column's stored 0..360 longitude.
+        constant = make_era5_netcdf_fixture(tmp_path, lon_min=0.0, lon_max=359.0, n_lon=360, filename="constant.nc")
+        ds = xr.load_dataset(constant)
+        ds["u10"] = ds["u10"].copy(data=np.broadcast_to(ds["longitude"].values, ds["u10"].shape).astype(np.float32))
+        path = tmp_path / "era5_0_360.nc"
+        ds.to_netcdf(path)
+
+        samples = ERA5Reader(path).samples_in(BoundingBox(0.0, 2.0, 178.6, 181.4, wraps_dateline=True), _T)
+
+        assert samples.n_samples == 4 * 3
+        assert sorted(set(zip(samples.lons.tolist(), samples.values[0].tolist(), strict=True))) == [
+            (-180.0, 180.0),
+            (-179.0, 181.0),
+            (179.0, 179.0),
+        ]
 
 
 class TestERA5ReaderTimeSteps:
