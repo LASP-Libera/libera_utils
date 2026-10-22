@@ -35,8 +35,7 @@ File naming:
     CLDPROP_D3_VIIRS_NOAA20.A{YYYYDDD}.{collection}.{YYYYDDDHHMMSS}.nc
 """
 
-from __future__ import annotations
-
+import netCDF4
 import numpy as np
 
 from libera_utils.footprint_matching.readers.base import StaticReader
@@ -117,8 +116,6 @@ class VIIRSCloudReader(StaticReader):
             ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
             [cloud_optical_thickness, cloud_top_pressure] (fill as NaN).
         """
-        import netCDF4  # noqa: PLC0415
-
         with netCDF4.Dataset(str(self.single_file_path), "r") as ds:
             # Root-level coordinate arrays: (180,) and (360,) respectively
             lats_full = np.array(ds.variables["latitude"][:], dtype=np.float64)

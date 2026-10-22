@@ -9,8 +9,6 @@ Real CLDPROP_D3 files can be downloaded from:
     Example: CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710.nc
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 

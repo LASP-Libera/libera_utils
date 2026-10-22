@@ -10,8 +10,6 @@ Real CLDPIX files come from NASA CERES, e.g.
 ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc``.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 

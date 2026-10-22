@@ -57,11 +57,10 @@ FLASHFlux: https://ceres.larc.nasa.gov/data/#fast-longwave-and-shortwave-flux-fl
 File naming: CER_SSF_{platform}-{instrument}-{imager}_{config}_{prod}.{YYYYMMDDHH}.nc
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import NamedTuple
 
+import netCDF4
 import numpy as np
 
 from libera_utils.footprint_matching.readers._points import (
@@ -473,8 +472,6 @@ class SSFReader(PassReader):
         ValueError
             If either attribute is missing or is not an ISO 8601 instant.
         """
-        import netCDF4  # noqa: PLC0415
-
         with netCDF4.Dataset(str(path), "r") as ds:
             return granule_time_coverage(ds, source=f"ssf {path.name}")
 
@@ -496,8 +493,6 @@ class SSFReader(PassReader):
             If the granule's time variable cannot be decoded (see
             :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`).
         """
-        import netCDF4  # noqa: PLC0415
-
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
             # apply_fill_and_valid_range (which normalizes descending

@@ -188,7 +188,10 @@ class VIIRSBRDFReader(StaticReader):
         Notes
         -----
         The fill and valid-range test runs on the raw int16 values, before scaling, and
-        each field is scaled straight into the preallocated float32 array.
+        each field is scaled straight into the preallocated float32 array. This is done
+        here rather than with ``_points.apply_fill_and_valid_range``: that helper returns
+        float64, about 207 MB of transient memory per global field next to the
+        preallocated float32 array.
         """
         source = str(self.single_file_path)
         with h5py.File(source, "r") as f:

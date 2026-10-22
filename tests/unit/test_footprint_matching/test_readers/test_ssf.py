@@ -9,8 +9,6 @@ Real SSF/FLASHFlux files come from NASA CERES, e.g.
 ``CER_SSF_NOAA20-FM6-VIIRS_alpha4_000000.2020040115.nc``.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 
