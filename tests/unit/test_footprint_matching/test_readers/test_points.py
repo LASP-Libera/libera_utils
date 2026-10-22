@@ -190,7 +190,14 @@ class TestFieldFillValue:
         [(np.float32, np.float32(3.4028235e38), float(np.float32(3.4028235e38))), (np.int8, 127, 127)],
     )
     def test_returns_the_attribute(self, tmp_path, dtype, fill, expected):
-        # Targets reading the declared _FillValue; asserts the stored value comes back as a Python scalar.
+        """``field_fill_value`` returns a field's declared ``_FillValue`` as a Python scalar.
+
+        The readers mask each field with the sentinel the file declares; a wrong or reshaped value would leave every
+        fill cell in the field to be served as data.
+
+        Parametrized over a float32 field filled with the float32 maximum and an int8 field filled with 127; builds
+        each in a scratch netCDF file and asserts the returned value equals the stored fill.
+        """
         ds, var = self._variable(tmp_path, dtype, fill)
         try:
             assert field_fill_value(var, source="test") == expected
@@ -198,7 +205,14 @@ class TestFieldFillValue:
             ds.close()
 
     def test_field_without_fill_value_raises(self, tmp_path):
-        # Targets a field with no _FillValue; asserts a ValueError naming the field rather than a guessed sentinel.
+        """``field_fill_value`` raises ``ValueError`` naming the field when it has no ``_FillValue`` attribute.
+
+        Guessing a sentinel for a field that declares none could mask valid values or let real fill cells through as
+        data, so the reader stops instead.
+
+        Builds a float32 field created with ``fill_value=False`` and asserts a ``ValueError`` whose message names the
+        field and the missing ``_FillValue``.
+        """
         ds, var = self._variable(tmp_path, np.float32, False)
         try:
             with pytest.raises(ValueError, match="field has no _FillValue attribute"):
@@ -224,6 +238,14 @@ class TestDecodeCfTimes:
         return ds, var
 
     def test_seconds_since_epoch(self, tmp_path):
+        """``decode_cf_times`` decodes values in CF ``seconds since`` units into ``datetime64[ns]`` instants.
+
+        Sample times decide which footprint a measurement is matched to, so a wrong epoch or unit would attach
+        measurements to the wrong footprints.
+
+        Decodes [0, 3600] seconds since 2026-01-01 and asserts a ``datetime64[ns]`` result of midnight and 01:00 on
+        that day.
+        """
         ds, var = self._variable(tmp_path, [0.0, 3600.0], units="seconds since 2026-01-01 00:00:00")
         try:
             times = decode_cf_times(var, source="test")
@@ -234,6 +256,14 @@ class TestDecodeCfTimes:
         assert times[1] == np.datetime64("2026-01-01T01:00:00", "ns")
 
     def test_masked_value_is_nat(self, tmp_path):
+        """``decode_cf_times`` decodes a masked time entry to ``NaT`` and leaves valid entries decoded.
+
+        A missing time decoded as the epoch would give its sample a time it was never observed at; ``NaT`` lets the
+        reader drop the sample instead.
+
+        Writes the variable's -1 fill into the second of two times, so netCDF4 masks it, and asserts the first time is
+        valid and the second is ``NaT``.
+        """
         ds, var = self._variable(tmp_path, [0.0, 60.0], units="seconds since 2026-01-01", mask_index=1)
         try:
             times = decode_cf_times(var, source="test")
@@ -243,6 +273,12 @@ class TestDecodeCfTimes:
         assert np.isnat(times[1])
 
     def test_missing_units_raises(self, tmp_path):
+        """``decode_cf_times`` raises ``ValueError`` for a time variable with no ``units`` attribute.
+
+        Without units the numbers have no epoch or scale, and any assumed one would silently shift every sample time.
+
+        Builds a time variable without ``units`` and asserts a ``ValueError`` saying it has no ``'units'`` attribute.
+        """
         ds, var = self._variable(tmp_path, [0.0])
         try:
             with pytest.raises(ValueError, match="no 'units' attribute"):
@@ -251,6 +287,13 @@ class TestDecodeCfTimes:
             ds.close()
 
     def test_undecodable_units_raise(self, tmp_path):
+        """``decode_cf_times`` raises ``ValueError`` when the ``units`` are not a CF time unit netCDF4 can decode.
+
+        A unit string the decoder does not understand must stop the read with a clear message rather than surface as an
+        opaque library error or a wrong time.
+
+        Builds a time variable with units ``"julian day"`` and asserts a ``ValueError`` saying it cannot decode them.
+        """
         ds, var = self._variable(tmp_path, [0.0], units="julian day")
         try:
             with pytest.raises(ValueError, match="cannot decode"):
@@ -259,8 +302,14 @@ class TestDecodeCfTimes:
             ds.close()
 
     def test_fill_and_out_of_range_values_are_nat(self, tmp_path):
-        # The CERES SSF time fill is ~1.8e308 days, which would overflow the calendar
-        # arithmetic; it and anything outside valid_range decode to NaT instead.
+        """``decode_cf_times`` decodes ``_FillValue`` and out-of-``valid_range`` entries to ``NaT`` with masking off.
+
+        The CERES SSF time fill is about 1.8e308 days, which would overflow the calendar arithmetic, and the SSF reader
+        turns netCDF4's automatic masking off, so the function must apply the fill and range itself.
+
+        Writes 18353.5 days since 1970, the float64 maximum fill and 5.0 (below a ``valid_range`` of 10000..400000),
+        reopens with ``set_auto_mask(False)``, and asserts 2020-04-01T12:00 followed by two ``NaT``.
+        """
         import netCDF4
 
         path = tmp_path / "fill.nc"
@@ -295,6 +344,14 @@ class TestDecodeHoursOfDay:
         return ds, var
 
     def test_hours_date_from_the_granule_day(self, tmp_path):
+        """``decode_hours_of_day`` adds fractional UTC hours to the given day's midnight, keeping the variable's shape.
+
+        CLDPIX stores only the hour of day, so the date must come from the granule; a wrong day or hour scale would
+        shift every pixel away from the footprints it was observed with.
+
+        Decodes a (2, 2) float32 variable holding 15.5 and 15.999 hours against 2020-04-10 and asserts the shape,
+        15:30:00 exactly, and 15:59:56.4 to within 10 ms (float32 resolution).
+        """
         ds, var = self._variable(tmp_path, [15.5, 15.999])
         try:
             times = decode_hours_of_day(var, np.datetime64("2020-04-10"), source="test")
@@ -306,6 +363,14 @@ class TestDecodeHoursOfDay:
         assert abs(times[1, 1] - np.datetime64("2020-04-10T15:59:56.4", "ns")) < np.timedelta64(10, "ms")
 
     def test_fill_is_nat(self, tmp_path):
+        """``decode_hours_of_day`` decodes fill entries to ``NaT`` and leaves valid hours decoded.
+
+        A float32-maximum fill read as hours would land a pixel years past its granule; ``NaT`` lets the reader drop
+        it.
+
+        Overwrites the second row of a (2, 2) variable with the float32-maximum fill and asserts the first row has no
+        ``NaT`` and the second row is all ``NaT``.
+        """
         ds, var = self._variable(tmp_path, [1.0, 2.0])
         var[1, :] = np.float32(3.4028235e38)
         try:
@@ -316,6 +381,13 @@ class TestDecodeHoursOfDay:
         assert np.isnat(times[1]).all()
 
     def test_wrong_units_raise(self, tmp_path):
+        """``decode_hours_of_day`` raises ``ValueError`` when the variable's ``units`` are not hours.
+
+        Reading a CF ``seconds since`` time as hours of day would put every sample at a meaningless time.
+
+        Builds the variable with units ``"seconds since 1970-01-01"`` and asserts a ``ValueError`` that says fractional
+        hours were expected.
+        """
         ds, var = self._variable(tmp_path, [1.0], units="seconds since 1970-01-01")
         try:
             with pytest.raises(ValueError, match="fractional hours"):
@@ -326,6 +398,14 @@ class TestDecodeHoursOfDay:
 
 class TestNeighborSpacing:
     def test_swath_reports_the_larger_of_across_and_along(self):
+        """``neighbor_spacing_km`` reports the larger of the across-track and along-track spacing of a 2-D swath.
+
+        The coverage measure credits each sample with this spacing, so a swath subsampled in one direction would be
+        credited with too small an area, and its coverage understated, if only the finer direction were measured.
+
+        Builds a 10 x 5 equatorial grid with rows 0.018 deg (about 2 km) apart and pixels 0.063 deg (about 7 km) apart
+        and asserts a spacing of 7 km within 3%.
+        """
         # 2 km along-track rows, 7 km across-track pixels at the equator (0.063 deg).
         lats = np.arange(0.0, 0.18, 0.018)[:, None] + np.zeros((1, 5))
         lons = np.zeros((10, 1)) + np.arange(0.0, 0.315, 0.063)[None, :]
@@ -333,18 +413,41 @@ class TestNeighborSpacing:
         assert spacing == pytest.approx(7.0, rel=0.03)
 
     def test_track_ignores_large_jumps(self):
+        """``neighbor_spacing_km`` reports a 1-D track's typical step, not inflated by a single large jump.
+
+        A scan turnaround or data gap is not a sample spacing; letting it raise the estimate would credit each sample
+        with too much area and overstate coverage.
+
+        Builds two runs of five points 0.108 deg (about 12 km) apart in latitude separated by a jump of about 500 km,
+        and asserts a spacing of 12 km within 3%.
+        """
         # 12 km steps with one 500 km jump (a scan turnaround) that must not inflate the median.
         lats = np.concatenate([np.arange(0.0, 0.54, 0.108), np.arange(5.0, 5.54, 0.108)])
         lons = np.zeros_like(lats)
         assert neighbor_spacing_km(lats, lons) == pytest.approx(12.0, rel=0.03)
 
     def test_non_finite_and_degenerate_inputs(self):
+        """``neighbor_spacing_km`` returns NaN when there are fewer than two finite neighboring samples.
+
+        With no measurable pair there is no spacing, and a made-up number such as zero would be credited to every
+        sample as if it were measured.
+
+        Asserts NaN for a single point and for two points whose latitudes are both NaN.
+        """
         assert np.isnan(neighbor_spacing_km(np.array([0.0]), np.array([0.0])))
         assert np.isnan(neighbor_spacing_km(np.array([np.nan, np.nan]), np.array([0.0, 0.0])))
 
 
 class TestScanToScanSpacing:
     def test_pairs_the_same_scan_position_on_consecutive_scans(self):
+        """``scan_to_scan_spacing_km`` measures the distance between a scan position and the same position one scan on.
+
+        SSF footprints are listed scan by scan, so consecutive footprints are only the along-scan spacing apart; the
+        along-track spacing between scans, several times larger, is only seen by pairing like positions.
+
+        Builds three scans of four footprints 0.108 deg (about 12 km) apart along-scan, with scans 0.396 deg (about 44
+        km) apart, and asserts ``neighbor_spacing_km`` gives 12 km while ``scan_to_scan_spacing_km`` gives 44 km.
+        """
         # Three scans of four footprints 12 km apart along-scan; scans 44 km apart along-track.
         n_scan, n_pos = 3, 4
         lats = (np.arange(n_scan)[:, None] * 0.396 + np.zeros((1, n_pos))).ravel()
@@ -355,6 +458,13 @@ class TestScanToScanSpacing:
         assert scan_to_scan_spacing_km(lats, lons, times, sample_number) == pytest.approx(44.0, rel=0.03)
 
     def test_single_scan_is_nan(self):
+        """``scan_to_scan_spacing_km`` returns NaN when no two footprints share a scan position.
+
+        A single scan has no next scan to measure against, and any number returned would be a guess presented as a
+        measurement.
+
+        Passes four footprints with distinct sample numbers 1 to 4 and asserts NaN.
+        """
         lats = np.zeros(4)
         lons = np.arange(4) * 0.1
         assert np.isnan(scan_to_scan_spacing_km(lats, lons, np.arange(4.0), np.arange(1, 5)))
@@ -362,6 +472,14 @@ class TestScanToScanSpacing:
 
 class TestGranuleTimeCoverage:
     def test_reads_both_attributes_with_a_z_suffix(self):
+        """``granule_time_coverage`` parses ``time_coverage_start`` and ``time_coverage_end`` with a trailing ``Z``.
+
+        The granule's span decides which files are read for a footprint's time; failing on the UTC ``Z`` suffix CERES
+        granules carry, or losing sub-second precision, would misplace the granule in time.
+
+        Passes a stand-in dataset with both attributes ending in ``Z`` and asserts the start, with microseconds, and the
+        end as ``datetime64[ns]``.
+        """
         ds = SimpleNamespace(
             time_coverage_start="2020-04-10T15:00:01.414490Z", time_coverage_end="2020-04-10T15:59:59Z"
         )
@@ -370,11 +488,26 @@ class TestGranuleTimeCoverage:
         assert end == np.datetime64("2020-04-10T15:59:59", "ns")
 
     def test_missing_attribute_raises(self):
+        """``granule_time_coverage`` raises ``ValueError`` naming the attribute when one of the pair is missing.
+
+        A granule with no stated end cannot be placed in time, and an assumed span could pull in or skip data.
+
+        Passes a stand-in dataset with only ``time_coverage_start`` and asserts a ``ValueError`` naming
+        ``time_coverage_end``.
+        """
         ds = SimpleNamespace(time_coverage_start="2020-04-10T15:00:00Z")
         with pytest.raises(ValueError, match="no 'time_coverage_end' global attribute"):
             granule_time_coverage(ds, source="test")
 
     def test_non_iso_value_raises(self):
+        """``granule_time_coverage`` raises ``ValueError`` when an attribute is not an ISO 8601 instant.
+
+        An unparseable coverage time must stop the read with a message naming the value rather than surface as a
+        bare NumPy error.
+
+        Passes a stand-in dataset whose ``time_coverage_start`` is ``"not-a-time"`` and asserts a ``ValueError`` saying
+        it is not an ISO 8601 instant.
+        """
         ds = SimpleNamespace(time_coverage_start="not-a-time", time_coverage_end="2020-04-10T15:59:59Z")
         with pytest.raises(ValueError, match="is not an ISO 8601 instant"):
             granule_time_coverage(ds, source="test")
