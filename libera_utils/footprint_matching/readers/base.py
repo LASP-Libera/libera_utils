@@ -103,7 +103,7 @@ def split_dateline(bbox: BoundingBox) -> list[BoundingBox]:
 
 
 class _PointIndex:
-    """A point cloud sorted into 1 degree bins for bounding-box queries.
+    """A point cloud sorted into bins of :data:`POINT_INDEX_BIN_DEG` degrees for bounding-box queries.
 
     Built once per loaded :class:`PointSamples`. Samples with a non-finite coordinate,
     or a NaT time when times are present, are dropped here; the rest are permuted into
