@@ -81,7 +81,7 @@ def write_data_product_metadata_ummg(
     Raises
     ------
     ValueError
-        If the Dataset has no ``ProductionDateTime`` attribute.
+        If the Dataset has no ``date_created`` attribute.
     """
     logger.info("Writing UMM-G metadata for Libera data product")
 

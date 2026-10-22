@@ -23,8 +23,6 @@ from libera_utils.constants import (
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
 REVISION_TS_FORMAT = f"R{PRINTABLE_TS_FORMAT}%f"
-# Second-resolution revision format of earlier data product filenames. Still parsed, never written.
-_DOY_REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"
 
 
 def _ensure_utc_timezone(dt_obj: datetime) -> datetime:
@@ -87,15 +85,14 @@ DATA_LEVELS = "|".join([level.value for level in DataLevel])
 DATA_PRODUCT_NAMES = "|".join([str(dpi) for dpi in DataProductIdentifier])
 
 # Everything in a data product filename except the extension. Shared by the data file and its UMM-G metadata file.
-# The revision is either REVISION_TS_FORMAT (R + 8-digit date, T, 6-digit time, 6-digit microseconds) or the
-# second-resolution _DOY_REVISION_TS_FORMAT (R + 11 digits).
+# The revision is REVISION_TS_FORMAT: R + 8-digit date, T, 6-digit time, 6-digit microseconds.
 _LIBERA_DATA_PRODUCT_BODY_REGEX = (
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
     r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-    r"_(?P<revision>R(?:[0-9]{8}T[0-9]{12}|[0-9]{11}))"
+    r"_(?P<revision>R[0-9]{8}T[0-9]{12})"
 )
 
 LIBERA_DATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>nc|bsp|bc)$")
@@ -623,16 +620,41 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
     - ``version`` is the algorithm semantic version in ``VM-m-p[RCn]`` form.
     - ``utc_start`` / ``utc_end`` bound the data in the file, formatted ``YYYYMMDDTHHMMSS``.
     - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
-      Names with the earlier second-resolution revision, ``R`` followed by ``YYDDDHHMMSS``, still parse; rebuilding
-      such a name from its parts writes the microsecond form.
     - ``extension`` is ``nc`` for NetCDF-4 products, or ``bsp`` / ``bc`` for SPICE kernels.
-
-    Order revisions by ``filename_parts.revision``, which is a timezone-aware UTC datetime for both forms. The two
-    revision forms do not sort correctly against each other as strings.
     """
 
     _regex = LIBERA_DATA_PRODUCT_REGEX
     _fmt = "LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}"
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting a utc_start, utc_end or revision that is not a real UTC time.
+
+        The regex admits any digits in those fields, so the name is parsed before it is assigned.
+
+        Parameters
+        ----------
+        new_path : str | PathType
+            Path to the data product file.
+
+        Raises
+        ------
+        ValueError
+            If the path does not match the filename regex, or a time field is not a real UTC time.
+        """
+        if isinstance(new_path, str):
+            _new_path: PathType = cast(PathType, AnyPath(new_path))
+        else:
+            _new_path = new_path
+        parts = self.regex_match(_new_path)
+        try:
+            self._parse_match(parts)
+        except ValueError as err:
+            raise ValueError(
+                f"Proposed path {_new_path} has a utc_start, utc_end or revision that is not a real UTC time: "
+                f"{err}. Correct that field."
+            ) from err
+        self._path = _new_path
 
     @property
     def processing_step_id(self) -> ProcessingStepIdentifier | None:
@@ -838,11 +860,30 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
-        d = self.regex_match(self.path)
+        return self._parse_match(self.regex_match(self.path))
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If utc_start, utc_end or revision is not a real UTC time.
+        """
         d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
-        revision_format = REVISION_TS_FORMAT if "T" in d["revision"] else _DOY_REVISION_TS_FORMAT
-        d["revision"] = datetime.strptime(d["revision"], revision_format).replace(tzinfo=UTC)
+        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT).replace(tzinfo=UTC)
         return SimpleNamespace(**d)
 
 

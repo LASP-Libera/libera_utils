@@ -181,7 +181,7 @@ def l1a_test_product(
             "Format": "NetCDF-4",
             "ProductID": "AXIS-SAMPLE-DECODED",
             "algorithm_version": "1.0.0",
-            "ProductionDateTime": "2027-01-03T08:09:10.123456+00:00",
+            "date_created": "2027-01-03T08:09:10.123456+00:00",
             "ProjectLongName": "Libera",
             "ProjectShortName": "Libera",
             "PlatformLongName": "TBD",
