@@ -68,6 +68,12 @@ class KernelManager:
     -----
     The path length limit is fixed by the class attribute ``_max_path_length`` (80) and is not
     a constructor argument. ``load_static_kernels`` validates paths before furnishing kernels.
+
+    A KernelManager is not shared between processes. Loading kernels writes the NAIF and static
+    kernel files into the on-disk cache in place, so processes that fill an empty cache at the same
+    time overwrite each other's files. Before starting worker processes, call ``populate_cache``
+    once in the parent; each worker then loads kernels through its own KernelManager, which finds
+    the cache filled.
     """
 
     _naif_kernel_regexs = [
@@ -664,6 +670,37 @@ class KernelManager:
         scope = [rec.file for rec in sp.ext.loaded_kernels(coverage.COVERAGE_KERNEL_TYPES) if rec.file in furnished]
 
         coverage.coverage_gaps(targets, start_ugps, stop_ugps, kernels=scope, error=error)
+
+    def populate_cache(self) -> None:
+        """
+        Fill the on-disk NAIF and static kernel caches and leave the SPICE kernel pool empty.
+
+        Call it in a parent process before starting worker processes that each load kernels
+        through their own KernelManager, so the workers find the caches filled and never write
+        the same cache files at once.
+
+        Raises
+        ------
+        FileNotFoundError
+            If a kernel or kernel configuration cannot be found.
+        RuntimeError
+            If creating a static kernel fails or a kernel path exceeds the SPICE length limit.
+        requests.RequestException
+            If listing or downloading a NAIF generic kernel fails.
+
+        Notes
+        -----
+        The pool is emptied with ``kclear``, which also unloads kernels furnished outside this
+        manager.
+        """
+        try:
+            self.load_static_kernels()
+            self.load_naif_kernels()
+        finally:
+            try:
+                self.unload_all()
+            finally:
+                self._delete_temporary_static_kernels()
 
     def __enter__(self):
         """Enter context manager, loading static kernels automatically."""
