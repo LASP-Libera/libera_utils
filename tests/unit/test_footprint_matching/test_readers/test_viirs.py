@@ -48,6 +48,27 @@ def _full_bbox() -> BoundingBox:
     return BoundingBox(_LAT_MIN - 0.1, _LAT_MAX + 0.1, _LON_MIN - 0.1, _LON_MAX + 0.1)
 
 
+def _position_code(lats: np.ndarray, lons: np.ndarray) -> np.ndarray:
+    """A value unique to each fixture cell: ``100 * latitude + longitude``."""
+    return 100.0 * lats + lons
+
+
+def _write_position_coded_means(fixture_path) -> None:
+    """Overwrite each group's ``Mean`` so every cell holds :func:`_position_code` of its own location.
+
+    The fields are written in the file's (longitude, latitude) order, so a reader that skips the transpose or slices
+    the wrong axis serves a value that does not match the location it is served at.
+    """
+    import netCDF4
+
+    with netCDF4.Dataset(str(fixture_path), "r+") as ds:
+        lats = ds["latitude"][:].astype(np.float64)
+        lons = ds["longitude"][:].astype(np.float64)
+        coded = _position_code(lats[None, :], lons[:, None]).astype(np.float32)  # (n_lon, n_lat)
+        for group in ds.groups.values():
+            group["Mean"][:] = coded
+
+
 class TestVIIRSCldpropD3ReaderClassAttributes:
     def test_reader_key(self):
         """``VIIRSCldpropD3Reader.READER_KEY`` is ``"viirs_cldprop_d3"``.
@@ -124,10 +145,12 @@ class TestVIIRSCldpropD3ReaderLoadSpatialRegion:
         order would publish one cloud property under another's name.
 
         Builds a fixture whose cloud fraction, optical thickness and top pressure groups hold 0.6, 4.0 and 700.0 and
-        asserts row 0 is 4.0 and row 1 is 700.0, so the unread cloud fraction group does not appear in either row.
+        asserts exactly two rows are served, row 0 is 4.0 and row 1 is 700.0, so the unread cloud fraction group
+        appears nowhere.
         """
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
         data, _, _ = _region(reader, _full_bbox(), _T)
+        assert data.shape[0] == 2
         assert np.allclose(data[0], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
         assert np.allclose(data[1], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
 
@@ -239,32 +262,42 @@ class TestVIIRSCldpropD3ReaderTranspose:
         CLDPROP_D3 stores its fields longitude first; without the transpose the grid would not match its latitude and
         longitude axes and values would be placed at the wrong locations.
 
-        Stores the 4 lat x 8 lon fixture as (8, 4), queries the full grid and asserts the served grid is 4 latitudes by
-        8 longitudes.
+        Stores the 4 lat x 8 lon fixture as (8, 4) with every cell holding ``100 * latitude + longitude``, queries the
+        full grid and asserts the served grid is 4 latitudes by 8 longitudes and every sample's values equal the code
+        of the location it is served at.
         """
-        reader, _ = _make_reader(tmp_path)
+        reader, path = _make_reader(tmp_path)
+        _write_position_coded_means(path)
         data, lats, lons = _region(reader, _full_bbox(), _T)
         # With the default 4 lat × 8 lon fixture, axis 1 must be n_lat=4
         # and axis 2 must be n_lon=8.
         n_lat_out, n_lon_out = data.shape[1], data.shape[2]
         assert n_lat_out == _N_LAT
         assert n_lon_out == _N_LON
+        samples = reader.samples_in(_full_bbox(), _T)
+        expected = _position_code(samples.lats, samples.lons)
+        assert np.allclose(samples.values, expected[None, :], atol=1e-3)
 
     def test_partial_lat_subset_selects_correct_rows(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves fewer rows but every column for a box over part of the latitudes.
+        """``VIIRSCldpropD3Reader.samples_in`` serves the rows inside a box over part of the latitudes, at every column.
 
-        A footprint should be served only the cells near it; slicing the wrong axis of the transposed grid would cut
-        columns instead of rows.
+        A footprint should be served only the cells near it, with their own values; slicing the wrong axis of the
+        transposed grid would cut columns instead of rows or serve another row's values.
 
-        Queries a box over the lower half of the fixture's latitudes and the full longitude range, and asserts fewer
-        than 4 latitudes and all 8 longitudes are served.
+        Writes ``100 * latitude + longitude`` into every cell, queries a box over the lower half of the fixture's
+        latitudes and the full longitude range, and asserts the top row (3.5°, beyond the box and its one-cell padding)
+        is not served while all 8 longitudes are, each sample holding the code of its own location.
         """
-        reader, _ = _make_reader(tmp_path)
+        reader, path = _make_reader(tmp_path)
+        _write_position_coded_means(path)
         half_lat = (_LAT_MIN + _LAT_MAX) / 2
         bbox = BoundingBox(_LAT_MIN - 0.1, half_lat, _LON_MIN - 0.1, _LON_MAX + 0.1)
         data, lats, lons = _region(reader, bbox, _T)
         assert lats.size < _N_LAT
+        assert _LAT_MAX not in lats
         assert lons.size == _N_LON
+        samples = reader.samples_in(bbox, _T)
+        assert np.allclose(samples.values, _position_code(samples.lats, samples.lons)[None, :], atol=1e-3)
 
 
 class TestVIIRSCldpropD3ReaderSamples:
@@ -287,13 +320,14 @@ class TestVIIRSCldpropD3ReaderSamples:
         Every footprint in the processing day matches the one daily composite; a time selection would drop footprints
         late in the day from cloud matching.
 
-        Asserts ``TIME_MATCH`` is ``TimeMatch.DAILY`` and that queries at midnight and 23 hours later serve identical
-        values.
+        Asserts ``TIME_MATCH`` is ``TimeMatch.DAILY`` and that queries at midnight and 23 hours later each serve all 32
+        cells of the fixture grid with identical values.
         """
         reader, _ = _make_reader(tmp_path)
         assert VIIRSCldpropD3Reader.TIME_MATCH is TimeMatch.DAILY
         a = reader.samples_in(_full_bbox(), _T)
         b = reader.samples_in(_full_bbox(), _T + np.timedelta64(23, "h"))
+        assert a.n_samples == b.n_samples == _N_LAT * _N_LON
         np.testing.assert_array_equal(a.values, b.values)
 
 

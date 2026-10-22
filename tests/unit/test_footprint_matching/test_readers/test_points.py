@@ -413,18 +413,20 @@ class TestNeighborSpacing:
         assert spacing == pytest.approx(7.0, rel=0.03)
 
     def test_track_ignores_large_jumps(self):
-        """``neighbor_spacing_km`` reports a 1-D track's typical step, not inflated by a single large jump.
+        """``neighbor_spacing_km`` leaves out 1-D steps larger than ten times the median before taking the median.
 
         A scan turnaround or data gap is not a sample spacing; letting it raise the estimate would credit each sample
         with too much area and overstate coverage.
 
-        Builds two runs of five points 0.108 deg (about 12 km) apart in latitude separated by a jump of about 500 km,
-        and asserts a spacing of 12 km within 3%.
+        Builds a meridional track of four 10 km steps, three 20 km steps and three 1000 km jumps, whose plain median is
+        20 km, and asserts a spacing of 10 km within 3%, the median once the jumps are left out.
         """
-        # 12 km steps with one 500 km jump (a scan turnaround) that must not inflate the median.
-        lats = np.concatenate([np.arange(0.0, 0.54, 0.108), np.arange(5.0, 5.54, 0.108)])
+        # Sorted steps 10, 10, 10, 10, 20, 20, 20, 1000, 1000, 1000: the jumps push the plain
+        # median to 20 km; without them the median is 10 km.
+        steps_km = np.array([10.0] * 4 + [20.0] * 3 + [1000.0] * 3)
+        lats = np.concatenate([[0.0], np.cumsum(steps_km / 111.195)])
         lons = np.zeros_like(lats)
-        assert neighbor_spacing_km(lats, lons) == pytest.approx(12.0, rel=0.03)
+        assert neighbor_spacing_km(lats, lons) == pytest.approx(10.0, rel=0.03)
 
     def test_non_finite_and_degenerate_inputs(self):
         """``neighbor_spacing_km`` returns NaN when there are fewer than two finite neighboring samples.

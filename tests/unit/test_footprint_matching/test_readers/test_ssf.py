@@ -143,13 +143,22 @@ class TestSSFReaderSamples:
         variable names or merge footprints before they are weighted.
 
         Reads the default fixture over the cluster box and asserts the values are 2-D, shaped ``(len(VARIABLES), 5)``
-        for the five clustered footprints, and float32.
+        for the five clustered footprints, and float32, and that the rows at the positions of three fields with
+        distinct fixture values (a base field near the start, a layered field and an imager-only field near the end)
+        hold those fields' values.
         """
         reader = SSFReader(make_ssf_fixture(tmp_path))
         samples = reader.samples_in(_BBOX, _T)
         assert samples.values.ndim == 2
         assert samples.values.shape == (len(SSFReader.VARIABLES), 5)
         assert samples.values.dtype == np.float32
+        names = [v.name for v in SSFReader.VARIABLES]
+        for name, expected in (
+            ("aerosol_optical_depth", [0.10, 0.20, 0.30, 0.40, 0.50]),
+            ("cloud_optical_depth_lower", [1.0, 2.0, 4.0, 8.0, 16.0]),
+            ("toa_incoming_solar_radiation", [1360.0, 1361.0, 1362.0, 1363.0, 1364.0]),
+        ):
+            assert np.allclose(np.sort(samples.values[names.index(name)]), expected, atol=1e-3), name
 
     def test_longitude_normalization_places_points(self, tmp_path):
         """``SSFReader.samples_in`` finds footprints stored at 350 degrees longitude in a box at -10 degrees.
@@ -157,12 +166,13 @@ class TestSSFReaderSamples:
         SSF stores longitude in 0..360 while boxes use -180..180; without normalization every western-hemisphere
         footprint would be missed and those Libera footprints would get no SSF match.
 
-        Reads the default fixture over the cluster box at -11..-9 degrees and asserts at least one served value is
-        finite.
+        Reads the default fixture over the cluster box at -11..-9 degrees and asserts all five clustered footprints are
+        served, each with its longitude converted to -10 degrees.
         """
         reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.isfinite(data).any()
+        samples = reader.samples_in(_BBOX, _T)
+        assert samples.n_samples == 5
+        assert np.allclose(samples.lons, -10.0, atol=1e-4)
 
     def test_points_absent_from_unrelated_tile(self, tmp_path):
         """``SSFReader.samples_in`` serves nothing in a box at +170 degrees for footprints stored at 350 degrees.
@@ -170,11 +180,10 @@ class TestSSFReaderSamples:
         If longitude were not converted, or were converted wrongly, footprints could be served at the wrong place on
         Earth and attributed to unrelated Libera footprints.
 
-        Reads the default fixture over a box at 169..171 degrees longitude and asserts no served value is finite.
+        Reads the default fixture over a box at 169..171 degrees longitude and asserts no footprint is served.
         """
         reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, BoundingBox(10.0, 12.0, 169.0, 171.0))
-        assert not np.isfinite(data).any()
+        assert reader.samples_in(BoundingBox(10.0, 12.0, 169.0, 171.0), _T).n_samples == 0
 
     def test_aerosol_optical_depth_values(self, tmp_path):
         """``SSFReader.samples_in`` serves ``aerosol_optical_depth`` with the footprints' source values unchanged.
@@ -221,8 +230,8 @@ class TestSSFReaderSamples:
         Water and ice radii are stored per layer; reading the upper layer would report the wrong cloud's droplet size
         under the lower-layer name.
 
-        Reads the default fixture, whose upper layer is the lower plus one, and asserts the finite values are non-empty
-        and lie within the lower-layer span of 5..9 um.
+        Reads the default fixture, whose upper layer is the lower plus one, and asserts the finite values equal the
+        lower-layer [5, 6, 7, 8, 9] um.
         """
         # Fixture defaults: lower-layer water radii are [5, 6, 7, 8, 9] μm for the
         # five clustered footprints. The base `cloud_water_particle_radius_lower` spec
@@ -231,24 +240,22 @@ class TestSSFReaderSamples:
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data = _values(reader, _BBOX)
         values = _finite_values(data, "cloud_water_particle_radius_lower")
-        assert values.size > 0
-        assert np.all((values >= 5.0) & (values <= 9.0))
+        assert np.allclose(values, [5.0, 6.0, 7.0, 8.0, 9.0], atol=1e-4)
 
     def test_cloud_ice_particle_radius_uses_lower_layer(self, tmp_path):
         """``SSFReader.samples_in`` fills ``cloud_ice_particle_radius_lower`` from the lower cloud layer.
 
         Reading the upper layer would report the wrong cloud's ice particle size under the lower-layer name.
 
-        Reads the default fixture, whose upper layer is the lower plus two, and asserts the finite values are non-empty
-        and lie within the lower-layer span of 20..40 um.
+        Reads the default fixture, whose upper layer is the lower plus two, and asserts the finite values equal the
+        lower-layer [20, 25, 30, 35, 40] um.
         """
         # Fixture defaults: lower-layer ice radii are [20, 25, 30, 35, 40] μm for the
         # five clustered footprints. The base spec reads only the lower layer.
         reader = SSFReader(make_ssf_fixture(tmp_path))
         data = _values(reader, _BBOX)
         values = _finite_values(data, "cloud_ice_particle_radius_lower")
-        assert values.size > 0
-        assert np.all((values >= 20.0) & (values <= 40.0))
+        assert np.allclose(values, [20.0, 25.0, 30.0, 35.0, 40.0], atol=1e-4)
 
     def test_fill_values_dropped_for_shortwave_adm(self, tmp_path):
         """``SSFReader.samples_in`` turns the int16 fill in ``shortwave_adm_type`` into NaN.
@@ -295,7 +302,7 @@ class TestSSFReaderExtendedImagerFields:
         assert np.allclose(lower, [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
         assert np.allclose(upper, [2.0, 3.0, 5.0, 9.0, 17.0], atol=1e-4)
 
-    def test_new_layered_field_both_layers(self, tmp_path):
+    def test_cloud_top_pressure_reads_both_layers(self, tmp_path):
         """``SSFReader.samples_in`` serves ``cloud_top_pressure_lower`` and ``_upper`` each from its own layer.
 
         A layered field flattened into ``_lower`` and ``_upper`` variables must take each from its own layer, or the two
@@ -397,19 +404,19 @@ class TestSSFReaderTimeMatchingAndCache:
     def test_nearest_pass_is_served(self, tmp_path):
         """``SSFReader.samples_in`` serves only the pass nearest the query time when two passes cover the box.
 
-        Mixing a pass twelve hours away into a Libera footprint would average clouds and aerosols from a different time
-        of day into the match.
+        Two passes over the same place can both fall inside ``MAX_TIME_OFFSET``; mixing the farther one into a Libera
+        footprint would average clouds and aerosols observed hours apart into one match.
 
-        Builds a fixture with three footprints at the fixture time and three twelve hours later at the same location,
-        queries 20 minutes after each pass, and asserts each query returns three samples whose aerosol optical depths
-        are that pass's values.
+        Builds a fixture with three footprints at the fixture time and three two hours later at the same location, so
+        both passes are within the three-hour ``MAX_TIME_OFFSET`` of either query, queries 20 minutes after each pass,
+        and asserts each query returns only that pass's three samples and aerosol optical depths.
         """
-        # Six footprints: the first three at the fixture time, the last three twelve hours
+        # Six footprints: the first three at the fixture time, the last three two hours
         # later, all at the same cluster location. A footprint near either pass gets that
         # pass's three footprints only.
         lats = np.array([10.2, 10.4, 10.6, 10.2, 10.4, 10.6], dtype=np.float32)
         lons = np.full(6, 350.0, dtype=np.float32)
-        late_time = _T + np.timedelta64(12, "h")
+        late_time = _T + np.timedelta64(2, "h")
         times = np.array([_T, _T, _T, late_time, late_time, late_time], dtype="datetime64[ns]")
         reader = SSFReader(make_ssf_fixture(tmp_path, lats=lats, lons_0360=lons, times=times))
         near_early = reader.samples_in(_BBOX, _T + np.timedelta64(20, "m"))
