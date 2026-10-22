@@ -6,7 +6,8 @@ samples of a source inside a footprint's bounding box, matched to the footprint
 time by that reader's :class:`~libera_utils.footprint_matching.types.TimeMatch`
 policy. It owns no cache of its own: each reader holds its source once (a static
 reader its whole indexed body of data, a stepped reader the one hourly step
-nearest the current footprint), and every query is answered from that.
+nearest the current footprint, a pass reader the hourly granules within
+``MAX_TIME_OFFSET`` of the current footprint), and every query is answered from that.
 
 A reader that cannot read its source raises, and the run stops: a product with a
 source silently missing would be wrong, and a crash gets noticed.
@@ -30,13 +31,16 @@ if TYPE_CHECKING:
 class AncillarySources:
     """The readers active for one operational mode, queried per footprint.
 
+    Production code constructs this through :func:`build_sources`; direct
+    construction is for tests and demonstrations.
+
     Parameters
     ----------
     readers : dict[str, AncillaryReader]
         Mapping of reader registry key to an *instantiated* reader, already filtered
         to the active mode (see :func:`build_sources`).
     active_mode : OperationalMode
-        The operational mode these sources serve, kept for provenance.
+        The operational mode these sources serve; it labels error messages.
     """
 
     def __init__(self, readers: dict[str, AncillaryReader], active_mode: OperationalMode) -> None:
@@ -89,6 +93,12 @@ class AncillarySources:
         ------
         KeyError
             If ``source`` is not active for this mode.
+        ValueError
+            Propagated from the reader; see
+            :meth:`~libera_utils.footprint_matching.readers.base.AncillaryReader.samples_in`.
+        TypeError
+            Propagated from the reader; see
+            :meth:`~libera_utils.footprint_matching.readers.base.AncillaryReader.samples_in`.
         """
         return self.reader(source).samples_in(bbox, time)
 
