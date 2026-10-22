@@ -92,10 +92,11 @@ def write_libera_data_product(
         are shuffled and deflated on the workers of the active ``dask.distributed`` Client, so compression runs in
         parallel instead of one chunk at a time under the HDF5 write lock. This process stores the compressed
         chunks with h5py ``write_direct_chunk``, and the file reads back identical to a ``to_netcdf`` write. Requires
-        the ``h5netcdf`` engine and an active Client. A chunk equal to the variable's ``_FillValue`` throughout is not
-        stored when that value is also the HDF5 fill value, with the same dtype; HDF5 returns the fill value for it.
-        Other Dask-backed variables are computed in the same graph, so tasks shared between variables run once, and
-        are written by this process uncompressed by the workers.
+        the ``h5netcdf`` engine and an active Client. Other Dask-backed variables are computed in the same graph, so
+        tasks shared between variables run once, and are written by this process uncompressed by the workers. If
+        this write fails after creating its local file, the file is deleted before the error propagates: a local
+        product already at that path is gone as well, while for an S3 destination the existing object is untouched
+        and nothing is uploaded.
 
     Returns
     -------
@@ -110,11 +111,11 @@ def write_libera_data_product(
         to the product definition. With `worker_compressed_variables`, before any data is
         computed: if the engine is not ``h5netcdf``; if a name is not a Dask-backed data variable
         or is repeated; if no ``dask.distributed`` Client is active; if a named variable is not
-        chunked on disk, has filters other than deflate with or without shuffle, has a
-        non-numeric dtype, or has a Dask chunk length that is not a whole multiple of its on-disk
-        chunk length; or if another Dask-backed variable has a dtype that is not numeric or
-        boolean. Then, if a computed Dask block's dtype or shape differs from what its array
-        declared.
+        chunked on disk, has filters other than deflate with or without shuffle, has a dtype
+        that is not integer or floating point, or has a Dask chunk length that is not a whole
+        multiple of its on-disk chunk length; or if another Dask-backed variable has a dtype
+        that is not numeric or boolean. Then, if a computed Dask block's dtype or shape differs
+        from what its array declared.
     pydantic.ValidationError
         If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
         a list of positive integers with as many entries as its ``dimensions``.
@@ -170,6 +171,33 @@ def write_libera_data_product(
     logger.info(f"Writing data product with the {engine} engine")
     _write_dataset(dataset, data_product_filename.path, engine, worker_compressed_variables)
     return data_product_filename
+
+
+def _load_netcdf_into_memory(path: str | PathType) -> xr.Dataset:
+    """Read a NetCDF file fully into memory and close it
+
+    Parameters
+    ----------
+    path : str | PathType
+        Local or S3 path to a NetCDF file.
+
+    Returns
+    -------
+    xr.Dataset
+        The Dataset, loaded into memory with the file closed.
+
+    Raises
+    ------
+    ValueError
+        If the file cannot be opened or read as NetCDF.
+    """
+    path = AnyPath(path)
+    logger.info("Opening NetCDF file: %s", path)
+    try:
+        with xr.open_dataset(path, engine="h5netcdf") as dataset:
+            return dataset.load()
+    except Exception as e:
+        raise ValueError(f"Failed to open or read NetCDF file {path}: {e}") from e
 
 
 def _write_dataset(
@@ -289,7 +317,7 @@ def _write_worker_compressed(dataset: xr.Dataset, path: Path, variable_names: tu
                 dset = h5file[name]
                 compressed = name in variable_names
                 if compressed:
-                    shuffle, level, fill = _worker_compression_settings(dset, source.chunks)
+                    shuffle, level = _worker_compression_settings(dset, source.chunks)
                 elif dset.dtype.kind not in "iufb":
                     # Written through h5py directly, which skips the enum, string and compound
                     # handling of h5netcdf's Variable.__setitem__; numeric and boolean data need none.
@@ -305,7 +333,7 @@ def _write_worker_compressed(dataset: xr.Dataset, path: Path, variable_names: tu
                     if compressed:
                         units.append(
                             delayed(_compress_block)(
-                                blocks[index], name, dset.chunks, dset.dtype, block_shape, shuffle, level, fill
+                                blocks[index], name, dset.chunks, dset.dtype, block_shape, shuffle, level
                             )
                         )
                     else:
@@ -344,33 +372,34 @@ def _write_worker_compressed(dataset: xr.Dataset, path: Path, variable_names: tu
     logger.info(f"Stored {stored} worker-compressed chunks for {len(variable_names)} variables")
 
 
-def _worker_compression_settings(
-    dset: h5py.Dataset, source_chunks: tuple[tuple[int, ...], ...]
-) -> tuple[bool, int, bytes | None]:
-    """Read the shuffle, deflate level and skippable fill bytes that `dset` stores its chunks with
+def _worker_compression_settings(dset: h5py.Dataset, source_chunks: tuple[tuple[int, ...], ...]) -> tuple[bool, int]:
+    """Check that the workers can compress `dset`'s chunks, and return how HDF5 compresses them
+
+    The workers must produce the same bytes HDF5 would store, so this reads the compression
+    settings xarray gave the new dataset: deflate (zlib compression) at some level, optionally
+    preceded by shuffle, which regroups each value's bytes so deflate compresses them better.
 
     Parameters
     ----------
     dset : h5py.Dataset
-        Dataset just created by xarray.
+        The HDF5 dataset xarray created for the variable, with its chunk shape and filters set and
+        no data written yet.
     source_chunks : tuple[tuple[int, ...], ...]
         Dask chunk lengths of the encoded source array, one tuple per axis.
 
     Returns
     -------
-    : tuple[bool, int, bytes | None]
-        Whether the shuffle filter precedes deflate, the deflate level, and the HDF5 fill value's
-        bytes when a chunk equal to it throughout may be left unstored, else None. That holds only
-        when the fill value is user-defined, HDF5 writes it for unallocated chunks, and the
-        ``_FillValue`` attribute has the same dtype and bytes.
+    : tuple[bool, int]
+        Whether to shuffle before deflating, and the deflate level.
 
     Raises
     ------
     ValueError
-        If `dset` is not chunked, its filters are not deflate with or without a preceding shuffle,
-        its dtype is not numeric, or a Dask chunk length is not a whole multiple of the on-disk
-        chunk length on its axis. Whole multiples also make every dimension a multiple of its chunk
-        length, so no partial edge chunk reaches `write_direct_chunk`.
+        If the variable is not chunked on disk; if its filters are anything other than deflate,
+        with or without shuffle before it; if its dtype is not integer or floating point; or if a
+        Dask chunk length is not a whole multiple of the on-disk chunk length on its axis. That
+        last rule also means every chunk handed to `write_direct_chunk` is complete, with none cut
+        short at the array's edge.
     """
     plist = dset.id.get_create_plist()
     if dset.chunks is None:
@@ -391,7 +420,7 @@ def _worker_compression_settings(
     level = int(plist.get_filter(len(filter_ids) - 1)[2][0])
     if dset.dtype.kind not in "iuf":
         raise ValueError(
-            f"Variable {dset.name} has dtype {dset.dtype}; the workers compress only numeric data, "
+            f"Variable {dset.name} has dtype {dset.dtype}; the workers compress only integer and floating-point data, "
             "so leave it out of worker_compressed_variables"
         )
     for lengths, chunk_length in zip(source_chunks, dset.chunks, strict=True):
@@ -400,19 +429,7 @@ def _worker_compression_settings(
                 f"Variable {dset.name} has Dask chunk lengths {lengths} on an axis whose on-disk chunk length is "
                 f"{chunk_length}; each must be a whole multiple, so rechunk the Dask array or change chunksizes"
             )
-
-    fill = None
-    attr_fill = dset.attrs.get("_FillValue")
-    if (
-        plist.fill_value_defined() == h5py.h5d.FILL_VALUE_USER_DEFINED
-        and plist.get_fill_time() != h5py.h5d.FILL_TIME_NEVER
-        and attr_fill is not None
-        and np.asarray(attr_fill).dtype == dset.dtype
-    ):
-        hdf5_fill = np.asarray(dset.fillvalue, dtype=dset.dtype).tobytes()
-        if np.asarray(attr_fill).reshape(-1)[:1].tobytes() == hdf5_fill:
-            fill = hdf5_fill
-    return shuffle, level, fill
+    return shuffle, level
 
 
 def _check_block(block: np.ndarray, name: str, dtype: np.dtype, block_shape: tuple[int, ...]) -> None:
@@ -437,7 +454,6 @@ def _compress_block(
     block_shape: tuple[int, ...],
     shuffle: bool,
     level: int,
-    fill: bytes | None,
 ) -> list[tuple[tuple[int, ...], bytes]]:
     """Split a Dask block into on-disk chunks and compress each as HDF5's shuffle and deflate filters do
 
@@ -459,13 +475,11 @@ def _compress_block(
         Whether to byte-shuffle before deflating.
     level : int
         Deflate level.
-    fill : bytes | None
-        Bytes of one fill element; a chunk equal to it throughout is left out. None stores every chunk.
 
     Returns
     -------
     : list[tuple[tuple[int, ...], bytes]]
-        Each stored chunk's start within the block and its compressed bytes.
+        Each chunk's start within the block and its compressed bytes.
 
     Raises
     ------
@@ -473,12 +487,9 @@ def _compress_block(
         If the block's dtype or shape differs from `dtype` or `block_shape`.
     """
     _check_block(block, name, dtype, block_shape)
-    fill_element = None if fill is None else np.frombuffer(fill, dtype=f"u{dtype.itemsize}")[0]
     compressed = []
     for start in itertools.product(*(range(0, n, c) for n, c in zip(block_shape, chunk_shape, strict=True))):
         chunk = np.ascontiguousarray(block[tuple(slice(s, s + c) for s, c in zip(start, chunk_shape, strict=True))])
-        if fill_element is not None and (chunk.view(f"u{dtype.itemsize}") == fill_element).all():
-            continue
         raw = chunk.view(np.uint8).reshape(-1, dtype.itemsize).T.tobytes() if shuffle else chunk.tobytes()
         compressed.append((start, zlib.compress(raw, level)))
     return compressed

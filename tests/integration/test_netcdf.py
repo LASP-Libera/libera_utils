@@ -26,4 +26,4 @@ def test_worker_compressed_write_on_worker_processes_matches_to_netcdf(tmp_path)
 
     with h5py.File(tmp_path / "reference.nc") as expected, h5py.File(tmp_path / "out.nc") as actual:
         np.testing.assert_array_equal(actual["values"][()].view(np.uint32), expected["values"][()].view(np.uint32))
-        assert actual["values"].id.get_num_chunks() == expected["values"].id.get_num_chunks() - 4
+        assert actual["values"].id.get_num_chunks() == expected["values"].id.get_num_chunks()

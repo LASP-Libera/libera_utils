@@ -18,7 +18,12 @@ from distributed import Client
 
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.manifest import calculate_checksum
-from libera_utils.io.netcdf import NetcdfEngine, _write_worker_compressed, write_libera_data_product
+from libera_utils.io.netcdf import (
+    NetcdfEngine,
+    _load_netcdf_into_memory,
+    _write_worker_compressed,
+    write_libera_data_product,
+)
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
 from tests.marks import strict_warnings
@@ -820,6 +825,24 @@ class TestNetcdfEngineConfig:
         assert not result.path._local.exists()
 
 
+def test_load_netcdf_into_memory_reads_the_file_and_closes_it(tmp_path):
+    """The Dataset is fully loaded, so it reads back unchanged after the file is closed and removed"""
+    expected = xr.Dataset({"values": (("t",), np.arange(5.0))}, coords={"t": np.arange(5)})
+    path = tmp_path / "small.nc"
+    expected.to_netcdf(path, engine="h5netcdf")
+    loaded = _load_netcdf_into_memory(path)
+    path.unlink()
+    xr.testing.assert_identical(loaded, expected)
+
+
+def test_load_netcdf_into_memory_unreadable_file_raises(tmp_path):
+    """A file that is not NetCDF raises ValueError naming the file"""
+    not_netcdf = tmp_path / "not_netcdf.nc"
+    not_netcdf.write_text("not a NetCDF file")
+    with pytest.raises(ValueError, match="Failed to open or read NetCDF file"):
+        _load_netcdf_into_memory(not_netcdf)
+
+
 @pytest.fixture
 def distributed_client():
     """An in-process dask.distributed Client, closed after the test so later tests find none"""
@@ -827,33 +850,30 @@ def distributed_client():
         yield client
 
 
-def _counted_blocks(counter: Path, n_frames: int, frames_per_block: int, size: int):
-    """Two Dask arrays (float32 and uint16) fed by one shared task per block, which logs each call to `counter`"""
+def _small_dataset(counter: Path, chunks: tuple[int, int, int] = (1, 16, 16), **float_encoding) -> xr.Dataset:
+    """A 6-frame 64x64 Dataset whose float32 `floats` and uint16 `ints` share one task per 2-frame block
+
+    Each run of that task appends a line to `counter`.
+    """
 
     def produce(frame_start):
         with counter.open("a") as log:
             log.write("call\n")
-        rng = np.random.default_rng(frame_start)
-        values = rng.normal(size=(frames_per_block, size, size)).astype(np.float32)
-        values[:, : size // 4] = -999
+        values = np.random.default_rng(frame_start).normal(size=(2, 64, 64)).astype(np.float32)
+        values[:, :16] = -999
         return values, (np.abs(values) % 100).astype(np.uint16)
 
     task = dask.delayed(produce, nout=2, pure=False)
-    floats, ints = [], []
-    for start in range(0, n_frames, frames_per_block):
+    float_blocks, int_blocks = [], []
+    for start in range(0, 6, 2):
         values, counts = task(start)
-        floats.append(da.from_delayed(values, (frames_per_block, size, size), np.float32))
-        ints.append(da.from_delayed(counts, (frames_per_block, size, size), np.uint16))
-    return da.concatenate(floats), da.concatenate(ints)
-
-
-def _small_dataset(counter: Path, chunks: tuple[int, int, int] = (1, 16, 16), **float_encoding) -> xr.Dataset:
-    """A 6-frame 64x64 Dataset with two Dask variables sharing their upstream task"""
-    floats, ints = _counted_blocks(counter, n_frames=6, frames_per_block=2, size=64)
+        float_blocks.append(da.from_delayed(values, (2, 64, 64), np.float32))
+        int_blocks.append(da.from_delayed(counts, (2, 64, 64), np.uint16))
+    floats = da.concatenate(float_blocks)
     dataset = xr.Dataset(
         {
             "floats": (("t", "y", "x"), floats, {"_FillValue": np.float32(-999)}),
-            "ints": (("t", "y", "x"), ints),
+            "ints": (("t", "y", "x"), da.concatenate(int_blocks)),
             "frame_flag": (("t",), (floats.max(axis=(1, 2)) > 0).astype(np.uint32)),
         },
         coords={"t": np.arange(6)},
@@ -864,6 +884,7 @@ def _small_dataset(counter: Path, chunks: tuple[int, int, int] = (1, 16, 16), **
 
 
 def _calls(counter: Path) -> int:
+    """Number of times the shared block task has run, from the lines in `counter`; 0 before the first run"""
     return len(counter.read_text().split()) if counter.exists() else 0
 
 
@@ -871,11 +892,6 @@ def _stored_bits(dset: h5py.Dataset) -> np.ndarray:
     """Values read through HDF5's filters, without CF decoding, as unsigned integers of the same width"""
     values = dset[()]
     return values.view(f"u{values.dtype.itemsize}")
-
-
-def _storage_settings(dset: h5py.Dataset) -> tuple:
-    plist = dset.id.get_create_plist()
-    return dset.dtype, dset.chunks, [plist.get_filter(i)[:3] for i in range(plist.get_nfilters())], dset.fillvalue
 
 
 class TestWorkerCompression:
@@ -909,7 +925,7 @@ class TestWorkerCompression:
     def test_reads_back_identical_to_a_to_netcdf_write(
         self, to_s3, distributed_client, test_worker_compression_product_definition, tmp_path, create_mock_bucket
     ):
-        """Every variable's stored values, settings and metadata match a to_netcdf write; fill chunks are not stored"""
+        """Every variable's stored values, chunks, settings and metadata match a to_netcdf write"""
         names = ("float_fill", "float_fill_shuffled", "counts", "mask")
         (tmp_path / "reference").mkdir()
         (tmp_path / "direct").mkdir()
@@ -938,13 +954,12 @@ class TestWorkerCompression:
 
         with h5py.File(reference.path) as expected, h5py.File(direct_path) as actual:
             for name in (*names, "frame_flag", "CAMERA_TIME"):
-                assert _storage_settings(actual[name]) == _storage_settings(expected[name]), name
+                for setting in ("dtype", "chunks", "compression", "compression_opts", "shuffle", "fillvalue"):
+                    assert getattr(actual[name], setting) == getattr(expected[name], setting), (name, setting)
                 np.testing.assert_array_equal(_stored_bits(actual[name]), _stored_bits(expected[name]), err_msg=name)
-            # One 512x512 chunk of each float variable is all fill and left unallocated; it reads back as fill.
-            for name in ("float_fill", "float_fill_shuffled"):
-                assert actual[name].id.get_num_chunks() == expected[name].id.get_num_chunks() - 1, name
-            # The all-zero chunk of a variable with no _FillValue is still stored.
-            assert actual["counts"].id.get_num_chunks() == expected["counts"].id.get_num_chunks()
+            # The all-fill and all-zero chunks in _camera_dataset are stored, as to_netcdf stores them.
+            for name in names:
+                assert actual[name].id.get_num_chunks() == expected[name].id.get_num_chunks(), name
         with xr.open_dataset(reference.path) as expected, xr.open_dataset(direct_path) as actual:
             assert actual.identical(expected)
 
@@ -1028,7 +1043,7 @@ class TestWorkerCompression:
         dataset["labels"] = (("t",), da.from_array(np.array([b"ab"] * 6), chunks=3))
         # xarray stores the byte strings as a (t, string2) character array, hence two chunk lengths.
         dataset["labels"].encoding = {"zlib": True, "complevel": 4, "chunksizes": (3, 2)}
-        with pytest.raises(ValueError, match="compress only numeric data"):
+        with pytest.raises(ValueError, match="compress only integer and floating-point data"):
             _write_worker_compressed(dataset, tmp_path / "out.nc", ("labels",))
         assert not (tmp_path / "out.nc").exists()
         assert _calls(counter) == 0

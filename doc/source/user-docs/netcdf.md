@@ -99,19 +99,23 @@ write_libera_data_product(
 )
 ```
 
-The file reads back the same as a normal write, with the same metadata, chunk shapes and
-filters. The two writes differ only in storage: a chunk equal to the variable's `_FillValue`
-throughout is not stored when that value is also the HDF5 fill value, with the same dtype, and
-HDF5 returns the fill value for it. Every Dask block is computed in one graph, so a task that
-feeds several variables runs once.
+The keyword is optional; without it the product is written with `to_netcdf` as before. List the
+large Dask-backed variables whose compression dominates the write. Dask-backed variables left off
+the list are still written, compressed by the writing process one chunk at a time.
+
+The file reads back the same as a normal write, with the same metadata, chunk shapes, filters
+and stored chunks. Every Dask block is computed in one graph, so a task that feeds several
+variables runs once.
 
 It requires the `h5netcdf` engine and an active `distributed.Client`. Each named variable must
-be chunked on disk with deflate, optionally after shuffle, have a numeric dtype, and have Dask
-chunk lengths that are whole multiples of its on-disk chunk lengths. Any other Dask-backed
-variable must be numeric or boolean. Anything else raises `ValueError` before any data is
-computed, though the file already exists by then and is left partly written. A computed block
-whose dtype or shape differs from what its Dask array declared raises `ValueError`, naming the
-variable, when it arrives.
+be chunked on disk with deflate, optionally after shuffle, have an integer or floating-point
+dtype, and have Dask chunk lengths that are whole multiples of its on-disk chunk lengths. Any
+other Dask-backed variable must be numeric or boolean. Anything else raises `ValueError` before
+any data is computed. A computed block whose dtype or shape differs from what its Dask array
+declared raises `ValueError`, naming the variable, when it arrives. Once the write has created
+its local file, any error deletes that file before propagating. For a local destination, a
+product already at that path is gone as well; for an S3 destination, the existing object is
+untouched and nothing is uploaded.
 
 ## Basic Usage
 
