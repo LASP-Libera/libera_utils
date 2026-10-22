@@ -17,8 +17,6 @@ LP DAAC Access: https://appeears.earthdatacloud.nasa.gov/ (EarthData login requi
 SDS naming:   "LC_Type1" for IGBP classification scheme
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
@@ -128,7 +126,7 @@ class IGBPReader(StaticReader):
         ),
     )
 
-    def _load_native(self) -> _SinusoidalTiles:
+    def _load_native(self) -> "_SinusoidalTiles":
         """Read every staged tile's ``LC_Type1`` codes and pixel geometry.
 
         Returns

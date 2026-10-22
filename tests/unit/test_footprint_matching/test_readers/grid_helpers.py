@@ -6,8 +6,6 @@ the ``(data, lats, lons)`` grid view the value assertions are written against;
 :func:`sample_at` picks out the one sample served at a given location.
 """
 
-from __future__ import annotations
-
 import numpy as np
 
 from libera_utils.footprint_matching.readers.base import AncillaryReader

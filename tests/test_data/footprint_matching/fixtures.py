@@ -36,8 +36,6 @@ VIIRS Deep Blue aerosol — AOD + type (AERDB_D3_VIIRS_NOAA20, NetCDF4, root-lev
     Example filename: AERDB_D3_VIIRS_NOAA20.A2026001.002.2026005001030.nc
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import numpy as np
@@ -606,6 +604,8 @@ def make_aod_noaa20_fixture(
     write_histogram: bool = True,
     aod_valid_range: tuple[float, float] | None = (0.0, 10.0),
     aerosol_type_valid_range: tuple[int, int] | None = (0, 7),
+    aod_fill_value: float | None = -999.0,
+    aerosol_type_fill_value: int | None = -999,
 ) -> Path:
     """Write a synthetic AERDB_D3_VIIRS_NOAA20 Deep Blue aerosol NetCDF4 file.
 
@@ -646,6 +646,9 @@ def make_aod_noaa20_fixture(
         fidelity. Default True.
     aod_valid_range, aerosol_type_valid_range : tuple or None
         The ``valid_range`` attribute written on each field; ``None`` writes none.
+    aod_fill_value, aerosol_type_fill_value : float, int or None
+        The ``_FillValue`` attribute written on each field; ``None`` writes none.
+        Default −999, as in the real product.
 
     Returns
     -------
@@ -677,7 +680,7 @@ def make_aod_noaa20_fixture(
             "Aerosol_Optical_Thickness_550_Land_Ocean_Mean",
             "f4",
             ("Latitude_1D", "Longitude_1D"),
-            fill_value=-999.0,
+            fill_value=False if aod_fill_value is None else aod_fill_value,
         )
         aod_data = np.full((n_lat, n_lon), aod_fill, dtype=np.float32)
         if include_fill_pixel:
@@ -691,7 +694,7 @@ def make_aod_noaa20_fixture(
             "Aerosol_Type_Land_Ocean_Mode",
             "i4",
             ("Latitude_1D", "Longitude_1D"),
-            fill_value=-999,
+            fill_value=False if aerosol_type_fill_value is None else aerosol_type_fill_value,
         )
         type_data = np.full((n_lat, n_lon), aerosol_type_value, dtype=np.int32)
         if include_fill_pixel:

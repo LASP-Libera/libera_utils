@@ -51,31 +51,62 @@ File naming:
     VJ143C1.A{YYYYDDD}.{version}.{YYYYDDDHHMMSS}.h5
 """
 
-from __future__ import annotations
+import h5py
+import numpy as np
 
-from collections.abc import Sequence
-from pathlib import Path
-
-from libera_utils.footprint_matching.readers._hdf5_io import read_viirs_brdf_hdf5
+from libera_utils.footprint_matching.readers._hdf5_io import _parse_he5_grid_metadata, read_he5_struct_metadata
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
 # The HDF-EOS5 grid holding the BRDF parameter fields and coordinate arrays.
 _BRDF_GRID_NAME: str = "VIIRS_CMG_BRDF"
 
-# Mapping from VariableSpec name → HDF5 field name in the grid's Data Fields group.
-# Order here must match VARIABLES tuple order (used for indexing data axis 0).
-_BRDF_FIELD_MAP: dict[str, str] = {
-    "brdf_shortwave_fiso": "BRDF_Albedo_Parameter1_shortwave",
-    "brdf_shortwave_fvol": "BRDF_Albedo_Parameter2_shortwave",
-    "brdf_shortwave_fgeo": "BRDF_Albedo_Parameter3_shortwave",
-    "brdf_vis_fiso": "BRDF_Albedo_Parameter1_vis",
-    "brdf_vis_fvol": "BRDF_Albedo_Parameter2_vis",
-    "brdf_vis_fgeo": "BRDF_Albedo_Parameter3_vis",
-    "brdf_nir_fiso": "BRDF_Albedo_Parameter1_nir",
-    "brdf_nir_fvol": "BRDF_Albedo_Parameter2_nir",
-    "brdf_nir_fgeo": "BRDF_Albedo_Parameter3_nir",
-}
+# Each output variable and the HDF5 field it reads from the grid's Data Fields group.
+# This order is VARIABLES order and axis 0 of the reader's data array.
+_BRDF_FIELDS: tuple[tuple[str, str], ...] = (
+    ("brdf_shortwave_fiso", "BRDF_Albedo_Parameter1_shortwave"),
+    ("brdf_shortwave_fvol", "BRDF_Albedo_Parameter2_shortwave"),
+    ("brdf_shortwave_fgeo", "BRDF_Albedo_Parameter3_shortwave"),
+    ("brdf_vis_fiso", "BRDF_Albedo_Parameter1_vis"),
+    ("brdf_vis_fvol", "BRDF_Albedo_Parameter2_vis"),
+    ("brdf_vis_fgeo", "BRDF_Albedo_Parameter3_vis"),
+    ("brdf_nir_fiso", "BRDF_Albedo_Parameter1_nir"),
+    ("brdf_nir_fvol", "BRDF_Albedo_Parameter2_nir"),
+    ("brdf_nir_fgeo", "BRDF_Albedo_Parameter3_nir"),
+)
+
+# The per-field attributes a VJ143C1 BRDF field carries and the read applies.
+_BRDF_FIELD_ATTRIBUTES: tuple[str, ...] = ("_FillValue", "valid_range", "scale_factor", "add_offset")
+
+
+def _cell_centers(edges: np.ndarray, first_edge: float, last_edge: float, axis_name: str, source: str) -> np.ndarray:
+    """Turn a VJ143C1 coordinate axis of leading cell edges into cell centers.
+
+    The file's ``lat``/``lon`` hold each cell's edge on the side the axis starts from
+    (the grid's upper-left corner): ``lat`` 90 -> -89.95 and ``lon`` -180 -> 179.95 for
+    the 0.05 degree CMG. The center is half a cell further along the axis.
+
+    Raises
+    ------
+    ValueError
+        If the axis spacing is not uniform, or the axis does not run from
+        ``first_edge`` to ``last_edge`` (the StructMetadata corners).
+    """
+    steps = np.diff(edges)
+    cell = float(np.mean(np.abs(steps))) if steps.size else 0.0
+    if steps.size == 0 or not np.allclose(np.abs(steps), cell):
+        raise ValueError(
+            f"{source}: the {axis_name} axis is not uniformly spaced, so it is not the regular CMG grid this reader "
+            "serves. Check that the file is an unmodified VJ143C1 granule."
+        )
+    direction = float(np.sign(steps[0]))
+    if not (np.isclose(edges[0], first_edge) and np.isclose(edges[-1] + direction * cell, last_edge)):
+        raise ValueError(
+            f"{source}: the {axis_name} axis runs {edges[0]} .. {edges[-1]} in steps of {cell}, which does not span "
+            f"the StructMetadata corners {first_edge} .. {last_edge} as cell edges. Check that the file is an "
+            "unmodified VJ143C1 granule."
+        )
+    return edges + direction * 0.5 * cell
 
 
 class VIIRSBRDFReader(StaticReader):
@@ -107,100 +138,90 @@ class VIIRSBRDFReader(StaticReader):
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 5.6  # 0.05 deg is about 5.6 km at the equator
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
-    VARIABLES: tuple[VariableSpec, ...] = (
+    VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
-            name="brdf_shortwave_fiso",
+            name=name,
             dtype="float32",
             aggregation="weighted_mean",
             required_mode=OperationalMode.CAM,
             n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_shortwave_fvol",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_shortwave_fgeo",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_vis_fiso",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_vis_fvol",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_vis_fgeo",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_nir_fiso",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_nir_fvol",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="brdf_nir_fgeo",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
+        )
+        for name, _ in _BRDF_FIELDS
     )
 
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
-        super().__init__(file_paths)
-        # Build ordered field name list matching VARIABLES tuple order.
-        self._field_names: list[str] = [_BRDF_FIELD_MAP[v.name] for v in self.VARIABLES]
-
     def _load_native(self) -> GridSamples:
-        """Read all 9 BRDF fields from the HDF5 file once.
+        """Read all nine BRDF fields from the HDF5 file once.
 
-        Reads via
-        :func:`~libera_utils.footprint_matching.readers._hdf5_io.read_viirs_brdf_hdf5`,
-        which returns cell-center axes in ascending latitude order with fill and
-        out-of-range pixels as NaN.
+        Each field is int16 with its own ``_FillValue``, ``valid_range``,
+        ``scale_factor`` and ``add_offset``. Fill and out-of-range pixels become NaN,
+        the scale and offset are applied, and the cell-edge ``lat``/``lon`` axes are
+        checked against the ``StructMetadata.0`` corners and served as cell centers,
+        latitude ascending.
 
         Returns
         -------
         GridSamples
-            ``data`` is float32 shape ``(9, n_lat, n_lon)`` (axis 0 in ``VARIABLES``
-            order, fill as NaN).
+            ``data`` is float32 shape ``(9, n_lat, n_lon)``, axis 0 in ``VARIABLES``
+            order, fill and out-of-range as NaN; ``lat_axis`` and ``lon_axis`` are
+            float64 cell centers, ascending.
 
         Raises
         ------
+        KeyError
+            If the grid's group, a field, the lat/lon datasets or ``StructMetadata.0``
+            are not found in the file.
+        OSError
+            If the file cannot be opened (not found, corrupt HDF5 header, etc.).
         ValueError
-            If the granule's fields or grid metadata are not those of a VJ143C1
-            granule (see :func:`read_viirs_brdf_hdf5`).
+            If a field lacks one of ``_FillValue``, ``valid_range``, ``scale_factor`` or
+            ``add_offset``; if ``StructMetadata.0`` is not text or does not describe the
+            grid as a geographic (``HE5_GCTP_GEO``) grid of the axes' size; or if the
+            axes are not uniformly spaced cell edges spanning its corners.
+
+        Notes
+        -----
+        The fill and valid-range test runs on the raw int16 values, before scaling, and
+        is done here rather than with ``_points.apply_fill_and_valid_range``: that helper
+        returns float64, about 207 MB of transient memory per global field next to the
+        preallocated float32 array.
         """
-        data, lats, lons = read_viirs_brdf_hdf5(
-            file_path=str(self.single_file_path),
-            field_names=self._field_names,
-            grid_name=_BRDF_GRID_NAME,
-        )
+        source = str(self.single_file_path)
+        with h5py.File(source, "r") as f:
+            grid = _parse_he5_grid_metadata(read_he5_struct_metadata(f, source), _BRDF_GRID_NAME, source)
+            group = f[f"HDFEOS/GRIDS/{_BRDF_GRID_NAME}/Data Fields"]
+
+            lat_edges = np.array(group["lat"], dtype=np.float64)
+            lon_edges = np.array(group["lon"], dtype=np.float64)
+            if (lat_edges.size, lon_edges.size) != (grid["ydim"], grid["xdim"]):
+                raise ValueError(
+                    f"{source}: the lat/lon axes have {lat_edges.size} x {lon_edges.size} values but StructMetadata.0 "
+                    f"gives grid {_BRDF_GRID_NAME!r} YDim={grid['ydim']}, XDim={grid['xdim']}. Check that the file "
+                    "is an unmodified VJ143C1 granule."
+                )
+            lats = _cell_centers(lat_edges, grid["ul_lat"], grid["lr_lat"], "lat", source)
+            lons = _cell_centers(lon_edges, grid["ul_lon"], grid["lr_lon"], "lon", source)
+
+            # One array for every field, filled in place (nine global fields are ~0.9 GB).
+            data = np.empty((len(_BRDF_FIELDS), lats.size, lons.size), dtype=np.float32)
+            for i, (_, field) in enumerate(_BRDF_FIELDS):
+                ds = group[field]
+                missing = [attr for attr in _BRDF_FIELD_ATTRIBUTES if attr not in ds.attrs]
+                if missing:
+                    raise ValueError(
+                        f"{source}: BRDF field {field!r} has no {', '.join(missing)} attribute. Every VJ143C1 field "
+                        "carries all four; stage the granule as distributed."
+                    )
+                # HDF-EOS5 stores each attribute as a 1-element array (valid_range as 2).
+                attrs = {attr: np.asarray(ds.attrs[attr]).ravel() for attr in _BRDF_FIELD_ATTRIBUTES}
+                raw = np.array(ds)
+                low, high = attrs["valid_range"][:2]
+                invalid = (raw == attrs["_FillValue"][0]) | (raw < low) | (raw > high)
+                np.multiply(raw, float(attrs["scale_factor"][0]), out=data[i], casting="unsafe")
+                data[i] += float(attrs["add_offset"][0])
+                data[i][invalid] = np.nan
+
+        # Flip to ascending latitude order (the file stores 90 -> -90), as a view.
+        if lats.size > 1 and lats[0] > lats[-1]:
+            lats = lats[::-1]
+            data = data[:, ::-1, :]
         return GridSamples(lat_axis=lats, lon_axis=lons, data=data)

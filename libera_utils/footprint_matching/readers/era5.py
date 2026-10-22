@@ -30,8 +30,6 @@ Param DB (id): u10=165, v10=166, t2m=167, d2m=168, sp=134, z=129, fal=243
               e.g. https://apps.ecmwf.int/codes/grib/param-db?id=165
 """
 
-from __future__ import annotations
-
 import abc
 from collections.abc import Sequence
 from pathlib import Path
@@ -43,17 +41,21 @@ from libera_utils.footprint_matching.readers._points import normalize_longitude
 from libera_utils.footprint_matching.readers.base import SteppedGridReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
 
-# Ordered mapping of FMATCH spec name -> ERA5 variable name as stored in CDS
-# NetCDF4 files. The order here defines axis 0 of the reader's data array and
-# MUST match the order of the VARIABLES tuple below (guarded by a unit test).
-_ERA5_SINGLE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
-    ("wind_u10", "u10"),
-    ("wind_v10", "v10"),
-    ("temperature_2m", "t2m"),
-    ("dew_point_temperature_2m", "d2m"),
-    ("surface_pressure", "sp"),
-    ("surface_geopotential", "z"),
-    ("forecast_albedo", "fal"),
+# Each output variable, the ERA5 variable it reads as stored in CDS NetCDF4 files, and
+# the operational mode that gates it. This order is VARIABLES order and axis 0 of the
+# reader's data array.
+_ERA5_SINGLE_LEVEL_VARIABLES: tuple[tuple[str, str, OperationalMode], ...] = (
+    # Wind components: every product, from mission start.
+    ("wind_u10", "u10", OperationalMode.CAM),
+    ("wind_v10", "v10", OperationalMode.CAM),
+    # FMATCH-IMAGER single-level fields: they flow to the FMATCH-IMAGER product while
+    # staying out of the lower-latency CAM products, alongside the RBSP CLDPIX/SSF
+    # cloud fields.
+    ("temperature_2m", "t2m", OperationalMode.IMAGER),
+    ("dew_point_temperature_2m", "d2m", OperationalMode.IMAGER),
+    ("surface_pressure", "sp", OperationalMode.IMAGER),
+    ("surface_geopotential", "z", OperationalMode.IMAGER),
+    ("forecast_albedo", "fal", OperationalMode.IMAGER),
 )
 
 
@@ -128,7 +130,9 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
         # direct call on a fresh instance still resolves.
         _ = self._steps
         path, local_index = self._step_locations[index]
-        ds = xr.open_dataset(path, engine="netcdf4")
+        # cache=False: xarray would otherwise keep every plane read below alive until close,
+        # a second copy of the step beside ``data``.
+        ds = xr.open_dataset(path, engine="netcdf4", cache=False)
         try:
             ds = self._normalize_longitudes(ds)
             time_dim = self._time_dimension(ds, path)
@@ -194,8 +198,8 @@ class ERA5Reader(ERA5ReaderBase):
         are unrestricted (``required_mode=CAM``); the five additional single-level
         fields carry per-spec ``required_mode=IMAGER`` gating, so they appear only in
         the FMATCH-IMAGER-family products. This per-spec latency split is why ``era5``
-        belongs to every product's reader set yet contributes a different variable
-        subset to the CAM vs IMAGER products.
+        serves every product yet contributes a different variable subset to the CAM vs
+        IMAGER products.
 
     Parameters
     ----------
@@ -212,61 +216,15 @@ class ERA5Reader(ERA5ReaderBase):
     # The 0.25 degree grid spacing at the equator. A sample covers a cell of this side in
     # the coverage measure, so the cells abut and a footprint inside the grid is complete.
     RESOLUTION_KM: float = 28.0
-    VARIABLES: tuple[VariableSpec, ...] = (
-        # --- Wind components: every product, from mission start ---
+    VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
-            name="wind_u10",
+            name=name,
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            required_mode=mode,
             n_categories=None,
-        ),
-        VariableSpec(
-            name="wind_v10",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
-        # --- Additional FMATCH-IMAGER single-level fields (beyond the winds).
-        # Gated per-spec with required_mode=IMAGER, so they flow to the FMATCH-IMAGER
-        # product while staying out of the lower-latency CAM products. They sit in the
-        # product alongside the RBSP CLDPIX/SSF cloud fields.
-        VariableSpec(
-            name="temperature_2m",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="dew_point_temperature_2m",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="surface_pressure",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="surface_geopotential",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            n_categories=None,
-        ),
-        VariableSpec(
-            name="forecast_albedo",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
-            n_categories=None,
-        ),
+        )
+        for name, _, mode in _ERA5_SINGLE_LEVEL_VARIABLES
     )
 
     def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
@@ -278,12 +236,12 @@ class ERA5Reader(ERA5ReaderBase):
             If the file is missing any of the expected ERA5 variables (e.g. a
             download configured with only a subset of the required fields).
         """
-        missing = [nc_name for _, nc_name in _ERA5_SINGLE_LEVEL_VARIABLES if nc_name not in step]
+        missing = [nc_name for _, nc_name, _ in _ERA5_SINGLE_LEVEL_VARIABLES if nc_name not in step]
         if missing:
             raise KeyError(
                 f"ERA5 single-levels file {path} is missing variable(s) {missing}. "
                 f"The CDS download must include every variable in "
-                f"{[nc for _, nc in _ERA5_SINGLE_LEVEL_VARIABLES]}."
+                f"{[nc for _, nc, _ in _ERA5_SINGLE_LEVEL_VARIABLES]}."
             )
-        for i, (_, nc_name) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES):
+        for i, (_, nc_name, _) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES):
             out[i] = step[nc_name].values

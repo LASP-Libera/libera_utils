@@ -31,14 +31,13 @@ Aerosol type categories (from the file's ``long_name``)
 
 Why the single-sensor granule (not the GEO-LEO merged one)?
 -----------------------------------------------------------
-FMATCH-IMAGER requires a single, well-characterized VIIRS aerosol source. The
+The AOD is written to the FMATCH-IMAGER products, and the L2 algorithms that read it
+there need a single, well-characterized VIIRS aerosol source. The
 dedicated single-sensor ``AERDB_D3_VIIRS_NOAA20`` Deep Blue granule provides the
 NOAA-20 VIIRS Deep Blue 550 nm AOD **and** the aerosol-type field, so both are
 sourced from this one authoritative granule. The cross-sensor
 ``AERDB_D3_GEOLEO_Merged`` granule only re-bundles the per-sensor L3s and its AOD
-lacks the aerosol-type field. To switch sensors later (e.g. NOAA-21/NOAA-22),
-point the reader at the corresponding ``AERDB_D3_VIIRS_*`` granule.
-TODO[LIBSDC-785]
+lacks the aerosol-type field.
 
 NetCDF4 layout (AERDB_D3_VIIRS_NOAA20)
 -------------------------------------
@@ -63,18 +62,11 @@ File naming:
     AERDB_D3_VIIRS_NOAA20.A{YYYYDDD}.{collection}.{YYYYDDDHHMMSS}.nc
 """
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
+import netCDF4
 import numpy as np
 
-from libera_utils.footprint_matching.readers._points import apply_fill_and_valid_range
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
-
-if TYPE_CHECKING:
-    import netCDF4
 
 # Root-level coordinate and data variable names in the single-sensor Deep Blue
 # L3 granule. (No group navigation: unlike AERDB_D3_GEOLEO_Merged, this product
@@ -200,12 +192,7 @@ class VIIRSAODReader(StaticReader):
             If either field lacks a ``_FillValue`` or ``valid_range`` attribute, or the
             aerosol-type ``valid_range`` admits a code outside the 8 categories (0..7).
         """
-        import netCDF4  # noqa: PLC0415
-
         with netCDF4.Dataset(str(self.single_file_path), "r") as ds:
-            # Each field's fill and valid range are applied once, below, rather than also
-            # by netCDF4's automatic masking.
-            ds.set_auto_mask(False)
             # Root-level coordinate arrays: (180,) and (360,) respectively.
             lats_full = np.array(ds.variables[_LAT_VAR][:], dtype=np.float64)
             lons_full = np.array(ds.variables[_LON_VAR][:], dtype=np.float64)
@@ -243,6 +230,6 @@ class VIIRSAODReader(StaticReader):
                 f"{self.single_file_path}: {variable.name} has no {' or '.join(missing)} attribute. The Deep Blue "
                 "AERDB_D3_VIIRS_NOAA20 granule carries both on every field; stage the granule as distributed."
             )
-        valid_range = np.asarray(variable.valid_range)
-        values = apply_fill_and_valid_range(variable[:], variable._FillValue, (valid_range[0], valid_range[1]))
-        return values.astype(np.float32)
+        # netCDF4's automatic masking applies the field's own _FillValue and valid_range,
+        # compared in the stored dtype before the cast.
+        return np.ma.asarray(variable[:]).astype(np.float32).filled(np.nan)

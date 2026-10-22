@@ -42,7 +42,7 @@ classifiers = [
 dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
     "lasp-curryer >= 0.5.2, <1.0",
-    "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
+    "h5netcdf[h5py]>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray; h5py comes only with the extra
     "netCDF4>=1.7.0,<2.0.0,!=1.7.3",  # netcdf4 engine support for xarray
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
     "pydantic>2.0.3",

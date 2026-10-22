@@ -35,8 +35,7 @@ Variables read (at each retained pressure level)
 These pressure-level fields sit in the radiometer-timescale FMATCH-IMAGER product
 alongside the RBSP CLDPIX/SSF cloud fields. The reader is deliberately absent from
 the camera-timescale FMATCH-IMAGER-CAMTIME product: the pressure-level fields are a
-radiometer-timescale quantity. Product membership is declared in the per-product
-reader sets in ``readers/registry.py``, not by the reader itself.
+radiometer-timescale quantity. Product membership is declared outside the reader.
 
 References
 ----------
@@ -47,8 +46,7 @@ Param DB (id): t=130, z=129, o3=203, q=133, r=157
               e.g. https://apps.ecmwf.int/codes/grib/param-db?id=130
 """
 
-from __future__ import annotations
-
+from collections.abc import Iterator
 from pathlib import Path
 
 import numpy as np
@@ -117,25 +115,33 @@ _ERA5_PRESSURE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
 _PRESSURE_LEVEL_COORD: str = "pressure_level"
 
 
-def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
-    """Generate one VariableSpec per (variable, pressure level) pair.
+def _pressure_level_layers() -> Iterator[tuple[str, str, int]]:
+    """Yield ``(spec name, ERA5 variable name, level hPa)`` for every reader output layer.
 
-    Variable-major, levels ascending — e.g. ``temperature_10hPa`` ...
-    ``temperature_1000hPa``, then ``geopotential_10hPa`` ... -- matching the
-    plane order in ``ERA5PressureLevelReader._read_step_layers``. Every field
-    is continuous (weighted-mean aggregated), so each also gains an automatic
-    ``_standard_deviation`` companion in ``product_variable_specs()``.
+    Variable-major, levels ascending (``temperature_10hPa`` ... ``temperature_1000hPa``,
+    then ``geopotential_10hPa`` ...). This is VARIABLES order and the plane order
+    ``ERA5PressureLevelReader._read_step_layers`` writes.
+    """
+    for base_name, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:
+        for level in _ERA5_PRESSURE_LEVELS:
+            yield f"{base_name}_{level}hPa", nc_name, level
+
+
+def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
+    """Generate one VariableSpec per (variable, pressure level) pair, in :func:`_pressure_level_layers` order.
+
+    Every field is continuous (weighted-mean aggregated), so each also gains an
+    automatic ``_standard_deviation`` companion in ``product_variable_specs()``.
     """
     return tuple(
         VariableSpec(
-            name=f"{base_name}_{level}hPa",
+            name=name,
             dtype="float32",
             aggregation="weighted_mean",
             required_mode=OperationalMode.IMAGER,
             n_categories=None,
         )
-        for base_name, _ in _ERA5_PRESSURE_LEVEL_VARIABLES
-        for level in _ERA5_PRESSURE_LEVELS
+        for name, _, _ in _pressure_level_layers()
     )
 
 
@@ -206,10 +212,5 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
                 f"FMATCH requires {list(_ERA5_PRESSURE_LEVELS)} (see _ERA5_PRESSURE_LEVELS)."
             )
 
-        # Variable-major, levels ascending -- must mirror _build_pressure_level_specs.
-        plane = 0
-        for _, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:
-            da = step[nc_name]
-            for level in _ERA5_PRESSURE_LEVELS:
-                out[plane] = da.sel({_PRESSURE_LEVEL_COORD: level}).values
-                plane += 1
+        for plane, (_, nc_name, level) in enumerate(_pressure_level_layers()):
+            out[plane] = step[nc_name].sel({_PRESSURE_LEVEL_COORD: level}).values

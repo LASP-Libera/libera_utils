@@ -6,8 +6,6 @@ Tests confirm:
 - a second class registering a key another class holds is rejected at definition
 """
 
-from __future__ import annotations
-
 import pytest
 
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)

@@ -10,7 +10,7 @@ Real ERA5 pressure-level files can be downloaded from:
     CDS login required: https://cds.climate.copernicus.eu/user/register
 """
 
-from __future__ import annotations
+import tracemalloc
 
 import numpy as np
 import pytest
@@ -136,6 +136,22 @@ class TestERA5PressureLevelReaderLoadSpatialRegion:
         reader = ERA5PressureLevelReader(fixture_path)
         with pytest.raises(ValueError, match="time dimension"):
             reader.samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
+
+    def test_step_load_peak_memory_is_one_step(self, tmp_path):
+        fixture_path = make_era5_pressure_netcdf_fixture(
+            tmp_path, n_lat=60, n_lon=120, lat_min=-15.0, lat_max=15.0, lon_min=-30.0, lon_max=30.0
+        )
+        reader = ERA5PressureLevelReader(fixture_path)
+        _ = reader._steps
+        tracemalloc.start()
+        try:
+            grid = reader._load_step(0)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # Each pressure plane is written into one preallocated array; stacking the planes
+        # would hold at least twice the step.
+        assert peak < 1.5 * grid.data.nbytes
 
 
 class TestERA5PressureLevelReaderErrors:

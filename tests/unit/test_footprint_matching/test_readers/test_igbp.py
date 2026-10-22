@@ -10,11 +10,10 @@ Real MCD12Q1 files can be downloaded from:
     LP DAAC Data Pool: https://e4ftl01.cr.usgs.gov/MOTA/MCD12Q1.061/
 """
 
-from __future__ import annotations
-
 import tracemalloc
 
 import numpy as np
+import pyhdf.SD as sd
 import pytest
 from pyhdf.error import HDF4Error
 
@@ -134,6 +133,19 @@ class TestReadModisSinusoidal:
         with pytest.raises(ValueError, match="StructMetadata.0 begins: .*GridStructure"):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
 
+    def test_error_quotes_only_the_first_400_characters(self, tmp_path):
+        path, _ = _tile(tmp_path, 18, 4)
+        long_text = "GROUP=GridStructure\n" + "\tSphereCode=-1\n" * 100
+        hdf = sd.SD(str(path), sd.SDC.WRITE)
+        try:
+            hdf.attr("StructMetadata.0").set(sd.SDC.CHAR8, long_text)
+        finally:
+            hdf.end()
+        with pytest.raises(ValueError, match="has no XDim field") as excinfo:
+            read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
+        assert repr(long_text[:400]) in str(excinfo.value)
+        assert repr(long_text[:401]) not in str(excinfo.value)
+
     def test_non_sinusoidal_projection_raises(self, tmp_path):
         path, _ = _tile(tmp_path, 18, 4, projection="GCTP_GEO")
         with pytest.raises(ValueError, match="Projection=GCTP_GEO, not the sinusoidal GCTP_SNSOID"):
@@ -154,6 +166,10 @@ class TestReadModisSinusoidal:
         path, _ = _tile(tmp_path, 18, 4)
         with pytest.raises(HDF4Error):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type2")
+
+    def test_missing_file_raises_hdf4_error(self, tmp_path):
+        with pytest.raises(HDF4Error):
+            read_modis_sinusoidal_hdf4(str(tmp_path / "absent.hdf"), "LC_Type1")
 
 
 class TestIGBPTiles:
