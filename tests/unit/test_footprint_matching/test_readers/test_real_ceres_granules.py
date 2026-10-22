@@ -28,6 +28,15 @@ def cldpix_path(fmatch_real_data_path):
 
 class TestRealSSF:
     def test_times_cover_one_hour_and_every_footprint_is_served(self, ssf_path):
+        """``SSFReader._load_granule`` decodes a time for every footprint of a real SSF granule, spanning the hour.
+
+        The pass matching selects SSF footprints by their observation time, so a footprint with an undecoded time would
+        never match, and a time variable decoded with the wrong encoding would place the whole granule at the wrong
+        hour.
+
+        Loads the real SSF cut and asserts every time is set (no NaT), the times span between 55 min and 1 h, the values
+        array holds one row per declared variable and one column per footprint, and every longitude lies in [-180, 180).
+        """
         reader = SSFReader(ssf_path)
         points = reader._load_granule(ssf_path)
         assert points.times is not None
@@ -38,6 +47,15 @@ class TestRealSSF:
         assert np.all((points.lons >= -180.0) & (points.lons < 180.0))
 
     def test_query_at_a_footprint_time_serves_its_pass(self, ssf_path):
+        """``SSFReader.samples_in`` serves a real SSF footprint's own pass when queried at its time and place.
+
+        This is the end-to-end path a Libera footprint takes: if the geolocation or time conventions of the file were
+        read wrong, a query at a known SSF footprint would find nothing, or a pass from the wrong time, and the matched
+        footprint would carry no or wrong SSF values.
+
+        Takes the middle footprint of the real SSF cut, queries a 1-degree box around it at its time and asserts samples
+        are served, all within ``PASS_WINDOW`` of that time, and that the same box four hours later serves none.
+        """
         reader = SSFReader(ssf_path)
         points = reader._load_granule(ssf_path)
         i = points.lats.size // 2
@@ -51,6 +69,14 @@ class TestRealSSF:
 
 class TestRealCLDPIX:
     def test_times_are_dated_fractional_hours_spanning_one_hour(self, cldpix_path):
+        """``CLDPIXReader._load_granule`` dates a real granule's fractional-hour ``Observation_Time`` onto its day.
+
+        CLDPIX stores times as hours of the day with the date only in a global attribute, so a decoding that dropped or
+        misread the date would put every pixel on the wrong day and no Libera footprint would ever match it.
+
+        Loads the real CLDPIX cut and asserts it has set times spanning between 55 min and 1 h, and that they fall
+        within 10 s of the granule's ``time_coverage_start``/``time_coverage_end`` as read by ``_granule_span``.
+        """
         reader = CLDPIXReader(cldpix_path)
         points = reader._load_granule(cldpix_path)
         assert points.times is not None
@@ -66,6 +92,14 @@ class TestRealCLDPIX:
         assert finite.max() <= end + np.timedelta64(10, "s")
 
     def test_latitudes_are_true_latitudes_in_both_hemispheres(self, cldpix_path):
+        """``CLDPIXReader._load_granule`` returns latitudes converted from the file's colatitude, within [-90, 90].
+
+        CLDPIX stores colatitude (0 at the North Pole to 180 at the South Pole); read as latitude, the southern
+        hemisphere would fall outside the valid range and be discarded and the rest would be misplaced, so cloud values
+        would land on the wrong footprints.
+
+        Loads the real CLDPIX cut and asserts every latitude lies in [-90, 90] and every longitude in [-180, 180).
+        """
         reader = CLDPIXReader(cldpix_path)
         points = reader._load_granule(cldpix_path)
         assert np.nanmin(points.lats) >= -90.0
@@ -73,6 +107,14 @@ class TestRealCLDPIX:
         assert np.all((points.lons >= -180.0) & (points.lons < 180.0))
 
     def test_query_at_a_pixel_time_serves_its_pass(self, cldpix_path):
+        """``CLDPIXReader.samples_in`` serves a real CLDPIX pixel's own pass when queried at its time and place.
+
+        This is the end-to-end path a Libera footprint takes through the cloud reader: a wrong geolocation or time
+        convention would leave a footprint over a known pixel with no cloud values, or with values from another pass.
+
+        Takes the middle pixel of the real CLDPIX cut, queries a 0.6-degree box around it at its time and asserts
+        samples are served, all within ``PASS_WINDOW`` of that time, with one value row per declared variable.
+        """
         reader = CLDPIXReader(cldpix_path)
         points = reader._load_granule(cldpix_path)
         i = points.lats.size // 2
@@ -83,6 +125,14 @@ class TestRealCLDPIX:
         assert samples.values.shape == (len(CLDPIXReader.VARIABLES), samples.n_samples)
 
     def test_granule_span_matches_the_coverage_attributes(self, cldpix_path):
+        """``CLDPIXReader._granule_span`` reads an hour-long span from a real granule that ``granules_in_window`` uses.
+
+        The span decides which granules are held for a footprint; a misread span would drop the granule a footprint
+        falls in, losing its cloud values, or hold granules a day away.
+
+        Reads the real CLDPIX cut's span, asserts it lasts between 55 min and 1 h, and asserts ``granules_in_window``
+        returns the granule for a time 30 min into the span and nothing for a time 24 h later.
+        """
         reader = CLDPIXReader(cldpix_path)
         start, end = reader._granule_span(cldpix_path)
         assert np.timedelta64(55, "m") < end - start <= np.timedelta64(1, "h")
