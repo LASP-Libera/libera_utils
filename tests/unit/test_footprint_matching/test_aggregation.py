@@ -2,7 +2,7 @@
 
 These exercise the pure strategy functions against hand-computed values, the
 NaN / zero-weight exclusion rules, the categorical mode / ranked-mode logic, the
-coverage bookkeeping, and the dispatcher's error handling. They do not query a reader
+coverage rule, and the dispatcher's error handling. They do not query a reader
 or read data -- that is covered by the integration test.
 """
 
@@ -150,6 +150,40 @@ class TestWeightedLogMean:
         Passes only -1 and 0 and asserts the result is NaN.
         """
         assert math.isnan(agg.weighted_log_mean(np.array([-1.0, 0.0]), np.array([1.0, 1.0]))["log_mean"])
+
+    def test_positive_std_uses_the_log_means_samples(self):
+        """``weighted_positive_std`` is the spread of the same positive samples ``weighted_log_mean`` averages.
+
+        A zero is in range for an optical depth but has no logarithm, so the log mean drops it. If its
+        ``_standard_deviation`` companion kept the zero, the mean and its spread would describe different samples.
+
+        Passes 0, 4 and 9 at equal weight. Asserts the log mean is 6 (4 and 9 only) and the positive std is 2.5, the
+        spread of 4 and 9, where ``weighted_std`` over all three would be about 3.68.
+        """
+        values = np.array([0.0, 4.0, 9.0])
+        weights = np.array([1.0, 1.0, 1.0])
+        assert agg.weighted_log_mean(values, weights)["log_mean"] == pytest.approx(6.0)
+        assert agg.weighted_positive_std(values, weights)["standard_deviation"] == pytest.approx(2.5)
+
+    def test_log_mean_companion_is_positive_std(self):
+        """The ``_standard_deviation`` companion of a log-mean variable is aggregated with ``weighted_positive_std``.
+
+        The companion's strategy is set when the reader's specs are expanded, so that is where a log-mean variable must
+        be paired with the positive-sample spread rather than the plain one.
+
+        Expands one ``weighted_mean`` and one ``weighted_log_mean`` spec and asserts their companions use
+        ``weighted_std`` and ``weighted_positive_std`` respectively.
+        """
+        specs = with_standard_deviation_companions(
+            (
+                VariableSpec(name="a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+                VariableSpec(
+                    name="b", dtype="float32", aggregation="weighted_log_mean", required_mode=OperationalMode.CAM
+                ),
+            )
+        )
+        companions = {spec.name: spec.aggregation for spec in specs if spec.name.endswith("_standard_deviation")}
+        assert companions == {"a_standard_deviation": "weighted_std", "b_standard_deviation": "weighted_positive_std"}
 
 
 class TestWeightedMedian:
@@ -358,50 +392,43 @@ class TestCheckCoverage:
         a footprint in the wrong band either publishes values backed by too little data or throws good ones away.
 
         Asserts the ``(accept, partial)`` pair for one coverage in each band: 0.96 is accepted in full, 0.80 is
-        accepted as partial and 0.50 is rejected. Also asserts that a footprint with zero total PSF energy is rejected
-        rather than dividing by zero. The exact boundaries of 0.75 and 0.95 are not tested.
+        accepted as partial, and 0.50 and 0.0 (no usable data) are rejected. The exact boundaries of 0.75 and 0.95 are
+        not tested.
         """
-        assert agg.check_coverage(0.96, 1.0) == (True, False)  # full
-        assert agg.check_coverage(0.80, 1.0) == (True, True)  # partial
-        assert agg.check_coverage(0.50, 1.0) == (False, False)  # discard
-        assert agg.check_coverage(1.0, 0.0) == (False, False)  # no PSF energy
+        assert agg.check_coverage(0.96) == (True, False)  # full
+        assert agg.check_coverage(0.80) == (True, True)  # partial
+        assert agg.check_coverage(0.50) == (False, False)  # discard
+        assert agg.check_coverage(0.0) == (False, False)  # no usable data
 
 
 class TestDispatcher:
-    def test_aggregate_wraps_result_with_coverage(self):
-        """``aggregate`` runs the named strategy and wraps its result with coverage bookkeeping.
+    def test_aggregate_wraps_result_with_sample_counts(self):
+        """``aggregate`` runs the named strategy and wraps its result with the samples it used.
 
-        ``aggregate`` is the general entry point for running a strategy by name. Its ``AggregationResult`` must carry
-        both the statistic and how much of the PSF energy the data backed, so that a caller can judge the value.
+        ``aggregate`` is the general entry point for running a strategy by name. Its ``AggregationResult`` carries the
+        statistic and how many samples backed it.
 
-        Runs ``"weighted_mean"`` on two fully covered samples with ``total_energy`` equal to their weight sum. Asserts
-        the mean is 3, the coverage is 1.0, both samples count as valid out of 2 in total, and the partial flag is
-        off.
+        Runs ``"weighted_mean"`` on two samples and asserts the mean is 3 and both samples count as valid out of 2.
         """
         values = np.array([2.0, 4.0])
         weights = np.array([1.0, 1.0])
-        result = agg.aggregate("weighted_mean", values, weights, total_energy=2.0)
+        result = agg.aggregate("weighted_mean", values, weights)
         assert result.values["mean"] == pytest.approx(3.0)
-        assert result.coverage == pytest.approx(1.0)
         assert result.n_valid == 2
         assert result.n_total == 2
-        assert result.partial_flag is False
 
-    def test_coverage_drops_with_uncovered_cells(self):
-        """``aggregate`` coverage is the share of ``total_energy`` on usable samples; 75-95% sets the partial flag.
+    def test_nan_samples_do_not_count_as_valid(self):
+        """``aggregate`` counts a NaN sample in ``n_total`` but not in ``n_valid``.
 
-        A sample with no data inside the PSF contour means part of what the instrument saw is not represented. The
-        coverage must fall by that sample's weight, so that the footprint is flagged or discarded under the CERES
-        rule.
+        A NaN is the reader's "no value here", so it must not be reported as a sample that contributed.
 
-        Gives four samples weight 1 each with one NaN value and ``total_energy=4``. Asserts the coverage is 0.75 and
-        that the result is flagged partial.
+        Gives four samples weight 1 each with one NaN value and asserts ``n_valid`` is 3 of ``n_total`` 4.
         """
         values = np.array([1.0, 1.0, 1.0, np.nan])
         weights = np.array([1.0, 1.0, 1.0, 1.0])
-        result = agg.aggregate("weighted_mean", values, weights, total_energy=4.0)
-        assert result.coverage == pytest.approx(0.75)
-        assert result.partial_flag is True
+        result = agg.aggregate("weighted_mean", values, weights)
+        assert result.n_valid == 3
+        assert result.n_total == 4
 
     def test_unknown_strategy_raises_value_error(self):
         """``aggregate`` raises ``ValueError`` for an unregistered strategy name.
@@ -474,17 +501,13 @@ def _reference_sample_variables(reader_cls, samples: SampleSet, weight_field: We
     No per-plane sharing, so any divergence in the optimized path shows up as a value
     mismatch here.
     """
-    planes = [samples.values[i] for i in range(samples.values.shape[0])]
     weights = np.asarray(weight_field.weights, dtype=float).ravel()
     out: dict[str, float] = {}
     for spec, read_index in agg._map_product_specs(reader_cls):
-        plane = planes[read_index] if read_index < len(planes) else np.empty(0, dtype=float)
         n_categories = spec.n_categories
         if n_categories is None:
             n_categories = reader_cls.VARIABLES[read_index].n_categories
-        result = agg.aggregate(
-            spec.aggregation, plane, weights, total_energy=weight_field.total_energy, n_categories=n_categories
-        )
+        result = agg.aggregate(spec.aggregation, samples.values[read_index], weights, n_categories=n_categories)
         out[spec.name] = float(result.values[agg._SCALAR_KEY[spec.aggregation]])
     return out
 
@@ -558,3 +581,164 @@ class TestAggregateSampleVariablesParity:
         weight_field = WeightField(weights=np.empty(0), total_energy=0.0, max_radius_km=100.0, coverage=0.0)
         got = agg.aggregate_sample_variables(_ParityReader, samples, weight_field)
         assert all(math.isnan(v) for v in got.values())
+
+
+def _sample_set(values: np.ndarray) -> SampleSet:
+    """A SampleSet carrying ``values`` (``(n_var, n)``) at arbitrary in-box positions."""
+    n = values.shape[1]
+    return SampleSet(
+        lats=np.linspace(0.2, 0.8, n),
+        lons=np.linspace(0.2, 0.8, n),
+        values=values,
+        times=None,
+        source="_test",
+        bounds=BoundingBox(0.0, 1.0, 0.0, 1.0),
+    )
+
+
+def _weight_field(weights: np.ndarray) -> WeightField:
+    return WeightField(weights=weights, total_energy=float(weights.sum()), max_radius_km=100.0, coverage=1.0)
+
+
+class TestAggregateSampleVariablesValues:
+    def test_hand_computed_footprint(self):
+        """``aggregate_sample_variables`` puts the hand-computed value of each product variable under its name.
+
+        The parity test checks the shared path against a reference that uses the same spec-to-row mapping, so a
+        variable read from the wrong row would pass it. Known numbers pin each variable to its own row.
+
+        Four samples with weights 1, 1, 1 and 2:
+
+        - ``field_a`` = 1, 3, NaN, 5: mean (1 + 3 + 10) / 4 = 3.5, std sqrt(15 - 3.5^2) = sqrt(2.75).
+        - ``field_b`` = 0, 4, 9, 4: log mean over 4, 9, 4 is 4^0.75 * 9^0.25 = sqrt(24); its std over the same
+          samples is sqrt(32.25 - 5.25^2) = sqrt(4.6875).
+        - ``surface`` = 1, 2, 2, 1: class 1 weighs 3 and class 2 weighs 2, so the mode and primary are 1, the secondary
+          is 2 and the tertiary is NaN.
+        """
+        values = np.array(
+            [
+                [1.0, 3.0, np.nan, 5.0],
+                [0.0, 4.0, 9.0, 4.0],
+                [1.0, 2.0, 2.0, 1.0],
+            ]
+        )
+        got = agg.aggregate_sample_variables(
+            _ParityReader, _sample_set(values), _weight_field(np.array([1.0, 1.0, 1.0, 2.0]))
+        )
+        assert got["field_a"] == pytest.approx(3.5)
+        assert got["field_a_standard_deviation"] == pytest.approx(math.sqrt(2.75))
+        assert got["field_b"] == pytest.approx(math.sqrt(24.0))
+        assert got["field_b_standard_deviation"] == pytest.approx(math.sqrt(4.6875))
+        assert got["surface"] == 1.0
+        assert got["surface_primary"] == 1.0
+        assert got["surface_secondary"] == 2.0
+        assert math.isnan(got["surface_tertiary"])
+
+    def test_cloud_path_strategy_on_the_product_path(self):
+        """``aggregate_sample_variables`` runs a cloud-path strategy that has no shared per-row core.
+
+        ``coverage_fraction`` and the other cloud and radiance strategies are called directly on the variable's row
+        rather than through the shared mask or histogram. That path must still read the right row and return the
+        strategy's scalar.
+
+        Uses a reader whose one variable is ``coverage_fraction``, with values 0, 1, 1 at weights 2, 1, 1, and asserts
+        the fraction is 0.5 (weight 2 of 4 above zero).
+        """
+        got = agg.aggregate_sample_variables(
+            _CloudFractionReader, _sample_set(np.array([[0.0, 1.0, 1.0]])), _weight_field(np.array([2.0, 1.0, 1.0]))
+        )
+        assert got == {"cloud": pytest.approx(0.5)}
+
+
+class _CloudFractionReader:
+    """Reader stand-in whose one product variable uses a cloud-path strategy."""
+
+    __name__ = "_CloudFractionReader"
+    VARIABLES = (
+        VariableSpec(name="cloud", dtype="float32", aggregation="coverage_fraction", required_mode=OperationalMode.CAM),
+    )
+
+    @classmethod
+    def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
+        return cls.VARIABLES
+
+
+class _UnmappableReader:
+    """Reader stand-in whose derived product variable is not named after any read variable."""
+
+    __name__ = "_UnmappableReader"
+    VARIABLES = (
+        VariableSpec(name="field_a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+    )
+
+    @classmethod
+    def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
+        return cls.VARIABLES + (
+            VariableSpec(
+                name="other_thing", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM
+            ),
+        )
+
+
+class _NonScalarReader:
+    """Reader stand-in whose product variable names a strategy that does not yield one value."""
+
+    __name__ = "_NonScalarReader"
+    VARIABLES = (
+        VariableSpec(name="field_a", dtype="float32", aggregation="report_all", required_mode=OperationalMode.CAM),
+    )
+
+    @classmethod
+    def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
+        return cls.VARIABLES
+
+
+class TestAggregateSampleVariablesErrors:
+    def test_unmappable_product_variable_raises(self):
+        """``aggregate_sample_variables`` raises ``ValueError`` for a product variable it cannot map to a read row.
+
+        A derived product variable is read from the row of the read variable its name starts with. One named after
+        none of them would otherwise have no row to read, and the run must stop rather than store a wrong value.
+
+        Uses a reader whose extra product variable is ``other_thing`` and asserts a ``ValueError`` matching "cannot be
+        mapped".
+        """
+        values = np.array([[1.0, 2.0]])
+        with pytest.raises(ValueError, match="cannot be mapped"):
+            agg.aggregate_sample_variables(_UnmappableReader, _sample_set(values), _weight_field(np.ones(2)))
+
+    def test_non_scalar_aggregation_raises(self):
+        """``aggregate_sample_variables`` raises ``ValueError`` naming the variable when its strategy has no scalar.
+
+        ``report_all`` returns arrays, not one value, so a product variable labelled with it, or with a misspelled
+        strategy, cannot be stored. The error must name the reader and the variable so the spec can be fixed.
+
+        Uses a reader whose only variable is ``report_all`` and asserts a ``ValueError`` naming ``field_a``.
+        """
+        values = np.array([[1.0, 2.0]])
+        with pytest.raises(ValueError, match="'field_a'.*'report_all'"):
+            agg.aggregate_sample_variables(_NonScalarReader, _sample_set(values), _weight_field(np.ones(2)))
+
+    def test_missing_value_row_raises(self):
+        """``aggregate_sample_variables`` raises ``ValueError`` when the samples carry fewer rows than the reader's
+        variables.
+
+        A missing row would otherwise read as NaN, the "not covered" signal, or fail inside numpy with a message that
+        names neither the reader nor the cause.
+
+        Passes two rows for ``_ParityReader``'s three variables and asserts a ``ValueError`` matching "expected".
+        """
+        values = np.array([[1.0, 2.0], [3.0, 4.0]])
+        with pytest.raises(ValueError, match="_ParityReader.*expected"):
+            agg.aggregate_sample_variables(_ParityReader, _sample_set(values), _weight_field(np.ones(2)))
+
+    def test_weight_length_mismatch_raises(self):
+        """``aggregate_sample_variables`` raises ``ValueError`` when the weights do not match the samples one to one.
+
+        Weights computed for a different sample set would pair each value with another sample's weight.
+
+        Passes three samples with two weights and asserts a ``ValueError`` matching "2 weights for 3 samples".
+        """
+        values = np.ones((3, 3))
+        with pytest.raises(ValueError, match="2 weights for 3 samples"):
+            agg.aggregate_sample_variables(_ParityReader, _sample_set(values), _weight_field(np.ones(2)))

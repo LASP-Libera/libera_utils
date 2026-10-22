@@ -475,7 +475,13 @@ class VariableSpec:
             )
 
 
-_MEAN_AGGREGATIONS: frozenset[str] = frozenset({"weighted_mean", "weighted_log_mean"})
+# The aggregation of the standard-deviation companion for each mean-aggregated parent:
+# a geometric mean is defined only on positive values, so its spread is taken over the
+# same positive samples.
+_STANDARD_DEVIATION_AGGREGATION: dict[str, str] = {
+    "weighted_mean": "weighted_std",
+    "weighted_log_mean": "weighted_positive_std",
+}
 
 # Suffix appended to a continuous variable's name to form its std-dev companion.
 # Kept as a module constant so the readers, product definitions, and tests all
@@ -495,10 +501,9 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
     The companion is declared here so the reader ``VariableSpec`` tuple stays the
     single source of truth for the FMATCH product variables (the product
     definition YAMLs and the cross-check test both derive variable names from
-    these specs). The companion's ``aggregation`` is set to ``"weighted_std"`` --
-    a strategy name that the PSF aggregation engine does not yet implement; like
-    the parent variables, the companion is *declared* now and *computed* once the
-    aggregation engine is built (see ``product.aggregate_external_variables``).
+    these specs). The companion's ``aggregation`` is ``"weighted_std"`` for a
+    ``weighted_mean`` parent and ``"weighted_positive_std"`` for a
+    ``weighted_log_mean`` parent, so the spread covers the same samples as the mean.
 
     Parameters
     ----------
@@ -515,7 +520,7 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
     expanded: list[VariableSpec] = []
     for spec in specs:
         expanded.append(spec)
-        if spec.aggregation in _MEAN_AGGREGATIONS:
+        if spec.aggregation in _STANDARD_DEVIATION_AGGREGATION:
             # A standard deviation is always a non-negative real number, so it is
             # stored as float32 regardless of the parent's dtype and carries no
             # category count. The companion inherits the parent's ``modes``, so it
@@ -524,7 +529,7 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
                 VariableSpec(
                     name=f"{spec.name}{STANDARD_DEVIATION_SUFFIX}",
                     dtype="float32",
-                    aggregation="weighted_std",
+                    aggregation=_STANDARD_DEVIATION_AGGREGATION[spec.aggregation],
                     modes=spec.modes,
                     n_categories=None,
                 )

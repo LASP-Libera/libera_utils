@@ -1,4 +1,4 @@
-"""PSF aggregation engine: collapse a footprint's gridded pixels to one value.
+"""PSF aggregation engine: collapse a footprint's native samples to one value.
 
 Where this sits in the pipeline
 -------------------------------
@@ -21,9 +21,7 @@ Two layers
 2. **A product-facing projection** (:func:`aggregate_sample_variables`) that walks a
    reader's *product* variable specifications, picks the right value row for each,
    dispatches to the correct strategy, and returns the single scalar the product
-   definition stores for that variable. This is the bit
-   :func:`libera_utils.footprint_matching.product.aggregate_external_variables`
-   calls once per footprint per source.
+   definition stores for that variable, once per footprint per source.
 
 CERES heritage
 --------------
@@ -36,7 +34,7 @@ https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cache
 from typing import TYPE_CHECKING, Any
 
@@ -47,11 +45,13 @@ from libera_utils.footprint_matching.types import STANDARD_DEVIATION_SUFFIX
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from libera_utils.footprint_matching.readers.base import AncillaryReader
     from libera_utils.footprint_matching.types import SampleSet, VariableSpec
     from libera_utils.footprint_matching.weighting import WeightField
 
 # CERES coverage thresholds (design doc section 2.4.2.7 / 2.8.1.1.3). The coverage
-# metric is the fraction of the PSF's 95%-energy weight that had usable data:
+# metric is the fraction of the PSF's 95%-energy contour backed by usable data, as the
+# weigher measures it on its reference grid (WeightField.coverage):
 #   >= 95%           -> fully accepted
 #   75% .. < 95%     -> accepted but flagged as *partial* coverage
 #   < 75%            -> insufficient data (the orchestrator discards the footprint)
@@ -63,39 +63,31 @@ PARTIAL_COVERAGE_THRESHOLD: float = 0.95
 
 @dataclass
 class AggregationResult:
-    """Output of a single aggregation, with coverage bookkeeping.
+    """Output of a single aggregation, with sample bookkeeping.
 
-    Mirrors the design doc's ``AggregationResult`` (section 2.8.1.4.2). The
-    ``values`` dict holds the strategy's named sub-results (e.g. ``{"mean": ...}``,
-    ``{"mode": ..., "coverage_fractions": ...}``); the remaining fields describe how
-    much of the PSF footprint actually had data so the footprint can be scored as
-    full / partial / discard downstream.
+    The ``values`` dict holds the strategy's named sub-results (e.g. ``{"mean": ...}``,
+    ``{"mode": ..., "coverage_fractions": ...}``). Footprint coverage is not
+    recorded here: a swath gap has no samples, so it can only be measured on the
+    weigher's reference grid (``WeightField.coverage``), which :func:`check_coverage`
+    scores.
 
     Attributes
     ----------
     values : dict[str, Any]
         Named results produced by the strategy function.
-    coverage : float
-        Fraction of the PSF's total in-contour weight backed by usable data, in
-        ``[0, 1]``. ``0.0`` when there was no data or no PSF weight.
     n_valid : int
         Number of samples that contributed (finite value, positive weight).
     n_total : int
         Number of samples considered (the sample set's size).
-    partial_flag : bool
-        ``True`` when ``0.75 <= coverage < 0.95`` (CERES partial-coverage band).
     """
 
     values: dict[str, Any]
-    coverage: float
     n_valid: int
     n_total: int
-    partial_flag: bool = field(default=False)
 
 
 def check_coverage(
-    sampled_weight: float,
-    total_energy: float,
+    coverage: float,
     *,
     accept_threshold: float = ACCEPT_COVERAGE_THRESHOLD,
     partial_threshold: float = PARTIAL_COVERAGE_THRESHOLD,
@@ -104,11 +96,9 @@ def check_coverage(
 
     Parameters
     ----------
-    sampled_weight : float
-        Sum of PSF weights over samples that had usable data.
-    total_energy : float
-        Total PSF weight within the 95%-energy contour (the full-coverage
-        denominator). ``<= 0`` means the footprint had no PSF weight at all.
+    coverage : float
+        Fraction in ``[0, 1]`` of the PSF's in-contour energy backed by usable data,
+        as the weigher reports it (``WeightField.coverage``).
     accept_threshold, partial_threshold : float, optional
         Lower bound for acceptance (default 0.75) and for full (non-partial)
         coverage (default 0.95).
@@ -120,11 +110,8 @@ def check_coverage(
         ``partial`` is ``True`` in the ``[accept_threshold, partial_threshold)``
         band.
     """
-    if total_energy <= 0.0:
-        return False, False
-    fraction = sampled_weight / total_energy
-    accept = fraction >= accept_threshold
-    partial = accept_threshold <= fraction < partial_threshold
+    accept = coverage >= accept_threshold
+    partial = accept_threshold <= coverage < partial_threshold
     return accept, partial
 
 
@@ -206,14 +193,23 @@ def _std_from_partials(p: _WeightedPartials) -> dict[str, float]:
     return {"standard_deviation": float(np.sqrt(max(variance, 0.0)))}
 
 
+def _positive(p: _WeightedPartials) -> _WeightedPartials:
+    """The strictly positive samples of pre-masked partials, the set a geometric mean is defined on."""
+    positive = p.values > 0.0
+    return _WeightedPartials(values=p.values[positive], weights=p.weights[positive])
+
+
 def _log_mean_from_partials(p: _WeightedPartials) -> dict[str, float]:
     """Weighted geometric mean from pre-masked partials (see :func:`weighted_log_mean`)."""
-    positive = p.values > 0.0
-    if not np.any(positive):
+    q = _positive(p)
+    if q.weights.size == 0:
         return {"log_mean": float("nan")}
-    v = p.values[positive]
-    w = p.weights[positive]
-    return {"log_mean": float(np.exp(np.sum(w * np.log(v)) / np.sum(w)))}
+    return {"log_mean": float(np.exp(np.sum(q.weights * np.log(q.values)) / np.sum(q.weights)))}
+
+
+def _positive_std_from_partials(p: _WeightedPartials) -> dict[str, float]:
+    """Weighted standard deviation over the strictly positive samples (see :func:`weighted_positive_std`)."""
+    return _std_from_partials(_positive(p))
 
 
 def _median_from_partials(p: _WeightedPartials) -> dict[str, float]:
@@ -257,11 +253,22 @@ def weighted_log_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict
 
     Used for optical depths, where the distribution is closer to log-normal so a
     geometric mean is the physically meaningful average. Only strictly positive
-    values contribute -- ``ln`` is undefined at and below zero, and a zero/negative
-    optical depth is not physical -- so those cells are dropped in addition to the
-    usual NaN exclusion.
+    values contribute -- ``ln`` is undefined at and below zero -- so those samples are
+    dropped in addition to the usual NaN exclusion. Its ``_standard_deviation``
+    companion is :func:`weighted_positive_std`, over the same positive samples.
     """
     return _log_mean_from_partials(_prepare(values, weights))
+
+
+def weighted_positive_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
+    """PSF-weighted standard deviation over the strictly positive samples.
+
+    The ``<name>_standard_deviation`` companion of a :func:`weighted_log_mean`
+    variable, so the spread describes the same samples as the mean it pairs with. In
+    the variable's own units, as :func:`weighted_std` is. NaN when no sample is
+    positive.
+    """
+    return _positive_std_from_partials(_prepare(values, weights))
 
 
 def weighted_median(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
@@ -408,8 +415,8 @@ def weighted_mode_tertiary(
 # These are declared in the design doc (section 2.8.1.4) and provided here so the
 # dispatcher is complete, but note that no *current* reader labels a variable with
 # them -- VIIRS/CLDPIX cloud variables are presently aggregated with weighted_mean /
-# weighted_log_mean. They are wired and unit-tested so a future reader (or a
-# variables.yaml re-labelling) can select them without touching this module.
+# weighted_log_mean. They are wired and unit-tested so a future reader can select
+# them without touching this module.
 
 
 def coverage_fraction(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
@@ -480,8 +487,8 @@ def aggregate_broadband_radiance(
     not yet expose, so this provides the total PSF-weighted radiance now and reports
     NaN for the clear/cloudy split.
 
-    TODO[LIBSDC-785]: implement the cloud-layer-aware bin weighting once the angular
-    PSF projection (see :mod:`libera_utils.footprint_matching.weighting`) is in place.
+    TODO[LIBSDC-785]: implement the cloud-layer-aware bin weighting once the weighting
+    exposes the per-bin cloud layering.
     """
     total = weighted_mean(values, weights)["mean"]
     if cloud_mask is None:
@@ -516,6 +523,7 @@ _STRATEGIES: dict[str, Callable[..., dict[str, Any]]] = {
     "weighted_mean": weighted_mean,
     "weighted_std": weighted_std,
     "weighted_log_mean": weighted_log_mean,
+    "weighted_positive_std": weighted_positive_std,
     "weighted_median": weighted_median,
     "weighted_mode": weighted_mode,
     "weighted_mode_primary": weighted_mode_primary,
@@ -536,6 +544,7 @@ _SCALAR_KEY: dict[str, str] = {
     "weighted_mean": "mean",
     "weighted_std": "standard_deviation",
     "weighted_log_mean": "log_mean",
+    "weighted_positive_std": "standard_deviation",
     "weighted_median": "median",
     "weighted_mode": "mode",
     "weighted_mode_primary": "mode",
@@ -558,6 +567,7 @@ _CONTINUOUS_CORES: dict[str, Callable[[_WeightedPartials], dict[str, Any]]] = {
     "weighted_mean": _mean_from_partials,
     "weighted_std": _std_from_partials,
     "weighted_log_mean": _log_mean_from_partials,
+    "weighted_positive_std": _positive_std_from_partials,
     "weighted_median": _median_from_partials,
 }
 
@@ -575,17 +585,13 @@ def aggregate(
     strategy: str,
     values: np.ndarray,
     weights: np.ndarray,
-    *,
-    total_energy: float | None = None,
     **kwargs: Any,
 ) -> AggregationResult:
-    """Run a named aggregation strategy and wrap it with coverage bookkeeping.
+    """Run a named aggregation strategy and wrap it with sample bookkeeping.
 
     Looks ``strategy`` up in the registry, invokes it on ``(values, weights)``, and
-    packages the result in an :class:`AggregationResult` whose coverage is the
-    fraction of the PSF's total weight (``total_energy``) that was backed by usable
-    data. When ``total_energy`` is not supplied it defaults to the total finite
-    weight, so coverage collapses to 1.0 for a fully-covered footprint.
+    packages the result in an :class:`AggregationResult` with the number of samples
+    that contributed.
 
     Parameters
     ----------
@@ -594,9 +600,6 @@ def aggregate(
     values, weights : np.ndarray
         Per-cell data values and PSF weights (any shape; flattened internally by the
         strategies via the usable-mask helper).
-    total_energy : float, optional
-        Total PSF weight within the 95% contour, the coverage denominator. Defaults
-        to the summed finite positive weight.
     **kwargs
         Extra strategy arguments (e.g. ``n_categories``, ``cloud_mask``,
         ``threshold``).
@@ -620,19 +623,11 @@ def aggregate(
     result = func(values, weights, **kwargs)
 
     values_arr = np.asarray(values, dtype=float)
-    weights_arr = np.asarray(weights, dtype=float)
-    mask = _usable(values_arr, weights_arr)
-    valid_weight = float(np.sum(weights_arr[mask])) if np.any(mask) else 0.0
-    denom = total_energy if total_energy is not None else valid_weight
-    coverage = (valid_weight / denom) if denom and denom > 0.0 else 0.0
-    _, partial = check_coverage(valid_weight, denom if denom else 0.0)
-
+    mask = _usable(values_arr, np.asarray(weights, dtype=float))
     return AggregationResult(
         values=result,
-        coverage=float(coverage),
         n_valid=int(np.count_nonzero(mask)),
         n_total=int(values_arr.size),
-        partial_flag=bool(partial),
     )
 
 
@@ -642,7 +637,7 @@ def aggregate(
 
 
 @cache
-def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
+def _map_product_specs(reader_cls: type[AncillaryReader]) -> list[tuple[VariableSpec, int]]:
     """Associate every product variable spec with the read-plane it derives from.
 
     Cached per reader class (:func:`functools.lru_cache`): the spec-to-plane mapping is a
@@ -673,14 +668,21 @@ def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
     Raises
     ------
     ValueError
-        If a product spec cannot be associated with any read variable (a
-        misconfigured reader), so the failure is loud rather than a silent bad plane.
+        If a product spec cannot be associated with any read variable, or names an
+        aggregation strategy that does not yield one scalar (a misconfigured reader),
+        so the failure is loud at the first footprint rather than a silent bad plane.
     """
     read_names = [spec.name for spec in reader_cls.VARIABLES]
     index_by_name = {name: i for i, name in enumerate(read_names)}
 
     mapping: list[tuple[VariableSpec, int]] = []
     for spec in reader_cls.product_variable_specs():
+        if spec.aggregation not in _SCALAR_KEY:
+            raise ValueError(
+                f"Reader {reader_cls.__name__!r}: product variable {spec.name!r} names aggregation "
+                f"{spec.aggregation!r}, which does not yield one value per footprint. Set its "
+                f"VariableSpec.aggregation to one of {sorted(_SCALAR_KEY)}."
+            )
         if spec.name in index_by_name:
             mapping.append((spec, index_by_name[spec.name]))
             continue
@@ -702,7 +704,9 @@ def _map_product_specs(reader_cls: Any) -> list[tuple[VariableSpec, int]]:
     return mapping
 
 
-def aggregate_sample_variables(reader_cls: Any, samples: SampleSet, weight_field: WeightField) -> dict[str, float]:
+def aggregate_sample_variables(
+    reader_cls: type[AncillaryReader], samples: SampleSet, weight_field: WeightField
+) -> dict[str, float]:
     """Aggregate one footprint's samples from one source to one scalar per product variable.
 
     For the given reader, this picks the correct value row for each product
@@ -730,37 +734,54 @@ def aggregate_sample_variables(reader_cls: Any, samples: SampleSet, weight_field
         ``{spec.name: scalar}`` for every variable in
         ``reader_cls.product_variable_specs()``.
 
+    Raises
+    ------
+    ValueError
+        If a product variable cannot be mapped to a read variable or names an
+        aggregation that does not yield one value (see :func:`_map_product_specs`); if
+        ``samples.values`` is not ``(len(reader_cls.VARIABLES), samples.n_samples)``; or
+        if ``weight_field.weights`` does not hold one weight per sample.
+
     Notes
     -----
-    Only the scalar each strategy yields is returned; the coverage bookkeeping that
-    :func:`aggregate` computes is not needed here (the weigher reports coverage on its
-    reference grid, see :class:`~libera_utils.footprint_matching.weighting.WeightField`),
-    so this dispatches to the strategy cores directly rather than through :func:`aggregate`.
+    Only the scalar each strategy yields is returned, so this dispatches to the strategy
+    cores directly rather than through :func:`aggregate`. Coverage is the weigher's
+    (``WeightField.coverage``, scored by :func:`check_coverage`), not computed here.
     Because many product variables derive from the same data plane -- a variable and its
     ``_standard_deviation`` companion, or IGBP's four ranked-mode scenes off one
     ``surface_type`` plane -- the per-plane :func:`_usable` mask (continuous) and category
     histogram (categorical) are computed once and reused across those variables.
     """
+    mapping = _map_product_specs(reader_cls)
+
     # (n_var, n) value rows; axis 0 order matches VARIABLES (the reader contract),
     # which is what _map_product_specs indexes into.
     data_rows = np.asarray(samples.values)
-    n_planes = data_rows.shape[0]
+    expected_shape = (len(reader_cls.VARIABLES), samples.n_samples)
+    if data_rows.shape != expected_shape:
+        raise ValueError(
+            f"Reader {reader_cls.__name__!r}: samples.values has shape {data_rows.shape}, expected "
+            f"{expected_shape} (one row per VARIABLES entry, one column per sample). The reader served "
+            f"values that do not match its declared variables."
+        )
 
     weights = np.asarray(weight_field.weights, dtype=float).ravel()
+    if weights.size != samples.n_samples:
+        raise ValueError(
+            f"Reader {reader_cls.__name__!r}: the weight field holds {weights.size} weights for "
+            f"{samples.n_samples} samples. Weigh the same SampleSet that is being aggregated."
+        )
 
     # Lazily computed, per-plane shared work: the usable-masked partials (reused by every
     # continuous variable on the plane) and the category histogram per (plane,
     # n_categories) (reused by a plane's mode + ranked-mode variants). Cached within this
     # call only -- weights differ per footprint, so nothing survives across footprints.
-    def plane(read_index: int) -> np.ndarray:
-        return data_rows[read_index] if read_index < n_planes else np.empty(0, dtype=float)
-
     partials_cache: dict[int, _WeightedPartials] = {}
 
     def partials(read_index: int) -> _WeightedPartials:
         cached = partials_cache.get(read_index)
         if cached is None:
-            cached = _prepare(plane(read_index), weights)
+            cached = _prepare(data_rows[read_index], weights)
             partials_cache[read_index] = cached
         return cached
 
@@ -770,12 +791,12 @@ def aggregate_sample_variables(reader_cls: Any, samples: SampleSet, weight_field
         key = (read_index, n_categories)
         cached = histogram_cache.get(key)
         if cached is None:
-            cached = _weighted_category_weights(plane(read_index), weights, n_categories)
+            cached = _weighted_category_weights(data_rows[read_index], weights, n_categories)
             histogram_cache[key] = cached
         return cached
 
     out: dict[str, float] = {}
-    for spec, read_index in _map_product_specs(reader_cls):
+    for spec, read_index in mapping:
         strategy = spec.aggregation
         if strategy in _CONTINUOUS_CORES:
             result = _CONTINUOUS_CORES[strategy](partials(read_index))
@@ -791,8 +812,7 @@ def aggregate_sample_variables(reader_cls: Any, samples: SampleSet, weight_field
                 result = _ranked_mode_from_histogram(*histogram(read_index, n_categories), _CATEGORICAL_RANK[strategy])
             else:
                 # Uncommon strategies (cloud / radiance path) that no current reader
-                # labels on the product path: fall back to a direct strategy call. Still
-                # bypasses aggregate() (no coverage needed here).
-                result = _STRATEGIES[strategy](plane(read_index), weights, n_categories=n_categories)
+                # labels on the product path: fall back to a direct strategy call.
+                result = _STRATEGIES[strategy](data_rows[read_index], weights, n_categories=n_categories)
         out[spec.name] = float(result[_SCALAR_KEY[strategy]])
     return out
