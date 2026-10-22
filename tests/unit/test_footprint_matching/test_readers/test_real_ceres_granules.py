@@ -27,7 +27,7 @@ def cldpix_path(fmatch_real_data_path):
 
 
 class TestRealSSF:
-    def test_times_cover_one_hour_and_every_footprint_is_served(self, ssf_path):
+    def test_every_footprint_has_a_time_and_the_times_span_one_hour(self, ssf_path):
         """``SSFReader._load_granule`` decodes a time for every footprint of a real SSF granule, spanning the hour.
 
         The pass matching selects SSF footprints by their observation time, so a footprint with an undecoded time would
@@ -98,12 +98,14 @@ class TestRealCLDPIX:
         hemisphere would fall outside the valid range and be discarded and the rest would be misplaced, so cloud values
         would land on the wrong footprints.
 
-        Loads the real CLDPIX cut and asserts every latitude lies in [-90, 90] and every longitude in [-180, 180).
+        Loads the real CLDPIX cut, which crosses the equator, and asserts every latitude lies in [-90, 90], that some
+        are south and some north of the equator, and every longitude lies in [-180, 180).
         """
         reader = CLDPIXReader(cldpix_path)
         points = reader._load_granule(cldpix_path)
         assert np.nanmin(points.lats) >= -90.0
         assert np.nanmax(points.lats) <= 90.0
+        assert np.nanmin(points.lats) < 0.0 < np.nanmax(points.lats)
         assert np.all((points.lons >= -180.0) & (points.lons < 180.0))
 
     def test_query_at_a_pixel_time_serves_its_pass(self, cldpix_path):

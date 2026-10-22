@@ -116,12 +116,13 @@ class TestCLDPIXReaderSamples:
         Footprint boxes are given in -180..180; a pixel left at 345° would never match a footprint at -15° and the
         western-hemisphere cloud properties would be lost.
 
-        Builds the fixture with pixels at 345° longitude, queries a box spanning -16° to -14° and asserts some value is
-        finite.
+        Builds the fixture with its 12 pixels at 345° longitude, queries a box spanning -16° to -14° and asserts all 12
+        are served, each at -15°.
         """
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.isfinite(data).any()
+        samples = reader.samples_in(_BBOX, _T)
+        assert samples.n_samples == 12
+        assert np.allclose(samples.lons, -15.0, atol=1e-4)
 
     def test_points_absent_from_unrelated_tile(self, tmp_path):
         """``CLDPIXReader.samples_in`` serves no pixels to a box that does not contain them.
@@ -129,12 +130,11 @@ class TestCLDPIXReaderSamples:
         A footprint must receive only the imager pixels under it; pixels leaking into a distant box would assign one
         region's clouds to another.
 
-        Builds the fixture with pixels near 40° N, -15° E, queries a box at 14° to 16° E and asserts no value is
-        finite.
+        Builds the fixture with pixels near 40° N, -15° E, queries a box at 14° to 16° E and asserts no pixel is
+        served.
         """
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data = _values(reader, BoundingBox(39.0, 41.0, 14.0, 16.0))
-        assert not np.isfinite(data).any()
+        assert reader.samples_in(BoundingBox(39.0, 41.0, 14.0, 16.0), _T).n_samples == 0
 
     def test_continuous_values(self, tmp_path):
         """``CLDPIXReader.samples_in`` serves continuous cloud properties with the values stored in the file.
@@ -182,18 +182,23 @@ class TestCLDPIXReaderSamples:
         assert np.allclose(radius, 10.0, atol=1e-3)
 
     def test_categorical_values(self, tmp_path):
-        """``CLDPIXReader.samples_in`` serves the cloud mask and particle phase categories with their stored values.
+        """``CLDPIXReader.samples_in`` serves the cloud mask and particle phase categories as stored, fill as NaN.
 
         A category is a class label, so any change in decoding would report a different cloud class, such as ice in
-        place of water.
+        place of water, and an int8 fill of 127 left in place would be counted as a class of its own.
 
-        Builds the fixture with both fields set to category 1 and asserts every finite ``cloud_mask`` and
-        ``cloud_particle_phase`` value is 1.0.
+        Builds the fixture with both fields set to category 1 on its 12 pixels, except one ``Cloud_Particle_Phase``
+        pixel at the fill 127, and asserts all 12 ``cloud_mask`` values are 1.0 and the 11 finite
+        ``cloud_particle_phase`` values are 1.0.
         """
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         data = _values(reader, _BBOX)
-        assert np.allclose(_finite(data, "cloud_mask"), 1.0)
-        assert np.allclose(_finite(data, "cloud_particle_phase"), 1.0)
+        mask = _finite(data, "cloud_mask")
+        phase = _finite(data, "cloud_particle_phase")
+        assert mask.size == 12
+        assert np.allclose(mask, 1.0)
+        assert phase.size == 11
+        assert np.allclose(phase, 1.0)
 
     def test_southern_hemisphere_pixels_are_kept(self, tmp_path):
         """``CLDPIXReader`` converts the colatitude stored as ``Latitude`` so southern-hemisphere pixels are kept.
@@ -202,20 +207,20 @@ class TestCLDPIXReaderSamples:
         a true latitude and filtering on -90..90 would drop the whole southern hemisphere, and a sign error would
         mirror it north.
 
-        Builds the fixture with every pixel at 40° S and asserts the box at 39° to 41° S holds finite values while the
-        mirrored box at 39° to 41° N holds none.
+        Builds the fixture with its 12 pixels at 40° S and asserts the box at 39° to 41° S serves all 12, at 40° S,
+        while the mirrored box at 39° to 41° N serves none.
         """
         lats = np.full((3, 4), -40.0, dtype=np.float32)
         fixture = make_cldpix_fixture(tmp_path, lats=lats)
         reader = CLDPIXReader(fixture)
 
-        southern = _values(reader, BoundingBox(-41.0, -39.0, -16.0, -14.0))
-        assert np.isfinite(southern).any()
+        southern = reader.samples_in(BoundingBox(-41.0, -39.0, -16.0, -14.0), _T)
+        assert southern.n_samples == 12
+        assert np.allclose(southern.lats, -40.0, atol=1e-4)
 
         # The mirrored northern tile must be empty — a sign-flip bug would put
         # the pixels there instead.
-        northern = _values(reader, _BBOX)
-        assert not np.isfinite(northern).any()
+        assert reader.samples_in(_BBOX, _T).n_samples == 0
 
     def test_top_cloud_height_fill_is_dropped(self, tmp_path):
         """``CLDPIXReader`` masks the float32 fill sentinel in ``Top_Cld_Height``, the one field with no valid range.
@@ -264,15 +269,16 @@ class TestCLDPIXReaderTimeMatching:
     def test_nearest_pass_is_served(self, tmp_path):
         """``CLDPIXReader.samples_in`` serves only the granule nearest the footprint time when two cover the same pixels.
 
-        Two passes over one location are hours apart in cloud state; mixing them would average clouds from different
-        times into one footprint.
+        Two passes over one location can both fall inside ``MAX_TIME_OFFSET``, and their cloud states differ; mixing
+        them would average clouds observed hours apart into one footprint.
 
-        Builds two granules over the same pixels twelve hours apart and asserts a query 30 minutes after the first gets
-        its 12 pixels all at the first time, and a query 30 minutes before the second gets 12 pixels at the second.
+        Builds two granules over the same pixels two hours apart, so both are within the three-hour ``MAX_TIME_OFFSET``
+        of either query, and asserts a query 30 minutes after the first gets only its 12 pixels, all at the first time,
+        and a query 30 minutes before the second gets only its 12 pixels, at the second.
         """
         n_scan = 3
         early = make_cldpix_fixture(tmp_path, times=np.full(n_scan, _T, dtype="datetime64[ns]"), filename="early.nc")
-        late_time = _T + np.timedelta64(12, "h")
+        late_time = _T + np.timedelta64(2, "h")
         late = make_cldpix_fixture(
             tmp_path, times=np.full(n_scan, late_time, dtype="datetime64[ns]"), filename="late.nc"
         )
@@ -320,14 +326,23 @@ class TestCLDPIXReaderGranuleDate:
     def test_times_are_dated_by_the_granule(self, tmp_path):
         """``CLDPIXReader`` dates the fractional-hour ``Observation_Time`` by the granule's ``time_coverage_start``.
 
-        A wrong date on the hours of day would shift every pixel by whole days and match it to the wrong footprints.
+        ``Observation_Time`` holds only hours of the day, so the date must come from the attribute; a date taken from
+        anywhere else would shift every pixel by whole days and match it to the wrong footprints.
 
-        Builds the fixture with fractional hours of 2026-01-01 dated by the attribute and asserts every served pixel
-        time equals the fixture instant.
+        Builds the fixture, then moves its ``time_coverage_start`` and ``time_coverage_end`` one day later while leaving
+        the hours unchanged, and asserts a query at the fixture time a day later serves the 12 pixels at that time.
         """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
-        assert np.all(samples.times == _T)
+        import netCDF4
+
+        path = make_cldpix_fixture(tmp_path)
+        next_day = _T + np.timedelta64(1, "D")
+        with netCDF4.Dataset(str(path), "r+") as ds:
+            for attr in ("time_coverage_start", "time_coverage_end"):
+                value = np.datetime64(ds.getncattr(attr).rstrip("Z")) + np.timedelta64(1, "D")
+                ds.setncattr(attr, np.datetime_as_string(value, unit="us") + "Z")
+        samples = CLDPIXReader(path).samples_in(_BBOX, next_day)
+        assert samples.n_samples == 12
+        assert np.all(samples.times == next_day)
 
 
 class TestCLDPIXReaderGeolocationChecks:
