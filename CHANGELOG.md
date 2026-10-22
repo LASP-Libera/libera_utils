@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The `libera_utils.footprint_matching.readers` plugin subsystem: an `AncillaryReader` base with auto-registration (`StaticReader` for a daily composite, map or time-stamped swath held in memory; `SteppedGridReader` for a time series of global grids served one step at a time), a `ReaderRegistry`, and HDF4 and HDF-EOS5 I/O helpers. A reader serves the _native samples_ of its source inside a footprint's bounding box as a `SampleSet` (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), matched to the footprint time by its `TimeMatch` policy: `DAILY` (IGBP, NISE, VIIRS BRDF and AOD) or `NEAREST_STEP` (ERA5). A reader whose `READER_KEY` is already registered to another class is rejected when its module is imported. A query raises `ValueError` when a point cloud holds a coordinate outside latitude [-90, 90] or longitude [-180, 180], when a `NEAREST_PASS` reader serves samples without times, or when the footprint time a time-selecting reader needs is NaT. This release adds the gridded readers:
+  - ERA5 single-level (`era5_single_level`, 7 variables) and 37-level pressure (`era5_pressure`) fields, serving the hourly step nearest each footprint's time (none beyond 1 h), rejecting a file with no time axis, and declaring `RESOLUTION_KM = 28.0`, the 0.25 degree grid spacing.
+  - VIIRS Deep Blue AOD (`AERDB_D3_VIIRS_NOAA20`) with a categorical `aerosol_type`, applying each field's own `_FillValue` and `valid_range` (AOD 0 to 10).
+  - VIIRS BRDF (`VJ143C1`), served at the 0.05 degree cell centers (the file's `lat`/`lon` are cell edges, checked against the grid's HDF-EOS5 `StructMetadata.0` corners), applying each field's own `_FillValue`, `valid_range`, `scale_factor` and `add_offset`.
+  - IGBP land cover (MCD12Q1), held as its uint8 sinusoidal tiles and geolocated per query, declaring `RESOLUTION_KM = 0.463`, the 463.3 m sinusoidal cell.
+  - NSIDC NISE sea ice (AMSR-2 provenance), with the unused Extent codes (102, 105-251) and the coastline and suspect-ice quality codes (252, 253) missing (NaN) in every layer. Each hemisphere's HDF-EOS `StructMetadata.0` grid is checked against the 721 x 721 25 km EASE-Grid it is geolocated on (dimensions, corners and `GCTP_LAMAZ` projection), and a granule that differs raises `ValueError`.
+- `notebooks/02_readers_gridded.ipynb`, a demonstration of the gridded readers.
+- `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available, as on aarch64; the Docker image installs it.
+
+### Changed
+
+- The `h5netcdf` dependency is declared with its `h5py` extra (`h5netcdf[h5py]`), since `h5netcdf` no longer installs `h5py` by default.
+
 ## [5.12.0] - 2026-10-21
 
 ### Added

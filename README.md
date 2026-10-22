@@ -18,5 +18,9 @@ Please contact the Libera SDC Team at LASP for access to the Developer Guide.
 pip install libera-utils
 ```
 
+Note: `pyhdf` needs the HDF4 C library at build time when no prebuilt wheel is available for your
+interpreter. On Debian/Ubuntu: `sudo apt-get install libhdf4-dev`; with conda:
+`conda install -c conda-forge pyhdf`.
+
 Other suffixed versions such as release candidate versions (version strings suffixed with `rc` followed by the candidate
 number, e.g. `1.2.3rc2`) may also be available but are likely to contain bugs.
