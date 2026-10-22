@@ -516,21 +516,44 @@ class TestPsfGroundRadius:
     """psf_ground_radius_km projects the PSF angular extent to a ground radius."""
 
     def test_grows_with_altitude(self):
+        """``psf_ground_radius_km`` returns a positive radius that is larger for a higher satellite.
+
+        A fixed angular field of view covers more ground from farther away. The radial weigher truncates its kernel at
+        this radius, so a radius that ignored altitude would cut off part of the footprint, or take in too much,
+        whenever the orbit height changes.
+
+        Computes the nadir radius at 400 km and 800 km above the WGS84 equatorial radius and asserts the higher one is
+        larger and both are above 0.
+        """
         low = psf_ground_radius_km(WGS84_SEMI_MAJOR_AXIS_KM + 400.0, 0.0)
         high = psf_ground_radius_km(WGS84_SEMI_MAJOR_AXIS_KM + 800.0, 0.0)
         assert high > low > 0.0
 
     def test_grows_with_viewing_zenith(self):
-        # The 1/cos(vza) elongation makes an oblique view reach farther on the ground.
+        """``psf_ground_radius_km`` is larger at a 60 degree viewing zenith than at nadir.
+
+        At an oblique view, the line of sight is longer and meets the ground at a slant, so the same angular PSF spreads
+        over more ground. A nadir-sized radius at the scan edge would drop ground the instrument actually saw.
+
+        Computes the radius at 835 km altitude for viewing zeniths of 0 and 60 degrees and asserts the 60 degree radius
+        is larger.
+        """
         radius = WGS84_SEMI_MAJOR_AXIS_KM + ALT
         assert psf_ground_radius_km(radius, 60.0) > psf_ground_radius_km(radius, 0.0)
 
     @pytest.mark.parametrize("distance_deg", [0.0, 4.0, 7.0, 10.0, 13.0])
     def test_matches_ray_traced_along_view_reach(self, distance_deg):
-        # A FOV floor above the PSF's diagonal extent pins the angle the radius uses, so
-        # the radius can be checked against rays traced +/- that angle along the view
-        # direction. Their mean ground reach is what rho * tan(theta) / cos(vza) predicts;
-        # a flat-Earth h * tan(theta) / cos(vza) falls ~40% short at vza 60.
+        """``psf_ground_radius_km`` is within 5% of the ground reach of rays traced to the WGS84 ellipsoid.
+
+        The radius is an analytic estimate on a sphere, ``rho * tan(theta) / cos(vza)``, while the rest of the geometry
+        module traces rays to the ellipsoid. The estimate is only safe to use if it agrees with that tracing across
+        viewing zeniths. A flat-Earth formula falls about 40% short at a 60 degree viewing zenith.
+
+        For a footprint at the equator viewed from subsatellite points 0 to 13 degrees north (nadir to steeply oblique),
+        traces rays at plus and minus 2 degrees along the view direction to the ellipsoid and measures each ray's
+        geodesic distance from the footprint. Passes a 2 degree FOV floor so the radius uses that same angle, and
+        asserts the radius is within 5% of the mean of the two distances. Also asserts neither ray misses the Earth.
+        """
         theta = 2.0
         lat, lon = 0.0, 0.0
         satellite, boresight, cross_axis = _geometry(lat, lon, distance_deg, 0.0)
@@ -552,13 +575,34 @@ class TestSlantRange:
     RADIUS_KM = WGS84_SEMI_MAJOR_AXIS_KM + 830.0
 
     def test_nadir_is_the_altitude_above_the_sphere(self):
+        """``slant_range_km`` at nadir equals the satellite's height above the WGS84 equatorial radius.
+
+        Looking straight down, the distance to the ground is simply the altitude. That is the simplest check that the
+        spherical slant-range formula is set up correctly before it is used at oblique angles.
+
+        Asserts the slant range at a viewing zenith of 0 equals the satellite radius minus ``WGS84_SEMI_MAJOR_AXIS_KM``.
+        """
         assert slant_range_km(self.RADIUS_KM, 0.0) == pytest.approx(self.RADIUS_KM - WGS84_SEMI_MAJOR_AXIS_KM)
 
     def test_grows_with_viewing_zenith(self):
+        """``slant_range_km`` increases steadily with viewing zenith.
+
+        The angular weigher divides a source's cell size by the slant range to get the angle a sample covers. A slant
+        range that did not grow toward the scan edge would overstate how much of the PSF each sample covers there.
+
+        Computes the range at 0, 20, 40, 60 and 80 degrees and asserts each value is larger than the one before.
+        """
         ranges = [slant_range_km(self.RADIUS_KM, vza) for vza in (0.0, 20.0, 40.0, 60.0, 80.0)]
         assert np.all(np.diff(ranges) > 0)
 
     def test_clamped_past_the_elongation_cap(self):
+        """``slant_range_km`` treats any viewing zenith above 80 degrees as 80 degrees.
+
+        Near the limb the line of sight grazes the Earth and the slant range grows without bound. The cap keeps the
+        coverage cell size finite and matches the cap ``psf_ground_radius_km`` applies.
+
+        Asserts the range at 89 degrees equals the range at 80 degrees exactly.
+        """
         assert slant_range_km(self.RADIUS_KM, 89.0) == slant_range_km(self.RADIUS_KM, 80.0)
 
 

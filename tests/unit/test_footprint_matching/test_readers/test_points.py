@@ -210,8 +210,9 @@ class TestDecodeHoursOfDay:
     def test_fill_is_nat(self, tmp_path):
         """``decode_hours_of_day`` decodes fill entries to ``NaT`` and leaves valid hours decoded.
 
-        A float32-maximum fill read as hours would land a pixel years past its granule; ``NaT`` lets the reader drop
-        it.
+        A float32-maximum fill read as hours is far beyond any representable time and overflows the nanosecond clock,
+        so it would decode to a garbage timestamp that could match an unrelated footprint. Decoding it to ``NaT`` lets
+        the reader drop the pixel.
 
         Overwrites the second row of a (2, 2) variable with the float32-maximum fill and asserts the first row has no
         ``NaT`` and the second row is all ``NaT``.

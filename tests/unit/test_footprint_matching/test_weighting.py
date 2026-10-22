@@ -53,6 +53,14 @@ def _center_index(lats: np.ndarray, lons: np.ndarray) -> int:
 
 class TestRadialWeigher:
     def test_weight_field_is_one_weight_per_sample(self):
+        """``RadialWeigher.weight_field`` returns a ``WeightField`` with one weight per sample.
+
+        The aggregation engine pairs ``weights[i]`` with sample ``i``. A weight array of another length, or one shaped
+        like a grid, would misalign every value with its weight.
+
+        Weighs a 3 x 2 grid of samples and asserts the result is a ``WeightField`` whose ``weights`` is a flat array of
+        6.
+        """
         lats = np.array([0.0, 0.1, 0.2])
         lons = np.array([0.0, 0.1])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.1, 0.05, **_GEOM)
@@ -60,7 +68,14 @@ class TestRadialWeigher:
         assert isinstance(wf, WeightField)
 
     def test_peak_at_boresight_and_decreasing_outward(self):
-        # Boresight sits on the center sample; its weight must be the maximum.
+        """``RadialWeigher`` weighs the boresight sample most, and a farther sample no more than a nearer one.
+
+        The radial stand-in models a centrally peaked instrument response: the ground the instrument looks straight at
+        counts most. A kernel peaking anywhere else would shift every footprint value toward an off-center scene.
+
+        Weighs a 3 x 3 grid centered on the boresight. Asserts the center sample has the maximum weight and that a
+        corner sample weighs no more than its neighboring edge sample, which is closer to the boresight.
+        """
         lats = np.array([-0.1, 0.0, 0.1])
         lons = np.array([-0.1, 0.0, 0.1])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
@@ -70,6 +85,14 @@ class TestRadialWeigher:
         assert wf.weights[0] <= wf.weights[1] + 1e-12
 
     def test_symmetric_about_boresight(self):
+        """``RadialWeigher`` weights are mirror-symmetric about the boresight.
+
+        The stand-in kernel depends only on distance from the boresight, unlike the real CERES PSF. Any asymmetry would
+        point to an error in the distance calculation, such as a mixed-up latitude or longitude scale.
+
+        Weighs a 3 x 3 grid centered on the boresight, reshapes the weights to the grid, and asserts the grid equals its
+        own north-south flip and its own east-west flip.
+        """
         lats = np.array([-0.1, 0.0, 0.1])
         lons = np.array([-0.1, 0.0, 0.1])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
@@ -79,8 +102,14 @@ class TestRadialWeigher:
         np.testing.assert_allclose(grid, grid[:, ::-1], rtol=1e-6)
 
     def test_zero_beyond_ground_radius(self):
-        # A far-away sample (many degrees from the boresight) is outside the PSF radius
-        # and must receive exactly zero weight.
+        """``RadialWeigher`` gives exactly zero weight to a sample beyond the PSF ground radius.
+
+        A reader can serve samples well outside the PSF. Those samples were not seen by the instrument, and even a tiny
+        Gaussian tail weight would let their values leak into the footprint and count toward its total energy.
+
+        Weighs one sample at the boresight and one 40 degrees away. Asserts the far sample's weight is exactly 0.0 and
+        the boresight sample's weight is positive.
+        """
         lats = np.array([0.0, 40.0])
         lons = np.array([0.0])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
@@ -88,12 +117,27 @@ class TestRadialWeigher:
         assert wf.weights[0] > 0.0
 
     def test_total_energy_is_weight_sum(self):
+        """``WeightField.total_energy`` from ``RadialWeigher`` is the sum of its sample weights.
+
+        ``total_energy`` is the denominator of coverage when results go through ``aggregate``. If it disagreed with the
+        weights, coverage would be reported wrong even with full data.
+
+        Weighs a 2 x 2 grid and asserts ``total_energy`` equals ``weights.sum()``.
+        """
         lats = np.array([0.0, 0.05])
         lons = np.array([0.0, 0.05])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.025, 0.025, **_GEOM)
         assert wf.total_energy == pytest.approx(float(wf.weights.sum()))
 
     def test_high_vza_elongates_ground_radius(self):
+        """``RadialWeigher`` uses a larger ground radius at a 70 degree viewing zenith than at nadir.
+
+        An oblique view strikes the ground at a slant and covers a larger area. If the radius stayed at its nadir value,
+        the weigher would cut off ground the instrument actually saw at the edge of the scan.
+
+        Weighs the same samples at viewing zenith 0 and 70 degrees and asserts the oblique ``max_radius_km`` is the
+        larger.
+        """
         lats = np.array([-0.1, 0.1])
         lons = np.array([-0.1, 0.1])
         nadir = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
@@ -101,6 +145,13 @@ class TestRadialWeigher:
         assert oblique.max_radius_km > nadir.max_radius_km
 
     def test_empty_samples_give_zero_energy_and_coverage(self):
+        """``RadialWeigher`` returns empty weights, zero total energy and zero coverage for an empty sample set.
+
+        An empty sample set is how a footprint outside a source's coverage arrives. It must yield a well-formed,
+        zero-coverage result rather than fail on the minimum or maximum of an empty array.
+
+        Weighs an empty grid and asserts ``total_energy`` is 0, ``weights`` has size 0 and ``coverage`` is 0.
+        """
         empty = _grid_samples(np.array([]), np.array([]))
         wf = RadialWeigher().weight_field(empty, 0.0, 0.0, **_GEOM)
         assert wf.total_energy == 0.0
@@ -108,11 +159,26 @@ class TestRadialWeigher:
         assert wf.coverage == 0.0
 
     def test_conforms_to_interface(self):
+        """``RadialWeigher`` is a ``PixelWeigher``.
+
+        The orchestrator accepts any ``PixelWeigher``, so the radial stand-in and the angular weigher can be swapped
+        without touching aggregation code. That only works if both implement the interface.
+
+        Asserts ``isinstance(RadialWeigher(), PixelWeigher)``.
+        """
         assert isinstance(RadialWeigher(), PixelWeigher)
 
     def test_fast_path_matches_exact_geodesic(self, monkeypatch):
-        # For a normal box the local-tangent-plane fast path must agree with the exact
-        # ellipsoidal Geod.inv distance to well within the Gaussian stand-in's tolerance.
+        """``RadialWeigher``'s flat-plane distance fast path matches the exact WGS84 geodesic on a normal box.
+
+        For speed, the weigher measures distance on a local tangent plane instead of calling ``pyproj``'s iterative
+        geodesic for every footprint. That shortcut is valid only if it agrees with the exact distance over a
+        footprint's span.
+
+        Weighs a box under a degree across, once by default (fast path) and once with ``_FAST_DISTANCE_MAX_SPAN_DEG``
+        patched to -1, which forces the exact path. Asserts the weights agree to within 1e-4 and the coverage to within
+        1e-6.
+        """
         lats = np.linspace(-0.1, 0.1, 7)
         lons = np.linspace(19.9, 20.1, 8)
         samples = _grid_samples(lats, lons)
@@ -125,8 +191,14 @@ class TestRadialWeigher:
         assert fast.coverage == pytest.approx(exact.coverage, abs=1e-6)
 
     def test_polar_samples_use_exact_path(self, monkeypatch):
-        # Near-pole samples must already use the exact Geod path, so forcing it changes
-        # nothing (bit-identical), unlike a normal box.
+        """``RadialWeigher`` already uses the exact WGS84 geodesic for samples poleward of 85 degrees.
+
+        Near a pole, a degree of longitude shrinks toward zero, and the flat-plane shortcut's constant east-west scale
+        no longer holds. Polar footprints must therefore take the exact path whatever the size of their box.
+
+        Weighs a small box at 86 degrees latitude by default and again with the exact path forced. Asserts the two
+        weight arrays are bit-for-bit identical, which holds only if the default run was already exact.
+        """
         lats = np.linspace(86.0, 86.2, 6)
         lons = np.linspace(10.0, 10.3, 6)
         samples = _grid_samples(lats, lons)
@@ -145,20 +217,40 @@ class TestRadialCoverage:
         return axis, axis
 
     def test_complete_fine_sampling_covers_fully(self):
-        # 1 km-spaced samples (~0.009 deg) over the whole ~26 km disc: every bin is hit.
+        """``RadialWeigher`` coverage is about 1.0 when 1 km samples fill the whole PSF disc.
+
+        Coverage feeds the CERES 75% / 95% rule. A complete source must score 1.0, or good footprints would be flagged
+        as partial or discarded.
+
+        Weighs a 0.009 degree (about 1 km) grid that spans the whole disc of about 27 km radius, using a 1 km sample
+        resolution, and asserts coverage is 1.0 to within 0.02.
+        """
         lats, lons = self._dense(0.35, 0.009)
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
         assert wf.coverage == pytest.approx(1.0, abs=0.02)
 
     def test_half_missing_swath_covers_about_half(self):
-        # Samples only on the northern half of the disc: about half the kernel energy.
+        """``RadialWeigher`` coverage is about 0.5 when samples fill only the northern half of the PSF disc.
+
+        A swath edge or data gap shows up as missing samples, not as NaN-valued ones. Coverage must therefore come from
+        where samples lie relative to the PSF, so that a half-covered footprint is reported as half covered.
+
+        Weighs the same dense grid as the full-coverage test, cut to latitudes at or north of the boresight. Asserts
+        coverage is between 0.4 and 0.6.
+        """
         lats, lons = self._dense(0.35, 0.009)
         north = lats[lats >= 0.0]
         wf = RadialWeigher().weight_field(_grid_samples(north, lons), 0.0, 0.0, **_GEOM)
         assert 0.4 < wf.coverage < 0.6
 
     def test_nan_valued_samples_do_not_count(self):
-        # Present but all-NaN samples back no energy.
+        """``RadialWeigher`` coverage is 0.0 when every sample is present but NaN.
+
+        Readers mark fill or invalid data as NaN. A footprint whose samples are all fill has no usable data, so it must
+        not pass the coverage rule just because sample locations exist.
+
+        Weighs the full dense grid with every value replaced by NaN and asserts coverage is exactly 0.0.
+        """
         lats, lons = self._dense(0.35, 0.009)
         samples = _grid_samples(lats, lons)
         nan_values = np.full_like(samples.values, np.nan)
@@ -167,8 +259,16 @@ class TestRadialCoverage:
         assert wf.coverage == 0.0
 
     def test_coarse_source_covers_its_cell(self):
-        # One 28 km sample at the boresight covers the central 28 km square of the ~27 km
-        # radius disc: most of the Gaussian energy, but not the rim.
+        """A single coarse ``RadialWeigher`` sample covers the reference square its native cell spans.
+
+        Coarse sources such as the 1 degree VIIRS composites have only one or a few samples per footprint. Coverage must
+        credit each sample with the ground its cell represents, not a single point, or a coarse source could never pass
+        the 75% rule.
+
+        Weighs one sample at the boresight. With ``sample_resolution_km=28``, the sample covers a square of half-width
+        28 / sqrt(2), about 20 km, inside a disc of about 27 km radius, and the test asserts coverage is between 0.4 and
+        0.9. With 111 km, the square encloses the whole disc, and the test asserts coverage is 1.0.
+        """
         samples = _grid_samples(np.array([0.0]), np.array([0.0]))
         geom = {**_GEOM, "sample_resolution_km": 28.0}
         wf = RadialWeigher().weight_field(samples, 0.0, 0.0, **geom)
@@ -207,9 +307,25 @@ class TestAngularPSFWeigher:
         return AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **self._kw(cone_angle_rate))
 
     def test_conforms_to_interface(self):
+        """``AngularPSFWeigher`` is a ``PixelWeigher``.
+
+        The orchestrator accepts any ``PixelWeigher``, so the CERES-faithful weigher must implement the same interface
+        as the radial stand-in it can replace.
+
+        Asserts ``isinstance(AngularPSFWeigher(), PixelWeigher)``.
+        """
         assert isinstance(AngularPSFWeigher(), PixelWeigher)
 
     def test_positive_weight_at_boresight_zero_far_away(self):
+        """``AngularPSFWeigher`` weighs the boresight above 0, outside the 95% contour 0, and nothing below 0.
+
+        The weigher evaluates the instrument's point spread function at each sample. A sample outside the contour lies
+        outside what the instrument measured and must not contribute, and a negative weight would have no physical
+        meaning.
+
+        Weighs a 41 x 41 grid about 0.35 degrees across each side of an oblique boresight. Asserts there is one weight
+        per sample, the center weight is above 0, the far corner weight is exactly 0, and all weights are at least 0.
+        """
         samples, lats, lons = self._grid()
         wf = self._wf()
         assert wf.weights.shape == (lats.size * lons.size,)
@@ -218,19 +334,40 @@ class TestAngularPSFWeigher:
         assert np.all(wf.weights >= 0.0)
 
     def test_total_energy_is_weight_sum(self):
+        """``WeightField.total_energy`` from ``AngularPSFWeigher`` is the sum of its sample weights and is positive.
+
+        ``total_energy`` is the coverage denominator in ``aggregate``. A zero value for a footprint that clearly has
+        samples inside the PSF would make every such footprint fail the coverage rule.
+
+        Weighs the standard grid and asserts ``total_energy`` equals ``weights.sum()`` and is greater than 0.
+        """
         wf = self._wf()
         assert wf.total_energy == pytest.approx(float(wf.weights.sum()))
         assert wf.total_energy > 0.0
 
     def test_scan_direction_changes_the_field(self):
-        # The CERES PSF is asymmetric along-scan, so reversing the cone-angle-rate sign
-        # (outward vs inward scan) must produce a different weight field.
+        """``AngularPSFWeigher`` produces a different weight field when the sign of ``cone_angle_rate`` flips.
+
+        The CERES PSF has a trailing tail along the scan, from the detector's lagging response, so it points one way
+        when the scanner moves outward and the other way when it moves inward. Ignoring the scan direction would weight
+        the wrong side of every footprint.
+
+        Weighs the same grid with ``cone_angle_rate`` set to +1 (outward) and to -1 (inward) and asserts the two weight
+        arrays are not equal.
+        """
         outward = self._wf(cone_angle_rate=+1.0)
         inward = self._wf(cone_angle_rate=-1.0)
         assert not np.allclose(outward.weights, inward.weights)
 
     def test_differs_from_radial_stand_in(self):
-        # Confirms this is genuinely the CERES shape, not the isotropic Gaussian.
+        """``AngularPSFWeigher`` weights differ in shape from ``RadialWeigher`` weights for the same footprint.
+
+        The angular weigher exists to apply the real asymmetric CERES PSF. If its output matched the isotropic Gaussian
+        stand-in, the science-accurate path would add nothing.
+
+        Weighs the same grid with both weighers at the same viewing zenith, normalizes each weight array to sum to 1,
+        and asserts they differ by more than 1e-3 somewhere.
+        """
         samples, _, _ = self._grid()
         radial = RadialWeigher().weight_field(samples, self.B_LAT, self.B_LON, viewing_zenith_deg=self.VZA, **_GEOM)
         angular = self._wf()
@@ -240,7 +377,15 @@ class TestAngularPSFWeigher:
         assert not np.allclose(r, a, atol=1e-3)
 
     def test_stationary_scanner_uses_uniform_static_fov(self):
-        # cone_angle_rate ~ 0 -> uniform response inside the FOV (binary weights).
+        """``AngularPSFWeigher`` uses a flat, on-or-off field-of-view response when ``cone_angle_rate`` is zero.
+
+        At a scan turnaround the scanner is momentarily still, so the moving-scan PSF and its trailing tail do not
+        apply. The response is then the instrument's static circular field of view, in which every point inside counts
+        equally.
+
+        Weighs the grid with ``cone_angle_rate=0`` and asserts every weight is 0 or 1 and the boresight sample's weight
+        is 1.
+        """
         wf = self._wf(cone_angle_rate=0.0)
         unique = np.unique(wf.weights)
         assert set(unique.tolist()) <= {0.0, 1.0}
@@ -248,6 +393,13 @@ class TestAngularPSFWeigher:
         assert wf.weights[_center_index(lats, lons)] == 1.0
 
     def test_empty_samples_give_zero_energy_and_coverage(self):
+        """``AngularPSFWeigher`` returns empty weights, zero total energy and zero coverage for an empty sample set.
+
+        A footprint outside a source's coverage arrives with no samples. The weigher must return a well-formed,
+        zero-coverage result without trying to project an empty array into the angular frame.
+
+        Weighs an empty grid and asserts ``total_energy`` is 0, ``weights`` has size 0 and ``coverage`` is 0.
+        """
         wf = AngularPSFWeigher().weight_field(
             _grid_samples(np.array([]), np.array([])),
             self.B_LAT,
@@ -262,8 +414,14 @@ class TestAngularPSFWeigher:
         assert wf.coverage == 0.0
 
     def test_precomputed_frame_matches_inline_frame(self):
-        # The orchestrator batches the viewing frames and hands each footprint its own; the
-        # weights must equal those from building the frame inline from the geolocation.
+        """``AngularPSFWeigher`` gives the same result with a precomputed viewing frame as with its own.
+
+        For speed, the orchestrator builds the viewing frames for all footprints at once and passes each footprint its
+        own. That optimization must not change any weight.
+
+        Builds the frame with ``compute_viewing_frames`` and passes ``frames.for_index(0)`` as ``frame``. Asserts the
+        weights and coverage match a call with no ``frame``.
+        """
         samples, _, _ = self._grid()
         kw = self._kw()
         frames = compute_viewing_frames(
@@ -275,26 +433,54 @@ class TestAngularPSFWeigher:
         assert batched.coverage == pytest.approx(inline.coverage)
 
     def test_complete_fine_sampling_covers_fully(self):
-        # A dense 1 km-ish grid (0.009 deg) over the whole contour hits every reference bin.
+        """``AngularPSFWeigher`` coverage is about 1.0 when a dense grid spans the whole PSF contour.
+
+        A complete source must score full coverage under the CERES 75% / 95% rule, or good footprints would be flagged
+        or discarded.
+
+        Weighs a 201 x 201 grid, about 0.009 degrees (1 km) apart and spanning 0.9 degrees each side of the boresight,
+        and asserts coverage is 1.0 to within 0.02.
+        """
         samples, _, _ = self._grid(half=0.9, n=201)
         wf = AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **self._kw())
         assert wf.coverage == pytest.approx(1.0, abs=0.02)
 
     def test_half_missing_swath_covers_about_half(self):
-        # Samples only south of the boresight: roughly half of the PSF energy is backed.
+        """``AngularPSFWeigher`` coverage drops to about half when samples lie only on the south side of the boresight.
+
+        Missing samples, such as a swath edge, must lower coverage according to how much of the PSF's energy they would
+        have carried. Otherwise a half-observed footprint would pass as complete.
+
+        Weighs a dense grid cut off at the boresight latitude and asserts coverage is between 0.3 and 0.7. The band is
+        wider than the radial test's because the asymmetric PSF does not split its energy evenly across the cut.
+        """
         lats = np.linspace(self.B_LAT - 0.9, self.B_LAT, 101)
         lons = np.linspace(self.B_LON - 0.9, self.B_LON + 0.9, 201)
         wf = AngularPSFWeigher().weight_field(_grid_samples(lats, lons), self.B_LAT, self.B_LON, **self._kw())
         assert 0.3 < wf.coverage < 0.7
 
     def test_stationary_coverage_uses_the_disc(self):
+        """``AngularPSFWeigher`` coverage for a stationary scanner is about 1.0 over a dense, complete grid.
+
+        The stationary case measures coverage against the field-of-view disc rather than the moving-scan PSF contour. A
+        complete source must still score 1.0 against it.
+
+        Weighs the dense 201 x 201 grid with ``cone_angle_rate=0`` and asserts coverage is 1.0 to within 0.02.
+        """
         samples, _, _ = self._grid(half=0.9, n=201)
         wf = AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **self._kw(cone_angle_rate=0.0))
         assert wf.coverage == pytest.approx(1.0, abs=0.02)
 
     def test_coarse_source_covers_from_a_few_samples(self):
-        # A 111 km source (the VIIRS composites) has one reference bin wider than the
-        # whole contour: any sample inside the contour is a complete match.
+        """``AngularPSFWeigher`` coverage is 1.0 for a 111 km source with only two samples near the boresight.
+
+        The 1 degree VIIRS composites have cells wider than the whole PSF contour, so any sample inside the contour
+        stands for all of it. Without crediting each sample with its cell, such a source would fail the coverage rule
+        everywhere.
+
+        Weighs two samples 0.05 degrees either side of the boresight with ``sample_resolution_km=111`` and asserts
+        coverage is exactly 1.0.
+        """
         samples = _grid_samples(np.array([self.B_LAT - 0.05, self.B_LAT + 0.05]), np.array([self.B_LON]))
         wf = AngularPSFWeigher().weight_field(samples, self.B_LAT, self.B_LON, **self._kw(resolution_km=111.0))
         assert wf.coverage == pytest.approx(1.0)
