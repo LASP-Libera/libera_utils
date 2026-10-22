@@ -766,7 +766,7 @@ def _make_kernel_in_worker(
     whether an existing kernel may be replaced is decided by the parent when it copies the kernel out.
     """
     # curryer shortens long kernel paths with fixed-name symlinks in its temp directory, so each worker
-    # needs its own directory or concurrent workers replace and delete each other's links.
+    # needs its own directory or concurrent workers replace and delete each other's links (lasp/curryer#210).
     os.environ["CURRYER_TEMP_DIR"] = str(work_dir)
     try:
         kernel = create_kernel_from_l1a(l1a_data=l1a_dataset, kernel_identifier=kernel_identifier, output_dir=work_dir)
