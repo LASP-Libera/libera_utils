@@ -83,26 +83,26 @@ variables:
   #     Variable names are <source_key>_<spec_name>; the source instrument is
   #     recorded in each variable's long_name as "... (INSTRUMENT)".
   # ---------------------------------------------------------------------------
-  # --- source reader: era5 (resolution 25.0 km) ---
-  era5_wind_u10:
+  # --- source reader: era5_single_level (resolution 25.0 km) ---
+  era5_single_level_wind_u10:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Eastward wind component at 10 m (ECMWF)
       units: m/s
-  era5_wind_u10_standard_deviation:
+  era5_single_level_wind_u10_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Eastward wind component at 10 m (within-footprint standard deviation) (ECMWF)
       units: m/s
-  era5_wind_v10:
+  era5_single_level_wind_v10:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Northward wind component at 10 m (ECMWF)
       units: m/s
-  era5_wind_v10_standard_deviation:
+  era5_single_level_wind_v10_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
@@ -302,26 +302,26 @@ variables:
     attributes:
       long_name: Near-infrared BRDF geometric kernel weight (within-footprint standard deviation) (NOAA20)
       units: "1"
-  # --- source reader: viirs_cloud (resolution 111.0 km) ---
-  viirs_cloud_cloud_optical_thickness:
+  # --- source reader: viirs_cldprop_d3 (resolution 111.0 km) ---
+  viirs_cldprop_d3_cloud_optical_thickness:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Cloud optical thickness (NOAA20)
       units: "1"
-  viirs_cloud_cloud_optical_thickness_standard_deviation:
+  viirs_cldprop_d3_cloud_optical_thickness_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Cloud optical thickness (within-footprint standard deviation) (NOAA20)
       units: "1"
-  viirs_cloud_cloud_top_pressure:
+  viirs_cldprop_d3_cloud_top_pressure:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
       long_name: Cloud top pressure (NOAA20)
       units: hPa
-  viirs_cloud_cloud_top_pressure_standard_deviation:
+  viirs_cldprop_d3_cloud_top_pressure_standard_deviation:
     dtype: float32
     dimensions: ["RADIOMETER_TIME"]
     attributes:
