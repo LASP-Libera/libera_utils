@@ -200,8 +200,8 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
     def test_lat_is_ascending(self, tmp_path):
         """``VIIRSBRDFReader`` serves latitude ascending, though the file stores it descending.
 
-        Every reader serves latitude ascending; a reader that kept the file's north-to-south order would pair each value
-        with the wrong row of cells.
+        Every reader serves latitude ascending: ``GridSamples`` rejects a descending axis and box queries slice rows
+        with ``searchsorted``, so a reader that kept the file's north-to-south order could not serve the grid at all.
 
         Queries the full fixture region and asserts the latitudes increase and the first one is the southernmost cell
         center, half a cell above the region's southern edge.

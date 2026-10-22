@@ -50,8 +50,9 @@ class TestCLDPIXReaderClassAttributes:
     def test_resolution_km(self):
         """``CLDPIXReader.RESOLUTION_KM`` declares the 1 km VIIRS imager-pixel scale.
 
-        The resolution pads each footprint's query box and is the fallback pixel spacing when a granule's own spacing
-        cannot be measured; a wrong value would serve too few or too many pixels to a footprint.
+        When a granule's own pixel spacing cannot be measured, this value sets both the query-box padding and the
+        coverage measure's cell size; a wrong value would then serve too few or too many pixels to a footprint and
+        misstate its coverage.
 
         Asserts ``RESOLUTION_KM`` equals 1.0.
         """
@@ -84,7 +85,7 @@ class TestCLDPIXReaderClassAttributes:
         """``CLDPIXReader.VARIABLES`` declares mode-aggregated categories as int16 and every other variable as float32.
 
         A category such as cloud phase is a class label stored as an integer in the product, while a continuous
-        property needs a float; the wrong dtype would truncate a mean or write a label as a fractional value.
+        property needs a float; written as an integer, a mean would lose its fraction.
 
         Asserts, for every variable, ``int16`` when its aggregation is ``weighted_mode`` and ``float32`` otherwise.
         """
@@ -254,8 +255,9 @@ class TestCLDPIXReaderTimeMatching:
     def test_samples_carry_source_and_scanline_times(self, tmp_path):
         """``CLDPIXReader.samples_in`` labels its samples ``"cldpix"`` with no timestamp source and per-pixel times.
 
-        The source label and each pixel's observation time are what the product records about where and when a cloud
-        property came from; a wrong label or time would misattribute the data.
+        Each pixel's observation time is what the nearest-pass selection uses to keep one pass and drop another, and the
+        source label identifies which reader produced the samples; a wrong time would pair a footprint with clouds from
+        the wrong pass.
 
         Builds the fixture with every scanline at the fixture time and asserts ``source`` is ``"cldpix"``,
         ``timestamp_source`` is None and every sample time equals the fixture time.

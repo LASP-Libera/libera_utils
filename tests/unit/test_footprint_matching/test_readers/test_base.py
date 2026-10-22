@@ -40,7 +40,7 @@ _SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", req
 
 
 class _GridReader(StaticReader):
-    """A daily 1 degree global grid whose value is 100 * lat_index + lon_index."""
+    """A daily 1 degree global grid whose value is 1000 * lat_index + lon_index."""
 
     READER_KEY = "_base_test_grid"
     INSTRUMENT = "FAKE"
@@ -397,8 +397,9 @@ class TestGridQuery:
     def test_grid_slice_includes_points_on_the_box_edges(self, tmp_path):
         """The grid slice behind ``samples_in`` keeps grid points lying exactly on the box's edges.
 
-        Footprint boxes are built edge to edge, so a grid point on a shared edge must be served to both boxes; an
-        exclusive slice would drop it from every footprint.
+        A grid point lying exactly on a box edge is inside the box, because the box test is inclusive. An exclusive
+        slice would drop it, so a cell whose center sits on the padded edge would lose its sample and the coverage it
+        contributes to the footprint.
 
         Calls the unpadded slice directly (``samples_in`` would pad the edge points inside the box) with a box whose
         four corners are grid points, and asserts all four are returned.
@@ -1108,5 +1109,5 @@ class TestResolutionOfServedSamples:
         )
         samples = _PointReader(points).samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0)
         assert samples.resolution_km == 7.2
-        # The query padding follows the measured spacing too: 7.2 km is 0.032 deg.
+        # The query padding follows the measured spacing too: half of 7.2 km is 0.032 deg.
         assert _PointReader(points).samples_in(BoundingBox(0.0, 1.0, 10.62, 10.63), _T0).n_samples == 1

@@ -119,7 +119,9 @@ class TestReadersForMode:
     def test_camera_modes_exclude_the_climate_quality_readers(self, mode):
         """The CAM products take none of the AOD, SSF, CLDPIX or ERA5 pressure-level readers.
 
-        Those sources are climate-quality inputs written only to the FMATCH-IMAGER products.
+        ``FMATCH_MODE_READERS`` is the only place that decides which sources feed which product, so a set copied from
+        FMATCH-IMAGER into a CAM mode would silently add four sources' inputs and variables to the camera products.
+        These four sources feed only the FMATCH-IMAGER family; SSF also feeds FMATCH-IMAGER-FLASH.
 
         Parametrized over the two CAM modes; asserts none of the four keys is in the mode's set.
         """
