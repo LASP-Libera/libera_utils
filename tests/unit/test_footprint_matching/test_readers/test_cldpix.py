@@ -60,6 +60,11 @@ class TestCLDPIXReaderClassAttributes:
         assert "snow_map" not in names
         assert "ice_map" not in names
 
+    def test_weighted_mode_variables_are_int16(self):
+        # Targets the dtype rule; asserts mode-aggregated categories are int16 and every other variable float32.
+        for v in CLDPIXReader.VARIABLES:
+            assert v.dtype == ("int16" if v.aggregation == "weighted_mode" else "float32"), v.name
+
 
 class TestCLDPIXReaderSamples:
     def test_returns_one_row_per_variable(self, tmp_path):
@@ -203,3 +208,25 @@ class TestCLDPIXReaderGranuleDate:
         reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
         samples = reader.samples_in(_BBOX, _T)
         assert np.all(samples.times == _T)
+
+
+class TestCLDPIXReaderGeolocationChecks:
+    def test_latitude_valid_range_other_than_colatitude_raises(self, tmp_path):
+        # Targets a granule whose Latitude declares a true -90..90 range; converting it as colatitude
+        # would mirror the data, so the reader raises instead.
+        path = make_cldpix_fixture(tmp_path, latitude_valid_range=(-90.0, 90.0))
+        with pytest.raises(ValueError, match=r"Latitude declares valid_range"):
+            CLDPIXReader(path).samples_in(_BBOX, _T)
+
+    def test_latitude_without_valid_range_raises(self, tmp_path):
+        # Targets a granule whose Latitude declares no valid_range; the convention cannot be confirmed.
+        path = make_cldpix_fixture(tmp_path, latitude_valid_range=None)
+        with pytest.raises(ValueError, match=r"Latitude declares valid_range None"):
+            CLDPIXReader(path).samples_in(_BBOX, _T)
+
+    @pytest.mark.parametrize("name", ["Latitude", "Eff_Cld_Optical_Depth", "Cloud_Particle_Phase"])
+    def test_field_without_fill_value_raises(self, tmp_path, name):
+        # Targets a geolocation, continuous and categorical field written with no _FillValue.
+        path = make_cldpix_fixture(tmp_path, omit_fill_value=(name,))
+        with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
+            CLDPIXReader(path).samples_in(_BBOX, _T)

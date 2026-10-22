@@ -5,8 +5,8 @@ Data source: CERES Cloud Pixel (CLDPIX) imager-resolution cloud retrievals
 - Format: NetCDF4 with flat (root-level) variables on a 2-D imager swath
   ``(Scanlines, Pixels)`` grid (e.g. 16120 × 400).
 - Geolocation: per-pixel 2-D ``Latitude`` / ``Longitude`` arrays. Despite its
-  name, ``Latitude`` holds **colatitude** (see below); longitude is stored
-  0..360. Both are normalized here.
+  name, ``Latitude`` holds **colatitude** (see below), converted here to latitude;
+  longitude is stored 0..360 and normalized here to -180..180.
 - Native scale: ~1 km (VIIRS imager pixel).
 
 Geolocation conventions: colatitude and 0..360 longitude
@@ -25,10 +25,6 @@ latitude *and* discard the entire southern hemisphere (colatitude > 90 falls
 outside a −90..90 valid-range filter), so the conversion below is mandatory.
 Longitude uses the CERES 0..360 degrees-east convention and is wrapped to
 −180..180 by :func:`~libera_utils.footprint_matching.readers._points.normalize_longitude`.
-
-CERES SSF stores its footprint geolocation the same way, but under explicitly
-named variables (``instrument_fov_latitude`` is a true −90..90 latitude), so
-:mod:`~libera_utils.footprint_matching.readers.ssf` needs no such conversion.
 
 Native pixels, matched by time
 ------------------------------
@@ -50,10 +46,10 @@ have moved past its window.
 
 Variable set
 ------------
-This is a **minimal starter set** drawn from the footprint-matching
-dependencies in ``data_products.md`` (CLDPIX supplies imager-pixel cloud
-properties for the Imager / Imager-camera-time products). Expected to be
-refined.
+The CLDPIX cloud properties: seven continuous cloud properties (optical depth, water
+path, effective temperature, height and pressure, top height and particle radius) and
+two mode-aggregated categories (particle phase and cloud mask). All are carried by
+FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME, the products CLDPIX feeds.
 
 Surface-type variables (``IGBP_Ecosystem``, ``Snow_Map_Value``, ``Ice_Map_Value``)
 are intentionally NOT extracted here. The pipeline uses the dedicated
@@ -76,16 +72,13 @@ import numpy as np
 from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_hours_of_day,
+    field_fill_value,
     granule_time_coverage,
     neighbor_spacing_km,
     normalize_longitude,
 )
 from libera_utils.footprint_matching.readers.base import PassReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
-
-# Fill sentinels: floats use the float32 max; int8 categoricals use 127.
-_FILL_FLOAT: float = 3.4028235e38
-_FILL_INT8: int = 127
 
 # Root-level 2-D geolocation variable names. NOTE: ``Latitude`` holds
 # COLATITUDE (0 = North Pole, 180 = South Pole) -- see the module docstring.
@@ -116,8 +109,6 @@ class _CLDPIXField(NamedTuple):
         Root-level source variable name.
     aggregation : str
         PSF aggregation strategy for the emitted spec.
-    fill : float or int
-        Fill sentinel for the source variable.
     valid_range : tuple of (float, float) or None
         Inclusive valid range; values outside become NaN. Also used to drop the
         ``-1`` "no data" sentinel in the snow/ice maps.
@@ -128,30 +119,26 @@ class _CLDPIXField(NamedTuple):
     out_name: str
     var: str
     aggregation: str
-    fill: float | int
     valid_range: tuple[float, float] | None
     n_categories: int | None
 
 
-# Minimal starter field set (refine later — see module docstring).
-# Note: surface-type variables (IGBP_Ecosystem, Snow_Map_Value, Ice_Map_Value)
-# are deliberately omitted — see module docstring for the rationale.
 _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
     # --- continuous cloud properties ---
-    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", _FILL_FLOAT, (0.25, 150.0), None),
-    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", _FILL_FLOAT, (0.0, 10000.0), None),
-    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", _FILL_FLOAT, (190.0, 350.0), None),
-    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", _FILL_FLOAT, (0.0, 18.0), None),
-    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", _FILL_FLOAT, (10.0, 1100.0), None),
-    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", _FILL_FLOAT, None, None),
+    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", (0.25, 150.0), None),
+    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", (0.0, 10000.0), None),
+    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", (190.0, 350.0), None),
+    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", (0.0, 18.0), None),
+    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", (10.0, 1100.0), None),
+    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", None, None),
     # Effective cloud particle radius (μm). Cld_Radius is the combined
     # (water+ice blended) effective radius produced by the CERES cloud
     # retrieval algorithm, distinct from the phase-separated radii
     # (Cld_Radius_0124, Cld_Radius_0160) at specific wavelengths.
-    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", _FILL_FLOAT, (2.0, 60.0), None),
+    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", (2.0, 60.0), None),
     # --- categorical (mode-aggregated) ---
-    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", _FILL_INT8, (1.0, 5.0), 5),
-    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", _FILL_INT8, (0.0, 3.0), 4),
+    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", (1.0, 5.0), 5),
+    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", (0.0, 3.0), 4),
 )
 
 
@@ -159,7 +146,7 @@ class CLDPIXReader(PassReader):
     """Read CERES CLDPIX imager-pixel cloud data as time-stamped native points.
 
     Flattens the imager swath to points -- every pixel at its own position, with
-    its own observation time -- and reads a minimal set of cloud
+    its own observation time -- and reads the CLDPIX cloud
     properties. A day of CLDPIX sees a ground location on more than one pass, so
     the reader serves the pass nearest the Libera footprint time
     (``TIME_MATCH = NEAREST_PASS``). Granules are hourly and an hour is several million
@@ -174,7 +161,7 @@ class CLDPIXReader(PassReader):
         ~1 km (VIIRS imager pixel scale), the fallback when a granule's own pixel
         spacing cannot be measured.
     VARIABLES : tuple[VariableSpec, ...]
-        Minimal starter set (see module docstring).
+        The CLDPIX cloud properties (see module docstring).
 
     Parameters
     ----------
@@ -195,7 +182,7 @@ class CLDPIXReader(PassReader):
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,
-            dtype="float32" if f.n_categories is None else "int16",
+            dtype="int16" if f.aggregation == "weighted_mode" else "float32",
             aggregation=f.aggregation,
             required_mode=OperationalMode.IMAGER,
             n_categories=f.n_categories,
@@ -235,8 +222,10 @@ class CLDPIXReader(PassReader):
         ------
         ValueError
             If the granule lacks the ``time_coverage_start`` attribute that dates its
-            fractional-hour times, if its time variable is not in hours, or if the
-            time variable is not one value per scanline (or per pixel).
+            fractional-hour times, if its time variable is not in hours, if the
+            time variable is not one value per scanline (or per pixel), if
+            ``Latitude`` does not declare the colatitude ``valid_range`` of [0, 180],
+            or if a field read has no ``_FillValue`` attribute.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
@@ -254,13 +243,25 @@ class CLDPIXReader(PassReader):
             # (NaN survives the subtraction), and convert at read time so every
             # downstream consumer sees ordinary latitudes. See the module docstring
             # for the evidence that this field really is colatitude.
+            source = f"cldpix {path.name}"
+            lat_var = ds.variables[_LAT_VAR]
+            declared_range = getattr(lat_var, "valid_range", None)
+            if declared_range is None or not np.array_equal(np.asarray(declared_range), _COLATITUDE_VALID_RANGE):
+                raise ValueError(
+                    f"{source}: {_LAT_VAR} declares valid_range {declared_range!r}, but this reader converts "
+                    f"colatitude {list(_COLATITUDE_VALID_RANGE)} to latitude. The granule's geolocation convention "
+                    "has changed; update the reader's colatitude conversion before reading it."
+                )
             colatitudes_2d = apply_fill_and_valid_range(
-                ds.variables[_LAT_VAR][:], fill_value=_FILL_FLOAT, valid_range=_COLATITUDE_VALID_RANGE
+                lat_var[:], fill_value=field_fill_value(lat_var, source=source), valid_range=_COLATITUDE_VALID_RANGE
             )
             shape = colatitudes_2d.shape
             lats_2d = _NORTH_POLE_COLATITUDE - colatitudes_2d
+            lon_var = ds.variables[_LON_VAR]
             lons_2d = normalize_longitude(
-                apply_fill_and_valid_range(ds.variables[_LON_VAR][:], fill_value=_FILL_FLOAT, valid_range=(0.0, 360.0))
+                apply_fill_and_valid_range(
+                    lon_var[:], fill_value=field_fill_value(lon_var, source=source), valid_range=(0.0, 360.0)
+                )
             )
             # The granule's own pixel spacing: the delivered swath may be subsampled (the
             # CERES test granules carry 400 of the 3200 VIIRS pixels per scanline), and the
@@ -269,9 +270,9 @@ class CLDPIXReader(PassReader):
             lats = lats_2d.ravel()
             lons = lons_2d.ravel()
 
-            day, _ = granule_time_coverage(ds, source=f"cldpix {path.name}")
+            day, _ = granule_time_coverage(ds, source=source)
             times = decode_hours_of_day(
-                ds.variables[_TIME_VAR], day.astype("datetime64[D]"), source=f"cldpix {path.name} {_TIME_VAR}"
+                ds.variables[_TIME_VAR], day.astype("datetime64[D]"), source=f"{source} {_TIME_VAR}"
             )
             if times.shape == shape[:1]:
                 # One time per scanline: broadcast across the pixels of the line.
@@ -280,14 +281,17 @@ class CLDPIXReader(PassReader):
                 times = times.ravel()
             else:
                 raise ValueError(
-                    f"cldpix {path.name}: {_TIME_VAR} has shape {times.shape}, but the swath is {shape}; "
+                    f"{source}: {_TIME_VAR} has shape {times.shape}, but the swath is {shape}; "
                     "expected one time per scanline or per pixel."
                 )
 
             value_rows: list[np.ndarray] = []
             for f in _CLDPIX_FIELDS:
-                raw = ds.variables[f.var][:]
-                value_rows.append(apply_fill_and_valid_range(raw, fill_value=f.fill, valid_range=f.valid_range).ravel())
+                var = ds.variables[f.var]
+                fill_value = field_fill_value(var, source=source)
+                value_rows.append(
+                    apply_fill_and_valid_range(var[:], fill_value=fill_value, valid_range=f.valid_range).ravel()
+                )
 
         return PointSamples(
             lats=lats,

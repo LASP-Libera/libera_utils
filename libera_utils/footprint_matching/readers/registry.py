@@ -45,14 +45,14 @@ if TYPE_CHECKING:
 # repeat by design) rather than composed. Note FMATCH-IMAGER-CAMTIME omits ``era5_pressure``:
 # the ERA5 pressure levels are a radiometer-timescale quantity (see fmatch_imager_camtime.yml).
 FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
-    OperationalMode.CAM: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud"}),
-    OperationalMode.CAM_CAMTIME: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud"}),
-    OperationalMode.IMAGER_FLASH: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "ssf"}),
+    OperationalMode.CAM: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
+    OperationalMode.CAM_CAMTIME: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
+    OperationalMode.IMAGER_FLASH: frozenset({"era5", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "ssf"}),
     OperationalMode.IMAGER: frozenset(
-        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "viirs_aod", "era5_pressure", "cldpix", "ssf"}
+        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "viirs_aod", "era5_pressure", "cldpix", "ssf"}
     ),
     OperationalMode.IMAGER_CAMTIME: frozenset(
-        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cloud", "viirs_aod", "cldpix", "ssf"}
+        {"era5", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "viirs_aod", "cldpix", "ssf"}
     ),
 }
 
@@ -69,7 +69,7 @@ class ReaderRegistry:
     --------
     >>> import libera_utils.footprint_matching.readers  # triggers registration
     >>> ReaderRegistry.list_readers()
-    ['cldpix', 'era5_pressure', 'era5_single_level', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cloud']
+    ['cldpix', 'era5_single_level', 'era5_pressure', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cldprop_d3']
     >>> ReaderRegistry.get("igbp").__name__
     'IGBPReader'
     """
@@ -144,7 +144,7 @@ class ReaderRegistry:
         >>> from libera_utils.footprint_matching.types import OperationalMode
         >>> import libera_utils.footprint_matching.readers  # triggers registration
         >>> sorted(ReaderRegistry.get_readers_for_mode(OperationalMode.CAM))
-        ['era5', 'igbp', 'nise', 'viirs_brdf', 'viirs_cloud']
+        ['era5', 'igbp', 'nise', 'viirs_brdf', 'viirs_cldprop_d3']
         >>> imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
         >>> 'cldpix' in imager and 'era5_pressure' in imager  # RBSP alongside ERA5
         True
