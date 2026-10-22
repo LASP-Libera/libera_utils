@@ -190,14 +190,14 @@ class ERA5Reader(ERA5ReaderBase):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"era5"``.
+        Registry key ``"era5_single_level"``.
     RESOLUTION_KM : float
         28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
         Seven continuous float32 variables. The winds (``wind_u10``/``wind_v10``)
         are unrestricted (``required_mode=CAM``); the five additional single-level
         fields carry per-spec ``required_mode=IMAGER`` gating, so they appear only in
-        the FMATCH-IMAGER-family products. This per-spec latency split is why ``era5``
+        the FMATCH-IMAGER-family products. This per-spec latency split is why ``era5_single_level``
         serves every product yet contributes a different variable subset to the CAM vs
         IMAGER products.
 
@@ -209,7 +209,7 @@ class ERA5Reader(ERA5ReaderBase):
         time axis.
     """
 
-    READER_KEY: str = "era5"
+    READER_KEY: str = "era5_single_level"
     # ERA5 is a reanalysis (no single instrument); use the producing center so the
     # long_name provenance tag "... (ECMWF)" stays uniform across every source.
     INSTRUMENT: str = "ECMWF"

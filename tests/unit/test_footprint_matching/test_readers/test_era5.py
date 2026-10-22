@@ -43,14 +43,14 @@ _IMAGER_SINGLE_LEVEL_SPEC_NAMES = (
 
 class TestERA5ReaderClassAttributes:
     def test_reader_key(self):
-        """``ERA5Reader`` registers under the key ``"era5"``.
+        """``ERA5Reader`` registers under the key ``"era5_single_level"``.
 
         The key selects the reader in ``ReaderRegistry`` and prefixes every product variable name it contributes
-        (``era5_wind_u10``), so changing it renames those variables and breaks every lookup by key.
+        (``era5_single_level_wind_u10``), so changing it renames those variables and breaks every lookup by key.
 
-        Asserts the ``READER_KEY`` class attribute equals ``"era5"``.
+        Asserts the ``READER_KEY`` class attribute equals ``"era5_single_level"``.
         """
-        assert ERA5Reader.READER_KEY == "era5"
+        assert ERA5Reader.READER_KEY == "era5_single_level"
 
     def test_resolution_km(self):
         """``ERA5Reader.RESOLUTION_KM`` is 28 km, the 0.25 degree ERA5 grid spacing at the equator.
@@ -344,7 +344,7 @@ class TestERA5ReaderMissingVariables:
 
 class TestERA5ReaderSamples:
     def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
-        """``ERA5Reader`` samples carry the source ``"era5"``, no timestamp source and no per-sample times.
+        """``ERA5Reader`` samples carry the source ``"era5_single_level"``, no timestamp source and no per-sample times.
 
         ERA5 is a reanalysis: the whole step is chosen by time, so its samples need no times of their own, and
         ``timestamp_source`` is reserved for cloud-property products tied to a radiometer or camera time.
@@ -357,7 +357,7 @@ class TestERA5ReaderSamples:
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
         )
         samples = ERA5Reader(fixture_path).samples_in(BoundingBox(0.0, 2.0, 0.0, 2.0), _T)
-        assert samples.source == "era5"
+        assert samples.source == "era5_single_level"
         assert samples.timestamp_source is None
         assert samples.times is None
         assert samples.n_samples == 16
