@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `notebooks/05_weighting_aggregation.ipynb`, a demonstration of the weighers and the aggregation engine.
 - `footprint_matching.geometry.psf_ground_radius_km` and `slant_range_km`: the PSF's analytic ground radius and the satellite-to-ground distance at a viewing zenith, used by the PSF weighers.
 
+### Changed
+
+- `notebooks/04_sources_query.ipynb` also demonstrates coverage.
+
 ## [5.19.0] - 2026-10-30
 
 ### Added
