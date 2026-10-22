@@ -102,14 +102,17 @@ EPSG:3408 desc:  https://epsg.io/3408  (North)  /  https://epsg.io/3409  (South)
 EASE-Grid ref:   https://nsidc.org/ease
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import pyhdf.SD as sd
 import pyproj
 
+from libera_utils.footprint_matching.readers._hdf4_io import (
+    parse_eos_grid,
+    read_hdf4_struct_metadata,
+    struct_metadata_error,
+)
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
@@ -120,10 +123,18 @@ _DEFAULT_GRID_ROWS: int = 721
 _DEFAULT_GRID_COLS: int = 721
 _DEFAULT_RESOLUTION_M: float = 25_067.525  # EASE-Grid North 25-km cell size in meters
 # Upper-left corner of the grid in EPSG:3408/3409 meters (x = easting, y = northing).
-# StructMetadata.0 in a real granule gives both grids the identical extent
-# (UpperLeftPointMtrs=(-9036842.7625, 9036842.7625)); only the CRS differs.
+# Both grids share this extent; only the CRS differs. Each grid's StructMetadata.0 entry
+# is checked against it at load (see ``NISEReader._check_grid``).
 _DEFAULT_X_ORIGIN: float = -9_036_842.7625  # meters (upper-left x)
 _DEFAULT_Y_ORIGIN: float = 9_036_842.7625  # meters (upper-left y)
+# The GCTP projection StructMetadata.0 names for the EASE-Grid (Lambert azimuthal equal-area).
+_EASE_GRID_PROJECTION: str = "GCTP_LAMAZ"
+# How far a StructMetadata.0 corner may sit from the expected one, meters: the attribute
+# writes corners to the micrometer, so this only absorbs decimal rounding.
+_CORNER_TOLERANCE_M: float = 0.01
+_STRUCT_METADATA_ADVICE: str = (
+    "A NISE or NISE_A2 granule carries its EASE-Grid geometry there; stage the 25 km granule as distributed."
+)
 
 # The two NSIDC EASE-Grid projections carried in one NISE granule.
 _DEFAULT_EPSG_NORTH: int = 3408  # NSIDC EASE-Grid North (azimuthal equal-area, +90 deg center)
@@ -182,8 +193,8 @@ class _HemisphereGrid:
     epsg : int
         Source CRS for the pixel-center reprojection (3408 North, 3409 South).
     hemisphere_label : str
-        Substring matched against the HDF-EOS grid dimension name to select this
-        hemisphere's ``Extent`` SDS (see :data:`_HEMISPHERE_LABEL_NORTH`).
+        The HDF-EOS ``GridName`` of this hemisphere, also matched against the SDS
+        dimension names to select its ``Extent`` SDS (see :data:`_HEMISPHERE_LABEL_NORTH`).
     grid_rows, grid_cols : int
         Grid dimensions (default 721 x 721).
     resolution_m : float
@@ -201,13 +212,6 @@ class _HemisphereGrid:
     y_origin: float = _DEFAULT_Y_ORIGIN
 
 
-# The default: read both hemispheres from the single granule, Northern first.
-_DEFAULT_HEMISPHERES: tuple[_HemisphereGrid, ...] = (
-    _HemisphereGrid(epsg=_DEFAULT_EPSG_NORTH, hemisphere_label=_HEMISPHERE_LABEL_NORTH),
-    _HemisphereGrid(epsg=_DEFAULT_EPSG_SOUTH, hemisphere_label=_HEMISPHERE_LABEL_SOUTH),
-)
-
-
 class NISEReader(StaticReader):
     """Read NISE surface-class coverage layers from an HDF-EOS4 file.
 
@@ -221,9 +225,6 @@ class NISEReader(StaticReader):
     docstring's geolocation note). The daily granule has no time axis, so the staged
     day is the time match (``TIME_MATCH = DAILY``).
 
-    The hemispheres to read are the ``hemispheres`` constructor keyword, defaulting to
-    both.
-
     Class Attributes
     ----------------
     READER_KEY : str
@@ -235,14 +236,14 @@ class NISEReader(StaticReader):
         ``weighted_mean`` aggregation and range 0.0–1.0:
         ``"sea_ice_concentration"``, ``"snow_free_land"``, ``"permanent_ice"``,
         ``"snow_on_land"``, and ``"open_ocean"``.
+    _HEMISPHERES : tuple[_HemisphereGrid, ...]
+        The EASE-Grids read from every granule, in order: the Northern (EPSG:3408) and
+        Southern (EPSG:3409) 721 x 721 25 km grids.
 
     Parameters
     ----------
     file_paths : Path or Sequence[Path]
         The one NISE HDF-EOS4 file (``*.HDFEOS``) for the processing day.
-    hemispheres : tuple[_HemisphereGrid, ...], optional
-        The EASE-Grid hemispheres to read. Defaults to both the Northern
-        (EPSG:3408) and Southern (EPSG:3409) grids (:data:`_DEFAULT_HEMISPHERES`).
     """
 
     READER_KEY: str = "nise"
@@ -295,15 +296,11 @@ class NISEReader(StaticReader):
             n_categories=None,
         ),
     )
-
-    def __init__(
-        self,
-        file_paths: Path | Sequence[Path],
-        *,
-        hemispheres: tuple[_HemisphereGrid, ...] = _DEFAULT_HEMISPHERES,
-    ) -> None:
-        super().__init__(file_paths)
-        self._hemispheres = hemispheres
+    # Both hemispheres of the single granule, Northern first.
+    _HEMISPHERES: tuple[_HemisphereGrid, ...] = (
+        _HemisphereGrid(epsg=_DEFAULT_EPSG_NORTH, hemisphere_label=_HEMISPHERE_LABEL_NORTH),
+        _HemisphereGrid(epsg=_DEFAULT_EPSG_SOUTH, hemisphere_label=_HEMISPHERE_LABEL_SOUTH),
+    )
 
     def _build_transformer(self, epsg: int) -> object:
         """Build an ``epsg`` → WGS84 transformer for one hemisphere's pixel centers.
@@ -348,12 +345,15 @@ class NISEReader(StaticReader):
         Raises
         ------
         ValueError
-            If a hemisphere's ``Extent`` SDS is not the shape its grid declares.
+            If a hemisphere's ``Extent`` SDS is not the shape its grid declares, or its
+            ``StructMetadata.0`` entry is missing or gives other dimensions, corners or
+            projection than the EASE-Grid it is geolocated on (see :meth:`_check_grid`).
         """
+        struct_meta = read_hdf4_struct_metadata(self.single_file_path)
         hemi_lats: list[np.ndarray] = []
         hemi_lons: list[np.ndarray] = []
         hemi_values: list[np.ndarray] = []
-        for hemi in self._hemispheres:
+        for hemi in self._HEMISPHERES:
             raw = self._read_extent_sds(hemi.hemisphere_label)
             if raw.shape != (hemi.grid_rows, hemi.grid_cols):
                 raise ValueError(
@@ -361,6 +361,7 @@ class NISEReader(StaticReader):
                     f"EASE-Grid it is geolocated on is {hemi.grid_rows} x {hemi.grid_cols}. Stage a NISE or NISE_A2 "
                     "25 km granule."
                 )
+            self._check_grid(struct_meta, hemi)
             lats_2d, lons_2d = self._compute_latlon_grid(hemi)
             # Split the Extent SDS into the five per-code coverage layers.
             # Shape: (5, n_rows, n_cols), axis 0 in canonical _VARIABLE_ORDER.
@@ -386,6 +387,55 @@ class NISEReader(StaticReader):
             lons=np.concatenate(hemi_lons) if hemi_lons else np.empty(0, dtype=np.float64),
             values=np.concatenate(hemi_values, axis=1) if hemi_values else np.empty((n_vars, 0), dtype=np.float32),
         )
+
+    def _check_grid(self, struct_meta: str, hemi: _HemisphereGrid) -> None:
+        """Check one hemisphere's ``StructMetadata.0`` grid against the EASE-Grid it is geolocated on.
+
+        Pixel centers are computed from ``hemi``'s fixed geometry, not from the file, so a
+        granule whose grid differs in size, corners or projection would be misplaced; this
+        stops the load instead.
+
+        Parameters
+        ----------
+        struct_meta : str
+            The granule's ``StructMetadata.0`` text.
+        hemi : _HemisphereGrid
+            The grid the hemisphere's pixels are geolocated on.
+
+        Raises
+        ------
+        ValueError
+            If ``StructMetadata.0`` has no grid named ``hemi.hemisphere_label`` or lacks
+            one of its geometry fields, names a projection other than ``GCTP_LAMAZ``, or
+            gives dimensions or corners other than ``hemi``'s.
+        """
+        source = self.single_file_path
+        grid = parse_eos_grid(struct_meta, source, _STRUCT_METADATA_ADVICE, grid_name=hemi.hemisphere_label)
+        if grid.projection != _EASE_GRID_PROJECTION:
+            raise struct_metadata_error(
+                source,
+                struct_meta,
+                f"names Projection={grid.projection} for grid {hemi.hemisphere_label!r}, not the EASE-Grid "
+                f"{_EASE_GRID_PROJECTION} this reader geolocates",
+                _STRUCT_METADATA_ADVICE,
+            )
+        upper_left = (hemi.x_origin, hemi.y_origin)
+        lower_right = (
+            hemi.x_origin + hemi.grid_cols * hemi.resolution_m,
+            hemi.y_origin - hemi.grid_rows * hemi.resolution_m,
+        )
+        same_corners = np.allclose(grid.upper_left_m, upper_left, rtol=0.0, atol=_CORNER_TOLERANCE_M) and np.allclose(
+            grid.lower_right_m, lower_right, rtol=0.0, atol=_CORNER_TOLERANCE_M
+        )
+        if (grid.ydim, grid.xdim) != (hemi.grid_rows, hemi.grid_cols) or not same_corners:
+            raise struct_metadata_error(
+                source,
+                struct_meta,
+                f"gives grid {hemi.hemisphere_label!r} YDim={grid.ydim}, XDim={grid.xdim}, corners "
+                f"{grid.upper_left_m} to {grid.lower_right_m} m, but the reader geolocates it on the "
+                f"{hemi.grid_rows} x {hemi.grid_cols} EASE-Grid with corners {upper_left} to {lower_right} m",
+                _STRUCT_METADATA_ADVICE,
+            )
 
     def _extent_to_category_masks(self, raw: np.ndarray) -> np.ndarray:
         """Split the raw NISE Extent codes into five float32 coverage layers.

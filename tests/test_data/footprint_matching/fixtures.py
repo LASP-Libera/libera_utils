@@ -429,12 +429,22 @@ def make_modis_sinusoidal_hdf4_fixture(
 NISE_HEMISPHERE_LABELS: tuple[str, str] = ("Northern Hemisphere", "Southern Hemisphere")
 
 
-def make_nise_hdfeos_fixture(path: Path, north: np.ndarray, south: np.ndarray) -> Path:
+def make_nise_hdfeos_fixture(
+    path: Path,
+    north: np.ndarray,
+    south: np.ndarray,
+    *,
+    upper_left_m: tuple[float, float] = (-9_036_842.7625, 9_036_842.7625),
+    lower_right_m: tuple[float, float] = (9_036_842.7625, -9_036_842.7625),
+    projection: str = "GCTP_LAMAZ",
+    struct_metadata: bool = True,
+) -> Path:
     """Write a NISE HDF-EOS4 granule with pyhdf: an ``Extent`` and an ``Age`` SDS per hemisphere.
 
     Mirrors the real layout: both hemispheres name their fields ``Extent`` and ``Age``,
     and only the dimension names (``"YDim:Northern Hemisphere"``, ...) tell them apart.
-    Northern fields are written first.
+    Northern fields are written first. ``StructMetadata.0`` defines one grid per
+    hemisphere, named by its label, with the arrays' dimensions and the corners given.
 
     Parameters
     ----------
@@ -442,6 +452,13 @@ def make_nise_hdfeos_fixture(path: Path, north: np.ndarray, south: np.ndarray) -
         Output ``.HDFEOS`` path.
     north, south : np.ndarray
         uint8 Extent codes per hemisphere, ``(n_rows, n_cols)``.
+    upper_left_m, lower_right_m : tuple[float, float], optional
+        Both grids' corners in ``StructMetadata.0``, projection meters. The defaults are
+        the 25 km EASE-Grid's.
+    projection : str, optional
+        The ``Projection`` both grids name.
+    struct_metadata : bool, optional
+        Whether to write ``StructMetadata.0`` at all.
 
     Returns
     -------
@@ -449,6 +466,25 @@ def make_nise_hdfeos_fixture(path: Path, north: np.ndarray, south: np.ndarray) -
         ``path``.
     """
     import pyhdf.SD as sd  # noqa: PLC0415
+
+    lines = ["GROUP=SwathStructure", "END_GROUP=SwathStructure", "GROUP=GridStructure"]
+    for number, (label, extent) in enumerate(zip(NISE_HEMISPHERE_LABELS, (north, south), strict=True), start=1):
+        center = "90000000" if label.startswith("Northern") else "-90000000"
+        lines.extend(
+            [
+                f"\tGROUP=GRID_{number}",
+                f'\t\tGridName="{label}"',
+                f"\t\tXDim={extent.shape[1]}",
+                f"\t\tYDim={extent.shape[0]}",
+                f"\t\tUpperLeftPointMtrs=({upper_left_m[0]:.6f},{upper_left_m[1]:.6f})",
+                f"\t\tLowerRightMtrs=({lower_right_m[0]:.6f},{lower_right_m[1]:.6f})",
+                f"\t\tProjection={projection}",
+                f"\t\tProjParams=(6371228,0,0,0,0,{center},0,0,0,0,0,0,0)",
+                "\t\tSphereCode=19",
+                f"\tEND_GROUP=GRID_{number}",
+            ]
+        )
+    lines.extend(["END_GROUP=GridStructure", "END"])
 
     hdf = sd.SD(str(path), sd.SDC.WRITE | sd.SDC.CREATE)
     try:
@@ -459,6 +495,8 @@ def make_nise_hdfeos_fixture(path: Path, north: np.ndarray, south: np.ndarray) -
                 sds.dim(1).setname(f"XDim:{label}")
                 sds[:] = np.asarray(values, dtype=np.uint8)
                 sds.endaccess()
+        if struct_metadata:
+            hdf.attr("StructMetadata.0").set(sd.SDC.CHAR8, "\n".join(lines) + "\n")
     finally:
         hdf.end()
     return path
