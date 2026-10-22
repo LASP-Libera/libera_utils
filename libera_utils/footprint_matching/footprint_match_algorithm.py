@@ -784,12 +784,9 @@ def create_and_write_data_product(
     aggregates (``igbp_surface_type``, ``era5_*``, ``ssf_*``, ``cldpix_*``, ...) and the
     camera cloud-fraction values are **not** supplied here - the aggregation engine that
     computes them is still ``TODO[LIBSDC-785]`` - so ``write_fmatch_product`` writes them as
-    conformant fill values. A product written by this
-    function is therefore **not yet consumable by SCENE-ID**: its placeholder
-    ``igbp_surface_type=0`` makes
-    :func:`~libera_utils.scene_identification.scene_id.calculate_trmm_surface_type` raise.
-    These runners are intentionally non-operational end-to-end until that engine lands; see
-    the module ``Milestone note``.
+    conformant fill values. SCENE-ID reads those fills as missing inputs, so a product
+    written this way classifies with every footprint unmatched (scene ID 0) until that
+    engine lands.
     """
     inputs, cloud_fraction_camera = run_footprint_matching(input_file_path, config)
 
