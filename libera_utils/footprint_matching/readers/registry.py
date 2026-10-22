@@ -24,9 +24,49 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+# OperationalMode is imported at runtime (not just for type checking): it keys the
+# per-product reader-set map below. types.py is dependency-free, so this cannot
+# create an import cycle.
+from libera_utils.footprint_matching.types import OperationalMode
+
 if TYPE_CHECKING:
     # Avoid a circular import at module load time; only used for type hints
     from libera_utils.footprint_matching.readers.base import AncillaryReader
+
+
+# ---------------------------------------------------------------------------
+# Per-product reader membership
+# ---------------------------------------------------------------------------
+# One fully-enumerated reader set per shipped FMATCH product -- the single source of truth
+# for which readers contribute to which product (readers do not self-gate by mode). Keyed by
+# OperationalMode like ``product.FMATCH_DEFINITION_FILENAMES``; ``get_readers_for_mode``
+# resolves ``mode`` with the same logic as ``load_fmatch_definition``, so the active reader
+# set and the loaded definition can never drift. Each set is spelled out in full (names
+# repeat by design) rather than composed. Note FMATCH-IMAGER-CAMTIME omits ``era5_pressure``:
+# the ERA5 pressure levels are a radiometer-timescale quantity (see fmatch_imager_camtime.yml).
+FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
+    OperationalMode.CAM: frozenset({"era5_single_level", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
+    OperationalMode.CAM_CAMTIME: frozenset({"era5_single_level", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
+    OperationalMode.IMAGER_FLASH: frozenset(
+        {"era5_single_level", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "ssf"}
+    ),
+    OperationalMode.IMAGER: frozenset(
+        {
+            "era5_single_level",
+            "igbp",
+            "nise",
+            "viirs_brdf",
+            "viirs_cldprop_d3",
+            "viirs_aod",
+            "era5_pressure",
+            "cldpix",
+            "ssf",
+        }
+    ),
+    OperationalMode.IMAGER_CAMTIME: frozenset(
+        {"era5_single_level", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "viirs_aod", "cldpix", "ssf"}
+    ),
+}
 
 
 class ReaderRegistry:
@@ -41,7 +81,7 @@ class ReaderRegistry:
     --------
     >>> import libera_utils.footprint_matching.readers  # triggers registration
     >>> ReaderRegistry.list_readers()
-    ['era5_pressure', 'era5_single_level', 'igbp', 'nise', 'viirs_aod', 'viirs_brdf']
+    ['cldpix', 'era5_pressure', 'era5_single_level', 'igbp', 'nise', 'ssf', 'viirs_aod', 'viirs_brdf', 'viirs_cldprop_d3']
     >>> ReaderRegistry.get("igbp").__name__
     'IGBPReader'
     """
@@ -87,3 +127,41 @@ class ReaderRegistry:
             Alphabetically sorted registry keys.
         """
         return sorted(ReaderRegistry._registry.keys())
+
+    @staticmethod
+    def get_readers_for_mode(mode: OperationalMode) -> dict[str, type[AncillaryReader]]:
+        """Return the readers that contribute to a product's definition.
+
+        Membership is read directly from the per-product reader set
+        (:data:`FMATCH_MODE_READERS`), keyed by the *same* ``mode`` as
+        :func:`~libera_utils.footprint_matching.product.load_fmatch_definition`. Because
+        both resolve identically, this returns exactly the readers whose variable blocks
+        appear in the definition that ``load_fmatch_definition(mode)`` loads -- the active
+        reader set and the product schema cannot drift.
+
+        Parameters
+        ----------
+        mode : OperationalMode
+            The operational mode (product) whose readers to return.
+
+        Returns
+        -------
+        dict[str, type[AncillaryReader]]
+            Mapping of registry key to reader class for every reader in the product's
+            set. Only production readers named in the sets are returned; throwaway
+            readers other code may have registered are not included.
+
+        Examples
+        --------
+        >>> from libera_utils.footprint_matching.types import OperationalMode
+        >>> import libera_utils.footprint_matching.readers  # triggers registration
+        >>> sorted(ReaderRegistry.get_readers_for_mode(OperationalMode.CAM))
+        ['era5_single_level', 'igbp', 'nise', 'viirs_brdf', 'viirs_cldprop_d3']
+        >>> imager = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER)
+        >>> 'cldpix' in imager and 'era5_pressure' in imager  # RBSP alongside ERA5
+        True
+        >>> camtime = ReaderRegistry.get_readers_for_mode(OperationalMode.IMAGER_CAMTIME)
+        >>> 'era5_pressure' in camtime  # pressure-level ERA5 is radiometer-timescale only
+        False
+        """
+        return {key: ReaderRegistry._registry[key] for key in FMATCH_MODE_READERS[mode]}
