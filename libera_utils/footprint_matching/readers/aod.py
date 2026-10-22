@@ -31,8 +31,8 @@ Aerosol type categories (from the file's ``long_name``)
 
 Why the single-sensor granule (not the GEO-LEO merged one)?
 -----------------------------------------------------------
-The AOD is written to the FMATCH-IMAGER products, and the L2 algorithms that read it
-there need a single, well-characterized VIIRS aerosol source. The
+The AOD is written to the FMATCH-IMAGER products, and used by L2 Surface Irradiance algorithms. 
+The L2 algorithms that read it there need a single, well-characterized VIIRS aerosol source. The
 dedicated single-sensor ``AERDB_D3_VIIRS_NOAA20`` Deep Blue granule provides the
 NOAA-20 VIIRS Deep Blue 550 nm AOD **and** the aerosol-type field, so both are
 sourced from this one authoritative granule. The cross-sensor
