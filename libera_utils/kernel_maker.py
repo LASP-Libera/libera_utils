@@ -10,6 +10,7 @@ import logging
 import multiprocessing
 import os
 import tempfile
+import traceback
 import warnings
 from datetime import UTC, datetime
 from multiprocessing.connection import Connection
@@ -28,12 +29,13 @@ from libera_utils.constants import DataLevel, DataProductIdentifier
 from libera_utils.io import filenaming
 from libera_utils.io.caching import get_local_short_temp_dir, validate_path_length
 from libera_utils.io.manifest import Manifest
+from libera_utils.io.netcdf import _load_netcdf_into_memory
 from libera_utils.io.smart_open import smart_copy_file
 from libera_utils.l1a import packets as libera_packets
 from libera_utils.l1a.l1a_packet_configs import get_packet_config
 from libera_utils.libera_spice import spice_utils
 from libera_utils.libera_spice.kernel_manager import KernelManager
-from libera_utils.logutil import configure_task_logging
+from libera_utils.logutil import configure_task_logging, flush_cloudwatch_logs
 
 logger = logging.getLogger(__name__)
 
@@ -562,33 +564,6 @@ def create_jpss_kernel_dataframe_from_csv(
     return df, utc_range_tuple
 
 
-def _load_l1a_dataset(l1a_path: str | filenaming.PathType) -> xr.Dataset:
-    """Read an L1A NetCDF file fully into memory.
-
-    Parameters
-    ----------
-    l1a_path : str | filenaming.PathType
-        Local or S3 path to an L1A NetCDF file.
-
-    Returns
-    -------
-    xr.Dataset
-        The L1A Dataset, loaded into memory with the file closed.
-
-    Raises
-    ------
-    ValueError
-        If the file cannot be opened or read as NetCDF.
-    """
-    l1a_path = cast(filenaming.PathType, AnyPath(l1a_path))
-    logger.info("Opening L1A NetCDF file: %s", l1a_path)
-    try:
-        with xr.open_dataset(l1a_path, engine="h5netcdf") as l1a_dataset:
-            return l1a_dataset.load()
-    except Exception as e:
-        raise ValueError(f"Failed to open or read L1A NetCDF file {l1a_path}: {e}") from e
-
-
 def create_kernel_from_l1a(
     l1a_data: str | filenaming.PathType | xr.Dataset,
     kernel_identifier: str | DataProductIdentifier,
@@ -621,7 +596,7 @@ def create_kernel_from_l1a(
     if isinstance(l1a_data, xr.Dataset):
         l1a_dataset = l1a_data
     else:
-        l1a_dataset = _load_l1a_dataset(l1a_data)
+        l1a_dataset = _load_netcdf_into_memory(l1a_data)
 
     kernel_identifier = DataProductIdentifier(kernel_identifier)
 
@@ -782,26 +757,27 @@ def _make_kernel_in_worker(
     l1a_dataset: xr.Dataset,
     kernel_identifier: DataProductIdentifier,
     work_dir: Path,
-    overwrite: bool,
 ) -> None:
-    """Create one kernel in `work_dir` and send its path through `result_conn`.
+    """Create one kernel in `work_dir` and send the outcome through `result_conn`.
 
-    Runs as the target of a forked process. A failure is logged and nothing is sent, which the parent
-    counts as that kernel failing.
+    Runs as the target of a forked process. Sends ``("kernel", path)`` on success, or ``("error", traceback
+    text)`` after logging the exception. CloudWatch handlers are flushed before returning, because the process
+    then exits through ``os._exit`` and atexit's ``logging.shutdown`` never runs. `work_dir` starts empty, so
+    whether an existing kernel may be replaced is decided by the parent when it copies the kernel out.
     """
     # curryer shortens long kernel paths with fixed-name symlinks in its temp directory, so each worker
     # needs its own directory or concurrent workers replace and delete each other's links.
     os.environ["CURRYER_TEMP_DIR"] = str(work_dir)
     try:
-        result_conn.send(
-            create_kernel_from_l1a(
-                l1a_data=l1a_dataset, kernel_identifier=kernel_identifier, output_dir=work_dir, overwrite=overwrite
-            )
-        )
+        kernel = create_kernel_from_l1a(l1a_data=l1a_dataset, kernel_identifier=kernel_identifier, output_dir=work_dir)
     except Exception:
         logger.exception("Kernel generation failed for DPI [%s]", kernel_identifier)
+        result_conn.send(("error", traceback.format_exc()))
+    else:
+        result_conn.send(("kernel", kernel))
     finally:
         result_conn.close()
+        flush_cloudwatch_logs()
 
 
 def create_kernels_from_manifest(
@@ -835,8 +811,9 @@ def create_kernels_from_manifest(
         If a requested identifier is not a SPICE product or is repeated, if the manifest does not hold
         exactly one input file, if the L1A file cannot be read, or if the platform has no ``fork`` start
         method. These raise before any kernel is attempted. Also raised after every kernel was attempted
-        when any kernel failed, listing each failed kernel with its input files; no output manifest is
-        written.
+        when any kernel failed, listing each failed kernel with its input files and the reason it
+        failed: a kernel process's traceback, its exit code when it sent nothing, or the copy to
+        `output_dir` failing or being refused; no output manifest is written.
     RuntimeError
         If a kernel work directory path is too long for curryer (set LIBERA_TEMP_DIR to a shorter
         base path), or if static kernel creation fails while populating the kernel cache.
@@ -905,15 +882,15 @@ def create_kernels_from_manifest(
         warnings.warn(f"Input manifest file contains non-L1A product filename: {l1a_file} ({ve})")
 
     logger.info("Using input file for kernel generation: %s", l1a_file)
-    l1a_dataset = _load_l1a_dataset(l1a_file)
+    l1a_dataset = _load_netcdf_into_memory(l1a_file)
 
     # Populate the kernel cache once, before the workers start, so they never write the same cache files at
-    # once. Leaving the context clears the SPICE kernel pool, so every worker starts from an empty pool.
-    with KernelManager():
-        pass
+    # once. populate_cache leaves the SPICE kernel pool empty, so every worker starts from an empty pool.
+    KernelManager().populate_cache()
 
     outputs = []
     kernel_processing_failures: list[tuple[str, list]] = []
+    failure_details: list[str] = []
     # Workers write to local staging and this process copies each kernel to `output_dir`, because a forked
     # child must not use the parent's S3 connections.
     with tempfile.TemporaryDirectory(dir=get_local_short_temp_dir()) as staging_dir:
@@ -929,7 +906,7 @@ def create_kernels_from_manifest(
                 receive_conn, send_conn = fork_context.Pipe(duplex=False)
                 process = fork_context.Process(
                     target=_make_kernel_in_worker,
-                    args=(send_conn, l1a_dataset, kernel_identifier, work_dir, overwrite),
+                    args=(send_conn, l1a_dataset, kernel_identifier, work_dir),
                     name=f"kernel-{kernel_identifier.value}",
                 )
                 process.start()
@@ -937,29 +914,38 @@ def create_kernels_from_manifest(
                 workers.append((kernel_identifier, process, receive_conn))
 
             for kernel_identifier, process, receive_conn in workers:
-                process.join()
+                # Receive before joining: a result larger than the pipe buffer blocks the child in send() until read.
                 try:
-                    staged_kernel = receive_conn.recv()
+                    outcome, payload = receive_conn.recv()
                 except EOFError:
-                    kernel_processing_failures.append((kernel_identifier, input_file_names))
-                    logger.error(
-                        "Kernel process for DPI [%s] and inputs [%s] exited with code %s without producing a kernel. "
-                        "Its own error, if any, is logged above; a negative code is the signal that killed it, and -9 "
-                        "usually means the job reached its memory limit.",
-                        kernel_identifier,
-                        input_file_names,
-                        process.exitcode,
+                    outcome, payload = None, None
+                process.join()
+                if outcome is None:
+                    payload = (
+                        f"kernel process exited with code {process.exitcode} without sending a result; a negative "
+                        "code is the signal that killed it, and -9 usually means the job reached its memory limit"
                     )
+                    logger.error(
+                        "Kernel for DPI [%s] and inputs [%s]: %s", kernel_identifier, input_file_names, payload
+                    )
+                if outcome != "kernel":
+                    kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    failure_details.append(f"{kernel_identifier.value}: {payload}")
                     continue
+                staged_kernel = payload
                 output_kernel = AnyPath(output_dir) / staged_kernel.name
                 if not overwrite and output_kernel.exists():
                     kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    failure_details.append(
+                        f"{kernel_identifier.value}: {output_kernel} already exists and overwrite is False"
+                    )
                     logger.error("Kernel %s already exists and overwrite is False", output_kernel)
                     continue
                 try:
                     smart_copy_file(staged_kernel, output_kernel)
-                except Exception:
+                except Exception as error:
                     kernel_processing_failures.append((kernel_identifier, input_file_names))
+                    failure_details.append(f"{kernel_identifier.value}: copying to {output_kernel} failed: {error!r}")
                     logger.exception("Copying kernel for DPI [%s] to %s failed", kernel_identifier, output_kernel)
                     continue
                 outputs.append(output_kernel)
@@ -973,7 +959,10 @@ def create_kernels_from_manifest(
     # If failures occurred during kernel generation, raise before we write out a manifest
     # This allows the kernel maker to try making each kernel but if any fail, we don't want to continue.
     if kernel_processing_failures:
-        raise ValueError(f"Kernel processing steps failed (kernel DPI, input_files): {kernel_processing_failures}")
+        raise ValueError(
+            f"Kernel processing steps failed (kernel DPI, input_files): {kernel_processing_failures}\n"
+            + "\n".join(failure_details)
+        )
 
     outputs = sorted(outputs)
 

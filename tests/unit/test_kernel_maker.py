@@ -1,6 +1,8 @@
 """Unit tests for kernel_maker module"""
 
 import argparse
+import json
+import logging
 import multiprocessing
 import os
 import signal
@@ -11,11 +13,14 @@ from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import patch
 
+import boto3
 import numpy as np
 import pandas as pd
 import pytest
+import watchtower
 import xarray as xr
 from cloudpathlib import AnyPath
+from moto import mock_aws
 
 from libera_utils import kernel_maker
 from libera_utils.config import config
@@ -166,7 +171,7 @@ def _fake_kernel_writer(
     `failing` identifier, kills its own process for the `killed` one and sleeps for the `blocked` one.
     """
 
-    def create_kernel(l1a_data, kernel_identifier, output_dir, overwrite):
+    def create_kernel(l1a_data, kernel_identifier, output_dir):
         if l1a_data is not l1a_dataset:
             raise AssertionError("The kernel process did not receive the L1A Dataset loaded by the parent")
         if os.environ.get("CURRYER_TEMP_DIR") != str(output_dir):
@@ -178,7 +183,7 @@ def _fake_kernel_writer(
         if kernel_identifier == blocked:
             time.sleep(60)
         kernel = Path(output_dir) / f"{kernel_identifier.value}.bsp"
-        kernel.write_text(f"overwrite={overwrite}")
+        kernel.write_text(kernel_identifier.value)
         return kernel
 
     return create_kernel
@@ -190,7 +195,7 @@ def manifest_kernel_run():
     l1a_dataset = xr.Dataset()
     with (
         mock.patch.object(kernel_maker, "Manifest") as manifest_class,
-        mock.patch.object(kernel_maker, "_load_l1a_dataset", return_value=l1a_dataset) as load_l1a,
+        mock.patch.object(kernel_maker, "_load_netcdf_into_memory", return_value=l1a_dataset) as load_l1a,
         mock.patch.object(kernel_maker, "KernelManager") as kernel_manager_class,
         mock.patch.object(
             kernel_maker, "create_kernel_from_l1a", side_effect=_fake_kernel_writer(l1a_dataset)
@@ -203,6 +208,7 @@ def manifest_kernel_run():
             output_manifest=manifest_class.output_manifest_from_input_manifest.return_value,
             load_l1a=load_l1a,
             kernel_manager_class=kernel_manager_class,
+            populate_cache=kernel_manager_class.return_value.populate_cache,
             create_kernel=create_kernel,
         )
 
@@ -218,8 +224,8 @@ def test_from_manifest(manifest_kernel_run, tmp_path):
     assert pedi is manifest_kernel_run.output_manifest
     manifest_kernel_run.manifest_class.from_file.return_value.validate_checksums.assert_called_once()
     manifest_kernel_run.load_l1a.assert_called_once_with("l1a_file.nc")
-    manifest_kernel_run.kernel_manager_class.return_value.__enter__.assert_called_once()
-    assert (tmp_path / "JPSS-SPK.bsp").read_text() == "overwrite=True"
+    manifest_kernel_run.populate_cache.assert_called_once_with()
+    assert (tmp_path / "JPSS-SPK.bsp").read_text() == "JPSS-SPK"
     pedi.add_files.assert_called_once_with(tmp_path / "JPSS-SPK.bsp")
     pedi.write.assert_called_once_with(tmp_path)
 
@@ -256,9 +262,9 @@ def test_from_manifest_multi_kernel_processing(manifest_kernel_run, tmp_path):
     )
 
     manifest_kernel_run.load_l1a.assert_called_once_with("l1a_file.nc")
-    manifest_kernel_run.kernel_manager_class.return_value.__enter__.assert_called_once()
-    assert (tmp_path / "JPSS-SPK.bsp").read_text() == "overwrite=False"
-    assert (tmp_path / "JPSS-CK.bsp").read_text() == "overwrite=False"
+    manifest_kernel_run.populate_cache.assert_called_once_with()
+    assert (tmp_path / "JPSS-SPK.bsp").read_text() == "JPSS-SPK"
+    assert (tmp_path / "JPSS-CK.bsp").read_text() == "JPSS-CK"
     pedi.add_files.assert_called_once_with(tmp_path / "JPSS-CK.bsp", tmp_path / "JPSS-SPK.bsp")
 
 
@@ -271,13 +277,16 @@ def test_from_manifest_exception_handling(manifest_kernel_run, tmp_path):
     with pytest.raises(
         ValueError,
         match=r"Kernel processing steps failed.*'JPSS-SPK'.*'l1a_file.nc'",
-    ):
+    ) as excinfo:
         _ = kernel_maker.create_kernels_from_manifest(
             input_manifest="test.manifest",
             kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
             output_dir=tmp_path,
         )
 
+    # The kernel process's exception and traceback reach the raised error.
+    assert "RuntimeError: Test error" in str(excinfo.value)
+    assert "in create_kernel" in str(excinfo.value)
     assert (tmp_path / "JPSS-CK.bsp").exists()
     assert not (tmp_path / "JPSS-SPK.bsp").exists()
     manifest_kernel_run.output_manifest.add_files.assert_not_called()
@@ -290,16 +299,65 @@ def test_from_manifest_killed_kernel_process_is_a_failure(manifest_kernel_run, t
         manifest_kernel_run.l1a_dataset, killed="JPSS-SPK"
     )
 
-    with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'"):
+    with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'") as excinfo:
         _ = kernel_maker.create_kernels_from_manifest(
             input_manifest="test.manifest",
             kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
             output_dir=tmp_path,
         )
 
+    assert "exited with code -9" in str(excinfo.value)
     assert "exited with code -9" in caplog.text
     assert (tmp_path / "JPSS-CK.bsp").exists()
     manifest_kernel_run.output_manifest.write.assert_not_called()
+
+
+def _run_with_failing_spk(run, tmp_path):
+    run.create_kernel.side_effect = _fake_kernel_writer(run.l1a_dataset, failing="JPSS-SPK")
+    with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'"):
+        kernel_maker.create_kernels_from_manifest(
+            input_manifest="test.manifest", kernel_product_ids=["JPSS-SPK", "JPSS-CK"], output_dir=tmp_path
+        )
+
+
+def test_from_manifest_kernel_process_logs_reach_parent_handlers(manifest_kernel_run, tmp_path):
+    """Records a kernel process logs, its traceback included, reach a handler the calling process configured"""
+    log_file = tmp_path / "task.log"
+    handler = logging.FileHandler(log_file)
+    logging.getLogger().addHandler(handler)
+    try:
+        _run_with_failing_spk(manifest_kernel_run, tmp_path)
+    finally:
+        logging.getLogger().removeHandler(handler)
+        handler.close()
+    text = log_file.read_text()
+    assert "Kernel generation failed for DPI [JPSS-SPK]" in text
+    assert "RuntimeError: Test error" in text
+
+
+# watchtower's sender thread exists when the kernel processes fork, which Python 3.12+ warns about.
+@pytest.mark.filterwarnings("ignore:.*multi-threaded.*fork:DeprecationWarning")
+@mock_aws
+def test_from_manifest_kernel_process_flushes_cloudwatch_handler(manifest_kernel_run, tmp_path):
+    """A kernel process sends its CloudWatch records, its traceback included, before it exits"""
+    sent = tmp_path / "sent.jsonl"
+
+    def record(params, **kwargs):
+        with sent.open("a") as log:
+            log.write(json.dumps([event["message"] for event in params["logEvents"]]) + "\n")
+
+    client = boto3.client("logs", region_name="us-east-1")
+    client.meta.events.register("before-parameter-build.cloudwatch-logs.PutLogEvents", record)
+    handler = watchtower.CloudWatchLogHandler(
+        log_group_name="kernel-test", log_stream_name="kernel-test", boto3_client=client, send_interval=60
+    )
+    logging.getLogger().addHandler(handler)
+    try:
+        _run_with_failing_spk(manifest_kernel_run, tmp_path)
+    finally:
+        logging.getLogger().removeHandler(handler)
+        handler.close()
+    assert "RuntimeError: Test error" in sent.read_text()
 
 
 @pytest.mark.parametrize("overwrite", [False, True])
@@ -317,10 +375,11 @@ def test_from_manifest_existing_kernel_is_replaced_only_with_overwrite(manifest_
 
     if overwrite:
         kernel_maker.create_kernels_from_manifest(**kwargs)
-        assert existing.read_text() == "overwrite=True"
+        assert existing.read_text() == "JPSS-CK"
     else:
-        with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-CK'"):
+        with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-CK'") as excinfo:
             kernel_maker.create_kernels_from_manifest(**kwargs)
+        assert "already exists and overwrite is False" in str(excinfo.value)
         assert existing.read_text() == "existing"
         manifest_kernel_run.output_manifest.write.assert_not_called()
     assert (tmp_path / "JPSS-SPK.bsp").exists()
@@ -355,8 +414,8 @@ def test_from_manifest_without_fork_raises_before_reading_l1a(manifest_kernel_ru
 @pytest.mark.parametrize(
     ("failing_step", "error"),
     [
-        ("load_l1a", ValueError("Failed to open or read L1A NetCDF file l1a_file.nc")),
-        ("kernel_manager_class", RuntimeError("Static kernel creation failed")),
+        ("load_l1a", ValueError("Failed to open or read NetCDF file l1a_file.nc")),
+        ("populate_cache", RuntimeError("Static kernel creation failed")),
     ],
 )
 def test_from_manifest_shared_setup_failure_raises_before_any_kernel(
@@ -403,13 +462,14 @@ def test_from_manifest_copy_failure_is_a_failure(manifest_kernel_run, tmp_path):
         return copy_kernel(source_path, dest_path)
 
     with mock.patch.object(kernel_maker, "smart_copy_file", side_effect=copy_all_but_spk):
-        with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'"):
+        with pytest.raises(ValueError, match=r"Kernel processing steps failed.*'JPSS-SPK'") as excinfo:
             kernel_maker.create_kernels_from_manifest(
                 input_manifest="test.manifest",
                 kernel_product_ids=["JPSS-SPK", "JPSS-CK"],
                 output_dir=tmp_path,
             )
 
+    assert "Test copy error" in str(excinfo.value)
     assert (tmp_path / "JPSS-CK.bsp").exists()
     assert not (tmp_path / "JPSS-SPK.bsp").exists()
     manifest_kernel_run.output_manifest.write.assert_not_called()
@@ -441,14 +501,6 @@ def test_from_manifest_parent_error_terminates_running_kernel_processes(manifest
 
     assert started[0].exitcode == -signal.SIGTERM
     manifest_kernel_run.output_manifest.write.assert_not_called()
-
-
-def test_load_l1a_dataset_unreadable_file_raises(tmp_path):
-    """A file that is not NetCDF raises ValueError naming the file"""
-    not_netcdf = tmp_path / "not_netcdf.nc"
-    not_netcdf.write_text("not a NetCDF file")
-    with pytest.raises(ValueError, match="Failed to open or read L1A NetCDF file"):
-        kernel_maker._load_l1a_dataset(not_netcdf)
 
 
 @pytest.fixture
