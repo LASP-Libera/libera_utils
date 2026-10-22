@@ -487,15 +487,15 @@ def resolve_ancillary_inputs(
     subdirectory per reader, named by the reader's registry key**::
 
         $FMATCH_ANCILLARY_PATH/
-            era5/           ERA5 single-level granules
-            era5_pressure/  ERA5 pressure-level granules
-            igbp/           MCD12Q1 land-cover granules
-            nise/           NISE snow/ice granules
-            viirs_brdf/     VIIRS BRDF granules
-            viirs_cloud/    VIIRS cloud granules
-            viirs_aod/      VIIRS Deep Blue aerosol granules (AOD + aerosol type)
-            cldpix/         CERES CLDPIX granules   (IMAGER-family modes)
-            ssf/            CERES SSF granules      (IMAGER-family modes)
+            era5_single_level/  ERA5 single-level granules
+            era5_pressure/      ERA5 pressure-level granules
+            igbp/               MCD12Q1 land-cover granules
+            nise/               NISE snow/ice granules
+            viirs_brdf/         VIIRS BRDF granules
+            viirs_cldprop_d3/   VIIRS daily L3 cloud-property granules
+            viirs_aod/          VIIRS Deep Blue aerosol granules (AOD + aerosol type)
+            cldpix/             CERES CLDPIX granules   (IMAGER-family modes)
+            ssf/                CERES SSF granules      (IMAGER-family modes)
 
     The active reader set comes from
     :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
