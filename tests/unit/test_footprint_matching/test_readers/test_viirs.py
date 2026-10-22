@@ -1,7 +1,7 @@
-"""Unit tests for VIIRSCloudReader.
+"""Unit tests for VIIRSCldpropD3Reader.
 
 Uses synthetic CLDPROP_D3 NetCDF4 fixture files created by
-``make_viirs_cloud_d3_fixture`` so that the group navigation, fill handling,
+``make_viirs_cldprop_d3_fixture`` so that the group navigation, fill handling,
 and (lon, lat) → (lat, lon) transpose logic can be exercised without real data.
 
 Real CLDPROP_D3 files can be downloaded from:
@@ -12,9 +12,9 @@ Real CLDPROP_D3 files can be downloaded from:
 import numpy as np
 import pytest
 
-from libera_utils.footprint_matching.readers.viirs import VIIRSCloudReader
+from libera_utils.footprint_matching.readers.viirs import VIIRSCldpropD3Reader
 from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
-from tests.test_data.footprint_matching.fixtures import make_viirs_cloud_d3_fixture
+from tests.test_data.footprint_matching.fixtures import make_viirs_cldprop_d3_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
@@ -29,9 +29,9 @@ _LON_MIN = 10.5
 _LON_MAX = 17.5
 
 
-def _make_reader(tmp_path, **kwargs) -> tuple[VIIRSCloudReader, object]:
+def _make_reader(tmp_path, **kwargs) -> tuple[VIIRSCldpropD3Reader, object]:
     """Return (reader, fixture_path) using default or overridden fixture params."""
-    fixture_path = make_viirs_cloud_d3_fixture(
+    fixture_path = make_viirs_cldprop_d3_fixture(
         tmp_path,
         n_lat=_N_LAT,
         n_lon=_N_LON,
@@ -41,38 +41,38 @@ def _make_reader(tmp_path, **kwargs) -> tuple[VIIRSCloudReader, object]:
         lon_max=_LON_MAX,
         **kwargs,
     )
-    return VIIRSCloudReader(fixture_path), fixture_path
+    return VIIRSCldpropD3Reader(fixture_path), fixture_path
 
 
 def _full_bbox() -> BoundingBox:
     return BoundingBox(_LAT_MIN - 0.1, _LAT_MAX + 0.1, _LON_MIN - 0.1, _LON_MAX + 0.1)
 
 
-class TestVIIRSCloudReaderClassAttributes:
+class TestVIIRSCldpropD3ReaderClassAttributes:
     def test_reader_key(self):
-        # Targets the reader's registry key; asserts READER_KEY equals the expected "viirs_cloud".
-        assert VIIRSCloudReader.READER_KEY == "viirs_cloud"
+        # Targets the reader's registry key; asserts READER_KEY equals the expected "viirs_cldprop_d3".
+        assert VIIRSCldpropD3Reader.READER_KEY == "viirs_cldprop_d3"
 
     def test_resolution_km(self):
         # Targets the declared grid resolution; asserts RESOLUTION_KM equals 111.0 km.
-        assert VIIRSCloudReader.RESOLUTION_KM == 111.0
+        assert VIIRSCldpropD3Reader.RESOLUTION_KM == 111.0
 
     def test_variables_has_two_entries(self):
         # Targets the VARIABLES count; asserts exactly two variable specs are declared.
-        assert len(VIIRSCloudReader.VARIABLES) == 2
+        assert len(VIIRSCldpropD3Reader.VARIABLES) == 2
 
     def test_variable_names_in_order(self):
         # Targets VARIABLES ordering; asserts names are ["cloud_optical_thickness", "cloud_top_pressure"].
-        names = [v.name for v in VIIRSCloudReader.VARIABLES]
+        names = [v.name for v in VIIRSCldpropD3Reader.VARIABLES]
         assert names == ["cloud_optical_thickness", "cloud_top_pressure"]
 
     def test_variables_have_no_categories(self):
         # Targets that cloud variables are continuous; asserts every spec's n_categories is None.
-        for v in VIIRSCloudReader.VARIABLES:
+        for v in VIIRSCldpropD3Reader.VARIABLES:
             assert v.n_categories is None
 
 
-class TestVIIRSCloudReaderLoadSpatialRegion:
+class TestVIIRSCldpropD3ReaderLoadSpatialRegion:
     def test_returns_3d_data_array(self, tmp_path):
         # Targets samples_in output; asserts a 3-D array whose leading axis holds the 2 variables.
         reader, _ = _make_reader(tmp_path)
@@ -116,7 +116,7 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
 
     def test_fill_value_becomes_nan(self, tmp_path):
         # Targets D3 fill-value masking; builds a fixture with ctp_fill=-9999.0 (the D3 fill) so the field is all fill.
-        fixture_path = make_viirs_cloud_d3_fixture(
+        fixture_path = make_viirs_cldprop_d3_fixture(
             tmp_path,
             n_lat=_N_LAT,
             n_lon=_N_LON,
@@ -126,13 +126,26 @@ class TestVIIRSCloudReaderLoadSpatialRegion:
             lon_max=_LON_MAX,
             ctp_fill=-9999.0,
         )
-        reader = VIIRSCloudReader(fixture_path)
+        reader = VIIRSCldpropD3Reader(fixture_path)
         data, _, _ = _region(reader, _full_bbox(), _T)
         # cloud_top_pressure (index 1) should be all NaN since fill_value = -9999.0
         assert np.all(np.isnan(data[1]))
 
+    def test_fill_value_comes_from_the_field(self, tmp_path):
+        # Targets reading the field's own _FillValue; a file declaring -999.0 masks -999.0 and keeps -9999.0.
+        reader, _ = _make_reader(tmp_path, mean_fill_value=-999.0, cot_fill=-9999.0, ctp_fill=-999.0)
+        data, _, _ = _region(reader, _full_bbox(), _T)
+        np.testing.assert_array_equal(data[0], -9999.0)
+        assert np.all(np.isnan(data[1]))
 
-class TestVIIRSCloudReaderTranspose:
+    def test_field_without_fill_value_raises(self, tmp_path):
+        # Targets a file whose Mean fields declare no _FillValue; the reader refuses to guess one.
+        reader, _ = _make_reader(tmp_path, mean_fill_value=None)
+        with pytest.raises(ValueError, match="has no _FillValue attribute"):
+            _region(reader, _full_bbox(), _T)
+
+
+class TestVIIRSCldpropD3ReaderTranspose:
     """Verify the (lon, lat) → (lat, lon) dimension transpose is applied."""
 
     def test_spatial_shape_after_transpose(self, tmp_path):
@@ -157,23 +170,23 @@ class TestVIIRSCloudReaderTranspose:
         assert lons.size == _N_LON
 
 
-class TestVIIRSCloudReaderSamples:
-    def test_timestamp_source_is_radiometer(self, tmp_path):
-        # Cloud properties are collocated in time with the radiometer observation.
+class TestVIIRSCldpropD3ReaderSamples:
+    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
+        # A daily composite has no observation time, so the samples claim no timestamp source.
         reader, _ = _make_reader(tmp_path)
         samples = reader.samples_in(_full_bbox(), _T)
-        assert samples.timestamp_source == "radiometer"
-        assert samples.source == "viirs_cloud"
+        assert samples.timestamp_source is None
+        assert samples.source == "viirs_cldprop_d3"
 
     def test_daily_composite_ignores_time(self, tmp_path):
         reader, _ = _make_reader(tmp_path)
-        assert VIIRSCloudReader.TIME_MATCH is TimeMatch.DAILY
+        assert VIIRSCldpropD3Reader.TIME_MATCH is TimeMatch.DAILY
         a = reader.samples_in(_full_bbox(), _T)
         b = reader.samples_in(_full_bbox(), _T + np.timedelta64(23, "h"))
         np.testing.assert_array_equal(a.values, b.values)
 
 
-class TestVIIRSCloudReaderRealSubset:
+class TestVIIRSCldpropD3ReaderRealSubset:
     """The full 1 degree grid of a real CLDPROP_D3_VIIRS_NOAA20 granule (2026-05-27).
 
     Only the coordinates and the two Mean fields the reader reads are kept, stored as
@@ -183,7 +196,9 @@ class TestVIIRSCloudReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return VIIRSCloudReader(fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc")
+        return VIIRSCldpropD3Reader(
+            fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc"
+        )
 
     def test_grid_is_transposed_to_latitude_by_longitude(self, reader):
         native = reader._load_native()

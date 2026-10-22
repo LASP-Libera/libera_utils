@@ -24,7 +24,7 @@ from libera_utils.footprint_matching.readers import (
     StaticReader,
     VIIRSAODReader,
     VIIRSBRDFReader,
-    VIIRSCloudReader,
+    VIIRSCldpropD3Reader,
 )
 from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS
 from libera_utils.footprint_matching.types import OperationalMode, TimeMatch, VariableSpec
@@ -38,7 +38,7 @@ _BUILT_IN = {
     "ssf": SSFReader,
     "viirs_aod": VIIRSAODReader,
     "viirs_brdf": VIIRSBRDFReader,
-    "viirs_cloud": VIIRSCloudReader,
+    "viirs_cldprop_d3": VIIRSCldpropD3Reader,
 }
 _SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM)
 _CAM = OperationalMode.CAM

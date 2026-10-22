@@ -456,7 +456,9 @@ class VariableSpec:
         Ignored when ``only_modes`` is set (see below).
     n_categories : int or None
         For categorical variables only: number of distinct category values
-        (e.g., 20 for IGBP surface type). ``None`` for continuous variables.
+        (e.g., 20 for IGBP surface type). ``None`` for continuous variables, and
+        for a mode-aggregated code with no fixed count (e.g., the CERES SSF scene
+        and ADM type codes), which the aggregation bins by the codes it sees.
     only_modes : tuple[OperationalMode, ...] or None
         Exact set of operational modes (products) this variable belongs to. When
         ``None`` (the default), the variable uses the ``required_mode`` *minimum

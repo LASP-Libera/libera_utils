@@ -2,6 +2,7 @@
 
 - :func:`normalize_longitude` -- convert a 0..360 longitude convention to -180..180
   (the ERA5 grids and the CERES SSF and CLDPIX swaths arrive on 0..360).
+- :func:`field_fill_value` -- read a field's own ``_FillValue``, raising when it has none.
 - :func:`apply_fill_and_valid_range` -- convert a raw masked/integer array to a float
   array with fill values and out-of-range values replaced by ``NaN`` (the CERES SSF and
   CLDPIX readers apply each field's own ``_FillValue`` and ``valid_range``).
@@ -55,6 +56,40 @@ def _fill_in_dtype(fill_value: float | int, dtype: np.dtype) -> np.ndarray | Non
             return None
         return np.asarray(int(fill_value), dtype=dtype)
     return np.asarray(fill_value).astype(dtype)
+
+
+def field_fill_value(variable: netCDF4.Variable, *, source: str) -> float | int:
+    """Return a field's own ``_FillValue`` attribute.
+
+    Readers take each field's fill sentinel from the file rather than hard-coding one.
+    The CERES SSF and CLDPIX readers, which turn netCDF4's automatic masking off (some
+    fields declare a descending ``valid_range``), pass it to
+    :func:`apply_fill_and_valid_range`; the VIIRS cloud-property reader calls it only to
+    require the attribute that netCDF4's automatic masking applies.
+
+    Parameters
+    ----------
+    variable : netCDF4.Variable
+        The field being read.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    float or int
+        The ``_FillValue`` attribute, as stored.
+
+    Raises
+    ------
+    ValueError
+        If the field has no ``_FillValue`` attribute.
+    """
+    if "_FillValue" not in variable.ncattrs():
+        raise ValueError(
+            f"{source}: {variable.name} has no _FillValue attribute. The reader takes each field's fill value "
+            "from the file; stage the granule as distributed, which carries one on every field."
+        )
+    return np.asarray(variable.getncattr("_FillValue")).item()
 
 
 def apply_fill_and_valid_range(

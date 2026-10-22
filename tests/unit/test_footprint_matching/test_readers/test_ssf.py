@@ -83,6 +83,18 @@ class TestSSFReaderClassAttributes:
         assert sum(n == "surface_albedo" for n in names) == 1
         assert sum(n == "toa_incoming_solar_radiation" for n in names) == 1
 
+    def test_weighted_mode_variables_are_int16(self):
+        # Targets the dtype rule; the scene and ADM type codes are mode-aggregated int16, as in the source.
+        for v in SSFReader.VARIABLES:
+            assert v.dtype == ("int16" if v.aggregation == "weighted_mode" else "float32"), v.name
+
+    def test_fields_are_the_base_set_then_the_imager_only_set(self):
+        # Targets the field order; asserts VARIABLES lists every base field before the FMATCH-IMAGER-only ones.
+        pinned = [v.only_modes is not None for v in SSFReader.VARIABLES]
+        first_imager_only = pinned.index(True)
+        assert not any(pinned[:first_imager_only])
+        assert all(pinned[first_imager_only:])
+
 
 class TestSSFReaderSamples:
     def test_returns_one_row_per_variable_in_variable_order(self, tmp_path):
@@ -264,3 +276,19 @@ class TestSSFReaderSpacing:
         reader = SSFReader(make_ssf_fixture(tmp_path))
         samples = reader.samples_in(_BBOX, _T)
         assert samples.resolution_km == pytest.approx(22.2, rel=0.03)
+
+
+class TestSSFReaderGeolocationChecks:
+    @pytest.mark.parametrize("units", ["degrees", None])
+    def test_latitude_units_other_than_degrees_north_raises(self, tmp_path, units):
+        # Targets a granule whose footprint latitude does not declare degrees_north (or declares no units).
+        path = make_ssf_fixture(tmp_path, latitude_units=units)
+        with pytest.raises(ValueError, match="instrument_fov_latitude has units"):
+            SSFReader(path).samples_in(_BBOX, _T)
+
+    @pytest.mark.parametrize("name", ["instrument_fov_latitude", "aerosol_optical_depth", "cloud_classification"])
+    def test_field_without_fill_value_raises(self, tmp_path, name):
+        # Targets a geolocation, continuous and code field written with no _FillValue.
+        path = make_ssf_fixture(tmp_path, omit_fill_value=(name,))
+        with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
+            SSFReader(path).samples_in(_BBOX, _T)

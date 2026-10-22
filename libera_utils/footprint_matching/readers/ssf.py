@@ -31,9 +31,15 @@ lie within ``MAX_TIME_OFFSET`` of the current footprint time are held in memory.
 
 Variable set
 ------------
-This is a **minimal starter set** drawn from the footprint-matching
-dependencies in ``data_products.md`` (SSF supplies cloud properties and ADM /
-scene types for radiometer footprints). It is expected to be refined.
+Two sets, read in this order:
+
+- **The base SSF fields** (``_SSF_BASE_FIELDS``): aerosol optical depth, clear
+  coverage, the lower-layer cloud optical depth and water / ice particle radii, and
+  the scene and ADM type codes. Carried by every product SSF feeds: FMATCH-IMAGER-FLASH,
+  FMATCH-IMAGER and FMATCH-IMAGER-CAMTIME.
+- **The FMATCH-IMAGER-only SSF fields** (``_SSF_IMAGER_ONLY_FIELDS``): the extended
+  cloud-layer, aerosol, surface-albedo and TOA-insolation fields, carried by
+  FMATCH-IMAGER alone.
 
 Surface-type variables in the ``Surface_Map`` group (``surface_igbp_type``,
 ``surface_igbp_type_coverage``, ``snow_ice_coverage``) are intentionally NOT
@@ -66,6 +72,7 @@ import numpy as np
 from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_cf_times,
+    field_fill_value,
     granule_time_coverage,
     neighbor_spacing_km,
     normalize_longitude,
@@ -74,14 +81,12 @@ from libera_utils.footprint_matching.readers._points import (
 from libera_utils.footprint_matching.readers.base import PassReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
-# Float and integer fill sentinels used across SSF groups.
-_FILL_FLOAT: float = 3.4028235e38  # float32 max, the CERES float fill
-_FILL_INT16: int = 32767
-
 # Group paths to the per-footprint geolocation and time variables.
 _TIME_POS_GROUP: str = "Time_and_Position"
 _FOV_LAT_VAR: str = "instrument_fov_latitude"
 _FOV_LON_VAR: str = "instrument_fov_longitude"
+# Units the footprint latitude must declare: a true -90..90 latitude, not CLDPIX's colatitude.
+_LATITUDE_UNITS: str = "degrees_north"
 # Per-footprint observation time in the same group, decoded through its CF ``units``
 # (``days since 1970-01-01 00:00:00``, gregorian), as found in the CER_SSF_NOAA20-FM6-VIIRS
 # granules. A granule covers one hour.
@@ -111,8 +116,6 @@ class _SSFField(NamedTuple):
         Source variable name within ``group``.
     aggregation : str
         PSF aggregation strategy for the emitted spec.
-    fill : float or int
-        Fill sentinel for the source variable.
     valid_range : tuple of (float, float) or None
         Inclusive valid range; values outside become NaN.
     layer_index : int or None
@@ -122,7 +125,8 @@ class _SSFField(NamedTuple):
         all are read as ``raw[:, layer_index]``. ``None`` for 1-D ``(Footprints,)``
         variables.
     n_categories : int or None
-        Category count for categorical variables; ``None`` for continuous.
+        Category count for categorical variables; ``None`` for continuous variables
+        and for the mode-aggregated scene and ADM type codes, which have no fixed count.
     required_mode : OperationalMode
         Minimum operational mode for the emitted spec (see
         :class:`~libera_utils.footprint_matching.types.VariableSpec`). Defaults to
@@ -138,7 +142,6 @@ class _SSFField(NamedTuple):
     group: str
     var: str
     aggregation: str
-    fill: float | int
     valid_range: tuple[float, float] | None
     layer_index: int | None
     n_categories: int | None
@@ -146,16 +149,13 @@ class _SSFField(NamedTuple):
     only_modes: tuple[OperationalMode, ...] | None = None
 
 
-# Minimal starter field set (refine later — see module docstring).
-# Note: surface-type variables in Surface_Map are deliberately omitted —
-# see module docstring for the rationale.
-_SSF_FIELDS: tuple[_SSFField, ...] = (
+# The base SSF fields, carried by every product SSF feeds (see module docstring).
+_SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
     _SSFField(
         "aerosol_optical_depth",
         "Auxillary_Properties",
         "aerosol_optical_depth",
         "weighted_log_mean",
-        _FILL_FLOAT,
         (0.0, 8.0),
         None,
         None,
@@ -165,7 +165,6 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         "Clear_Footprint_Area",
         "clear_coverage",
         "weighted_mean",
-        _FILL_FLOAT,
         (0.0, 100.0),
         None,
         None,
@@ -175,7 +174,6 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
         "weighted_log_mean",
-        _FILL_FLOAT,
         (0.0, 512.0),
         _CLOUD_LAYER_INDEX,
         None,
@@ -190,7 +188,6 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
-        _FILL_FLOAT,
         (2.0, 60.0),
         _CLOUD_LAYER_INDEX,
         None,
@@ -200,7 +197,6 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
-        _FILL_FLOAT,
         (5.0, 90.0),
         _CLOUD_LAYER_INDEX,
         None,
@@ -210,7 +206,6 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         "Scene_Type",
         "cloud_classification",
         "weighted_mode",
-        _FILL_INT16,
         (0.0, 32766.0),
         None,
         None,
@@ -220,14 +215,11 @@ _SSF_FIELDS: tuple[_SSFField, ...] = (
         "Scene_Type",
         "shortwave_adm_type",
         "weighted_mode",
-        _FILL_INT16,
         (0.0, 5000.0),
         None,
         None,
     ),
-    _SSFField(
-        "longwave_adm_type", "Scene_Type", "longwave_adm_type", "weighted_mode", _FILL_INT16, (0.0, 5000.0), None, None
-    ),
+    _SSFField("longwave_adm_type", "Scene_Type", "longwave_adm_type", "weighted_mode", (0.0, 5000.0), None, None),
 )
 
 
@@ -363,8 +355,6 @@ _IMAGER_SSF_SOURCES: tuple[
     # --- Surface field (1-D, footprint only) ---
     # Auxillary_Properties/surface_albedo is a single 1-D (Footprints,) broadband value
     # (file long_name "Surface Albedo"; valid_range 0..1, a fraction — no units attr).
-    # This replaces the earlier (Footprints, AlbedoDim=10) "Imager Spectral Albedo"
-    # (Surface_Map/broadband_surface_albedo), which we no longer read.
     ("surface_albedo", "Auxillary_Properties", "surface_albedo", "weighted_mean", (0.0, 1.0), _SCALAR_MEMBER),
     # --- TOA flux field (1-D, footprint only) ---
     # Observed_TOA_Fluxes/toa_incoming_solar_radiation (file units "W/m^2";
@@ -402,7 +392,6 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
                     group,
                     var,
                     aggregation,
-                    _FILL_FLOAT,
                     valid_range,
                     index,
                     None,
@@ -413,16 +402,19 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
     return tuple(fields)
 
 
-# The full SSF field set: the base FLASH+ fields followed by the FMATCH-IMAGER-only
-# extension. _load_points stacks value rows in this order, matching VARIABLES.
-_SSF_FIELDS = _SSF_FIELDS + _build_imager_only_ssf_fields()
+# The FMATCH-IMAGER-only SSF fields (see module docstring).
+_SSF_IMAGER_ONLY_FIELDS: tuple[_SSFField, ...] = _build_imager_only_ssf_fields()
+
+# Every SSF field read: the base fields, then the FMATCH-IMAGER-only fields.
+# _load_granule stacks value rows in this order, matching VARIABLES.
+_SSF_FIELDS: tuple[_SSFField, ...] = _SSF_BASE_FIELDS + _SSF_IMAGER_ONLY_FIELDS
 
 
 class SSFReader(PassReader):
     """Read CERES SSF / FLASHFlux footprints as time-stamped native points.
 
-    Parses the per-footprint geolocation, observation time and a minimal set of
-    cloud / aerosol / scene variables from every staged granule.
+    Parses the per-footprint geolocation, observation time and the base and
+    FMATCH-IMAGER-only SSF fields from every staged granule.
 
     Class Attributes
     ----------------
@@ -432,7 +424,7 @@ class SSFReader(PassReader):
         ~20 km (CERES footprint scale at nadir), the fallback when a granule's own
         footprint spacing cannot be measured.
     VARIABLES : tuple[VariableSpec, ...]
-        Minimal starter set (see module docstring).
+        The base and FMATCH-IMAGER-only SSF fields (see module docstring).
 
     Parameters
     ----------
@@ -455,7 +447,7 @@ class SSFReader(PassReader):
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,
-            dtype="float32" if f.n_categories is None else "int16",
+            dtype="int16" if f.aggregation == "weighted_mode" else "float32",
             aggregation=f.aggregation,
             required_mode=f.required_mode,
             n_categories=f.n_categories,
@@ -491,7 +483,9 @@ class SSFReader(PassReader):
         ------
         ValueError
             If the granule's time variable cannot be decoded (see
-            :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`).
+            :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`),
+            if its footprint latitude is not in ``degrees_north``, or if a field read
+            has no ``_FillValue`` attribute.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
@@ -500,24 +494,36 @@ class SSFReader(PassReader):
             # every value). Scale/offset auto-application is left enabled.
             ds.set_auto_mask(False)
 
+            source = f"ssf {path.name}"
             tp = ds.groups[_TIME_POS_GROUP]
+            lat_var = tp.variables[_FOV_LAT_VAR]
+            lat_units = getattr(lat_var, "units", None)
+            if lat_units != _LATITUDE_UNITS:
+                raise ValueError(
+                    f"{source}: {_TIME_POS_GROUP}/{_FOV_LAT_VAR} has units {lat_units!r}, but this reader reads it "
+                    f"as a true -90..90 latitude in {_LATITUDE_UNITS!r}. The granule's geolocation convention has "
+                    "changed; update the reader before reading it."
+                )
             lats = apply_fill_and_valid_range(
-                tp.variables[_FOV_LAT_VAR][:], fill_value=_FILL_FLOAT, valid_range=(-90.0, 90.0)
+                lat_var[:], fill_value=field_fill_value(lat_var, source=source), valid_range=(-90.0, 90.0)
             )
+            lon_var = tp.variables[_FOV_LON_VAR]
             lons_raw = apply_fill_and_valid_range(
-                tp.variables[_FOV_LON_VAR][:], fill_value=_FILL_FLOAT, valid_range=(0.0, 360.0)
+                lon_var[:], fill_value=field_fill_value(lon_var, source=source), valid_range=(0.0, 360.0)
             )
             lons = normalize_longitude(lons_raw)
-            times = decode_cf_times(tp.variables[_TIME_VAR], source=f"ssf {path.name} {_TIME_POS_GROUP}/{_TIME_VAR}")
+            times = decode_cf_times(tp.variables[_TIME_VAR], source=f"{source} {_TIME_POS_GROUP}/{_TIME_VAR}")
             sample_number = np.asarray(tp.variables[_SAMPLE_NUMBER_VAR][:])
 
             value_rows: list[np.ndarray] = []
             for f in _SSF_FIELDS:
-                raw = ds.groups[f.group].variables[f.var][:]
+                var = ds.groups[f.group].variables[f.var]
+                fill_value = field_fill_value(var, source=source)
+                raw = var[:]
                 if f.layer_index is not None:
                     # 2-D (Footprints, LowerUpper) -- pick one layer.
                     raw = raw[:, f.layer_index]
-                value_rows.append(apply_fill_and_valid_range(raw, fill_value=f.fill, valid_range=f.valid_range))
+                value_rows.append(apply_fill_and_valid_range(raw, fill_value=fill_value, valid_range=f.valid_range))
 
         return PointSamples(
             lats=lats,

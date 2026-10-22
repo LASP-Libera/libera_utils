@@ -20,7 +20,8 @@ Root:
   Cloud_Top_Pressure/
     Mean      (360, 180) — daily mean cloud top pressure [hPa]
 
-Fill value: −9999.0 (replaced with NaN before output)
+Fill value: each field's own ``_FillValue`` (−9999.0 in the distributed files), applied by
+netCDF4's automatic masking and replaced with NaN before output.
 
 References
 ----------
@@ -38,6 +39,7 @@ File naming:
 import netCDF4
 import numpy as np
 
+from libera_utils.footprint_matching.readers._points import field_fill_value
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
@@ -48,11 +50,8 @@ _D3_GROUP_MAP: dict[str, tuple[str, str]] = {
     "cloud_top_pressure": ("Cloud_Top_Pressure", "Mean"),
 }
 
-# Fill / missing value used in CLDPROP_D3 files.
-_D3_FILL_VALUE: float = -9999.0
 
-
-class VIIRSCloudReader(StaticReader):
+class VIIRSCldpropD3Reader(StaticReader):
     """Read VIIRS daily cloud properties from a CLDPROP_D3 NetCDF4 file.
 
     Loads two cloud variables (cloud_optical_thickness, cloud_top_pressure)
@@ -67,7 +66,7 @@ class VIIRSCloudReader(StaticReader):
     Class Attributes
     ----------------
     READER_KEY : str
-        Registry key ``"viirs_cloud"``.
+        Registry key ``"viirs_cldprop_d3"``, after the product's short name.
     RESOLUTION_KM : float
         111 km (1° × 1° daily L3 grid resolution at equator).
     VARIABLES : tuple[VariableSpec, ...]
@@ -79,13 +78,11 @@ class VIIRSCloudReader(StaticReader):
         The one CLDPROP_D3 NetCDF4 file for the processing day.
     """
 
-    READER_KEY: str = "viirs_cloud"
+    READER_KEY: str = "viirs_cldprop_d3"
     # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
-    # Cloud properties are collocated in time with the radiometer observation.
-    TIMESTAMP_SOURCE: str | None = "radiometer"
     VARIABLES: tuple[VariableSpec, ...] = (
         VariableSpec(
             name="cloud_optical_thickness",
@@ -108,13 +105,18 @@ class VIIRSCloudReader(StaticReader):
 
         Opens the NetCDF4 file, navigates to each variable's group, transposes
         from (longitude, latitude) to (latitude, longitude) storage order, and
-        replaces fill values with NaN.
+        replaces each field's own fill values with NaN.
 
         Returns
         -------
         GridSamples
             ``data`` is float32 shape ``(2, n_lat, n_lon)`` with axis 0 =
             [cloud_optical_thickness, cloud_top_pressure] (fill as NaN).
+
+        Raises
+        ------
+        ValueError
+            If a field has no ``_FillValue`` attribute.
         """
         with netCDF4.Dataset(str(self.single_file_path), "r") as ds:
             # Root-level coordinate arrays: (180,) and (360,) respectively
@@ -124,12 +126,11 @@ class VIIRSCloudReader(StaticReader):
             variable_arrays: list[np.ndarray] = []
             for var_spec in self.VARIABLES:
                 group_name, var_name = _D3_GROUP_MAP[var_spec.name]
-                group = ds.groups[group_name]
+                variable = ds.groups[group_name].variables[var_name]
+                # Require the field's own _FillValue, which netCDF4's automatic masking applies.
+                field_fill_value(variable, source=f"{self.single_file_path} {group_name}")
                 # Data shape is (n_lon, n_lat) in the file -- transpose to (n_lat, n_lon).
-                raw = np.array(group.variables[var_name][:], dtype=np.float32).T
-                # Replace fill values with NaN.
-                raw[raw <= _D3_FILL_VALUE] = np.nan
-                variable_arrays.append(raw)
+                variable_arrays.append(variable[:].astype(np.float32).filled(np.nan).T)
 
         data = np.stack(variable_arrays, axis=0)  # (2, n_lat_full, n_lon_full)
         return GridSamples(lat_axis=lats_full, lon_axis=lons_full, data=data)

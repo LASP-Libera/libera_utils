@@ -14,6 +14,7 @@ from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_cf_times,
     decode_hours_of_day,
+    field_fill_value,
     granule_time_coverage,
     neighbor_spacing_km,
     normalize_longitude,
@@ -173,6 +174,37 @@ class TestApplyFillAndValidRange:
         out = apply_fill_and_valid_range(raw, fill_value=fill)
         assert np.all(np.isfinite(out))
         assert out.tolist() == raw.astype(np.float64).tolist()
+
+
+class TestFieldFillValue:
+    @staticmethod
+    def _variable(tmp_path, dtype, fill_value):
+        import netCDF4
+
+        ds = netCDF4.Dataset(str(tmp_path / "f.nc"), "w")
+        ds.createDimension("n", 2)
+        return ds, ds.createVariable("field", dtype, ("n",), fill_value=fill_value)
+
+    @pytest.mark.parametrize(
+        ("dtype", "fill", "expected"),
+        [(np.float32, np.float32(3.4028235e38), float(np.float32(3.4028235e38))), (np.int8, 127, 127)],
+    )
+    def test_returns_the_attribute(self, tmp_path, dtype, fill, expected):
+        # Targets reading the declared _FillValue; asserts the stored value comes back as a Python scalar.
+        ds, var = self._variable(tmp_path, dtype, fill)
+        try:
+            assert field_fill_value(var, source="test") == expected
+        finally:
+            ds.close()
+
+    def test_field_without_fill_value_raises(self, tmp_path):
+        # Targets a field with no _FillValue; asserts a ValueError naming the field rather than a guessed sentinel.
+        ds, var = self._variable(tmp_path, np.float32, False)
+        try:
+            with pytest.raises(ValueError, match="field has no _FillValue attribute"):
+                field_fill_value(var, source="test")
+        finally:
+            ds.close()
 
 
 class TestDecodeCfTimes:

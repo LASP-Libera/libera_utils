@@ -706,7 +706,7 @@ def make_aod_noaa20_fixture(
     return out_path
 
 
-def make_viirs_cloud_d3_fixture(
+def make_viirs_cldprop_d3_fixture(
     tmp_path: Path,
     n_lat: int = 4,
     n_lon: int = 8,
@@ -717,6 +717,7 @@ def make_viirs_cloud_d3_fixture(
     cf_fill: float = 0.6,
     cot_fill: float = 4.0,
     ctp_fill: float = 700.0,
+    mean_fill_value: float | None = -9999.0,
 ) -> Path:
     """Write a synthetic CLDPROP_D3 VIIRS cloud properties NetCDF4 file.
 
@@ -726,9 +727,9 @@ def make_viirs_cloud_d3_fixture(
       ``Cloud_Optical_Thickness_Combined``, ``Cloud_Top_Pressure``
     - **Variable dimension order is (longitude, latitude)** — transposed from
       the conventional (lat, lon) order — to match the real product format and
-      exercise the transpose logic in ``VIIRSCloudReader``.
-    - Fill values (−9999.0) are NOT used by default; callers can pass a data
-      array with −9999.0 elements to test fill handling.
+      exercise the transpose logic in ``VIIRSCldpropD3Reader``.
+    - Each ``Mean`` declares ``_FillValue = -9999.0``, as the distributed files do; the
+      constant data values contain no fill.
 
     Parameters
     ----------
@@ -746,6 +747,9 @@ def make_viirs_cloud_d3_fixture(
         Constant fill value for cloud optical thickness. Default 4.0.
     ctp_fill : float
         Constant fill value for cloud top pressure. Default 700.0 hPa.
+    mean_fill_value : float or None
+        ``_FillValue`` declared on each ``Mean``. ``None`` writes none, to test a file
+        without one.
 
     Returns
     -------
@@ -779,7 +783,10 @@ def make_viirs_cloud_d3_fixture(
         ]
         for grp_name, fill in group_specs:
             grp = ds.createGroup(grp_name)
-            mean_var = grp.createVariable("Mean", "f4", ("longitude", "latitude"))
+            if mean_fill_value is None:
+                mean_var = grp.createVariable("Mean", "f4", ("longitude", "latitude"), fill_value=False)
+            else:
+                mean_var = grp.createVariable("Mean", "f4", ("longitude", "latitude"), fill_value=mean_fill_value)
             # Fill with the constant value; shape is (n_lon, n_lat) in file.
             mean_var[:] = np.full((n_lon, n_lat), fill, dtype=np.float32)
 
@@ -810,6 +817,8 @@ def make_ssf_fixture(
     cloud_classification: np.ndarray | None = None,
     shortwave_adm_type: np.ndarray | None = None,
     longwave_adm_type: np.ndarray | None = None,
+    latitude_units: str | None = "degrees_north",
+    omit_fill_value: tuple[str, ...] = (),
 ) -> Path:
     """Write a synthetic CERES SSF (footprint/swath) NetCDF4 file.
 
@@ -856,6 +865,11 @@ def make_ssf_fixture(
         layer (index 0) of ``cloud_ice_particle_radius_37um_mean``.
     cloud_classification, shortwave_adm_type, longwave_adm_type : np.ndarray, optional
         Per-footprint int16 categorical/encoded codes.
+    latitude_units : str or None, optional
+        ``units`` written on ``instrument_fov_latitude``; ``None`` writes none.
+        Default ``"degrees_north"``, as the real product declares.
+    omit_fill_value : tuple of str, optional
+        Names of 1-D variables written without a ``_FillValue`` attribute.
 
     Returns
     -------
@@ -901,10 +915,12 @@ def make_ssf_fixture(
     out_path = tmp_path / "cer_ssf_fixture.nc"
 
     def _add(grp, name, data, fill, valid_range=None):
+        fill = False if name in omit_fill_value else fill
         var = grp.createVariable(name, data.dtype, ("Footprints",), fill_value=fill)
         var[:] = data
         if valid_range is not None:
             var.valid_range = np.array(valid_range, dtype=data.dtype)
+        return var
 
     def _add_lower_upper(grp, name, lower_values, fill, valid_range=None, upper_values=None):
         """Write a 2-D (Footprints, LowerUpper) variable with per-layer values.
@@ -942,7 +958,9 @@ def make_ssf_fixture(
         ds.createDimension("AeroTypePct", 7)
 
         tp = ds.createGroup("Time_and_Position")
-        _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
+        lat_var = _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
+        if latitude_units is not None:
+            lat_var.units = latitude_units
         _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
         time_var = tp.createVariable("time", np.float64, ("Footprints",))
         time_var[:] = _seconds_since_fixture_epoch(times)
@@ -1057,6 +1075,8 @@ def make_cldpix_fixture(
     lons_0360: np.ndarray | None = None,
     times: np.ndarray | None = None,
     filename: str = "cer_cldpix_fixture.nc",
+    latitude_valid_range: tuple[float, float] | None = (0.0, 180.0),
+    omit_fill_value: tuple[str, ...] = (),
 ) -> Path:
     """Write a synthetic CERES CLDPIX (imager-pixel swath) NetCDF4 file.
 
@@ -1095,6 +1115,11 @@ def make_cldpix_fixture(
         at :data:`SWATH_FIXTURE_TIME`.
     filename : str, optional
         Name of the file written under ``tmp_path``.
+    latitude_valid_range : tuple of (float, float) or None, optional
+        ``valid_range`` written on ``Latitude``; ``None`` writes none. Default
+        ``(0, 180)``, the colatitude range the real product declares.
+    omit_fill_value : tuple of str, optional
+        Names of variables written without a ``_FillValue`` attribute.
 
     Returns
     -------
@@ -1137,6 +1162,7 @@ def make_cldpix_fixture(
         ds.time_coverage_end = np.datetime_as_string(times.max(), unit="us") + "Z"
 
         def _add(name, data, fill, valid_range=None):
+            fill = False if name in omit_fill_value else fill
             var = ds.createVariable(name, data.dtype, dims, fill_value=fill)
             var[:] = data
             if valid_range is not None:
@@ -1146,7 +1172,7 @@ def make_cldpix_fixture(
         # [0, 180] valid_range. Convert the caller's true latitudes so the
         # fixture exercises the reader's colatitude → latitude conversion.
         colatitudes = 90.0 - lats.astype(np.float32)
-        _add("Latitude", colatitudes.astype(np.float32), fill_f, (0.0, 180.0))
+        _add("Latitude", colatitudes.astype(np.float32), fill_f, latitude_valid_range)
         _add("Longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
 
         # Continuous cloud properties (constant values for easy assertions).
