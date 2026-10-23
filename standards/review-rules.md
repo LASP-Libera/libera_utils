@@ -19,6 +19,7 @@ Wording: [R-001 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a validator deliberately deferred because it needs data the constructor does
 not have, when the docstring says so.
+scope: libera_utils/io/filenaming.py, libera_utils/constants.py
 
 ### R-002 · A condition that invalidates the output raises; it does not warn or no-op
 
@@ -28,6 +29,8 @@ Wording: [R-002 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a genuinely optional input whose absence has a defined meaning, when the
 docstring names it; a `logger.warning` beside a raise, for context.
+scope: libera_utils/*.py
+example: fires on libera_utils#37 PRRT_kwDORdqWxM6QzaGN; not on libera_utils#37@6e6b198 libera_utils/kernel_maker.py::create_kernel_from_l1a "requires Az/El encoder columns "
 
 ### R-003 · One exception type per condition, and a predicate returns rather than raises
 
@@ -37,6 +40,8 @@ Wording: [R-003 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: one exception type covering conditions a caller genuinely handles identically,
 when the message distinguishes them.
+scope: libera_utils/*.py
+example: fires on libera_utils#48 PRRT_kwDORdqWxM6WyRdX; not on libera_utils#48@d92a283 libera_utils/l1a/data_time_extractors.py::is_data_time_indexed_apid "return False"
 
 ### R-004 · Every public symbol has a numpydoc docstring, including what it raises
 
@@ -46,6 +51,8 @@ Wording: [R-004 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: private helpers; a one-line docstring on a symbol whose signature is
 self-describing and that raises nothing.
+scope: libera_utils/*.py
+example: fires on libera_utils#27 PRRT_kwDORdqWxM6Uh9qF; not on libera_utils#27@4a8f12e libera_utils/l1a/wfov_image_metadata.py::enhance_wfov_l1a_dataset "If required WFOV packet variables are missing from ``packet_ds``"
 
 ### R-005 · A published quantity states its unit; a time states its epoch and frame
 
@@ -55,6 +62,8 @@ Wording: [R-005 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: dimensionless counters and flags; a field whose unit is stated once for a group
 in the product definition.
+scope: libera_utils/*.py, libera_utils/data/*.yml
+example: fires on libera_utils#27 PRRT_kwDORdqWxM6LdEMP; not on libera_utils#27@4a8f12e libera_utils/l1a/wfov_image_metadata.py::_fsw_timestamps_to_datetime64 "The 1958-01-01 CCSDS epoch"
 
 ### R-006 · One source of truth for a value; tabular data lives in a data file
 
@@ -64,6 +73,8 @@ Wording: [R-006 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a named constant that gives a meaning to a literal used in one place; a value
 duplicated in a test on purpose, so the test fails when the source changes.
+scope: libera_utils/*.py, libera_utils/data/*.yml
+example: fires on libera_utils#41 PRRT_kwDORdqWxM6VPL_H; not on libera_utils#41@2989bd1 libera_utils/obsids.py::_load_registry "with OBSID_REGISTRY_CSV.open("
 
 ### R-007 · Delete dead code rather than leaving it unreferenced
 
@@ -73,6 +84,8 @@ Wording: [R-007 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a public symbol kept for backwards compatibility with a deprecation note; code
 behind a feature flag that the changelog names.
+scope: libera_utils/*.py, tests/*.py
+example: fires on libera_utils#27 PRRT_kwDORdqWxM6Ujyln; not on libera_utils#27@4a8f12e libera_utils/l1a/wfov_image_metadata.py::_extract_wfov_header_metadata_from_blob "if len(blob_bytes) < WFOV_HEADER_SIZE:"
 
 ### R-008 · Test scaffolding does not ship in the package — **retired 2026-09-19**
 
@@ -93,7 +106,7 @@ Do not flag: a tagged deferred-work marker such as `TODO[LIBSDC-1234]`, which is
 forward-looking; a comment citing an external
 document that the code implements; a name that tells apart two versions the code keeps side by
 side on purpose.
-scope: libera_utils/**/*.py, tests/**/*.py
+scope: libera_utils/*.py, tests/*.py
 example: fires on libera_utils#21 PRRT_kwDORdqWxM6B0Gb3; not on libera_utils#21@7ef5d28 tests/unit/test_io/test_product_definition.py::TestLiberaStandardDimensions.test_standard_dimensions_match_yaml_file "Every dimension in libera_dimensions.yml loads as a LiberaDimensionDefinition."
 
 ### R-010 · Deferred work carries a LIBSDC or CURRYER ticket tag
@@ -115,6 +128,7 @@ tier: reviewer · status: provisional · since: 2026-09 · evidence: pr-0058 (a 
 Wording: [R-011 in the instruction file](../.github/instructions/libera-utils.instructions.md#r-011--a-dependency-pins-to-an-immutable-ref)
 
 Do not flag: a pin in a local development extra that is never published.
+scope: pyproject.toml
 
 ### R-012 · The version bump matches the change, and the changelog heading matches it
 
@@ -138,7 +152,7 @@ Wording: [R-013 in the instruction file](../.github/instructions/libera-utils.in
 Do not flag: a repeated read of something small and mutable, where the reread is the point;
 a loop that runs a fixed handful of times over a small input; a copy a library makes that the
 change cannot avoid, when a comment says so.
-scope: libera_utils/**/*.py
+scope: libera_utils/*.py
 example: fires on libera_utils#27 PRRT_kwDORdqWxM6UjzXp; not on libera_utils#27@4a8f12e libera_utils/l1a/wfov_image_metadata.py::_build_camera_dataset "blob_array[row, : len(image.payload)] = np.frombuffer(image.payload, dtype=np.uint8)"
 
 ### R-014 · No internal URL or internal document content in this repository
@@ -149,6 +163,7 @@ Wording: [R-014 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a LIBSDC ticket key on its own, which is an identifier rather than a link; a
 public URL, such as NAIF or the CERES documentation.
+scope: libera_utils/*, tests/*, doc/*, standards/*
 
 ### R-015 · The annotation says what the code actually accepts
 
@@ -161,6 +176,8 @@ Do not flag: a union every branch of which the body handles, as pr-0041's
 definition names; a constructor that documents a single coercion at the boundary and says so in its
 docstring; a runtime check beside a narrowed annotation, or its absence, since the annotation is
 the baseline and a check is neither required nor a finding.
+scope: libera_utils/*.py
+example: fires on libera_utils#28 PRRT_kwDORdqWxM6LanhC; not on libera_utils#28@2c77b27 libera_utils/aws/s3_utilities.py::manual_ingest_data_products "paths_to_files: list[Path]"
 
 ---
 
@@ -174,6 +191,8 @@ Do not flag: a message whose condition and next action are already in the except
 name; re-raising the original exception when its message already says what went wrong. Never
 propose wrapping a standard exception in a custom type only to add a message: custom exception
 types are public API and make common exceptions hard to catch.
+scope: libera_utils/*.py
+example: fires on libera_utils#28 PRRT_kwDORdqWxM6Mj7f8; not on libera_utils#28@2c77b27 libera_utils/aws/utils.py::get_l2_team_role_session "Check that you are using the profile that logs in as the L2 Developer base role."
 
 ### R-017 · A valid range or an enumeration cites its source
 
@@ -183,6 +202,7 @@ Wording: [R-017 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a range that is the dtype's own limits; an enumeration defined once elsewhere in
 this repository and referenced by name.
+scope: libera_utils/*.py, libera_utils/data/*.yml
 
 ### R-018 · Use the code that already does a job, and do not run it twice
 
@@ -192,7 +212,7 @@ Wording: [R-018 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a second implementation whose contract differs, when the change says why; a test
 of a helper that calls the helper's parts directly.
-scope: libera_utils/**/*.py, tests/**/*.py
+scope: libera_utils/*.py, tests/*.py
 example: fires on libera_utils#23 PRRT_kwDORdqWxM6FyIrR; not on libera_utils#23@d4aeb68 tests/integration/test_l1a_processing.py::test_process_packets_to_l1a_product "output_filename = write_libera_data_product("
 
 ## Candidates below the criteria
