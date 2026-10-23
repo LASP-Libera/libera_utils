@@ -1,7 +1,6 @@
 attributes:
   ProductID: TEMP-HK-DECODED
   algorithm_version: null
-  date_created: null
   input_files: null
 coordinates:
   PACKET_ICIE_TIME:

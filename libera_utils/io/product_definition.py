@@ -2,6 +2,7 @@
 
 import logging
 import warnings
+from datetime import UTC, datetime
 from os import PathLike
 from pathlib import Path
 from typing import Any, ClassVar, cast
@@ -21,6 +22,38 @@ from libera_utils.version import ALGORITHM_VERSION_REGEX
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENCODING = {"zlib": True, "complevel": 4}
+
+# Required product attribute holding the file creation time (ACDD), which is also the revision in the product filename
+DATE_CREATED_ATTRIBUTE = "date_created"
+# Required product attribute holding the semantic version of the algorithm that produced the file
+ALGORITHM_VERSION_ATTRIBUTE = "algorithm_version"
+
+
+def _set_date_created(attrs: dict[str, Any]) -> None:
+    """Set the ``date_created`` attribute to the current UTC time, warning if it overwrites a value
+
+    Parameters
+    ----------
+    attrs : dict[str, Any]
+        Product level attributes, modified in place.
+
+    Warns
+    -----
+    UserWarning
+        If ``attrs`` already carries a non-null ``date_created``, which is overwritten.
+    """
+    date_created = datetime.now(tz=UTC).isoformat(timespec="microseconds")
+    old_date_created = attrs.get(DATE_CREATED_ATTRIBUTE)
+    attrs[DATE_CREATED_ATTRIBUTE] = date_created
+    if old_date_created is not None:
+        warnings.warn(
+            f"Dataset attribute '{DATE_CREATED_ATTRIBUTE}' was set to '{old_date_created}'. "
+            "The data product writer sets this attribute to the creation time, which is also the filename revision. "
+            "Remove it from the input Dataset or dynamic_product_attributes."
+        )
+        logger.warning(
+            f"Overwrote global attribute '{DATE_CREATED_ATTRIBUTE}' from '{old_date_created}' to '{date_created}'"
+        )
 
 
 class LiberaDimensionDefinition(BaseModel):
@@ -624,6 +657,12 @@ class LiberaDataProductDefinition(BaseModel):
         -------
         dict[str, Any]
             The validated attributes dictionary, including standard defaults that we always require.
+
+        Raises
+        ------
+        ValueError
+            If the product definition conflicts with a standard attribute value, sets ``date_created``, or does not
+            statically define a valid ``ProductID``.
         """
         if not cls._standard_product_attributes:
             cls._standard_product_attributes = cls._get_static_project_attributes()
@@ -645,6 +684,12 @@ class LiberaDataProductDefinition(BaseModel):
                 f"Expected {conflicts_expected} but got {conflicts_provided}. "
                 "Simply remove the conflicting attributes from your product definition YAML. "
                 "Standard values will be automatically populated."
+            )
+        if raw_attributes.get(DATE_CREATED_ATTRIBUTE) is not None:
+            raise ValueError(
+                f"Product definition sets '{DATE_CREATED_ATTRIBUTE}' to '{raw_attributes[DATE_CREATED_ATTRIBUTE]}'. "
+                f"The data product writer sets {DATE_CREATED_ATTRIBUTE} to the creation time, which is also the "
+                f"filename revision. Remove {DATE_CREATED_ATTRIBUTE} from the product definition YAML."
             )
         # Standard attributes with null values are required but must be set by the user
         null_standard_attributes = {k: v for k, v in cls._standard_product_attributes.items() if v is None}
@@ -721,7 +766,8 @@ class LiberaDataProductDefinition(BaseModel):
         Parameters
         ----------
         dataset : Dataset
-            The Dataset for which to create a filename. Used to extract algorithm version and start and end times.
+            The Dataset for which to create a filename. Used to extract the product ID, algorithm version, start and
+            end times, and the revision, which is the dataset's ``date_created`` attribute.
         time_variable : str
             Name of the time dimension to use for determining the start and end time.
 
@@ -729,6 +775,13 @@ class LiberaDataProductDefinition(BaseModel):
         -------
         LiberaDataProductFilename
             Properly formatted filename object
+
+        Raises
+        ------
+        KeyError
+            If the dataset lacks the ``ProductID``, ``algorithm_version`` or ``date_created`` attribute.
+        ValueError
+            If ``date_created`` is not an ISO 8601 datetime string.
         """
         # Convert numpy.datetime64 to Python datetime for filename generation
         with warnings.catch_warnings():
@@ -740,9 +793,10 @@ class LiberaDataProductDefinition(BaseModel):
 
         return LiberaDataProductFilename.from_filename_parts(
             product_name=DataProductIdentifier(dataset.attrs["ProductID"]),
-            version=dataset.attrs["algorithm_version"],
+            version=dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE],
             utc_start=utc_start,
             utc_end=utc_end,
+            revision=datetime.fromisoformat(dataset.attrs[DATE_CREATED_ATTRIBUTE]),
         )
 
     def _check_dataset_attrs(self, dataset_attrs: dict[str, Any]) -> list[str]:
@@ -795,10 +849,10 @@ class LiberaDataProductDefinition(BaseModel):
         # Check some attribute values for validity using custom logic
         # NOTE: If we find that we are adding code here frequently to do validation on attribute values,
         # refactor this into a more generic system.
-        if "algorithm_version" in dataset_attrs and dataset_attrs["algorithm_version"] is not None:
+        if dataset_attrs.get(ALGORITHM_VERSION_ATTRIBUTE) is not None:
             # Check that algorithm_version strictly follows semantic versioning
-            if not ALGORITHM_VERSION_REGEX.match(dataset_attrs["algorithm_version"]):
-                _err_msg = f"PRODUCT: algorithm_version: invalid format - Expected semantic versioning (e.g., 1.0.0), got {dataset_attrs['algorithm_version']}"
+            if not ALGORITHM_VERSION_REGEX.match(dataset_attrs[ALGORITHM_VERSION_ATTRIBUTE]):
+                _err_msg = f"PRODUCT: {ALGORITHM_VERSION_ATTRIBUTE}: invalid format - Expected semantic versioning (e.g., 1.0.0), got {dataset_attrs[ALGORITHM_VERSION_ATTRIBUTE]}"
                 warnings.warn(_err_msg)
                 error_messages.append(_err_msg)
 
@@ -965,8 +1019,18 @@ class LiberaDataProductDefinition(BaseModel):
         Returns
         -------
         Dataset
-            The created Dataset. This Dataset is not guaranteed to be conformant and should be checked with
-            `check_dataset_conformance`.
+            The created Dataset, with its ``date_created`` attribute set to the current UTC time. This Dataset is not
+            guaranteed to be conformant and should be checked with `check_dataset_conformance`.
+
+        Raises
+        ------
+        ValueError
+            If a key in ``data`` is neither a coordinate nor a variable in the product definition.
+
+        Warns
+        -----
+        UserWarning
+            If ``dynamic_product_attributes`` sets ``date_created``, which is overwritten.
 
         Notes
         -----
@@ -976,10 +1040,8 @@ class LiberaDataProductDefinition(BaseModel):
           checking the result with `check_dataset_conformance` and fixing any errors that arise.
         """
         logger.info("Creating product Dataset from numpy data arrays.")
-        if dynamic_product_attributes is not None:
-            product_attrs = {**self.attributes, **dynamic_product_attributes}
-        else:
-            product_attrs = self.attributes
+        product_attrs = {**self.attributes, **(dynamic_product_attributes or {})}
+        _set_date_created(product_attrs)
 
         # Initialize Dataset object - first create coordinates, then data variables
         coords_dict = {}
