@@ -19,7 +19,7 @@ Wording: [R-001 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a validator deliberately deferred because it needs data the constructor does
 not have, when the docstring says so.
-scope: libera_utils/io/filenaming.py, libera_utils/constants.py
+scope: libera_utils/*.py
 
 ### R-002 · A condition that invalidates the output raises; it does not warn or no-op
 
@@ -30,7 +30,7 @@ Wording: [R-002 in the instruction file](../.github/instructions/libera-utils.in
 Do not flag: a genuinely optional input whose absence has a defined meaning, when the
 docstring names it; a `logger.warning` beside a raise, for context.
 scope: libera_utils/*.py
-example: fires on libera_utils#37 PRRT_kwDORdqWxM6QzaGN; not on libera_utils#37@6e6b198 libera_utils/kernel_maker.py::create_kernel_from_l1a "requires Az/El encoder columns "
+example: fires on libera_utils#37 PRRT_kwDORdqWxM6QzaGN; not on libera_utils#22@5ab16b2 libera_utils/l1a/packets.py::_normalize_field_dtype "All other dtype"
 
 ### R-003 · One exception type per condition, and a predicate returns rather than raises
 
@@ -73,7 +73,7 @@ Wording: [R-006 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a named constant that gives a meaning to a literal used in one place; a value
 duplicated in a test on purpose, so the test fails when the source changes.
-scope: libera_utils/*.py, libera_utils/data/*.yml
+scope: libera_utils/*.py, libera_utils/data/*.yml, libera_utils/data/*.csv, tests/*.py
 example: fires on libera_utils#41 PRRT_kwDORdqWxM6VPL_H; not on libera_utils#41@2989bd1 libera_utils/obsids.py::_load_registry "with OBSID_REGISTRY_CSV.open("
 
 ### R-007 · Delete dead code rather than leaving it unreferenced
@@ -163,7 +163,7 @@ Wording: [R-014 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a LIBSDC ticket key on its own, which is an identifier rather than a link; a
 public URL, such as NAIF or the CERES documentation.
-scope: libera_utils/*, tests/*, doc/*, standards/*
+scope: libera_utils/*, tests/*, doc/*, standards/*, notebooks/*, .github/*, *.md
 
 ### R-015 · The annotation says what the code actually accepts
 
@@ -202,7 +202,7 @@ Wording: [R-017 in the instruction file](../.github/instructions/libera-utils.in
 
 Do not flag: a range that is the dtype's own limits; an enumeration defined once elsewhere in
 this repository and referenced by name.
-scope: libera_utils/*.py, libera_utils/data/*.yml
+scope: libera_utils/*.py, libera_utils/data/*.yml, libera_utils/data/*.csv
 
 ### R-018 · Use the code that already does a job, and do not run it twice
 
