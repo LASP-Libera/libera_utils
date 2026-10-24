@@ -114,6 +114,15 @@ MANIFEST_FILE_REGEX = re.compile(
 
 LIBERA_SEM_VER_REGEX = re.compile(r"V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?")
 
+# Non-daily data products carry no data level and no time range. The product name alternation lists every product
+# so that the pattern stays well formed; LiberaDynamicDataProductFilename rejects a product that is not dynamic.
+LIBERA_DYNAMIC_DATA_PRODUCT_REGEX = re.compile(
+    rf"^LIBERA_(?P<product_name>{DATA_PRODUCT_NAMES})"
+    rf"_(?P<version>{LIBERA_SEM_VER_REGEX.pattern})"
+    r"_(?P<revision>R[0-9]{11})"
+    r"\.(?P<extension>nc)$"
+)
+
 
 class AbstractValidFilename(ABC):
     """Filename class that ensures validity of a filename based on regex pattern.
@@ -151,6 +160,7 @@ class AbstractValidFilename(ABC):
             L0Filename,
             LiberaGroundCcsdsFilename,
             LiberaDataProductFilename,
+            LiberaDynamicDataProductFilename,
             ManifestFilename,
         ):
             try:
@@ -821,6 +831,137 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         d = self.regex_match(self.path)
         d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
+        d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT).replace(tzinfo=UTC)
+        return SimpleNamespace(**d)
+
+
+class LiberaDynamicDataProductFilename(AbstractDataProductFilename):
+    """Filename validation class for non-daily Libera SDC data products.
+
+    A non-daily product, such as an ADM, is valid over a period other than one day. Its filename carries no data
+    level and no time range, so it has no applicable date; the period it covers is recorded in the file's variables
+    and attributes. Only a DataProductIdentifier whose ``is_dynamic`` is True is accepted. A daily product is named
+    by LiberaDataProductFilename.
+    """
+
+    _regex = LIBERA_DYNAMIC_DATA_PRODUCT_REGEX
+    _fmt = "LIBERA_{product_name}_{version}_{revision}.nc"
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting a product that is not dynamic.
+
+        The regex admits every product name, so a daily product's name in this form passes it.
+
+        Raises
+        ------
+        ValueError
+            If the path does not match the regex, or if it names a daily data product.
+        """
+        AbstractValidFilename.path.fset(self, new_path)
+        if not self.data_product_id.is_dynamic:
+            raise ValueError(
+                f"{self.data_product_id} is a daily data product, so {self._path.name} is not a valid non-daily "
+                "filename. Name a daily product with LiberaDataProductFilename, which includes its time range."
+            )
+
+    @property
+    def data_product_id(self) -> DataProductIdentifier:
+        """Property that contains the DataProductIdentifier for this file type"""
+        return DataProductIdentifier(self.filename_parts.product_name)
+
+    @property
+    def archive_prefix(self) -> str:
+        """Property that contains the generated prefix for archiving: <product_name>/<version>
+
+        Each file is archived once under this prefix, whatever period it covers.
+        """
+        return f"{self.filename_parts.product_name}/{self.filename_parts.version}"
+
+    @classmethod
+    def from_filename_parts(
+        cls,
+        *,  # No positional arguments
+        product_name: str | DataProductIdentifier,
+        version: str,
+        revision: datetime | None = None,
+        basepath: str | Path | S3Path | None = None,
+    ):
+        """Create instance from filename parts.
+
+        Parameters
+        ----------
+        product_name : str | DataProductIdentifier
+            Non-daily product type, e.g. ADM-CAM.
+        version : str
+            Software version that the file was created with, as VM-m-p or a semantic version M.m.p. Corresponds to
+            the algorithm version as determined by the algorithm software.
+        revision : datetime.datetime | None
+            Time when the file was created. Default None uses the current UTC time.
+        basepath : str | Path | S3Path | None
+            Allows prepending a basepath or prefix.
+
+        Returns
+        -------
+        : LiberaDynamicDataProductFilename
+
+        Raises
+        ------
+        ValueError
+            If `product_name` is not a DataProductIdentifier, if it names a daily data product, or if `version` is
+            not a valid version string.
+        """
+        if revision is None:
+            revision = datetime.now(tz=UTC)
+        return cls._from_filename_parts(
+            basepath=basepath,
+            product_name=DataProductIdentifier(product_name),
+            version=version,
+            revision=_ensure_utc_timezone(revision),
+        )
+
+    @classmethod
+    def _format_filename_parts(
+        cls,
+        *,  # No positional arguments
+        product_name: str,
+        version: str,
+        revision: datetime,
+    ):
+        """Construct a filename from filename parts
+
+        Parameters
+        ----------
+        product_name : str
+            Non-daily product type, e.g. ADM-CAM.
+        version : str
+            Software version that the file was created with, as VM-m-p or a semantic version M.m.p.
+        revision : datetime.datetime
+            Time when the file was created.
+
+        Returns
+        -------
+        : str
+            Formatted filename
+        """
+        if not check_version_number_format(version):
+            version = format_from_semantic_version(version)
+
+        return cls._fmt.format(
+            product_name=product_name.upper(),
+            version=version,
+            revision=_ensure_utc_timezone(revision).strftime(REVISION_TS_FORMAT),
+        )
+
+    def _parse_filename_parts(self):
+        """Parse the filename parts into objects from regex matched strings
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+        """
+        d = self.regex_match(self.path)
         d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT).replace(tzinfo=UTC)
         return SimpleNamespace(**d)
 

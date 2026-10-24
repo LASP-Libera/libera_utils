@@ -3,7 +3,10 @@
 import numpy as np
 import pandas as pd
 import pytest
+import yaml
 from xarray import DataArray, Dataset
+
+from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 
 @pytest.fixture
@@ -100,3 +103,12 @@ def test_data_dict():
         "q_flag": np.random.randint(2147483647, size=n_times, dtype=np.int32),
         "cartesian_position": positions,
     }
+
+
+@pytest.fixture
+def dynamic_product_definition(test_product_definition):
+    """The unit test product definition, with the ProductID of a non-daily product (ADM-CAM)"""
+    with test_product_definition.open("r") as f:
+        definition_contents = yaml.safe_load(f)
+    definition_contents["attributes"]["ProductID"] = "ADM-CAM"
+    return LiberaDataProductDefinition(**definition_contents)
