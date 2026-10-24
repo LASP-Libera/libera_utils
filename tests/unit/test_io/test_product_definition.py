@@ -11,7 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from libera_utils.config import config
-from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaDynamicDataProductFilename
 from libera_utils.io.product_definition import (
     DATE_CREATED_ATTRIBUTE,
     LiberaDataProductDefinition,
@@ -124,6 +124,32 @@ class TestLiberaDataProductDefinition:
         with pytest.warns(UserWarning, match="Expected attribute 'date_created' not found"):
             with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
                 definition.check_dataset_conformance(test_dataset, strict=True)
+
+    def test_generate_filename_dynamic(self, dynamic_product_definition, test_dataset):
+        """A non-daily product is named without a time range and needs no time variable"""
+        dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
+        fn = dynamic_product_definition.generate_data_product_filename(dataset)
+        assert isinstance(fn, LiberaDynamicDataProductFilename)
+        assert fn.path.name.startswith("LIBERA_ADM-CAM_V0-0-1_R")
+
+    def test_generate_filename_dynamic_warns_on_unused_time_variable(self, dynamic_product_definition, test_dataset):
+        """A time variable given for a non-daily product is unused and warned about"""
+        dataset = test_dataset.assign_attrs(ProductID="ADM-CAM")
+        with pytest.warns(UserWarning, match="time_variable 'radiometer_time' is not used"):
+            fn = dynamic_product_definition.generate_data_product_filename(dataset, time_variable="radiometer_time")
+        assert isinstance(fn, LiberaDynamicDataProductFilename)
+
+    def test_generate_filename_daily_requires_time_variable(self, test_product_definition, test_dataset):
+        """A daily product without a time variable raises, naming the missing argument"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        with pytest.raises(ValueError, match="RAD-4CH is a daily product.*no time_variable was given"):
+            definition.generate_data_product_filename(test_dataset)
+
+    def test_generate_filename_daily_rejects_non_datetime_time_variable(self, test_product_definition, test_dataset):
+        """A daily product's time variable must be datetime64"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        with pytest.raises(ValueError, match="Specified time variable lat does not have dtype datetime64"):
+            definition.generate_data_product_filename(test_dataset, time_variable="lat")
 
 
 @strict_warnings

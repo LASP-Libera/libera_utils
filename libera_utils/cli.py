@@ -328,7 +328,8 @@ def parse_cli_args(cli_args: list):
         "--verify",
         action="store_true",
         help="After triggering ingest, block until each file is confirmed fully ingested (archived with metadata "
-        "and data availability records), then report the result. Requires only read permissions.",
+        "and data availability records), then report the result. Requires only read permissions. Not yet supported "
+        "for non-daily data product files.",
     )
     s3_put_parser.add_argument(
         "--timeout",

@@ -74,6 +74,8 @@ class TestManualIngestPut:
             ],
             # Demuxed ground CCSDS basename (single APID, no extension)
             ["LIBERA_SDC_1040_ccsds_2025_318_13_53_06"],
+            # Non-daily data product
+            ["LIBERA_ADM-CAM_V3-14-159_R27002112233.nc"],
         ],
     )
     def test_manual_ingest_stages_files_and_emits_event(
@@ -184,6 +186,31 @@ class TestManualIngestPut:
         mock_verify.assert_called_once_with(
             returned_filenames, boto_session=mock_get_session.return_value, timeout=42.0
         )
+
+    @patch("libera_utils.aws.s3_utilities.verify_ingestion")
+    @patch("libera_utils.aws.s3_utilities.manual_ingest_data_products")
+    @patch("libera_utils.aws.s3_utilities.get_l2_team_role_session")
+    def test_cli_handler_verify_refuses_dynamic_product_before_staging(
+        self, mock_get_session, mock_manual_ingest, mock_verify
+    ):
+        """--verify with a non-daily data product file raises before a session is made or anything is staged."""
+        args = argparse.Namespace(
+            func=s3_utilities.s3_put_cli_handler,
+            file_paths=[
+                "some/dir/LIBERA_L1B_RAD-4CH_V3-14-159_20270102T112233_20270102T122233_R27002112233.nc",
+                "some/dir/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc",
+            ],
+            profile=None,
+            verify=True,
+            timeout=42.0,
+        )
+
+        with pytest.raises(ValueError, match=r"--verify does not yet support non-daily.*LIBERA_ADM-CAM"):
+            s3_utilities.s3_put_cli_handler(args)
+
+        mock_get_session.assert_not_called()
+        mock_manual_ingest.assert_not_called()
+        mock_verify.assert_not_called()
 
 
 class TestVerifyIngestion:
