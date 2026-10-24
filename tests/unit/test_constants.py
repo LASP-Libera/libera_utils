@@ -251,6 +251,13 @@ class TestDataProductIdentifier:
             assert isinstance(level, DataLevel)
             assert level in DataLevel
 
+    def test_is_dynamic_property(self):
+        """The ADMs are non-daily products, and a product defaults to daily"""
+        assert DataProductIdentifier.aux_adm_cam.is_dynamic is True
+        assert DataProductIdentifier.aux_adm_imager.is_dynamic is True
+        assert DataProductIdentifier.l1b_rad.is_dynamic is False
+        assert DataProductIdentifier.aux_adm_stats_cam.is_dynamic is False
+
     def test_associated_apid_property(self):
         """Test associated_apid property for L0 and L1A products"""
         _no_single_apid = {DataProductIdentifier.l0_pds_cr, DataProductIdentifier.l0_ground_ccsds}

@@ -11,7 +11,7 @@ from cloudpathlib.enums import FileCacheMode
 from numpy.typing import NDArray
 
 from libera_utils.config import config
-from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
+from libera_utils.io.filenaming import LiberaDataProductFilename, LiberaDynamicDataProductFilename, PathType
 from libera_utils.io.product_definition import LiberaDataProductDefinition
 
 T_XarrayNetcdfEngine = Literal["netcdf4", "h5netcdf"]
@@ -39,11 +39,11 @@ def write_libera_data_product(
     data_product_definition: str | PathType | LiberaDataProductDefinition,
     data: dict[str, NDArray] | xr.Dataset,
     output_path: str | PathType,
-    time_variable: str,
+    time_variable: str | None = None,
     dynamic_product_attributes: dict[str, Any] | None = None,
     strict: bool = True,
     add_archive_path_prefix: bool = False,
-) -> LiberaDataProductFilename:
+) -> LiberaDataProductFilename | LiberaDynamicDataProductFilename:
     """Write a Libera data product NetCDF4 file that conforms to data product definition requirements
 
     Steps:
@@ -51,7 +51,7 @@ def write_libera_data_product(
     1. (Numpy array input only) Create a product Dataset from the input arrays and optional dynamic attributes, using the product definition to determine the expected structure and metadata.
     2. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
     3. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
-    4. Generate the data product filename using the product definition and the specified time variable.
+    4. Generate the data product filename using the product definition and, for a daily product, the specified time variable.
     5. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
     A product already present at the generated path is replaced, on local disk and in S3
@@ -67,8 +67,11 @@ def write_libera_data_product(
         Data mapping variable names to numpy data arrays or a fully formed L1A xarray Dataset.
     output_path : str | PathType
         Base path (directory or S3 prefix) at which to write the product file
-    time_variable : str
-        Name of variable that indicates time. This is used to generate the start and end time for the filename.
+    time_variable : str | None
+        Name of the datetime64 variable that indicates time. Required for a daily product, whose filename carries
+        the start and end time of this variable. Omit it for a non-daily product, whose DataProductIdentifier
+        ``is_dynamic``: its filename carries no time range, and a time variable given for it is unused and warned
+        about.
     dynamic_product_attributes : dict[str, Any] | None
         Optional dictionary of additional global attributes to add to the data product file. Must conform to the data
         product definition.
@@ -80,15 +83,16 @@ def write_libera_data_product(
 
     Returns
     -------
-    : LiberaDataProductFilename
-        Filename object containing the full path to the written NetCDF4 data product file.
+    : LiberaDataProductFilename | LiberaDynamicDataProductFilename
+        Filename object containing the full path to the written NetCDF4 data product file:
+        LiberaDynamicDataProductFilename for a non-daily product, LiberaDataProductFilename otherwise.
 
     Raises
     ------
     ValueError
-        If `dynamic_product_attributes` is passed alongside a Dataset, if `time_variable` does
-        not have a datetime64 dtype, or, when `strict` is True, if the Dataset does not conform
-        to the product definition.
+        If `dynamic_product_attributes` is passed alongside a Dataset, if the product is daily and
+        `time_variable` is None or does not have a datetime64 dtype, or, when `strict` is True, if
+        the Dataset does not conform to the product definition.
     pydantic_core.ValidationError
         If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
         a list of positive integers with as many entries as its ``dimensions``.
@@ -121,9 +125,6 @@ def write_libera_data_product(
 
     logger.info("Checking final Dataset conformance against the product definition")
     definition.check_dataset_conformance(dataset, strict=strict)
-
-    if "datetime64" not in str(dataset[time_variable].dtype):
-        raise ValueError(f"Specified time variable {time_variable} does not have dtype datetime64.")
 
     data_product_filename = definition.generate_data_product_filename(dataset, time_variable)
 

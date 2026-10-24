@@ -280,13 +280,15 @@ metadata and data availability records — exactly as it does for files produced
 command returns once the files are staged and the event is emitted; the ingest itself runs asynchronously, so it may
 take a few minutes for files to appear in their archive bucket.
 
-Each path must be a properly named Libera L0 or data product file (manifests and other filename types are rejected).
+Each path must be a properly named Libera L0, daily or non-daily data product file (manifests and other filename types
+are rejected).
 
 By default the command returns as soon as the files are staged and the event is emitted. Pass `--verify` to instead
 block until each file is confirmed fully ingested — that is, present in its archive bucket, with a File Metadata
 record and (for non-L0 data products) a Data Availability record. Verification needs only read permissions. Use
 `--timeout` to control how long to wait (default 300 seconds); if any file is not fully ingested by then the command
-logs a per-file summary and exits with an error.
+logs a per-file summary and exits with an error. `--verify` does not yet support non-daily data product files (such as
+ADMs): given one, the command stages nothing and exits with an error, so stage those files without `--verify`.
 
 ```shell
 usage: libera-utils s3-utils put [-h] [--verify] [--timeout TIMEOUT] file_path [file_path ...]
@@ -297,6 +299,7 @@ positional arguments:
 options:
   -h, --help         show this help message and exit
   --verify           After triggering ingest, block until each file is confirmed fully ingested, then report the result.
+                     Not yet supported for non-daily data product files.
   --timeout TIMEOUT  Seconds to wait for ingestion verification when --verify is set. Default is 300 (5 minutes).
 ```
 

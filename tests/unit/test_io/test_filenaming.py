@@ -39,6 +39,12 @@ from libera_utils.io import filenaming
             "/some/foobar/path/LIBERA_SPICE_JPSS-CK_V3-14-159_20270102T112233_20270102T122233_R28002112233.bc",
             filenaming.LiberaDataProductFilename,
         ),
+        ("/some/fake/path/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc", filenaming.LiberaDynamicDataProductFilename),
+        ("s3://fake-bucket/LIBERA_ADM-IMAGER_V1-0-0_R27002112233.nc", filenaming.LiberaDynamicDataProductFilename),
+        (
+            "/some/fake/path/LIBERA_AUX_ADM-CAM_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc",
+            filenaming.LiberaDataProductFilename,
+        ),
     ],
 )
 def test_from_filename(filename, filename_type):
@@ -96,6 +102,11 @@ def test_from_filename(filename, filename_type):
             S3Path(
                 "s3://my-archive-bucket/SC-POS-DECODED/2027/01/02/LIBERA_L1A_SC-POS-DECODED_V3-14-159_20270102T000000_20270103T000000_R27002112233.nc"
             ),
+        ),
+        (
+            "/ignore/this/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc",
+            "s3://my-aux-bucket",
+            S3Path("s3://my-aux-bucket/ADM-CAM/V3-14-159/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc"),
         ),
         (
             "/ignore/this/LIBERA_INPUT_MANIFEST_01MBAK5DC06HX46P3PG0M6HJR0.json",
@@ -869,3 +880,106 @@ def test_hash_changes_when_path_is_reassigned():
     fn.path = Path("/tmp/elsewhere") / fn.path.name
     assert hash(fn) != before
     assert hash(fn) == hash(fn.path)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "/some/fake/path/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc",
+        Path("/fake-path/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc"),
+        "s3://fake-bucket/LIBERA_ADM-IMAGER_V3-14-159RC1_R27002112233.nc",
+        S3Path("s3://fake-bucket/LIBERA_ADM-IMAGER_V3-14-159_R27002112233.nc"),
+    ],
+)
+def test_LiberaDynamicDataProductFilename(filename):
+    """A non-daily product filename parses, with no applicable date and no data level"""
+    fn = filenaming.LiberaDynamicDataProductFilename(filename)
+    assert fn.data_product_id.is_dynamic
+    assert not hasattr(fn, "applicable_date")
+    assert not hasattr(fn.filename_parts, "data_level")
+    assert fn.filename_parts.revision == dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC)
+
+
+@pytest.mark.parametrize(
+    "product_id",
+    [dpi for dpi in DataProductIdentifier if dpi.data_level != DataLevel.L0],
+)
+def test_LiberaDynamicDataProductFilename_rejects_daily_filenames(product_id):
+    """No daily filename, of any non-L0 product, parses as a non-daily filename"""
+    daily = filenaming.LiberaDataProductFilename.from_filename_parts(
+        product_name=product_id,
+        version="V1-2-3",
+        utc_start=dt.datetime(2027, 1, 2, tzinfo=dt.UTC),
+        utc_end=dt.datetime(2027, 1, 3, tzinfo=dt.UTC),
+    )
+    with pytest.raises(ValueError, match="failed validation against regex pattern"):
+        filenaming.LiberaDynamicDataProductFilename(daily.path)
+    assert isinstance(filenaming.AbstractValidFilename.from_file_path(daily.path), filenaming.LiberaDataProductFilename)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "LIBERA_RAD-4CH_V1-2-3_R27002112233.nc",
+        "LIBERA_CF-CAM_V1-2-3_R27002112233.nc",
+    ],
+)
+def test_LiberaDynamicDataProductFilename_rejects_daily_products(filename):
+    """A daily product named in the non-daily form is rejected where it is constructed"""
+    with pytest.raises(ValueError, match="is a daily data product"):
+        filenaming.LiberaDynamicDataProductFilename(filename)
+    with pytest.raises(ValueError, match="is a daily data product"):
+        filenaming.LiberaDynamicDataProductFilename.from_filename_parts(
+            product_name=filename.split("_")[1], version="V1-2-3"
+        )
+    with pytest.raises(ValueError, match="Unable to create a valid filename"):
+        filenaming.AbstractValidFilename.from_file_path(filename)
+
+
+@pytest.mark.parametrize(
+    ("parts", "expected"),
+    [
+        (
+            dict(
+                product_name=DataProductIdentifier.aux_adm_cam,
+                version="1.2.3",
+                revision=dt.datetime(2028, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
+            ),
+            "LIBERA_ADM-CAM_V1-2-3_R28002112233.nc",
+        ),
+        (
+            dict(
+                product_name="ADM-IMAGER",
+                version="V3-14-159",
+                revision=dt.datetime(2027, 1, 2, 11, 22, 33),
+                basepath="s3://bucket/prefix",
+            ),
+            "s3://bucket/prefix/LIBERA_ADM-IMAGER_V3-14-159_R27002112233.nc",
+        ),
+    ],
+)
+def test_LiberaDynamicDataProductFilename_from_filename_parts(parts, expected):
+    """Creating a non-daily filename from parts round-trips through parsing"""
+    fn = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(**parts)
+    assert str(fn.path) == expected
+    assert filenaming.LiberaDynamicDataProductFilename(fn.path) == fn
+
+
+def test_LiberaDynamicDataProductFilename_revision_defaults_to_call_time():
+    """The default revision is the time of each call, not a single time fixed at import"""
+    first, second = (
+        dt.datetime(2027, 1, 2, 11, 22, 33, tzinfo=dt.UTC),
+        dt.datetime(2027, 1, 2, 11, 22, 34, tzinfo=dt.UTC),
+    )
+    with mock.patch.object(filenaming, "datetime", wraps=dt.datetime) as mock_datetime:
+        mock_datetime.now.side_effect = [first, second]
+        fn1 = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(product_name="ADM-CAM", version="V1-2-3")
+        fn2 = filenaming.LiberaDynamicDataProductFilename.from_filename_parts(product_name="ADM-CAM", version="V1-2-3")
+    assert fn1.filename_parts.revision == first
+    assert fn2.filename_parts.revision == second
+
+
+def test_LiberaDynamicDataProductFilename_archive_prefix():
+    """A non-daily file has one archive location, its product name and version"""
+    fn = filenaming.LiberaDynamicDataProductFilename("s3://dropbox/LIBERA_ADM-CAM_V3-14-159_R27002112233.nc")
+    assert fn.archive_prefix == "ADM-CAM/V3-14-159"

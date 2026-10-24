@@ -127,9 +127,16 @@ print(f"Created data product: {filename.path}")
 The function automatically:
 
 - Validates data against the product definition
-- Generates a standardized filename based on the time range
+- Generates a standardized filename: for a daily product, from the time range of `time_variable`; for a non-daily
+  product (one whose `DataProductIdentifier` has `is_dynamic` set, such as an ADM), from its product ID, version and
+  revision alone
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
+
+`time_variable` is required for a daily product, and `write_libera_data_product` raises a `ValueError` without it.
+Omit it for a non-daily product: its filename carries no time range, and a `time_variable` given for it is unused and
+issues a `UserWarning`. The function returns a `LiberaDataProductFilename` for a daily product and a
+`LiberaDynamicDataProductFilename` for a non-daily one.
 
 ## Advanced Usage
 

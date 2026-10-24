@@ -12,7 +12,11 @@ import yaml
 from cloudpathlib import AnyPath, S3Client, S3Path
 from cloudpathlib.enums import FileCacheMode
 
-from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.io.filenaming import (
+    LIBERA_DYNAMIC_DATA_PRODUCT_REGEX,
+    LiberaDataProductFilename,
+    LiberaDynamicDataProductFilename,
+)
 from libera_utils.io.manifest import calculate_checksum
 from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
 from libera_utils.io.product_definition import LiberaDataProductDefinition
@@ -487,6 +491,42 @@ class TestWriteLiberaDataProduct:
             time_variable="radiometer_time",
         )
         assert result2.path.exists()
+
+    def test_write_dynamic_product_without_time_variable(self, dynamic_product_definition, test_data_dict, tmp_path):
+        """A non-daily product is written to one file, named without a time range"""
+        result = write_libera_data_product(
+            data_product_definition=dynamic_product_definition,
+            data=test_data_dict,
+            output_path=tmp_path,
+        )
+
+        assert isinstance(result, LiberaDynamicDataProductFilename)
+        assert list(tmp_path.iterdir()) == [result.path]
+        assert LIBERA_DYNAMIC_DATA_PRODUCT_REGEX.match(result.path.name)
+        assert result.path.name.startswith("LIBERA_ADM-CAM_V0-0-1_R")
+
+    def test_write_dynamic_product_with_archive_prefix(self, dynamic_product_definition, test_data_dict, tmp_path):
+        """A non-daily product's archive prefix is its product name and version"""
+        result = write_libera_data_product(
+            data_product_definition=dynamic_product_definition,
+            data=test_data_dict,
+            output_path=tmp_path,
+            add_archive_path_prefix=True,
+        )
+
+        assert result.path.parent == tmp_path / "ADM-CAM" / "V0-0-1"
+        assert result.path.exists()
+
+    def test_write_daily_product_without_time_variable(self, test_product_definition, test_data_dict, tmp_path):
+        """A daily product without a time variable raises, naming the missing argument, and writes nothing"""
+        with pytest.raises(ValueError, match="no time_variable was given"):
+            write_libera_data_product(
+                data_product_definition=test_product_definition,
+                data=test_data_dict,
+                output_path=tmp_path,
+            )
+
+        assert list(tmp_path.iterdir()) == []
 
 
 class TestNetCDFSupport:

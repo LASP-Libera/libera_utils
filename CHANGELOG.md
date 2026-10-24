@@ -9,11 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `LiberaDynamicDataProductFilename` names a non-daily data product, such as an ADM, as
+  `LIBERA_<ProductID>_V<Version>_R<Revision>.nc`, with no data level, time range or applicable date, and archives it
+  once under `<ProductID>/<Version>`. `AbstractValidFilename.from_file_path` recognizes it.
+- `DataProductIdentifier.is_dynamic` says whether a product is non-daily. A member sets it with `True` as a third tuple
+  element.
+- `s3-utils put` accepts non-daily data product files. `put --verify` refuses them before staging anything, until
+  ingestion verification supports them (LIBSDC-880).
 - The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
 - Link the UMM-G granule page from the user docs index.
 
 ### Changed
 
+- `ADM-CAM` and `ADM-IMAGER` are non-daily products: `write_libera_data_product` now names them with
+  `LiberaDynamicDataProductFilename`, with no time range, and archives them under `<ProductID>/<Version>`. ADM files
+  already archived under daily names still parse as `LiberaDataProductFilename`. Ingesting the new names needs the
+  matching `libera_cdk` change (LIBSDC-873).
+- `write_libera_data_product` and `LiberaDataProductDefinition.generate_data_product_filename` take `time_variable` as
+  an optional argument, default `None`, and return `LiberaDataProductFilename | LiberaDynamicDataProductFilename`. A
+  daily product without `time_variable` raises `ValueError`; a non-daily product given one ignores it and warns.
 - The docs build fails on any warning: `doc/Makefile` runs `sphinx-build -W --keep-going`, and `.readthedocs.yaml` sets `fail_on_warning`.
 - ReadTheDocs builds the docs on Python 3.13 (Ubuntu 24.04), and the `docgen` dependency group requires Sphinx 9.1 or newer on Python 3.12 or newer.
 
