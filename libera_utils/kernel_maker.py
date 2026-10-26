@@ -9,6 +9,7 @@ import argparse
 import logging
 import multiprocessing
 import os
+import sys
 import tempfile
 import traceback
 import warnings
@@ -810,8 +811,8 @@ def create_kernels_from_manifest(
     ------
     ValueError
         If a requested identifier is not a SPICE product or is repeated, if the manifest does not hold
-        exactly one input file, if the L1A file cannot be read, or if the platform has no ``fork`` start
-        method. These raise before any kernel is attempted. Also raised after every kernel was attempted
+        exactly one input file, if the L1A file cannot be read, or if the platform is not Linux. These
+        raise before any kernel is attempted. Also raised after every kernel was attempted
         when any kernel failed, listing each failed kernel with its input files and the reason it
         failed: a kernel process's traceback, its exit code when it sent nothing, or the copy to
         `output_dir` failing or being refused; no output manifest is written.
@@ -820,14 +821,13 @@ def create_kernels_from_manifest(
         base path), or if static kernel creation fails while populating the kernel cache.
     FileNotFoundError
         If a kernel needed to populate the kernel cache cannot be found.
-    requests.RequestException
+    requests.exceptions.RequestException
         If listing or downloading a NAIF generic kernel fails while populating the kernel cache.
 
     Notes
     -----
     The L1A file is read once, then each kernel is created at the same time in its own forked process
-    (CSPICE is not thread-safe), so this requires a platform with the ``fork`` start method (Linux or
-    macOS). Call it from a process with no other threads running, for example not alongside a
+    (CSPICE is not thread-safe), so this requires Linux. Call it from a process with no other threads running, for example not alongside a
     ``dask.distributed`` Client, because each forked kernel process inherits only the calling thread.
     Peak memory is about the sum of the concurrent kernels'. Kernels are written to a local
     staging directory and copied to `output_dir` by the calling process. A kernel process killed by the
@@ -859,6 +859,10 @@ def create_kernels_from_manifest(
     if len(set(kernel_list)) != len(kernel_list):
         raise ValueError(f"The `kernel_product_ids` [{kernel_list}] repeat a kernel. Request each kernel once.")
 
+    # macOS has fork, but a forked kernel process crashes there when requests looks up the system proxy
+    # settings to list the NAIF kernels.
+    if sys.platform != "linux":
+        raise ValueError(f"Creating kernels in forked processes requires Linux, not {sys.platform!r}.")
     # Fork shares the loaded L1A with every worker and keeps the logging configuration; it is named
     # explicitly because it is not the default start method on every platform and Python version.
     fork_context = multiprocessing.get_context("fork")

@@ -194,6 +194,7 @@ def manifest_kernel_run():
     """Patch the manifest, the L1A read, the kernel cache and kernel creation around create_kernels_from_manifest."""
     l1a_dataset = xr.Dataset()
     with (
+        mock.patch.object(kernel_maker, "sys", SimpleNamespace(platform="linux")),
         mock.patch.object(kernel_maker, "Manifest") as manifest_class,
         mock.patch.object(kernel_maker, "_load_netcdf_into_memory", return_value=l1a_dataset) as load_l1a,
         mock.patch.object(kernel_maker, "KernelManager") as kernel_manager_class,
@@ -396,12 +397,10 @@ def test_from_manifest_repeated_kernel_raises(manifest_kernel_run, tmp_path):
     manifest_kernel_run.load_l1a.assert_not_called()
 
 
-def test_from_manifest_without_fork_raises_before_reading_l1a(manifest_kernel_run, tmp_path):
-    """A platform with no fork start method is rejected before the L1A is read or the kernel cache populated"""
-    with mock.patch.object(
-        kernel_maker.multiprocessing, "get_context", side_effect=ValueError("cannot find context for 'fork'")
-    ):
-        with pytest.raises(ValueError, match="cannot find context for 'fork'"):
+def test_from_manifest_off_linux_raises_before_reading_l1a(manifest_kernel_run, tmp_path):
+    """A platform other than Linux is rejected before the L1A is read or the kernel cache populated"""
+    with mock.patch.object(kernel_maker, "sys", SimpleNamespace(platform="darwin")):
+        with pytest.raises(ValueError, match="requires Linux, not 'darwin'"):
             kernel_maker.create_kernels_from_manifest(
                 input_manifest="test.manifest",
                 kernel_product_ids=["JPSS-SPK", "JPSS-CK"],

@@ -1,5 +1,6 @@
 """Tests for kernel_maker CLI module"""
 
+import sys
 from datetime import datetime
 from unittest import mock
 
@@ -11,6 +12,8 @@ from libera_utils.io.manifest import Manifest
 
 # Mark test module as integration tests
 pytestmark = pytest.mark.integration
+
+requires_linux = pytest.mark.skipif(sys.platform != "linux", reason="create_kernels_from_manifest requires Linux")
 
 
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
@@ -244,6 +247,7 @@ def test_make_el_ck_aws(
     ).exists()
 
 
+@requires_linux
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
@@ -266,6 +270,7 @@ def test_make_jpss_kernels_from_manifest(
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
 
 
+@requires_linux
 @pytest.mark.parametrize("test_type", ["S3", "Local"], indirect=True)
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
@@ -291,6 +296,7 @@ def test_make_azel_kernels_from_manifest(
     assert len(sorted(output_path.glob("*"))) == 3  # 2 kernels + 1 manifest.
 
 
+@requires_linux
 @pytest.mark.parametrize("test_type", ["Local"], indirect=True)
 @mock.patch.object(kernel_maker, "datetime", mock.Mock(wraps=datetime))
 @mock.patch("libera_utils.kernel_maker.filenaming.get_current_version_str", return_value="V3-14-159")
