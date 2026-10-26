@@ -7,24 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-10-26
+
 ### Added
 
 - The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
 - Link the UMM-G granule page from the user docs index.
+- `Manifest.write()` takes a keyword-only `overwrite=False`, and `out_path` may be a directory, an S3 prefix, or a full manifest file path.
+- `Manifest.output_manifest_from_input_manifest()` takes an optional `configuration=` dict, and raises `ManifestError` for an input manifest with no ULID.
 
 ### Changed
 
 - The docs build fails on any warning: `doc/Makefile` runs `sphinx-build -W --keep-going`, and `.readthedocs.yaml` sets `fail_on_warning`.
 - ReadTheDocs builds the docs on Python 3.13 (Ubuntu 24.04), and the `docgen` dependency group requires Sphinx 9.1 or newer on Python 3.12 or newer.
+- **BREAKING:** `Manifest.ulid_code` is a read-only property derived from `filename`. Assigning to it raises; assign `filename` instead. `ulid_code=` is still accepted by the constructor.
+- **BREAKING:** `Manifest.write()` sets `filename` to the path it wrote.
+- **BREAKING:** `Manifest.write()` no longer takes a `filename` argument; pass the full manifest file path as `out_path` instead. The old positional form `write(out_path, filename)` raises `TypeError`.
+- **BREAKING:** `Manifest.write()` raises `FileExistsError` for an existing target unless `overwrite=True` is passed, and `ManifestError` for a target whose INPUT/OUTPUT label disagrees with `manifest_type` or that would change the manifest's ULID, and `ManifestError` for an `out_path` that has an extension but is not a valid manifest filename.
+- **BREAKING:** `Manifest.validate_checksums()` raises `ManifestError` instead of `ValueError`. A file that cannot be found fails validation.
+- **BREAKING:** `Manifest.from_file()` raises `ManifestError` for a path that is not a valid manifest filename, or when the filename or `ulid_code` stored in the file disagrees with the ULID in the path.
+- **BREAKING:** `Manifest.filename` is validated on assignment, and a `filename` or `manifest_type` whose INPUT/OUTPUT label disagrees with the other raises `ValidationError`.
+- **BREAKING:** A file record with a null checksum, such as one read from a manifest file, raises `ValidationError` instead of being recomputed.
+- **BREAKING:** `MANIFEST_FILE_REGEX` must match the whole basename, so names such as `LIBERA_INPUT_MANIFEST_<ULID>.json.bak` are no longer valid manifest filenames.
 
 ### Removed
 
 - `numpydoc` from the `docgen` dependency group. `sphinx.ext.napoleon` parses the numpy style docstrings.
+- **BREAKING:** `libera_utils.io.manifest.get_ulid_code`. Use `Manifest.ulid_code`, or `ManifestFilename(path).filename_parts.ulid_code`.
 
 ### Fixed
 
 - Fix the docstring, markdown and Sphinx config defects behind the docs build's 9841 warnings, including cross-references to private or renamed targets (`create_l1a_dataset` is now `parse_packets_to_l1a_dataset`).
 - Fix the docs build warnings and errors in the `footprint_matching` and `scene_identification` docstrings and the `write_libera_data_product` and `LiberaVariableDefinition` `Raises` sections, which the build now treats as failures.
+- A second `Manifest.write()` to a different directory no longer writes to the first location.
+- A manifest with no filename serializes `filename` as `null`, not the string `"None"`.
 
 ## [5.12.0] - 2026-10-21
 
@@ -831,7 +847,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...HEAD
+[5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0
 [5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0
 [5.11.5]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...5.11.5
 [5.11.4]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...5.11.4
