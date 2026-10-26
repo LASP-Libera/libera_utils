@@ -685,7 +685,7 @@ class KernelManager:
             If a kernel or kernel configuration cannot be found.
         RuntimeError
             If creating a static kernel fails or a kernel path exceeds the SPICE length limit.
-        requests.RequestException
+        requests.exceptions.RequestException
             If listing or downloading a NAIF generic kernel fails.
 
         Notes
