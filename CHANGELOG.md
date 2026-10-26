@@ -12,11 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `write_libera_data_product` takes `worker_compressed_variables`, a tuple of Dask-backed data variables whose chunks are shuffled and deflated on the `dask.distributed` workers instead of one at a time under the HDF5 write lock. The writing process stores the compressed chunks with h5py `write_direct_chunk`, and the file reads back identical to a normal write. It requires the `h5netcdf` engine and an active `distributed.Client`, and each named variable's Dask chunks must be whole multiples of its on-disk chunk shape, its filters deflate with or without shuffle, and its dtype integer or floating point; otherwise `ValueError` before any data is computed. A write that fails after creating the file deletes it. The default, an empty tuple, writes with `to_netcdf` as before.
 - `KernelManager.populate_cache()` fills the on-disk NAIF and static kernel caches and leaves the SPICE kernel pool empty, for a process to call before starting workers that each load their own kernels.
 - `h5py` and `dask[distributed]` are declared dependencies; worker-compressed writes import both, and `h5netcdf` already required `h5py`.
+- The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
+- Link the UMM-G granule page from the user docs index.
 
 ### Changed
 
 - `kernel_maker.create_kernels_from_manifest` reads the input L1A product once and creates each requested SPICE kernel at the same time, each in its own forked process, so the Az/El and JPSS kernel steps take about as long as their slowest kernel rather than the sum. Forking requires Linux or macOS. Kernel filenames and the output manifest are unchanged. The `ValueError` raised after every kernel was attempted when any kernel fails now also gives each failed kernel's reason: its process's traceback, or its exit code when the process sent nothing; a kernel process killed by the operating system counts as that kernel failing. A kernel process flushes CloudWatch log handlers before it exits. Peak memory is about the sum of the concurrent kernels' (an estimated 18 GB for a full-day Az/El run, from about 9 GB measured per kernel). A kernel identifier repeated in `kernel_product_ids` raises `ValueError`.
 - **BREAKING:** `kernel_maker.create_kernels_from_manifest` raises a shared-setup failure before any kernel is attempted, with its own exception type, instead of the aggregated `ValueError` listing every kernel as failed: an unreadable L1A file raises `ValueError`, a kernel work directory path too long for curryer raises `RuntimeError` (set `LIBERA_TEMP_DIR` to a shorter base path), and a failure populating the kernel cache raises `RuntimeError`, `FileNotFoundError` or a `requests.RequestException`.
+- The docs build fails on any warning: `doc/Makefile` runs `sphinx-build -W --keep-going`, and `.readthedocs.yaml` sets `fail_on_warning`.
+- ReadTheDocs builds the docs on Python 3.13 (Ubuntu 24.04), and the `docgen` dependency group requires Sphinx 9.1 or newer on Python 3.12 or newer.
+
+### Removed
+
+- `numpydoc` from the `docgen` dependency group. `sphinx.ext.napoleon` parses the numpy style docstrings.
+
+### Fixed
+
+- Fix the docstring, markdown and Sphinx config defects behind the docs build's 9841 warnings, including cross-references to private or renamed targets (`create_l1a_dataset` is now `parse_packets_to_l1a_dataset`).
+- Fix the docs build warnings and errors in the `footprint_matching` and `scene_identification` docstrings and the `write_libera_data_product` and `LiberaVariableDefinition` `Raises` sections, which the build now treats as failures.
 
 ## [5.12.0] - 2026-10-21
 
@@ -70,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Comparing two `Manifest` models when one has `filename=None` no longer raises `AttributeError` from the filename comparison.
 
-## [5.11.2] - 2026-10-06
+## [5.11.2] - 2026-10-09
 
 ### Changed
 
@@ -293,8 +306,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.8.3] - 2026-06-04
 
-_Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-index fields with indexed arrays). Treat this as breaking for external consumers of those variables; a patch bump was chosen during early development. Changed variables: ICIE**SW_FP_WP_ST_WP, ICIE**SW_SEQ_EXEC_BUF_OP,
-ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
+_Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-index fields with indexed arrays). Treat this as breaking for external consumers of those variables; a patch bump was chosen during early development. Changed variables: `ICIE__SW_FP_WP_ST_WP`, `ICIE__SW_SEQ_EXEC_BUF_OP`,
+`ICIE__SW_SEQ_EXEC_POS_OP`, `ICIE__SW_SEQ_ST_OP`, `ICIE__SW_SEQ_STOP_CD_OP`
 
 ### Added
 
@@ -426,6 +439,11 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 ### Added
 
 - Add enforcement of valid versioning in Filename classes
+
+## [5.4.4] - 2026-01-13
+
+### Added
+
 - Allow passing dynamic product level attributes to data product writer
 
 ## [5.4.3] - 2026-01-10
@@ -861,7 +879,8 @@ ICIE**SW_SEQ_EXEC_POS_OP, ICIE**SW_SEQ_ST_OP, ICIE\_\_SW_SEQ_STOP_CD_OP
 [5.4.8]: https://github.com/LASP-Libera/libera_utils/compare/5.4.7...5.4.8
 [5.4.7]: https://github.com/LASP-Libera/libera_utils/compare/5.4.6...5.4.7
 [5.4.6]: https://github.com/LASP-Libera/libera_utils/compare/5.4.5...5.4.6
-[5.4.5]: https://github.com/LASP-Libera/libera_utils/compare/5.4.3...5.4.5
+[5.4.5]: https://github.com/LASP-Libera/libera_utils/compare/5.4.4...5.4.5
+[5.4.4]: https://github.com/LASP-Libera/libera_utils/compare/5.4.3...5.4.4
 [5.4.3]: https://github.com/LASP-Libera/libera_utils/compare/5.4.2...5.4.3
 [5.4.2]: https://github.com/LASP-Libera/libera_utils/compare/5.4.1...5.4.2
 [5.4.1]: https://github.com/LASP-Libera/libera_utils/compare/5.4.0...5.4.1

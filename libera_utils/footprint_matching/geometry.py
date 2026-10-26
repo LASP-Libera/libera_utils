@@ -41,7 +41,7 @@ raised as :class:`PartialFootprintError`). Unusable ephemeris fields, or a footp
 satellite could not have seen, raise :class:`MissingGeolocationError`.
 
 The geodetic<->ECEF transforms and the ray-ellipsoid intersection are curryer's
-(:mod:`curryer.compute.spatial`); :mod:`pyproj` is used only for the surface distances in
+(``curryer.compute.spatial``); ``pyproj`` is used only for the surface distances in
 the pole-enclosure test (``pyproj.Geod``).
 
 References
@@ -592,7 +592,7 @@ def bounding_box_from_points_batch(
 
     * the radiometer path (:func:`compute_footprint_bounding_boxes`), which passes the
       ray-traced PSF *perimeter* samples, and
-    * the camera path (:mod:`libera_utils.footprint_matching.camera_segmentation`),
+    * the camera path (``libera_utils.footprint_matching.camera_segmentation``),
       which passes the four *corner pixels* of a pseudo-footprint's pixel block.
 
     ``center_lat_deg``/``center_lon_deg`` is each footprint's anchor (the radiometer
@@ -773,9 +773,9 @@ def compute_footprint_bounding_boxes(
     fov_halfangle_deg : float, optional
         Instrument FOV half-angle, degrees. Used as a floor on the PSF extent so the
         box is never smaller than the optical field of view. Defaults to
-        :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
+        ``libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG``.
     n_samples : int, optional
-        Number of PSF-perimeter samples. Defaults to :data:`_N_PERIMETER_SAMPLES`.
+        Number of PSF-perimeter samples. Defaults to ``_N_PERIMETER_SAMPLES``.
 
     Returns
     -------
@@ -848,8 +848,8 @@ def compute_footprint_bounding_box(
         ``Radius_of_Satellite_from_Center_of_Earth``), km.
     fov_halfangle_deg : float, optional
         Instrument FOV half-angle, degrees; the floor on the PSF extent. Defaults to
-        :data:`~libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG`.
-    on_limb : {"flag", "raise"}, optional
+        ``libera_utils.footprint_matching.psf.LIBERA_FOV_HALFANGLE_DEG``.
+    on_limb : str, optional
         Behavior when a box *corner* ray runs off the Earth limb at a severe angle
         while the boresight is still on Earth. ``"flag"`` (default) truncates those
         rays at the horizon and marks the box ``BoundingBox.truncated = True`` so the
@@ -1050,7 +1050,7 @@ def project_to_angular(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Project ground grid cells into the radiometer's angular frame ``(delta, beta)``.
 
-    This is the **inverse** of the forward rotation :func:`_offset_ray_direction`
+    This is the **inverse** of the forward rotation ``_offset_ray_direction``
     used to build the footprint bounding box, and the piece the PSF aggregation
     weighting needs: given where each ancillary grid cell sits on the ground, how far
     off the boresight is it in the along-scan (``delta``) and cross-scan (``beta``)
@@ -1072,7 +1072,7 @@ def project_to_angular(
 
     For each cell we form the unit look vector from the satellite to the cell and read
     off the angles by projecting onto that basis. Because
-    :func:`_offset_ray_direction` produces a direction
+    ``_offset_ray_direction`` produces a direction
     ``d = (b_hat cos(delta) + n_hat sin(delta)) cos(beta) - c_hat sin(beta)`` (the
     beta rotation is about ``c_hat x along``), the inverse is exact::
 
