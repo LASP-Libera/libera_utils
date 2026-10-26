@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.13.0] - 2026-10-26
+
 ### Added
 
 - The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
@@ -845,7 +847,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...HEAD
+[5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0
 [5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0
 [5.11.5]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...5.11.5
 [5.11.4]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...5.11.4
