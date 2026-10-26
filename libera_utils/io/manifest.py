@@ -35,9 +35,15 @@ class ManifestError(Exception):
 
 _CHECKSUM_BLOCK_BYTES = 16 * 2**20
 
+_MANIFEST_NAME_HELP = (
+    "expected LIBERA_INPUT_MANIFEST_<ULID>.json or LIBERA_OUTPUT_MANIFEST_<ULID>.json, where <ULID> is a "
+    "26-character ULID, for example LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json. Manifest.write() "
+    "generates this name when out_path is a directory or S3 prefix, so it need not be given."
+)
+
 
 def calculate_checksum(file: str | Path | S3Path) -> str:
-    """Compute the MD5 checksum of a file, reading it in fixed-size blocks.
+    """Compute the MD5 checksum of the given file, reading it in fixed-size blocks.
 
     The checksum is taken over the bytes as they are stored on disk. For a ``*.gz`` file that means
     the compressed bytes, so the value can be compared against the file a data provider delivered.
@@ -70,14 +76,13 @@ class ManifestFileRecord(BaseModel):
     ----------
     filename : str
         Absolute local or S3 path of the file.
-    checksum : str or None
-        MD5 checksum of the file, or None if the file could not be found when it was recorded.
+    checksum : str
+        MD5 hex digest of the file's bytes as stored on disk; a gzipped file is not decompressed. Required: a null
+        checksum is a validation error.
     """
 
     filename: str = Field(description="Absolute local or S3 path of the file")
-    checksum: str | None = Field(
-        default=None, description="MD5 checksum of the file; None if the file could not be found when it was recorded"
-    )
+    checksum: str = Field(description="MD5 hex digest of the file's bytes as stored")
 
 
 class Manifest(BaseModel):
@@ -88,16 +93,20 @@ class Manifest(BaseModel):
     manifest_type : ManifestType
         INPUT or OUTPUT.
     files : list of ManifestFileRecord
-        Files listed in the manifest. May be given as paths, dicts or ``ManifestFileRecord`` objects; paths are
-        checksummed.
+        Files listed in the manifest. May be given as paths, dicts or ``ManifestFileRecord`` objects; paths, and
+        dicts without a ``checksum``, are checksummed with MD5. A file that cannot be found raises
+        ``FileNotFoundError``.
     configuration : dict
         Freeform JSON-compatible configuration items.
     filename : ManifestFilename or None
         Path or bare name of the manifest file. Its INPUT/OUTPUT label must match ``manifest_type``. Assignment is
         validated.
     ulid_code : ULID or None
-        Read-only ULID taken from ``filename``. May be given to the constructor: without a ``filename`` it sets a
-        bare manifest filename, and with one it must agree.
+        Read-only ULID that uniquely identifies the manifest, taken from ``filename``. As a constructor argument:
+        without ``filename``, it sets a bare manifest filename carrying this ULID, which ``write()`` uses when
+        ``out_path`` is a directory; with ``filename``, it must match the ULID in it. With neither, ``write()`` takes
+        the ULID from a full manifest path given as ``out_path``, or generates a new one when ``out_path`` is a
+        directory.
     """
 
     manifest_type: ManifestType = Field(description="Either INPUT or OUTPUT.")
@@ -244,7 +253,7 @@ class Manifest(BaseModel):
 
     @classmethod
     def check_file_structure(
-        cls, file_structure: ManifestFileRecord, existing_names: set[str], existing_checksums: set[str | None]
+        cls, file_structure: ManifestFileRecord, existing_names: set[str], existing_checksums: set[str]
     ) -> bool:
         """Check whether a file record can be added to a list of records.
 
@@ -254,7 +263,7 @@ class Manifest(BaseModel):
             Record to check.
         existing_names : set of str
             Filenames already in the list.
-        existing_checksums : set of str or None
+        existing_checksums : set of str
             Checksums already in the list.
 
         Returns
@@ -274,7 +283,7 @@ class Manifest(BaseModel):
         if file in existing_names:
             logger.warning(f"Attempting to add {file} to manifest but it is already included.")
             return False
-        if file_structure.checksum is not None and file_structure.checksum in existing_checksums:
+        if file_structure.checksum in existing_checksums:
             logger.warning(
                 f"Attempting to add {file} to manifest but another file with the same checksum is already included."
             )
@@ -288,8 +297,7 @@ class Manifest(BaseModel):
     ) -> list[ManifestFileRecord]:
         """Convert the incoming files to ManifestFileRecords, dropping duplicates.
 
-        A path, or a dict with no ``checksum`` key, is checksummed. A file that cannot be found gets a None checksum
-        and a warning.
+        A path, or a dict with no ``checksum`` key, is checksummed with MD5.
 
         Parameters
         ----------
@@ -303,8 +311,10 @@ class Manifest(BaseModel):
 
         Raises
         ------
+        FileNotFoundError
+            If a file to be checksummed cannot be found.
         ValueError
-            If a path is not absolute.
+            If a path is not absolute, or a record's checksum is null.
         """
         result = []
         existing_names = set()
@@ -313,19 +323,18 @@ class Manifest(BaseModel):
             if isinstance(raw_file, ManifestFileRecord):
                 file_structure = raw_file
             elif isinstance(raw_file, dict) and "checksum" in raw_file:
-                # An explicit null checksum is kept so that checksum validation reports it
                 file_structure = ManifestFileRecord(filename=raw_file.get("filename"), checksum=raw_file["checksum"])
             else:
                 file = raw_file.get("filename") if isinstance(raw_file, dict) else str(AnyPath(raw_file))
-                checksum = None
-                if AnyPath(file).exists():
-                    checksum = calculate_checksum(file)
-                else:
-                    logger.warning(
-                        f"File {file} cannot be found; its checksum will be empty, which may cause checksum "
-                        "validation to fail when the manifest is read."
+                # Checked before existence so a relative path is reported as relative, not as missing
+                if not AnyPath(file).is_absolute():
+                    raise ValueError(f"The file path for {file} must be an absolute path.")
+                if not AnyPath(file).exists():
+                    raise FileNotFoundError(
+                        f"File {file} cannot be found. A file must exist when it is added to a manifest so its "
+                        "checksum can be calculated; check the path and that the file has been written."
                     )
-                file_structure = ManifestFileRecord(filename=file, checksum=checksum)
+                file_structure = ManifestFileRecord(filename=file, checksum=calculate_checksum(file))
             if cls.check_file_structure(file_structure, existing_names, existing_checksums):
                 result.append(file_structure)
                 existing_names.add(str(file_structure.filename))
@@ -382,7 +391,9 @@ class Manifest(BaseModel):
         try:
             filename = filepath if isinstance(filepath, ManifestFilename) else ManifestFilename(filepath)
         except ValueError as err:
-            raise ManifestError(f"Manifest file {filepath} does not have a valid manifest filename.") from err
+            raise ManifestError(
+                f"Manifest file {filepath} does not have a valid manifest filename; {_MANIFEST_NAME_HELP}"
+            ) from err
 
         with smart_open(filename.path) as manifest_file:
             contents = json.loads(manifest_file.read())
@@ -410,8 +421,6 @@ class Manifest(BaseModel):
     def add_files(self, *files: str | Path | S3Path) -> None:
         """Add files to the manifest, checksumming each one.
 
-        A file that cannot be found is added with a None checksum and a warning.
-
         Parameters
         ----------
         *files : str, Path or S3Path
@@ -419,10 +428,12 @@ class Manifest(BaseModel):
 
         Raises
         ------
+        FileNotFoundError
+            If a file cannot be found. No file is added.
         ValueError
             If a path is not absolute.
         """
-        self.files = self.transform_files([*self.files, *files])
+        self.files = [*self.files, *files]
 
     def validate_checksums(self) -> None:
         """Check every listed file against its recorded checksum.
@@ -430,15 +441,13 @@ class Manifest(BaseModel):
         Raises
         ------
         ManifestError
-            Listing every file that has no recorded checksum, cannot be found, or whose checksum differs.
+            Listing every file that cannot be found or whose checksum differs.
         """
         failed_filenames = []
         for file_structure in self.files:
             checksum_expected = file_structure.checksum
             filename = file_structure.filename
-            if checksum_expected is None:
-                logger.error(f"Checksum validation for {filename} failed. No checksum is recorded.")
-            elif not AnyPath(filename).exists():
+            if not AnyPath(filename).exists():
                 logger.error(f"Checksum validation for {filename} failed. The file cannot be found.")
             else:
                 checksum_calculated = calculate_checksum(filename)
@@ -452,17 +461,17 @@ class Manifest(BaseModel):
         if failed_filenames:
             raise ManifestError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
 
-    def write(
-        self, out_path: str | Path | S3Path | ManifestFilename | None = None, *, overwrite: bool = False
-    ) -> Path | S3Path:
+    def write(self, out_path: str | Path | S3Path | ManifestFilename, *, overwrite: bool = False) -> Path | S3Path:
         """Write the manifest to a file and set ``filename`` to the path written.
 
         Parameters
         ----------
-        out_path : str, Path, S3Path or ManifestFilename, optional
+        out_path : str, Path, S3Path or ManifestFilename
             Full path of the manifest file, or a directory or S3 prefix to write into under the name in
-            ``filename`` (or a generated name with a new ULID). Defaults to the directory of ``filename``, or the
-            current working directory.
+            ``filename`` (or a generated name with a new ULID). A path whose last component has an extension is
+            taken as a file name and must be a valid manifest filename, so a directory such as ``/data/v1.2`` is
+            refused; give the full manifest file path inside it instead. An S3 bucket root is always a prefix, even
+            when the bucket name contains a dot.
         overwrite : bool, optional
             Whether to overwrite an existing file. Default False.
 
@@ -474,21 +483,23 @@ class Manifest(BaseModel):
         Raises
         ------
         ManifestError
-            If ``out_path`` names a manifest file whose INPUT/OUTPUT label or ULID disagrees with this manifest.
+            If ``out_path`` names a manifest file whose INPUT/OUTPUT label or ULID disagrees with this manifest, or
+            has an extension but is not a valid manifest filename.
         FileExistsError
             If the target exists and ``overwrite`` is False.
         """
         has_directory = self.filename is not None and str(self.filename) != self.filename.path.name
-        target = None
-        if out_path is None:
-            directory = self.filename.path.parent if has_directory else Path.cwd()
-        else:
-            directory = out_path.path if isinstance(out_path, ManifestFilename) else AnyPath(out_path)
-            try:
-                target = ManifestFilename(directory)  # out_path names the manifest file itself
-            except ValueError:
-                pass
-        if target is None:
+        directory = out_path.path if isinstance(out_path, ManifestFilename) else AnyPath(out_path)
+        try:
+            target = ManifestFilename(directory)  # out_path names the manifest file itself
+        except ValueError:
+            # Note: If a user provides a manifest filename without an extension, it reads as a directory
+            is_bucket_root = isinstance(directory, S3Path) and not directory.key  # a bucket name may contain dots
+            if directory.suffix and not is_bucket_root:
+                raise ManifestError(
+                    f"Refusing to write to {directory}, which has an extension but is not a valid manifest "
+                    f"filename; {_MANIFEST_NAME_HELP}"
+                ) from None
             if self.filename is not None:
                 name = self.filename.path.name
             else:

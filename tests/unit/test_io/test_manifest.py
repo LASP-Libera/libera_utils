@@ -191,7 +191,9 @@ class TestFromFile:
     def test_invalid_filename(self, tmp_path):
         """A file that is not named as a manifest is an error"""
         path = write_manifest_json(tmp_path / "not_a_manifest.json")
-        with pytest.raises(ManifestError, match="does not have a valid manifest filename"):
+        with pytest.raises(
+            ManifestError, match=r"does not have a valid manifest filename.*LIBERA_INPUT_MANIFEST_<ULID>\.json"
+        ):
             Manifest.from_file(path)
 
     @pytest.mark.parametrize(
@@ -221,10 +223,11 @@ class TestFromFile:
         with pytest.raises(ValidationError):
             Manifest.from_file(path)
 
-    def test_stored_null_checksum_is_kept(self, tmp_path, test_txt):
-        """A null checksum on disk is not recomputed on read"""
+    def test_stored_null_checksum_is_invalid(self, tmp_path, test_txt):
+        """A null checksum on disk is a validation error, not recomputed on read"""
         path = write_manifest_json(tmp_path / INPUT_NAME, files=[{"filename": str(test_txt), "checksum": None}])
-        assert Manifest.from_file(path).files[0].checksum is None
+        with pytest.raises(ValidationError):
+            Manifest.from_file(path)
 
     def test_round_trip(self, tmp_path, test_txt):
         """A written manifest reads back with the same contents and ULID, and reading leaves the file unchanged"""
@@ -309,23 +312,28 @@ class TestFiles:
         m.validate_checksums()
         assert len(m.files) == initial_length
 
-    def test_add_missing_files(self, tmp_path, caplog):
-        """Missing files are added with an empty checksum and a warning, and are not treated as duplicates"""
-        missing = [tmp_path / "missing1.nc", tmp_path / "missing2.nc"]
-        m = Manifest(manifest_type=ManifestType.INPUT)
-        with caplog.at_level("WARNING"):
-            m.add_files(*missing)
-        assert [f.checksum for f in m.files] == [None, None]
-        assert f"File {missing[0]} cannot be found; its checksum will be empty" in caplog.text
+    @pytest.mark.parametrize("on_s3", [False, True])
+    def test_add_missing_file_raises(self, tmp_path, test_txt, create_mock_bucket, on_s3):
+        """Adding a file that cannot be found raises FileNotFoundError and leaves the file list unchanged"""
+        missing = f"s3://{create_mock_bucket().name}/missing.nc" if on_s3 else str(tmp_path / "missing.nc")
+        m = Manifest(manifest_type=ManifestType.INPUT, files=[test_txt])
+        before = list(m.files)
+        with pytest.raises(FileNotFoundError, match=f"File {missing} cannot be found"):
+            m.add_files(missing)
+        assert m.files == before
+        # A valid file passed in the same call is not added either
+        present = tmp_path / "present.nc"
+        present.write_text("present")
+        with pytest.raises(FileNotFoundError):
+            m.add_files(present, missing)
+        assert m.files == before
 
     @pytest.mark.parametrize("as_dict", [True, False])
-    def test_constructor_with_missing_file(self, tmp_path, caplog, as_dict):
-        """A missing file passed to the constructor, as a path or as a record without a checksum, is kept"""
+    def test_constructor_with_missing_file(self, tmp_path, as_dict):
+        """A missing file passed to the constructor, as a path or as a record without a checksum, raises"""
         missing = tmp_path / "missing.nc"
-        with caplog.at_level("WARNING"):
-            m = Manifest(manifest_type=ManifestType.INPUT, files=[{"filename": str(missing)} if as_dict else missing])
-        assert m.files[0].checksum is None
-        assert "cannot be found" in caplog.text
+        with pytest.raises(FileNotFoundError, match=f"File {missing} cannot be found"):
+            Manifest(manifest_type=ManifestType.INPUT, files=[{"filename": str(missing)} if as_dict else missing])
 
 
 class TestCalculateChecksum:
@@ -377,12 +385,6 @@ class TestValidateChecksums:
         m.files = [ManifestFileRecord(filename=str(test_jpss_manifest.absolute()), checksum=checksum)]
         m.validate_checksums()
 
-    def test_missing_checksum_fails(self, test_txt):
-        """A file with no recorded checksum fails validation"""
-        m = Manifest(manifest_type=ManifestType.INPUT, files=[ManifestFileRecord(filename=str(test_txt))])
-        with pytest.raises(ManifestError, match=str(test_txt)):
-            m.validate_checksums()
-
     def test_missing_file_fails(self, tmp_path):
         """A file that cannot be found fails validation rather than raising FileNotFoundError"""
         missing = str(tmp_path / "missing.nc")
@@ -413,11 +415,18 @@ class TestWrite:
             manifest_type=ManifestType.INPUT,
         )
         outpath = S3Path(f"s3://{bucket.name}")
-        m.write(outpath / INPUT_NAME)
-        with smart_open(outpath / INPUT_NAME) as f:
-            manifest_dict = json.load(f)
-            for element in ("manifest_type", "files", "configuration"):
-                assert element in manifest_dict
+        written = m.write(outpath)
+        assert written.parent == outpath
+        assert ManifestFilename(written).filename_parts.manifest_type == ManifestType.INPUT
+        read = Manifest.from_file(written)
+        assert read.manifest_type == ManifestType.INPUT
+        assert read.ulid_code == m.ulid_code
+
+    def test_write_to_dotted_bucket_root(self, create_mock_bucket):
+        """A bucket name containing a dot is a prefix to write into, not a file name with an extension"""
+        bucket = create_mock_bucket("test.dotted-bucket")
+        written = Manifest(manifest_type=ManifestType.INPUT).write(f"s3://{bucket.name}")
+        assert written.parent == S3Path(f"s3://{bucket.name}")
 
     @pytest.mark.parametrize("out_path", ["{tmp}/" + INPUT_NAME, "path", "manifest_filename"])
     def test_write_to_full_path(self, tmp_path, out_path):
@@ -437,6 +446,24 @@ class TestWrite:
             m.write(tmp_path, INPUT_NAME)
         assert list(tmp_path.iterdir()) == []
 
+    def test_write_requires_out_path(self):
+        """out_path is required; a manifest is never written to the working directory by default"""
+        m = Manifest(manifest_type=ManifestType.INPUT, filename=INPUT_NAME)
+        with pytest.raises(TypeError):
+            m.write()
+
+    @pytest.mark.parametrize("on_s3", [False, True])
+    def test_write_refuses_invalid_name_with_extension(self, tmp_path, create_mock_bucket, on_s3):
+        """An out_path with an extension that is not a valid manifest filename raises and writes nothing"""
+        root = S3Path(f"s3://{create_mock_bucket().name}") if on_s3 else tmp_path / "dropbox"
+        if not on_s3:
+            root.mkdir()
+        m = Manifest(manifest_type=ManifestType.INPUT)
+        with pytest.raises(ManifestError, match=r"not a valid manifest filename.*LIBERA_INPUT_MANIFEST_<ULID>\.json"):
+            m.write(root / "out.json")
+        assert list(root.iterdir()) == []
+        assert m.filename is None
+
     def test_write_refuses_mismatched_label(self, tmp_path):
         """A full path named for the other manifest type raises ManifestError and writes nothing"""
         m = Manifest(manifest_type=ManifestType.INPUT)
@@ -451,21 +478,6 @@ class TestWrite:
         with pytest.raises(ManifestError, match="never need to change the ULID of an output manifest"):
             m.write(tmp_path / f"LIBERA_OUTPUT_MANIFEST_{OTHER_ULID}.json")
         assert list(tmp_path.iterdir()) == []
-
-    @pytest.mark.parametrize("filename", [None, INPUT_NAME])
-    def test_write_without_out_path_uses_cwd(self, tmp_path, monkeypatch, filename):
-        """With no out_path and no directory in filename, the manifest is written to the working directory"""
-        monkeypatch.chdir(tmp_path)
-        m = Manifest(manifest_type=ManifestType.INPUT, filename=filename)
-        written = m.write()
-        assert written.resolve().parent == tmp_path.resolve()
-        if filename:
-            assert written.name == filename
-
-    def test_write_without_out_path_uses_filename_directory(self, tmp_path):
-        """With no out_path, a filename that includes a directory is written to that path"""
-        m = Manifest(manifest_type=ManifestType.INPUT, filename=tmp_path / INPUT_NAME)
-        assert m.write() == tmp_path / INPUT_NAME
 
     def test_write_relocation_warning(self, tmp_path, caplog):
         """Writing a written manifest somewhere else warns that its filename was updated"""
@@ -496,7 +508,7 @@ class TestWrite:
         m = Manifest(manifest_type=ManifestType.INPUT)
         written = m.write(tmp_path)
         m.configuration["key"] = "value"
-        assert m.write(overwrite=True) == written
+        assert m.write(written, overwrite=True) == written
         assert json.loads(written.read_text())["configuration"] == {"key": "value"}
 
     def test_cleared_filename_gets_new_ulid(self, tmp_path):

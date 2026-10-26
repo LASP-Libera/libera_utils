@@ -31,7 +31,7 @@ output_manifest.add_files(
 )
 
 # Writes the output manifest, under its filename, into the directory specified.
-# Usually this path is retrieved from the environment, like `os.environ["PROCESSING_PATH"]`.
+# In production algorithms this path is retrieved from the environment, like `os.environ["PROCESSING_PATH"]`.
 output_manifest.write("s3://some-dropbox/")
 ```
 
@@ -49,3 +49,6 @@ path = input_manifest.write("/dropbox/")
 ```
 
 `write()` refuses to overwrite an existing file unless you pass `overwrite=True`.
+
+`add_files()` raises `FileNotFoundError` for a file that cannot be found. A manifest records each file's MD5
+checksum, taken over its bytes as stored, so a `.gz` file is not decompressed first.
