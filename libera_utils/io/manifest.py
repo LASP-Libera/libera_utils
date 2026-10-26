@@ -202,7 +202,7 @@ class Manifest(BaseModel):
         ----------
         filename : ManifestFilename or None
             Filename to check.
-        info : ValidationInfo
+        info : pydantic.ValidationInfo
             Holds the already validated ``manifest_type``.
 
         Returns
@@ -233,7 +233,7 @@ class Manifest(BaseModel):
         ----------
         manifest_type : ManifestType
             Manifest type to check.
-        info : ValidationInfo
+        info : pydantic.ValidationInfo
             Holds the current ``filename`` on assignment.
 
         Returns
@@ -355,7 +355,7 @@ class Manifest(BaseModel):
         ----------
         filename : ManifestFilename or None
             Filename to serialize.
-        _info : SerializationInfo
+        _info : pydantic.SerializationInfo
             Unused.
 
         Returns
@@ -384,7 +384,7 @@ class Manifest(BaseModel):
         ManifestError
             If the path is not a valid manifest filename, or the filename or ULID stored in the file disagrees with
             the ULID in the path.
-        ValidationError
+        pydantic_core.ValidationError
             If the contents are not a valid manifest, or their manifest_type disagrees with the INPUT/OUTPUT label in
             the path.
         """
