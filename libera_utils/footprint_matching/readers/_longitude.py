@@ -1,4 +1,4 @@
-"""Shared decoding helpers for the readers.
+"""Longitude-convention helper for the readers.
 
 - :func:`normalize_longitude` -- convert a 0..360 longitude convention to -180..180
   (the ERA5 readers' grids arrive on 0..360).

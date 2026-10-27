@@ -239,8 +239,7 @@ class PointSamples:
         1-D ``(n,)`` ``datetime64[ns]`` observation time per sample. Required for a
         ``NEAREST_PASS`` reader; ``None`` otherwise.
     spacing_km : float or None
-        The samples' native spacing, km, measured on this body of data (see
-        ``libera_utils.footprint_matching.readers._points.neighbor_spacing_km``).
+        The samples' native spacing, km, measured on this body of data.
         ``None`` means the reader's declared ``RESOLUTION_KM`` applies. A swath that is
         subsampled on delivery is served with its true spacing, so the coverage measure
         credits each sample with the cell it really stands for.

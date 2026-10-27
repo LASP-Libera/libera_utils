@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from libera_utils.footprint_matching.readers._points import normalize_longitude
+from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers.base import SteppedGridReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, VariableSpec
 
