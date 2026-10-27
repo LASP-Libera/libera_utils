@@ -457,6 +457,38 @@ class TestGridQuery:
         # Two latitude rows (89.5 and, through the padding, 88.5) at every longitude.
         assert samples.n_samples == 720
 
+    @pytest.mark.parametrize(
+        ("bbox", "expected_lats", "expected_lons"),
+        [
+            pytest.param(
+                BoundingBox(86.2, 86.8, 10.2, 29.8, is_polar=True),
+                {86.5},
+                {lon + 0.5 for lon in range(1, 39)},
+                id="near-pole",
+            ),
+            pytest.param(
+                BoundingBox(89.6, 89.9, 0.0, 10.0, is_polar=True),
+                {89.5},
+                {lon + 0.5 for lon in range(-180, 180)},
+                id="pad-reaches-around",
+            ),
+        ],
+    )
+    def test_near_pole_box_is_padded_in_longitude(self, tmp_path, bbox, expected_lats, expected_lons):
+        """``samples_in`` pads a box near a pole in longitude, by half a cell measured at its poleward edge.
+
+        A box flagged polar need not enclose the pole, and near a pole half a cell spans many degrees of longitude;
+        without that padding the cells on the box's east and west rims are never served and are scored as missing.
+
+        On the 1 degree test grid: a box at 86.2..86.8 N, 10.2..29.8 E pads by 0.5 / cos(86.8) = 8.96 degrees, so
+        columns 1.5 through 38.5 of the 86.5 row are served; a box at 89.6..89.9 N, whose pad exceeds 180 degrees,
+        serves every column of the 89.5 row.
+        """
+        reader = _GridReader(tmp_path / "unused.nc")
+        samples = reader.samples_in(bbox, _T0)
+        assert set(samples.lats.tolist()) == expected_lats
+        assert set(samples.lons.tolist()) == expected_lons
+
     def test_daily_reader_ignores_time(self, tmp_path):
         """A ``DAILY`` reader serves the same samples for any footprint time, including NaT.
 

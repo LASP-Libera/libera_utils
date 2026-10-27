@@ -522,12 +522,15 @@ class AncillaryReader(abc.ABC):
         half_deg = 0.5 * resolution_km / _KM_PER_DEG
         lat_min = max(-90.0, bbox.lat_min - half_deg)
         lat_max = min(90.0, bbox.lat_max + half_deg)
-        if bbox.is_polar or bbox.lon_max - bbox.lon_min >= 360.0:
+        lon_span = bbox.lon_max - bbox.lon_min
+        if lon_span >= 360.0:
             return BoundingBox(lat_min, lat_max, bbox.lon_min, bbox.lon_max, bbox.wraps_dateline, True, bbox.truncated)
-        # Longitude padding grows toward the poles; cap it where a degree of longitude is
-        # shorter than a quarter of one at the equator (beyond that the box is polar anyway).
-        cos_lat = max(np.cos(np.radians(max(abs(bbox.lat_min), abs(bbox.lat_max)))), 0.25)
-        lon_pad = half_deg / cos_lat
+        # Half a cell spans more degrees of longitude toward the poles, so the pad is taken at
+        # the box's most poleward edge. A padded box that reaches all the way around serves
+        # every longitude.
+        lon_pad = half_deg / np.cos(np.radians(max(abs(bbox.lat_min), abs(bbox.lat_max))))
+        if lon_span + 2.0 * lon_pad >= 360.0:
+            return BoundingBox(lat_min, lat_max, -180.0, 180.0, False, True, bbox.truncated)
         lon_min, lon_max = bbox.lon_min - lon_pad, bbox.lon_max + lon_pad
         wraps = bbox.wraps_dateline
         if not wraps and lon_max > 180.0:
