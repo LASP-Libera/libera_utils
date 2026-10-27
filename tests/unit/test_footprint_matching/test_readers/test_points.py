@@ -15,6 +15,7 @@ from libera_utils.footprint_matching.readers._points import (
     decode_cf_times,
     decode_hours_of_day,
     field_fill_value,
+    field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
     normalize_longitude,
@@ -221,6 +222,52 @@ class TestFieldFillValue:
             ds.close()
 
 
+class TestFieldValidRange:
+    @staticmethod
+    def _variable(tmp_path, valid_range):
+        import netCDF4
+
+        ds = netCDF4.Dataset(str(tmp_path / "r.nc"), "w")
+        ds.createDimension("n", 2)
+        var = ds.createVariable("field", np.float32, ("n",))
+        if valid_range is not None:
+            var.valid_range = np.array(valid_range, dtype=np.float32)
+        return ds, var
+
+    def test_returns_the_attribute_in_file_order(self, tmp_path):
+        """``field_valid_range`` returns a field's declared ``valid_range`` as floats, in the file's order.
+
+        The readers range-check each field with the bounds the file declares; a reordered or rounded pair would drop
+        valid values or pass invalid ones, and the CLDPIX pressure range is stored descending.
+
+        Builds a field declaring the descending [1100, 10] and asserts ``(1100.0, 10.0)``.
+        """
+        ds, var = self._variable(tmp_path, (1100.0, 10.0))
+        try:
+            assert field_valid_range(var, source="test") == (1100.0, 10.0)
+        finally:
+            ds.close()
+
+    @pytest.mark.parametrize(
+        ("valid_range", "match"),
+        [(None, "field has no valid_range attribute"), ((0.0, 1.0, 2.0), r"not a \(low, high\) pair")],
+    )
+    def test_missing_or_malformed_range_raises(self, tmp_path, valid_range, match):
+        """``field_valid_range`` raises ``ValueError`` naming the field when its ``valid_range`` is absent or not a pair.
+
+        A guessed range could silently drop valid values or keep invalid ones, so the reader stops instead.
+
+        Parametrized over a field with no ``valid_range`` and one declaring three values; asserts a ``ValueError``
+        naming the field.
+        """
+        ds, var = self._variable(tmp_path, valid_range)
+        try:
+            with pytest.raises(ValueError, match=match):
+                field_valid_range(var, source="test")
+        finally:
+            ds.close()
+
+
 class TestDecodeCfTimes:
     @staticmethod
     def _variable(tmp_path, values, units=None, mask_index=None):
@@ -344,17 +391,17 @@ class TestDecodeHoursOfDay:
         return ds, var
 
     def test_hours_date_from_the_granule_day(self, tmp_path):
-        """``decode_hours_of_day`` adds fractional UTC hours to the given day's midnight, keeping the variable's shape.
+        """``decode_hours_of_day`` adds fractional UTC hours to the reference's midnight, keeping the variable's shape.
 
         CLDPIX stores only the hour of day, so the date must come from the granule; a wrong day or hour scale would
         shift every pixel away from the footprints it was observed with.
 
-        Decodes a (2, 2) float32 variable holding 15.5 and 15.999 hours against 2020-04-10 and asserts the shape,
-        15:30:00 exactly, and 15:59:56.4 to within 10 ms (float32 resolution).
+        Decodes a (2, 2) float32 variable holding 15.5 and 15.999 hours against a 2020-04-10T15:00:01.4 reference and
+        asserts the shape, 15:30:00 exactly, and 15:59:56.4 to within 10 ms (float32 resolution).
         """
         ds, var = self._variable(tmp_path, [15.5, 15.999])
         try:
-            times = decode_hours_of_day(var, np.datetime64("2020-04-10"), source="test")
+            times = decode_hours_of_day(var, np.datetime64("2020-04-10T15:00:01.4"), source="test")
         finally:
             ds.close()
         assert times.shape == (2, 2)
@@ -374,11 +421,36 @@ class TestDecodeHoursOfDay:
         ds, var = self._variable(tmp_path, [1.0, 2.0])
         var[1, :] = np.float32(3.4028235e38)
         try:
-            times = decode_hours_of_day(var, np.datetime64("2020-04-10"), source="test")
+            times = decode_hours_of_day(var, np.datetime64("2020-04-10T01:00"), source="test")
         finally:
             ds.close()
         assert not np.isnat(times[0]).any()
         assert np.isnat(times[1]).all()
+
+    @pytest.mark.parametrize(
+        ("reference", "hours", "expected"),
+        [
+            # A 00 UTC granule whose first scanline precedes midnight.
+            ("2020-04-10T00:00:01.4", 23.9999, "2020-04-09T23:59:59.64"),
+            # A 23 UTC granule whose last scanline follows midnight.
+            ("2020-04-09T23:00:01", 0.0001, "2020-04-10T00:00:00.36"),
+        ],
+    )
+    def test_hours_across_midnight_take_the_nearest_day(self, tmp_path, reference, hours, expected):
+        """``decode_hours_of_day`` dates an hour on the far side of midnight to the day nearest the reference.
+
+        A granule's scanlines can precede its ``time_coverage_start`` by a second or two; near midnight, dating them by
+        the start's calendar day would put them 24 h late (or early) and drop them from the nearest pass.
+
+        Parametrized over a 00 UTC reference with a 23.9999 h value and a 23 UTC reference with a 0.0001 h value;
+        asserts each decodes to the previous or next day respectively, within 10 ms (float32 resolution).
+        """
+        ds, var = self._variable(tmp_path, [hours])
+        try:
+            times = decode_hours_of_day(var, np.datetime64(reference), source="test")
+        finally:
+            ds.close()
+        assert abs(times[0, 0] - np.datetime64(expected, "ns")) < np.timedelta64(10, "ms")
 
     def test_wrong_units_raise(self, tmp_path):
         """``decode_hours_of_day`` raises ``ValueError`` when the variable's ``units`` are not hours.
@@ -504,7 +576,7 @@ class TestGranuleTimeCoverage:
     def test_non_iso_value_raises(self):
         """``granule_time_coverage`` raises ``ValueError`` when an attribute is not an ISO 8601 instant.
 
-        An unparseable coverage time must stop the read with a message naming the value rather than surface as a
+        An unparsable coverage time must stop the read with a message naming the value rather than surface as a
         bare NumPy error.
 
         Passes a stand-in dataset whose ``time_coverage_start`` is ``"not-a-time"`` and asserts a ``ValueError`` saying

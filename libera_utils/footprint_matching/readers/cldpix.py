@@ -73,6 +73,7 @@ from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_hours_of_day,
     field_fill_value,
+    field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
     normalize_longitude,
@@ -85,7 +86,7 @@ from libera_utils.footprint_matching.types import OperationalMode, PointSamples,
 _LAT_VAR: str = "Latitude"
 _LON_VAR: str = "Longitude"
 # Per-pixel observation time, ``(Scanlines, Pixels)``, in fractional UTC hours of the
-# granule's day (units ``hours``); the date comes from the granule's
+# day (units ``hours``); each hour is dated to the day nearest the granule's
 # ``time_coverage_start`` global attribute. As found in the CER_CLDPIX_NOAA20-VIIRS granules.
 _TIME_VAR: str = "Observation_Time"
 
@@ -98,8 +99,61 @@ _COLATITUDE_VALID_RANGE: tuple[float, float] = (0.0, 180.0)
 _NORTH_POLE_COLATITUDE: float = 90.0
 
 
+# The ``flag_meanings`` entry, compared case-insensitively, that marks a flag value as
+# carrying no retrieval. CER_CLDPIX labels Cloud_Particle_Phase 5 ``bad_data`` and
+# CERES_Cloud_Mask 3 ``Bad_data`` in the files' own ``flag_meanings``.
+_BAD_DATA_FLAG_MEANING: str = "bad_data"
+
+
+def _bad_data_flags(variable: netCDF4.Variable, *, source: str) -> tuple[int, ...]:
+    """Return the flag values a categorical field's own ``flag_meanings`` label as bad data.
+
+    A flag value whose meaning is ``bad_data`` (any case) carries no retrieval, so a
+    reader sets it to ``NaN`` rather than letting it vote in a mode. The labels come from
+    the file's CF ``flag_values`` / ``flag_meanings`` pair, not a hard-coded table.
+
+    Parameters
+    ----------
+    variable : netCDF4.Variable
+        The categorical field being read.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    tuple[int, ...]
+        The flag values labelled bad data; empty when the field labels none.
+
+    Raises
+    ------
+    ValueError
+        If the field has no ``flag_values`` or ``flag_meanings`` attribute, or the two
+        do not list the same number of entries.
+    """
+    attrs = variable.ncattrs()
+    if "flag_values" not in attrs or "flag_meanings" not in attrs:
+        raise ValueError(
+            f"{source}: {variable.name} has no flag_values / flag_meanings attributes. The reader takes the codes "
+            "to drop as bad data from them; stage the granule as distributed, which carries both on every "
+            "categorical field."
+        )
+    values = np.ravel(variable.getncattr("flag_values"))
+    meanings = str(variable.getncattr("flag_meanings")).split()
+    if values.size != len(meanings):
+        raise ValueError(
+            f"{source}: {variable.name} lists {values.size} flag_values but {len(meanings)} flag_meanings. "
+            "Stage the granule as distributed, or update the reader for this product version."
+        )
+    return tuple(int(v) for v, m in zip(values, meanings, strict=True) if m.lower() == _BAD_DATA_FLAG_MEANING)
+
+
 class _CLDPIXField(NamedTuple):
     """Mapping from an output variable to its source variable and decoding rules.
+
+    Each field's fill value and valid range are read from the file's own
+    ``_FillValue`` and ``valid_range`` attributes. A categorical field's flag values
+    that its ``flag_meanings`` label ``bad_data`` are dropped too, so they do not vote
+    in the mode.
 
     Attributes
     ----------
@@ -109,9 +163,6 @@ class _CLDPIXField(NamedTuple):
         Root-level source variable name.
     aggregation : str
         PSF aggregation strategy for the emitted spec.
-    valid_range : tuple of (float, float) or None
-        Inclusive valid range; values outside become NaN. Also used to drop the
-        ``-1`` "no data" sentinel in the snow/ice maps.
     n_categories : int or None
         Category count for categorical variables; ``None`` for continuous.
     """
@@ -119,26 +170,25 @@ class _CLDPIXField(NamedTuple):
     out_name: str
     var: str
     aggregation: str
-    valid_range: tuple[float, float] | None
     n_categories: int | None
 
 
 _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
     # --- continuous cloud properties ---
-    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", (0.25, 150.0), None),
-    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", (0.0, 10000.0), None),
-    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", (190.0, 350.0), None),
-    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", (0.0, 18.0), None),
-    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", (10.0, 1100.0), None),
-    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", None, None),
+    _CLDPIXField("cloud_optical_depth", "Eff_Cld_Optical_Depth", "weighted_log_mean", None),
+    _CLDPIXField("cloud_water_path", "Cld_Water_Path", "weighted_mean", None),
+    _CLDPIXField("cloud_effective_temperature", "Eff_Cld_Temp", "weighted_mean", None),
+    _CLDPIXField("cloud_effective_height", "Eff_Cld_Height", "weighted_mean", None),
+    _CLDPIXField("cloud_effective_pressure", "Eff_Cld_Pressure", "weighted_mean", None),
+    _CLDPIXField("cloud_top_height", "Top_Cld_Height", "weighted_mean", None),
     # Effective cloud particle radius (μm). Cld_Radius is the combined
     # (water+ice blended) effective radius produced by the CERES cloud
     # retrieval algorithm, distinct from the phase-separated radii
     # (Cld_Radius_0124, Cld_Radius_0160) at specific wavelengths.
-    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", (2.0, 60.0), None),
+    _CLDPIXField("cloud_particle_radius", "Cld_Radius", "weighted_mean", None),
     # --- categorical (mode-aggregated) ---
-    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", (1.0, 5.0), 5),
-    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", (0.0, 3.0), 4),
+    _CLDPIXField("cloud_particle_phase", "Cloud_Particle_Phase", "weighted_mode", 5),
+    _CLDPIXField("cloud_mask", "CERES_Cloud_Mask", "weighted_mode", 4),
 )
 
 
@@ -204,9 +254,10 @@ class CLDPIXReader(PassReader):
     def _load_granule(self, path: Path) -> PointSamples:
         """Parse one granule into a time-stamped pixel point cloud.
 
-        Flattens the 2-D ``(Scanlines, Pixels)`` swath arrays to 1-D point arrays. The
-        fractional-hour ``Observation_Time`` values are dated by the granule's
-        ``time_coverage_start``; a granule covers one hour, so it never crosses midnight.
+        Flattens the 2-D ``(Scanlines, Pixels)`` swath arrays to 1-D point arrays. Each
+        fractional-hour ``Observation_Time`` value is dated to the day nearest the
+        granule's ``time_coverage_start``, so scanlines on either side of midnight keep
+        their own date.
 
         Returns
         -------
@@ -214,7 +265,8 @@ class CLDPIXReader(PassReader):
             ``lats``/``lons`` are ``(n_pixels,)`` in ordinary WGS84 degrees (latitude
             converted from the file's colatitude, longitude normalized to -180..180),
             ``values`` is ``(n_var, n_pixels)`` float32 with fill / out-of-range
-            entries as NaN, ``times`` is each pixel's observation time,
+            entries, and categorical codes the file labels ``bad_data``, as NaN,
+            ``times`` is each pixel's observation time,
             ``datetime64[ns]`` (NaT where the file holds fill), and ``spacing_km`` the
             pixel spacing measured on this granule.
 
@@ -225,7 +277,8 @@ class CLDPIXReader(PassReader):
             fractional-hour times, if its time variable is not in hours, if the
             time variable is not one value per scanline (or per pixel), if
             ``Latitude`` does not declare the colatitude ``valid_range`` of [0, 180],
-            or if a field read has no ``_FillValue`` attribute.
+            if a field read has no ``_FillValue`` or ``valid_range`` attribute, or if a
+            categorical field has no ``flag_values`` / ``flag_meanings`` pair.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
@@ -270,10 +323,8 @@ class CLDPIXReader(PassReader):
             lats = lats_2d.ravel()
             lons = lons_2d.ravel()
 
-            day, _ = granule_time_coverage(ds, source=source)
-            times = decode_hours_of_day(
-                ds.variables[_TIME_VAR], day.astype("datetime64[D]"), source=f"{source} {_TIME_VAR}"
-            )
+            start, _ = granule_time_coverage(ds, source=source)
+            times = decode_hours_of_day(ds.variables[_TIME_VAR], start, source=f"{source} {_TIME_VAR}")
             if times.shape == shape[:1]:
                 # One time per scanline: broadcast across the pixels of the line.
                 times = np.repeat(times, shape[1])
@@ -288,10 +339,14 @@ class CLDPIXReader(PassReader):
             value_rows: list[np.ndarray] = []
             for f in _CLDPIX_FIELDS:
                 var = ds.variables[f.var]
-                fill_value = field_fill_value(var, source=source)
-                value_rows.append(
-                    apply_fill_and_valid_range(var[:], fill_value=fill_value, valid_range=f.valid_range).ravel()
-                )
+                row = apply_fill_and_valid_range(
+                    var[:],
+                    fill_value=field_fill_value(var, source=source),
+                    valid_range=field_valid_range(var, source=source),
+                ).ravel()
+                if f.n_categories is not None:
+                    row[np.isin(row, _bad_data_flags(var, source=source))] = np.nan
+                value_rows.append(row)
 
         return PointSamples(
             lats=lats,

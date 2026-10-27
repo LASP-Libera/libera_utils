@@ -18,6 +18,7 @@ from libera_utils.footprint_matching.readers.base import (
     StaticReader,
     SteppedGridReader,
     _PointIndex,
+    in_box,
     split_dateline,
 )
 from libera_utils.footprint_matching.readers.registry import ReaderRegistry
@@ -321,6 +322,22 @@ class TestSplitDateline:
         assert (east.lon_min, east.lon_max) == (-180.0, -179.0)
 
 
+class TestInBox:
+    def test_edges_are_inside(self):
+        """``in_box`` marks points inside a plain box, edges included, and points outside it as outside.
+
+        Every reader decides which samples a footprint receives with this mask; an exclusive edge would drop a
+        sample sitting exactly on the box boundary, and a loose one would leak samples from a neighbor.
+
+        Tests the four corners and the center of a 10..11 N, 20..21 E box (inside) and points just past each edge
+        (outside).
+        """
+        bbox = BoundingBox(10.0, 11.0, 20.0, 21.0)
+        lats = np.array([10.0, 10.0, 11.0, 11.0, 10.5, 9.99, 11.01, 10.5, 10.5])
+        lons = np.array([20.0, 21.0, 20.0, 21.0, 20.5, 20.5, 20.5, 19.99, 21.01])
+        assert in_box(lats, lons, bbox).tolist() == [True] * 5 + [False] * 4
+
+
 class TestGridQuery:
     def test_slice_is_row_major_and_paired(self, tmp_path):
         """``StaticReader.samples_in`` on a grid serves the grid points inside the box, flattened row by row.
@@ -582,6 +599,50 @@ class TestNearestPass:
         if n:
             assert set(samples.values[0].tolist()) == {value}
             assert samples.times is not None
+
+    @staticmethod
+    def _padding_and_box_passes(include_box_pass: bool) -> PointSamples:
+        # 44 km spacing pads the 10..11 N, 20..21 E box by ~0.2 deg. Two samples of a pass
+        # 5 min from the query sit only in that padding (11.1 N); three samples of a pass
+        # 60 min away sit inside the box itself.
+        lats = [11.1, 11.1] + ([10.5, 10.5, 10.5] if include_box_pass else [])
+        lons = [20.4, 20.6] + ([20.3, 20.5, 20.7] if include_box_pass else [])
+        values = [1.0, 1.0] + ([2.0, 2.0, 2.0] if include_box_pass else [])
+        times = [_T0 + np.timedelta64(5, "m")] * 2 + ([_T0 + np.timedelta64(60, "m")] * 3 if include_box_pass else [])
+        return PointSamples(
+            lats=np.array(lats),
+            lons=np.array(lons),
+            values=np.array([values], dtype=np.float32),
+            times=np.array(times, dtype="datetime64[ns]"),
+            spacing_km=44.0,
+        )
+
+    def test_pass_in_the_padding_only_does_not_win(self):
+        """A pass that only clips the padding does not displace a pass that covers the footprint's own box.
+
+        The padding exists so a sample whose cell overlaps the box is served, but its PSF weight is zero; choosing the
+        nearest pass from padding samples would serve a pass that contributes nothing and drop one that covers the
+        footprint completely.
+
+        Two padding-only samples 5 minutes from the query and three in-box samples 60 minutes away; asserts the three
+        in-box samples are served and the two padding samples are not.
+        """
+        reader = _PassReader(self._padding_and_box_passes(include_box_pass=True))
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+        assert samples.n_samples == 3
+        assert set(samples.values[0].tolist()) == {2.0}
+
+    def test_padding_pass_is_served_when_none_is_inside_the_box(self):
+        """With no sample inside the footprint's own box, the nearest pass is chosen from the padding samples.
+
+        A footprint smaller than one native cell can hold no sample center; choosing only from samples inside the box
+        would leave it with no match although a cell covers it.
+
+        Only the two padding-only samples exist; asserts both are served.
+        """
+        reader = _PassReader(self._padding_and_box_passes(include_box_pass=False))
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+        assert samples.n_samples == 2
 
     def test_nat_footprint_time_raises(self):
         """A reader that selects in time raises ``ValueError`` when the footprint time is NaT.

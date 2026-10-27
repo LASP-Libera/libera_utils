@@ -5,15 +5,32 @@ granules to three contiguous blocks spread across the hour (start, middle, end),
 their values unchanged; see tests/test_data/footprint_matching/real/README.md. The
 tests pin the file conventions the readers rely on: the time variables and their
 encodings, the geolocation conventions, the hourly granule span, and that a footprint
-query at a footprint's own time serves its pass.
+query at a footprint's own time serves its pass with the values the file holds there.
 """
 
+import netCDF4
 import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.types import BoundingBox
+
+
+def _raw(path, group, name):
+    """A variable's raw stored values and a mask of the entries that are neither fill nor outside ``valid_range``."""
+    with netCDF4.Dataset(str(path)) as ds:
+        ds.set_auto_mask(False)
+        var = (ds.groups[group] if group else ds).variables[name]
+        raw = np.asarray(var[:])
+        low, high = sorted(float(v) for v in var.valid_range)
+        usable = (raw != var._FillValue) & (raw >= low) & (raw <= high)
+    return raw, usable
+
+
+def _served_at(samples, lat, lon, time):
+    """Indices of the served samples at exactly ``(lat, lon, time)``."""
+    return np.flatnonzero((samples.lats == lat) & (samples.lons == lon) & (samples.times == time))
 
 
 @pytest.fixture
@@ -53,16 +70,35 @@ class TestRealSSF:
         read wrong, a query at a known SSF footprint would find nothing, or a pass from the wrong time, and the matched
         footprint would carry no or wrong SSF values.
 
-        Takes the middle footprint of the real SSF cut, queries a 1-degree box around it at its time and asserts samples
-        are served, all within ``PASS_WINDOW`` of that time, and that the same box four hours later serves none.
+        Takes the first footprint from the middle of the real SSF cut whose layer coverages, clear coverage and type-2
+        aerosol percentage are all valid in the file, queries a 1-degree box around it at its time and asserts samples
+        are served, all within ``PASS_WINDOW`` of that time; that the sample at that footprint serves the lower and
+        upper ``layers_coverages``, ``clear_coverage`` and ``aerosol_type_percentage[:, 2]`` the file stores for it, so
+        a wrong group, layer or type index fails; and that the same box four hours later serves none.
         """
         reader = SSFReader(ssf_path)
         points = reader._load_granule(ssf_path)
-        i = points.lats.size // 2
+        layers, layers_ok = _raw(ssf_path, "Cloudy_Imager_Footprint_Layer", "layers_coverages")
+        clear, clear_ok = _raw(ssf_path, "Clear_Footprint_Area", "clear_coverage")
+        aerosol, aerosol_ok = _raw(ssf_path, "Assimilated_Aerosol_Properties", "aerosol_type_percentage")
+        usable = layers_ok.all(axis=1) & clear_ok & aerosol_ok[:, 2] & ~np.isnat(points.times)
+        middle = points.lats.size // 2
+        i = middle + int(np.flatnonzero(usable[middle:])[0])
         box = BoundingBox(points.lats[i] - 0.5, points.lats[i] + 0.5, points.lons[i] - 0.5, points.lons[i] + 0.5)
         samples = reader.samples_in(box, points.times[i])
         assert samples.n_samples > 0
         assert np.all(np.abs(samples.times - points.times[i]) <= SSFReader.PASS_WINDOW)
+        at_i = _served_at(samples, points.lats[i], points.lons[i], points.times[i])
+        assert at_i.size > 0
+        names = [v.name for v in SSFReader.VARIABLES]
+        expected = {
+            "layer_coverage_lower": layers[i, 0],
+            "layer_coverage_upper": layers[i, 1],
+            "clear_coverage": clear[i],
+            "aerosol_type_percentage_type2": aerosol[i, 2],
+        }
+        for name, value in expected.items():
+            assert np.allclose(samples.values[names.index(name), at_i], value), name
         # Four hours away nothing is served.
         assert reader.samples_in(box, points.times[i] + np.timedelta64(4, "h")).n_samples == 0
 
@@ -85,8 +121,8 @@ class TestRealCLDPIX:
         span = finite.max() - finite.min()
         assert np.timedelta64(55, "m") < span <= np.timedelta64(1, "h")
         # The granule's own coverage attributes bracket every decoded time to within a few
-        # seconds (the first scanlines precede the declared start by about two seconds in the
-        # source granule, so the dating by day is right and only the attribute is coarse).
+        # seconds: the first scanlines precede the declared start by about two seconds in the
+        # source granule, which is why each hour is dated to the day nearest the start.
         start, end = reader._granule_span(cldpix_path)
         assert finite.min() >= start - np.timedelta64(10, "s")
         assert finite.max() <= end + np.timedelta64(10, "s")
@@ -114,17 +150,26 @@ class TestRealCLDPIX:
         This is the end-to-end path a Libera footprint takes through the cloud reader: a wrong geolocation or time
         convention would leave a footprint over a known pixel with no cloud values, or with values from another pass.
 
-        Takes the middle pixel of the real CLDPIX cut, queries a 0.6-degree box around it at its time and asserts
-        samples are served, all within ``PASS_WINDOW`` of that time, with one value row per declared variable.
+        Takes the first pixel from the middle of the real CLDPIX cut whose ``Cld_Radius`` is valid in the file, queries
+        a 0.6-degree box around it at its time and asserts samples are served, all within ``PASS_WINDOW`` of that time,
+        with one value row per declared variable, and that the sample at that pixel serves the ``Cld_Radius`` the file
+        stores for it.
         """
         reader = CLDPIXReader(cldpix_path)
         points = reader._load_granule(cldpix_path)
-        i = points.lats.size // 2
+        radius, radius_ok = _raw(cldpix_path, None, "Cld_Radius")
+        usable = radius_ok.ravel() & np.isfinite(points.lats) & ~np.isnat(points.times)
+        middle = points.lats.size // 2
+        i = middle + int(np.flatnonzero(usable[middle:])[0])
         box = BoundingBox(points.lats[i] - 0.3, points.lats[i] + 0.3, points.lons[i] - 0.3, points.lons[i] + 0.3)
         samples = reader.samples_in(box, points.times[i])
         assert samples.n_samples > 0
         assert np.all(np.abs(samples.times - points.times[i]) <= CLDPIXReader.PASS_WINDOW)
         assert samples.values.shape == (len(CLDPIXReader.VARIABLES), samples.n_samples)
+        at_i = _served_at(samples, points.lats[i], points.lons[i], points.times[i])
+        assert at_i.size > 0
+        row = [v.name for v in CLDPIXReader.VARIABLES].index("cloud_particle_radius")
+        assert np.allclose(samples.values[row, at_i], radius.ravel()[i])
 
     def test_granule_span_matches_the_coverage_attributes(self, cldpix_path):
         """``CLDPIXReader._granule_span`` reads an hour-long span from a real granule that ``granules_in_window`` uses.

@@ -3,13 +3,15 @@
 - :func:`normalize_longitude` -- convert a 0..360 longitude convention to -180..180
   (the ERA5 grids and the CERES SSF and CLDPIX swaths arrive on 0..360).
 - :func:`field_fill_value` -- read a field's own ``_FillValue``, raising when it has none.
+- :func:`field_valid_range` -- read a field's own ``valid_range``, raising when it has none.
 - :func:`apply_fill_and_valid_range` -- convert a raw masked/integer array to a float
   array with fill values and out-of-range values replaced by ``NaN`` (the CERES SSF and
   CLDPIX readers apply each field's own ``_FillValue`` and ``valid_range``).
 - :func:`decode_cf_times` -- turn a netCDF time variable with CF ``units`` into
   ``datetime64[ns]`` sample times (CERES SSF).
 - :func:`decode_hours_of_day` -- turn a fractional-hour-of-day time variable (CERES
-  CLDPIX) into ``datetime64[ns]`` sample times given the granule's date.
+  CLDPIX) into ``datetime64[ns]`` sample times, each dated to the day nearest the
+  granule's start.
 - :func:`granule_time_coverage` -- read the span a granule covers from its
   ``time_coverage_start`` / ``time_coverage_end`` attributes.
 - :func:`neighbor_spacing_km` and :func:`scan_to_scan_spacing_km` -- measure a swath's
@@ -90,6 +92,45 @@ def field_fill_value(variable: netCDF4.Variable, *, source: str) -> float | int:
             "from the file; stage the granule as distributed, which carries one on every field."
         )
     return np.asarray(variable.getncattr("_FillValue")).item()
+
+
+def field_valid_range(variable: netCDF4.Variable, *, source: str) -> tuple[float, float]:
+    """Return a field's own ``valid_range`` attribute.
+
+    Readers take each field's valid range from the file rather than hard-coding one, so
+    a range the producer revises is applied as distributed. The pair is returned in the
+    file's order; :func:`apply_fill_and_valid_range` accepts a descending range such as
+    CLDPIX ``Eff_Cld_Pressure``'s ``[1100, 10]``.
+
+    Parameters
+    ----------
+    variable : netCDF4.Variable
+        The field being read.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    tuple[float, float]
+        The two ``valid_range`` values, as floats.
+
+    Raises
+    ------
+    ValueError
+        If the field has no ``valid_range`` attribute, or it does not hold two values.
+    """
+    if "valid_range" not in variable.ncattrs():
+        raise ValueError(
+            f"{source}: {variable.name} has no valid_range attribute. The reader takes each field's valid range "
+            "from the file; stage the granule as distributed, which carries one on every field."
+        )
+    values = np.ravel(variable.getncattr("valid_range"))
+    if values.size != 2:
+        raise ValueError(
+            f"{source}: {variable.name} declares valid_range {values.tolist()!r}, which is not a (low, high) pair. "
+            "Stage the granule as distributed, or update the reader for this product version."
+        )
+    return float(values[0]), float(values[1])
 
 
 def apply_fill_and_valid_range(
@@ -225,19 +266,24 @@ def decode_cf_times(variable: Any, *, source: str) -> np.ndarray:
     return times
 
 
-def decode_hours_of_day(variable: Any, day: np.datetime64, *, source: str) -> np.ndarray:
-    """Decode a time variable holding fractional UTC hours of ``day`` into ``datetime64[ns]``.
+def decode_hours_of_day(variable: Any, reference: np.datetime64, *, source: str) -> np.ndarray:
+    """Decode a time variable holding fractional UTC hours of the day into ``datetime64[ns]``.
 
     CERES CLDPIX stores ``Observation_Time`` this way (units ``hours``, valid range
     0 to 24), with the date only in the granule's ``time_coverage_start`` attribute.
+    Each hour is dated to the day that puts it nearest ``reference``: a granule
+    starting just after midnight can hold scanlines from just before it (stored as
+    about 23.9999 h), and one starting just before midnight can hold scanlines from
+    just after it.
 
     Parameters
     ----------
     variable : netCDF4.Variable
         The fractional-hour variable. Entries equal to its ``_FillValue`` or outside
         its ``valid_range`` decode to ``NaT``.
-    day : np.datetime64
-        The UTC day the hours count from (midnight is hour 0).
+    reference : np.datetime64
+        The instant the hours are dated against, the granule's ``time_coverage_start``.
+        Each decoded time lies within 12 h of it.
     source : str
         Name used in error messages (reader key and variable path).
 
@@ -256,9 +302,14 @@ def decode_hours_of_day(variable: Any, day: np.datetime64, *, source: str) -> np
         raise ValueError(f"{source}: expected a time variable in fractional hours of the day, found units {units!r}.")
     data, mask = _raw_and_mask(variable)
     invalid = _invalid_time_mask(variable, data, mask)
-    midnight = np.datetime64(day, "D").astype("datetime64[ns]")
+    reference = np.datetime64(reference, "ns")
+    midnight = reference.astype("datetime64[D]").astype("datetime64[ns]")
     hours = np.where(invalid, 0.0, data).astype(np.float64)
     times = midnight + np.round(hours * 3.6e12).astype("timedelta64[ns]")
+    half_day = np.timedelta64(12, "h")
+    one_day = np.timedelta64(1, "D")
+    times = np.where(times - reference > half_day, times - one_day, times)
+    times = np.where(reference - times > half_day, times + one_day, times)
     if np.any(invalid):
         times = times.copy()
         times[invalid] = np.datetime64("NaT")

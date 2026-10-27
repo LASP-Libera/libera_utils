@@ -73,6 +73,7 @@ from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_cf_times,
     field_fill_value,
+    field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
     normalize_longitude,
@@ -102,9 +103,18 @@ _CLOUD_LAYER_INDEX: int = 0
 _CLOUD_LAYER_LOWER_INDEX: int = 0
 _CLOUD_LAYER_UPPER_INDEX: int = 1
 
+# Dimensions of the source variables, as found in the CER_SSF_NOAA20-FM6-VIIRS alpha4
+# granules. The reader checks each variable against these before indexing its second axis.
+_FOOTPRINT_DIMS: tuple[str, ...] = ("Footprints",)
+_LAYER_DIMS: tuple[str, ...] = ("Footprints", "LowerUpper")
+_AERO_TYPE_DIMS: tuple[str, ...] = ("Footprints", "AeroTypePct")
+
 
 class _SSFField(NamedTuple):
     """Mapping from an output variable to its source location and decoding rules.
+
+    Each field's fill value and valid range are read from the file's own
+    ``_FillValue`` and ``valid_range`` attributes.
 
     Attributes
     ----------
@@ -116,13 +126,13 @@ class _SSFField(NamedTuple):
         Source variable name within ``group``.
     aggregation : str
         PSF aggregation strategy for the emitted spec.
-    valid_range : tuple of (float, float) or None
-        Inclusive valid range; values outside become NaN.
+    dimensions : tuple[str, ...]
+        The source variable's dimensions; a granule whose variable has other
+        dimensions is rejected.
     layer_index : int or None
-        For 2-D ``(Footprints, <second axis>)`` variables, the index to select
-        along the second axis. Despite the name it is not limited to the
-        ``LowerUpper`` layer axis -- it also selects an ``AeroTypePct`` type, since
-        all are read as ``raw[:, layer_index]``. ``None`` for 1-D ``(Footprints,)``
+        For 2-D variables, the index to select along the second of ``dimensions``.
+        Despite the name it is not limited to the ``LowerUpper`` layer axis -- it
+        also selects an ``AeroTypePct`` type. ``None`` for 1-D ``(Footprints,)``
         variables.
     n_categories : int or None
         Category count for categorical variables; ``None`` for continuous variables
@@ -142,7 +152,7 @@ class _SSFField(NamedTuple):
     group: str
     var: str
     aggregation: str
-    valid_range: tuple[float, float] | None
+    dimensions: tuple[str, ...]
     layer_index: int | None
     n_categories: int | None
     required_mode: OperationalMode = OperationalMode.IMAGER_FLASH
@@ -156,7 +166,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Auxillary_Properties",
         "aerosol_optical_depth",
         "weighted_log_mean",
-        (0.0, 8.0),
+        _FOOTPRINT_DIMS,
         None,
         None,
     ),
@@ -165,7 +175,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Clear_Footprint_Area",
         "clear_coverage",
         "weighted_mean",
-        (0.0, 100.0),
+        _FOOTPRINT_DIMS,
         None,
         None,
     ),
@@ -174,7 +184,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
         "weighted_log_mean",
-        (0.0, 512.0),
+        _LAYER_DIMS,
         _CLOUD_LAYER_INDEX,
         None,
     ),
@@ -188,7 +198,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
-        (2.0, 60.0),
+        _LAYER_DIMS,
         _CLOUD_LAYER_INDEX,
         None,
     ),
@@ -197,7 +207,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
-        (5.0, 90.0),
+        _LAYER_DIMS,
         _CLOUD_LAYER_INDEX,
         None,
     ),
@@ -206,7 +216,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Scene_Type",
         "cloud_classification",
         "weighted_mode",
-        (0.0, 32766.0),
+        _FOOTPRINT_DIMS,
         None,
         None,
     ),
@@ -215,11 +225,11 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "Scene_Type",
         "shortwave_adm_type",
         "weighted_mode",
-        (0.0, 5000.0),
+        _FOOTPRINT_DIMS,
         None,
         None,
     ),
-    _SSFField("longwave_adm_type", "Scene_Type", "longwave_adm_type", "weighted_mode", (0.0, 5000.0), None, None),
+    _SSFField("longwave_adm_type", "Scene_Type", "longwave_adm_type", "weighted_mode", _FOOTPRINT_DIMS, None, None),
 )
 
 
@@ -248,11 +258,9 @@ _BOTH_LAYERS: tuple[tuple[str, int | None], ...] = (
 )
 _UPPER_LAYER_ONLY: tuple[tuple[str, int | None], ...] = (("upper", _CLOUD_LAYER_UPPER_INDEX),)
 
-# (out_base, group, var, aggregation, valid_range, members). ``members`` is a tuple of
+# (out_base, group, var, aggregation, dimensions, members). ``members`` is a tuple of
 # (name_suffix, second_axis_index) pairs; the flattener emits one _SSFField per member.
-_IMAGER_SSF_SOURCES: tuple[
-    tuple[str, str, str, str, tuple[float, float] | None, tuple[tuple[str, int | None], ...]], ...
-] = (
+_IMAGER_SSF_SOURCES: tuple[tuple[str, str, str, str, tuple[str, ...], tuple[tuple[str, int | None], ...]], ...] = (
     # --- Cloud layer fields (Cloudy_Imager_Footprint_Layer), (Footprints, LowerUpper) ---
     # Five genuinely-new layered fields: both lower and upper layers.
     (
@@ -260,7 +268,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "layers_coverages",
         "weighted_mean",
-        (0.0, 100.0),
+        _LAYER_DIMS,
         _BOTH_LAYERS,
     ),
     (
@@ -268,7 +276,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "cloud_coverage_multilayer",
         "weighted_mean",
-        (0.0, 100.0),
+        _LAYER_DIMS,
         _BOTH_LAYERS,
     ),
     (
@@ -276,7 +284,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "cloud_top_pressure_mean",
         "weighted_mean",
-        (0.0, 1100.0),
+        _LAYER_DIMS,
         _BOTH_LAYERS,
     ),
     (
@@ -284,7 +292,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "cloud_base_pressure_mean",
         "weighted_mean",
-        (0.0, 1100.0),
+        _LAYER_DIMS,
         _BOTH_LAYERS,
     ),
     (
@@ -292,20 +300,19 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "cloud_particle_phase_37um_mean",
         "weighted_mean",
-        (1.0, 2.0),
+        _LAYER_DIMS,
         _BOTH_LAYERS,
     ),
     # Three fields whose LOWER layer is already carried by the base specs above
     # (cloud_optical_depth_lower / cloud_water_particle_radius_lower /
     # cloud_ice_particle_radius_lower); add only the UPPER layer here to avoid a
-    # redundant lower duplicate. Valid ranges match the base specs so lower/upper
-    # stay consistent.
+    # redundant lower duplicate.
     (
         "cloud_optical_depth",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
         "weighted_log_mean",
-        (0.0, 512.0),
+        _LAYER_DIMS,
         _UPPER_LAYER_ONLY,
     ),
     (
@@ -313,7 +320,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
-        (2.0, 60.0),
+        _LAYER_DIMS,
         _UPPER_LAYER_ONLY,
     ),
     (
@@ -321,11 +328,11 @@ _IMAGER_SSF_SOURCES: tuple[
         "Cloudy_Imager_Footprint_Layer",
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
-        (5.0, 90.0),
+        _LAYER_DIMS,
         _UPPER_LAYER_ONLY,
     ),
     # --- Aerosol fields ---
-    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", (0.0, 8.0), _SCALAR_MEMBER),
+    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
     # aerosol_type_percentage is (Footprints, AeroTypePct=7). The seven type labels are
     # not recorded in the file; flattened to placeholder _type0.._type6 suffixes.
     (
@@ -333,7 +340,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Assimilated_Aerosol_Properties",
         "aerosol_type_percentage",
         "weighted_mean",
-        (0.0, 100.0),
+        _AERO_TYPE_DIMS,
         tuple((f"type{i}", i) for i in range(7)),
     ),
     (
@@ -341,7 +348,7 @@ _IMAGER_SSF_SOURCES: tuple[
         "Imager_Land_Aerosols",
         "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
         "weighted_log_mean",
-        (0.0, 5.0),
+        _FOOTPRINT_DIMS,
         _SCALAR_MEMBER,
     ),
     (
@@ -349,22 +356,21 @@ _IMAGER_SSF_SOURCES: tuple[
         "Imager_Ocean_Aerosols",
         "imager_deep_blue_ocean_055um_aerosol_optical_depth",
         "weighted_log_mean",
-        (0.0, 5.0),
+        _FOOTPRINT_DIMS,
         _SCALAR_MEMBER,
     ),
     # --- Surface field (1-D, footprint only) ---
     # Auxillary_Properties/surface_albedo is a single 1-D (Footprints,) broadband value
-    # (file long_name "Surface Albedo"; valid_range 0..1, a fraction — no units attr).
-    ("surface_albedo", "Auxillary_Properties", "surface_albedo", "weighted_mean", (0.0, 1.0), _SCALAR_MEMBER),
+    # (file long_name "Surface Albedo"; a fraction — no units attr).
+    ("surface_albedo", "Auxillary_Properties", "surface_albedo", "weighted_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
     # --- TOA flux field (1-D, footprint only) ---
-    # Observed_TOA_Fluxes/toa_incoming_solar_radiation (file units "W/m^2";
-    # valid_range 0..1400).
+    # Observed_TOA_Fluxes/toa_incoming_solar_radiation (file units "W/m^2").
     (
         "toa_incoming_solar_radiation",
         "Observed_TOA_Fluxes",
         "toa_incoming_solar_radiation",
         "weighted_mean",
-        (0.0, 1400.0),
+        _FOOTPRINT_DIMS,
         _SCALAR_MEMBER,
     ),
 )
@@ -383,7 +389,7 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
         One field per emitted output variable, in source-then-member order.
     """
     fields: list[_SSFField] = []
-    for out_base, group, var, aggregation, valid_range, members in _IMAGER_SSF_SOURCES:
+    for out_base, group, var, aggregation, dimensions, members in _IMAGER_SSF_SOURCES:
         for suffix, index in members:
             out_name = f"{out_base}_{suffix}" if suffix else out_base
             fields.append(
@@ -392,7 +398,7 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
                     group,
                     var,
                     aggregation,
-                    valid_range,
+                    dimensions,
                     index,
                     None,
                     OperationalMode.IMAGER,
@@ -408,6 +414,44 @@ _SSF_IMAGER_ONLY_FIELDS: tuple[_SSFField, ...] = _build_imager_only_ssf_fields()
 # Every SSF field read: the base fields, then the FMATCH-IMAGER-only fields.
 # _load_granule stacks value rows in this order, matching VARIABLES.
 _SSF_FIELDS: tuple[_SSFField, ...] = _SSF_BASE_FIELDS + _SSF_IMAGER_ONLY_FIELDS
+
+
+def _ssf_variable(ds: netCDF4.Dataset, group: str, name: str, *, source: str) -> netCDF4.Variable:
+    """Return ``group/name`` from an open SSF granule, rejecting a granule laid out otherwise.
+
+    Parameters
+    ----------
+    ds : netCDF4.Dataset
+        The open granule.
+    group : str
+        Group holding the variable.
+    name : str
+        Variable name within ``group``.
+    source : str
+        Name used in the error message (reader key and file).
+
+    Returns
+    -------
+    netCDF4.Variable
+        The variable.
+
+    Raises
+    ------
+    ValueError
+        If the granule has no such group, or the group has no such variable.
+    """
+    missing = None
+    if group not in ds.groups:
+        missing = f"group {group!r}"
+    elif name not in ds.groups[group].variables:
+        missing = f"variable {group}/{name}"
+    if missing is not None:
+        raise ValueError(
+            f"{source}: no {missing} in this granule (product_version "
+            f"{getattr(ds, 'product_version', None)!r}). Stage a CER_SSF granule in the layout this reader reads, "
+            "or update the reader's SSF field table for this product version."
+        )
+    return ds.groups[group].variables[name]
 
 
 class SSFReader(PassReader):
@@ -484,8 +528,10 @@ class SSFReader(PassReader):
         ValueError
             If the granule's time variable cannot be decoded (see
             :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`),
-            if its footprint latitude is not in ``degrees_north``, or if a field read
-            has no ``_FillValue`` attribute.
+            if its footprint latitude is not in ``degrees_north``, if a group or
+            variable read is missing, if a field's dimensions differ from the ones the
+            reader expects, or if a field read has no ``_FillValue`` or
+            ``valid_range`` attribute.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
@@ -495,8 +541,7 @@ class SSFReader(PassReader):
             ds.set_auto_mask(False)
 
             source = f"ssf {path.name}"
-            tp = ds.groups[_TIME_POS_GROUP]
-            lat_var = tp.variables[_FOV_LAT_VAR]
+            lat_var = _ssf_variable(ds, _TIME_POS_GROUP, _FOV_LAT_VAR, source=source)
             lat_units = getattr(lat_var, "units", None)
             if lat_units != _LATITUDE_UNITS:
                 raise ValueError(
@@ -507,23 +552,38 @@ class SSFReader(PassReader):
             lats = apply_fill_and_valid_range(
                 lat_var[:], fill_value=field_fill_value(lat_var, source=source), valid_range=(-90.0, 90.0)
             )
-            lon_var = tp.variables[_FOV_LON_VAR]
+            lon_var = _ssf_variable(ds, _TIME_POS_GROUP, _FOV_LON_VAR, source=source)
             lons_raw = apply_fill_and_valid_range(
                 lon_var[:], fill_value=field_fill_value(lon_var, source=source), valid_range=(0.0, 360.0)
             )
             lons = normalize_longitude(lons_raw)
-            times = decode_cf_times(tp.variables[_TIME_VAR], source=f"{source} {_TIME_POS_GROUP}/{_TIME_VAR}")
-            sample_number = np.asarray(tp.variables[_SAMPLE_NUMBER_VAR][:])
+            times = decode_cf_times(
+                _ssf_variable(ds, _TIME_POS_GROUP, _TIME_VAR, source=source),
+                source=f"{source} {_TIME_POS_GROUP}/{_TIME_VAR}",
+            )
+            sample_number = np.asarray(_ssf_variable(ds, _TIME_POS_GROUP, _SAMPLE_NUMBER_VAR, source=source)[:])
 
             value_rows: list[np.ndarray] = []
             for f in _SSF_FIELDS:
-                var = ds.groups[f.group].variables[f.var]
-                fill_value = field_fill_value(var, source=source)
+                var = _ssf_variable(ds, f.group, f.var, source=source)
+                if tuple(var.dimensions) != f.dimensions:
+                    raise ValueError(
+                        f"{source}: {f.group}/{f.var} (read as {f.out_name}) has dimensions {tuple(var.dimensions)}, "
+                        f"but this reader expects {f.dimensions} (product_version "
+                        f"{getattr(ds, 'product_version', None)!r}). Stage a CER_SSF granule in the layout this "
+                        "reader reads, or update the reader's SSF field table for this product version."
+                    )
                 raw = var[:]
                 if f.layer_index is not None:
-                    # 2-D (Footprints, LowerUpper) -- pick one layer.
+                    # 2-D (Footprints, <second axis>) -- pick one layer or type.
                     raw = raw[:, f.layer_index]
-                value_rows.append(apply_fill_and_valid_range(raw, fill_value=fill_value, valid_range=f.valid_range))
+                value_rows.append(
+                    apply_fill_and_valid_range(
+                        raw,
+                        fill_value=field_fill_value(var, source=source),
+                        valid_range=field_valid_range(var, source=source),
+                    )
+                )
 
         return PointSamples(
             lats=lats,

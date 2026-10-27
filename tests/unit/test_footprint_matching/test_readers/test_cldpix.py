@@ -13,7 +13,7 @@ Real CLDPIX files come from NASA CERES, e.g.
 import numpy as np
 import pytest
 
-from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader
+from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader, _bad_data_flags
 from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
 from tests.test_data.footprint_matching.fixtures import SWATH_FIXTURE_TIME, make_cldpix_fixture
 
@@ -223,19 +223,80 @@ class TestCLDPIXReaderSamples:
         assert reader.samples_in(_BBOX, _T).n_samples == 0
 
     def test_top_cloud_height_fill_is_dropped(self, tmp_path):
-        """``CLDPIXReader`` masks the float32 fill sentinel in ``Top_Cld_Height``, the one field with no valid range.
+        """``CLDPIXReader`` masks the float32 fill sentinel in ``Top_Cld_Height`` by its ``_FillValue``.
 
-        With no ``valid_range`` the fill test alone must catch the sentinel 3.4028235e38; if the stored float32 fill
-        and the declared value compare unequal, the sentinel would be published as a cloud top height of ~3.4e38 km.
+        If the stored float32 fill and the declared value compared unequal, the sentinel 3.4028235e38 would be
+        published as a cloud top height of ~3.4e38 km.
 
-        Builds the fixture with one ``Top_Cld_Height`` pixel at the fill and the rest at 6.0 km, and asserts some
-        height is finite and every finite one is 6.0.
+        Builds the fixture with one ``Top_Cld_Height`` pixel at the fill and the rest at 6.0 km, widens the field's
+        ``valid_range`` to include the sentinel so only the fill check can drop it, and asserts some height is finite
+        and every finite one is 6.0.
         """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
+        import netCDF4
+
+        path = make_cldpix_fixture(tmp_path)
+        with netCDF4.Dataset(str(path), "r+") as ds:
+            ds.variables["Top_Cld_Height"].valid_range = np.array([0.0, 3.4028235e38], dtype=np.float32)
+        reader = CLDPIXReader(path)
         data = _values(reader, _BBOX)
         heights = _finite(data, "cloud_top_height")
         assert heights.size > 0
         assert np.allclose(heights, 6.0, atol=1e-3)
+
+    @pytest.mark.parametrize(
+        ("var", "out_name", "value", "kept"),
+        [
+            # Inside the file's [2, 78] µm.
+            ("Cld_Radius", "cloud_particle_radius", 70.0, True),
+            # Outside the file's [0, 18] km.
+            ("Top_Cld_Height", "cloud_top_height", 20.0, False),
+        ],
+    )
+    def test_valid_range_comes_from_the_file(self, tmp_path, var, out_name, value, kept):
+        """``CLDPIXReader`` range-checks each field with the ``valid_range`` the file declares.
+
+        A hard-coded range that differs from the file silently drops valid retrievals or publishes invalid ones; the
+        real granules declare ``Cld_Radius`` [2, 78] µm and ``Top_Cld_Height`` [0, 18] km.
+
+        Parametrized over a 70 µm radius (inside the file's range) and a 20 km top height (outside it); writes the
+        value into every pixel of the fixture and asserts all 12 are served or none is.
+        """
+        import netCDF4
+
+        path = make_cldpix_fixture(tmp_path)
+        with netCDF4.Dataset(str(path), "r+") as ds:
+            ds.variables[var][:] = np.float32(value)
+        served = _finite(_values(CLDPIXReader(path)), out_name)
+        if kept:
+            assert served.size == 12
+            assert np.allclose(served, value)
+        else:
+            assert served.size == 0
+
+    @pytest.mark.parametrize(
+        ("var", "out_name", "bad_code", "kept_code"),
+        [("Cloud_Particle_Phase", "cloud_particle_phase", 5, 4), ("CERES_Cloud_Mask", "cloud_mask", 3, 2)],
+    )
+    def test_bad_data_codes_do_not_vote(self, tmp_path, var, out_name, bad_code, kept_code):
+        """``CLDPIXReader`` drops the categorical codes the file's ``flag_meanings`` label bad data.
+
+        Phase 5 (``bad_data``) and mask 3 (``Bad_data``) carry no retrieval; served as categories, a footprint of mostly
+        bad pixels would publish "bad data" as its mode. Mask 2 (``TBD``) is not labelled bad data and is kept.
+
+        Parametrized over phase and mask; sets four pixels to the bad-data code and four to another code, and asserts
+        the bad-data code is never served while the other is served on its four pixels.
+        """
+        import netCDF4
+
+        path = make_cldpix_fixture(tmp_path)
+        with netCDF4.Dataset(str(path), "r+") as ds:
+            codes = np.full((3, 4), 1, dtype=np.int8)
+            codes[0, :] = bad_code
+            codes[1, :] = kept_code
+            ds.variables[var][:] = codes
+        served = _finite(_values(CLDPIXReader(path)), out_name)
+        assert not np.any(served == bad_code)
+        assert np.count_nonzero(served == kept_code) == 4
 
 
 class TestCLDPIXReaderTimeMatching:
@@ -344,6 +405,55 @@ class TestCLDPIXReaderGranuleDate:
         assert samples.n_samples == 12
         assert np.all(samples.times == next_day)
 
+    def test_scanline_before_midnight_keeps_its_day(self, tmp_path):
+        """``CLDPIXReader`` dates a scanline observed just before midnight to that day in a granule starting after it.
+
+        The real granules' first scanlines precede ``time_coverage_start`` by about two seconds; in a 00 UTC granule
+        such a line is stored as ~23.9999 h, and dated by the start's calendar day it would land 24 h late and drop
+        out of the nearest pass.
+
+        Builds a granule with scanlines at 23:59:59.6 the previous day and 00:00:10, 00:00:20 with
+        ``time_coverage_start`` 00:00:01.4, queries at 23:59:59.6 and asserts that scanline's four pixels are served at
+        that time (to float32 resolution).
+        """
+        midnight = np.datetime64("2026-01-02T00:00:00", "ns")
+        before = midnight - np.timedelta64(400, "ms")
+        times = np.array([before, midnight + np.timedelta64(10, "s"), midnight + np.timedelta64(20, "s")])
+        path = make_cldpix_fixture(tmp_path, times=times, time_coverage_start=midnight + np.timedelta64(1400, "ms"))
+        samples = CLDPIXReader(path).samples_in(_BBOX, before)
+        early = samples.times[samples.times < midnight]
+        assert early.size == 4
+        assert np.all(np.abs(early - before) < np.timedelta64(10, "ms"))
+
+
+class TestCLDPIXReaderTimeShape:
+    def test_one_time_per_scanline_is_broadcast(self, tmp_path):
+        """``CLDPIXReader`` serves a per-scanline ``Observation_Time`` as each pixel of the line at the line's time.
+
+        A granule may store one time per scanline rather than per pixel; misaligned broadcasting would give pixels
+        another line's time.
+
+        Builds the fixture with a 1-D ``(Scanlines,)`` time, scanlines 0, 15 and 30 s after the fixture time, and
+        asserts the 12 served times are each line's time four times over (to float32 resolution).
+        """
+        times = _T + np.array([0, 15, 30], dtype="timedelta64[s]").astype("timedelta64[ns]")
+        path = make_cldpix_fixture(tmp_path, times=times, time_dims=("Scanlines",))
+        samples = CLDPIXReader(path).samples_in(_BBOX, _T)
+        assert samples.n_samples == 12
+        assert np.all(np.abs(np.sort(samples.times) - np.repeat(times, 4)) < np.timedelta64(10, "ms"))
+
+    def test_time_of_another_shape_raises(self, tmp_path):
+        """``CLDPIXReader`` raises ``ValueError`` when ``Observation_Time`` is neither per scanline nor per pixel.
+
+        A time variable of another shape cannot be attributed to pixels, and guessing would date every pixel wrongly.
+
+        Builds the fixture with a 4-long ``(Pixels,)`` time against the 3 x 4 swath and asserts ``samples_in`` raises
+        ``ValueError`` matching "expected one time per scanline or per pixel".
+        """
+        path = make_cldpix_fixture(tmp_path, time_dims=("Pixels",))
+        with pytest.raises(ValueError, match="expected one time per scanline or per pixel"):
+            CLDPIXReader(path).samples_in(_BBOX, _T)
+
 
 class TestCLDPIXReaderGeolocationChecks:
     def test_latitude_valid_range_other_than_colatitude_raises(self, tmp_path):
@@ -386,3 +496,93 @@ class TestCLDPIXReaderGeolocationChecks:
         path = make_cldpix_fixture(tmp_path, omit_fill_value=(name,))
         with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
             CLDPIXReader(path).samples_in(_BBOX, _T)
+
+    @pytest.mark.parametrize("name", ["Eff_Cld_Optical_Depth", "Top_Cld_Height", "Cloud_Particle_Phase"])
+    def test_field_without_valid_range_raises(self, tmp_path, name):
+        """``CLDPIXReader`` raises ``ValueError`` when a field it reads has no ``valid_range`` attribute.
+
+        The reader takes each field's valid range from the file; with none declared it cannot tell a retrieval from
+        an out-of-range value, and guessing one could silently drop or keep the wrong values.
+
+        Parametrized over two continuous fields and a categorical one; writes the fixture without that field's range
+        and asserts ``samples_in`` raises ``ValueError`` matching "<name> has no valid_range attribute".
+        """
+        path = make_cldpix_fixture(tmp_path, omit_valid_range=(name,))
+        with pytest.raises(ValueError, match=f"{name} has no valid_range attribute"):
+            CLDPIXReader(path).samples_in(_BBOX, _T)
+
+    @pytest.mark.parametrize("name", ["Cloud_Particle_Phase", "CERES_Cloud_Mask"])
+    def test_categorical_field_without_flags_raises(self, tmp_path, name):
+        """``CLDPIXReader`` raises ``ValueError`` when a categorical field has no ``flag_values`` / ``flag_meanings``.
+
+        The reader drops the codes the file labels bad data; without the labels it cannot tell which those are, and a
+        bad-data code would vote in the mode.
+
+        Parametrized over phase and mask; writes the fixture without that field's flags and asserts ``samples_in``
+        raises ``ValueError`` matching "<name> has no flag_values / flag_meanings".
+        """
+        path = make_cldpix_fixture(tmp_path, omit_flags=(name,))
+        with pytest.raises(ValueError, match=f"{name} has no flag_values / flag_meanings"):
+            CLDPIXReader(path).samples_in(_BBOX, _T)
+
+
+class TestBadDataFlags:
+    @staticmethod
+    def _variable(tmp_path, flag_values, flag_meanings):
+        import netCDF4
+
+        ds = netCDF4.Dataset(str(tmp_path / "flags.nc"), "w")
+        ds.createDimension("n", 2)
+        var = ds.createVariable("phase", np.int8, ("n",))
+        if flag_values is not None:
+            var.flag_values = np.array(flag_values, dtype=np.int8)
+        if flag_meanings is not None:
+            var.flag_meanings = flag_meanings
+        return ds, var
+
+    @pytest.mark.parametrize(
+        ("flag_values", "flag_meanings", "expected"),
+        [
+            ([1, 2, 3, 4, 5], "water_cloud ice_cloud no_cloud_retrieval clear bad_data", (5,)),
+            ([0, 1, 2, 3], "clear cloud TBD Bad_data", (3,)),
+            ([0, 1], "clear cloud", ()),
+        ],
+    )
+    def test_returns_the_values_labelled_bad_data(self, tmp_path, flag_values, flag_meanings, expected):
+        """``_bad_data_flags`` returns the flag values whose ``flag_meanings`` entry is ``bad_data``, any case.
+
+        A pixel flagged bad data carries no retrieval; counted as a category, a footprint of mostly bad pixels would
+        publish "bad data" as its cloud phase or mask.
+
+        Parametrized over the real CLDPIX phase flags (5 is ``bad_data``), mask flags (3 is ``Bad_data``, 2 ``TBD`` is
+        kept) and a field labelling none; asserts the returned tuple.
+        """
+        ds, var = self._variable(tmp_path, flag_values, flag_meanings)
+        try:
+            assert _bad_data_flags(var, source="test") == expected
+        finally:
+            ds.close()
+
+    @pytest.mark.parametrize(
+        ("flag_values", "flag_meanings", "match"),
+        [
+            (None, "clear cloud", "no flag_values / flag_meanings"),
+            ([0, 1], None, "no flag_values / flag_meanings"),
+            ([0, 1, 2], "clear cloud", "3 flag_values but 2 flag_meanings"),
+        ],
+    )
+    def test_missing_or_mismatched_flags_raise(self, tmp_path, flag_values, flag_meanings, match):
+        """``_bad_data_flags`` raises ``ValueError`` when the flag attributes are absent or disagree in length.
+
+        Without both lists the reader cannot tell which codes are bad data, and a mismatched pair would label the
+        wrong code.
+
+        Parametrized over a field missing ``flag_values``, one missing ``flag_meanings`` and one listing three values
+        against two meanings; asserts a ``ValueError`` saying which.
+        """
+        ds, var = self._variable(tmp_path, flag_values, flag_meanings)
+        try:
+            with pytest.raises(ValueError, match=match):
+                _bad_data_flags(var, source="test")
+        finally:
+            ds.close()

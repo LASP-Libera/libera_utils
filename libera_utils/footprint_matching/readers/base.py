@@ -107,6 +107,24 @@ def split_dateline(bbox: BoundingBox) -> list[BoundingBox]:
     return [west, east]
 
 
+def in_box(lats: np.ndarray, lons: np.ndarray, bbox: BoundingBox) -> np.ndarray:
+    """Mask of the points inside a plain (non-wrapping) box, edges included.
+
+    Parameters
+    ----------
+    lats, lons : np.ndarray
+        Point coordinates in degrees, longitude in -180..180, of the same shape.
+    bbox : BoundingBox
+        A plain box, such as one half from :func:`split_dateline`.
+
+    Returns
+    -------
+    np.ndarray
+        Boolean array the shape of ``lats``, true where the point lies inside ``bbox``.
+    """
+    return (lats >= bbox.lat_min) & (lats <= bbox.lat_max) & (lons >= bbox.lon_min) & (lons <= bbox.lon_max)
+
+
 class _PointIndex:
     """A point cloud sorted into bins of :data:`POINT_INDEX_BIN_DEG` degrees for bounding-box queries.
 
@@ -189,10 +207,7 @@ class _PointIndex:
         if not ranges:
             return np.empty(0, dtype=np.int64)
         candidates = np.concatenate(ranges)
-        lats = self.lats[candidates]
-        lons = self.lons[candidates]
-        inside = (lats >= bbox.lat_min) & (lats <= bbox.lat_max) & (lons >= bbox.lon_min) & (lons <= bbox.lon_max)
-        return candidates[inside]
+        return candidates[in_box(self.lats[candidates], self.lons[candidates], bbox)]
 
 
 @runtime_checkable
@@ -475,7 +490,10 @@ class AncillaryReader(abc.ABC):
                     "with a times array, or a box-queried native whose query_box returns times."
                 )
             if times.size:
-                keep = self._nearest_pass_mask(times, time)
+                inside = np.zeros(times.shape, dtype=bool)
+                for part in split_dateline(bbox):
+                    inside |= in_box(lats, lons, part)
+                keep = self._nearest_pass_mask(times, time, inside)
                 lats, lons, values, times = lats[keep], lons[keep], values[:, keep], times[keep]
 
         return SampleSet(
@@ -545,18 +563,22 @@ class AncillaryReader(abc.ABC):
             lon_min, lon_max, wraps = bbox.lon_min - lon_pad + 360.0, bbox.lon_max + lon_pad + 360.0, True
         return BoundingBox(lat_min, lat_max, lon_min, lon_max, wraps, bbox.is_polar, bbox.truncated)
 
-    def _nearest_pass_mask(self, times: np.ndarray, time: np.datetime64) -> np.ndarray:
+    def _nearest_pass_mask(self, times: np.ndarray, time: np.datetime64, inside: np.ndarray) -> np.ndarray:
         """Boolean mask of the samples that belong to the pass nearest ``time``.
 
-        The nearest pass is every sample within ``PASS_WINDOW`` of the smallest
-        ``|sample time - footprint time|``. When that smallest offset exceeds
-        ``MAX_TIME_OFFSET`` no sample is kept.
+        The nearest pass is every sample, padding included, within ``PASS_WINDOW`` of
+        the smallest ``|sample time - footprint time|`` among the samples ``inside`` the
+        footprint's own (unpadded) box, so a pass that only clips the padding, where
+        the PSF weight is zero, cannot displace one that covers the footprint. When no
+        sample lies inside the box (a footprint smaller than one native cell), the
+        smallest offset is taken over every served sample. When that smallest offset
+        exceeds ``MAX_TIME_OFFSET`` no sample is kept.
         """
         offsets = np.abs(times - time)
-        nearest = offsets.min()
+        nearest = offsets[inside].min() if inside.any() else offsets.min()
         if nearest > self.MAX_TIME_OFFSET:
             return np.zeros(times.shape, dtype=bool)
-        return offsets <= nearest + self.PASS_WINDOW
+        return np.abs(offsets - nearest) <= self.PASS_WINDOW
 
     def _box_samples(
         self, native: _Native, bbox: BoundingBox
@@ -777,7 +799,8 @@ class PassReader(AncillaryReader):
     time order, so the window slides forward and each granule is loaded once.
 
     The nearest-pass selection then runs over every sample the loaded granules hold in
-    the box, so a pass is found whichever granule it falls in.
+    the box, so a pass is found whichever granule it falls in. The pass is chosen from
+    the samples inside the footprint's own box and then served across the padded box.
     """
 
     TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS

@@ -819,12 +819,16 @@ def make_ssf_fixture(
     longwave_adm_type: np.ndarray | None = None,
     latitude_units: str | None = "degrees_north",
     omit_fill_value: tuple[str, ...] = (),
+    omit_valid_range: tuple[str, ...] = (),
+    omit_variables: tuple[tuple[str, str], ...] = (),
+    layer_dim_name: str = "LowerUpper",
 ) -> Path:
     """Write a synthetic CERES SSF (footprint/swath) NetCDF4 file.
 
     Replicates the grouped, per-footprint structure of the real SSF product:
     - 1-D ``Footprints`` dimension, a ``LowerUpper`` dimension of length 2, and the
-      ``AeroTypePct`` (7) secondary axis the reader flattens
+      ``AeroTypePct`` (7) secondary axis the reader flattens, with
+      ``product_version = "alpha4"``
     - ``Time_and_Position/instrument_fov_latitude`` and ``..._longitude``
       (**longitude stored in the 0..360 convention**, matching the real file), and
       ``Time_and_Position/time``, the per-footprint observation time encoded with
@@ -870,6 +874,14 @@ def make_ssf_fixture(
         Default ``"degrees_north"``, as the real product declares.
     omit_fill_value : tuple of str, optional
         Names of 1-D variables written without a ``_FillValue`` attribute.
+    omit_valid_range : tuple of str, optional
+        Names of variables written without a ``valid_range`` attribute.
+    omit_variables : tuple of (str, str), optional
+        ``(group, variable)`` pairs left out of the file. A group whose every
+        variable is left out is not written.
+    layer_dim_name : str, optional
+        Name of the layered fields' second dimension. Default ``"LowerUpper"``, as
+        the alpha4 product names it.
 
     Returns
     -------
@@ -914,12 +926,24 @@ def make_ssf_fixture(
 
     out_path = tmp_path / "cer_ssf_fixture.nc"
 
+    def _create(grp, name, dtype, dims, fill):
+        """Create ``grp/name``, making the group on first use; ``None`` when the caller omits it."""
+        if (grp, name) in omit_variables:
+            return None
+        group = ds.groups[grp] if grp in ds.groups else ds.createGroup(grp)
+        return group.createVariable(name, dtype, dims, fill_value=fill)
+
+    def _set_valid_range(var, valid_range, dtype):
+        if valid_range is not None and var.name not in omit_valid_range:
+            var.valid_range = np.array(valid_range, dtype=dtype)
+
     def _add(grp, name, data, fill, valid_range=None):
         fill = False if name in omit_fill_value else fill
-        var = grp.createVariable(name, data.dtype, ("Footprints",), fill_value=fill)
+        var = _create(grp, name, data.dtype, ("Footprints",), fill)
+        if var is None:
+            return None
         var[:] = data
-        if valid_range is not None:
-            var.valid_range = np.array(valid_range, dtype=data.dtype)
+        _set_valid_range(var, valid_range, data.dtype)
         return var
 
     def _add_lower_upper(grp, name, lower_values, fill, valid_range=None, upper_values=None):
@@ -931,21 +955,23 @@ def make_ssf_fixture(
         unaffected; the extended cloud fields pass distinct upper values so tests
         can tell the two layers apart.
         """
-        var = grp.createVariable(name, "f4", ("Footprints", "LowerUpper"), fill_value=fill)
+        var = _create(grp, name, "f4", ("Footprints", layer_dim_name), fill)
+        if var is None:
+            return
         data = np.full((n, 2), fill, dtype=np.float32)
         data[:, 0] = lower_values.astype(np.float32)
         if upper_values is not None:
             data[:, 1] = upper_values.astype(np.float32)
         var[:] = data
-        if valid_range is not None:
-            var.valid_range = np.array(valid_range, dtype=np.float32)
+        _set_valid_range(var, valid_range, np.float32)
 
     def _add_2d(grp, name, values_2d, dim_name, fill, valid_range=None):
         """Write a 2-D (Footprints, <dim_name>) variable (e.g. AeroTypePct)."""
-        var = grp.createVariable(name, "f4", ("Footprints", dim_name), fill_value=fill)
+        var = _create(grp, name, "f4", ("Footprints", dim_name), fill)
+        if var is None:
+            return
         var[:] = values_2d.astype(np.float32)
-        if valid_range is not None:
-            var.valid_range = np.array(valid_range, dtype=np.float32)
+        _set_valid_range(var, valid_range, np.float32)
 
     # Deterministic per-footprint ramp used to fill the extended cloud/aerosol/albedo
     # source fields with distinct, assertable values (upper layer offset from lower).
@@ -953,31 +979,33 @@ def make_ssf_fixture(
 
     with netCDF4.Dataset(str(out_path), "w") as ds:
         ds.createDimension("Footprints", n)
-        ds.createDimension("LowerUpper", 2)
+        ds.createDimension(layer_dim_name, 2)
+        ds.product_version = "alpha4"
         # Secondary axis flattened by the reader into _typeN 1-D variables.
         ds.createDimension("AeroTypePct", 7)
 
-        tp = ds.createGroup("Time_and_Position")
+        tp = "Time_and_Position"
         lat_var = _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
-        if latitude_units is not None:
+        if latitude_units is not None and lat_var is not None:
             lat_var.units = latitude_units
         _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
-        time_var = tp.createVariable("time", np.float64, ("Footprints",))
-        time_var[:] = _seconds_since_fixture_epoch(times)
-        time_var.units = _SWATH_TIME_UNITS
+        time_var = _create(tp, "time", np.float64, ("Footprints",), None)
+        if time_var is not None:
+            time_var[:] = _seconds_since_fixture_epoch(times)
+            time_var.units = _SWATH_TIME_UNITS
         # One scan: footprints numbered 1..n along it, as the real product numbers them.
         _add(tp, "sample_number", (np.arange(n) % 660 + 1).astype(np.int16), fill_i, (1, 660))
         times_ns = np.asarray(times).astype("datetime64[ns]")
         ds.time_coverage_start = np.datetime_as_string(times_ns.min(), unit="us") + "Z"
         ds.time_coverage_end = np.datetime_as_string(times_ns.max(), unit="us") + "Z"
 
-        aux = ds.createGroup("Auxillary_Properties")
+        aux = "Auxillary_Properties"
         _add(aux, "aerosol_optical_depth", aerosol_optical_depth.astype(np.float32), fill_f, (0.0, 8.0))
 
-        clr = ds.createGroup("Clear_Footprint_Area")
+        clr = "Clear_Footprint_Area"
         _add(clr, "clear_coverage", clear_coverage.astype(np.float32), fill_f, (0.0, 100.0))
 
-        cif = ds.createGroup("Cloudy_Imager_Footprint_Layer")
+        cif = "Cloudy_Imager_Footprint_Layer"
         # The three fields whose lower layer feeds the base reader specs. Upper-layer
         # values (offset from lower) feed the FMATCH-IMAGER-only *_upper specs.
         _add_lower_upper(
@@ -995,7 +1023,7 @@ def make_ssf_fixture(
             "cloud_water_particle_radius_37um_mean",
             cloud_water_particle_radius_lower,
             fill_f,
-            (2.0, 60.0),
+            (0.0, 40.0),
             upper_values=cloud_water_particle_radius_lower + 1.0,
         )
         _add_lower_upper(
@@ -1003,7 +1031,7 @@ def make_ssf_fixture(
             "cloud_ice_particle_radius_37um_mean",
             cloud_ice_particle_radius_lower,
             fill_f,
-            (5.0, 90.0),
+            (0.0, 300.0),
             upper_values=cloud_ice_particle_radius_lower + 2.0,
         )
         # Five genuinely-new layered fields carried by FMATCH-IMAGER (both layers).
@@ -1028,19 +1056,19 @@ def make_ssf_fixture(
             cif, "cloud_particle_phase_37um_mean", 1.0 + ramp * 0.05, fill_f, (1.0, 2.0), upper_values=1.5 + ramp * 0.05
         )
 
-        scn = ds.createGroup("Scene_Type")
+        scn = "Scene_Type"
         _add(scn, "cloud_classification", cloud_classification.astype(np.int16), fill_i, (0, 32766))
         _add(scn, "shortwave_adm_type", shortwave_adm_type.astype(np.int16), fill_i, (0, 5000))
         _add(scn, "longwave_adm_type", longwave_adm_type.astype(np.int16), fill_i, (0, 5000))
 
         # FMATCH-IMAGER-only aerosol fields.
-        aap = ds.createGroup("Assimilated_Aerosol_Properties")
+        aap = "Assimilated_Aerosol_Properties"
         _add(aap, "match_aot", (0.15 + ramp * 0.1).astype(np.float32), fill_f, (0.0, 8.0))
         # (Footprints, AeroTypePct=7): type t gets (t+1)*5 + footprint index.
         aerosol_pct = (np.arange(1, 8, dtype=np.float32)[None, :] * 5.0) + ramp[:, None]
         _add_2d(aap, "aerosol_type_percentage", aerosol_pct, "AeroTypePct", fill_f, (0.0, 100.0))
 
-        ila = ds.createGroup("Imager_Land_Aerosols")
+        ila = "Imager_Land_Aerosols"
         _add(
             ila,
             "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
@@ -1049,7 +1077,7 @@ def make_ssf_fixture(
             (0.0, 5.0),
         )
 
-        ioa = ds.createGroup("Imager_Ocean_Aerosols")
+        ioa = "Imager_Ocean_Aerosols"
         _add(
             ioa,
             "imager_deep_blue_ocean_055um_aerosol_optical_depth",
@@ -1063,7 +1091,7 @@ def make_ssf_fixture(
         _add(aux, "surface_albedo", (0.1 + ramp * 0.05).astype(np.float32), fill_f, (0.0, 1.0))
 
         # FMATCH-IMAGER-only TOA incoming solar radiation: 1-D (Footprints,), W/m^2.
-        otf = ds.createGroup("Observed_TOA_Fluxes")
+        otf = "Observed_TOA_Fluxes"
         _add(otf, "toa_incoming_solar_radiation", (1360.0 + ramp).astype(np.float32), fill_f, (0.0, 1400.0))
 
     return out_path
@@ -1077,6 +1105,10 @@ def make_cldpix_fixture(
     filename: str = "cer_cldpix_fixture.nc",
     latitude_valid_range: tuple[float, float] | None = (0.0, 180.0),
     omit_fill_value: tuple[str, ...] = (),
+    omit_valid_range: tuple[str, ...] = (),
+    omit_flags: tuple[str, ...] = (),
+    time_dims: tuple[str, ...] = ("Scanlines", "Pixels"),
+    time_coverage_start: np.datetime64 | None = None,
 ) -> Path:
     """Write a synthetic CERES CLDPIX (imager-pixel swath) NetCDF4 file.
 
@@ -1088,11 +1120,13 @@ def make_cldpix_fixture(
       is in the **0..360 convention**. The ``lats`` argument below is given as
       an ordinary −90..90 latitude and converted on write, so tests can express
       their expectations in normal latitudes.
-    - ``Observation_Time``, per pixel, in fractional UTC hours of the day (every
-      pixel of a scanline shares its time), dated by the ``time_coverage_start``
-      global attribute as the real product is
+    - ``Observation_Time``, per pixel, in fractional UTC hours of each time's own
+      day (every pixel of a scanline shares its time), dated by the
+      ``time_coverage_start`` global attribute as the real product is
     - A minimal set of float cloud variables (fill ``3.4028235e38``) and int8
-      categorical variables (fill ``127``)
+      categorical variables (fill ``127``), each with the real file's
+      ``valid_range``; the categorical ones also carry its ``flag_values`` and
+      ``flag_meanings``
     - ``Eff_Cld_Pressure`` is written with a **descending** ``valid_range``
       ([1100, 10]) exactly as the real file does, so tests can verify the reader
       disables netCDF4 auto-masking (which would otherwise mask every value).
@@ -1120,6 +1154,19 @@ def make_cldpix_fixture(
         ``(0, 180)``, the colatitude range the real product declares.
     omit_fill_value : tuple of str, optional
         Names of variables written without a ``_FillValue`` attribute.
+    omit_valid_range : tuple of str, optional
+        Names of cloud variables written without a ``valid_range`` attribute.
+    omit_flags : tuple of str, optional
+        Names of categorical variables written without ``flag_values`` /
+        ``flag_meanings`` attributes.
+    time_dims : tuple of str, optional
+        Dimensions of ``Observation_Time``. Default ``("Scanlines", "Pixels")``, one
+        time per pixel as the real product writes it; ``("Scanlines",)`` writes one
+        per scanline, and ``("Pixels",)`` writes a vector matching neither layout
+        the reader accepts.
+    time_coverage_start : np.datetime64, optional
+        The ``time_coverage_start`` global attribute. Default: the earliest of
+        ``times``.
 
     Returns
     -------
@@ -1150,23 +1197,32 @@ def make_cldpix_fixture(
         ds.createDimension("Pixels", shape[1])
         dims = ("Scanlines", "Pixels")
         # Real CLDPIX: per-pixel fractional UTC hours of the day, dated by the global
-        # time_coverage_start attribute (one hour per granule, so one date serves all).
+        # time_coverage_start attribute. Each time is written as hours of its own day,
+        # so a granule spanning midnight stores ~23.99 h and ~0.01 h as the real one does.
         times = np.asarray(times).astype("datetime64[ns]")
-        day = times[0].astype("datetime64[D]")
-        hours = ((times - day.astype("datetime64[ns]")) / np.timedelta64(1, "h")).astype(np.float32)
-        time_var = ds.createVariable("Observation_Time", np.float32, dims, fill_value=fill_f)
-        time_var[:] = np.repeat(hours[:, None], shape[1], axis=1)
+        hours = ((times - times.astype("datetime64[D]")) / np.timedelta64(1, "h")).astype(np.float32)
+        time_var = ds.createVariable("Observation_Time", np.float32, time_dims, fill_value=fill_f)
+        if time_dims == ("Scanlines", "Pixels"):
+            time_var[:] = np.repeat(hours[:, None], shape[1], axis=1)
+        elif time_dims == ("Scanlines",):
+            time_var[:] = hours
+        else:
+            time_var[:] = np.full(shape[1], hours[0], dtype=np.float32)
         time_var.units = "hours"
         time_var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
-        ds.time_coverage_start = np.datetime_as_string(times.min(), unit="us") + "Z"
+        start = times.min() if time_coverage_start is None else np.datetime64(time_coverage_start, "ns")
+        ds.time_coverage_start = np.datetime_as_string(start, unit="us") + "Z"
         ds.time_coverage_end = np.datetime_as_string(times.max(), unit="us") + "Z"
 
-        def _add(name, data, fill, valid_range=None):
+        def _add(name, data, fill, valid_range=None, flags=None):
             fill = False if name in omit_fill_value else fill
             var = ds.createVariable(name, data.dtype, dims, fill_value=fill)
             var[:] = data
-            if valid_range is not None:
+            if valid_range is not None and name not in omit_valid_range:
                 var.valid_range = np.array(valid_range, dtype=data.dtype)
+            if flags is not None and name not in omit_flags:
+                var.flag_values = np.arange(valid_range[0], valid_range[0] + len(flags), dtype=data.dtype)
+                var.flag_meanings = " ".join(flags)
 
         # Real CLDPIX files store colatitude under the name "Latitude", with a
         # [0, 180] valid_range. Convert the caller's true latitudes so the
@@ -1182,21 +1238,26 @@ def make_cldpix_fixture(
         _add("Eff_Cld_Height", np.full(shape, 5.0, np.float32), fill_f, (0.0, 18.0))
         # Reversed valid_range exactly like the real file.
         _add("Eff_Cld_Pressure", np.full(shape, 800.0, np.float32), fill_f, (1100.0, 10.0))
-        # Top_Cld_Height is the only field the reader configures with no
-        # valid_range, so its fill pixels can only be caught by the fill-value
-        # test. One pixel is set to the float32 fill sentinel to exercise that
-        # path (see test_top_cloud_height_fill_is_dropped).
+        # One Top_Cld_Height pixel is set to the float32 fill sentinel (see
+        # test_top_cloud_height_fill_is_dropped).
         top_height = np.full(shape, 6.0, np.float32)
         top_height.flat[0] = fill_f
-        _add("Top_Cld_Height", top_height, fill_f)
+        _add("Top_Cld_Height", top_height, fill_f, (0.0, 18.0))
         # Effective cloud particle radius (μm) — blended water+ice value from
         # the CERES retrieval algorithm. Constant 10.0 μm for easy assertions.
-        _add("Cld_Radius", np.full(shape, 10.0, np.float32), fill_f, (2.0, 60.0))
+        _add("Cld_Radius", np.full(shape, 10.0, np.float32), fill_f, (2.0, 78.0))
 
-        # Categorical (int8) fields; one pixel set to the 127 fill sentinel.
+        # Categorical (int8) fields, with the real file's flag_meanings; one pixel set
+        # to the 127 fill sentinel.
         phase = np.full(shape, 1, dtype=np.int8)
         phase.flat[-1] = fill_i8
-        _add("Cloud_Particle_Phase", phase, fill_i8, (1, 5))
-        _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3))
+        _add(
+            "Cloud_Particle_Phase",
+            phase,
+            fill_i8,
+            (1, 5),
+            ("water_cloud", "ice_cloud", "no_cloud_retrieval", "clear", "bad_data"),
+        )
+        _add("CERES_Cloud_Mask", np.full(shape, 1, np.int8), fill_i8, (0, 3), ("clear", "cloud", "TBD", "Bad_data"))
 
     return out_path

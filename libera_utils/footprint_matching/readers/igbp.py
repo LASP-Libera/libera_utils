@@ -25,7 +25,7 @@ from typing import ClassVar
 import numpy as np
 
 from libera_utils.footprint_matching.readers._hdf4_io import _SinusoidalGeometry, read_modis_sinusoidal_hdf4
-from libera_utils.footprint_matching.readers.base import StaticReader
+from libera_utils.footprint_matching.readers.base import StaticReader, in_box
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch, VariableSpec
 
 # MCD12Q1 ``LC_Type1`` valid IGBP land-cover codes are 1..17, where 17 = Water Bodies
@@ -256,7 +256,7 @@ class _SinusoidalTiles:
             lat = np.broadcast_to(row_lat_deg[:, np.newaxis], lon.shape)
             # The inclusive box mask; every box half lies inside [-180, 180], so it also
             # excludes the pixels off the sinusoidal globe (|lon| > 180).
-            inside = (lat >= bbox.lat_min) & (lat <= bbox.lat_max) & (lon >= bbox.lon_min) & (lon <= bbox.lon_max)
+            inside = in_box(lat, lon, bbox)
             codes = self.data[t, r0 : r1 + 1, c0 : c1 + 1][inside]
             lats_out.append(lat[inside])
             lons_out.append(lon[inside])

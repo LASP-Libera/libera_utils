@@ -502,3 +502,81 @@ class TestSSFReaderGeolocationChecks:
         path = make_ssf_fixture(tmp_path, omit_fill_value=(name,))
         with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
             SSFReader(path).samples_in(_BBOX, _T)
+
+    @pytest.mark.parametrize("name", ["aerosol_optical_depth", "cloud_ice_particle_radius_37um_mean"])
+    def test_field_without_valid_range_raises(self, tmp_path, name):
+        """``SSFReader.samples_in`` raises ``ValueError`` when a field it reads has no ``valid_range`` attribute.
+
+        The reader takes each field's valid range from the file; with none declared it cannot tell a retrieval from
+        an out-of-range value, and guessing one could silently drop or keep the wrong values.
+
+        Parametrized over a 1-D field and a layered field, each written without ``valid_range``; asserts the error
+        names the field.
+        """
+        path = make_ssf_fixture(tmp_path, omit_valid_range=(name,))
+        with pytest.raises(ValueError, match=f"{name} has no valid_range attribute"):
+            SSFReader(path).samples_in(_BBOX, _T)
+
+
+class TestSSFReaderValidRange:
+    def test_valid_range_comes_from_the_file(self, tmp_path):
+        """``SSFReader`` range-checks each field with the ``valid_range`` the file declares.
+
+        A hard-coded range that differs from the file silently drops valid retrievals or publishes invalid ones; the
+        real alpha4 granule declares the 3.7 µm ice radius [0, 300] µm and water radius [0, 40] µm.
+
+        Writes lower-layer ice radii of 150 µm (inside the file's range) and water radii of 50 µm (outside it) on the
+        five clustered footprints, and asserts all five ice radii are served and no water radius is.
+        """
+        n = 6
+        path = make_ssf_fixture(
+            tmp_path,
+            cloud_ice_particle_radius_lower=np.full(n, 150.0, dtype=np.float32),
+            cloud_water_particle_radius_lower=np.full(n, 50.0, dtype=np.float32),
+        )
+        data = _values(SSFReader(path))
+        assert np.allclose(_finite_values(data, "cloud_ice_particle_radius_lower"), 150.0)
+        assert _finite_values(data, "cloud_ice_particle_radius_lower").size == 5
+        assert _finite_values(data, "cloud_water_particle_radius_lower").size == 0
+
+
+class TestSSFReaderLayoutChecks:
+    def test_renamed_layer_dimension_raises(self, tmp_path):
+        """``SSFReader`` raises ``ValueError`` naming the field and ``product_version`` when a layer axis is renamed.
+
+        The reader picks a cloud layer by position on the second axis; in a layout whose second axis means something
+        else, such as Edition1C's ``Conditions``, it would serve the wrong quantity under the layer's name.
+
+        Builds the fixture with the layered fields' second dimension named ``Conditions`` and asserts a ``ValueError``
+        naming the first layered field read and ``alpha4``.
+        """
+        path = make_ssf_fixture(tmp_path, layer_dim_name="Conditions")
+        with pytest.raises(ValueError, match=r"read as cloud_optical_depth_lower\) has dimensions.*'alpha4'"):
+            SSFReader(path).samples_in(_BBOX, _T)
+
+    def test_missing_variable_raises(self, tmp_path):
+        """``SSFReader`` raises ``ValueError``, not ``KeyError``, naming a variable the granule lacks.
+
+        A granule in another layout should fail with a message saying what is missing and what to do, rather than an
+        opaque ``KeyError`` from inside the netCDF library.
+
+        Builds the fixture without ``Scene_Type/shortwave_adm_type`` and asserts a ``ValueError`` naming it and
+        ``alpha4``.
+        """
+        path = make_ssf_fixture(tmp_path, omit_variables=(("Scene_Type", "shortwave_adm_type"),))
+        with pytest.raises(ValueError, match=r"no variable Scene_Type/shortwave_adm_type .*'alpha4'"):
+            SSFReader(path).samples_in(_BBOX, _T)
+
+    def test_missing_group_raises(self, tmp_path):
+        """``SSFReader`` raises ``ValueError``, not ``KeyError``, naming a group the granule lacks.
+
+        A granule without ``Auxillary_Properties`` should fail with a message naming the missing group, not an opaque
+        ``KeyError``, so the reader of the error knows the granule is in a layout the reader does not read.
+
+        Builds the fixture with both ``Auxillary_Properties`` variables left out, so the group is not written, and
+        asserts a ``ValueError`` naming the group.
+        """
+        omit = (("Auxillary_Properties", "aerosol_optical_depth"), ("Auxillary_Properties", "surface_albedo"))
+        path = make_ssf_fixture(tmp_path, omit_variables=omit)
+        with pytest.raises(ValueError, match="no group 'Auxillary_Properties'"):
+            SSFReader(path).samples_in(_BBOX, _T)

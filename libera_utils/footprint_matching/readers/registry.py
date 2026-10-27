@@ -39,11 +39,9 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # One fully-enumerated reader set per shipped FMATCH product -- the single source of truth
 # for which readers contribute to which product (readers do not self-gate by mode). Keyed by
-# OperationalMode like ``product.FMATCH_DEFINITION_FILENAMES``; ``get_readers_for_mode``
-# resolves ``mode`` with the same logic as ``load_fmatch_definition``, so the active reader
-# set and the loaded definition can never drift. Each set is spelled out in full (names
-# repeat by design) rather than composed. Note FMATCH-IMAGER-CAMTIME omits ``era5_pressure``:
-# the ERA5 pressure levels are a radiometer-timescale quantity (see fmatch_imager_camtime.yml).
+# OperationalMode. Each set is spelled out in full (names repeat by design) rather than
+# composed. Note FMATCH-IMAGER-CAMTIME omits ``era5_pressure``: the ERA5 pressure levels are a
+# radiometer-timescale quantity.
 FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
     OperationalMode.CAM: frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
     OperationalMode.CAM_CAMTIME: frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
@@ -131,11 +129,7 @@ class ReaderRegistry:
         """Return the readers that contribute to a product's definition.
 
         Membership is read directly from the per-product reader set
-        (:data:`FMATCH_MODE_READERS`), keyed by the *same* ``mode`` as
-        :func:`~libera_utils.footprint_matching.product.load_fmatch_definition`. Because
-        both resolve identically, this returns exactly the readers whose variable blocks
-        appear in the definition that ``load_fmatch_definition(mode)`` loads -- the active
-        reader set and the product schema cannot drift.
+        (:data:`FMATCH_MODE_READERS`).
 
         Parameters
         ----------
