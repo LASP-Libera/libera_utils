@@ -63,7 +63,7 @@ Design notes
   other. Code 255 is ocean, the single largest class in each polar grid.
 
 The first axis of the returned ``values`` array follows ``VARIABLES`` order exactly
-(the multi-variable reader contract; see ``PointSamples`` and ``ERA5Reader``).
+(the multi-variable reader contract; see ``PointSamples`` and ``ERA5SurfaceReader``).
 
 Two hemispheres in one granule
 ------------------------------

@@ -45,7 +45,7 @@ import xarray as xr
 # by the ERA5 fixtures. Chosen to be physically plausible AND mutually distinct
 # so tests can assert that each output layer came from the right file variable.
 # The winds take their values from the u10_fill / v10_fill keyword parameters instead.
-ERA5_SINGLE_LEVEL_FILLS: dict[str, float] = {
+ERA5_SURFACE_FILLS: dict[str, float] = {
     "t2m": 285.0,  # 2 m temperature (K)
     "d2m": 280.0,  # 2 m dewpoint temperature (K)
     "sp": 101325.0,  # surface pressure (Pa)
@@ -54,7 +54,7 @@ ERA5_SINGLE_LEVEL_FILLS: dict[str, float] = {
 }
 
 # Metadata written on each single-level fixture variable, mirroring real CDS files.
-_ERA5_SINGLE_LEVEL_ATTRS: dict[str, dict[str, str]] = {
+_ERA5_SURFACE_ATTRS: dict[str, dict[str, str]] = {
     "u10": {"units": "m s**-1", "long_name": "10 metre U wind component"},
     "v10": {"units": "m s**-1", "long_name": "10 metre V wind component"},
     "t2m": {"units": "K", "long_name": "2 metre temperature"},
@@ -69,7 +69,7 @@ ERA5_FIXTURE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 """The single hourly step the default ERA5 fixtures carry; query them at this time."""
 
 
-def make_era5_netcdf_fixture(
+def make_era5_surface_netcdf_fixture(
     tmp_path: Path,
     lat_min: float = 0.0,
     lat_max: float = 2.0,
@@ -81,7 +81,7 @@ def make_era5_netcdf_fixture(
     v10_fill: float = -1.5,
     times: np.ndarray | None = None,
     u10_per_step: np.ndarray | None = None,
-    filename: str = "era5_fixture.nc",
+    filename: str = "era5_surface_fixture.nc",
     time_dim: str | None = "time",
 ) -> Path:
     """Write a synthetic ERA5 single-levels NetCDF4 file to ``tmp_path``.
@@ -89,9 +89,9 @@ def make_era5_netcdf_fixture(
     The real ERA5 files from CDS contain the single-level variables on a global
     lat/lon grid with the latitude dimension in DESCENDING order (90 -> -90) and a
     leading hourly time dimension. This factory reproduces that convention in a
-    small grid for testing, writing all seven variables the ERA5Reader expects
+    small grid for testing, writing all seven variables the ERA5SurfaceReader expects
     (u10, v10, t2m, d2m, sp, z, fal), each a constant-valued grid. The non-wind
-    variables carry the constant ``ERA5_SINGLE_LEVEL_FILLS`` values.
+    variables carry the constant ``ERA5_SURFACE_FILLS`` values.
 
     The real file format reference:
     https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
@@ -133,7 +133,7 @@ def make_era5_netcdf_fixture(
         times = np.array([ERA5_FIXTURE_TIME], dtype="datetime64[ns]")
     times = np.asarray(times).astype("datetime64[ns]")
 
-    fills = {"u10": u10_fill, "v10": v10_fill, **ERA5_SINGLE_LEVEL_FILLS}
+    fills = {"u10": u10_fill, "v10": v10_fill, **ERA5_SURFACE_FILLS}
     coords = {
         "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
         "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
@@ -148,12 +148,10 @@ def make_era5_netcdf_fixture(
             for step, value in enumerate(np.asarray(u10_per_step, dtype=np.float32)):
                 data[step] = value
         if time_dim is None:
-            data_vars[name] = xr.DataArray(
-                data[0], dims=["latitude", "longitude"], attrs=_ERA5_SINGLE_LEVEL_ATTRS[name]
-            )
+            data_vars[name] = xr.DataArray(data[0], dims=["latitude", "longitude"], attrs=_ERA5_SURFACE_ATTRS[name])
         else:
             data_vars[name] = xr.DataArray(
-                data, dims=[time_dim, "latitude", "longitude"], attrs=_ERA5_SINGLE_LEVEL_ATTRS[name]
+                data, dims=[time_dim, "latitude", "longitude"], attrs=_ERA5_SURFACE_ATTRS[name]
             )
     out_path = tmp_path / filename
     xr.Dataset(data_vars, coords=coords).to_netcdf(out_path)

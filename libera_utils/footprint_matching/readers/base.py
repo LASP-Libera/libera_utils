@@ -238,7 +238,7 @@ class AncillaryReader(abc.ABC):
     -------------------------------------------------------------
     READER_KEY : str
         Unique string key used to register the reader in ``ReaderRegistry``.
-        Examples: ``"igbp"``, ``"nise"``, ``"era5_single_level"``, ``"viirs_aod"``.
+        Examples: ``"igbp"``, ``"nise"``, ``"era5_surface"``, ``"viirs_aod"``.
     INSTRUMENT : str
         Instrument / platform token recorded in each output variable's ``long_name``
         for provenance, e.g. ``"NOAA20"``, ``"MODIS"``, ``"ECMWF"``. The variable

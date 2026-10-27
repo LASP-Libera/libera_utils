@@ -1,6 +1,6 @@
-"""Unit tests for ERA5Reader and the ERA5 reader base both ERA5 readers share.
+"""Unit tests for ERA5SurfaceReader and the ERA5 reader base both ERA5 readers share.
 
-Uses real synthetic NetCDF4 fixture files (created by make_era5_netcdf_fixture and
+Uses real synthetic NetCDF4 fixture files (created by make_era5_surface_netcdf_fixture and
 make_era5_pressure_netcdf_fixture) so that the xarray slicing and coordinate handling
 can be exercised without calling real CDS services.
 
@@ -17,14 +17,14 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
 from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
+from libera_utils.footprint_matching.readers.era5_surface import _ERA5_SURFACE_VARIABLES, ERA5SurfaceReader
 from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
-    ERA5_SINGLE_LEVEL_FILLS,
-    make_era5_netcdf_fixture,
+    ERA5_SURFACE_FILLS,
     make_era5_pressure_netcdf_fixture,
+    make_era5_surface_netcdf_fixture,
 )
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
@@ -35,8 +35,8 @@ _T = ERA5_FIXTURE_TIME
 # time axis, and its keywords for a grid large enough to measure a step load's peak memory.
 _ERA5_READERS = [
     pytest.param(
-        ERA5Reader,
-        make_era5_netcdf_fixture,
+        ERA5SurfaceReader,
+        make_era5_surface_netcdf_fixture,
         {"time_dim": None},
         {"n_lat": 400, "n_lon": 800},
         id="single-level",
@@ -122,7 +122,7 @@ class TestERA5ReaderBase:
 class TestERA5ReaderPlanes:
     @pytest.mark.parametrize("time_dim", ["time", "valid_time"])
     def test_planes_hold_their_variables(self, tmp_path, time_dim):
-        """``ERA5Reader`` serves one float32 plane per variable, plane ``i`` holding the field ``VARIABLES[i]`` names.
+        """``ERA5SurfaceReader`` serves one float32 plane per variable, plane ``i`` holding the field ``VARIABLES[i]`` names.
 
         CDS downloads name the time dimension ``time`` or ``valid_time``; a reader that missed either would reject the
         file or serve a step with the time axis still attached. Each plane is copied from a named file variable, so a
@@ -130,22 +130,22 @@ class TestERA5ReaderPlanes:
         whole step is chosen by time, so its samples carry the reader key, no timestamp source and no per-sample times.
 
         Parametrized over the two time-dimension names. The synthetic 4 x 4 file gives every variable its own constant
-        (``u10`` 3.0, ``v10`` -2.0, the rest from ``ERA5_SINGLE_LEVEL_FILLS``); a full-extent query must fold back to
+        (``u10`` 3.0, ``v10`` -2.0, the rest from ``ERA5_SURFACE_FILLS``); a full-extent query must fold back to
         ``(7, 4, 4)`` float32 planes, each the constant of the variable at that position, with the samples' source,
         timestamp source and times as above.
         """
-        fixture_path = make_era5_netcdf_fixture(tmp_path, u10_fill=3.0, v10_fill=-2.0, time_dim=time_dim)
-        reader = ERA5Reader(fixture_path)
+        fixture_path = make_era5_surface_netcdf_fixture(tmp_path, u10_fill=3.0, v10_fill=-2.0, time_dim=time_dim)
+        reader = ERA5SurfaceReader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = _region(reader, bbox, _T)
         assert data.shape == (7, 4, 4)
         assert data.dtype == np.float32
         assert np.allclose(data[0], 3.0, atol=1e-4)
         assert np.allclose(data[1], -2.0, atol=1e-4)
-        for i, (_, nc_name, _) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES[2:], start=2):
-            assert np.allclose(data[i], ERA5_SINGLE_LEVEL_FILLS[nc_name], rtol=1e-6), nc_name
+        for i, (_, nc_name, _) in enumerate(_ERA5_SURFACE_VARIABLES[2:], start=2):
+            assert np.allclose(data[i], ERA5_SURFACE_FILLS[nc_name], rtol=1e-6), nc_name
         samples = reader.samples_in(bbox, _T)
-        assert samples.source == "era5_single_level"
+        assert samples.source == "era5_surface"
         assert samples.timestamp_source is None
         assert samples.times is None
 
@@ -154,7 +154,7 @@ class TestERA5ReaderMissingVariables:
     """A partial CDS download (missing required variables) must fail loudly."""
 
     def test_file_missing_variables_raises_key_error(self, tmp_path):
-        """``ERA5Reader`` raises ``KeyError`` when a file lacks any of the seven single-level variables.
+        """``ERA5SurfaceReader`` raises ``KeyError`` when a file lacks any of the seven single-level variables.
 
         A CDS download configured with only some of the fields would otherwise leave planes unfilled, and the product
         would carry values that were never read.
@@ -180,7 +180,7 @@ class TestERA5ReaderMissingVariables:
         path = tmp_path / "era5_winds_only.nc"
         ds.to_netcdf(path)
 
-        reader = ERA5Reader(path)
+        reader = ERA5SurfaceReader(path)
         with pytest.raises(KeyError, match="missing variable"):
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
@@ -197,13 +197,15 @@ class TestERA5ReaderDateline:
         """
         # A 0..360 file is put on an ascending -180..180 axis, so the two halves of a split box
         # query both ends of one axis. u10 carries each column's stored 0..360 longitude.
-        constant = make_era5_netcdf_fixture(tmp_path, lon_min=0.0, lon_max=359.0, n_lon=360, filename="constant.nc")
+        constant = make_era5_surface_netcdf_fixture(
+            tmp_path, lon_min=0.0, lon_max=359.0, n_lon=360, filename="constant.nc"
+        )
         ds = xr.load_dataset(constant)
         ds["u10"] = ds["u10"].copy(data=np.broadcast_to(ds["longitude"].values, ds["u10"].shape).astype(np.float32))
         path = tmp_path / "era5_0_360.nc"
         ds.to_netcdf(path)
 
-        samples = ERA5Reader(path).samples_in(BoundingBox(0.0, 2.0, 178.6, 181.4, wraps_dateline=True), _T)
+        samples = ERA5SurfaceReader(path).samples_in(BoundingBox(0.0, 2.0, 178.6, 181.4, wraps_dateline=True), _T)
 
         assert samples.n_samples == 4 * 3
         assert sorted(set(zip(samples.lons.tolist(), samples.values[0].tolist(), strict=True))) == [
@@ -219,19 +221,19 @@ class TestERA5ReaderTimeSteps:
     @staticmethod
     def _three_steps(tmp_path, filename="era5_steps.nc"):
         times = ERA5_FIXTURE_TIME + np.arange(3) * np.timedelta64(1, "h")
-        return make_era5_netcdf_fixture(
+        return make_era5_surface_netcdf_fixture(
             tmp_path, times=times, u10_per_step=np.array([10.0, 20.0, 30.0]), filename=filename
         )
 
     def test_nearest_step_is_served(self, tmp_path):
-        """``ERA5Reader.samples_in`` serves the step nearest the footprint time.
+        """``ERA5SurfaceReader.samples_in`` serves the step nearest the footprint time.
 
         Serving any other step pairs a footprint with weather up to hours away from its observation.
 
         Writes three hourly steps whose ``u10`` is 10, 20 and 30, queries at 00:10 and 01:50, and asserts ``u10`` is 10
         and 30.
         """
-        reader = ERA5Reader(self._three_steps(tmp_path))
+        reader = ERA5SurfaceReader(self._three_steps(tmp_path))
         box = BoundingBox(0.0, 2.0, 10.0, 12.0)
         at_0010 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(10, "m"))
         at_0150 = reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(110, "m"))
@@ -239,14 +241,14 @@ class TestERA5ReaderTimeSteps:
         assert np.allclose(at_0150.values[0], 30.0)
 
     def test_only_the_nearest_step_is_held(self, tmp_path):
-        """``ERA5Reader`` releases the previous step when a query moves to another step.
+        """``ERA5SurfaceReader`` releases the previous step when a query moves to another step.
 
         A day of hourly steps does not fit in memory at once, so only the step in use may be held.
 
         Queries a three-step file at the first and then the last step, holds a weak reference to the first step's data,
         and asserts it is collected and the loaded step index is 2.
         """
-        reader = ERA5Reader(self._three_steps(tmp_path))
+        reader = ERA5SurfaceReader(self._three_steps(tmp_path))
         box = BoundingBox(0.0, 2.0, 10.0, 12.0)
         reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(10, "m"))
         first_step = weakref.ref(reader._loaded_step[1].data)
@@ -257,7 +259,7 @@ class TestERA5ReaderTimeSteps:
         assert reader._loaded_step[0] == 2
 
     def test_steps_span_several_granules(self, tmp_path):
-        """``ERA5Reader`` builds one time-ordered step index across several staged granules.
+        """``ERA5SurfaceReader`` builds one time-ordered step index across several staged granules.
 
         A processing period can be staged as several files in any order; each footprint must still get the step nearest
         it, whichever file holds it.
@@ -265,14 +267,14 @@ class TestERA5ReaderTimeSteps:
         Stages a 01:00 granule before a 00:00 granule, queries at each hour and asserts the ``u10`` constant of the
         matching granule.
         """
-        first = make_era5_netcdf_fixture(
+        first = make_era5_surface_netcdf_fixture(
             tmp_path, times=[ERA5_FIXTURE_TIME], u10_per_step=np.array([1.0]), filename="a.nc"
         )
-        second = make_era5_netcdf_fixture(
+        second = make_era5_surface_netcdf_fixture(
             tmp_path, times=[ERA5_FIXTURE_TIME + np.timedelta64(1, "h")], u10_per_step=np.array([2.0]), filename="b.nc"
         )
         # Handed out of time order: the step index sorts them.
-        reader = ERA5Reader([second, first])
+        reader = ERA5SurfaceReader([second, first])
         box = BoundingBox(0.0, 2.0, 10.0, 12.0)
         assert np.allclose(reader.samples_in(box, ERA5_FIXTURE_TIME).values[0], 1.0)
         assert np.allclose(reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(1, "h")).values[0], 2.0)
@@ -289,10 +291,10 @@ class TestERA5ReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return ERA5Reader(fmatch_real_data_path / "era5_single_levels_20250101T00_subset.nc")
+        return ERA5SurfaceReader(fmatch_real_data_path / "era5_single_levels_20250101T00_subset.nc")
 
     def test_window_is_served_on_normalized_longitudes(self, reader):
-        """``ERA5Reader._load_step`` serves a real 0..360 CDS download on -180..180 longitudes.
+        """``ERA5SurfaceReader._load_step`` serves a real 0..360 CDS download on -180..180 longitudes.
 
         The box query works in -180..180, so an unnormalized download would answer queries with the wrong cells or none.
 
@@ -302,11 +304,11 @@ class TestERA5ReaderRealSubset:
         grid = reader._load_step(0)
         assert (grid.lat_axis[0], grid.lat_axis[-1]) == (40.0, 50.0)
         assert (grid.lon_axis[0], grid.lon_axis[-1]) == (-110.0, -100.0)
-        assert grid.data.shape == (len(ERA5Reader.VARIABLES), 41, 41)
+        assert grid.data.shape == (len(ERA5SurfaceReader.VARIABLES), 41, 41)
         assert np.isfinite(grid.data).all()
 
     def test_values_at_a_grid_point_are_the_granules(self, reader):
-        """``ERA5Reader`` serves a real download's values unchanged at a grid point.
+        """``ERA5SurfaceReader`` serves a real download's values unchanged at a grid point.
 
         A value must reach the product exactly as the source granule stores it, under the right variable name.
 
@@ -314,7 +316,7 @@ class TestERA5ReaderRealSubset:
         and ``wind_u10`` with the source granule's values there.
         """
         samples = reader.samples_in(BoundingBox(44.9, 45.1, -105.1, -104.9), self._TIME)
-        values = dict(zip([v.name for v in ERA5Reader.VARIABLES], sample_at(samples, 45.0, -105.0), strict=True))
+        values = dict(zip([v.name for v in ERA5SurfaceReader.VARIABLES], sample_at(samples, 45.0, -105.0), strict=True))
         assert values["temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
         assert values["surface_pressure"] == pytest.approx(88917.95, abs=0.1)
         assert values["wind_u10"] == pytest.approx(1.84288, abs=1e-4)

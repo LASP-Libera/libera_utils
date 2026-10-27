@@ -13,7 +13,7 @@ import pytest
 import libera_utils.footprint_matching.readers  # noqa: F401  (registers the built-in readers)
 from libera_utils.footprint_matching.readers import (
     ERA5PressureLevelReader,
-    ERA5Reader,
+    ERA5SurfaceReader,
     IGBPReader,
     NISEReader,
     ReaderRegistry,
@@ -24,7 +24,7 @@ from libera_utils.footprint_matching.readers import (
 from libera_utils.footprint_matching.types import OperationalMode, TimeMatch, VariableSpec
 
 _GRIDDED = {
-    "era5_single_level": ERA5Reader,
+    "era5_surface": ERA5SurfaceReader,
     "era5_pressure": ERA5PressureLevelReader,
     "igbp": IGBPReader,
     "nise": NISEReader,
@@ -58,8 +58,8 @@ def _ranked(base: str, n_categories: int, mode: OperationalMode) -> tuple[tuple,
 # VARIABLES is None for era5_pressure, whose 185 specs are pinned separately.
 _DECLARED = [
     (
-        "era5_single_level",
-        ERA5Reader,
+        "era5_surface",
+        ERA5SurfaceReader,
         "ECMWF",
         28.0,  # the 0.25 degree ERA5 grid spacing at the equator
         TimeMatch.NEAREST_STEP,
@@ -191,7 +191,7 @@ class TestLookup:
         with pytest.raises(KeyError, match="No reader registered with name 'nope'") as excinfo:
             ReaderRegistry.get("nope")
         assert "Available readers:" in str(excinfo.value)
-        assert "'era5_single_level'" in str(excinfo.value)
+        assert "'era5_surface'" in str(excinfo.value)
 
     def test_list_readers_is_sorted_and_holds_the_gridded_readers(self):
         """``ReaderRegistry.list_readers`` returns the registered keys sorted, including every built-in gridded reader.

@@ -10,7 +10,7 @@ Data source: ECMWF ERA5 Reanalysis (pressure-level fields)
 
 This is a *separate CDS dataset* from the single-level fields, downloaded as a
 separate file, hence a separate reader from
-:class:`~libera_utils.footprint_matching.readers.era5.ERA5Reader` (each reader
+:class:`~libera_utils.footprint_matching.readers.era5_surface.ERA5SurfaceReader` (each reader
 reads one source).
 
 Why per-level variables?
@@ -52,7 +52,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 
-from libera_utils.footprint_matching.readers.era5 import ERA5ReaderBase
+from libera_utils.footprint_matching.readers.era5_surface import ERA5ReaderBase
 from libera_utils.footprint_matching.types import OperationalMode, VariableSpec
 
 # Pressure levels (hPa) retained for FMATCH, ascending — the full ERA5 set of 37

@@ -3,7 +3,7 @@
 Uses real synthetic NetCDF4 fixture files (created by
 make_era5_pressure_netcdf_fixture) so the xarray slicing, pressure-level
 selection, and coordinate handling can be exercised without calling real CDS
-services. What both ERA5 readers share is tested once, for both, in ``test_era5.py``.
+services. What both ERA5 readers share is tested once, for both, in ``test_era5_surface.py``.
 
 Real ERA5 pressure-level files can be downloaded from:
     Copernicus CDS: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels
