@@ -41,7 +41,7 @@ def read_hdf4_struct_metadata(file_path: str | Path) -> str:
 
 @dataclass(frozen=True)
 class _SinusoidalGeometry:
-    """Pixel geometry of one MODIS sinusoidal tile, from its HDF-EOS ``StructMetadata.0``.
+    """Pixel geometry of one tile on the MODIS sinusoidal grid, from its HDF-EOS2 ``StructMetadata.0``.
 
     Pixel ``(r, c)`` has its center at sinusoidal ``x = x_ul + (c + 0.5) * dx``,
     ``y = y_ul + (r + 0.5) * dy`` meters, which is latitude ``y / radius_m`` and
@@ -66,10 +66,10 @@ class _SinusoidalGeometry:
 
 
 def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.ndarray, _SinusoidalGeometry]:
-    """Read one MODIS sinusoidal-projection HDF4 tile and its pixel geometry.
+    """Read one HDF-EOS2 tile on the sinusoidal grid MODIS land products use, and its pixel geometry.
 
-    MODIS gridded products (e.g., MCD12Q1) do not store latitude/longitude as SDS
-    arrays: the tile geometry is the HDF-EOS ``StructMetadata.0`` attribute's
+    Products on this grid (e.g., MCD12Q1) do not store latitude/longitude as SDS
+    arrays: the tile geometry is the HDF-EOS2 ``StructMetadata.0`` attribute's
     upper-left/lower-right corners in sinusoidal meters, its ``XDim``/``YDim``, and
     its projection and sphere radius. This function returns the data as stored and
     that geometry; it computes no per-pixel coordinates, so a caller can geolocate
@@ -78,7 +78,7 @@ def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.n
     Parameters
     ----------
     file_path : str
-        Path to the MODIS HDF4 tile file.
+        Path to the HDF-EOS2 tile file.
     data_sds_name : str
         Name of the SDS to read (e.g., ``"LC_Type1"`` for MCD12Q1 IGBP).
 
@@ -106,7 +106,7 @@ def read_modis_sinusoidal_hdf4(file_path: str, data_sds_name: str) -> tuple[np.n
         lat = Y / R
         lon = X / (R * cos(lat))
 
-    where ``R`` is the sphere radius from ``ProjParams`` (6 371 007.181 m for MODIS).
+    where ``R`` is the sphere radius from ``ProjParams`` (6 371 007.181 m on the MODIS sinusoidal grid).
     """
     hdf = sd.SD(str(file_path), sd.SDC.READ)
     try:

@@ -4,8 +4,8 @@ The tests write small NISE HDF-EOS4 granules with pyhdf (both hemispheres, the
 duplicate ``Extent``/``Age`` SDS names and the hemisphere dimension names of a real
 granule) and read them back on a coarse 4 x 4 EASE-Grid, so the hemisphere
 selection, the pyproj EPSG:3408/3409 -> EPSG:4326 reprojection and the code-to-layer
-split all run for real. ``tests/integration/test_nise_real_granule.py`` runs the
-reader on a real granule when one is staged.
+split all run for real. ``TestNISEReaderRealSubset`` runs the reader on a real NISE_A2
+granule.
 
 Real NISE files can be downloaded from:
     NSIDC HTTPS: https://n5eil01u.ecs.nsidc.org/NISE/

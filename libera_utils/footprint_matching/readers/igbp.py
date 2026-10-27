@@ -28,7 +28,8 @@ from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch, VariableSpec
 
 # MCD12Q1 ``LC_Type1`` valid IGBP land-cover codes are 1..17, where 17 = Water Bodies
-# (255 is fill). These codes are 1-based and align 1:1 with the low 17 members of
+# (255 is fill), per the LC_Type1 IGBP legend in the MCD12Q1 v061 User Guide.
+# These codes are 1-based and align 1:1 with the low 17 members of
 # ``scene_identification.scene_id.IGBPSurfaceType`` (1 = Evergreen Needleleaf .. 17 =
 # Water Bodies), so a modal class read here maps straight through
 # ``calculate_trmm_surface_type`` without any renumbering. The enum's 18..20 (tundra /
@@ -85,6 +86,8 @@ class IGBPReader(StaticReader):
 
     READER_KEY: str = "igbp"
     # MCD12Q1 land cover is derived from Terra+Aqua MODIS.
+    # TODO[LIBSDC-899]: decide the land-cover source once Terra and Aqua MODIS end: a successor product on this
+    # sinusoidal grid (this reader, a new INSTRUMENT) or a new reader.
     INSTRUMENT: str = "MODIS"
     # The MCD12Q1 v061 User Guide's sinusoidal grid cell, 463.3 m.
     RESOLUTION_KM: float = 0.463
@@ -171,7 +174,7 @@ class IGBPReader(StaticReader):
 
 @dataclass(frozen=True, eq=False)
 class _SinusoidalTiles:
-    """MODIS sinusoidal tiles held as their codes, geolocated per box query.
+    """Tiles on the MODIS sinusoidal grid held as their codes, geolocated per box query.
 
     Holds 1 byte per pixel; a query geolocates only the block of each tile its box can
     reach. Pixel ``(r, c)`` of tile ``t`` has its center at

@@ -15,7 +15,7 @@ IGBP / MODIS MCD12Q1 (HDF4):
 
 NISE Sea Ice (HDF-EOS4):
     NSIDC HTTPS: https://n5eil01u.ecs.nsidc.org/NISE/
-    Example filename: NISE_SSMISF18_20260115.HDFEOS
+    Example filename: NISE_AMSR2_20260610.HDFEOS
     EarthData login required: https://urs.earthdata.nasa.gov/
 
 ERA5 single-level fields (NetCDF4):

@@ -116,6 +116,8 @@ class VIIRSAODReader(StaticReader):
 
     READER_KEY: str = "viirs_aod"
     # Deep Blue single-sensor product for VIIRS aboard NOAA-20 (JPSS-1).
+    # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
+    # second reader.
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
     TIME_MATCH: TimeMatch = TimeMatch.DAILY

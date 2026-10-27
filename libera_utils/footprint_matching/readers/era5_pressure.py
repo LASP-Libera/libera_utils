@@ -118,8 +118,8 @@ _PRESSURE_LEVEL_COORD: str = "pressure_level"
 def _pressure_level_layers() -> Iterator[tuple[str, str, int]]:
     """Yield ``(spec name, ERA5 variable name, level hPa)`` for every reader output layer.
 
-    Variable-major, levels ascending (``temperature_10hPa`` ... ``temperature_1000hPa``,
-    then ``geopotential_10hPa`` ...). This is VARIABLES order and the plane order
+    Variable-major, levels ascending (``temperature_1hPa`` ... ``temperature_1000hPa``,
+    then ``geopotential_1hPa`` ...). This is VARIABLES order and the plane order
     ``ERA5PressureLevelReader._read_step_layers`` writes.
     """
     for base_name, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES:

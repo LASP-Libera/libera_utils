@@ -222,7 +222,7 @@ class PointSamples:
     """A reader's native data as geolocated points.
 
     The native form of swath, footprint and projected-grid sources (CERES SSF and
-    CLDPIX, MODIS sinusoidal IGBP tiles, NISE EASE-Grid pixels): each sample carries its
+    CLDPIX, IGBP tiles on the MODIS sinusoidal grid, NISE EASE-Grid pixels): each sample carries its
     own latitude and longitude, and for a ``NEAREST_PASS`` source its own time.
 
     Attributes

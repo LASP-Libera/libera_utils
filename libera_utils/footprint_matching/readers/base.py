@@ -23,7 +23,7 @@ Geographic query
 ----------------
 :meth:`AncillaryReader.samples_in` takes a footprint's :class:`BoundingBox` and time.
 A grid is sliced on its axes with ``searchsorted``. A source whose pixels are regular
-in a projection, not in latitude/longitude (the MODIS sinusoidal tiles), is held in its
+in a projection, not in latitude/longitude (IGBP's tiles on the MODIS sinusoidal grid), is held in its
 projected form and geolocates only the block a box selects (:class:`_BoxNative`). A
 point cloud is sorted once, at
 load, into 1 degree latitude/longitude bins held as offset ranges (one permuted copy
@@ -194,7 +194,7 @@ class _PointIndex:
 class _BoxNative(Protocol):
     """A native body of data that answers a box query itself.
 
-    For a source held in a projected form (MODIS sinusoidal tiles), where flattening
+    For a source held in a projected form (IGBP's tiles on the MODIS sinusoidal grid), where flattening
     every pixel to a latitude/longitude point would multiply its size. The holder
     geolocates only the block a query selects.
 

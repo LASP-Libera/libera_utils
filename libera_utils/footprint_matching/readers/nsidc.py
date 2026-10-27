@@ -1,13 +1,13 @@
 """NISE sea ice reader plugin for the footprint matching pipeline.
 
 Data source: NSIDC Near-real-time Ice and Snow Extent (NISE) Product
-- Products: NISE (SSM/I-SSMIS, v5) and NISE_A2 (AMSR-2, v1)
+- Product: NISE_A2 (AMSR-2, v1)
 - Format: HDF-EOS4 (.HDFEOS), opened via pyhdf
 - Spatial resolution: 25 km nominal (NSIDC EASE-Grid North & South)
 - Grid: two 721 × 721 polar azimuthal equal-area grids — Northern Hemisphere
   (NSIDC EASE-Grid North, EPSG:3408) and Southern Hemisphere (EASE-Grid South,
   EPSG:3409), both carried in the single granule
-- Temporal coverage: 1978-present (NISE SSM/I-SSMIS), 2012-present (NISE_A2 AMSR-2)
+- Temporal coverage: 2012-present (NISE_A2)
 - Spatial coverage: Northern and Southern Hemispheres (both grids are read and
   merged into one geolocated point cloud)
 - Data variable: Extent SDS, one per hemisphere (uint8 category codes 0–255)
@@ -15,8 +15,7 @@ Data source: NSIDC Near-real-time Ice and Snow Extent (NISE) Product
 NISE Extent encoding
 --------------------
 The authoritative per-code meaning is the ``data_grid_key`` attribute embedded in
-every granule; it is identical across the AMSR-2 (NISE_A2) and legacy
-SSM/I-SSMIS (NISE v5) products:
+every granule:
 
   0        Snow-free land
   1–100    Sea ice concentration in percent (1 = 1%, 100 = 100%)
@@ -96,8 +95,7 @@ References
 Product page:    https://nsidc.org/data/nise
 User guide:      https://nsidc.org/sites/default/files/nise5-v001-userguide.pdf
 Data access:     https://n5eil01u.ecs.nsidc.org/NISE/  (Earthdata login required)
-File naming:     NISE_SSMISF{ss}_{YYYYMMDD}.HDFEOS  (NISE v5; ss = DMSP flight, e.g. F18)
-                 NISE_AMSR2_{YYYYMMDD}.HDFEOS        (NISE_A2 v1)
+File naming:     NISE_AMSR2_{YYYYMMDD}.HDFEOS  (NISE_A2 v1)
 EPSG:3408 desc:  https://epsg.io/3408  (North)  /  https://epsg.io/3409  (South)
 EASE-Grid ref:   https://nsidc.org/ease
 """
@@ -244,10 +242,8 @@ class NISEReader(StaticReader):
     """
 
     READER_KEY: str = "nise"
-    # Operationally the pipeline ingests the NISE_A2 product, built from AMSR-2
-    # passive microwave radiometry, so provenance is tagged AMSR2. The legacy
-    # SSM/I-SSMIS (NISE v5) granules are format-identical and read by the same
-    # code path (e.g. for regression fixtures); only this provenance label differs.
+    # The pipeline ingests NISE_A2, built from AMSR-2 passive microwave radiometry,
+    # so provenance is tagged AMSR2.
     INSTRUMENT: str = "AMSR2"
     RESOLUTION_KM: float = 25.0
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
