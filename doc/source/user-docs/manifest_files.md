@@ -42,7 +42,7 @@ from libera_utils.constants import ManifestType
 from libera_utils.io.manifest import Manifest
 
 input_manifest = Manifest(manifest_type=ManifestType.INPUT)
-input_manifest.add_files("/data/LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_R27002112233.nc")
+input_manifest.add_files("/data/LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456.nc")
 
 # Generates a manifest filename with a new ULID and returns the path written
 path = input_manifest.write("/dropbox/")
