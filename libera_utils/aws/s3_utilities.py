@@ -23,6 +23,7 @@ from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import (
     L0Filename,
     LiberaDataProductFilename,
+    LiberaDynamicDataProductFilename,
     LiberaGroundCcsdsFilename,
     PathType,
 )
@@ -45,11 +46,13 @@ NEW_FILES_AVAILABLE_EVENT_DETAIL_TYPE = "NewFilesAvailableEventDetail"
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 300.0  # 5 minutes
 VERIFY_POLL_INTERVAL_SECONDS = 10.0
 
-ManualIngestFilename = L0Filename | LiberaDataProductFilename | LiberaGroundCcsdsFilename
+ManualIngestFilename = (
+    L0Filename | LiberaDataProductFilename | LiberaDynamicDataProductFilename | LiberaGroundCcsdsFilename
+)
 
 
 def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
-    """Validate a path as a Libera L0, ground CCSDS, or data product filename eligible for manual ingest.
+    """Validate a path as a Libera L0, ground CCSDS, daily or non-daily data product filename eligible for manual ingest.
 
     Manifest and any other filename types are rejected.
 
@@ -60,17 +63,48 @@ def _validate_filename_for_ingest(path: PathType) -> ManualIngestFilename:
 
     Returns
     -------
-    L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+    L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaDynamicDataProductFilename
         The parsed filename object.
+
+    Raises
+    ------
+    ValueError
+        If the path is not a valid filename of any of these types.
     """
-    for filename_class in (L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename):
+    for filename_class in (
+        L0Filename,
+        LiberaGroundCcsdsFilename,
+        LiberaDataProductFilename,
+        LiberaDynamicDataProductFilename,
+    ):
         try:
             return filename_class(path)
         except ValueError:
             continue
     raise ValueError(
         f"File {path} is not a valid Libera L0, ground CCSDS, or data product filename and cannot be manually ingested."
+        " Rename it to one of those forms, or check that its product ID is a known DataProductIdentifier."
     )
+
+
+def _is_dynamic_data_product_file(path: PathType) -> bool:
+    """Whether a path is validly named as a non-daily data product file.
+
+    Parameters
+    ----------
+    path : Path or S3Path
+        Path to check.
+
+    Returns
+    -------
+    bool
+        True when the path's name is a valid LiberaDynamicDataProductFilename, False otherwise.
+    """
+    try:
+        LiberaDynamicDataProductFilename(path)
+    except ValueError:
+        return False
+    return True
 
 
 def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
@@ -80,6 +114,12 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     ``NewFilesAvailable`` event to the SDC event bus. The SDC Data Ingester service then archives the files and
     creates the associated file metadata and data availability records. This is the manual analog of the automated
     ingest that happens for files produced by SDC processing steps.
+
+    Raises
+    ------
+    ValueError
+        If ``--verify`` is given for a non-daily data product file, which ingestion verification does not yet
+        support. Nothing is staged in that case.
     """
     now = datetime.now(UTC)
     configure_task_logging(f"aws_s3_put_{now}", limit_debug_loggers="libera_utils", console_log_level=logging.DEBUG)
@@ -88,6 +128,15 @@ def s3_put_cli_handler(parsed_args: argparse.Namespace) -> None:
     profile_name = parsed_args.profile
     # The put workflow uploads from the local filesystem, so resolve inputs to plain local Paths.
     local_file_paths: list[Path] = [Path(file_path) for file_path in parsed_args.file_paths]
+
+    # TODO[LIBSDC-880]: verify ingestion of non-daily data products, then remove this refusal.
+    if parsed_args.verify:
+        unverifiable = [path for path in local_file_paths if _is_dynamic_data_product_file(path)]
+        if unverifiable:
+            raise ValueError(
+                f"--verify does not yet support non-daily data product files: {[str(p) for p in unverifiable]}. "
+                "Nothing was staged. Run s3-utils put again without --verify to ingest them."
+            )
 
     # The boto session originates here and is passed to every function that needs it. It assumes the LiberaUtils
     # role so the CLI has the permissions it needs. Keeping session creation in a single place lets integration
@@ -124,14 +173,14 @@ def manual_ingest_data_products(
     ----------
     paths_to_files : list of Path
         Local filesystem paths to the files to ingest. Each must be a validly named Libera L0, ground CCSDS, or
-        data product file.
+        daily or non-daily data product file.
     boto_session : boto3.Session
         Boto3 session used for all AWS interactions. Created once by the CLI handler and passed in so that the
         same authenticated session is used throughout the workflow.
 
     Returns
     -------
-    list of L0Filename, LiberaGroundCcsdsFilename, or LiberaDataProductFilename
+    list of L0Filename, LiberaGroundCcsdsFilename, LiberaDataProductFilename, or LiberaDynamicDataProductFilename
         The validated filename objects for the staged files (useful for subsequent verification).
     """
     # Validate every filename up front so we don't stage a partial set before discovering a bad name.
