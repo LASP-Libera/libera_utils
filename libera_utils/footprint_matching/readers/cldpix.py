@@ -222,13 +222,11 @@ class CLDPIXReader(PassReader):
     READER_KEY: str = "cldpix"
     # CLDPIX imager-pixel cloud retrievals read here are the NOAA-20 stream
     # (CER_CLDPIX_NOAA20-VIIRS).
+    # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets
+    # a second reader.
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 1.0
     TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
-    # See SSFReader: 15 min keeps one imager pass together, 3 h is the largest offset
-    # accepted before the footprint is scored as having no CLDPIX match.
-    PASS_WINDOW: np.timedelta64 | None = np.timedelta64(15, "m")
-    MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(3, "h")
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,
@@ -282,13 +280,10 @@ class CLDPIXReader(PassReader):
             no ``flag_values`` / ``flag_meanings`` pair.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
-            # Disable netCDF4 automatic masking and rely on our own
-            # apply_fill_and_valid_range. This is required because some CLDPIX
-            # variables (e.g. Eff_Cld_Pressure) store ``valid_range`` in
-            # descending order ([1100, 10]); netCDF4 interprets that as
-            # [valid_min, valid_max] and masks *every* value. Our helper
-            # normalizes the range order, so it handles such fields correctly.
-            # Scale/offset auto-application is left enabled (set_auto_scale).
+            # Mask with apply_fill_and_valid_range rather than netCDF4's automatic
+            # masking: Eff_Cld_Pressure stores its valid_range descending ([1100, 10]),
+            # which netCDF4 reads as [valid_min, valid_max] and so masks every value.
+            # The helper accepts either order.
             ds.set_auto_mask(False)
 
             # 2-D geolocation -> flatten to point lists. ``Latitude`` is colatitude
@@ -339,8 +334,10 @@ class CLDPIXReader(PassReader):
                     "expected one time per scanline or per pixel."
                 )
 
-            value_rows: list[np.ndarray] = []
-            for f in _CLDPIX_FIELDS:
+            # Each field is written straight into one float32 array, so the float64 copy
+            # of only one field is alive at a time; a granule is several million pixels.
+            values = np.empty((len(_CLDPIX_FIELDS), lats.size), dtype=np.float32)
+            for i, f in enumerate(_CLDPIX_FIELDS):
                 var = ds.variables[f.var]
                 row = apply_fill_and_valid_range(
                     var[:],
@@ -349,12 +346,12 @@ class CLDPIXReader(PassReader):
                 ).ravel()
                 if f.n_categories is not None:
                     row[np.isin(row, _bad_data_flags(var, source=source))] = np.nan
-                value_rows.append(row)
+                values[i] = row
 
         return PointSamples(
             lats=lats,
             lons=lons,
-            values=np.stack(value_rows, axis=0).astype(np.float32),
+            values=values,
             times=times,
             spacing_km=spacing_km,
         )

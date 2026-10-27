@@ -804,6 +804,14 @@ class PassReader(AncillaryReader):
     """
 
     TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
+    # The window for a swath from a polar orbiter, such as the NOAA-20 CERES host. One pass
+    # crosses a footprint box in seconds, consecutive passes are about 100 min apart and the
+    # opposite pass about 12 h, so 15 min keeps one pass together and never admits a second.
+    # Libera and the swath's host are different spacecraft, so the nearest pass can be tens
+    # of minutes away; 3 h is the largest offset accepted before the footprint is scored as
+    # having no match. A reader for another orbit overrides both.
+    PASS_WINDOW: np.timedelta64 | None = np.timedelta64(15, "m")
+    MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(3, "h")
 
     def __init__(self, file_paths: Path | Sequence[Path]) -> None:
         super().__init__(file_paths)

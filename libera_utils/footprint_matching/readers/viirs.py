@@ -43,12 +43,12 @@ from libera_utils.footprint_matching.readers._points import field_fill_value
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import GridSamples, OperationalMode, TimeMatch, VariableSpec
 
-# Map each VariableSpec name to its (group_name, variable_name_within_group)
-# path inside the CLDPROP_D3 NetCDF4 file.
-_D3_GROUP_MAP: dict[str, tuple[str, str]] = {
-    "cloud_optical_thickness": ("Cloud_Optical_Thickness_Combined", "Mean"),
-    "cloud_top_pressure": ("Cloud_Top_Pressure", "Mean"),
-}
+# Each output variable, the (group, variable) it reads in the CLDPROP_D3 NetCDF4 file,
+# and its aggregation. This order is VARIABLES order and axis 0 of the reader's data array.
+_D3_FIELDS: tuple[tuple[str, str, str, str], ...] = (
+    ("cloud_optical_thickness", "Cloud_Optical_Thickness_Combined", "Mean", "weighted_log_mean"),
+    ("cloud_top_pressure", "Cloud_Top_Pressure", "Mean", "weighted_mean"),
+)
 
 
 class VIIRSCldpropD3Reader(StaticReader):
@@ -80,24 +80,20 @@ class VIIRSCldpropD3Reader(StaticReader):
 
     READER_KEY: str = "viirs_cldprop_d3"
     # CLDPROP_D3_VIIRS_NOAA20 cloud properties are from VIIRS aboard NOAA-20 (JPSS-1).
+    # TODO[LIBSDC-899]: decide whether NOAA-22 VIIRS replaces NOAA-20 here (a cutover of this reader) or gets a
+    # second reader.
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 111.0
     TIME_MATCH: TimeMatch = TimeMatch.DAILY
-    VARIABLES: tuple[VariableSpec, ...] = (
+    VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
-            name="cloud_optical_thickness",
+            name=name,
             dtype="float32",
-            aggregation="weighted_log_mean",
+            aggregation=aggregation,
             required_mode=OperationalMode.CAM,
             n_categories=None,
-        ),
-        VariableSpec(
-            name="cloud_top_pressure",
-            dtype="float32",
-            aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
-            n_categories=None,
-        ),
+        )
+        for name, _, _, aggregation in _D3_FIELDS
     )
 
     def _load_native(self) -> GridSamples:
@@ -124,8 +120,7 @@ class VIIRSCldpropD3Reader(StaticReader):
             lons_full = np.array(ds.variables["longitude"][:], dtype=np.float64)
 
             variable_arrays: list[np.ndarray] = []
-            for var_spec in self.VARIABLES:
-                group_name, var_name = _D3_GROUP_MAP[var_spec.name]
+            for _, group_name, var_name, _ in _D3_FIELDS:
                 variable = ds.groups[group_name].variables[var_name]
                 # Require the field's own _FillValue, which netCDF4's automatic masking applies.
                 field_fill_value(variable, source=f"{self.single_file_path} {group_name}")

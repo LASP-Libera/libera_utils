@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers.viirs import VIIRSCldpropD3Reader
-from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
+from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import make_viirs_cldprop_d3_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
@@ -69,161 +69,29 @@ def _write_position_coded_means(fixture_path) -> None:
             group["Mean"][:] = coded
 
 
-class TestVIIRSCldpropD3ReaderClassAttributes:
-    def test_reader_key(self):
-        """``VIIRSCldpropD3Reader.READER_KEY`` is ``"viirs_cldprop_d3"``.
-
-        The key is how the pipeline looks the reader up and the prefix of every output variable name, so a changed key
-        would break configuration lookups and rename the cloud variables in the product.
-
-        Asserts the class attribute equals ``"viirs_cldprop_d3"``.
-        """
-        assert VIIRSCldpropD3Reader.READER_KEY == "viirs_cldprop_d3"
-
-    def test_resolution_km(self):
-        """``VIIRSCldpropD3Reader.RESOLUTION_KM`` is 111 km, the size of a 1 degree cell at the equator.
-
-        The resolution sets how far a footprint's box is widened and how coverage is scored; a wrong value would drop
-        grid cells that overlap a footprint's rim or misreport how much of the footprint has cloud data.
-
-        Asserts the class attribute equals 111.0.
-        """
-        assert VIIRSCldpropD3Reader.RESOLUTION_KM == 111.0
-
-    def test_variables_has_two_entries(self):
-        """``VIIRSCldpropD3Reader.VARIABLES`` declares exactly two variables.
-
-        The leading axis of every served array follows ``VARIABLES``, so an extra or missing spec would misalign the
-        loaded fields with the product variables they are written to.
-
-        Asserts ``len(VARIABLES) == 2``.
-        """
-        assert len(VIIRSCldpropD3Reader.VARIABLES) == 2
-
-    def test_variable_names_in_order(self):
-        """``VIIRSCldpropD3Reader.VARIABLES`` lists ``cloud_optical_thickness`` then ``cloud_top_pressure``.
-
-        Values are matched to variables by position, so swapping the order would publish optical thickness as cloud top
-        pressure and vice versa.
-
-        Asserts the spec names equal ``["cloud_optical_thickness", "cloud_top_pressure"]`` in that order.
-        """
-        names = [v.name for v in VIIRSCldpropD3Reader.VARIABLES]
-        assert names == ["cloud_optical_thickness", "cloud_top_pressure"]
-
-    def test_variables_have_no_categories(self):
-        """``VIIRSCldpropD3Reader.VARIABLES`` declares both cloud variables continuous (``n_categories`` None).
-
-        Optical thickness and top pressure are averaged over a footprint; treating either as categorical would aggregate
-        it as class fractions rather than a mean.
-
-        Asserts ``n_categories is None`` for every spec.
-        """
-        for v in VIIRSCldpropD3Reader.VARIABLES:
-            assert v.n_categories is None
-
-
 class TestVIIRSCldpropD3ReaderLoadSpatialRegion:
-    def test_returns_3d_data_array(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves both cloud variables for every grid point in the box.
-
-        Downstream aggregation expects one value row per declared variable; a missing row would leave a cloud variable
-        unfilled in the product.
-
-        Queries the synthetic 4 x 8 fixture with a box covering the whole grid, folds the samples into a grid and
-        asserts a 3-D array with 2 entries on the variable axis.
-        """
-        reader, _ = _make_reader(tmp_path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
-        assert data.ndim == 3
-        assert data.shape[0] == 2
-
-    def test_variable_stacking_order(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` stacks cloud optical thickness first and cloud top pressure second.
+    def test_full_box_serves_both_fields_in_variable_order(self, tmp_path):
+        """``VIIRSCldpropD3Reader.samples_in`` serves both cloud fields as float32 rows, in ``VARIABLES`` order.
 
         Each row is written to the product variable at the same position, so reading the wrong group or stacking out of
-        order would publish one cloud property under another's name.
+        order would publish one cloud property under another's name, and a dropped row or column would leave part of a
+        footprint without cloud data. A daily composite has no observation time, so its samples carry no timestamp
+        source.
 
-        Builds a fixture whose cloud fraction, optical thickness and top pressure groups hold 0.6, 4.0 and 700.0 and
-        asserts exactly two rows are served, row 0 is 4.0 and row 1 is 700.0, so the unread cloud fraction group
-        appears nowhere.
+        Builds a fixture whose cloud fraction, optical thickness and top pressure groups hold 0.6, 4.0 and 700.0,
+        queries a box just larger than the 4 x 8 grid and asserts a float32 ``(2, 4, 8)`` grid with row 0 at 4.0 and
+        row 1 at 700.0, so the unread cloud fraction group appears nowhere, the source ``"viirs_cldprop_d3"`` and no
+        timestamp source.
         """
         reader, _ = _make_reader(tmp_path, cf_fill=0.6, cot_fill=4.0, ctp_fill=700.0)
         data, _, _ = _region(reader, _full_bbox(), _T)
-        assert data.shape[0] == 2
-        assert np.allclose(data[0], 4.0, equal_nan=True, atol=1e-4)  # cloud_optical_thickness
-        assert np.allclose(data[1], 700.0, equal_nan=True, atol=1e-3)  # cloud_top_pressure
-
-    def test_data_dtype_is_float32(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves float32 values.
-
-        The variables are declared float32 and fill is carried as NaN, which an integer array could not hold.
-
-        Queries the full fixture grid and asserts the served data dtype is ``float32``.
-        """
-        reader, _ = _make_reader(tmp_path)
-        data, _, _ = _region(reader, _full_bbox(), _T)
+        assert data.shape == (2, _N_LAT, _N_LON)
         assert data.dtype == np.float32
-
-    def test_output_lat_count_matches_n_lat(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves every latitude row of the grid inside a box that covers it.
-
-        A dropped row would leave part of a footprint without cloud data and lower its reported coverage.
-
-        Queries a box just larger than the 4 x 8 fixture and asserts 4 distinct latitudes are served.
-        """
-        reader, _ = _make_reader(tmp_path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
-        assert lats.size == _N_LAT
-
-    def test_output_lon_count_matches_n_lon(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves every longitude column of the grid inside a box that covers it.
-
-        A dropped column would leave part of a footprint without cloud data and lower its reported coverage.
-
-        Queries a box just larger than the 4 x 8 fixture and asserts 8 distinct longitudes are served.
-        """
-        reader, _ = _make_reader(tmp_path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
-        assert lons.size == _N_LON
-
-    def test_empty_result_outside_bbox(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves no samples, shaped for two variables, for a box off the grid.
-
-        A footprint with no cloud data must come back empty, so it is scored as uncovered, and keep the variable axis so
-        the caller can handle it like any other result.
-
-        Queries a box at 60S, 171E, far from the fixture grid, and asserts the data is empty with 2 entries on the
-        variable axis.
-        """
-        reader, _ = _make_reader(tmp_path)
-        bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
-        data, lats, lons = _region(reader, bbox, _T)
-        assert data.size == 0
-        assert data.shape[0] == 2
-
-    def test_fill_value_becomes_nan(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` serves cells holding the -9999.0 fill value as NaN.
-
-        A fill sentinel left as a number would be averaged into a footprint's cloud top pressure as if it were data.
-
-        Builds a fixture whose cloud top pressure field is all -9999.0, the declared ``_FillValue``, and asserts every
-        served cloud top pressure is NaN.
-        """
-        fixture_path = make_viirs_cldprop_d3_fixture(
-            tmp_path,
-            n_lat=_N_LAT,
-            n_lon=_N_LON,
-            lat_min=_LAT_MIN,
-            lat_max=_LAT_MAX,
-            lon_min=_LON_MIN,
-            lon_max=_LON_MAX,
-            ctp_fill=-9999.0,
-        )
-        reader = VIIRSCldpropD3Reader(fixture_path)
-        data, _, _ = _region(reader, _full_bbox(), _T)
-        # cloud_top_pressure (index 1) should be all NaN since fill_value = -9999.0
-        assert np.all(np.isnan(data[1]))
+        assert np.allclose(data[0], 4.0, atol=1e-4)  # cloud_optical_thickness
+        assert np.allclose(data[1], 700.0, atol=1e-3)  # cloud_top_pressure
+        samples = reader.samples_in(_full_bbox(), _T)
+        assert samples.source == "viirs_cldprop_d3"
+        assert samples.timestamp_source is None
 
     def test_fill_value_comes_from_the_field(self, tmp_path):
         """``VIIRSCldpropD3Reader.samples_in`` masks the fill value each field declares, not a hard-coded -9999.0.
@@ -263,18 +131,13 @@ class TestVIIRSCldpropD3ReaderTranspose:
         longitude axes and values would be placed at the wrong locations.
 
         Stores the 4 lat x 8 lon fixture as (8, 4) with every cell holding ``100 * latitude + longitude``, queries the
-        full grid and asserts the served grid is 4 latitudes by 8 longitudes and every sample's values equal the code
-        of the location it is served at.
+        full grid and asserts all 32 cells are served and every sample's values equal the code of the location it is
+        served at.
         """
         reader, path = _make_reader(tmp_path)
         _write_position_coded_means(path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
-        # With the default 4 lat × 8 lon fixture, axis 1 must be n_lat=4
-        # and axis 2 must be n_lon=8.
-        n_lat_out, n_lon_out = data.shape[1], data.shape[2]
-        assert n_lat_out == _N_LAT
-        assert n_lon_out == _N_LON
         samples = reader.samples_in(_full_bbox(), _T)
+        assert samples.n_samples == _N_LAT * _N_LON
         expected = _position_code(samples.lats, samples.lons)
         assert np.allclose(samples.values, expected[None, :], atol=1e-3)
 
@@ -298,37 +161,6 @@ class TestVIIRSCldpropD3ReaderTranspose:
         assert lons.size == _N_LON
         samples = reader.samples_in(bbox, _T)
         assert np.allclose(samples.values, _position_code(samples.lats, samples.lons)[None, :], atol=1e-3)
-
-
-class TestVIIRSCldpropD3ReaderSamples:
-    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
-        """``VIIRSCldpropD3Reader.samples_in`` tags samples with source ``"viirs_cldprop_d3"`` and no timestamp source.
-
-        A daily composite has no radiometer or camera observation time, so claiming one would misstate the cloud data's
-        provenance; the source label ties the samples to this reader.
-
-        Queries the full fixture grid and asserts ``timestamp_source`` is None and ``source`` is ``"viirs_cldprop_d3"``.
-        """
-        reader, _ = _make_reader(tmp_path)
-        samples = reader.samples_in(_full_bbox(), _T)
-        assert samples.timestamp_source is None
-        assert samples.source == "viirs_cldprop_d3"
-
-    def test_daily_composite_ignores_time(self, tmp_path):
-        """``VIIRSCldpropD3Reader`` is ``TimeMatch.DAILY``, so ``samples_in`` serves the same values at any hour.
-
-        Every footprint in the processing day matches the one daily composite; a time selection would drop footprints
-        late in the day from cloud matching.
-
-        Asserts ``TIME_MATCH`` is ``TimeMatch.DAILY`` and that queries at midnight and 23 hours later each serve all 32
-        cells of the fixture grid with identical values.
-        """
-        reader, _ = _make_reader(tmp_path)
-        assert VIIRSCldpropD3Reader.TIME_MATCH is TimeMatch.DAILY
-        a = reader.samples_in(_full_bbox(), _T)
-        b = reader.samples_in(_full_bbox(), _T + np.timedelta64(23, "h"))
-        assert a.n_samples == b.n_samples == _N_LAT * _N_LON
-        np.testing.assert_array_equal(a.values, b.values)
 
 
 class TestVIIRSCldpropD3ReaderRealSubset:

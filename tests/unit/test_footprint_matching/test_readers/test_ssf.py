@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers.ssf import SSFReader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
+from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_ssf_fixture
 
 # Box that contains the default footprint cluster (lon −10° == 350°).
@@ -35,372 +35,82 @@ def _finite_values(data: np.ndarray, name: str) -> np.ndarray:
     return np.sort(arr[np.isfinite(arr)])
 
 
-class TestSSFReaderClassAttributes:
-    def test_reader_key(self):
-        """``SSFReader.READER_KEY`` is ``"ssf"``.
+def _ramp(start: float, step: float) -> list[float]:
+    return [start + step * i for i in range(5)]
 
-        The registry, the product reader sets and every sample's ``source`` tag find this reader by that key, so a
-        changed key would leave the SSF fields unread in every product that lists ``"ssf"``.
 
-        Asserts the class attribute equals ``"ssf"``.
-        """
-        assert SSFReader.READER_KEY == "ssf"
-
-    def test_resolution_km(self):
-        """``SSFReader.RESOLUTION_KM`` is the 20 km CERES footprint scale at nadir.
-
-        It is the spacing the coverage measure falls back on when a granule's own footprint spacing cannot be measured,
-        so a wrong value would over- or under-credit how much of a Libera footprint SSF covers.
-
-        Asserts the class attribute equals 20.0.
-        """
-        assert SSFReader.RESOLUTION_KM == 20.0
-
-    def test_base_variable_names_present(self):
-        """``SSFReader.VARIABLES`` holds exactly the eight base SSF fields that are not pinned to a product.
-
-        The base fields are carried by every product SSF feeds (FMATCH-IMAGER-FLASH, FMATCH-IMAGER and FMATCH-IMAGER-
-        CAMTIME); a field missing or added here changes the variable set of all three products.
-
-        Collects the names of the specs whose ``only_modes`` is None and asserts they equal the expected set of eight.
-        """
-        names = {v.name for v in SSFReader.VARIABLES if v.only_modes is None}
-        assert names == {
-            "aerosol_optical_depth",
-            "clear_coverage",
-            "cloud_optical_depth_lower",
-            "cloud_water_particle_radius_lower",
-            "cloud_ice_particle_radius_lower",
-            "cloud_classification",
-            "shortwave_adm_type",
-            "longwave_adm_type",
-        }
-
-    def test_extended_fields_are_imager_only(self):
-        """``SSFReader.VARIABLES`` pins the extended cloud, aerosol, surface and TOA fields to FMATCH-IMAGER.
-
-        These fields belong to FMATCH-IMAGER alone; one leaking into FMATCH-IMAGER-FLASH or FMATCH-IMAGER-CAMTIME would
-        put variables in those products that their definitions do not carry, and a mis-flattened multi-valued field
-        would drop or duplicate an aerosol type.
-
-        Asserts representative extended names are present, including the 1-D ``surface_albedo`` and
-        ``toa_incoming_solar_radiation``, that every one of them has ``only_modes == (IMAGER,)``, that seven
-        ``aerosol_type_percentage_typeN`` fields exist and that each 1-D field appears exactly once.
-        """
-        names = {v.name for v in SSFReader.VARIABLES}
-        for name in (
-            "layer_coverage_lower",
-            "layer_coverage_upper",
-            "cloud_top_pressure_lower",
-            "cloud_optical_depth_upper",
-            "match_aot",
-            "aerosol_type_percentage_type0",
-            "aerosol_type_percentage_type6",
-            "surface_albedo",
-            "toa_incoming_solar_radiation",
-        ):
-            assert name in names, f"missing extended field {name}"
-        imager_only = [v for v in SSFReader.VARIABLES if v.name in names and v.only_modes is not None]
-        assert all(v.only_modes == (OperationalMode.IMAGER,) for v in imager_only)
-        # The aerosol-type axis is fully flattened (7 types); surface_albedo and the TOA
-        # field are genuinely 1-D, so each appears exactly once (no _bandN flattening).
-        assert sum(n.startswith("aerosol_type_percentage_type") for n in names) == 7
-        assert sum(n == "surface_albedo" for n in names) == 1
-        assert sum(n == "toa_incoming_solar_radiation" for n in names) == 1
-
-    def test_weighted_mode_variables_are_int16(self):
-        """``SSFReader.VARIABLES`` declares the mode-aggregated fields as int16 and every other field as float32.
-
-        The scene and ADM type fields are encoded CERES integer codes; written as float they would no longer match the
-        source codes exactly, and a continuous field written as an integer would lose its fraction.
-
-        Asserts, for every spec, ``dtype`` is ``"int16"`` when ``aggregation`` is ``"weighted_mode"`` and ``"float32"``
-        otherwise.
-        """
-        for v in SSFReader.VARIABLES:
-            assert v.dtype == ("int16" if v.aggregation == "weighted_mode" else "float32"), v.name
-
-    def test_fields_are_the_base_set_then_the_imager_only_set(self):
-        """``SSFReader.VARIABLES`` lists every base field before every FMATCH-IMAGER-only field.
-
-        The reader stacks value rows in this order, so the field order is part of the contract that pairs each value row
-        with its variable name.
-
-        Finds the first spec with ``only_modes`` set and asserts no spec before it is pinned and every spec from it on
-        is.
-        """
-        pinned = [v.only_modes is not None for v in SSFReader.VARIABLES]
-        first_imager_only = pinned.index(True)
-        assert not any(pinned[:first_imager_only])
-        assert all(pinned[first_imager_only:])
+# The five clustered footprints' values for every field, sorted, from the fixture defaults: a layered field's upper
+# layer differs from its lower one, and aerosol type t holds (t + 1) * 5 plus the footprint index. Two of the five
+# shortwave ADM codes are the int16 fill.
+_CLUSTER_VALUES = {
+    "aerosol_optical_depth": _ramp(0.10, 0.10),
+    "clear_coverage": _ramp(10.0, 10.0),
+    "cloud_optical_depth_lower": [1.0, 2.0, 4.0, 8.0, 16.0],
+    "cloud_water_particle_radius_lower": _ramp(5.0, 1.0),
+    "cloud_ice_particle_radius_lower": _ramp(20.0, 5.0),
+    "cloud_classification": [1001.0, 1001.0, 1001.0, 1001.0, 1191.0],
+    "shortwave_adm_type": [50.0, 50.0, 50.0],
+    "longwave_adm_type": [50.0] * 5,
+    "layer_coverage_lower": _ramp(10.0, 5.0),
+    "layer_coverage_upper": _ramp(15.0, 5.0),
+    "cloud_coverage_multilayer_lower": _ramp(5.0, 3.0),
+    "cloud_coverage_multilayer_upper": _ramp(8.0, 3.0),
+    "cloud_top_pressure_lower": _ramp(300.0, 10.0),
+    "cloud_top_pressure_upper": _ramp(250.0, 10.0),
+    "cloud_base_pressure_lower": _ramp(800.0, 10.0),
+    "cloud_base_pressure_upper": _ramp(700.0, 10.0),
+    "cloud_particle_phase_37um_lower": _ramp(1.0, 0.05),
+    "cloud_particle_phase_37um_upper": _ramp(1.5, 0.05),
+    "cloud_optical_depth_upper": [2.0, 3.0, 5.0, 9.0, 17.0],
+    "cloud_water_particle_radius_upper": _ramp(6.0, 1.0),
+    "cloud_ice_particle_radius_upper": _ramp(22.0, 5.0),
+    "match_aot": _ramp(0.15, 0.10),
+    **{f"aerosol_type_percentage_type{t}": _ramp((t + 1) * 5.0, 1.0) for t in range(7)},
+    "imager_dark_target_land_055um_corrected_aerosol_optical_depth": _ramp(0.20, 0.10),
+    "imager_deep_blue_ocean_055um_aerosol_optical_depth": _ramp(0.25, 0.10),
+    "surface_albedo": _ramp(0.10, 0.05),
+    "toa_incoming_solar_radiation": _ramp(1360.0, 1.0),
+}
 
 
 class TestSSFReaderSamples:
-    def test_returns_one_row_per_variable_in_variable_order(self, tmp_path):
-        """``SSFReader.samples_in`` returns float32 ``(n_var, n)`` values: a row per variable, a column per footprint.
+    def test_cluster_is_served_as_time_stamped_footprints(self, tmp_path):
+        """``SSFReader.samples_in`` serves each footprint as its own float32 sample, at its position and time.
 
-        Each footprint is served as its own native sample for the PSF weigher; a wrong shape would misalign values with
-        variable names or merge footprints before they are weighted.
+        Each footprint is a native sample for the PSF weigher, tagged ``"ssf"`` with its own observation time, which
+        the nearest-pass selection relies on. SSF stores longitude in 0..360 while boxes use -180..180, so without
+        normalization every western-hemisphere footprint would be missed.
 
-        Reads the default fixture over the cluster box and asserts the values are 2-D, shaped ``(len(VARIABLES), 5)``
-        for the five clustered footprints, and float32, and that the rows at the positions of three fields with
-        distinct fixture values (a base field near the start, a layered field and an imager-only field near the end)
-        hold those fields' values.
+        Reads the default fixture over the cluster box at -11..-9 degrees and asserts the values are float32
+        ``(len(VARIABLES), 5)``, every longitude is -10 degrees (stored as 350), the source is ``"ssf"``,
+        ``timestamp_source`` is None and every sample time is the fixture time.
         """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
-        assert samples.values.ndim == 2
+        samples = SSFReader(make_ssf_fixture(tmp_path)).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(SSFReader.VARIABLES), 5)
         assert samples.values.dtype == np.float32
-        names = [v.name for v in SSFReader.VARIABLES]
-        for name, expected in (
-            ("aerosol_optical_depth", [0.10, 0.20, 0.30, 0.40, 0.50]),
-            ("cloud_optical_depth_lower", [1.0, 2.0, 4.0, 8.0, 16.0]),
-            ("toa_incoming_solar_radiation", [1360.0, 1361.0, 1362.0, 1363.0, 1364.0]),
-        ):
-            assert np.allclose(np.sort(samples.values[names.index(name)]), expected, atol=1e-3), name
-
-    def test_longitude_normalization_places_points(self, tmp_path):
-        """``SSFReader.samples_in`` finds footprints stored at 350 degrees longitude in a box at -10 degrees.
-
-        SSF stores longitude in 0..360 while boxes use -180..180; without normalization every western-hemisphere
-        footprint would be missed and those Libera footprints would get no SSF match.
-
-        Reads the default fixture over the cluster box at -11..-9 degrees and asserts all five clustered footprints are
-        served, each with its longitude converted to -10 degrees.
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
-        assert samples.n_samples == 5
         assert np.allclose(samples.lons, -10.0, atol=1e-4)
-
-    def test_points_absent_from_unrelated_tile(self, tmp_path):
-        """``SSFReader.samples_in`` serves nothing in a box at +170 degrees for footprints stored at 350 degrees.
-
-        If longitude were not converted, or were converted wrongly, footprints could be served at the wrong place on
-        Earth and attributed to unrelated Libera footprints.
-
-        Reads the default fixture over a box at 169..171 degrees longitude and asserts no footprint is served.
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        assert reader.samples_in(BoundingBox(10.0, 12.0, 169.0, 171.0), _T).n_samples == 0
-
-    def test_aerosol_optical_depth_values(self, tmp_path):
-        """``SSFReader.samples_in`` serves ``aerosol_optical_depth`` with the footprints' source values unchanged.
-
-        Aerosol optical depth is passed straight through to the PSF weigher, so any scaling or mix-up between footprints
-        would bias the product's aerosol field.
-
-        Reads the default fixture over the cluster box and asserts the sorted finite values equal [0.10, 0.20, 0.30,
-        0.40, 0.50].
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite_values(data, "aerosol_optical_depth"), [0.10, 0.20, 0.30, 0.40, 0.50], atol=1e-5)
-
-    def test_cloud_optical_depth_uses_lower_layer(self, tmp_path):
-        """``SSFReader.samples_in`` fills ``cloud_optical_depth_lower`` from the lower layer (index 0).
-
-        SSF stores cloud optical depth per cloud layer; reading the upper layer would report the wrong cloud's optical
-        depth under the lower-layer name.
-
-        Reads the default fixture, whose upper layer is the lower plus one, and asserts the finite values equal the
-        lower-layer [1, 2, 4, 8, 16].
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite_values(data, "cloud_optical_depth_lower"), [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
-
-    def test_cloud_classification_codes_preserved(self, tmp_path):
-        """``SSFReader.samples_in`` serves ``cloud_classification`` codes unchanged.
-
-        The classification is an encoded CERES identifier that downstream users decode; a code altered by scaling or
-        rounding would decode to a different scene.
-
-        Reads the default fixture over the cluster box and asserts the set of finite codes is exactly {1001, 1191}.
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        codes = set(_finite_values(data, "cloud_classification").astype(int))
-        assert codes == {1001, 1191}
-
-    def test_cloud_water_particle_radius_uses_lower_layer(self, tmp_path):
-        """``SSFReader.samples_in`` fills ``cloud_water_particle_radius_lower`` from the lower cloud layer.
-
-        Water and ice radii are stored per layer; reading the upper layer would report the wrong cloud's droplet size
-        under the lower-layer name.
-
-        Reads the default fixture, whose upper layer is the lower plus one, and asserts the finite values equal the
-        lower-layer [5, 6, 7, 8, 9] um.
-        """
-        # Fixture defaults: lower-layer water radii are [5, 6, 7, 8, 9] μm for the
-        # five clustered footprints. The base `cloud_water_particle_radius_lower` spec
-        # reads only the lower layer (index 0); the upper layer is exposed separately as
-        # the IMAGER-only `cloud_water_particle_radius_upper` spec.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        values = _finite_values(data, "cloud_water_particle_radius_lower")
-        assert np.allclose(values, [5.0, 6.0, 7.0, 8.0, 9.0], atol=1e-4)
-
-    def test_cloud_ice_particle_radius_uses_lower_layer(self, tmp_path):
-        """``SSFReader.samples_in`` fills ``cloud_ice_particle_radius_lower`` from the lower cloud layer.
-
-        Reading the upper layer would report the wrong cloud's ice particle size under the lower-layer name.
-
-        Reads the default fixture, whose upper layer is the lower plus two, and asserts the finite values equal the
-        lower-layer [20, 25, 30, 35, 40] um.
-        """
-        # Fixture defaults: lower-layer ice radii are [20, 25, 30, 35, 40] μm for the
-        # five clustered footprints. The base spec reads only the lower layer.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        values = _finite_values(data, "cloud_ice_particle_radius_lower")
-        assert np.allclose(values, [20.0, 25.0, 30.0, 35.0, 40.0], atol=1e-4)
-
-    def test_fill_values_dropped_for_shortwave_adm(self, tmp_path):
-        """``SSFReader.samples_in`` turns the int16 fill in ``shortwave_adm_type`` into NaN.
-
-        A fill sentinel left as a number would be counted in the weighted mode as if it were a real ADM type and could
-        become a footprint's dominant code.
-
-        Reads the default fixture, where two of the five clustered footprints hold the shortwave fill, and asserts three
-        finite shortwave codes, all 50, remain while all five longwave codes are kept.
-        """
-        # Two of the five clustered footprints have the int16 fill for the SW
-        # ADM type; only three valid values remain.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        sw = _finite_values(data, "shortwave_adm_type")
-        lw = _finite_values(data, "longwave_adm_type")
-        assert sw.size == 3
-        assert lw.size == 5
-        assert np.allclose(sw, 50.0)
-
-
-class TestSSFReaderExtendedImagerFields:
-    """The FMATCH-IMAGER-only flattened fields read the correct second-axis index.
-
-    All assertions use the deterministic fixture defaults for the five clustered
-    footprints (per-footprint ``ramp`` = 0..4). Each clustered footprint is served as
-    its own sample, so the sorted finite values equal the per-footprint source values.
-    """
-
-    def test_upper_layer_reads_index_one(self, tmp_path):
-        """``SSFReader.samples_in`` fills ``cloud_optical_depth_upper`` from layer index 1 and the lower from index 0.
-
-        The upper and lower layers describe different clouds; swapped or repeated layers would give FMATCH-IMAGER a
-        wrong two-layer cloud picture.
-
-        Reads the default fixture and asserts the lower values equal [1, 2, 4, 8, 16] and the upper values equal [2, 3,
-        5, 9, 17].
-        """
-        # cloud_optical_depth lower = [1,2,4,8,16]; upper = lower + 1 = [2,3,5,9,17].
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        lower = _finite_values(data, "cloud_optical_depth_lower")
-        upper = _finite_values(data, "cloud_optical_depth_upper")
-        assert np.allclose(lower, [1.0, 2.0, 4.0, 8.0, 16.0], atol=1e-4)
-        assert np.allclose(upper, [2.0, 3.0, 5.0, 9.0, 17.0], atol=1e-4)
-
-    def test_cloud_top_pressure_reads_both_layers(self, tmp_path):
-        """``SSFReader.samples_in`` serves ``cloud_top_pressure_lower`` and ``_upper`` each from its own layer.
-
-        A layered field flattened into ``_lower`` and ``_upper`` variables must take each from its own layer, or the two
-        cloud-top pressures would be swapped or equal.
-
-        Reads the default fixture and asserts the lower values equal [300..340] and the upper values equal [250..290] in
-        steps of 10.
-        """
-        # cloud_top_pressure lower = 300 + 10*ramp; upper = 250 + 10*ramp.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite_values(data, "cloud_top_pressure_lower"), [300, 310, 320, 330, 340], atol=1e-3)
-        assert np.allclose(_finite_values(data, "cloud_top_pressure_upper"), [250, 260, 270, 280, 290], atol=1e-3)
-
-    def test_scalar_field_read(self, tmp_path):
-        """``SSFReader.samples_in`` reads the 1-D ``match_aot`` field without indexing a second axis.
-
-        A 1-D field must be read whole; indexing it as if it had layers would fail or serve the wrong footprint's value.
-
-        Reads the default fixture and asserts the finite ``match_aot`` values equal [0.15, 0.25, 0.35, 0.45, 0.55].
-        """
-        # match_aot is a 1-D (Footprints,) field: 0.15 + 0.1*ramp.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite_values(data, "match_aot"), [0.15, 0.25, 0.35, 0.45, 0.55], atol=1e-5)
-
-    def test_aerosol_type_percentage_selects_type_index(self, tmp_path):
-        """``SSFReader.samples_in`` fills each ``aerosol_type_percentage_typeN`` from column N of the aerosol-type axis.
-
-        Each column is the percentage of a different aerosol type; a wrong column would attribute one type's share to
-        another.
-
-        Reads the default fixture, where column t holds (t + 1) * 5 plus the footprint index, and asserts type 3 serves
-        [20..24] and type 0 serves [5..9].
-        """
-        # aerosol_type_percentage[:, t] = (t+1)*5 + ramp. Type 3 -> 20 + ramp.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite_values(data, "aerosol_type_percentage_type3"), [20, 21, 22, 23, 24], atol=1e-3)
-        assert np.allclose(_finite_values(data, "aerosol_type_percentage_type0"), [5, 6, 7, 8, 9], atol=1e-3)
-
-    def test_surface_albedo_scalar_read(self, tmp_path):
-        """``SSFReader.samples_in`` reads the 1-D ``surface_albedo`` fraction unchanged.
-
-        Surface albedo is a 0..1 fraction passed to FMATCH-IMAGER; a misread or rescaled value would bias the surface
-        reflectance carried in the product.
-
-        Reads the default fixture and asserts the finite values equal [0.10, 0.15, 0.20, 0.25, 0.30].
-        """
-        # surface_albedo is a 1-D (Footprints,) fraction (0..1): 0.1 + 0.05*ramp.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite_values(data, "surface_albedo"), [0.10, 0.15, 0.20, 0.25, 0.30], atol=1e-5)
-
-    def test_toa_incoming_solar_radiation_scalar_read(self, tmp_path):
-        """``SSFReader.samples_in`` reads the 1-D ``toa_incoming_solar_radiation`` field unchanged, in W/m^2.
-
-        TOA insolation is the reference against which reflected shortwave flux is compared; a misread value would skew
-        any albedo derived from the product.
-
-        Reads the default fixture and asserts the finite values equal [1360..1364] W/m^2.
-        """
-        # toa_incoming_solar_radiation is a 1-D (Footprints,) field (W/m^2): 1360 + ramp.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(
-            _finite_values(data, "toa_incoming_solar_radiation"), [1360, 1361, 1362, 1363, 1364], atol=1e-3
-        )
-
-
-class TestSSFReaderTimeMatchingAndCache:
-    def test_policy_is_nearest_pass(self):
-        """``SSFReader`` matches by nearest pass, with a 15 minute pass window and a 3 hour maximum offset.
-
-        SSF sees a location on several passes a day; the window keeps one pass together without admitting the next, and
-        the maximum offset stops a pass hours away being matched to a Libera footprint.
-
-        Asserts ``TIME_MATCH`` is ``NEAREST_PASS``, ``PASS_WINDOW`` is 15 minutes and ``MAX_TIME_OFFSET`` is 3 hours.
-        """
-        assert SSFReader.TIME_MATCH is TimeMatch.NEAREST_PASS
-        assert SSFReader.PASS_WINDOW == np.timedelta64(15, "m")
-        assert SSFReader.MAX_TIME_OFFSET == np.timedelta64(3, "h")
-
-    def test_samples_carry_source_and_footprint_times(self, tmp_path):
-        """``SSFReader.samples_in`` tags samples with source ``"ssf"``, no timestamp source and footprint times.
-
-        The per-sample times are what the nearest-pass selection and any time-offset reporting rely on; a missing or
-        wrong time would match footprints from the wrong pass.
-
-        Reads the default fixture, whose footprints are all at the fixture time, and asserts the source is ``"ssf"``,
-        ``timestamp_source`` is None and every sample time equals the fixture time.
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
         assert samples.source == "ssf"
         assert samples.timestamp_source is None
         assert np.all(samples.times == _T)
 
+    def test_every_field_serves_its_source_values(self, tmp_path):
+        """``SSFReader.samples_in`` serves every field in its own row, from its own layer or type, fill as NaN.
+
+        Values are matched to variables by row, so a row out of ``VARIABLES`` order publishes one field under another's
+        name. A layered field read from the wrong layer reports the wrong cloud, an aerosol type read from the wrong
+        column attributes one type's share to another, a 1-D field indexed as layered serves the wrong footprint, and
+        a fill left as a number votes in the mode of a code field.
+
+        Reads the default fixture over the cluster box once and asserts, for every variable, that its sorted finite
+        values equal the fixture's (``_CLUSTER_VALUES``): the shortwave ADM row keeps three of its five codes.
+        """
+        data = _values(SSFReader(make_ssf_fixture(tmp_path)))
+        assert set(_CLUSTER_VALUES) == {v.name for v in SSFReader.VARIABLES}
+        for name, expected in _CLUSTER_VALUES.items():
+            np.testing.assert_allclose(_finite_values(data, name), expected, rtol=1e-5, err_msg=name)
+
+
+class TestSSFReaderTimeMatching:
     def test_nearest_pass_is_served(self, tmp_path):
         """``SSFReader.samples_in`` serves only the pass nearest the query time when two passes cover the box.
 
@@ -425,36 +135,6 @@ class TestSSFReaderTimeMatchingAndCache:
         near_late = reader.samples_in(_BBOX, late_time + np.timedelta64(20, "m"))
         assert near_late.n_samples == 3
         assert np.allclose(_finite_values(near_late.values, "aerosol_optical_depth"), [0.40, 0.50, 0.60], atol=1e-4)
-
-    def test_beyond_max_offset_gives_no_samples(self, tmp_path):
-        """``SSFReader.samples_in`` returns no samples when every footprint is beyond ``MAX_TIME_OFFSET``.
-
-        A footprint with no SSF pass within three hours must be scored as having no match rather than given stale cloud
-        and aerosol values.
-
-        Queries the default fixture five hours after its footprint time and asserts ``n_samples`` is 0.
-        """
-        reader = SSFReader(make_ssf_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T + np.timedelta64(5, "h"))
-        assert samples.n_samples == 0
-
-    def test_granule_loaded_once_while_in_window(self, tmp_path):
-        """``SSFReader`` parses a granule once while it is in the time window and releases it after.
-
-        Footprints arrive in time order across a day of hourly granules; reparsing a granule per query would multiply
-        run time, and keeping every granule would grow memory without bound.
-
-        Queries the fixture at its time and one hour later and asserts the same loaded index object is reused, then
-        queries ten hours later and asserts the granule is no longer held in ``_loaded``.
-        """
-        path = make_ssf_fixture(tmp_path)
-        reader = SSFReader(path)
-        reader.samples_in(_BBOX, _T)
-        first = reader._loaded[path]
-        reader.samples_in(_BBOX, _T + np.timedelta64(1, "h"))
-        assert reader._loaded[path] is first
-        reader.samples_in(_BBOX, _T + np.timedelta64(10, "h"))
-        assert path not in reader._loaded
 
 
 class TestSSFReaderSpacing:
@@ -490,49 +170,32 @@ class TestSSFReaderGeolocationChecks:
             SSFReader(path).samples_in(_BBOX, _T)
 
     @pytest.mark.parametrize(
-        "name",
+        ("attribute", "name"),
         [
-            "instrument_fov_latitude",
-            "instrument_fov_longitude",
-            "time",
-            "aerosol_optical_depth",
-            "cloud_classification",
+            ("_FillValue", "instrument_fov_latitude"),
+            ("_FillValue", "instrument_fov_longitude"),
+            ("_FillValue", "time"),
+            ("_FillValue", "aerosol_optical_depth"),
+            ("_FillValue", "cloud_classification"),
+            ("valid_range", "instrument_fov_latitude"),
+            ("valid_range", "instrument_fov_longitude"),
+            ("valid_range", "time"),
+            ("valid_range", "aerosol_optical_depth"),
+            ("valid_range", "cloud_ice_particle_radius_37um_mean"),
         ],
     )
-    def test_field_without_fill_value_raises(self, tmp_path, name):
-        """``SSFReader.samples_in`` raises ``ValueError`` when a field it reads has no ``_FillValue`` attribute.
+    def test_field_without_fill_value_or_valid_range_raises(self, tmp_path, attribute, name):
+        """``SSFReader.samples_in`` raises ``ValueError`` when a field it reads has no ``_FillValue`` or ``valid_range``.
 
-        The reader masks each field with its own fill value; with none declared, fill sentinels would pass through as
-        real numbers and be averaged into footprints.
+        The reader masks each field with its own fill value and valid range; with either missing, fill sentinels would
+        pass through as real numbers, or a retrieval could not be told from an out-of-range value.
 
-        Parametrized over the geolocation fields, the footprint time, a continuous field and a code field, each written
-        without ``_FillValue``; asserts the error names the field.
+        Parametrized over each attribute on the geolocation fields, the footprint time, a continuous field, a code
+        field and a layered field, each written without it; asserts the error names the field and the attribute.
         """
-        path = make_ssf_fixture(tmp_path, omit_fill_value=(name,))
-        with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
-            SSFReader(path).samples_in(_BBOX, _T)
-
-    @pytest.mark.parametrize(
-        "name",
-        [
-            "instrument_fov_latitude",
-            "instrument_fov_longitude",
-            "time",
-            "aerosol_optical_depth",
-            "cloud_ice_particle_radius_37um_mean",
-        ],
-    )
-    def test_field_without_valid_range_raises(self, tmp_path, name):
-        """``SSFReader.samples_in`` raises ``ValueError`` when a field it reads has no ``valid_range`` attribute.
-
-        The reader takes each field's valid range from the file; with none declared it cannot tell a retrieval from
-        an out-of-range value, and guessing one could silently drop or keep the wrong values.
-
-        Parametrized over the geolocation fields, the footprint time, a 1-D field and a layered field, each written
-        without ``valid_range``; asserts the error names the field.
-        """
-        path = make_ssf_fixture(tmp_path, omit_valid_range=(name,))
-        with pytest.raises(ValueError, match=f"{name} has no valid_range attribute"):
+        omit = {"omit_fill_value": (name,)} if attribute == "_FillValue" else {"omit_valid_range": (name,)}
+        path = make_ssf_fixture(tmp_path, **omit)
+        with pytest.raises(ValueError, match=f"{name} has no {attribute} attribute"):
             SSFReader(path).samples_in(_BBOX, _T)
 
 

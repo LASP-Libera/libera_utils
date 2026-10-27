@@ -96,10 +96,9 @@ _TIME_VAR: str = "time"
 # measure the along-track footprint spacing.
 _SAMPLE_NUMBER_VAR: str = "sample_number"
 
-# Cloudy layer to read for the layered (Footprints, LowerUpper) variables.
-# 0 = lower layer, 1 = upper layer. TODO[LIBSDC-785]: confirm the correct
-# layer-selection rule (lower vs upper vs combined) with the science team.
-_CLOUD_LAYER_INDEX: int = 0
+# Indices of the two cloud layers on the (Footprints, LowerUpper) variables. The base
+# fields read the lower layer. TODO[LIBSDC-785]: confirm the correct layer-selection
+# rule (lower vs upper vs combined) with the science team.
 _CLOUD_LAYER_LOWER_INDEX: int = 0
 _CLOUD_LAYER_UPPER_INDEX: int = 1
 
@@ -185,12 +184,12 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "cloud_optical_depth_mean",
         "weighted_log_mean",
         _LAYER_DIMS,
-        _CLOUD_LAYER_INDEX,
+        _CLOUD_LAYER_LOWER_INDEX,
         None,
     ),
     # Effective cloud particle radius separated by thermodynamic phase (μm).
     # SSF stores water and ice radii in separate 2-D (Footprints, LowerUpper)
-    # variables; both use _CLOUD_LAYER_INDEX to select the lower cloud layer,
+    # variables; both read the lower cloud layer (_CLOUD_LAYER_LOWER_INDEX),
     # consistent with cloud_optical_depth_lower. The combined (blended) radius is
     # not available in SSF — use cldpix.cloud_particle_radius for that.
     _SSFField(
@@ -199,7 +198,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "cloud_water_particle_radius_37um_mean",
         "weighted_mean",
         _LAYER_DIMS,
-        _CLOUD_LAYER_INDEX,
+        _CLOUD_LAYER_LOWER_INDEX,
         None,
     ),
     _SSFField(
@@ -208,7 +207,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         "cloud_ice_particle_radius_37um_mean",
         "weighted_mean",
         _LAYER_DIMS,
-        _CLOUD_LAYER_INDEX,
+        _CLOUD_LAYER_LOWER_INDEX,
         None,
     ),
     _SSFField(
@@ -262,7 +261,7 @@ _UPPER_LAYER_ONLY: tuple[tuple[str, int | None], ...] = (("upper", _CLOUD_LAYER_
 # (name_suffix, second_axis_index) pairs; the flattener emits one _SSFField per member.
 _IMAGER_SSF_SOURCES: tuple[tuple[str, str, str, str, tuple[str, ...], tuple[tuple[str, int | None], ...]], ...] = (
     # --- Cloud layer fields (Cloudy_Imager_Footprint_Layer), (Footprints, LowerUpper) ---
-    # Five genuinely-new layered fields: both lower and upper layers.
+    # Five layered fields no base spec carries: both lower and upper layers.
     (
         "layer_coverage",
         "Cloudy_Imager_Footprint_Layer",
@@ -478,16 +477,11 @@ class SSFReader(PassReader):
 
     READER_KEY: str = "ssf"
     # The SSF/FLASHFlux products read here are the NOAA-20 stream (CER_SSF_NOAA20-FM6-VIIRS).
+    # TODO[LIBSDC-899]: decide whether the NOAA-22 stream replaces NOAA-20 here (a cutover of this reader) or gets
+    # a second reader.
     INSTRUMENT: str = "NOAA20"
     RESOLUTION_KM: float = 20.0
     TIME_MATCH: TimeMatch = TimeMatch.NEAREST_PASS
-    # One CERES pass crosses a footprint box in seconds; consecutive polar passes are
-    # about 100 min apart and the opposite pass about 12 h. 15 min keeps one pass
-    # together and never admits a second. Libera and the CERES host are different
-    # spacecraft, so the nearest pass can be tens of minutes away; 3 h is the largest
-    # offset accepted before the footprint is scored as having no SSF match.
-    PASS_WINDOW: np.timedelta64 | None = np.timedelta64(15, "m")
-    MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(3, "h")
     VARIABLES: tuple[VariableSpec, ...] = tuple(
         VariableSpec(
             name=f.out_name,
@@ -534,10 +528,9 @@ class SSFReader(PassReader):
             ``_FillValue`` or ``valid_range`` attribute.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
-            # Disable netCDF4 automatic masking and rely on our own
-            # apply_fill_and_valid_range (which normalizes descending
-            # ``valid_range`` attributes that would otherwise make netCDF4 mask
-            # every value). Scale/offset auto-application is left enabled.
+            # Mask with apply_fill_and_valid_range rather than netCDF4's automatic
+            # masking, as the CLDPIX reader does: netCDF4 masks every value of a field
+            # whose valid_range is descending, which CERES products declare.
             ds.set_auto_mask(False)
 
             source = f"ssf {path.name}"
@@ -567,8 +560,10 @@ class SSFReader(PassReader):
             )
             sample_number = np.asarray(_ssf_variable(ds, _TIME_POS_GROUP, _SAMPLE_NUMBER_VAR, source=source)[:])
 
-            value_rows: list[np.ndarray] = []
-            for f in _SSF_FIELDS:
+            # Each field is written straight into one float32 array, so the float64 copy
+            # of only one field is alive at a time.
+            values = np.empty((len(_SSF_FIELDS), lats.size), dtype=np.float32)
+            for i, f in enumerate(_SSF_FIELDS):
                 var = _ssf_variable(ds, f.group, f.var, source=source)
                 if tuple(var.dimensions) != f.dimensions:
                     raise ValueError(
@@ -577,22 +572,18 @@ class SSFReader(PassReader):
                         f"{getattr(ds, 'product_version', None)!r}). Stage a CER_SSF granule in the layout this "
                         "reader reads, or update the reader's SSF field table for this product version."
                     )
-                raw = var[:]
-                if f.layer_index is not None:
-                    # 2-D (Footprints, <second axis>) -- pick one layer or type.
-                    raw = raw[:, f.layer_index]
-                value_rows.append(
-                    apply_fill_and_valid_range(
-                        raw,
-                        fill_value=field_fill_value(var, source=source),
-                        valid_range=field_valid_range(var, source=source),
-                    )
+                # A 2-D (Footprints, <second axis>) field reads only its one layer or type.
+                raw = var[:] if f.layer_index is None else var[:, f.layer_index]
+                values[i] = apply_fill_and_valid_range(
+                    raw,
+                    fill_value=field_fill_value(var, source=source),
+                    valid_range=field_valid_range(var, source=source),
                 )
 
         return PointSamples(
             lats=lats,
             lons=lons,
-            values=np.stack(value_rows, axis=0).astype(np.float32),
+            values=values,
             times=times,
             # The granule's own footprint spacing: the larger of the along-scan spacing
             # (consecutive footprints) and the along-track one (the same scan position on

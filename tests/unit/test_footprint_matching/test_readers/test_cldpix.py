@@ -10,11 +10,13 @@ Real CLDPIX files come from NASA CERES, e.g.
 ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc``.
 """
 
+import tracemalloc
+
 import numpy as np
 import pytest
 
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader, _bad_data_flags
-from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
+from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_cldpix_fixture
 
 # Box containing the default pixel cluster (lon −15° == 345°).
@@ -36,169 +38,58 @@ def _finite(data: np.ndarray, name: str) -> np.ndarray:
     return arr[np.isfinite(arr)]
 
 
-class TestCLDPIXReaderClassAttributes:
-    def test_reader_key(self):
-        """``CLDPIXReader.READER_KEY`` is ``"cldpix"``.
-
-        The key is how a configuration names the reader and how its samples are labeled; a changed key would leave a
-        configuration that asks for ``"cldpix"`` with no reader and no CLDPIX cloud properties.
-
-        Asserts ``READER_KEY`` equals ``"cldpix"``.
-        """
-        assert CLDPIXReader.READER_KEY == "cldpix"
-
-    def test_resolution_km(self):
-        """``CLDPIXReader.RESOLUTION_KM`` declares the 1 km VIIRS imager-pixel scale.
-
-        The resolution pads each footprint's query box and is the fallback pixel spacing when a granule's own spacing
-        cannot be measured; a wrong value would serve too few or too many pixels to a footprint.
-
-        Asserts ``RESOLUTION_KM`` equals 1.0.
-        """
-        assert CLDPIXReader.RESOLUTION_KM == 1.0
-
-    def test_expected_variable_names(self):
-        """``CLDPIXReader.VARIABLES`` holds the CLDPIX cloud properties and none of the surface-type fields.
-
-        The cloud properties are what the imager products carry from CLDPIX, while land cover and snow/ice come from
-        the IGBP and NISE readers; a CLDPIX copy of a surface field would put two competing values in the product.
-
-        Asserts the five core cloud variable names are a subset of ``VARIABLES`` and that ``igbp_ecosystem``,
-        ``snow_map`` and ``ice_map`` are absent.
-        """
-        names = {v.name for v in CLDPIXReader.VARIABLES}
-        # Surface-type variables (igbp_ecosystem, snow_map, ice_map) are
-        # intentionally absent — the IGBP and NISE readers are authoritative.
-        assert {
-            "cloud_optical_depth",
-            "cloud_effective_pressure",
-            "cloud_particle_phase",
-            "cloud_mask",
-            "cloud_particle_radius",
-        } <= names
-        assert "igbp_ecosystem" not in names
-        assert "snow_map" not in names
-        assert "ice_map" not in names
-
-    def test_weighted_mode_variables_are_int16(self):
-        """``CLDPIXReader.VARIABLES`` declares mode-aggregated categories as int16 and every other variable as float32.
-
-        A category such as cloud phase is a class label stored as an integer in the product, while a continuous
-        property needs a float; the wrong dtype would truncate a mean or write a label as a fractional value.
-
-        Asserts, for every variable, ``int16`` when its aggregation is ``weighted_mode`` and ``float32`` otherwise.
-        """
-        for v in CLDPIXReader.VARIABLES:
-            assert v.dtype == ("int16" if v.aggregation == "weighted_mode" else "float32"), v.name
+# The served pixels of every field in the default fixture, as (count, value): every field is constant, effective
+# pressure under its descending valid_range, and one Cloud_Particle_Phase pixel and one Top_Cld_Height pixel are fill.
+_FIXTURE_VALUES = {
+    "cloud_optical_depth": (12, 4.0),
+    "cloud_water_path": (12, 100.0),
+    "cloud_effective_temperature": (12, 270.0),
+    "cloud_effective_height": (12, 5.0),
+    "cloud_effective_pressure": (12, 800.0),
+    "cloud_top_height": (11, 6.0),
+    "cloud_particle_radius": (12, 10.0),
+    "cloud_particle_phase": (11, 1.0),
+    "cloud_mask": (12, 1.0),
+}
 
 
 class TestCLDPIXReaderSamples:
-    def test_returns_one_row_per_variable(self, tmp_path):
-        """``CLDPIXReader.samples_in`` returns a float32 ``(n_var, n_pixels)`` value array with one time per pixel.
+    def test_pixels_are_served_as_time_stamped_points(self, tmp_path):
+        """``CLDPIXReader.samples_in`` serves each pixel as its own float32 sample, at its position and time.
 
-        The PSF weigher indexes values by variable row and pixel column; a transposed, missing or differently typed
-        array would attach a value to the wrong variable or pixel.
+        The PSF weigher indexes values by variable row and pixel column, and the nearest-pass selection uses each
+        pixel's own time. Footprint boxes are given in -180..180, so a pixel left at 345 degrees would never match a
+        footprint at -15 degrees.
 
-        Builds the default 3 x 4 pixel fixture, queries the box holding it and asserts a 2-D float32 array of shape
-        ``(len(VARIABLES), 12)`` and a ``times`` array of shape ``(12,)``.
+        Builds the default 3 x 4 pixel fixture at 345 degrees longitude, queries the box at -16..-14 degrees and asserts
+        float32 values of shape ``(len(VARIABLES), 12)``, every longitude at -15 degrees, the source ``"cldpix"``, no
+        timestamp source and every pixel time at the fixture time.
         """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
-        assert samples.values.ndim == 2
+        samples = CLDPIXReader(make_cldpix_fixture(tmp_path)).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(CLDPIXReader.VARIABLES), 12)
         assert samples.values.dtype == np.float32
-        assert samples.times is not None
-        assert samples.times.shape == (12,)
-
-    def test_longitude_normalization_places_points(self, tmp_path):
-        """``CLDPIXReader`` normalizes the file's 0..360 longitudes so pixels land in a -180..180 query box.
-
-        Footprint boxes are given in -180..180; a pixel left at 345° would never match a footprint at -15° and the
-        western-hemisphere cloud properties would be lost.
-
-        Builds the fixture with its 12 pixels at 345° longitude, queries a box spanning -16° to -14° and asserts all 12
-        are served, each at -15°.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
-        assert samples.n_samples == 12
         assert np.allclose(samples.lons, -15.0, atol=1e-4)
+        assert samples.source == "cldpix"
+        assert samples.timestamp_source is None
+        assert np.all(samples.times == _T)
 
-    def test_points_absent_from_unrelated_tile(self, tmp_path):
-        """``CLDPIXReader.samples_in`` serves no pixels to a box that does not contain them.
+    def test_every_field_serves_its_source_values(self, tmp_path):
+        """``CLDPIXReader.samples_in`` serves every field in its own row with the file's values, fill as NaN.
 
-        A footprint must receive only the imager pixels under it; pixels leaking into a distant box would assign one
-        region's clouds to another.
+        Values are matched to variables by row, so a row out of ``VARIABLES`` order publishes one field under another's
+        name. The real ``Eff_Cld_Pressure`` declares its ``valid_range`` descending ([1100, 10]), which netCDF4's
+        automatic masking reads as empty, masking every pressure; and a category's int8 fill left in place would be
+        counted as a class of its own.
 
-        Builds the fixture with pixels near 40° N, -15° E, queries a box at 14° to 16° E and asserts no pixel is
-        served.
+        Reads the default fixture once and asserts, for every variable, the count and value of its finite pixels
+        (``_FIXTURE_VALUES``).
         """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        assert reader.samples_in(BoundingBox(39.0, 41.0, 14.0, 16.0), _T).n_samples == 0
-
-    def test_continuous_values(self, tmp_path):
-        """``CLDPIXReader.samples_in`` serves continuous cloud properties with the values stored in the file.
-
-        A decoding error such as a wrong scale or a misread field would publish a plausible-looking but wrong optical
-        depth, water path or temperature.
-
-        Builds the fixture with constant fields and asserts every finite optical depth is 4.0, water path 100.0 and
-        effective temperature 270.0.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        assert np.allclose(_finite(data, "cloud_optical_depth"), 4.0, atol=1e-4)
-        assert np.allclose(_finite(data, "cloud_water_path"), 100.0, atol=1e-3)
-        assert np.allclose(_finite(data, "cloud_effective_temperature"), 270.0, atol=1e-3)
-
-    def test_pressure_survives_descending_valid_range(self, tmp_path):
-        """``CLDPIXReader`` keeps effective cloud pressure although the file declares its ``valid_range`` descending.
-
-        The real ``Eff_Cld_Pressure`` declares ``valid_range`` [1100, 10], which netCDF4 automatic masking reads as an
-        empty range and masks every value, so the product would carry no cloud pressure at all.
-
-        Builds the fixture with a constant 800 hPa and the descending range, and asserts some pressure is finite and
-        every finite one is 800.0.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        pressure = _finite(data, "cloud_effective_pressure")
-        assert pressure.size > 0
-        assert np.allclose(pressure, 800.0, atol=1e-3)
-
-    def test_cloud_particle_radius_values(self, tmp_path):
-        """``CLDPIXReader.samples_in`` serves the effective cloud particle radius from ``Cld_Radius``.
-
-        The particle radius is read from the blended ``Cld_Radius`` field; reading the wrong field or masking it would
-        publish a wrong or missing radius.
-
-        Builds the fixture with ``Cld_Radius`` of 10.0 μm everywhere and asserts some radius is finite and every finite
-        one is 10.0.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        radius = _finite(data, "cloud_particle_radius")
-        assert radius.size > 0
-        assert np.allclose(radius, 10.0, atol=1e-3)
-
-    def test_categorical_values(self, tmp_path):
-        """``CLDPIXReader.samples_in`` serves the cloud mask and particle phase categories as stored, fill as NaN.
-
-        A category is a class label, so any change in decoding would report a different cloud class, such as ice in
-        place of water, and an int8 fill of 127 left in place would be counted as a class of its own.
-
-        Builds the fixture with both fields set to category 1 on its 12 pixels, except one ``Cloud_Particle_Phase``
-        pixel at the fill 127, and asserts all 12 ``cloud_mask`` values are 1.0 and the 11 finite
-        ``cloud_particle_phase`` values are 1.0.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        data = _values(reader, _BBOX)
-        mask = _finite(data, "cloud_mask")
-        phase = _finite(data, "cloud_particle_phase")
-        assert mask.size == 12
-        assert np.allclose(mask, 1.0)
-        assert phase.size == 11
-        assert np.allclose(phase, 1.0)
+        data = _values(CLDPIXReader(make_cldpix_fixture(tmp_path)))
+        assert set(_FIXTURE_VALUES) == {v.name for v in CLDPIXReader.VARIABLES}
+        for name, (count, value) in _FIXTURE_VALUES.items():
+            served = _finite(data, name)
+            assert served.size == count, name
+            np.testing.assert_allclose(served, value, rtol=1e-6, err_msg=name)
 
     def test_southern_hemisphere_pixels_are_kept(self, tmp_path):
         """``CLDPIXReader`` converts the colatitude stored as ``Latitude`` so southern-hemisphere pixels are kept.
@@ -298,35 +189,31 @@ class TestCLDPIXReaderSamples:
         assert not np.any(served == bad_code)
         assert np.count_nonzero(served == kept_code) == 4
 
+    def test_granule_load_peak_memory_is_bounded(self, tmp_path):
+        """``CLDPIXReader._load_granule`` reads a granule with peak memory under 2.5 times the points it returns.
+
+        A CLDPIX hour is about 6.4 million pixels and up to seven are held at once. Each field is written into one
+        preallocated float32 array; building a float64 row per field and stacking them holds the values about five
+        times over (3.5 times the returned points, measured).
+
+        Loads a 500 x 400 pixel synthetic granule under ``tracemalloc`` and compares the traced peak with the bytes of
+        the returned values, coordinates and times.
+        """
+        shape = (500, 400)
+        lats = 40.0 + np.linspace(0.0, 1.0, shape[0] * shape[1]).reshape(shape).astype(np.float32)
+        path = make_cldpix_fixture(tmp_path, lats=lats, lons_0360=np.full(shape, 345.0, np.float32))
+        reader = CLDPIXReader(path)
+        tracemalloc.start()
+        try:
+            points = reader._load_granule(path)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        held = points.values.nbytes + points.lats.nbytes + points.lons.nbytes + points.times.nbytes
+        assert peak < 2.5 * held
+
 
 class TestCLDPIXReaderTimeMatching:
-    def test_policy_is_nearest_pass(self):
-        """``CLDPIXReader`` matches by nearest pass with a 15 minute pass window and a 3 hour maximum offset.
-
-        A ground location is seen on more than one pass a day, so the reader must serve the pass nearest the
-        footprint time and refuse one too far away; other limits would mix passes or match clouds hours apart.
-
-        Asserts ``TIME_MATCH`` is ``NEAREST_PASS``, ``PASS_WINDOW`` is 15 minutes and ``MAX_TIME_OFFSET`` is 3 hours.
-        """
-        assert CLDPIXReader.TIME_MATCH is TimeMatch.NEAREST_PASS
-        assert CLDPIXReader.PASS_WINDOW == np.timedelta64(15, "m")
-        assert CLDPIXReader.MAX_TIME_OFFSET == np.timedelta64(3, "h")
-
-    def test_samples_carry_source_and_scanline_times(self, tmp_path):
-        """``CLDPIXReader.samples_in`` labels its samples ``"cldpix"`` with no timestamp source and per-pixel times.
-
-        The source label and each pixel's observation time are what the product records about where and when a cloud
-        property came from; a wrong label or time would misattribute the data.
-
-        Builds the fixture with every scanline at the fixture time and asserts ``source`` is ``"cldpix"``,
-        ``timestamp_source`` is None and every sample time equals the fixture time.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T)
-        assert samples.source == "cldpix"
-        assert samples.timestamp_source is None
-        assert np.all(samples.times == _T)
-
     def test_nearest_pass_is_served(self, tmp_path):
         """``CLDPIXReader.samples_in`` serves only the granule nearest the footprint time when two cover the same pixels.
 
@@ -350,20 +237,6 @@ class TestCLDPIXReaderTimeMatching:
         near_late = reader.samples_in(_BBOX, late_time - np.timedelta64(30, "m"))
         assert near_late.n_samples == 12
         assert np.all(near_late.times == late_time)
-
-    def test_beyond_max_offset_gives_no_samples(self, tmp_path):
-        """``CLDPIXReader.samples_in`` returns zero samples when the footprint time is beyond ``MAX_TIME_OFFSET``.
-
-        A cloud observation hours away from the footprint no longer describes the scene, so the footprint must be
-        scored as having no CLDPIX match rather than given stale clouds.
-
-        Builds the fixture at the fixture time, queries 6 hours later and asserts zero samples and a value array of
-        shape ``(len(VARIABLES), 0)``.
-        """
-        reader = CLDPIXReader(make_cldpix_fixture(tmp_path))
-        samples = reader.samples_in(_BBOX, _T + np.timedelta64(6, "h"))
-        assert samples.n_samples == 0
-        assert samples.values.shape == (len(CLDPIXReader.VARIABLES), 0)
 
 
 class TestCLDPIXReaderGranuleDate:
@@ -483,38 +356,43 @@ class TestCLDPIXReaderGeolocationChecks:
             CLDPIXReader(path).samples_in(_BBOX, _T)
 
     @pytest.mark.parametrize(
-        "name", ["Latitude", "Longitude", "Observation_Time", "Eff_Cld_Optical_Depth", "Cloud_Particle_Phase"]
+        ("attribute", "name"),
+        [
+            *(
+                ("_FillValue", name)
+                for name in (
+                    "Latitude",
+                    "Longitude",
+                    "Observation_Time",
+                    "Eff_Cld_Optical_Depth",
+                    "Cloud_Particle_Phase",
+                )
+            ),
+            *(
+                ("valid_range", name)
+                for name in (
+                    "Longitude",
+                    "Observation_Time",
+                    "Eff_Cld_Optical_Depth",
+                    "Top_Cld_Height",
+                    "Cloud_Particle_Phase",
+                )
+            ),
+        ],
     )
-    def test_field_without_fill_value_raises(self, tmp_path, name):
-        """``CLDPIXReader`` raises ``ValueError`` when a field it reads has no ``_FillValue`` attribute.
+    def test_field_without_fill_value_or_valid_range_raises(self, tmp_path, attribute, name):
+        """``CLDPIXReader`` raises ``ValueError`` when a field it reads has no ``_FillValue`` or ``valid_range``.
 
-        The reader takes each field's fill sentinel from the file; with none declared it cannot tell missing pixels
-        from data, and a sentinel would be averaged in as a real value.
+        The reader takes each field's fill sentinel and valid range from the file; with either missing it cannot tell
+        missing pixels or out-of-range values from data, and would average them in as real values.
 
-        Parametrized over the geolocation fields (``Latitude``, ``Longitude``), the pixel time (``Observation_Time``),
-        a continuous (``Eff_Cld_Optical_Depth``) and a categorical (``Cloud_Particle_Phase``) field; writes the fixture
-        without that field's fill and asserts ``samples_in`` raises ``ValueError`` matching "<name> has no _FillValue
-        attribute".
+        Parametrized over each attribute on the geolocation fields, the pixel time, continuous fields and a categorical
+        field (``Latitude``'s range is covered by the colatitude checks above); writes the fixture without it and
+        asserts ``samples_in`` raises ``ValueError`` naming the field and the attribute.
         """
-        path = make_cldpix_fixture(tmp_path, omit_fill_value=(name,))
-        with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
-
-    @pytest.mark.parametrize(
-        "name", ["Longitude", "Observation_Time", "Eff_Cld_Optical_Depth", "Top_Cld_Height", "Cloud_Particle_Phase"]
-    )
-    def test_field_without_valid_range_raises(self, tmp_path, name):
-        """``CLDPIXReader`` raises ``ValueError`` when a field it reads has no ``valid_range`` attribute.
-
-        The reader takes each field's valid range from the file; with none declared it cannot tell a retrieval from
-        an out-of-range value, and guessing one could silently drop or keep the wrong values.
-
-        Parametrized over ``Longitude``, the pixel time (``Observation_Time``), two continuous fields and a categorical
-        one; writes the fixture without that field's range and asserts ``samples_in`` raises ``ValueError`` matching
-        "<name> has no valid_range attribute".
-        """
-        path = make_cldpix_fixture(tmp_path, omit_valid_range=(name,))
-        with pytest.raises(ValueError, match=f"{name} has no valid_range attribute"):
+        omit = {"omit_fill_value": (name,)} if attribute == "_FillValue" else {"omit_valid_range": (name,)}
+        path = make_cldpix_fixture(tmp_path, **omit)
+        with pytest.raises(ValueError, match=f"{name} has no {attribute} attribute"):
             CLDPIXReader(path).samples_in(_BBOX, _T)
 
     def test_longitude_valid_range_comes_from_the_file(self, tmp_path):

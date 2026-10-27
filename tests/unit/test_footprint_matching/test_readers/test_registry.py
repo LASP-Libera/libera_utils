@@ -1,9 +1,8 @@
 """Unit tests for the reader registry.
 
 Tests confirm:
-- importing the readers package registers every built-in reader under its key
-- each gridded reader is registered with its declared instrument, resolution, time policy and
-  variables
+- importing the readers package registers every built-in reader under its key, with its declared
+  instrument, resolution, time policy and variables
 - an unknown key raises a KeyError naming the registered keys
 - each operational mode resolves to its per-product reader set (FMATCH_MODE_READERS)
 - a second class registering a key another class holds is rejected at definition
@@ -29,41 +28,68 @@ from libera_utils.footprint_matching.readers import (
 from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS
 from libera_utils.footprint_matching.types import OperationalMode, TimeMatch, VariableSpec
 
-_BUILT_IN = {
-    "cldpix": CLDPIXReader,
-    "era5_surface": ERA5SurfaceReader,
-    "era5_pressure": ERA5PressureLevelReader,
-    "igbp": IGBPReader,
-    "nise": NISEReader,
-    "ssf": SSFReader,
-    "viirs_aod": VIIRSAODReader,
-    "viirs_brdf": VIIRSBRDFReader,
-    "viirs_cldprop_d3": VIIRSCldpropD3Reader,
-}
 _SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM)
 _CAM = OperationalMode.CAM
+_FLASH = OperationalMode.IMAGER_FLASH
 _IMAGER = OperationalMode.IMAGER
 _HOUR = np.timedelta64(1, "h")
+_PASS_WINDOW = np.timedelta64(15, "m")
+_PASS_MAX_OFFSET = np.timedelta64(3, "h")
 # The ERA5 pressure-level fields and the 37 standard levels, hPa, in the order the reader declares them.
 _PRESSURE_FIELDS = ("temperature", "geopotential", "ozone_mass_mixing_ratio", "specific_humidity", "relative_humidity")
 _PRESSURE_LEVELS_HPA = (1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450)
 _PRESSURE_LEVELS_HPA += (500, 550, 600, 650, 700, 750, 775, 800, 825, 850, 875, 900, 925, 950, 975, 1000)
 
 
-def _mean(name: str, mode: OperationalMode) -> tuple:
-    return (name, "float32", "weighted_mean", None, mode)
+def _mean(name: str, mode: OperationalMode, only_modes: tuple | None = None) -> tuple:
+    return (name, "float32", "weighted_mean", None, mode, only_modes)
+
+
+def _log_mean(name: str, mode: OperationalMode, only_modes: tuple | None = None) -> tuple:
+    return (name, "float32", "weighted_log_mean", None, mode, only_modes)
+
+
+def _code(name: str, n_categories: int | None, mode: OperationalMode) -> tuple:
+    return (name, "int16", "weighted_mode", n_categories, mode, None)
 
 
 def _ranked(base: str, n_categories: int, mode: OperationalMode) -> tuple[tuple, ...]:
     return tuple(
-        (f"{base}_{rank}", "int16", f"weighted_mode_{rank}", n_categories, mode)
+        (f"{base}_{rank}", "int16", f"weighted_mode_{rank}", n_categories, mode, None)
         for rank in ("primary", "secondary", "tertiary")
     )
 
 
+# The SSF fields pinned to FMATCH-IMAGER alone.
+_IMAGER_ONLY = (_IMAGER,)
+_SSF_IMAGER_ONLY = (
+    *(
+        _mean(f"{base}_{layer}", _IMAGER, _IMAGER_ONLY)
+        for base in (
+            "layer_coverage",
+            "cloud_coverage_multilayer",
+            "cloud_top_pressure",
+            "cloud_base_pressure",
+            "cloud_particle_phase_37um",
+        )
+        for layer in ("lower", "upper")
+    ),
+    _log_mean("cloud_optical_depth_upper", _IMAGER, _IMAGER_ONLY),
+    _mean("cloud_water_particle_radius_upper", _IMAGER, _IMAGER_ONLY),
+    _mean("cloud_ice_particle_radius_upper", _IMAGER, _IMAGER_ONLY),
+    _log_mean("match_aot", _IMAGER, _IMAGER_ONLY),
+    *(_mean(f"aerosol_type_percentage_type{i}", _IMAGER, _IMAGER_ONLY) for i in range(7)),
+    _log_mean("imager_dark_target_land_055um_corrected_aerosol_optical_depth", _IMAGER, _IMAGER_ONLY),
+    _log_mean("imager_deep_blue_ocean_055um_aerosol_optical_depth", _IMAGER, _IMAGER_ONLY),
+    _mean("surface_albedo", _IMAGER, _IMAGER_ONLY),
+    _mean("toa_incoming_solar_radiation", _IMAGER, _IMAGER_ONLY),
+)
+
+
 # Each built-in reader's declared attributes, written out independently of the reader modules:
-# (key, class, INSTRUMENT, RESOLUTION_KM, TIME_MATCH, MAX_TIME_OFFSET, VARIABLES,
-#  ADDITIONAL_PRODUCT_VARIABLES), each variable as (name, dtype, aggregation, n_categories, required_mode).
+# (key, class, INSTRUMENT, RESOLUTION_KM, TIME_MATCH, PASS_WINDOW, MAX_TIME_OFFSET, VARIABLES,
+#  ADDITIONAL_PRODUCT_VARIABLES), each variable as
+#  (name, dtype, aggregation, n_categories, required_mode, only_modes).
 # VARIABLES is None for era5_pressure, whose 185 specs are pinned separately.
 _DECLARED = [
     (
@@ -72,6 +98,7 @@ _DECLARED = [
         "ECMWF",
         28.0,  # the 0.25 degree ERA5 grid spacing at the equator
         TimeMatch.NEAREST_STEP,
+        None,
         _HOUR,
         (
             _mean("wind_u10", _CAM),
@@ -84,7 +111,7 @@ _DECLARED = [
         ),
         (),
     ),
-    ("era5_pressure", ERA5PressureLevelReader, "ECMWF", 28.0, TimeMatch.NEAREST_STEP, _HOUR, None, ()),
+    ("era5_pressure", ERA5PressureLevelReader, "ECMWF", 28.0, TimeMatch.NEAREST_STEP, None, _HOUR, None, ()),
     (
         "igbp",
         IGBPReader,
@@ -92,7 +119,8 @@ _DECLARED = [
         0.463,  # the MCD12Q1 sinusoidal grid cell, 463.3 m
         TimeMatch.DAILY,
         None,
-        (("surface_type", "int16", "weighted_mode", 20, _CAM),),
+        None,
+        (_code("surface_type", 20, _CAM),),
         _ranked("surface_type", 20, _CAM),
     ),
     (
@@ -101,6 +129,7 @@ _DECLARED = [
         "AMSR2",
         25.0,  # the nominal NISE EASE-Grid cell
         TimeMatch.DAILY,
+        None,
         None,
         tuple(
             _mean(name, _CAM)
@@ -115,9 +144,10 @@ _DECLARED = [
         111.0,  # a 1 degree cell at the equator
         TimeMatch.DAILY,
         None,
+        None,
         (
-            ("aod_550", "float32", "weighted_log_mean", None, _IMAGER),
-            ("aerosol_type", "int16", "weighted_mode", 8, _IMAGER),
+            _log_mean("aod_550", _IMAGER),
+            _code("aerosol_type", 8, _IMAGER),
         ),
         _ranked("aerosol_type", 8, _IMAGER),
     ),
@@ -128,6 +158,7 @@ _DECLARED = [
         5.6,  # the 0.05 degree CMG spacing at the equator
         TimeMatch.DAILY,
         None,
+        None,
         tuple(
             _mean(f"brdf_{band}_{param}", _CAM)
             for band in ("shortwave", "vis", "nir")
@@ -135,32 +166,96 @@ _DECLARED = [
         ),
         (),
     ),
+    (
+        "viirs_cldprop_d3",
+        VIIRSCldpropD3Reader,
+        "NOAA20",
+        111.0,  # a 1 degree cell at the equator
+        TimeMatch.DAILY,
+        None,
+        None,
+        (_log_mean("cloud_optical_thickness", _CAM), _mean("cloud_top_pressure", _CAM)),
+        (),
+    ),
+    (
+        "ssf",
+        SSFReader,
+        "NOAA20",
+        20.0,  # the CERES footprint at nadir
+        TimeMatch.NEAREST_PASS,
+        _PASS_WINDOW,
+        _PASS_MAX_OFFSET,
+        (
+            _log_mean("aerosol_optical_depth", _FLASH),
+            _mean("clear_coverage", _FLASH),
+            _log_mean("cloud_optical_depth_lower", _FLASH),
+            _mean("cloud_water_particle_radius_lower", _FLASH),
+            _mean("cloud_ice_particle_radius_lower", _FLASH),
+            _code("cloud_classification", None, _FLASH),
+            _code("shortwave_adm_type", None, _FLASH),
+            _code("longwave_adm_type", None, _FLASH),
+            *_SSF_IMAGER_ONLY,
+        ),
+        (),
+    ),
+    (
+        "cldpix",
+        CLDPIXReader,
+        "NOAA20",
+        1.0,  # the VIIRS imager pixel
+        TimeMatch.NEAREST_PASS,
+        _PASS_WINDOW,
+        _PASS_MAX_OFFSET,
+        (
+            _log_mean("cloud_optical_depth", _IMAGER),
+            _mean("cloud_water_path", _IMAGER),
+            _mean("cloud_effective_temperature", _IMAGER),
+            _mean("cloud_effective_height", _IMAGER),
+            _mean("cloud_effective_pressure", _IMAGER),
+            _mean("cloud_top_height", _IMAGER),
+            _mean("cloud_particle_radius", _IMAGER),
+            _code("cloud_particle_phase", 5, _IMAGER),
+            _code("cloud_mask", 4, _IMAGER),
+        ),
+        (),
+    ),
 ]
+_BUILT_IN = {row[0]: row[1] for row in _DECLARED}
 
 
 def _as_tuples(specs: tuple[VariableSpec, ...]) -> tuple[tuple, ...]:
-    return tuple((v.name, v.dtype, v.aggregation, v.n_categories, v.required_mode) for v in specs)
+    return tuple((v.name, v.dtype, v.aggregation, v.n_categories, v.required_mode, v.only_modes) for v in specs)
 
 
 class TestLookup:
     @pytest.mark.parametrize(
-        ("key", "cls", "instrument", "resolution_km", "time_match", "max_time_offset", "variables", "additional"),
+        (
+            "key",
+            "cls",
+            "instrument",
+            "resolution_km",
+            "time_match",
+            "pass_window",
+            "max_time_offset",
+            "variables",
+            "additional",
+        ),
         [pytest.param(*row, id=row[0]) for row in _DECLARED],
     )
     def test_get_returns_the_registered_class(
-        self, key, cls, instrument, resolution_km, time_match, max_time_offset, variables, additional
+        self, key, cls, instrument, resolution_km, time_match, pass_window, max_time_offset, variables, additional
     ):
         """``ReaderRegistry.get`` returns each built-in reader under its key, with the attributes it is declared with.
 
         Callers obtain readers by key, and the key prefixes every output variable name. ``INSTRUMENT`` is recorded in
         each variable's ``long_name``; the query box is padded by half of ``RESOLUTION_KM`` and the weigher sizes its
-        coverage measure from it; ``TIME_MATCH`` and ``MAX_TIME_OFFSET`` decide which samples a footprint is paired
+        coverage measure from it; ``TIME_MATCH``, ``PASS_WINDOW`` and ``MAX_TIME_OFFSET`` decide which samples a footprint is paired
         with; and ``VARIABLES`` fixes the order of the served planes, each variable's aggregation, dtype, category
-        count and the products that carry it. A change to any of them renames, mis-aggregates or drops a product
+        count and the products that carry it (``only_modes`` pins a variable to exact products). A change to any of them renames, mis-aggregates or drops a product
         variable, or pairs a footprint with the wrong data.
 
-        Parametrized over the six gridded readers; asserts ``get(key)`` is the class and that its class attributes
-        equal the table's, with every variable's name, dtype, aggregation, category count and gating mode.
+        Parametrized over the nine built-in readers; asserts ``get(key)`` is the class and that its class attributes
+        equal the table's, with every variable's name, dtype, aggregation, category count and gating modes, in order.
         """
         assert ReaderRegistry.get(key) is cls
         assert cls.READER_KEY == key
@@ -168,21 +263,10 @@ class TestLookup:
         assert cls.RESOLUTION_KM == resolution_km
         assert cls.TIME_MATCH is time_match
         assert cls.MAX_TIME_OFFSET == max_time_offset
-        assert cls.PASS_WINDOW is None
+        assert cls.PASS_WINDOW == pass_window
         if variables is not None:
             assert _as_tuples(cls.VARIABLES) == variables
         assert _as_tuples(cls.ADDITIONAL_PRODUCT_VARIABLES) == additional
-
-    @pytest.mark.parametrize(("key", "cls"), sorted(_BUILT_IN.items()))
-    def test_get_returns_every_built_in_class(self, key, cls):
-        """``ReaderRegistry.get`` returns the class registered under each built-in reader's key.
-
-        Callers obtain readers by key, so importing the readers package must register every reader under the key it
-        declares.
-
-        Parametrized over the nine built-in readers' keys; asserts ``get(key)`` returns that exact class.
-        """
-        assert ReaderRegistry.get(key) is cls
 
     def test_pressure_variables_are_every_field_at_every_level(self):
         """``ERA5PressureLevelReader`` declares five fields at 37 levels, variable-major with levels ascending.
@@ -197,7 +281,7 @@ class TestLookup:
         assert [v.name for v in variables] == [
             f"{field}_{level}hPa" for field in _PRESSURE_FIELDS for level in _PRESSURE_LEVELS_HPA
         ]
-        assert {_as_tuples((v,))[0][1:] for v in variables} == {("float32", "weighted_mean", None, _IMAGER)}
+        assert {_as_tuples((v,))[0][1:] for v in variables} == {("float32", "weighted_mean", None, _IMAGER, None)}
 
     def test_unknown_key_raises(self):
         """``ReaderRegistry.get`` raises ``KeyError`` for a key with no registered reader.

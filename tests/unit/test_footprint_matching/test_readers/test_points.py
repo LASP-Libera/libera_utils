@@ -20,132 +20,63 @@ from libera_utils.footprint_matching.readers._points import (
     scan_to_scan_spacing_km,
 )
 
+_NAN = np.nan
+_INT32_MAX = np.iinfo(np.int32).max
+
 
 class TestApplyFillAndValidRange:
-    def test_fill_value_becomes_nan(self):
-        """``apply_fill_and_valid_range`` replaces the ``fill_value`` sentinel with NaN and keeps every other value.
-
-        A sentinel such as -999 left as a number would be averaged into a footprint as if it were data.
-
-        Passes a float array containing one -999 with ``fill_value=-999.0`` and asserts that element is NaN and the
-        other three are unchanged.
-        """
-        raw = np.array([1.0, 2.0, -999.0, 3.0])
-        out = apply_fill_and_valid_range(raw, fill_value=-999.0)
-        assert np.isnan(out[2])
-        assert np.allclose(out[[0, 1, 3]], [1.0, 2.0, 3.0])
-
-    def test_out_of_valid_range_becomes_nan(self):
-        """``apply_fill_and_valid_range`` sets values outside ``valid_range`` to NaN and keeps the inclusive endpoints.
-
-        A value outside a netCDF ``valid_range`` is invalid, but one sitting exactly on a bound is valid and would be
-        lost by an exclusive test.
-
-        Applies a range of (0, 5) to [-1, 0, 5, 6] and asserts -1 and 6 become NaN while 0 and 5 are kept.
-        """
-        raw = np.array([-1.0, 0.0, 5.0, 6.0])
-        out = apply_fill_and_valid_range(raw, valid_range=(0.0, 5.0))
-        assert np.isnan(out[0])
-        assert np.isnan(out[3])
-        assert np.allclose(out[[1, 2]], [0.0, 5.0])
-
-    def test_descending_valid_range_is_normalized(self):
-        """``apply_fill_and_valid_range`` treats a ``valid_range`` given high to low the same as one given low to high.
-
-        Some products store a range in descending order, such as a pressure field's [1100, 10]; taken literally, no
-        value would satisfy both bounds and the whole field would be masked.
-
-        Applies (1100, 10) to [800, 50, 5, 2000] and asserts 800 and 50 are kept while 5 and 2000 become NaN.
-        """
-        # The CLDPIX pressure field stores valid_range as [1100, 10]; values in
-        # between must be kept, not masked.
-        raw = np.array([800.0, 50.0, 5.0, 2000.0])
-        out = apply_fill_and_valid_range(raw, valid_range=(1100.0, 10.0))
-        assert np.allclose(out[[0, 1]], [800.0, 50.0])
-        assert np.isnan(out[2])
-        assert np.isnan(out[3])
-
-    def test_integer_fill_matches_exactly(self):
-        """``apply_fill_and_valid_range`` recognizes an integer fill value in an integer array.
-
-        Integer fields mark missing cells with an integer sentinel, which would otherwise be served as a valid value.
-
-        Passes an ``int8`` array containing 127 with ``fill_value=127`` and asserts that element is NaN in the float
-        output.
-        """
-        raw = np.array([1, 2, 127, 3], dtype=np.int8)
-        out = apply_fill_and_valid_range(raw, fill_value=127)
-        assert np.isnan(out[2])
-
-    def test_masked_array_input(self):
-        """``apply_fill_and_valid_range`` turns the masked elements of a ``numpy.ma.MaskedArray`` into NaN.
-
-        A masked array flags its missing elements in the mask rather than by a sentinel, and the data under the mask is
-        not a valid value, so the mask must be honored even when no fill value is given.
-
-        Passes a three-element masked array with its middle element masked and no fill or range, and asserts that
-        element is NaN and the other two are unchanged.
-        """
-        raw = np.ma.array([1.0, 2.0, 3.0], mask=[False, True, False])
-        out = apply_fill_and_valid_range(raw)
-        assert np.isnan(out[1])
-        assert np.allclose(out[[0, 2]], [1.0, 3.0])
-
-    def test_float32_fill_matches_in_raw_dtype(self):
-        """``apply_fill_and_valid_range`` matches a float32 fill equal to the float32 maximum by comparing in float32.
-
-        Some products use the float32 maximum as fill; the decimal literal a reader declares, widened to float64,
-        differs from the stored float32 value, so a float64 comparison would miss every fill and serve it as data.
-
-        Passes a float32 array containing 3.4028235e38 with that literal as ``fill_value`` and asserts that element is
-        NaN and the others are unchanged.
-        """
-        # The CERES float fill is the float32 maximum. Stored as float32 and compared in
-        # that dtype it matches exactly, even though its float64 widening differs from
-        # the decimal literal the readers declare.
-        raw = np.array([1.0, 3.4028235e38, 2.0], dtype=np.float32)
-        out = apply_fill_and_valid_range(raw, fill_value=3.4028235e38)
-        assert np.isnan(out[1])
-        assert np.allclose(out[[0, 2]], [1.0, 2.0])
-
-    def test_int32_extreme_fill_matches_exactly(self):
-        """``apply_fill_and_valid_range`` matches an int32 fill float32 cannot represent, without masking its neighbor.
-
-        The int32 maximum and the value one below it round to the same float32, so a comparison made after a cast to
-        float32 would also mask a valid value; comparing in the raw int32 dtype tells them apart.
-
-        Passes an int32 array holding the int32 maximum as fill and the maximum minus one as data, and asserts the fill
-        is NaN while the maximum minus one and the other values stay finite.
-        """
-        # An int32 sentinel float32 cannot represent exactly still matches, because the
-        # comparison is made before any cast. sentinel - 1 rounds to the same float32, so it
-        # survives only if the comparison is made in the raw dtype.
-        sentinel = np.iinfo(np.int32).max
-        raw = np.array([1, sentinel, 2, sentinel - 1], dtype=np.int32)
-        out = apply_fill_and_valid_range(raw, fill_value=sentinel)
-        assert np.isnan(out[1])
-        assert np.allclose(out[[0, 2]], [1.0, 2.0])
-        assert np.isfinite(out[3])
-
     @pytest.mark.parametrize(
-        ("raw", "fill"),
+        ("raw", "fill_value", "valid_range", "expected"),
         [
-            (np.array([25, 7], dtype=np.uint8), -999),
-            (np.array([1, 7], dtype=np.int16), 1.5),
-            (np.array([44, 7], dtype=np.int8), 300),
+            pytest.param(np.array([1.0, 2.0, -999.0, 3.0]), -999.0, None, [1.0, 2.0, _NAN, 3.0], id="fill"),
+            # The range is inclusive: a value on a bound is valid.
+            pytest.param(np.array([-1.0, 0.0, 5.0, 6.0]), None, (0.0, 5.0), [_NAN, 0.0, 5.0, _NAN], id="range"),
+            # CLDPIX Eff_Cld_Pressure declares [1100, 10]; taken literally no value would satisfy both bounds.
+            pytest.param(
+                np.array([800.0, 50.0, 5.0, 2000.0]), None, (1100.0, 10.0), [800.0, 50.0, _NAN, _NAN], id="descending"
+            ),
+            pytest.param(np.array([1, 2, 127, 3], dtype=np.int8), 127, None, [1.0, 2.0, _NAN, 3.0], id="int8-fill"),
+            # The mask flags missing elements with no sentinel.
+            pytest.param(
+                np.ma.array([1.0, 2.0, 3.0], mask=[False, True, False]), None, None, [1.0, _NAN, 3.0], id="masked"
+            ),
+            # The CERES float fill is the float32 maximum, whose float64 widening differs from the decimal literal.
+            pytest.param(
+                np.array([1.0, 3.4028235e38, 2.0], dtype=np.float32),
+                3.4028235e38,
+                None,
+                [1.0, _NAN, 2.0],
+                id="float32-max",
+            ),
+            # int32 max and max - 1 round to the same float32, so only a raw-dtype comparison keeps max - 1.
+            pytest.param(
+                np.array([1, _INT32_MAX, 2, _INT32_MAX - 1], dtype=np.int32),
+                _INT32_MAX,
+                None,
+                [1.0, _NAN, 2.0, float(_INT32_MAX - 1)],
+                id="int32-max",
+            ),
+            # A fill the dtype cannot hold would wrap or truncate onto a valid value if cast: -999 to 25 in uint8,
+            # 1.5 to 1 in int16, 300 to 44 in int8.
+            pytest.param(np.array([25, 7], dtype=np.uint8), -999, None, [25.0, 7.0], id="uint8-unholdable"),
+            pytest.param(np.array([1, 7], dtype=np.int16), 1.5, None, [1.0, 7.0], id="int16-unholdable"),
+            pytest.param(np.array([44, 7], dtype=np.int8), 300, None, [44.0, 7.0], id="int8-unholdable"),
         ],
     )
-    def test_fill_the_dtype_cannot_hold_masks_nothing(self, raw, fill):
-        """``apply_fill_and_valid_range`` masks nothing for a fill the raw integer dtype cannot hold.
+    def test_invalid_entries_become_nan(self, raw, fill_value, valid_range, expected):
+        """``apply_fill_and_valid_range`` sets fill, masked and out-of-range entries to NaN and keeps every other value.
 
-        Cast into the dtype, -999 wraps to 25 in uint8, 1.5 truncates to 1 in int16 and 300 wraps to 44 in
-        int8, so a cast comparison would mask a valid value; no stored value can equal such a fill.
+        A sentinel or out-of-range value left as a number would be averaged into a footprint as if it were data, and a
+        valid value masked by a careless comparison would be lost. The fill is compared in the raw dtype, so a sentinel
+        float32 cannot represent exactly still matches, and a fill the dtype cannot hold matches nothing.
 
-        The parameters pair each dtype with a fill outside it, and every output value must stay finite.
+        Parametrized over a float fill, an inclusive range, a descending range, an integer fill, a masked array, the
+        float32-maximum fill, the int32-maximum fill beside its float32 twin, and three fills their dtype cannot hold;
+        asserts the float64 output equals the expected values, NaN for NaN.
         """
-        out = apply_fill_and_valid_range(raw, fill_value=fill)
-        assert np.all(np.isfinite(out))
-        assert out.tolist() == raw.astype(np.float64).tolist()
+        out = apply_fill_and_valid_range(raw, fill_value=fill_value, valid_range=valid_range)
+        assert out.dtype == np.float64
+        np.testing.assert_array_equal(out, np.array(expected, dtype=np.float64))
 
 
 class TestFieldFillValue:
