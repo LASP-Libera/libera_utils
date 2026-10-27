@@ -69,6 +69,7 @@ from typing import NamedTuple
 import netCDF4
 import numpy as np
 
+from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_cf_times,
@@ -76,7 +77,6 @@ from libera_utils.footprint_matching.readers._points import (
     field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
-    normalize_longitude,
     scan_to_scan_spacing_km,
 )
 from libera_utils.footprint_matching.readers.base import PassReader

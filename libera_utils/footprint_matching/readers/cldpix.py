@@ -24,7 +24,7 @@ Reading the raw values as latitudes would place every pixel at the wrong
 latitude *and* discard the entire southern hemisphere (colatitude > 90 falls
 outside a −90..90 valid-range filter), so the conversion below is mandatory.
 Longitude uses the CERES 0..360 degrees-east convention and is wrapped to
-−180..180 by :func:`~libera_utils.footprint_matching.readers._points.normalize_longitude`.
+−180..180 by :func:`~libera_utils.footprint_matching.readers._longitude.normalize_longitude`.
 
 Native pixels, matched by time
 ------------------------------
@@ -69,6 +69,7 @@ from typing import NamedTuple
 import netCDF4
 import numpy as np
 
+from libera_utils.footprint_matching.readers._longitude import normalize_longitude
 from libera_utils.footprint_matching.readers._points import (
     apply_fill_and_valid_range,
     decode_hours_of_day,
@@ -76,7 +77,6 @@ from libera_utils.footprint_matching.readers._points import (
     field_valid_range,
     granule_time_coverage,
     neighbor_spacing_km,
-    normalize_longitude,
 )
 from libera_utils.footprint_matching.readers.base import PassReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec

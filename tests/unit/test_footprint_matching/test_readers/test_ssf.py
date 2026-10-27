@@ -14,7 +14,7 @@ import pytest
 
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
-from tests.test_data.footprint_matching.fixtures import SWATH_FIXTURE_TIME, make_ssf_fixture
+from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_ssf_fixture
 
 # Box that contains the default footprint cluster (lon −10° == 350°).
 _BBOX = BoundingBox(10.0, 12.0, -11.0, -9.0)

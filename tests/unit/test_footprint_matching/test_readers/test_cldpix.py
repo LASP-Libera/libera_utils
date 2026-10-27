@@ -15,7 +15,7 @@ import pytest
 
 from libera_utils.footprint_matching.readers.cldpix import CLDPIXReader, _bad_data_flags
 from libera_utils.footprint_matching.types import BoundingBox, TimeMatch
-from tests.test_data.footprint_matching.fixtures import SWATH_FIXTURE_TIME, make_cldpix_fixture
+from tests.plugins.footprint_matching_fixtures import SWATH_FIXTURE_TIME, make_cldpix_fixture
 
 # Box containing the default pixel cluster (lon −15° == 345°).
 _BBOX = BoundingBox(39.0, 41.0, -16.0, -14.0)

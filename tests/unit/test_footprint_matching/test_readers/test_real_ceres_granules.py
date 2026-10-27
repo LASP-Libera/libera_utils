@@ -2,7 +2,7 @@
 
 The granules are cut from real CER_SSF_NOAA20-FM6-VIIRS and CER_CLDPIX_NOAA20-VIIRS
 granules to three contiguous blocks spread across the hour (start, middle, end), with
-their values unchanged; see tests/test_data/footprint_matching/real/README.md. The
+their values unchanged; see tests/test_data/footprint_matching/README.md. The
 tests pin the file conventions the readers rely on: the time variables and their
 encodings, the geolocation conventions, the hourly granule span, and that a footprint
 query at a footprint's own time serves its pass with the values the file holds there.

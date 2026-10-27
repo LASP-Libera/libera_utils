@@ -627,7 +627,7 @@ class TestNearestPass:
         Two padding-only samples 5 minutes from the query and three in-box samples 60 minutes away; asserts the three
         in-box samples are served and the two padding samples are not.
         """
-        reader = _PassReader(self._padding_and_box_passes(include_box_pass=True))
+        reader = _HeldPassReader(self._padding_and_box_passes(include_box_pass=True))
         samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
         assert samples.n_samples == 3
         assert set(samples.values[0].tolist()) == {2.0}
@@ -640,7 +640,7 @@ class TestNearestPass:
 
         Only the two padding-only samples exist; asserts both are served.
         """
-        reader = _PassReader(self._padding_and_box_passes(include_box_pass=False))
+        reader = _HeldPassReader(self._padding_and_box_passes(include_box_pass=False))
         samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
         assert samples.n_samples == 2
 

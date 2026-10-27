@@ -1,7 +1,5 @@
 """Shared decoding helpers for the readers.
 
-- :func:`normalize_longitude` -- convert a 0..360 longitude convention to -180..180
-  (the ERA5 grids and the CERES SSF and CLDPIX swaths arrive on 0..360).
 - :func:`field_fill_value` -- read a field's own ``_FillValue``, raising when it has none.
 - :func:`field_valid_range` -- read a field's own ``valid_range``, raising when it has none.
 - :func:`apply_fill_and_valid_range` -- convert a raw masked/integer array to a float
@@ -22,27 +20,6 @@ from typing import Any
 
 import netCDF4
 import numpy as np
-
-
-def normalize_longitude(lon: np.ndarray) -> np.ndarray:
-    """Convert longitudes from the 0..360 convention to -180..180.
-
-    ERA5 grids store longitude in degrees-east on a 0..360 scale, whereas the
-    footprint-matching readers use -180..180. The transform
-    ``((lon + 180) % 360) - 180`` maps both conventions onto -180..180 and is a
-    no-op for values already in that range.
-
-    Parameters
-    ----------
-    lon : np.ndarray
-        Longitude values in degrees (any convention).
-
-    Returns
-    -------
-    np.ndarray
-        Longitudes wrapped to the half-open interval [-180, 180).
-    """
-    return ((np.asarray(lon, dtype=np.float64) + 180.0) % 360.0) - 180.0
 
 
 def _fill_in_dtype(fill_value: float | int, dtype: np.dtype) -> np.ndarray | None:
