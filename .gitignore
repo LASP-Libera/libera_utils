@@ -84,10 +84,11 @@ venv
 pytest.ini
 .devcontainer
 .claude/settings.local.json
-.claude/CLAUDE.local.md
+CLAUDE.local.md
 .mcp.json
 reviews/*
+.env*
 
 # Review loop working files #
 #############################
-.review/
+.review
