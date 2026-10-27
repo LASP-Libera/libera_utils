@@ -299,6 +299,16 @@ def test_l1a_product_definition_file(test_data_path: Path) -> Path:
     return test_data_path / "product_definitions" / "test_l1a_product_definition.yml"
 
 
+@pytest.fixture(scope="session")
+def fmatch_real_data_path(test_data_path):
+    """Path to shortened real ancillary granules for the footprint matching readers.
+
+    Each file is cut from a real granule with its values unchanged; see the README.md
+    in that directory for each file's source granule and what was kept.
+    """
+    return test_data_path / "footprint_matching"
+
+
 @pytest.fixture
 def scene_id_test_data_path(test_data_path):
     """Path to folder containing scene ID integration test files"""
