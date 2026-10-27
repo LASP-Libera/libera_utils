@@ -447,28 +447,6 @@ class TestVIIRSBRDFGridMetadata:
         assert (grid["xdim"], grid["ydim"]) == (7200, 3600)
         assert (grid["ul_lon"], grid["ul_lat"], grid["lr_lon"], grid["lr_lat"]) == (-180.0, 90.0, 180.0, -90.0)
 
-    def test_missing_grid_raises(self):
-        """``_parse_he5_grid_metadata`` raises ``ValueError`` when ``StructMetadata.0`` has no grid of the given name.
-
-        A file without the ``VIIRS_CMG_BRDF`` grid is not a VJ143C1 BRDF granule, and the reader has no grid definition
-        to check its axes against.
-
-        Parses a ``GridStructure`` group with no grids and checks the message names the missing grid.
-        """
-        with pytest.raises(ValueError, match="has no grid named 'VIIRS_CMG_BRDF'"):
-            _parse_he5_grid_metadata("GROUP=GridStructure\nEND_GROUP=GridStructure\n", "VIIRS_CMG_BRDF", "g.h5")
-
-    def test_missing_field_raises(self):
-        """``_parse_he5_grid_metadata`` raises ``ValueError`` when the grid's definition lacks a required field.
-
-        Without ``YDim`` the reader cannot confirm the latitude axis has the grid's size.
-
-        Parses a grid block that has ``XDim`` and ``Projection`` but no ``YDim`` and checks the message names ``YDim``.
-        """
-        text = 'GridName="VIIRS_CMG_BRDF"\n\t\tXDim=8\n\t\tProjection=HE5_GCTP_GEO\n\tEND_GROUP=GRID_1\n'
-        with pytest.raises(ValueError, match="has no YDim field"):
-            _parse_he5_grid_metadata(text, "VIIRS_CMG_BRDF", "g.h5")
-
     def test_non_geographic_projection_raises(self, tmp_path):
         """Loading a grid whose ``Projection`` is not ``HE5_GCTP_GEO`` raises ``ValueError``.
 

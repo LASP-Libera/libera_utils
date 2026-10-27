@@ -108,11 +108,8 @@ import numpy as np
 import pyhdf.SD as sd
 import pyproj
 
-from libera_utils.footprint_matching.readers._hdf4_io import (
-    parse_eos_grid,
-    read_hdf4_struct_metadata,
-    struct_metadata_error,
-)
+from libera_utils.footprint_matching.readers._eos_metadata import parse_eos_grid, struct_metadata_error
+from libera_utils.footprint_matching.readers._hdf4_io import read_hdf4_struct_metadata
 from libera_utils.footprint_matching.readers.base import StaticReader
 from libera_utils.footprint_matching.types import OperationalMode, PointSamples, TimeMatch, VariableSpec
 
@@ -414,9 +411,8 @@ class NISEReader(StaticReader):
         if grid.projection != _EASE_GRID_PROJECTION:
             raise struct_metadata_error(
                 source,
-                struct_meta,
                 f"names Projection={grid.projection} for grid {hemi.hemisphere_label!r}, not the EASE-Grid "
-                f"{_EASE_GRID_PROJECTION} this reader geolocates",
+                f"{_EASE_GRID_PROJECTION} projection this reader uses to geolocate the pixels",
                 _STRUCT_METADATA_ADVICE,
             )
         upper_left = (hemi.x_origin, hemi.y_origin)
@@ -424,16 +420,15 @@ class NISEReader(StaticReader):
             hemi.x_origin + hemi.grid_cols * hemi.resolution_m,
             hemi.y_origin - hemi.grid_rows * hemi.resolution_m,
         )
-        same_corners = np.allclose(grid.upper_left_m, upper_left, rtol=0.0, atol=_CORNER_TOLERANCE_M) and np.allclose(
-            grid.lower_right_m, lower_right, rtol=0.0, atol=_CORNER_TOLERANCE_M
+        same_corners = np.allclose(grid.upper_left, upper_left, rtol=0.0, atol=_CORNER_TOLERANCE_M) and np.allclose(
+            grid.lower_right, lower_right, rtol=0.0, atol=_CORNER_TOLERANCE_M
         )
         if (grid.ydim, grid.xdim) != (hemi.grid_rows, hemi.grid_cols) or not same_corners:
             raise struct_metadata_error(
                 source,
-                struct_meta,
                 f"gives grid {hemi.hemisphere_label!r} YDim={grid.ydim}, XDim={grid.xdim}, corners "
-                f"{grid.upper_left_m} to {grid.lower_right_m} m, but the reader geolocates it on the "
-                f"{hemi.grid_rows} x {hemi.grid_cols} EASE-Grid with corners {upper_left} to {lower_right} m",
+                f"{grid.upper_left} to {grid.lower_right} m, but this reader uses the {hemi.grid_rows} x "
+                f"{hemi.grid_cols} EASE-Grid with corners {upper_left} to {lower_right} m to geolocate the pixels",
                 _STRUCT_METADATA_ADVICE,
             )
 

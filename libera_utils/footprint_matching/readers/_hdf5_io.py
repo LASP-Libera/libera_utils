@@ -1,18 +1,20 @@
 """HDF-EOS5 helpers for the footprint matching readers.
 
-Reads an HDF-EOS5 file's ``StructMetadata.0`` grid definition with h5py. What a
-product stores in its grids, and how its fields are decoded, belongs to the product's
-reader (the VIIRS BRDF reader, VJ143C1, in ``brdf.py``).
+Reads an HDF-EOS5 file's ``StructMetadata.0`` grid definition with h5py, and parses it
+with ``_eos_metadata``. What a product stores in its grids, and how its fields are
+decoded, belongs to the product's reader (the VIIRS BRDF reader, VJ143C1, in ``brdf.py``).
 """
-
-import re
 
 import h5py
 
+from libera_utils.footprint_matching.readers._eos_metadata import parse_eos_grid, struct_metadata_error
+
 # The HDF-EOS5 metadata dataset that defines every grid's dimensions, corners and projection.
 _HE5_STRUCT_METADATA_PATH: str = "HDFEOS INFORMATION/StructMetadata.0"
-# How much of StructMetadata.0 an error message quotes.
-_STRUCT_METADATA_EXCERPT_CHARS: int = 400
+# What to check when StructMetadata.0 does not describe the expected grid.
+_HE5_STRUCT_METADATA_ADVICE: str = (
+    "An HDF-EOS5 file defines each grid there; check that the file is the unmodified granule as distributed."
+)
 
 
 def _dms_to_degrees(packed: float) -> float:
@@ -50,40 +52,22 @@ def _parse_he5_grid_metadata(struct_metadata: str, grid_name: str, source: str) 
         ``LowerRightMtrs`` or ``Projection`` fields is absent, or the projection is
         not the geographic ``HE5_GCTP_GEO``.
     """
-
-    def _fail(what: str) -> ValueError:
-        excerpt = struct_metadata[:_STRUCT_METADATA_EXCERPT_CHARS]
-        return ValueError(
-            f"{source}: StructMetadata.0 {what}. An HDF-EOS5 file defines each grid there; check that the file is "
-            f"the unmodified granule as distributed. StructMetadata.0 begins: {excerpt!r}"
+    grid = parse_eos_grid(struct_metadata, source, _HE5_STRUCT_METADATA_ADVICE, grid_name=grid_name)
+    if grid.projection != "HE5_GCTP_GEO":
+        raise struct_metadata_error(
+            source,
+            f"gives grid {grid_name!r} Projection={grid.projection}, not the geographic HE5_GCTP_GEO",
+            _HE5_STRUCT_METADATA_ADVICE,
         )
-
-    block = re.search(rf'GridName="{re.escape(grid_name)}"(.*?)END_GROUP=GRID_\d+', struct_metadata, flags=re.DOTALL)
-    if block is None:
-        raise _fail(f"has no grid named {grid_name!r}")
-    text = block.group(1)
-
-    def _field(pattern: str, field: str) -> re.Match:  # type: ignore[type-arg]
-        m = re.search(pattern, text)
-        if m is None:
-            raise _fail(f"has no {field} field for grid {grid_name!r}")
-        return m
-
-    xdim = int(_field(r"\bXDim\s*=\s*(\d+)", "XDim").group(1))
-    ydim = int(_field(r"\bYDim\s*=\s*(\d+)", "YDim").group(1))
-    ul = _field(r"UpperLeftPointMtrs\s*=\s*\(([^,]+),([^)]+)\)", "UpperLeftPointMtrs")
-    lr = _field(r"LowerRightMtrs\s*=\s*\(([^,]+),([^)]+)\)", "LowerRightMtrs")
-    projection = _field(r"\bProjection\s*=\s*(\w+)", "Projection").group(1)
-    if projection != "HE5_GCTP_GEO":
-        raise _fail(f"gives grid {grid_name!r} Projection={projection}, not the geographic HE5_GCTP_GEO")
+    (ul_lon, ul_lat), (lr_lon, lr_lat) = grid.upper_left, grid.lower_right
     return {
-        "xdim": xdim,
-        "ydim": ydim,
+        "xdim": grid.xdim,
+        "ydim": grid.ydim,
         # Geographic grids store their corners as packed DDDMMMSSS.SS degrees, longitude first.
-        "ul_lon": _dms_to_degrees(float(ul.group(1))),
-        "ul_lat": _dms_to_degrees(float(ul.group(2))),
-        "lr_lon": _dms_to_degrees(float(lr.group(1))),
-        "lr_lat": _dms_to_degrees(float(lr.group(2))),
+        "ul_lon": _dms_to_degrees(ul_lon),
+        "ul_lat": _dms_to_degrees(ul_lat),
+        "lr_lon": _dms_to_degrees(lr_lon),
+        "lr_lat": _dms_to_degrees(lr_lat),
     }
 
 

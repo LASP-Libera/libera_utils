@@ -13,7 +13,6 @@ Real MCD12Q1 files can be downloaded from:
 import tracemalloc
 
 import numpy as np
-import pyhdf.SD as sd
 import pytest
 from pyhdf.error import HDF4Error
 
@@ -154,65 +153,22 @@ class TestReadModisSinusoidal:
         assert geometry.dy == pytest.approx(-MODIS_TILE_SIZE_M / _N)
         assert geometry.radius_m == pytest.approx(MODIS_SPHERE_RADIUS_M)
 
-    @pytest.mark.parametrize("field", ["XDim", "YDim", "UpperLeftPointMtrs", "LowerRightMtrs", "Projection"])
+    @pytest.mark.parametrize(
+        "field", ["XDim", "YDim", "UpperLeftPointMtrs", "LowerRightMtrs", "Projection", "ProjParams"]
+    )
     def test_missing_field_raises(self, tmp_path, field):
         """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` naming a geometry field not in ``StructMetadata.0``.
 
-        Without any one of these fields the pixels cannot be located, so the read must stop with a message saying
-        which field is absent rather than fail obscurely or serve misplaced pixels.
+        Without any one of these fields the pixels cannot be located (``ProjParams`` carries the sphere radius that
+        converts sinusoidal meters to degrees), so the read must stop with a message saying which field is absent
+        rather than fail obscurely or serve misplaced pixels.
 
-        Parametrized over ``XDim``, ``YDim``, ``UpperLeftPointMtrs``, ``LowerRightMtrs`` and ``Projection``: each run
-        writes a tile without that field and asserts the error says it has no such field.
+        Parametrized over ``XDim``, ``YDim``, ``UpperLeftPointMtrs``, ``LowerRightMtrs``, ``Projection`` and
+        ``ProjParams``: each run writes a tile without that field and asserts the error says it has no such field.
         """
         path, _ = _tile(tmp_path, 18, 4, omit=(field,))
         with pytest.raises(ValueError, match=f"has no {field} field"):
             read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
-
-    def test_missing_proj_params_raises(self, tmp_path):
-        """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` when ``StructMetadata.0`` has no ``ProjParams``.
-
-        ``ProjParams`` carries the sphere radius that converts sinusoidal meters to degrees, so without it no pixel
-        can be geolocated.
-
-        Writes a tile without ``ProjParams`` and asserts the error says it has no ``ProjParams`` field.
-        """
-        path, _ = _tile(tmp_path, 18, 4, omit=("ProjParams",))
-        with pytest.raises(ValueError, match="has no ProjParams field"):
-            read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
-
-    def test_error_quotes_struct_metadata(self, tmp_path):
-        """A ``read_modis_sinusoidal_hdf4`` geometry error quotes the start of ``StructMetadata.0``.
-
-        Quoting what the file does carry lets a user see why the geometry could not be parsed without opening the
-        HDF4 file themselves.
-
-        Writes a tile without ``XDim`` and asserts the message contains ``StructMetadata.0 begins:`` followed by the
-        attribute's ``GridStructure`` text.
-        """
-        path, _ = _tile(tmp_path, 18, 4, omit=("XDim",))
-        with pytest.raises(ValueError, match="StructMetadata.0 begins: .*GridStructure"):
-            read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
-
-    def test_error_quotes_only_the_first_400_characters(self, tmp_path):
-        """A ``read_modis_sinusoidal_hdf4`` geometry error quotes at most 400 characters of ``StructMetadata.0``.
-
-        The attribute runs to tens of kilobytes in real tiles; quoting all of it would bury the error under
-        metadata.
-
-        Overwrites a tile's ``StructMetadata.0`` with long text lacking ``XDim`` and asserts the message contains the
-        first 400 characters but not the first 401.
-        """
-        path, _ = _tile(tmp_path, 18, 4)
-        long_text = "GROUP=GridStructure\n" + "\tSphereCode=-1\n" * 100
-        hdf = sd.SD(str(path), sd.SDC.WRITE)
-        try:
-            hdf.attr("StructMetadata.0").set(sd.SDC.CHAR8, long_text)
-        finally:
-            hdf.end()
-        with pytest.raises(ValueError, match="has no XDim field") as excinfo:
-            read_modis_sinusoidal_hdf4(str(path), "LC_Type1")
-        assert repr(long_text[:400]) in str(excinfo.value)
-        assert repr(long_text[:401]) not in str(excinfo.value)
 
     def test_non_sinusoidal_projection_raises(self, tmp_path):
         """``read_modis_sinusoidal_hdf4`` raises ``ValueError`` for a projection other than ``GCTP_SNSOID``.
