@@ -1,6 +1,7 @@
 """NISE sea ice reader plugin for the footprint matching pipeline.
 
 Data source: NSIDC Near-real-time Ice and Snow Extent (NISE) Product
+
 - Product: NISE_A2 (AMSR-2, v1)
 - Format: HDF-EOS4 (.HDFEOS), opened via pyhdf
 - Spatial resolution: 25 km nominal (NSIDC EASE-Grid North & South)
@@ -17,6 +18,9 @@ NISE Extent encoding
 The authoritative per-code meaning is the ``data_grid_key`` attribute embedded in
 every granule:
 
+  ======== ======================================================================
+  Code     Meaning
+  ======== ======================================================================
   0        Snow-free land
   1–100    Sea ice concentration in percent (1 = 1%, 100 = 100%)
   101      Permanent ice (Greenland Ice Sheet, Antarctic ice shelves)
@@ -29,6 +33,7 @@ every granule:
   254      Off-Earth corner fill — the square grid's corners fall outside the
            projection disk; these pixels are dropped (see "Two hemispheres" below)
   255      Ocean (open water, no ice)
+  ======== ======================================================================
 
 Per-code output layers
 ----------------------
@@ -189,7 +194,7 @@ class _HemisphereGrid:
         Source CRS for the pixel-center reprojection (3408 North, 3409 South).
     hemisphere_label : str
         The HDF-EOS ``GridName`` of this hemisphere, also matched against the SDS
-        dimension names to select its ``Extent`` SDS (see :data:`_HEMISPHERE_LABEL_NORTH`).
+        dimension names to select its ``Extent`` SDS (see ``_HEMISPHERE_LABEL_NORTH``).
     grid_rows, grid_cols : int
         Grid dimensions (default 721 x 721).
     resolution_m : float
@@ -493,7 +498,7 @@ class NISEReader(StaticReader):
         ----------
         hemisphere_label : str
             Substring of the grid dimension name identifying the hemisphere
-            (see :data:`_HEMISPHERE_LABEL_NORTH` / :data:`_HEMISPHERE_LABEL_SOUTH`).
+            (see ``_HEMISPHERE_LABEL_NORTH`` / ``_HEMISPHERE_LABEL_SOUTH``).
 
         Returns
         -------

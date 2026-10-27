@@ -162,13 +162,20 @@ nitpick_ignore_regex = [
     (r"py:class", r"(PydanticUndefined|FieldValidatorDecoratorInfo)"),
     (r"py:class", r"pydantic\._internal\..*"),
     # netCDF4 publishes no intersphinx inventory.
-    (r"py:class", r"netCDF4(\._netCDF4)?\.Dataset"),
+    (r"py:class", r"netCDF4(\._netCDF4)?\.(Dataset|Variable)"),
     # Module private helpers that appear inside Annotated[...] validators or as TypeVars, neither of
     # which autodoc gives a documentable target.
     (r"py:class", r"libera_utils\.io\.umm_g\.validate_iso_datetime"),
     (r"py:class", r"libera_utils\.libera_spice\.spice_utils\._F"),
+    # Module private classes of the readers, named in the signatures and parameter types of documented
+    # private methods. The module template lists only public classes, so they have no page to link to.
+    (
+        r"py:class",
+        r"(libera_utils\.footprint_matching\.readers\.(base|igbp|nsidc|_hdf4_io)\.)?"
+        r"(_BoxNative|_PointIndex|_SinusoidalTiles|_SinusoidalGeometry|_HemisphereGrid)",
+    ),
     # Third party exceptions whose projects publish no inventory (or none we subscribe to).
-    (r"py:exc", r"(requests\.exceptions|docker\.errors|boto3\.exceptions)\..*"),
+    (r"py:exc", r"(requests\.exceptions|docker\.errors|boto3\.exceptions|pyhdf\.error)\..*"),
     # Artifact, not a real reference: Sphinx splits a pydantic model's generated __signature__ on
     # the comma inside a subscripted annotation, so "attributes: dict[str, Any]" is rendered as two
     # parameters and the fragment "dict[str" is looked up as a class.

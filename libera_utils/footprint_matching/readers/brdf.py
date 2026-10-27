@@ -1,6 +1,7 @@
 """VIIRS surface BRDF reader plugin for the footprint matching pipeline.
 
 Data source: VIIRS/NOAA-20 BRDF/Albedo Model Parameters Daily L3 Global 0.05° CMG
+
 - Product: VJ143C1 (Collection 002)
 - Format: HDF5/HDF-EOS5 (.h5), opened via h5py
 - Spatial resolution: 0.05° (~5.6 km at equator)
@@ -27,17 +28,21 @@ fvol/fgeo. Stored as int16; each field's own ``_FillValue`` (32767), ``valid_ran
 
 Output variable naming: ``brdf_{band}_{param}``
 
-  Band     | HDF5 field suffix
-  ---------|-------------------
-  shortwave| shortwave
-  vis      | vis
-  nir      | nir
+  ========= =================
+  Band      HDF5 field suffix
+  ========= =================
+  shortwave shortwave
+  vis       vis
+  nir       nir
+  ========= =================
 
-  Parameter | HDF5 field prefix
-  ----------|------------------
-  fiso      | BRDF_Albedo_Parameter1
-  fvol      | BRDF_Albedo_Parameter2
-  fgeo      | BRDF_Albedo_Parameter3
+  ========= ======================
+  Parameter HDF5 field prefix
+  ========= ======================
+  fiso      BRDF_Albedo_Parameter1
+  fvol      BRDF_Albedo_Parameter2
+  fgeo      BRDF_Albedo_Parameter3
+  ========= ======================
 
 References
 ----------

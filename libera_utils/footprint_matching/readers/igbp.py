@@ -1,6 +1,7 @@
 """IGBP land cover reader plugin for the footprint matching pipeline.
 
 Data source: MODIS MCD12Q1 (Terra+Aqua Combined Land Cover Type Yearly L3 Global 500m)
+
 - Product: MCD12Q1
 - Version: 061 (current)
 - Format: HDF4 (.hdf)
@@ -53,7 +54,7 @@ class IGBPReader(StaticReader):
     The MCD12Q1 product stores IGBP land cover as ``LC_Type1`` (uint8) in
     sinusoidal-projected HDF4 tiles. Geographic coordinates are not stored as SDS
     arrays; each tile's pixel geometry comes from its HDF-EOS ``StructMetadata.0``
-    via :func:`read_modis_sinusoidal_hdf4`.
+    via ``read_modis_sinusoidal_hdf4``.
 
     Geolocation: native pixels, geolocated per query
     ------------------------------------------------
@@ -61,7 +62,7 @@ class IGBPReader(StaticReader):
     along each row (``lon = X / (R cos(lat))``), so a single longitude per column
     places no real pixel. Every pixel is served at its own position, and the PSF
     weigher is the first place a pixel is weighted. The staged tiles (one file each)
-    are held as their uint8 codes plus their geometry (:class:`_SinusoidalTiles`, 1
+    are held as their uint8 codes plus their geometry (``_SinusoidalTiles``, 1
     byte per pixel); a query computes positions only for the block of each tile its
     box selects.
 

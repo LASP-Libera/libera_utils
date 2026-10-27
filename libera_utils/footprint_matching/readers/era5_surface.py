@@ -1,6 +1,7 @@
 """ERA5 single-level reader plugin for the footprint matching pipeline.
 
 Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
+
 - Format: NetCDF4 (.nc), distributed via the Copernicus Climate Data Store
 - Spatial resolution: ~0.25° (~28 km), stored as 28 km in RESOLUTION_KM
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90)
@@ -11,10 +12,12 @@ Data source: ECMWF ERA5 Reanalysis (single-level surface fields)
 Variables read
 --------------
 Wind components (every product, from mission start):
+
 - u10 / v10: 10 m U/V wind components
 
 Additional FMATCH-IMAGER single-level fields (``required_mode=IMAGER``), which
 sit in the FMATCH-IMAGER product alongside the RBSP CLDPIX/SSF cloud fields:
+
 - t2m: 2 m temperature
 - d2m: 2 m dewpoint temperature
 - sp:  surface pressure
@@ -26,8 +29,8 @@ References
 CDS dataset:  https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels
 CDS API docs: https://cds.climate.copernicus.eu/how-to-api
 Variable list:https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
-Param DB (id): u10=165, v10=166, t2m=167, d2m=168, sp=134, z=129, fal=243
-              e.g. https://apps.ecmwf.int/codes/grib/param-db?id=165
+Param DB (id): u10=165, v10=166, t2m=167, d2m=168, sp=134, z=129, fal=243,
+e.g. https://apps.ecmwf.int/codes/grib/param-db?id=165
 """
 
 import abc
@@ -68,7 +71,7 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
     ``valid_time``) holding hourly steps. This intermediate class owns:
 
     * the step index across the staged granules (:meth:`_step_times`), and
-    * loading one step as a :class:`GridSamples` (:meth:`_load_step`), with the
+    * loading one step as a :class:`~libera_utils.footprint_matching.types.GridSamples` (:meth:`_load_step`), with the
       longitude normalization and latitude flip both datasets need.
 
     A footprint is served the hourly step nearest its time

@@ -10,9 +10,9 @@ Two concrete contracts
 ----------------------
 * :class:`StaticReader` -- the source is one body of data for the staged period: a
   daily composite, a yearly map, or swath data carrying a time per sample. The reader
-  loads it once (:meth:`StaticReader._load_native`) as :class:`GridSamples`,
-  :class:`PointSamples`, or a native that answers box queries itself (see
-  :class:`_BoxNative`); the base class indexes a point cloud and answers every query
+  loads it once (:meth:`StaticReader._load_native`) as :class:`~libera_utils.footprint_matching.types.GridSamples`,
+  :class:`~libera_utils.footprint_matching.types.PointSamples`, or a native that answers box queries itself (see
+  ``_BoxNative``); the base class indexes a point cloud and answers every query
   from memory.
 * :class:`SteppedGridReader` -- the source is a time series of global grids (ERA5
   hourly steps). The reader lists the step times (:meth:`SteppedGridReader._step_times`)
@@ -21,10 +21,10 @@ Two concrete contracts
 
 Geographic query
 ----------------
-:meth:`AncillaryReader.samples_in` takes a footprint's :class:`BoundingBox` and time.
+:meth:`AncillaryReader.samples_in` takes a footprint's :class:`~libera_utils.footprint_matching.types.BoundingBox` and time.
 A grid is sliced on its axes with ``searchsorted``. A source whose pixels are regular
 in a projection, not in latitude/longitude (IGBP's tiles on the MODIS sinusoidal grid), is held in its
-projected form and geolocates only the block a box selects (:class:`_BoxNative`). A
+projected form and geolocates only the block a box selects (``_BoxNative``). A
 point cloud is sorted once, at
 load, into 1 degree latitude/longitude bins held as offset ranges (one permuted copy
 of the data, the unsorted one released), so a box query touches only the bins the box
@@ -231,7 +231,7 @@ class AncillaryReader(abc.ABC):
 
     Each concrete subclass reads one external data source (IGBP land cover, NSIDC
     sea ice, ERA5 wind, ...) and serves the native samples inside a footprint's
-    bounding box, selected in time by its :class:`TimeMatch` policy. Subclass
+    bounding box, selected in time by its :class:`~libera_utils.footprint_matching.types.TimeMatch` policy. Subclass
     :class:`StaticReader` or :class:`SteppedGridReader`, not this class directly.
 
     Class-Level Attributes (required on every concrete subclass)
@@ -262,7 +262,7 @@ class AncillaryReader(abc.ABC):
         policies; ``None`` for ``DAILY``.
     TIMESTAMP_SOURCE : str or None
         For cloud-property products, ``'radiometer'`` or ``'camera'``; recorded on every
-        :class:`SampleSet` served. ``None`` (the default) for surface and static products.
+        :class:`~libera_utils.footprint_matching.types.SampleSet` served. ``None`` (the default) for surface and static products.
     ADDITIONAL_PRODUCT_VARIABLES : tuple[VariableSpec, ...]
         Extra variables this reader contributes to the *product definition* that are
         derived during PSF aggregation rather than read (e.g. IGBP's ranked scenes).
@@ -544,7 +544,7 @@ class AncillaryReader(abc.ABC):
         """Boolean mask of the samples that belong to the pass nearest ``time``.
 
         The nearest pass is every sample within ``PASS_WINDOW`` of the smallest
-        |sample time - footprint time|. When that smallest offset exceeds
+        ``|sample time - footprint time|``. When that smallest offset exceeds
         ``MAX_TIME_OFFSET`` no sample is kept.
         """
         offsets = np.abs(times - time)
@@ -592,8 +592,8 @@ class AncillaryReader(abc.ABC):
     def _native_for(self, time: np.datetime64) -> tuple[_Native, ...]:
         """Return the native data a query at ``time`` draws from; empty for no match.
 
-        :class:`StaticReader` returns its one indexed body of data regardless of
-        ``time``; :class:`SteppedGridReader` the step nearest ``time``, or nothing when
+        :class:`~libera_utils.footprint_matching.readers.base.StaticReader` returns its one indexed body of data regardless of
+        ``time``; :class:`~libera_utils.footprint_matching.readers.base.SteppedGridReader` the step nearest ``time``, or nothing when
         that step is farther than ``MAX_TIME_OFFSET``.
         """
 
@@ -665,7 +665,7 @@ class StaticReader(AncillaryReader):
         Returns
         -------
         GridSamples or PointSamples or _BoxNative
-            ``GridSamples`` for a regular latitude/longitude grid, a :class:`_BoxNative`
+            ``GridSamples`` for a regular latitude/longitude grid, a ``_BoxNative``
             for a source held in a projected form that geolocates the block a query
             selects, ``PointSamples`` for anything else (with ``times`` for a
             ``NEAREST_PASS`` reader).

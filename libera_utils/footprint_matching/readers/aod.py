@@ -1,6 +1,7 @@
 """NOAA-20 VIIRS Deep Blue aerosol reader plugin (AOD + aerosol type).
 
 Data source: Deep Blue single-sensor daily Level-3 aerosol product
+
 - Product: AERDB_D3_VIIRS_NOAA20 (Collection 002)
 - Format: NetCDF4, **all variables at the root** (no groups)
 - Spatial resolution: 1° × 1° (~111 km at equator)
@@ -40,8 +41,9 @@ sourced from this one authoritative granule. The cross-sensor
 lacks the aerosol-type field.
 
 NetCDF4 layout (AERDB_D3_VIIRS_NOAA20)
--------------------------------------
-Root (no groups):
+--------------------------------------
+Root (no groups)::
+
   Latitude_1D  (180,)  — 1° bin centers, −89.5 → 89.5 (ascending)
   Longitude_1D (360,)  — 1° bin centers, −179.5 → 179.5
   Aerosol_Optical_Thickness_550_Land_Ocean_Mean (180, 360)  — daily-mean AOD @ 550 nm

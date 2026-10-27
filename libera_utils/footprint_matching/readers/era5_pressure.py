@@ -1,6 +1,7 @@
 """ERA5 pressure-level reader plugin for the footprint matching pipeline.
 
 Data source: ECMWF ERA5 Reanalysis (pressure-level fields)
+
 - Format: NetCDF4 (.nc), distributed via the Copernicus Climate Data Store
 - Spatial resolution: ~0.25° (~28 km), stored as 28 km in RESOLUTION_KM
 - Grid: Regular lat/lon, global coverage, latitudes in DESCENDING order (90 → -90),
@@ -42,8 +43,8 @@ References
 CDS dataset:  https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels
 CDS API docs: https://cds.climate.copernicus.eu/how-to-api
 Variable list:https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
-Param DB (id): t=130, z=129, o3=203, q=133, r=157
-              e.g. https://apps.ecmwf.int/codes/grib/param-db?id=130
+Param DB (id): t=130, z=129, o3=203, q=133, r=157,
+e.g. https://apps.ecmwf.int/codes/grib/param-db?id=130
 """
 
 from collections.abc import Iterator
