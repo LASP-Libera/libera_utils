@@ -1,4 +1,4 @@
-"""Module for file naming utilities"""
+"""Classes and utilities for naming and parsing files in the Libera SDC production system"""
 
 import re
 import warnings
@@ -22,7 +22,7 @@ from libera_utils.constants import (
 )
 from libera_utils.time import NUMERIC_DOY_TS_FORMAT, PRINTABLE_TS_FORMAT
 
-REVISION_TS_FORMAT = f"R{NUMERIC_DOY_TS_FORMAT}"  # Just adds an r in front
+REVISION_TS_FORMAT = f"R{PRINTABLE_TS_FORMAT}%f"
 
 
 def _ensure_utc_timezone(dt_obj: datetime) -> datetime:
@@ -84,25 +84,20 @@ DATA_LEVELS = "|".join([level.value for level in DataLevel])
 # Get all data product names
 DATA_PRODUCT_NAMES = "|".join([str(dpi) for dpi in DataProductIdentifier])
 
-LIBERA_DATA_PRODUCT_REGEX = re.compile(
+# Everything in a data product filename except the extension. Shared by the data file and its UMM-G metadata file.
+# The revision is REVISION_TS_FORMAT: R + 8-digit date, T, 6-digit time, 6-digit microseconds.
+_LIBERA_DATA_PRODUCT_BODY_REGEX = (
     rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
     rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
     r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
     r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
     r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-    r"_(?P<revision>R[0-9]{11})"
-    r"\.(?P<extension>nc|h5|bsp|bc)$"
+    r"_(?P<revision>R[0-9]{8}T[0-9]{12})"
 )
 
-LIBERA_METADATA_PRODUCT_REGEX = re.compile(
-    rf"^LIBERA_(?P<data_level>{DATA_LEVELS})"
-    rf"_(?P<product_name>{DATA_PRODUCT_NAMES})"
-    r"_(?P<version>V[0-9]*-[0-9]*-[0-9]*(RC[0-9])?)"
-    r"_(?P<utc_start>[0-9]{8}T[0-9]{6})"
-    r"_(?P<utc_end>[0-9]{8}T[0-9]{6})"
-    r"_(?P<revision>R[0-9]{11})"
-    r"\.(?P<extension>cmr\.json)$"
-)
+LIBERA_DATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>nc|bsp|bc)$")
+
+LIBERA_METADATA_PRODUCT_REGEX = re.compile(_LIBERA_DATA_PRODUCT_BODY_REGEX + r"\.(?P<extension>cmr\.json)$")
 
 MANIFEST_FILE_REGEX = re.compile(
     r"^LIBERA"
@@ -612,10 +607,54 @@ class LiberaGroundCcsdsFilename(AbstractDataProductFilename):
 
 
 class LiberaDataProductFilename(AbstractDataProductFilename):
-    """Filename validation class for Libera SDC data products."""
+    """Filename validation class for Libera SDC data products.
+
+    Libera data product filenames follow the convention::
+
+        LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}
+
+    e.g. ``LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456.nc``
+
+    - ``data_level`` and ``product_name`` are the string values of :class:`~libera_utils.constants.DataLevel` and
+      :class:`~libera_utils.constants.DataProductIdentifier`.
+    - ``version`` is the algorithm semantic version in ``VM-m-p[RCn]`` form.
+    - ``utc_start`` / ``utc_end`` bound the data in the file, formatted ``YYYYMMDDTHHMMSS``.
+    - ``revision`` is the UTC creation time of the file, ``R`` followed by ``YYYYMMDDTHHMMSSffffff`` (microseconds).
+    - ``extension`` is ``nc`` for NetCDF-4 products, or ``bsp`` / ``bc`` for SPICE kernels.
+    """
 
     _regex = LIBERA_DATA_PRODUCT_REGEX
     _fmt = "LIBERA_{data_level}_{product_name}_{version}_{utc_start}_{utc_end}_{revision}.{extension}"
+
+    @AbstractValidFilename.path.setter
+    def path(self, new_path: str | PathType):
+        """Set the path, rejecting a utc_start, utc_end or revision that is not a real UTC time.
+
+        The regex admits any digits in those fields, so the name is parsed before it is assigned.
+
+        Parameters
+        ----------
+        new_path : str | PathType
+            Path to the data product file.
+
+        Raises
+        ------
+        ValueError
+            If the path does not match the filename regex, or a time field is not a real UTC time.
+        """
+        if isinstance(new_path, str):
+            _new_path: PathType = cast(PathType, AnyPath(new_path))
+        else:
+            _new_path = new_path
+        parts = self.regex_match(_new_path)
+        try:
+            self._parse_match(parts)
+        except ValueError as err:
+            raise ValueError(
+                f"Proposed path {_new_path} has a utc_start, utc_end or revision that is not a real UTC time: "
+                f"{err}. Correct that field."
+            ) from err
+        self._path = _new_path
 
     @property
     def processing_step_id(self) -> ProcessingStepIdentifier | None:
@@ -695,11 +734,11 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         utc_start: datetime,
         utc_end: datetime,
         data_level: str | DataLevel | None = None,
-        revision: datetime = datetime.now(tz=UTC),
+        revision: datetime | None = None,
         extension: str | None = None,
         basepath: str | Path | S3Path | None = None,
     ):
-        """Create instance from filename parts. All keyword arguments other than basepath are required!
+        """Create instance from filename parts.
 
         This method exists primarily to expose typehinting to the user for use with the generic _from_filename_parts.
         The part names are named according to the regex for the file type.
@@ -717,8 +756,8 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             First timestamp in the SPK
         utc_end : datetime.datetime
             Last timestamp in the SPK
-        revision: datetime.datetime
-            Time when the file was created. Default is now in UTC time.
+        revision : datetime.datetime | None
+            Time when the file was created. Default None uses the current UTC time at the time of the call.
         extension : str | None
             File extension. Default None will infer extension based on product_name.
         basepath : Optional[Union[str, Path, S3Path]]
@@ -747,6 +786,9 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             )
 
         data_level = dpi.data_level
+
+        if revision is None:
+            revision = datetime.now(tz=UTC)
 
         return cls._from_filename_parts(
             basepath=basepath,
@@ -787,10 +829,10 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
             First timestamp in the SPK
         utc_end : datetime.datetime
             Last timestamp in the SPK
-        revision: datetime.datetime
+        revision : datetime.datetime
             Time when the file was created.
         extension : str
-            File extension (.nc or .h5)
+            File extension (nc, bsp or bc)
 
         Returns
         -------
@@ -818,7 +860,27 @@ class LiberaDataProductFilename(AbstractDataProductFilename):
         : types.SimpleNamespace
             namespace object containing filename parts as parsed objects
         """
-        d = self.regex_match(self.path)
+        return self._parse_match(self.regex_match(self.path))
+
+    @staticmethod
+    def _parse_match(d: dict[str, Any]) -> SimpleNamespace:
+        """Parse regex matched filename parts into objects
+
+        Parameters
+        ----------
+        d : dict
+            Named groups from matching the filename regex
+
+        Returns
+        -------
+        : types.SimpleNamespace
+            namespace object containing filename parts as parsed objects
+
+        Raises
+        ------
+        ValueError
+            If utc_start, utc_end or revision is not a real UTC time.
+        """
         d["utc_start"] = datetime.strptime(d["utc_start"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["utc_end"] = datetime.strptime(d["utc_end"], PRINTABLE_TS_FORMAT).replace(tzinfo=UTC)
         d["revision"] = datetime.strptime(d["revision"], REVISION_TS_FORMAT).replace(tzinfo=UTC)

@@ -9,7 +9,7 @@ import pytest
 import xarray as xr
 
 from libera_utils.constants import DataProductIdentifier
-from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.l1a.nom_hk_trim import (
     find_obsid_runs,
     get_trimmed_nom_hk_product_definition,
@@ -18,7 +18,9 @@ from libera_utils.l1a.nom_hk_trim import (
 from libera_utils.obsids import NomHkObsidSource
 from libera_utils.version import version as libera_utils_version
 
-_PARENT_GRANULE = "/some/dir/LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R28044120000.nc"
+_PARENT_GRANULE = (
+    "/some/dir/LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R20280213T120000000000.nc"
+)
 
 
 def _synthetic_nom_hk(
@@ -203,10 +205,24 @@ class TestWriteTrimmedNomHkProducts:
 
         written_attrs = mock_write.call_args_list[0].args[1].attrs
         assert written_attrs["input_files"] == [
-            "LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R28044120000.nc"
+            "LIBERA_L1A_NOM-HK-DECODED_V5-10-0_20280213T020000_20280213T040000_R20280213T120000000000.nc"
         ]
         # The parent's L0 provenance must not leak through
         assert "fake.bin" not in written_attrs["input_files"]
+
+    def test_parent_date_created_is_dropped(self, tmp_path):
+        """The parent's date_created is not handed to the writer, which sets the trimmed file's own."""
+        ds = _synthetic_nom_hk(rad_obsids=[257, 257])
+        assert DATE_CREATED_ATTRIBUTE in ds.attrs
+        mock_filename = MagicMock()
+        mock_filename.path.name = "fake.nc"
+        with patch(
+            "libera_utils.l1a.nom_hk_trim.write_libera_data_product",
+            return_value=mock_filename,
+        ) as mock_write:
+            write_trimmed_nom_hk_products(ds, tmp_path, source_product_filename=_PARENT_GRANULE, strict=False)
+
+        assert DATE_CREATED_ATTRIBUTE not in mock_write.call_args_list[0].args[1].attrs
 
     def test_algorithm_version_is_restamped(self, tmp_path):
         ds = _synthetic_nom_hk(rad_obsids=[257, 257])

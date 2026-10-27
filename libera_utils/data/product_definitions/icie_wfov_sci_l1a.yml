@@ -1,7 +1,6 @@
 attributes:
   ProductID: WFOV-SCI-DECODED
   algorithm_version: null
-  date_created: null
   input_files: null
   PacketCountNotUsedInImages: null
   ErrorFlaggedImageCount: null

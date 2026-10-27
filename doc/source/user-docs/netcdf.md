@@ -121,13 +121,15 @@ filename = write_libera_data_product(
 )
 
 print(f"Created data product: {filename.path}")
-# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T002739_R25280215327.nc
+# Output: Created data product: /path/to/output/directory/LIBERA_L1B_RAD-4CH_V0-0-1_20240101T000000_20240101T002739_R20270103T080910123456.nc
 ```
 
 The function automatically:
 
 - Validates data against the product definition
-- Generates a standardized filename based on the time range
+- Sets the `date_created` attribute to the creation time, overwriting (with a warning) any value already set
+- Generates a standardized filename from the product, algorithm version, and time range, whose revision is that
+  `date_created`
 - Applies correct encoding and compression settings
 - Ensures CF-convention compliance
 
@@ -147,6 +149,10 @@ The `LiberaDataProductDefinition.check_dataset_conformance()` method takes a dat
 conforms to the data product definition. The typical usage of this method is in strict mode, which raises an exception
 for any validation error. For debugging, you can run with `strict=False`, in which case it returns a (possibly empty)
 list of informational error messages.
+
+`date_created` is a required attribute. `create_product_dataset` sets it, and `write_libera_data_product` sets it on a
+Dataset passed in directly. A conformance check on a Dataset built some other way reports `date_created` as missing
+until the writer sets it; that is expected, and setting it yourself only makes the writer overwrite it with a warning.
 
 ```python
 # Call LiberaDataProductDefinition.check_dataset_conformance() with strict=False
@@ -221,7 +227,6 @@ call these "dynamic attributes" and they are required but must be passed directl
 ```python
 # Set dynamic global attribute values (e.g., algorithm-specific metadata values for required attribute keys)
 dynamic_product_attrs = {
-    "date_created": "2024-03-15T11:22:33",
     "algorithm_version": "2.1.0",
     "processing_level": "L1B",
 }

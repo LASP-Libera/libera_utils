@@ -2,7 +2,6 @@
 
 import logging
 import warnings
-from datetime import UTC, datetime
 from os import PathLike
 from typing import cast
 
@@ -15,6 +14,7 @@ from space_packet_parser.xarr import create_dataset
 from libera_utils.config import config
 from libera_utils.constants import LiberaApid
 from libera_utils.io import filenaming
+from libera_utils.io.product_definition import ALGORITHM_VERSION_ATTRIBUTE
 from libera_utils.l1a.l1a_packet_configs import (
     AggregationGroup,
     ArrayGroup,
@@ -334,8 +334,7 @@ def parse_packets_to_l1a_dataset(
 
     # Add global dynamic attributes that are required per the data product configs but do not have static values
     global_attrs: dict[str, str | list | set] = {
-        "algorithm_version": version(),
-        "date_created": datetime.now(tz=UTC).isoformat(),
+        ALGORITHM_VERSION_ATTRIBUTE: version(),
     }
     global_attrs["input_files"] = [f.name for f in _packet_files]
     packet_ds.attrs.update(global_attrs)

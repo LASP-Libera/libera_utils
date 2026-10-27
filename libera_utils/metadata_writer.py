@@ -77,6 +77,11 @@ def write_data_product_metadata_ummg(
     -------
     PathType
         Path to the written UMM-G metadata file.
+
+    Raises
+    ------
+    ValueError
+        If the Dataset has no ``date_created`` attribute.
     """
     logger.info("Writing UMM-G metadata for Libera data product")
 

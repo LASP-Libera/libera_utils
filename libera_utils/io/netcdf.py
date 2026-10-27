@@ -12,7 +12,7 @@ from numpy.typing import NDArray
 
 from libera_utils.config import config
 from libera_utils.io.filenaming import LiberaDataProductFilename, PathType
-from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_definition import LiberaDataProductDefinition, _set_date_created
 
 T_XarrayNetcdfEngine = Literal["netcdf4", "h5netcdf"]
 
@@ -48,11 +48,12 @@ def write_libera_data_product(
 
     Steps:
 
-    1. (Numpy array input only) Create a product Dataset from the input arrays and optional dynamic attributes, using the product definition to determine the expected structure and metadata.
-    2. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
-    3. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
-    4. Generate the data product filename using the product definition and the specified time variable.
-    5. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
+    1. (Numpy array input only) Create a product Dataset from the input arrays and optional dynamic attributes, using the product definition to determine the expected structure and metadata. Creating the Dataset sets its ``date_created`` attribute to the current UTC time.
+    2. (Dataset input only) Set the ``date_created`` attribute to the current UTC time, overwriting (with a warning) any value the input Dataset already carries.
+    3. Bring the Dataset into conformance with the product definition, fixing any issues that can be automatically fixed and issuing warnings for any issues that cannot be automatically fixed.
+    4. Check the final conformance of the Dataset against the product definition, raising an exception if any issues are found in strict mode.
+    5. Generate the data product filename using the product definition and the specified time variable. The filename's revision is the ``date_created`` set in step 1 or 2.
+    6. Write the Dataset to a NetCDF4 file at the specified output path with the generated filename, using the configured NetCDF engine.
 
     A product already present at the generated path is replaced, on local disk and in S3
     alike. Reprocessing rewrites a granule at the same key by design: a run that halted because
@@ -92,6 +93,12 @@ def write_libera_data_product(
     pydantic_core.ValidationError
         If `data_product_definition` is a path and a variable's ``encoding['chunksizes']`` is not
         a list of positive integers with as many entries as its ``dimensions``.
+
+    Warns
+    -----
+    UserWarning
+        If the input Dataset or ``dynamic_product_attributes`` already carries a ``date_created`` attribute, which is
+        overwritten.
     """
     logger.info("Writing Libera data product")
 
@@ -111,6 +118,7 @@ def write_libera_data_product(
             )
         # This is how L1A products are typically created (starting as a Dataset)
         dataset = data
+        _set_date_created(dataset.attrs)
     else:
         # This is the expectation for L2 product creation (from numpy arrays)
         logger.info(f"Creating Dataset from data arrays with variables: {list(data.keys())}")

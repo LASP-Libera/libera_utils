@@ -1,7 +1,7 @@
 """Tests for data product definition YAML parsing and validation."""
 
 import warnings
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from libera_utils.config import config
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.product_definition import (
+    DATE_CREATED_ATTRIBUTE,
     LiberaDataProductDefinition,
     LiberaDimensionDefinition,
     LiberaVariableDefinition,
@@ -30,6 +31,9 @@ def _libera_dimensions_yaml_contents() -> dict:
 
 
 _STANDARD_DIMENSION_NAMES = tuple(_libera_dimensions_yaml_contents())
+
+# date_created for datasets not built by create_product_dataset or write_libera_data_product, which set it
+_DATE_CREATED = "2027-01-03T08:09:10.123456+00:00"
 
 
 @pytest.fixture(scope="module")
@@ -80,6 +84,15 @@ class TestLiberaDataProductDefinition:
         with pytest.raises(ValidationError, match="Instance is frozen"):
             definition.attributes = {"should": "fail"}
 
+    def test_date_created_in_product_definition_raises(self, test_product_definition):
+        """Test that a product definition giving date_created a value is rejected"""
+        with test_product_definition.open("r") as f:
+            definition_contents = yaml.safe_load(f)
+        definition_contents["attributes"][DATE_CREATED_ATTRIBUTE] = _DATE_CREATED
+
+        with pytest.raises(ValueError, match="Remove date_created from the product definition YAML"):
+            _definition = LiberaDataProductDefinition(**definition_contents)
+
     def test_undefined_dimension_exception(self, test_product_definition):
         """Test that an exception is raised for undefined dimension in the product definition."""
         # Modify the test product definition to include an undefined dimension
@@ -99,6 +112,18 @@ class TestLiberaDataProductDefinition:
         assert fn.filename_parts.version == "V0-0-1"
         assert fn.filename_parts.utc_start == datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         assert fn.filename_parts.utc_end == datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC)
+        # The revision is the dataset's date_created
+        assert fn.filename_parts.revision == datetime.fromisoformat(test_dataset.attrs[DATE_CREATED_ATTRIBUTE])
+        assert fn.path.name.endswith("_R20270103T080910123456.nc")
+
+    def test_check_dataset_conformance_missing_date_created(self, test_product_definition, test_dataset):
+        """Test that a dataset without date_created fails a strict conformance check"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+        del test_dataset.attrs[DATE_CREATED_ATTRIBUTE]
+
+        with pytest.warns(UserWarning, match="Expected attribute 'date_created' not found"):
+            with pytest.raises(ValueError, match="Errors detected during dataset conformance check"):
+                definition.check_dataset_conformance(test_dataset, strict=True)
 
 
 @strict_warnings
@@ -514,6 +539,7 @@ class TestLiberaDataProductDefinitionConformanceEnforcement:
                     attrs={"long_name": "Geolocation longitude", "units": "degrees", "valid_range": [-180, 180]},
                 ),
             },
+            attrs={DATE_CREATED_ATTRIBUTE: _DATE_CREATED},
         )
 
         # Fix the dataset
@@ -714,6 +740,17 @@ class TestVariableCreateMethods:
 class TestLiberaDataProductDefinitionCreateMethods:
     """Tests for LiberaDataProductDefinition.create_conforming_dataset method"""
 
+    def test_create_product_dataset_overwrites_date_created(self, test_product_definition, test_data_dict):
+        """A date_created passed in dynamic_product_attributes is replaced by the creation time, with a warning"""
+        definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
+
+        with pytest.warns(UserWarning, match="'date_created' was set to '2000-01-01T00:00:00\\+00:00'"):
+            ds = definition.create_product_dataset(
+                test_data_dict, dynamic_product_attributes={DATE_CREATED_ATTRIBUTE: "2000-01-01T00:00:00+00:00"}
+            )
+
+        assert datetime.fromisoformat(ds.attrs[DATE_CREATED_ATTRIBUTE]).year != 2000
+
     def test_create_conforming_dataset(self, test_product_definition, test_data_dict):
         """Test creating a valid Dataset from numpy arrays"""
         definition = LiberaDataProductDefinition.from_yaml(test_product_definition)
@@ -736,6 +773,13 @@ class TestLiberaDataProductDefinitionCreateMethods:
         errors = definition.check_dataset_conformance(ds)
         assert not errors
         assert len(errors) == 0
+
+        # date_created is set to the creation time, without changing the definition, and is the filename revision
+        date_created = datetime.fromisoformat(ds.attrs[DATE_CREATED_ATTRIBUTE])
+        assert date_created.utcoffset() == timedelta(0)
+        assert definition.attributes[DATE_CREATED_ATTRIBUTE] is None
+        fn = definition.generate_data_product_filename(ds, time_variable="radiometer_time")
+        assert fn.filename_parts.revision == date_created
 
         # Check structure
         assert "radiometer_time" in ds.coords
