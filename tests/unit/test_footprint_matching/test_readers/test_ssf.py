@@ -489,29 +489,47 @@ class TestSSFReaderGeolocationChecks:
         with pytest.raises(ValueError, match="instrument_fov_latitude has units"):
             SSFReader(path).samples_in(_BBOX, _T)
 
-    @pytest.mark.parametrize("name", ["instrument_fov_latitude", "aerosol_optical_depth", "cloud_classification"])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "instrument_fov_latitude",
+            "instrument_fov_longitude",
+            "time",
+            "aerosol_optical_depth",
+            "cloud_classification",
+        ],
+    )
     def test_field_without_fill_value_raises(self, tmp_path, name):
         """``SSFReader.samples_in`` raises ``ValueError`` when a field it reads has no ``_FillValue`` attribute.
 
         The reader masks each field with its own fill value; with none declared, fill sentinels would pass through as
         real numbers and be averaged into footprints.
 
-        Parametrized over a geolocation field, a continuous field and a code field, each written without ``_FillValue``;
-        asserts the error names the field.
+        Parametrized over the geolocation fields, the footprint time, a continuous field and a code field, each written
+        without ``_FillValue``; asserts the error names the field.
         """
         path = make_ssf_fixture(tmp_path, omit_fill_value=(name,))
         with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
             SSFReader(path).samples_in(_BBOX, _T)
 
-    @pytest.mark.parametrize("name", ["aerosol_optical_depth", "cloud_ice_particle_radius_37um_mean"])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "instrument_fov_latitude",
+            "instrument_fov_longitude",
+            "time",
+            "aerosol_optical_depth",
+            "cloud_ice_particle_radius_37um_mean",
+        ],
+    )
     def test_field_without_valid_range_raises(self, tmp_path, name):
         """``SSFReader.samples_in`` raises ``ValueError`` when a field it reads has no ``valid_range`` attribute.
 
         The reader takes each field's valid range from the file; with none declared it cannot tell a retrieval from
         an out-of-range value, and guessing one could silently drop or keep the wrong values.
 
-        Parametrized over a 1-D field and a layered field, each written without ``valid_range``; asserts the error
-        names the field.
+        Parametrized over the geolocation fields, the footprint time, a 1-D field and a layered field, each written
+        without ``valid_range``; asserts the error names the field.
         """
         path = make_ssf_fixture(tmp_path, omit_valid_range=(name,))
         with pytest.raises(ValueError, match=f"{name} has no valid_range attribute"):
@@ -538,6 +556,18 @@ class TestSSFReaderValidRange:
         assert np.allclose(_finite_values(data, "cloud_ice_particle_radius_lower"), 150.0)
         assert _finite_values(data, "cloud_ice_particle_radius_lower").size == 5
         assert _finite_values(data, "cloud_water_particle_radius_lower").size == 0
+
+    def test_longitude_valid_range_comes_from_the_file(self, tmp_path):
+        """``SSFReader`` range-checks footprint longitude with the ``valid_range`` the file declares.
+
+        Geolocation is held to the file's own range like every other field, so a footprint outside it is dropped
+        rather than placed on the map.
+
+        Writes ``instrument_fov_longitude`` with a ``valid_range`` of [0, 340], which excludes the cluster's 350
+        degrees, and asserts no footprint is served in the cluster box.
+        """
+        path = make_ssf_fixture(tmp_path, longitude_valid_range=(0.0, 340.0))
+        assert SSFReader(path).samples_in(_BBOX, _T).n_samples == 0
 
 
 class TestSSFReaderLayoutChecks:

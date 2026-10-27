@@ -818,6 +818,7 @@ def make_ssf_fixture(
     shortwave_adm_type: np.ndarray | None = None,
     longwave_adm_type: np.ndarray | None = None,
     latitude_units: str | None = "degrees_north",
+    longitude_valid_range: tuple[float, float] = (0.0, 360.0),
     omit_fill_value: tuple[str, ...] = (),
     omit_valid_range: tuple[str, ...] = (),
     omit_variables: tuple[tuple[str, str], ...] = (),
@@ -872,6 +873,9 @@ def make_ssf_fixture(
     latitude_units : str or None, optional
         ``units`` written on ``instrument_fov_latitude``; ``None`` writes none.
         Default ``"degrees_north"``, as the real product declares.
+    longitude_valid_range : tuple of (float, float), optional
+        ``valid_range`` written on ``instrument_fov_longitude``. Default ``(0, 360)``,
+        as the real product declares.
     omit_fill_value : tuple of str, optional
         Names of 1-D variables written without a ``_FillValue`` attribute.
     omit_valid_range : tuple of str, optional
@@ -988,11 +992,15 @@ def make_ssf_fixture(
         lat_var = _add(tp, "instrument_fov_latitude", lats.astype(np.float32), fill_f, (-90.0, 90.0))
         if latitude_units is not None and lat_var is not None:
             lat_var.units = latitude_units
-        _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
-        time_var = _create(tp, "time", np.float64, ("Footprints",), None)
+        _add(tp, "instrument_fov_longitude", lons_0360.astype(np.float32), fill_f, longitude_valid_range)
+        # The float64-maximum fill the real product declares; the valid range, in seconds since the
+        # fixture epoch, spans about 1972..2098.
+        time_fill = False if "time" in omit_fill_value else np.finfo(np.float64).max
+        time_var = _create(tp, "time", np.float64, ("Footprints",), time_fill)
         if time_var is not None:
             time_var[:] = _seconds_since_fixture_epoch(times)
             time_var.units = _SWATH_TIME_UNITS
+            _set_valid_range(time_var, (-1.7e9, 2.3e9), np.float64)
         # One scan: footprints numbered 1..n along it, as the real product numbers them.
         _add(tp, "sample_number", (np.arange(n) % 660 + 1).astype(np.int16), fill_i, (1, 660))
         times_ns = np.asarray(times).astype("datetime64[ns]")
@@ -1104,6 +1112,7 @@ def make_cldpix_fixture(
     times: np.ndarray | None = None,
     filename: str = "cer_cldpix_fixture.nc",
     latitude_valid_range: tuple[float, float] | None = (0.0, 180.0),
+    longitude_valid_range: tuple[float, float] = (0.0, 360.0),
     omit_fill_value: tuple[str, ...] = (),
     omit_valid_range: tuple[str, ...] = (),
     omit_flags: tuple[str, ...] = (),
@@ -1152,10 +1161,13 @@ def make_cldpix_fixture(
     latitude_valid_range : tuple of (float, float) or None, optional
         ``valid_range`` written on ``Latitude``; ``None`` writes none. Default
         ``(0, 180)``, the colatitude range the real product declares.
+    longitude_valid_range : tuple of (float, float), optional
+        ``valid_range`` written on ``Longitude``. Default ``(0, 360)``, as the real
+        product declares.
     omit_fill_value : tuple of str, optional
         Names of variables written without a ``_FillValue`` attribute.
     omit_valid_range : tuple of str, optional
-        Names of cloud variables written without a ``valid_range`` attribute.
+        Names of variables written without a ``valid_range`` attribute.
     omit_flags : tuple of str, optional
         Names of categorical variables written without ``flag_values`` /
         ``flag_meanings`` attributes.
@@ -1201,7 +1213,8 @@ def make_cldpix_fixture(
         # so a granule spanning midnight stores ~23.99 h and ~0.01 h as the real one does.
         times = np.asarray(times).astype("datetime64[ns]")
         hours = ((times - times.astype("datetime64[D]")) / np.timedelta64(1, "h")).astype(np.float32)
-        time_var = ds.createVariable("Observation_Time", np.float32, time_dims, fill_value=fill_f)
+        time_fill = False if "Observation_Time" in omit_fill_value else fill_f
+        time_var = ds.createVariable("Observation_Time", np.float32, time_dims, fill_value=time_fill)
         if time_dims == ("Scanlines", "Pixels"):
             time_var[:] = np.repeat(hours[:, None], shape[1], axis=1)
         elif time_dims == ("Scanlines",):
@@ -1209,7 +1222,8 @@ def make_cldpix_fixture(
         else:
             time_var[:] = np.full(shape[1], hours[0], dtype=np.float32)
         time_var.units = "hours"
-        time_var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
+        if "Observation_Time" not in omit_valid_range:
+            time_var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
         start = times.min() if time_coverage_start is None else np.datetime64(time_coverage_start, "ns")
         ds.time_coverage_start = np.datetime_as_string(start, unit="us") + "Z"
         ds.time_coverage_end = np.datetime_as_string(times.max(), unit="us") + "Z"
@@ -1229,7 +1243,7 @@ def make_cldpix_fixture(
         # fixture exercises the reader's colatitude → latitude conversion.
         colatitudes = 90.0 - lats.astype(np.float32)
         _add("Latitude", colatitudes.astype(np.float32), fill_f, latitude_valid_range)
-        _add("Longitude", lons_0360.astype(np.float32), fill_f, (0.0, 360.0))
+        _add("Longitude", lons_0360.astype(np.float32), fill_f, longitude_valid_range)
 
         # Continuous cloud properties (constant values for easy assertions).
         _add("Eff_Cld_Optical_Depth", np.full(shape, 4.0, np.float32), fill_f, (0.25, 150.0))

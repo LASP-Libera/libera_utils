@@ -167,29 +167,25 @@ def apply_fill_and_valid_range(
     return arr
 
 
-def _invalid_time_mask(variable: Any, data: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Mark fill (``_FillValue``) and out-of-``valid_range`` entries of a time variable."""
+def _invalid_time_mask(variable: netCDF4.Variable, data: np.ndarray, mask: np.ndarray, *, source: str) -> np.ndarray:
+    """Mark fill (``_FillValue``) and out-of-``valid_range`` entries of a time variable, both read from the file."""
     invalid = mask.copy()
-    fill_value = getattr(variable, "_FillValue", None)
-    if fill_value is not None:
-        fill = _fill_in_dtype(fill_value, data.dtype)
-        if fill is not None:
-            invalid |= data == fill
-    valid_range = getattr(variable, "valid_range", None)
-    if valid_range is not None and len(valid_range) == 2:
-        low, high = sorted(float(v) for v in valid_range)
-        invalid |= (data < low) | (data > high)
+    fill = _fill_in_dtype(field_fill_value(variable, source=source), data.dtype)
+    if fill is not None:
+        invalid |= data == fill
+    low, high = sorted(field_valid_range(variable, source=source))
+    invalid |= (data < low) | (data > high)
     return invalid
 
 
-def _raw_and_mask(variable: Any) -> tuple[np.ndarray, np.ndarray]:
+def _raw_and_mask(variable: netCDF4.Variable) -> tuple[np.ndarray, np.ndarray]:
     raw = variable[:]
     if isinstance(raw, np.ma.MaskedArray):
         return np.ma.getdata(raw), np.ma.getmaskarray(raw)
     return np.asarray(raw), np.zeros(np.shape(raw), dtype=bool)
 
 
-def decode_cf_times(variable: Any, *, source: str) -> np.ndarray:
+def decode_cf_times(variable: netCDF4.Variable, *, source: str) -> np.ndarray:
     """Decode a netCDF4 time variable with CF ``units`` into ``datetime64[ns]``.
 
     Parameters
@@ -213,7 +209,8 @@ def decode_cf_times(variable: Any, *, source: str) -> np.ndarray:
     ------
     ValueError
         If the variable has no ``units`` attribute, or its units are not a CF time
-        unit netCDF4 can decode.
+        unit netCDF4 can decode; if it has no ``_FillValue`` or ``valid_range``
+        attribute, or its ``valid_range`` is not a (low, high) pair.
     """
     units = getattr(variable, "units", None)
     if not units:
@@ -222,7 +219,7 @@ def decode_cf_times(variable: Any, *, source: str) -> np.ndarray:
             "The reader needs a CF time unit such as 'seconds since 1970-01-01'."
         )
     data, mask = _raw_and_mask(variable)
-    invalid = _invalid_time_mask(variable, data, mask)
+    invalid = _invalid_time_mask(variable, data, mask, source=source)
     calendar = getattr(variable, "calendar", "standard")
     # Decode a safe stand-in where the value is invalid, then overwrite with NaT: the
     # fill sentinel (1e308 days) would overflow the calendar arithmetic.
@@ -243,7 +240,7 @@ def decode_cf_times(variable: Any, *, source: str) -> np.ndarray:
     return times
 
 
-def decode_hours_of_day(variable: Any, reference: np.datetime64, *, source: str) -> np.ndarray:
+def decode_hours_of_day(variable: netCDF4.Variable, reference: np.datetime64, *, source: str) -> np.ndarray:
     """Decode a time variable holding fractional UTC hours of the day into ``datetime64[ns]``.
 
     CERES CLDPIX stores ``Observation_Time`` this way (units ``hours``, valid range
@@ -272,13 +269,15 @@ def decode_hours_of_day(variable: Any, reference: np.datetime64, *, source: str)
     Raises
     ------
     ValueError
-        If the variable's ``units`` attribute is present and is not ``hours``.
+        If the variable's ``units`` attribute is present and is not ``hours``; if it has
+        no ``_FillValue`` or ``valid_range`` attribute, or its ``valid_range`` is not a
+        (low, high) pair.
     """
     units = getattr(variable, "units", None)
     if units is not None and str(units).strip().lower() not in ("hours", "hour", "h"):
         raise ValueError(f"{source}: expected a time variable in fractional hours of the day, found units {units!r}.")
     data, mask = _raw_and_mask(variable)
-    invalid = _invalid_time_mask(variable, data, mask)
+    invalid = _invalid_time_mask(variable, data, mask, source=source)
     reference = np.datetime64(reference, "ns")
     midnight = reference.astype("datetime64[D]").astype("datetime64[ns]")
     hours = np.where(invalid, 0.0, data).astype(np.float64)

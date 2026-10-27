@@ -476,40 +476,58 @@ class TestCLDPIXReaderGeolocationChecks:
         could misplace every pixel.
 
         Builds the fixture with no ``valid_range`` on ``Latitude`` and asserts ``samples_in`` raises ``ValueError``
-        matching "Latitude declares valid_range None".
+        matching "Latitude has no valid_range attribute".
         """
         path = make_cldpix_fixture(tmp_path, latitude_valid_range=None)
-        with pytest.raises(ValueError, match=r"Latitude declares valid_range None"):
+        with pytest.raises(ValueError, match=r"Latitude has no valid_range attribute"):
             CLDPIXReader(path).samples_in(_BBOX, _T)
 
-    @pytest.mark.parametrize("name", ["Latitude", "Eff_Cld_Optical_Depth", "Cloud_Particle_Phase"])
+    @pytest.mark.parametrize(
+        "name", ["Latitude", "Longitude", "Observation_Time", "Eff_Cld_Optical_Depth", "Cloud_Particle_Phase"]
+    )
     def test_field_without_fill_value_raises(self, tmp_path, name):
         """``CLDPIXReader`` raises ``ValueError`` when a field it reads has no ``_FillValue`` attribute.
 
         The reader takes each field's fill sentinel from the file; with none declared it cannot tell missing pixels
         from data, and a sentinel would be averaged in as a real value.
 
-        Parametrized over a geolocation (``Latitude``), a continuous (``Eff_Cld_Optical_Depth``) and a categorical
-        (``Cloud_Particle_Phase``) field; writes the fixture without that field's fill and asserts ``samples_in``
-        raises ``ValueError`` matching "<name> has no _FillValue attribute".
+        Parametrized over the geolocation fields (``Latitude``, ``Longitude``), the pixel time (``Observation_Time``),
+        a continuous (``Eff_Cld_Optical_Depth``) and a categorical (``Cloud_Particle_Phase``) field; writes the fixture
+        without that field's fill and asserts ``samples_in`` raises ``ValueError`` matching "<name> has no _FillValue
+        attribute".
         """
         path = make_cldpix_fixture(tmp_path, omit_fill_value=(name,))
         with pytest.raises(ValueError, match=f"{name} has no _FillValue attribute"):
             CLDPIXReader(path).samples_in(_BBOX, _T)
 
-    @pytest.mark.parametrize("name", ["Eff_Cld_Optical_Depth", "Top_Cld_Height", "Cloud_Particle_Phase"])
+    @pytest.mark.parametrize(
+        "name", ["Longitude", "Observation_Time", "Eff_Cld_Optical_Depth", "Top_Cld_Height", "Cloud_Particle_Phase"]
+    )
     def test_field_without_valid_range_raises(self, tmp_path, name):
         """``CLDPIXReader`` raises ``ValueError`` when a field it reads has no ``valid_range`` attribute.
 
         The reader takes each field's valid range from the file; with none declared it cannot tell a retrieval from
         an out-of-range value, and guessing one could silently drop or keep the wrong values.
 
-        Parametrized over two continuous fields and a categorical one; writes the fixture without that field's range
-        and asserts ``samples_in`` raises ``ValueError`` matching "<name> has no valid_range attribute".
+        Parametrized over ``Longitude``, the pixel time (``Observation_Time``), two continuous fields and a categorical
+        one; writes the fixture without that field's range and asserts ``samples_in`` raises ``ValueError`` matching
+        "<name> has no valid_range attribute".
         """
         path = make_cldpix_fixture(tmp_path, omit_valid_range=(name,))
         with pytest.raises(ValueError, match=f"{name} has no valid_range attribute"):
             CLDPIXReader(path).samples_in(_BBOX, _T)
+
+    def test_longitude_valid_range_comes_from_the_file(self, tmp_path):
+        """``CLDPIXReader`` range-checks pixel longitude with the ``valid_range`` the file declares.
+
+        Geolocation is held to the file's own range like every other field, so a pixel outside it is dropped rather
+        than placed on the map.
+
+        Writes ``Longitude`` with a ``valid_range`` of [0, 340], which excludes the fixture's 345 degrees, and asserts
+        no pixel is served in the fixture box.
+        """
+        path = make_cldpix_fixture(tmp_path, longitude_valid_range=(0.0, 340.0))
+        assert CLDPIXReader(path).samples_in(_BBOX, _T).n_samples == 0
 
     @pytest.mark.parametrize("name", ["Cloud_Particle_Phase", "CERES_Cloud_Mask"])
     def test_categorical_field_without_flags_raises(self, tmp_path, name):

@@ -277,8 +277,9 @@ class CLDPIXReader(PassReader):
             fractional-hour times, if its time variable is not in hours, if the
             time variable is not one value per scanline (or per pixel), if
             ``Latitude`` does not declare the colatitude ``valid_range`` of [0, 180],
-            if a field read has no ``_FillValue`` or ``valid_range`` attribute, or if a
-            categorical field has no ``flag_values`` / ``flag_meanings`` pair.
+            if a field read (geolocation and ``Observation_Time`` included) has no
+            ``_FillValue`` or ``valid_range`` attribute, or if a categorical field has
+            no ``flag_values`` / ``flag_meanings`` pair.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
@@ -298,22 +299,24 @@ class CLDPIXReader(PassReader):
             # for the evidence that this field really is colatitude.
             source = f"cldpix {path.name}"
             lat_var = ds.variables[_LAT_VAR]
-            declared_range = getattr(lat_var, "valid_range", None)
-            if declared_range is None or not np.array_equal(np.asarray(declared_range), _COLATITUDE_VALID_RANGE):
+            declared_range = field_valid_range(lat_var, source=source)
+            if declared_range != _COLATITUDE_VALID_RANGE:
                 raise ValueError(
-                    f"{source}: {_LAT_VAR} declares valid_range {declared_range!r}, but this reader converts "
+                    f"{source}: {_LAT_VAR} declares valid_range {list(declared_range)}, but this reader converts "
                     f"colatitude {list(_COLATITUDE_VALID_RANGE)} to latitude. The granule's geolocation convention "
                     "has changed; update the reader's colatitude conversion before reading it."
                 )
             colatitudes_2d = apply_fill_and_valid_range(
-                lat_var[:], fill_value=field_fill_value(lat_var, source=source), valid_range=_COLATITUDE_VALID_RANGE
+                lat_var[:], fill_value=field_fill_value(lat_var, source=source), valid_range=declared_range
             )
             shape = colatitudes_2d.shape
             lats_2d = _NORTH_POLE_COLATITUDE - colatitudes_2d
             lon_var = ds.variables[_LON_VAR]
             lons_2d = normalize_longitude(
                 apply_fill_and_valid_range(
-                    lon_var[:], fill_value=field_fill_value(lon_var, source=source), valid_range=(0.0, 360.0)
+                    lon_var[:],
+                    fill_value=field_fill_value(lon_var, source=source),
+                    valid_range=field_valid_range(lon_var, source=source),
                 )
             )
             # The granule's own pixel spacing: the delivered swath may be subsampled (the

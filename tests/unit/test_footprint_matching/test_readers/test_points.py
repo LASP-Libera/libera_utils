@@ -241,16 +241,18 @@ class TestFieldValidRange:
 
 class TestDecodeCfTimes:
     @staticmethod
-    def _variable(tmp_path, values, units=None, mask_index=None):
+    def _variable(tmp_path, values, units=None, mask_index=None, fill_value=-1.0, valid_range=(0.0, 1.0e9)):
         import netCDF4
 
         path = tmp_path / "t.nc"
         ds = netCDF4.Dataset(str(path), "w")
         ds.createDimension("n", len(values))
-        var = ds.createVariable("time", np.float64, ("n",), fill_value=-1.0)
+        var = ds.createVariable("time", np.float64, ("n",), fill_value=False if fill_value is None else fill_value)
         var[:] = np.asarray(values, dtype=np.float64)
         if units is not None:
             var.units = units
+        if valid_range is not None:
+            var.valid_range = np.array(valid_range)
         if mask_index is not None:
             var[mask_index] = -1.0
         return ds, var
@@ -344,21 +346,67 @@ class TestDecodeCfTimes:
         assert np.isnat(times[1])
         assert np.isnat(times[2])
 
+    @pytest.mark.parametrize(
+        ("fill_value", "valid_range", "match"),
+        [
+            (None, (0.0, 1.0e9), "time has no _FillValue attribute"),
+            (-1.0, None, "time has no valid_range attribute"),
+            (-1.0, (0.0, 1.0, 2.0), r"time declares valid_range \[0.0, 1.0, 2.0\]"),
+        ],
+    )
+    def test_missing_or_malformed_fill_or_range_raises(self, tmp_path, fill_value, valid_range, match):
+        """``decode_cf_times`` raises ``ValueError`` when the time variable lacks a fill or a (low, high) valid range.
+
+        The fill and range come from the file as for every other field; with either missing, a fill sentinel or an
+        out-of-range value would decode to a real-looking time and match the sample to the wrong footprints.
+
+        Parametrized over no ``_FillValue``, no ``valid_range`` and a three-value ``valid_range``; asserts each raises
+        ``ValueError`` naming the variable.
+        """
+        ds, var = self._variable(
+            tmp_path, [0.0], units="seconds since 2026-01-01", fill_value=fill_value, valid_range=valid_range
+        )
+        try:
+            with pytest.raises(ValueError, match=match):
+                decode_cf_times(var, source="test")
+        finally:
+            ds.close()
+
+    def test_descending_valid_range_is_accepted(self, tmp_path):
+        """``decode_cf_times`` applies a ``valid_range`` declared high-to-low as the same interval.
+
+        CERES files declare some ranges in descending order; read as written, such a range would mark every time
+        invalid.
+
+        Declares ``valid_range`` [100, 0] seconds, decodes 50 and 200 seconds since 2026-01-01, and asserts the first
+        decodes and the second is ``NaT``.
+        """
+        ds, var = self._variable(tmp_path, [50.0, 200.0], units="seconds since 2026-01-01", valid_range=(100.0, 0.0))
+        try:
+            ds.set_auto_mask(False)
+            times = decode_cf_times(var, source="test")
+        finally:
+            ds.close()
+        assert times[0] == np.datetime64("2026-01-01T00:00:50", "ns")
+        assert np.isnat(times[1])
+
 
 class TestDecodeHoursOfDay:
     @staticmethod
-    def _variable(tmp_path, values, units="hours"):
+    def _variable(tmp_path, values, units="hours", fill=True, valid_range=True):
         import netCDF4
 
         path = tmp_path / "hours.nc"
         ds = netCDF4.Dataset(str(path), "w")
         ds.createDimension("s", len(values))
         ds.createDimension("p", 2)
-        var = ds.createVariable("Observation_Time", np.float32, ("s", "p"), fill_value=np.float32(3.4028235e38))
+        fill_value = np.float32(3.4028235e38) if fill else False
+        var = ds.createVariable("Observation_Time", np.float32, ("s", "p"), fill_value=fill_value)
         var[:] = np.repeat(np.asarray(values, dtype=np.float32)[:, None], 2, axis=1)
         if units is not None:
             var.units = units
-        var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
+        if valid_range:
+            var.valid_range = np.array([0.0, 23.999998], dtype=np.float32)
         return ds, var
 
     def test_hours_date_from_the_granule_day(self, tmp_path):
@@ -434,6 +482,29 @@ class TestDecodeHoursOfDay:
         ds, var = self._variable(tmp_path, [1.0], units="seconds since 1970-01-01")
         try:
             with pytest.raises(ValueError, match="fractional hours"):
+                decode_hours_of_day(var, np.datetime64("2020-04-10"), source="test")
+        finally:
+            ds.close()
+
+    @pytest.mark.parametrize(
+        ("fill", "valid_range", "match"),
+        [
+            (False, True, "Observation_Time has no _FillValue attribute"),
+            (True, False, "Observation_Time has no valid_range attribute"),
+        ],
+    )
+    def test_missing_fill_or_range_raises(self, tmp_path, fill, valid_range, match):
+        """``decode_hours_of_day`` raises ``ValueError`` when the variable has no ``_FillValue`` or ``valid_range``.
+
+        The fill and range come from the file as for every other field; with either missing, a fill sentinel would be
+        read as an hour and land the pixel far from its granule.
+
+        Parametrized over a variable with no ``_FillValue`` and one with no ``valid_range``; asserts each raises
+        ``ValueError`` naming the variable.
+        """
+        ds, var = self._variable(tmp_path, [1.0], fill=fill, valid_range=valid_range)
+        try:
+            with pytest.raises(ValueError, match=match):
                 decode_hours_of_day(var, np.datetime64("2020-04-10"), source="test")
         finally:
             ds.close()

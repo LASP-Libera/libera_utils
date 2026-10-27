@@ -530,8 +530,8 @@ class SSFReader(PassReader):
             :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`),
             if its footprint latitude is not in ``degrees_north``, if a group or
             variable read is missing, if a field's dimensions differ from the ones the
-            reader expects, or if a field read has no ``_FillValue`` or
-            ``valid_range`` attribute.
+            reader expects, or if a field read (geolocation and time included) has no
+            ``_FillValue`` or ``valid_range`` attribute.
         """
         with netCDF4.Dataset(str(path), "r") as ds:
             # Disable netCDF4 automatic masking and rely on our own
@@ -550,11 +550,15 @@ class SSFReader(PassReader):
                     "changed; update the reader before reading it."
                 )
             lats = apply_fill_and_valid_range(
-                lat_var[:], fill_value=field_fill_value(lat_var, source=source), valid_range=(-90.0, 90.0)
+                lat_var[:],
+                fill_value=field_fill_value(lat_var, source=source),
+                valid_range=field_valid_range(lat_var, source=source),
             )
             lon_var = _ssf_variable(ds, _TIME_POS_GROUP, _FOV_LON_VAR, source=source)
             lons_raw = apply_fill_and_valid_range(
-                lon_var[:], fill_value=field_fill_value(lon_var, source=source), valid_range=(0.0, 360.0)
+                lon_var[:],
+                fill_value=field_fill_value(lon_var, source=source),
+                valid_range=field_valid_range(lon_var, source=source),
             )
             lons = normalize_longitude(lons_raw)
             times = decode_cf_times(
