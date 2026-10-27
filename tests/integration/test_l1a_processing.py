@@ -300,10 +300,7 @@ def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
     tmp_path,
 ):
     """DITL WFOV SCI: parse, write, read back, and smoke-test JPEG-LS decompression."""
-    from io import BytesIO
-
-    import pillow_jpls  # noqa: F401 - registers JPEG-LS plugin with Pillow
-    from PIL import Image
+    import jpeg_ls
 
     monkeypatch.setenv("SKIP_PACKET_HEADER_BYTES", "8")
     apid = LiberaApid.icie_wfov_sci
@@ -354,8 +351,7 @@ def test_ditl_camera_wfov_compressed_image_round_trip_and_decompress(
         for image_index in range(min(3, n_complete)):
             length = int(read_dataset[WFOV_COMPRESSED_IMAGE_LENGTH_VAR].values[image_index])
             payload = read_dataset[WFOV_COMPRESSED_IMAGE_VAR].values[image_index, :length].tobytes()
-            with Image.open(BytesIO(payload)) as img:
-                assert img.size == (2048, 2048)
+            assert jpeg_ls.jlsread(payload).shape == (2048, 2048)
 
 
 def test_wfov_sci_no_complete_images_raises(
