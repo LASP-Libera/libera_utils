@@ -21,7 +21,7 @@ from libera_utils.footprint_matching.readers.era5_pressure import (
     ERA5PressureLevelReader,
 )
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode
-from tests.test_data.footprint_matching.fixtures import (
+from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     era5_pressure_fixture_value,
     make_era5_pressure_netcdf_fixture,

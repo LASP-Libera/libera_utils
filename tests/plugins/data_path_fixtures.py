@@ -306,7 +306,7 @@ def fmatch_real_data_path(test_data_path):
     Each file is cut from a real granule with its values unchanged; see the README.md
     in that directory for each file's source granule and what was kept.
     """
-    return test_data_path / "footprint_matching" / "real"
+    return test_data_path / "footprint_matching"
 
 
 @pytest.fixture

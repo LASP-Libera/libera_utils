@@ -20,7 +20,7 @@ from pyhdf.error import HDF4Error
 from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.types import BoundingBox, SampleSet, TimeMatch
-from tests.test_data.footprint_matching.fixtures import (
+from tests.plugins.footprint_matching_fixtures import (
     MODIS_SPHERE_RADIUS_M,
     MODIS_TILE_SIZE_M,
     make_modis_sinusoidal_hdf4_fixture,

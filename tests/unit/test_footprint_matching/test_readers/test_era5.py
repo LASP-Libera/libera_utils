@@ -19,7 +19,7 @@ import xarray as xr
 
 from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
 from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
-from tests.test_data.footprint_matching.fixtures import (
+from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     ERA5_SINGLE_LEVEL_FILLS,
     make_era5_netcdf_fixture,
@@ -264,7 +264,7 @@ class TestERA5ReaderValidTimeDimension:
         Queries a synthetic file whose time dimension is ``valid_time`` and asserts the served grid is three-dimensional
         with 7 planes.
         """
-        from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
+        from tests.plugins.footprint_matching_fixtures import make_era5_valid_time_fixture
 
         fixture_path = make_era5_valid_time_fixture(
             tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
@@ -284,7 +284,7 @@ class TestERA5ReaderValidTimeDimension:
         Writes a ``valid_time`` file with ``u10`` 3.0 and ``v10`` -2.0 and asserts the first two served planes hold
         those constants.
         """
-        from tests.test_data.footprint_matching.fixtures import make_era5_valid_time_fixture
+        from tests.plugins.footprint_matching_fixtures import make_era5_valid_time_fixture
 
         fixture_path = make_era5_valid_time_fixture(
             tmp_path,

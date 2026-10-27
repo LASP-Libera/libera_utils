@@ -14,7 +14,7 @@ import pytest
 
 from libera_utils.footprint_matching.readers.aod import VIIRSAODReader
 from libera_utils.footprint_matching.types import BoundingBox
-from tests.test_data.footprint_matching.fixtures import make_aod_noaa20_fixture
+from tests.plugins.footprint_matching_fixtures import make_aod_noaa20_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 

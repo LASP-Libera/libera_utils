@@ -20,7 +20,7 @@ import pytest
 from libera_utils.footprint_matching.readers._hdf5_io import _parse_he5_grid_metadata
 from libera_utils.footprint_matching.readers.brdf import VIIRSBRDFReader
 from libera_utils.footprint_matching.types import BoundingBox
-from tests.test_data.footprint_matching.fixtures import make_viirs_brdf_hdf5_fixture
+from tests.plugins.footprint_matching_fixtures import make_viirs_brdf_hdf5_fixture
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 

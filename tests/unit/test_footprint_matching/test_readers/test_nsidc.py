@@ -25,7 +25,7 @@ from libera_utils.footprint_matching.readers.nsidc import (
     _HemisphereGrid,
 )
 from libera_utils.footprint_matching.types import BoundingBox, SampleSet, TimeMatch
-from tests.test_data.footprint_matching.fixtures import make_nise_hdfeos_fixture
+from tests.plugins.footprint_matching_fixtures import make_nise_hdfeos_fixture
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
