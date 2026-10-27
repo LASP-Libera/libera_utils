@@ -1,8 +1,8 @@
-"""Unit tests for ERA5Reader.
+"""Unit tests for ERA5Reader and the ERA5 reader base both ERA5 readers share.
 
-Uses real synthetic NetCDF4 fixture files (created by make_era5_netcdf_fixture)
-so that the xarray slicing and coordinate handling can be exercised without
-calling real CDS services.
+Uses real synthetic NetCDF4 fixture files (created by make_era5_netcdf_fixture and
+make_era5_pressure_netcdf_fixture) so that the xarray slicing and coordinate handling
+can be exercised without calling real CDS services.
 
 Real ERA5 files can be downloaded from:
     Copernicus CDS: https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels
@@ -18,197 +18,60 @@ import pytest
 import xarray as xr
 
 from libera_utils.footprint_matching.readers.era5 import _ERA5_SINGLE_LEVEL_VARIABLES, ERA5Reader
-from libera_utils.footprint_matching.types import BoundingBox, OperationalMode, TimeMatch
+from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
+from libera_utils.footprint_matching.types import BoundingBox
 from tests.plugins.footprint_matching_fixtures import (
     ERA5_FIXTURE_TIME,
     ERA5_SINGLE_LEVEL_FILLS,
     make_era5_netcdf_fixture,
+    make_era5_pressure_netcdf_fixture,
 )
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import region as _region
 from tests.unit.test_footprint_matching.test_readers.grid_helpers import sample_at
 
 _T = ERA5_FIXTURE_TIME
 
-# The five additional FMATCH-IMAGER single-level fields alongside the winds.
-# (They sit in the FMATCH-IMAGER product alongside the RBSP fields; they are
-# mode-gated to IMAGER.)
-_IMAGER_SINGLE_LEVEL_SPEC_NAMES = (
-    "temperature_2m",
-    "dew_point_temperature_2m",
-    "surface_pressure",
-    "surface_geopotential",
-    "forecast_albedo",
-)
+# Both ERA5 readers, each with its fixture factory, the factory's keywords for a file with no
+# time axis, and its keywords for a grid large enough to measure a step load's peak memory.
+_ERA5_READERS = [
+    pytest.param(
+        ERA5Reader,
+        make_era5_netcdf_fixture,
+        {"time_dim": None},
+        {"n_lat": 400, "n_lon": 800},
+        id="single-level",
+    ),
+    pytest.param(
+        ERA5PressureLevelReader,
+        make_era5_pressure_netcdf_fixture,
+        {"with_valid_time": False},
+        {"n_lat": 60, "n_lon": 120, "lat_min": -15.0, "lat_max": 15.0, "lon_min": -30.0, "lon_max": 30.0},
+        id="pressure",
+    ),
+]
 
 
-class TestERA5ReaderClassAttributes:
-    def test_reader_key(self):
-        """``ERA5Reader`` registers under the key ``"era5_single_level"``.
+@pytest.mark.parametrize(("reader_cls", "make_fixture", "no_time", "large_grid"), _ERA5_READERS)
+class TestERA5ReaderBase:
+    """What the shared ERA5 reader base does for both ERA5 readers."""
 
-        The key selects the reader in ``ReaderRegistry`` and prefixes every product variable name it contributes
-        (``era5_single_level_wind_u10``), so changing it renames those variables and breaks every lookup by key.
+    def test_served_grid_is_ascending_and_float64(self, tmp_path, reader_cls, make_fixture, no_time, large_grid):
+        """An ERA5 reader serves latitudes ascending, as float64, although ERA5 files store them descending.
 
-        Asserts the ``READER_KEY`` class attribute equals ``"era5_single_level"``.
+        The box query slices the latitude axis with ``searchsorted``, which needs an ascending axis, and
+        ``SampleSet`` defines its coordinates as float64, which the PSF weigher places each sample by; a descending
+        axis would select the wrong rows, and a narrower dtype would shift the samples it weighs.
+
+        Queries a synthetic file whose latitudes are stored 2 to 0 over its full extent and asserts the served,
+        row-major latitudes never decrease and both coordinate arrays are float64.
         """
-        assert ERA5Reader.READER_KEY == "era5_single_level"
+        samples = reader_cls(make_fixture(tmp_path)).samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
+        assert np.all(np.diff(samples.lats) >= 0), f"Lats should be ascending but got: {samples.lats}"
+        assert samples.lats.dtype == np.float64
+        assert samples.lons.dtype == np.float64
 
-    def test_resolution_km(self):
-        """``ERA5Reader.RESOLUTION_KM`` is 28 km, the 0.25 degree ERA5 grid spacing at the equator.
-
-        The query box is padded by half this cell size and the weigher sizes its coverage measure from it, so a wrong
-        value serves the wrong rim cells and misreports how much of a footprint the grid covers.
-
-        Asserts the class attribute equals 28.0.
-        """
-        assert ERA5Reader.RESOLUTION_KM == 28.0
-
-    def test_variables_has_seven_entries(self):
-        """``ERA5Reader.VARIABLES`` declares exactly seven single-level fields.
-
-        The product definition derives the reader's variables from this tuple and each served step has one data plane
-        per entry, so an entry added or dropped changes the product schema and the plane count together.
-
-        Asserts the tuple has length 7.
-        """
-        assert len(ERA5Reader.VARIABLES) == 7
-
-    def test_variable_names(self):
-        """``ERA5Reader.VARIABLES`` names the two 10 m winds first, then the five IMAGER single-level fields.
-
-        The spec order is the order of the data planes the reader serves; if the names and the planes disagree, a value
-        is published under another variable's name.
-
-        Compares the spec names, in order, with ``wind_u10``, ``wind_v10`` and ``_IMAGER_SINGLE_LEVEL_SPEC_NAMES``.
-        """
-        names = [v.name for v in ERA5Reader.VARIABLES]
-        assert names == ["wind_u10", "wind_v10", *_IMAGER_SINGLE_LEVEL_SPEC_NAMES]
-
-    def test_wind_variables_are_unrestricted(self):
-        """The two wind specs are gated at ``OperationalMode.CAM``, so every FMATCH product carries them.
-
-        A spec is carried when its ``required_mode`` rank is at or below the active mode's, and CAM is the
-        lowest-latency mode; a higher gate would drop the winds from the CAM products that run from mission start.
-
-        Asserts ``required_mode`` is CAM for the first two entries of ``VARIABLES``.
-        """
-        for v in ERA5Reader.VARIABLES[:2]:
-            assert v.required_mode == OperationalMode.CAM
-
-    def test_imager_single_level_variables_are_mode_gated(self):
-        """The five non-wind single-level specs are gated at ``OperationalMode.IMAGER``.
-
-        These fields belong to the FMATCH-IMAGER products and must stay out of the lower-latency CAM products; a CAM
-        gate would add them to products they are not defined for.
-
-        Asserts ``required_mode`` is IMAGER for every entry of ``VARIABLES`` after the two winds.
-        """
-        # The additional single-level fields exist for the FMATCH-IMAGER product; asserts each of
-        # VARIABLES[2:] has required_mode == IMAGER (mode-gated to IMAGER).
-        for v in ERA5Reader.VARIABLES[2:]:
-            assert v.required_mode == OperationalMode.IMAGER
-
-    def test_variables_have_no_categories(self):
-        """Every ``ERA5Reader`` variable is continuous, with ``n_categories`` left as ``None``.
-
-        ERA5 fields are physical quantities aggregated as a weighted mean; a category count would declare one of them a
-        categorical variable.
-
-        Asserts ``n_categories`` is ``None`` on every entry of ``VARIABLES``.
-        """
-        for v in ERA5Reader.VARIABLES:
-            assert v.n_categories is None
-
-
-class TestERA5ReaderLoadSpatialRegion:
-    def test_returns_3d_data_array(self, tmp_path):
-        """``ERA5Reader.samples_in`` serves a grid that folds back to ``(7, n_lat, n_lon)``.
-
-        Axis 0 must hold one plane per variable with the time axis removed; an extra or missing axis means the samples
-        no longer line up with ``VARIABLES``.
-
-        Queries a 4 x 4 synthetic file over its full extent, folds the samples back into a grid with ``region`` and
-        asserts three dimensions with 7 planes on axis 0.
-        """
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, lats, lons = _region(reader, bbox, _T)
-        # 3D: (7 variables, n_lat, n_lon)
-        assert data.ndim == 3
-        assert data.shape[0] == 7
-
-    def test_data_axis0_is_variables(self, tmp_path):
-        """Plane ``i`` of the served data holds the ERA5 variable that ``VARIABLES[i]`` names.
-
-        Each plane is copied from a named file variable; a mismatch publishes, for example, surface pressure under the 2
-        m temperature name.
-
-        The synthetic file gives every variable its own constant (``u10`` 2.5, ``v10`` -1.5, the rest from
-        ``ERA5_SINGLE_LEVEL_FILLS``), and each plane is compared with the constant of the variable at that position.
-        """
-        fixture_path = make_era5_netcdf_fixture(tmp_path, u10_fill=2.5, v10_fill=-1.5, n_lat=4, n_lon=4)
-        reader = ERA5Reader(fixture_path)
-        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, _, _ = _region(reader, bbox, _T)
-        # data[0] should be u10 (all 2.5) and data[1] should be v10 (all -1.5);
-        # the remaining layers follow the file-variable mapping order with the
-        # distinct constant fills the fixture writes for each variable.
-        assert np.allclose(data[0], 2.5, atol=1e-4)
-        assert np.allclose(data[1], -1.5, atol=1e-4)
-        for i, (_, nc_name, _) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES[2:], start=2):
-            assert np.allclose(data[i], ERA5_SINGLE_LEVEL_FILLS[nc_name], rtol=1e-6), nc_name
-
-    def test_lats_are_ascending_order(self, tmp_path):
-        """``ERA5Reader`` serves latitudes ascending although ERA5 files store them descending.
-
-        The box query slices the latitude axis with ``searchsorted``, which needs an ascending axis; a descending axis
-        would select the wrong rows or none.
-
-        Queries a synthetic file whose latitudes are stored 2 to 0 and asserts the served latitudes never decrease.
-        """
-        # The fixture stores lats in DESCENDING order (ERA5 convention); asserts the reader flips them
-        # so that np.diff(lats) >= 0 (ascending) on output.
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        _, lats, _ = _region(reader, bbox, _T)
-        assert np.all(np.diff(lats) >= 0), f"Lats should be ascending but got: {lats}"
-
-    def test_data_dtype_is_float32(self, tmp_path):
-        """``ERA5Reader.samples_in`` serves its values as float32.
-
-        ``VARIABLES`` declares every field float32, the dtype the product stores; a wider dtype would double the memory
-        of every served step.
-
-        Queries a 4 x 4 synthetic file and asserts the folded data array is float32.
-        """
-        fixture_path = make_era5_netcdf_fixture(tmp_path, n_lat=4, n_lon=4)
-        reader = ERA5Reader(fixture_path)
-        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, _, _ = _region(reader, bbox, _T)
-        assert data.dtype == np.float32
-
-    def test_lats_dtype_is_float64(self, tmp_path):
-        """``ERA5Reader.samples_in`` serves latitudes and longitudes as float64.
-
-        ``SampleSet`` defines its coordinates as float64, and the PSF weigher places each sample by them; a narrower
-        dtype would shift the samples it weighs.
-
-        Queries a 4 x 4 synthetic file and asserts both coordinate arrays are float64.
-        """
-        fixture_path = make_era5_netcdf_fixture(tmp_path, n_lat=4, n_lon=4)
-        reader = ERA5Reader(fixture_path)
-        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        _, lats, lons = _region(reader, bbox, _T)
-        assert lats.dtype == np.float64
-        assert lons.dtype == np.float64
-
-    def test_partial_bbox_subsets_grid(self, tmp_path):
-        """``ERA5Reader.samples_in`` serves only the grid points inside the query box, not the whole step.
+    def test_partial_bbox_subsets_grid(self, tmp_path, reader_cls, make_fixture, no_time, large_grid):
+        """An ERA5 reader serves only the grid points inside the query box, not the whole step.
 
         A footprint must be aggregated from the cells around it; serving cells from outside the box would mix in values
         from elsewhere and waste memory on every query.
@@ -217,25 +80,35 @@ class TestERA5ReaderLoadSpatialRegion:
         (latitudes 1 to 3, longitudes 10.5 to 11.5, padded by about 0.13 degree), and asserts exactly the four interior
         rows and two interior columns are served.
         """
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=4.0, lon_min=10.0, lon_max=12.0, n_lat=8, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        data, lats, lons = _region(reader, BoundingBox(1.0, 3.0, 10.5, 11.5), _T)
+        fixture_path = make_fixture(tmp_path, lat_min=0.0, lat_max=4.0, lon_min=10.0, lon_max=12.0, n_lat=8, n_lon=4)
+        data, lats, lons = _region(reader_cls(fixture_path), BoundingBox(1.0, 3.0, 10.5, 11.5), _T)
         np.testing.assert_allclose(lats, np.linspace(0.0, 4.0, 8)[2:6])
         np.testing.assert_allclose(lons, np.linspace(10.0, 12.0, 4)[1:3])
         assert data.shape[1:] == (4, 2)
 
-    def test_step_load_peak_memory_is_one_step(self, tmp_path):
-        """``ERA5Reader._load_step`` reads a step with peak memory under 1.5 times the step's own size.
+    def test_file_without_time_axis_is_rejected(self, tmp_path, reader_cls, make_fixture, no_time, large_grid):
+        """An ERA5 reader raises ``ValueError`` for a file with no time dimension.
 
-        The variables are read plane by plane into one preallocated array; building per-variable arrays and stacking
-        them would hold the step twice, and the full-resolution global step is large.
+        Without a time axis a step cannot be matched to a footprint's time, so the file is rejected rather than served
+        for every time.
 
-        Loads one step of a 400 x 800 synthetic grid under ``tracemalloc`` and compares the traced peak with the size of
+        Writes a file whose grids have only latitude and longitude dimensions and asserts a query raises
+        ``ValueError`` naming the time dimension.
+        """
+        reader = reader_cls(make_fixture(tmp_path, **no_time))
+        with pytest.raises(ValueError, match="time dimension"):
+            reader.samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
+
+    def test_step_load_peak_memory_is_one_step(self, tmp_path, reader_cls, make_fixture, no_time, large_grid):
+        """An ERA5 reader's ``_load_step`` reads a step with peak memory under 1.5 times the step's own size.
+
+        Each plane is read into one preallocated array; building per-variable arrays and stacking them would hold the
+        step twice, and the full-resolution global step is large (about 0.8 GB for every pressure layer).
+
+        Loads one step of a larger synthetic grid under ``tracemalloc`` and compares the traced peak with the size of
         the returned data array.
         """
-        reader = ERA5Reader(make_era5_netcdf_fixture(tmp_path, n_lat=400, n_lon=800))
+        reader = reader_cls(make_fixture(tmp_path, **large_grid))
         _ = reader._steps
         tracemalloc.start()
         try:
@@ -243,65 +116,38 @@ class TestERA5ReaderLoadSpatialRegion:
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
-        # The variables are read plane by plane into one array; stacking per-variable arrays
-        # would hold at least twice the step.
         assert peak < 1.5 * grid.data.nbytes
 
 
-class TestERA5ReaderValidTimeDimension:
-    """ERA5 files downloaded via the new CDS API use 'valid_time' as the time dimension name.
+class TestERA5ReaderPlanes:
+    @pytest.mark.parametrize("time_dim", ["time", "valid_time"])
+    def test_planes_hold_their_variables(self, tmp_path, time_dim):
+        """``ERA5Reader`` serves one float32 plane per variable, plane ``i`` holding the field ``VARIABLES[i]`` names.
 
-    The reader must find ANY dimension whose name contains the substring 'time',
-    not just the exact name 'time'.
-    """
+        CDS downloads name the time dimension ``time`` or ``valid_time``; a reader that missed either would reject the
+        file or serve a step with the time axis still attached. Each plane is copied from a named file variable, so a
+        mismatch publishes, for example, surface pressure under the 2 m temperature name. ERA5 is a reanalysis whose
+        whole step is chosen by time, so its samples carry the reader key, no timestamp source and no per-sample times.
 
-    def test_valid_time_dimension_is_the_step_axis(self, tmp_path):
-        """``ERA5Reader`` treats a ``valid_time`` dimension as its hourly step axis.
-
-        CDS downloads name the time dimension ``valid_time`` or ``time``; a reader that missed ``valid_time`` would
-        reject those files or serve a step with the time axis still attached.
-
-        Queries a synthetic file whose time dimension is ``valid_time`` and asserts the served grid is three-dimensional
-        with 7 planes.
+        Parametrized over the two time-dimension names. The synthetic 4 x 4 file gives every variable its own constant
+        (``u10`` 3.0, ``v10`` -2.0, the rest from ``ERA5_SINGLE_LEVEL_FILLS``); a full-extent query must fold back to
+        ``(7, 4, 4)`` float32 planes, each the constant of the variable at that position, with the samples' source,
+        timestamp source and times as above.
         """
-        from tests.plugins.footprint_matching_fixtures import make_era5_valid_time_fixture
-
-        fixture_path = make_era5_valid_time_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=10.0, lon_max=12.0, n_lat=4, n_lon=4
-        )
-        reader = ERA5Reader(fixture_path)
-        bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
-        data, lats, lons = _region(reader, bbox, _T)
-        # A time axis left on the step would make the shape (7, 1, n_lat, n_lon).
-        assert data.ndim == 3
-        assert data.shape[0] == 7
-
-    def test_valid_time_values_correct(self, tmp_path):
-        """``ERA5Reader`` serves the stored wind values from a file with a ``valid_time`` dimension.
-
-        Finding the step axis is not enough: the planes read from that step must carry the file's values.
-
-        Writes a ``valid_time`` file with ``u10`` 3.0 and ``v10`` -2.0 and asserts the first two served planes hold
-        those constants.
-        """
-        from tests.plugins.footprint_matching_fixtures import make_era5_valid_time_fixture
-
-        fixture_path = make_era5_valid_time_fixture(
-            tmp_path,
-            lat_min=0.0,
-            lat_max=2.0,
-            lon_min=10.0,
-            lon_max=12.0,
-            n_lat=4,
-            n_lon=4,
-            u10_fill=3.0,
-            v10_fill=-2.0,
-        )
+        fixture_path = make_era5_netcdf_fixture(tmp_path, u10_fill=3.0, v10_fill=-2.0, time_dim=time_dim)
         reader = ERA5Reader(fixture_path)
         bbox = BoundingBox(0.0, 2.0, 10.0, 12.0)
         data, _, _ = _region(reader, bbox, _T)
+        assert data.shape == (7, 4, 4)
+        assert data.dtype == np.float32
         assert np.allclose(data[0], 3.0, atol=1e-4)
         assert np.allclose(data[1], -2.0, atol=1e-4)
+        for i, (_, nc_name, _) in enumerate(_ERA5_SINGLE_LEVEL_VARIABLES[2:], start=2):
+            assert np.allclose(data[i], ERA5_SINGLE_LEVEL_FILLS[nc_name], rtol=1e-6), nc_name
+        samples = reader.samples_in(bbox, _T)
+        assert samples.source == "era5_single_level"
+        assert samples.timestamp_source is None
+        assert samples.times is None
 
 
 class TestERA5ReaderMissingVariables:
@@ -316,9 +162,6 @@ class TestERA5ReaderMissingVariables:
         Writes a file holding only ``u10`` and ``v10`` and asserts a query raises ``KeyError`` naming the missing
         variables.
         """
-        import pytest
-        import xarray as xr
-
         # A legacy wind-only download: valid ERA5 format but missing the five
         # additional single-level variables (t2m, d2m, sp, z, fal).
         lats = np.linspace(2.0, 0.0, 4)
@@ -342,26 +185,7 @@ class TestERA5ReaderMissingVariables:
             _region(reader, BoundingBox(0.0, 2.0, 10.0, 12.0), _T)
 
 
-class TestERA5ReaderSamples:
-    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
-        """``ERA5Reader`` samples carry the source ``"era5_single_level"``, no timestamp source and no per-sample times.
-
-        ERA5 is a reanalysis: the whole step is chosen by time, so its samples need no times of their own, and
-        ``timestamp_source`` is reserved for cloud-property products tied to a radiometer or camera time.
-
-        Queries a 4 x 4 synthetic file over its full extent and asserts ``source``, ``timestamp_source``, ``times`` and
-        a count of 16 samples.
-        """
-        # ERA5 is a reanalysis; its samples carry the reader key and no instrument timestamp source.
-        fixture_path = make_era5_netcdf_fixture(
-            tmp_path, lat_min=0.0, lat_max=2.0, lon_min=0.0, lon_max=2.0, n_lat=4, n_lon=4
-        )
-        samples = ERA5Reader(fixture_path).samples_in(BoundingBox(0.0, 2.0, 0.0, 2.0), _T)
-        assert samples.source == "era5_single_level"
-        assert samples.timestamp_source is None
-        assert samples.times is None
-        assert samples.n_samples == 16
-
+class TestERA5ReaderDateline:
     def test_dateline_box_on_a_0_to_360_file_serves_both_ends(self, tmp_path):
         """A dateline-crossing box on a 0..360 file serves the columns on both sides of 180 degrees.
 
@@ -399,17 +223,6 @@ class TestERA5ReaderTimeSteps:
             tmp_path, times=times, u10_per_step=np.array([10.0, 20.0, 30.0]), filename=filename
         )
 
-    def test_policy_is_nearest_step(self):
-        """``ERA5Reader`` matches time by ``NEAREST_STEP`` with a one-hour ``MAX_TIME_OFFSET``.
-
-        The reader serves the hourly step nearest a footprint's time without interpolation, and a footprint more than an
-        hour from every staged step gets no ERA5 samples and is flagged.
-
-        Asserts the ``TIME_MATCH`` and ``MAX_TIME_OFFSET`` class attributes.
-        """
-        assert ERA5Reader.TIME_MATCH is TimeMatch.NEAREST_STEP
-        assert ERA5Reader.MAX_TIME_OFFSET == np.timedelta64(1, "h")
-
     def test_nearest_step_is_served(self, tmp_path):
         """``ERA5Reader.samples_in`` serves the step nearest the footprint time.
 
@@ -443,18 +256,6 @@ class TestERA5ReaderTimeSteps:
         assert first_step() is None
         assert reader._loaded_step[0] == 2
 
-    def test_step_beyond_max_offset_gives_no_samples(self, tmp_path):
-        """``ERA5Reader.samples_in`` serves no samples when the nearest step is beyond ``MAX_TIME_OFFSET``.
-
-        A footprint far from every staged step must be scored as uncovered and flagged, not filled from a step hours
-        away.
-
-        Queries a file with steps at 00:00 to 02:00 at 09:00 and asserts zero samples.
-        """
-        reader = ERA5Reader(self._three_steps(tmp_path))
-        samples = reader.samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), ERA5_FIXTURE_TIME + np.timedelta64(9, "h"))
-        assert samples.n_samples == 0
-
     def test_steps_span_several_granules(self, tmp_path):
         """``ERA5Reader`` builds one time-ordered step index across several staged granules.
 
@@ -475,35 +276,6 @@ class TestERA5ReaderTimeSteps:
         box = BoundingBox(0.0, 2.0, 10.0, 12.0)
         assert np.allclose(reader.samples_in(box, ERA5_FIXTURE_TIME).values[0], 1.0)
         assert np.allclose(reader.samples_in(box, ERA5_FIXTURE_TIME + np.timedelta64(1, "h")).values[0], 2.0)
-
-    def test_file_without_time_axis_is_rejected(self, tmp_path):
-        """``ERA5Reader`` raises ``ValueError`` for a file with no time dimension.
-
-        Without a time axis a step cannot be matched to a footprint's time, so the file is rejected rather than served
-        for every time.
-
-        Writes a ``u10`` grid with only latitude and longitude dimensions and asserts a query raises ``ValueError``
-        naming the time dimension.
-        """
-        import pytest
-        import xarray as xr
-
-        lats = np.linspace(2.0, 0.0, 4)
-        lons = np.linspace(10.0, 12.0, 4)
-        ds = xr.Dataset(
-            {
-                name: xr.DataArray(np.zeros((4, 4), dtype=np.float32), dims=["latitude", "longitude"])
-                for name in ("u10",)
-            },
-            coords={
-                "latitude": xr.DataArray(lats, dims=["latitude"]),
-                "longitude": xr.DataArray(lons, dims=["longitude"]),
-            },
-        )
-        path = tmp_path / "era5_no_time.nc"
-        ds.to_netcdf(path)
-        with pytest.raises(ValueError, match="time dimension"):
-            ERA5Reader(path).samples_in(BoundingBox(0.0, 2.0, 10.0, 12.0), ERA5_FIXTURE_TIME)
 
 
 class TestERA5ReaderRealSubset:
@@ -546,14 +318,3 @@ class TestERA5ReaderRealSubset:
         assert values["temperature_2m"] == pytest.approx(268.0293, abs=1e-3)
         assert values["surface_pressure"] == pytest.approx(88917.95, abs=0.1)
         assert values["wind_u10"] == pytest.approx(1.84288, abs=1e-4)
-
-    def test_a_time_beyond_the_offset_serves_nothing(self, reader):
-        """A real single-step download serves no samples two hours after its step.
-
-        The one-hour ``MAX_TIME_OFFSET`` must hold on a real file, so a footprint outside the staged hours is flagged as
-        uncovered.
-
-        Queries the real subset two hours after its only step and asserts zero samples.
-        """
-        samples = reader.samples_in(BoundingBox(44.0, 46.0, -106.0, -104.0), self._TIME + np.timedelta64(2, "h"))
-        assert samples.n_samples == 0

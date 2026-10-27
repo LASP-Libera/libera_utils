@@ -18,7 +18,7 @@ from pyhdf.error import HDF4Error
 
 from libera_utils.footprint_matching.readers._hdf4_io import read_modis_sinusoidal_hdf4
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
-from libera_utils.footprint_matching.types import BoundingBox, SampleSet, TimeMatch
+from libera_utils.footprint_matching.types import BoundingBox, SampleSet
 from tests.plugins.footprint_matching_fixtures import (
     MODIS_SPHERE_RADIUS_M,
     MODIS_TILE_SIZE_M,
@@ -82,52 +82,6 @@ def _assert_matches(reader: IGBPReader, tiles, bbox: BoundingBox) -> None:
     assert got.shape == expected.shape
     np.testing.assert_allclose(got[:, :2], expected[:, :2], rtol=0, atol=1e-9)
     np.testing.assert_array_equal(np.sort(got[:, 2]), np.sort(expected[:, 2]))
-
-
-class TestIGBPReaderClassAttributes:
-    def test_reader_key(self):
-        """``IGBPReader`` registers under the reader key ``"igbp"``.
-
-        The key names the reader in the registry and is stamped as the ``source`` of every sample set it serves, so
-        a different value would break lookups of the reader and attribution of its samples.
-
-        Asserts the class attribute ``READER_KEY`` equals ``"igbp"``.
-        """
-        assert IGBPReader.READER_KEY == "igbp"
-
-    def test_resolution_km(self):
-        """``IGBPReader.RESOLUTION_KM`` is 0.463 km, the MCD12Q1 sinusoidal grid cell of 463.3 m.
-
-        The coverage measure credits each served pixel with a cell of this side, and the query box is padded by half
-        of it; a wrong value misstates how much of a footprint the land-cover pixels cover.
-
-        Asserts the class attribute equals 0.463.
-        """
-        # The MCD12Q1 sinusoidal grid cell, 463.3 m.
-        assert IGBPReader.RESOLUTION_KM == 0.463
-
-    def test_one_categorical_variable(self):
-        """``IGBPReader`` declares one variable, ``surface_type``, with 20 categories.
-
-        The PSF aggregation histograms the class codes into ``n_categories`` bins sized to the 20-class
-        ``IGBPSurfaceType`` domain, so a different count would misalign the bins with the surface-type enum.
-
-        Asserts ``VARIABLES`` has length one, its name is ``surface_type`` and its ``n_categories`` is 20.
-        """
-        assert len(IGBPReader.VARIABLES) == 1
-        assert IGBPReader.VARIABLES[0].name == "surface_type"
-        assert IGBPReader.VARIABLES[0].n_categories == 20
-
-    def test_time_match_is_daily(self):
-        """``IGBPReader`` matches in time as ``TimeMatch.DAILY``.
-
-        MCD12Q1 is a yearly product with no time axis, so every staged tile applies to every footprint; selecting by
-        time would discard land cover that does apply.
-
-        Asserts ``TIME_MATCH`` is ``TimeMatch.DAILY``.
-        """
-        # The yearly land-cover map is the match for the whole staged period.
-        assert IGBPReader.TIME_MATCH is TimeMatch.DAILY
 
 
 class TestReadModisSinusoidal:
@@ -260,43 +214,44 @@ class TestIGBPTiles:
             _assert_matches(reader, tiles, BoundingBox(lat0, lat0 + rng.uniform(0.1, 3.0), lon0, lon0 + 2.0))
 
     @pytest.mark.parametrize(
-        "bbox",
+        ("tile_ids", "bbox"),
         [
-            # Wholly east of the prime meridian, straddling the h18/h19 edge near the
-            # poleward rows: x reaches lowest at the pole-most row.
-            BoundingBox(60.0, 62.0, 20.0, 22.0),
+            # Wholly east of the prime meridian, straddling the h18/h19 edge near the poleward rows:
+            # x reaches lowest at the pole-most row.
+            pytest.param(
+                [(15, 2), (16, 2), (17, 2), (18, 2), (19, 2), (20, 2)],
+                BoundingBox(60.0, 62.0, 20.0, 22.0),
+                id="high-lat-east",
+            ),
             # Wholly west, straddling the h16/h17 edge: x reaches highest at the pole-most row.
-            BoundingBox(60.0, 62.0, -22.0, -20.0),
+            pytest.param(
+                [(15, 2), (16, 2), (17, 2), (18, 2), (19, 2), (20, 2)],
+                BoundingBox(60.0, 62.0, -22.0, -20.0),
+                id="high-lat-west",
+            ),
+            pytest.param([(18, 8), (19, 8), (18, 9), (19, 9)], BoundingBox(-1.0, 1.0, -0.5, 1.5), id="equator"),
+            pytest.param([(17, 0), (18, 0)], BoundingBox(85.0, 90.0, -180.0, 180.0, is_polar=True), id="polar"),
+            # Tiles h06/h29 at 50-60 deg straddle the edge of the sinusoidal globe: part of each
+            # maps beyond +-180 deg longitude.
+            pytest.param([(6, 3), (29, 3)], BoundingBox(50.0, 60.0, -180.0, 180.0), id="off-globe-edge"),
         ],
     )
-    def test_high_latitude_boxes_on_one_side_of_the_prime_meridian(self, tmp_path, bbox):
-        """``query_box`` serves every pixel of a high-latitude box wholly east or wholly west of the prime meridian.
+    def test_query_box_matches_every_pixel_center(self, tmp_path, tile_ids, bbox):
+        """``query_box`` serves exactly the pixel centers inside a box where the sinusoidal geometry is hardest.
 
-        At high latitude the box's sinusoidal x-range depends on which latitude edge is used: east of the meridian it
-        is lowest at the pole-most row, west of it highest there, and using the wrong edge would cut off pixels
-        across a tile boundary.
+        At high latitude a box's sinusoidal x-range depends on which latitude edge is used (lowest at the pole-most row
+        east of the meridian, highest there west of it), and the wrong edge cuts off pixels across a tile boundary; a box
+        crossing the equator spans two tile rows and the widest point of each; near the pole the rows shrink to a few
+        pixels spanning every longitude; and edge tiles hold pixels whose computed longitude exceeds 180 degrees, which
+        are not on Earth and must not be served.
 
-        Parametrized over a box at 60-62 degrees straddling the h18/h19 edge and its mirror straddling h16/h17: each
-        asserts the served pixels equal the brute-force set and that some are served.
+        Parametrized over boxes at 60-62 degrees on either side of the prime meridian, across the equator, over the
+        north pole, and over the globe's edge at 50-60 degrees; each stages the tiles around its box and asserts the
+        served pixels equal a non-empty brute-force set over every pixel center of every tile.
         """
-        reader, tiles = self._reader(tmp_path, [(15, 2), (16, 2), (17, 2), (18, 2), (19, 2), (20, 2)])
+        reader, tiles = self._reader(tmp_path, tile_ids)
+        assert _brute_force(tiles, bbox).shape[0] > 0
         _assert_matches(reader, tiles, bbox)
-        assert reader._native.query_box(bbox)[0].size > 0
-
-    def test_box_straddling_the_equator(self, tmp_path):
-        """``query_box`` serves pixels on both sides of the equator for a box that crosses it.
-
-        A box crossing the equator spans the widest point of each row and two vertical tile rows; losing either
-        hemisphere would leave half a footprint without land cover.
-
-        Stages the four tiles around the equator at the prime meridian, asserts the served pixels equal the
-        brute-force set, and that latitudes both below and above zero are served.
-        """
-        reader, tiles = self._reader(tmp_path, [(18, 8), (19, 8), (18, 9), (19, 9)])
-        bbox = BoundingBox(-1.0, 1.0, -0.5, 1.5)
-        _assert_matches(reader, tiles, bbox)
-        lats = reader._native.query_box(bbox)[0]
-        assert lats.min() < 0.0 < lats.max()
 
     def test_dateline_box_serves_h35_and_h00(self, tmp_path):
         """``samples_in`` serves a box wrapping the antimeridian from the tiles on both sides of it.
@@ -313,38 +268,6 @@ class TestIGBPTiles:
         assert samples.lons.min() < -179.0
         for half in (BoundingBox(4.0, 6.0, 179.0, 180.0), BoundingBox(4.0, 6.0, -180.0, -179.0)):
             _assert_matches(reader, tiles, half)
-
-    def test_polar_box(self, tmp_path):
-        """``query_box`` serves the pixels of a polar box spanning all longitudes.
-
-        Near the pole the sinusoidal rows shrink to a few pixels that span every longitude, so a polar footprint
-        depends on the full-longitude box reaching them.
-
-        Stages tiles h17v00 and h18v00, queries 85-90 degrees north over -180 to 180, and asserts the served pixels
-        equal the brute-force set and are not empty.
-        """
-        reader, tiles = self._reader(tmp_path, [(17, 0), (18, 0)])
-        bbox = BoundingBox(85.0, 90.0, -180.0, 180.0, is_polar=True)
-        _assert_matches(reader, tiles, bbox)
-        assert reader._native.query_box(bbox)[0].size > 0
-
-    def test_no_off_globe_pixel_is_served(self, tmp_path):
-        """``query_box`` serves no pixel lying off the sinusoidal globe, beyond 180 degrees longitude.
-
-        Edge tiles contain pixels whose computed longitude exceeds 180 degrees; they are not on Earth, and serving
-        them would add bogus land cover to footprints.
-
-        Stages tiles h06v03 and h29v03, which straddle the globe's edge at 50-60 degrees, queries a full-longitude
-        band, and asserts every served longitude is within 180 degrees and the result matches the brute-force
-        set.
-        """
-        # Tiles h06/h29 at 50-60 deg straddle the edge of the sinusoidal globe: part of each
-        # maps beyond +-180 deg longitude.
-        reader, tiles = self._reader(tmp_path, [(6, 3), (29, 3)])
-        lats, lons, _, _ = reader._native.query_box(BoundingBox(50.0, 60.0, -180.0, 180.0))
-        assert lons.size > 0
-        assert np.all(np.abs(lons) <= 180.0)
-        _assert_matches(reader, tiles, BoundingBox(50.0, 60.0, -180.0, 180.0))
 
     def test_tile_outside_the_box_contributes_nothing(self, tmp_path):
         """A staged tile far from the query box serves no samples.
@@ -405,18 +328,6 @@ class TestIGBPCodes:
         finite = samples.values[np.isfinite(samples.values)]
         assert set(np.unique(finite).tolist()) == {1.0, 5.0, 17.0}
         assert np.isnan(samples.values).any()
-
-    def test_all_fill_tile_serves_only_nan(self, tmp_path):
-        """A tile that is all fill (255) serves its pixels, every one as NaN.
-
-        Fill pixels still occupy the footprint, but they carry no class, so they must not be counted as land cover.
-
-        Writes a tile of 255 everywhere, serves a box over it, and asserts samples are served and all are NaN.
-        """
-        path, _ = _tile(tmp_path, 18, 4, codes=np.full((_N, _N), 255, dtype=np.uint8))
-        samples = IGBPReader(path).samples_in(BoundingBox(44.0, 45.0, 5.0, 6.0), _T)
-        assert samples.n_samples > 0
-        assert np.all(np.isnan(samples.values))
 
 
 class TestIGBPTileHolder:

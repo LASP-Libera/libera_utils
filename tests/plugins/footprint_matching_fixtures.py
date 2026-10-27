@@ -69,56 +69,6 @@ ERA5_FIXTURE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 """The single hourly step the default ERA5 fixtures carry; query them at this time."""
 
 
-def _era5_single_level_dataset(
-    lat_min: float,
-    lat_max: float,
-    lon_min: float,
-    lon_max: float,
-    n_lat: int,
-    n_lon: int,
-    u10_fill: float,
-    v10_fill: float,
-    time_dim: str,
-    times: np.ndarray | None,
-    u10_per_step: np.ndarray | None = None,
-) -> xr.Dataset:
-    """Build the in-memory Dataset shared by the two single-level fixture makers.
-
-    Contains all seven single-level variables the ERA5Reader expects (u10, v10,
-    t2m, d2m, sp, z, fal), each a constant-valued grid, with latitudes stored
-    DESCENDING (real ERA5 convention) and a leading time dimension named
-    ``time_dim`` (``"time"`` as older CDS downloads name it, or ``"valid_time"`` as
-    the new CDS API does). ``times`` are the step times (default: the single
-    :data:`ERA5_FIXTURE_TIME`); ``u10_per_step`` optionally gives u10 one constant per
-    step so a test can tell which step the reader served.
-    """
-    lats = np.linspace(lat_max, lat_min, n_lat)  # descending, real ERA5 convention
-    lons = np.linspace(lon_min, lon_max, n_lon)
-    if times is None:
-        times = np.array([ERA5_FIXTURE_TIME], dtype="datetime64[ns]")
-    times = np.asarray(times).astype("datetime64[ns]")
-    n_time = times.size
-
-    fills = {"u10": u10_fill, "v10": v10_fill, **ERA5_SINGLE_LEVEL_FILLS}
-    shape = (n_time, n_lat, n_lon)
-    dims = [time_dim, "latitude", "longitude"]
-
-    coords = {
-        "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
-        "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
-        time_dim: xr.DataArray(times, dims=[time_dim]),
-    }
-
-    data_vars = {}
-    for name, fill in fills.items():
-        data = np.full(shape, fill, dtype=np.float32)
-        if name == "u10" and u10_per_step is not None:
-            for step, value in enumerate(np.asarray(u10_per_step, dtype=np.float32)):
-                data[step] = value
-        data_vars[name] = xr.DataArray(data, dims=dims, attrs=_ERA5_SINGLE_LEVEL_ATTRS[name])
-    return xr.Dataset(data_vars, coords=coords)
-
-
 def make_era5_netcdf_fixture(
     tmp_path: Path,
     lat_min: float = 0.0,
@@ -132,15 +82,16 @@ def make_era5_netcdf_fixture(
     times: np.ndarray | None = None,
     u10_per_step: np.ndarray | None = None,
     filename: str = "era5_fixture.nc",
+    time_dim: str | None = "time",
 ) -> Path:
     """Write a synthetic ERA5 single-levels NetCDF4 file to ``tmp_path``.
 
     The real ERA5 files from CDS contain the single-level variables on a global
     lat/lon grid with the latitude dimension in DESCENDING order (90 -> -90) and a
-    leading hourly ``time`` dimension. This factory reproduces that convention in a
+    leading hourly time dimension. This factory reproduces that convention in a
     small grid for testing, writing all seven variables the ERA5Reader expects
-    (u10, v10, t2m, d2m, sp, z, fal). The non-wind variables carry the constant
-    ``ERA5_SINGLE_LEVEL_FILLS`` values.
+    (u10, v10, t2m, d2m, sp, z, fal), each a constant-valued grid. The non-wind
+    variables carry the constant ``ERA5_SINGLE_LEVEL_FILLS`` values.
 
     The real file format reference:
     https://confluence.ecmwf.int/display/CKB/ERA5+data+documentation
@@ -166,63 +117,46 @@ def make_era5_netcdf_fixture(
         One u10 constant per step, overriding ``u10_fill`` step by step.
     filename : str, optional
         Name of the file written under ``tmp_path``.
+    time_dim : str or None, optional
+        Name of the leading time dimension: ``"time"`` (default) as older CDS
+        downloads name it, or ``"valid_time"`` as the current CDS API does. ``None``
+        writes the first step's grids with no time dimension at all.
 
     Returns
     -------
     Path
         Path to the created NetCDF4 fixture file.
     """
-    ds = _era5_single_level_dataset(
-        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, "time", times, u10_per_step
-    )
+    lats = np.linspace(lat_max, lat_min, n_lat)  # descending, real ERA5 convention
+    lons = np.linspace(lon_min, lon_max, n_lon)
+    if times is None:
+        times = np.array([ERA5_FIXTURE_TIME], dtype="datetime64[ns]")
+    times = np.asarray(times).astype("datetime64[ns]")
+
+    fills = {"u10": u10_fill, "v10": v10_fill, **ERA5_SINGLE_LEVEL_FILLS}
+    coords = {
+        "latitude": xr.DataArray(lats, dims=["latitude"], attrs={"units": "degrees_north"}),
+        "longitude": xr.DataArray(lons, dims=["longitude"], attrs={"units": "degrees_east"}),
+    }
+    if time_dim is not None:
+        coords[time_dim] = xr.DataArray(times, dims=[time_dim])
+
+    data_vars = {}
+    for name, fill in fills.items():
+        data = np.full((times.size, n_lat, n_lon), fill, dtype=np.float32)
+        if name == "u10" and u10_per_step is not None:
+            for step, value in enumerate(np.asarray(u10_per_step, dtype=np.float32)):
+                data[step] = value
+        if time_dim is None:
+            data_vars[name] = xr.DataArray(
+                data[0], dims=["latitude", "longitude"], attrs=_ERA5_SINGLE_LEVEL_ATTRS[name]
+            )
+        else:
+            data_vars[name] = xr.DataArray(
+                data, dims=[time_dim, "latitude", "longitude"], attrs=_ERA5_SINGLE_LEVEL_ATTRS[name]
+            )
     out_path = tmp_path / filename
-    ds.to_netcdf(out_path)
-    return out_path
-
-
-def make_era5_valid_time_fixture(
-    tmp_path: Path,
-    lat_min: float = 0.0,
-    lat_max: float = 2.0,
-    lon_min: float = 10.0,
-    lon_max: float = 12.0,
-    n_lat: int = 4,
-    n_lon: int = 4,
-    u10_fill: float = 2.5,
-    v10_fill: float = -1.5,
-) -> Path:
-    """Write a synthetic ERA5 single-levels NetCDF4 file with a ``valid_time`` dimension.
-
-    Identical to :func:`make_era5_netcdf_fixture` except that the time dimension is
-    named ``valid_time``, matching the format produced by the new CDS API. This
-    exercises the reader's time-dimension detection, which matches on the substring
-    ``"time"``.
-
-    Parameters
-    ----------
-    tmp_path : Path
-        pytest ``tmp_path`` fixture directory.
-    lat_min, lat_max : float
-        Latitude range (DESCENDING in file). Default: 0 -> 2 N.
-    lon_min, lon_max : float
-        Longitude range. Default: 10 -> 12 E.
-    n_lat, n_lon : int
-        Number of grid points in each dimension. Default 4.
-    u10_fill : float
-        Constant fill value for u10. Default 2.5 m/s.
-    v10_fill : float
-        Constant fill value for v10. Default -1.5 m/s.
-
-    Returns
-    -------
-    Path
-        Path to the created NetCDF4 fixture file.
-    """
-    ds = _era5_single_level_dataset(
-        lat_min, lat_max, lon_min, lon_max, n_lat, n_lon, u10_fill, v10_fill, "valid_time", None
-    )
-    out_path = tmp_path / "era5_valid_time_fixture.nc"
-    ds.to_netcdf(out_path)
+    xr.Dataset(data_vars, coords=coords).to_netcdf(out_path)
     return out_path
 
 

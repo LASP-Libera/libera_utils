@@ -54,46 +54,27 @@ class _GridReader(StaticReader):
         return GridSamples(lat_axis=lats, lon_axis=lons, data=data[np.newaxis])
 
 
-class _PointReader(StaticReader):
-    """A daily point cloud handed in at construction."""
+class _HeldReader(StaticReader):
+    """A daily reader whose native data, handed in at construction, is served as returned."""
 
-    READER_KEY = "_base_test_points"
+    READER_KEY = "_base_test_held"
     INSTRUMENT = "FAKE"
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.DAILY
     VARIABLES = (_SPEC,)
 
-    def __init__(self, points: PointSamples) -> None:
+    def __init__(self, native: object) -> None:
         super().__init__("unused.bin")
-        self._points = points
+        self._held = native
 
-    def _load_native(self) -> PointSamples:
-        return self._points
-
-
-class _PassReader(StaticReader):
-    """A nearest-pass point cloud handed in at construction."""
-
-    READER_KEY = "_base_test_pass"
-    INSTRUMENT = "FAKE"
-    RESOLUTION_KM = 1.0
-    TIME_MATCH = TimeMatch.NEAREST_PASS
-    PASS_WINDOW = np.timedelta64(15, "m")
-    MAX_TIME_OFFSET = np.timedelta64(3, "h")
-    VARIABLES = (_SPEC,)
-
-    def __init__(self, points: PointSamples) -> None:
-        super().__init__("unused.bin")
-        self._points = points
-
-    def _load_native(self) -> PointSamples:
-        return self._points
+    def _load_native(self):
+        return self._held
 
 
-class _PassNativeReader(StaticReader):
+class _HeldPassReader(StaticReader):
     """A nearest-pass reader whose native data, handed in at construction, is served as returned."""
 
-    READER_KEY = "_base_test_pass_native"
+    READER_KEY = "_base_test_held_pass"
     INSTRUMENT = "FAKE"
     RESOLUTION_KM = 1.0
     TIME_MATCH = TimeMatch.NEAREST_PASS
@@ -134,20 +115,6 @@ class _StepReader(SteppedGridReader):
         return GridSamples(lat_axis=axis, lon_axis=axis, data=data)
 
 
-class _WrongPlanesGridReader(StaticReader):
-    """A daily grid reader that loads two planes for its one declared variable."""
-
-    READER_KEY = "_base_test_wrong_planes"
-    INSTRUMENT = "FAKE"
-    RESOLUTION_KM = 111.0
-    TIME_MATCH = TimeMatch.DAILY
-    VARIABLES = (_SPEC,)
-
-    def _load_native(self) -> GridSamples:
-        axis = np.array([0.0, 1.0])
-        return GridSamples(lat_axis=axis, lon_axis=axis, data=np.zeros((2, 2, 2), dtype=np.float32))
-
-
 class _BoxHolder:
     """A box-queried native: samples on a 0.5 degree lattice, generated per query."""
 
@@ -164,23 +131,6 @@ class _BoxHolder:
         lon_grid, lat_grid = np.meshgrid(lons, lats)
         values = np.tile(lon_grid.ravel().astype(np.float32), (self.n_variables, 1))
         return lat_grid.ravel(), lon_grid.ravel(), values, None
-
-
-class _BoxReader(StaticReader):
-    """A daily reader whose native data answers box queries itself."""
-
-    READER_KEY = "_base_test_box"
-    INSTRUMENT = "FAKE"
-    RESOLUTION_KM = 1.0
-    TIME_MATCH = TimeMatch.DAILY
-    VARIABLES = (_SPEC,)
-
-    def __init__(self, native: object) -> None:
-        super().__init__("unused.hdf")
-        self._held = native
-
-    def _load_native(self):
-        return self._held
 
 
 def _random_points(rng: np.random.Generator, n: int, with_times: bool = False) -> PointSamples:
@@ -353,12 +303,13 @@ class TestGridQuery:
         Each served value must stay paired with its own latitude and longitude, or the weigher would weight
         values at the wrong locations.
 
-        A 1 degree global test grid encoding each cell's row and column in its value is queried with a box around
-        four grid points; the test asserts the four latitudes, longitudes and values in row-major order, the
-        float32 dtype, no times, and the reader key as ``source``.
+        A 1 degree global test grid encoding each cell's row and column in its value is queried with a box lying
+        strictly between four grid points (0.1 degree inside each), so it is the half-cell padding that serves
+        them; the test asserts the four latitudes, longitudes and values in row-major order, the float32 dtype, no
+        times, and the reader key as ``source``.
         """
         reader = _GridReader(tmp_path / "unused.nc")
-        samples = reader.samples_in(BoundingBox(0.5, 1.5, 10.5, 11.5), _T0)
+        samples = reader.samples_in(BoundingBox(0.6, 1.4, 10.6, 11.4), _T0)
         assert isinstance(samples, SampleSet)
         assert samples.n_samples == 4
         np.testing.assert_array_equal(samples.lats, [0.5, 0.5, 1.5, 1.5])
@@ -368,6 +319,22 @@ class TestGridQuery:
         assert samples.values.dtype == np.float32
         assert samples.times is None
         assert samples.source == "_base_test_grid"
+
+    def test_box_off_the_grid_serves_nothing(self):
+        """A query box that holds no grid point serves an empty sample set, still shaped for every variable.
+
+        A footprint can lie outside the grid a reader holds; the query must then serve nothing rather than fail or serve
+        points from outside the box.
+
+        A one-variable reader holding a 2 x 2 grid near the equator is queried at 58 to 60 degrees south, 170 to 172
+        degrees east, and must serve zero samples with values shaped ``(1, 0)``.
+        """
+        grid = GridSamples(
+            lat_axis=np.array([0.5, 1.5]), lon_axis=np.array([10.5, 11.5]), data=np.ones((1, 2, 2), np.float32)
+        )
+        samples = _HeldReader(grid).samples_in(BoundingBox(-60.0, -58.0, 170.0, 172.0), _T0)
+        assert samples.n_samples == 0
+        assert samples.values.shape == (1, 0)
 
     def test_grid_slice_includes_points_on_the_box_edges(self, tmp_path):
         """The grid slice behind ``samples_in`` keeps grid points lying exactly on the box's edges.
@@ -383,22 +350,6 @@ class TestGridQuery:
         np.testing.assert_array_equal(lats, [0.5, 0.5, 1.5, 1.5])
         np.testing.assert_array_equal(lons, [10.5, 11.5, 10.5, 11.5])
 
-    def test_box_is_padded_by_half_a_cell(self, tmp_path):
-        # A 111 km cell pads the box by 0.5 deg: the four grid points whose cells overlap a
-        # box lying between them are served.
-        """``samples_in`` widens the box by half a native cell, so grid points whose cells overlap it are served.
-
-        A sample whose center lies just outside a footprint's box can still cover part of it; without the padding
-        a coarse grid would never serve the cells on the box's rim and the rim would be scored as missing.
-
-        On the 111 km test grid, a box lying strictly between four grid points (0.1 degree inside each) is
-        queried, and all four points must be served.
-        """
-        reader = _GridReader(tmp_path / "unused.nc")
-        samples = reader.samples_in(BoundingBox(0.6, 1.4, 10.6, 11.4), _T0)
-        assert samples.n_samples == 4
-        np.testing.assert_array_equal(samples.lats, [0.5, 0.5, 1.5, 1.5])
-
     def test_box_beyond_the_padding_is_empty(self, tmp_path):
         # A 1 km-cell reader pads by 0.0045 deg: a box 0.4 deg from every point serves nothing,
         # a box around a point serves it.
@@ -410,7 +361,7 @@ class TestGridQuery:
         both, which serves nothing, and with a box around one point, which serves that one.
         """
         points = PointSamples(lats=np.array([0.5, 1.5]), lons=np.array([10.5, 11.5]), values=np.array([[1.0, 2.0]]))
-        reader = _PointReader(points)
+        reader = _HeldReader(points)
         assert reader.samples_in(BoundingBox(0.9, 1.1, 10.9, 11.1), _T0).n_samples == 0
         assert reader.samples_in(BoundingBox(0.4, 0.6, 10.4, 10.6), _T0).n_samples == 1
 
@@ -518,7 +469,7 @@ class TestBoxQueriedNative:
         values, and the declared resolution is reported.
         """
         holder = _BoxHolder()
-        reader = _BoxReader(holder)
+        reader = _HeldReader(holder)
         samples = reader.samples_in(BoundingBox(0.0, 1.0, 179.0, 181.0, wraps_dateline=True), _T0)
         # Two halves queried, each inside [-180, 180] and padded by half a 1 km cell.
         assert len(holder.queries) == 2
@@ -539,36 +490,13 @@ class TestBoxQueriedNative:
         is the very stub object it returned.
         """
         holder = _BoxHolder()
-        reader = _BoxReader(holder)
+        reader = _HeldReader(holder)
         loads = []
         monkeypatch.setattr(reader, "_load_native", lambda: loads.append(1) or holder)
         reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
         reader.samples_in(BoundingBox(5.0, 6.0, 5.0, 6.0), _T0)
         assert len(loads) == 1
         assert reader._native is holder
-
-    def test_wrong_variable_count_raises(self):
-        """A box-queried native whose variable count differs from the reader's ``VARIABLES`` raises ``ValueError``.
-
-        Each row of served values is attributed to a declared variable, so a count mismatch would publish
-        values under the wrong variable names.
-
-        A stub declaring two variables is held by a reader declaring one, and the first query must raise with a
-        message naming the box-queried native and its two variables.
-        """
-        with pytest.raises(ValueError, match="box-queried native with 2 variables"):
-            _BoxReader(_BoxHolder(n_variables=2)).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
-
-    def test_unknown_native_type_raises(self):
-        """A ``StaticReader`` whose loader returns an unsupported type raises ``TypeError`` on the first query.
-
-        The base class only knows how to query grids, point clouds and box-queried natives; anything else is a
-        programming error in the reader and must stop the run rather than serve nothing.
-
-        A reader whose loader returns a ``dict`` is queried and must raise a message naming the type ``dict``.
-        """
-        with pytest.raises(TypeError, match="native data of type dict"):
-            _BoxReader({}).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
 
     def test_unknown_native_type_from_native_for_raises(self, monkeypatch):
         # A reader whose _native_for hands the query an unrecognized object.
@@ -580,7 +508,7 @@ class TestBoxQueriedNative:
         ``_native_for`` is patched to return a bare ``object``, and the query must raise a message naming the
         type ``object``.
         """
-        reader = _BoxReader(_BoxHolder())
+        reader = _HeldReader(_BoxHolder())
         monkeypatch.setattr(reader, "_native_for", lambda time: (object(),))
         with pytest.raises(TypeError, match="native data of type object"):
             reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
@@ -602,50 +530,33 @@ class TestNearestPass:
         )
         return PointSamples(lats=lats, lons=lons, values=values, times=times)
 
-    def test_nearest_pass_only(self):
-        """A ``NEAREST_PASS`` reader serves only the pass nearest the footprint time.
+    @pytest.mark.parametrize(
+        ("offset", "value", "n"),
+        [
+            pytest.param(np.timedelta64(-10, "m"), 1.0, 5, id="before-pass-a"),
+            pytest.param(np.timedelta64(40, "m"), 1.0, 5, id="after-pass-a"),
+            pytest.param(np.timedelta64(11, "h"), 2.0, 5, id="before-pass-b"),
+            pytest.param(np.timedelta64(6, "h"), None, 0, id="beyond-max-offset"),
+        ],
+    )
+    def test_query_time_selects_one_pass(self, offset, value, n):
+        """A ``NEAREST_PASS`` reader serves the whole pass nearest the footprint time, none past ``MAX_TIME_OFFSET``.
 
-        Two passes over the same spot can be hours apart and see different conditions, so mixing them would
-        blend observations that do not describe the footprint's moment.
+        Two passes over one spot can be hours apart and see different conditions, so mixing them would blend
+        observations that do not describe the footprint's moment; ``PASS_WINDOW`` keeps the whole nearest pass
+        rather than its single closest sample; and a pass too far from the footprint time no longer describes it.
 
-        Two passes of five samples, 12 hours apart, cover one spot; a query 40 minutes after the first pass gets
-        exactly its five samples, and a query an hour before the second pass gets only the second pass.
-        """
-        reader = _PassReader(self._two_passes())
-        box = BoundingBox(10.0, 11.0, 20.0, 21.0)
-        near_a = reader.samples_in(box, _T0 + np.timedelta64(40, "m"))
-        assert set(near_a.values[0].tolist()) == {1.0}
-        assert near_a.n_samples == 5
-        near_b = reader.samples_in(box, _T0 + np.timedelta64(11, "h"))
-        assert set(near_b.values[0].tolist()) == {2.0}
-
-    def test_beyond_max_offset_is_empty(self):
-        """A ``NEAREST_PASS`` query farther than ``MAX_TIME_OFFSET`` from every sample serves no samples.
-
-        A pass too far from the footprint time no longer describes it; returning nothing lets the footprint be
-        scored as having no coverage instead of taking a stale value.
-
-        The two-pass fixture is queried 6 hours after the first pass, past the 3 hour limit to either pass, and
-        the result must be empty.
-        """
-        reader = _PassReader(self._two_passes())
-        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0 + np.timedelta64(6, "h"))
-        assert samples.n_samples == 0
-
-    def test_window_keeps_a_pass_together(self):
-        # The pass spans 60 s; a footprint 10 min before its first sample keeps all of it.
-        """``PASS_WINDOW`` keeps every sample of the nearest pass, not just the single closest one.
-
-        A pass spans some seconds of observation, and keeping only the closest sample would discard most of the
-        pass that covers the footprint.
-
-        The first pass spans 60 seconds; a query 10 minutes before it must serve all five of its samples, with
+        Two passes of five samples, 12 hours apart, cover one spot. A query 10 minutes before or 40 minutes after
+        the first pass serves its five samples, a query an hour before the second serves only the second, and a
+        query 6 hours after the first, past the 3 hour limit to either pass, serves nothing. Served samples carry
         their times.
         """
-        reader = _PassReader(self._two_passes())
-        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0 - np.timedelta64(10, "m"))
-        assert samples.n_samples == 5
-        assert samples.times is not None
+        reader = _HeldPassReader(self._two_passes())
+        samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0 + offset)
+        assert samples.n_samples == n
+        if n:
+            assert set(samples.values[0].tolist()) == {value}
+            assert samples.times is not None
 
     def test_nat_footprint_time_raises(self):
         """A reader that selects in time raises ``ValueError`` when the footprint time is NaT.
@@ -655,7 +566,7 @@ class TestNearestPass:
 
         A ``NEAREST_PASS`` reader is queried with a NaT time and must raise a message mentioning NaT.
         """
-        reader = _PassReader(self._two_passes())
+        reader = _HeldPassReader(self._two_passes())
         with pytest.raises(ValueError, match="NaT"):
             reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), np.datetime64("NaT"))
 
@@ -670,7 +581,7 @@ class TestNearestPass:
         """
         points = PointSamples(lats=np.array([10.5]), lons=np.array([20.5]), values=np.array([[1.0]], dtype=np.float32))
         with pytest.raises(ValueError, match="per-sample times"):
-            _PassReader(points).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+            _HeldPassReader(points).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
 
     @pytest.mark.parametrize(
         "native",
@@ -696,7 +607,7 @@ class TestNearestPass:
         data must raise a message about per-sample times.
         """
         with pytest.raises(ValueError, match="served no per-sample times"):
-            _PassNativeReader(native).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
+            _HeldPassReader(native).samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
 
 
 class TestNearestStep:
@@ -726,13 +637,14 @@ class TestNearestStep:
         A step too far from the footprint time no longer describes it, and loading a large grid only to discard
         it would waste read time.
 
-        Hourly steps span 3 hours from noon; a query 9 hours after noon must return no samples and leave the
-        load log empty.
+        Hourly steps span 3 hours from noon; a query 9 hours after noon must return no samples, leave the load log
+        empty, and still report the reader's declared 25 km resolution.
         """
         reader = _StepReader()
         samples = reader.samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0 + np.timedelta64(9, "h"))
         assert samples.n_samples == 0
         assert reader.loads == []
+        assert samples.resolution_km == 25.0
 
     def test_step_with_wrong_plane_count_raises(self):
         """A stepped reader whose loaded step has a different number of planes than ``VARIABLES`` raises ``ValueError``.
@@ -846,139 +758,128 @@ class TestRegistrationValidation:
         with pytest.raises(TypeError, match=missing):
             incomplete("unused.nc")
 
-    def test_missing_time_match_is_rejected_at_import(self):
-        """Defining a concrete ``StaticReader`` without ``TIME_MATCH`` raises ``TypeError`` when the class is created.
+    @pytest.mark.parametrize(
+        ("base", "attrs", "match"),
+        [
+            pytest.param(
+                StaticReader, {"TIME_MATCH": TimeMatch.DAILY, "INSTRUMENT": None}, "INSTRUMENT", id="no-instrument"
+            ),
+            pytest.param(StaticReader, {}, "TIME_MATCH", id="no-time-match"),
+            pytest.param(SteppedGridReader, {}, "MAX_TIME_OFFSET", id="step-no-max-offset"),
+            pytest.param(
+                StaticReader,
+                {"TIME_MATCH": TimeMatch.NEAREST_PASS, "MAX_TIME_OFFSET": np.timedelta64(1, "h")},
+                "PASS_WINDOW",
+                id="pass-no-window",
+            ),
+            pytest.param(
+                StaticReader,
+                {"TIME_MATCH": TimeMatch.DAILY, "MAX_TIME_OFFSET": np.timedelta64(1, "h")},
+                "daily",
+                id="daily-with-max-offset",
+            ),
+            pytest.param(
+                StaticReader,
+                {"TIME_MATCH": TimeMatch.DAILY, "PASS_WINDOW": np.timedelta64(15, "m")},
+                "daily",
+                id="daily-with-pass-window",
+            ),
+        ],
+    )
+    def test_inconsistent_class_attributes_are_rejected(self, request, base, attrs, match):
+        """Defining a concrete reader whose class attributes are missing or inconsistent raises ``TypeError``.
 
-        Without a time policy the reader cannot select samples in time; rejecting it when its module is imported
-        surfaces the mistake before any footprint is processed.
+        The checks run when the class is created, so the mistake surfaces when the reader's module is imported,
+        before any footprint is processed: without ``INSTRUMENT`` output variables have no stated source; without
+        ``TIME_MATCH`` the reader cannot select samples in time; a nearest-step or nearest-pass reader needs
+        ``MAX_TIME_OFFSET`` to bound the pairing, and a nearest-pass one ``PASS_WINDOW`` to keep a pass together;
+        and a daily reader applies no time selection, so a declared window would be silently ignored.
 
-        A reader class with every other required attribute is defined inside ``pytest.raises`` and must fail
-        with a message naming ``TIME_MATCH``.
+        Each case builds a reader class from its base with every other required attribute and method and must fail
+        with a message naming the attribute at fault (or mentioning daily).
         """
-        with pytest.raises(TypeError, match="TIME_MATCH"):
-
-            class _NoPolicy(StaticReader):
-                READER_KEY = "_base_test_no_policy"
-                INSTRUMENT = "FAKE"
-                RESOLUTION_KM = 1.0
-                VARIABLES = (_SPEC,)
-
-                def _load_native(self):
-                    raise NotImplementedError
-
-    def test_missing_instrument_is_rejected_at_import(self):
-        """Defining a concrete reader without ``INSTRUMENT`` raises ``TypeError`` when the class is created.
-
-        The instrument is recorded in every output variable's ``long_name`` for provenance, so a reader without
-        it would publish variables with no stated source instrument.
-
-        A reader class lacking ``INSTRUMENT`` is defined inside ``pytest.raises`` and must fail with a message
-        naming ``INSTRUMENT``.
-        """
-        with pytest.raises(TypeError, match="INSTRUMENT"):
-
-            class _NoInstrument(StaticReader):
-                READER_KEY = "_base_test_no_instrument"
-                RESOLUTION_KM = 1.0
-                TIME_MATCH = TimeMatch.DAILY
-                VARIABLES = (_SPEC,)
-
-                def _load_native(self):
-                    raise NotImplementedError
-
-    def test_nearest_step_without_max_offset_is_rejected(self):
-        """Defining a ``SteppedGridReader`` without ``MAX_TIME_OFFSET`` raises ``TypeError`` when the class is created.
-
-        Without a limit, a footprint far from every step would still be paired with the nearest one, however
-        distant in time.
-
-        A stepped reader class lacking ``MAX_TIME_OFFSET`` is defined inside ``pytest.raises`` and must fail
-        with a message naming that attribute.
-        """
-        with pytest.raises(TypeError, match="MAX_TIME_OFFSET"):
-
-            class _NoOffset(SteppedGridReader):
-                READER_KEY = "_base_test_no_offset"
-                INSTRUMENT = "FAKE"
-                RESOLUTION_KM = 1.0
-                VARIABLES = (_SPEC,)
-
-                def _step_times(self):
-                    raise NotImplementedError
-
-                def _load_step(self, index):
-                    raise NotImplementedError
-
-    def test_nearest_pass_without_window_is_rejected(self):
-        """Defining a ``NEAREST_PASS`` reader without ``PASS_WINDOW`` raises ``TypeError`` when the class is created.
-
-        The window is what keeps a pass's samples together; without it the reader could not tell which samples
-        form the nearest pass.
-
-        A nearest-pass reader class with ``MAX_TIME_OFFSET`` but no ``PASS_WINDOW`` is defined inside
-        ``pytest.raises`` and must fail with a message naming ``PASS_WINDOW``.
-        """
-        with pytest.raises(TypeError, match="PASS_WINDOW"):
-
-            class _NoWindow(StaticReader):
-                READER_KEY = "_base_test_no_window"
-                INSTRUMENT = "FAKE"
-                RESOLUTION_KM = 1.0
-                TIME_MATCH = TimeMatch.NEAREST_PASS
-                MAX_TIME_OFFSET = np.timedelta64(1, "h")
-                VARIABLES = (_SPEC,)
-
-                def _load_native(self):
-                    raise NotImplementedError
-
-    def test_daily_with_window_is_rejected(self):
-        """Defining a ``DAILY`` reader that sets a time-window attribute raises ``TypeError`` when the class is created.
-
-        A daily reader applies no time selection, so a declared window would be silently ignored and mislead
-        anyone reading the reader's definition.
-
-        A daily reader class setting ``MAX_TIME_OFFSET`` is defined inside ``pytest.raises`` and must fail with
-        a message mentioning daily.
-        """
-        with pytest.raises(TypeError, match="daily"):
-
-            class _DailyWindow(StaticReader):
-                READER_KEY = "_base_test_daily_window"
-                INSTRUMENT = "FAKE"
-                RESOLUTION_KM = 1.0
-                TIME_MATCH = TimeMatch.DAILY
-                MAX_TIME_OFFSET = np.timedelta64(1, "h")
-                VARIABLES = (_SPEC,)
-
-                def _load_native(self):
-                    raise NotImplementedError
+        namespace = {
+            "READER_KEY": f"_base_test_{request.node.callspec.id}",
+            "INSTRUMENT": "FAKE",
+            "RESOLUTION_KM": 1.0,
+            "VARIABLES": (_SPEC,),
+            **{name: lambda self, *args: None for name in base.__abstractmethods__},
+            **attrs,
+        }
+        with pytest.raises(TypeError, match=match):
+            type(base)("_Inconsistent", (base,), namespace)
 
 
 class TestLoadedShapeValidation:
-    def test_point_cloud_with_wrong_variable_rows_raises(self):
-        """A point cloud whose value rows differ in number from the reader's ``VARIABLES`` raises ``ValueError``.
+    @pytest.mark.parametrize(
+        ("native", "exc", "match"),
+        [
+            pytest.param(
+                PointSamples(lats=np.array([0.5]), lons=np.array([0.5]), values=np.zeros((2, 1), dtype=np.float32)),
+                ValueError,
+                "variable rows",
+                id="points-wrong-rows",
+            ),
+            pytest.param(
+                GridSamples(
+                    lat_axis=np.array([0.0, 1.0]),
+                    lon_axis=np.array([0.0, 1.0]),
+                    data=np.zeros((2, 2, 2), dtype=np.float32),
+                ),
+                ValueError,
+                "variable planes",
+                id="grid-wrong-planes",
+            ),
+            pytest.param(
+                _BoxHolder(n_variables=2), ValueError, "box-queried native with 2 variables", id="box-wrong-n-variables"
+            ),
+            pytest.param({}, TypeError, "native data of type dict", id="unsupported-type"),
+        ],
+    )
+    def test_loaded_native_is_validated(self, native, exc, match):
+        """A loaded native that does not fit the reader's ``VARIABLES``, or is of no supported type, stops the query.
 
-        Each value row is attributed to a declared variable, so a mismatch would publish values under the wrong
-        variable names.
+        Each value row or plane is attributed to a declared variable, so a count mismatch would publish values under
+        the wrong variable names; and the base class only knows how to query grids, point clouds and box-queried
+        natives, so anything else is a programming error in the reader that must stop the run rather than serve
+        nothing.
 
-        A one-variable point reader is handed a cloud with two value rows and the first query must raise a
-        message about variable rows.
+        A one-variable daily reader is handed, in turn, a point cloud with two value rows, a grid with two planes, a
+        box-queried native with two variables (each ``ValueError``) and a ``dict`` (``TypeError``); the first query
+        must raise the matching message.
         """
-        points = PointSamples(lats=np.array([0.5]), lons=np.array([0.5]), values=np.zeros((2, 1), dtype=np.float32))
-        with pytest.raises(ValueError, match="variable rows"):
-            _PointReader(points).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+        with pytest.raises(exc, match=match):
+            _HeldReader(native).samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
 
-    def test_grid_with_wrong_variable_planes_raises(self, tmp_path):
-        """A grid whose planes differ in number from the reader's ``VARIABLES`` raises ``ValueError``.
 
-        Each plane is attributed to a declared variable, so a mismatch would publish values under the wrong
-        variable names.
+class TestProductVariableSpecs:
+    def test_continuous_variables_get_a_standard_deviation_companion(self):
+        """``product_variable_specs`` adds a ``_standard_deviation`` companion after each continuous variable only.
 
-        A one-variable grid reader whose loader returns two planes is queried and must raise a message about
-        variable planes.
+        A continuous field also reports its spread within the footprint, while a standard deviation of a most-common
+        category is not physically meaningful; the derived ``ADDITIONAL_PRODUCT_VARIABLES`` follow the read ones.
+
+        A reader declaring a mean-aggregated and a mode-aggregated variable plus one additional variable must report,
+        in order, the mean variable, its companion, the mode variable, and the additional one.
         """
-        with pytest.raises(ValueError, match="variable planes"):
-            _WrongPlanesGridReader(tmp_path / "unused.nc").samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0)
+        categorical = VariableSpec(
+            name="c", dtype="int16", aggregation="weighted_mode", required_mode=OperationalMode.CAM, n_categories=4
+        )
+        ranked = VariableSpec(
+            name="c_primary",
+            dtype="int16",
+            aggregation="weighted_mode_primary",
+            required_mode=OperationalMode.CAM,
+            n_categories=4,
+        )
+
+        class _Companions(_GridReader):
+            READER_KEY = "_base_test_companions"
+            VARIABLES = (_SPEC, categorical)
+            ADDITIONAL_PRODUCT_VARIABLES = (ranked,)
+
+        names = [spec.name for spec in _Companions.product_variable_specs()]
+        assert names == ["v", "v_standard_deviation", "c", "c_primary"]
 
 
 class TestFilePaths:
@@ -1018,15 +919,11 @@ class TestResolutionOfServedSamples:
         The weigher sizes its coverage measure from the resolution each sample set reports, so it must be
         the reader's own cell size.
 
-        A query on the 111 km test grid reports 111 km, and an hourly 25 km stepped reader queried 9 hours from
-        every step, which serves an empty set without loading a step, still reports 25 km.
+        A query on the 111 km test grid reports 111 km.
         """
         reader = _GridReader(tmp_path / "unused.nc")
         samples = reader.samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0)
         assert samples.resolution_km == 111.0
-        empty = _StepReader().samples_in(BoundingBox(0.0, 1.0, 0.0, 1.0), _T0 + np.timedelta64(9, "h"))
-        assert empty.n_samples == 0
-        assert empty.resolution_km == 25.0
 
     def test_measured_spacing_wins_over_the_declared_resolution(self):
         """A spacing measured on the loaded point cloud overrides ``RESOLUTION_KM`` for the served samples and padding.
@@ -1040,7 +937,7 @@ class TestResolutionOfServedSamples:
         points = PointSamples(
             lats=np.array([0.5, 0.5]), lons=np.array([10.5, 10.6]), values=np.array([[1.0, 2.0]]), spacing_km=7.2
         )
-        samples = _PointReader(points).samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0)
+        samples = _HeldReader(points).samples_in(BoundingBox(0.0, 1.0, 10.0, 11.0), _T0)
         assert samples.resolution_km == 7.2
         # The query padding follows the measured spacing too: 7.2 km is 0.032 deg.
-        assert _PointReader(points).samples_in(BoundingBox(0.0, 1.0, 10.62, 10.63), _T0).n_samples == 1
+        assert _HeldReader(points).samples_in(BoundingBox(0.0, 1.0, 10.62, 10.63), _T0).n_samples == 1

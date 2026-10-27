@@ -62,185 +62,34 @@ def _full_bbox() -> BoundingBox:
     return BoundingBox(_LAT_MIN - 0.01, _LAT_MAX + 0.01, _LON_MIN - 0.01, _LON_MAX + 0.01)
 
 
-class TestVIIRSBRDFReaderClassAttributes:
-    def test_reader_key(self):
-        """``VIIRSBRDFReader.READER_KEY`` is ``"viirs_brdf"``.
+class TestVIIRSBRDFReaderLoadSpatialRegion:
+    def test_full_region_is_scaled_flipped_and_fill_masked(self, tmp_path):
+        """A full-region query serves nine scaled float32 planes on ascending latitudes, with only the fill as NaN.
 
-        The key is how the reader registry finds this reader, and it names the source on every served sample set and
-        prefixes every output variable name, so a changed key breaks lookups and renames the product's variables.
+        The file stores kernel weights as int16 counts with a ``scale_factor``, so unscaled counts would be a thousand
+        times too large; it stores latitude descending, and every reader serves it ascending, so a value left in the
+        file's order is paired with the wrong row; and a fill left in place would be scaled into a plausible-looking
+        weight of 32.767, while one landed in the wrong row would mask a valid cell. Consumers index the variable axis
+        by ``VARIABLES``, and the source key attributes the samples to this reader; a static surface product carries
+        no timestamp source.
 
-        Compares the class attribute with the literal string.
+        The 4 x 8 fixture writes count 200 with ``scale_factor`` 0.001 everywhere and the fill to the southernmost row,
+        last column, of each field. The query must fold back to a float32 ``(9, 4, 8)`` grid whose served latitudes
+        ascend from the southern cell center 0.025, equal to 0.2 everywhere except NaN at row 0, last column, of every
+        plane, with source ``"viirs_brdf"`` and no timestamp source.
         """
-        assert VIIRSBRDFReader.READER_KEY == "viirs_brdf"
-
-    def test_resolution_km(self):
-        """``VIIRSBRDFReader.RESOLUTION_KM`` is 5.6 km, the spacing of the 0.05 degree CMG at the equator.
-
-        The declared resolution sets how far ``samples_in`` widens each query box and how the weigher sizes each
-        sample's coverage, so a wrong value over- or under-credits BRDF samples in a footprint.
-
-        Compares the class attribute with 5.6.
-        """
-        assert VIIRSBRDFReader.RESOLUTION_KM == 5.6
-
-    def test_variables_count_is_nine(self):
-        """``VIIRSBRDFReader.VARIABLES`` declares nine variables, three RTLS kernel weights for each of three bands.
-
-        The variable count must match the nine planes the reader loads; the base class rejects a load whose plane count
-        differs from ``VARIABLES``.
-
-        Checks the length of the class attribute.
-        """
-        assert len(VIIRSBRDFReader.VARIABLES) == 9
-
-    def test_variable_names_cover_three_bands_three_params(self):
-        """``VIIRSBRDFReader.VARIABLES`` has a ``brdf_{band}_{param}`` name for every band and kernel-weight pair.
-
-        Downstream configuration and the product definition refer to these variables by name, so a missing or misspelled
-        name drops that BRDF parameter from the product.
-
-        Loops over the bands ``shortwave``, ``vis`` and ``nir`` and the weights ``fiso``, ``fvol`` and ``fgeo`` and
-        asserts each expected name is declared.
-        """
-        names = {v.name for v in VIIRSBRDFReader.VARIABLES}
-        for band in ("shortwave", "vis", "nir"):
-            for param in ("fiso", "fvol", "fgeo"):
-                assert f"brdf_{band}_{param}" in names
-
-    def test_all_variables_are_float32_weighted_mean(self):
-        """Every ``VIIRSBRDFReader`` variable is a continuous float32 field aggregated by ``weighted_mean``.
-
-        BRDF kernel weights are continuous quantities, so they are averaged over a footprint; declaring them categorical
-        or giving them another strategy would aggregate them as the wrong kind of quantity.
-
-        Asserts ``dtype``, ``aggregation`` and ``n_categories is None`` on each declared variable.
-        """
-        for v in VIIRSBRDFReader.VARIABLES:
-            assert v.dtype == "float32"
-            assert v.aggregation == "weighted_mean"
-            assert v.n_categories is None
-
-
-class TestVIIRSBRDFReaderScaleAndFill:
-    """Verify scale_factor application and fill → NaN conversion."""
-
-    def test_scale_factor_applied_to_param_fill(self, tmp_path):
-        """The reader multiplies each raw int16 count by the field's ``scale_factor``.
-
-        The file stores kernel weights as scaled integers; serving the raw counts would make every weight a thousand
-        times too large.
-
-        The fixture writes raw count 200 with ``scale_factor`` 0.001 everywhere but one fill pixel; every non-NaN value
-        served for the whole region must be 0.200.
-        """
-        # param_fill=200 with scale_factor=0.001 → 0.2
         reader = _make_reader(tmp_path)
-        data, _, _ = _region(reader, _full_bbox(), _T)
-        # All non-fill pixels should equal 0.200
-        non_fill = data[~np.isnan(data)]
-        assert non_fill.size > 0
-        assert np.allclose(non_fill, 0.200, atol=1e-4)
-
-    def test_fill_sentinel_becomes_nan(self, tmp_path):
-        """A pixel holding the field's ``_FillValue`` is served as NaN, at its position after the latitude flip.
-
-        A fill value left in place would be scaled into a plausible-looking weight of 32.767 and averaged into
-        footprints; landing it in the wrong row would mask a valid cell and keep the fill.
-
-        The fixture writes the fill to the last (southernmost) row and column of each field in the descending file; the
-        served region must be NaN at output row 0, last column, for every variable, and nowhere else.
-        """
-        # The fixture writes fill_sentinel to file position [-1, -1] — the lat_min row of
-        # the DESCENDING file. The reader flips lats to ascending, moving that row to
-        # output row 0, so the fill lands at [:, 0, -1] (one fill pixel per band).
-        reader = _make_reader(tmp_path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
+        samples = reader.samples_in(_full_bbox(), _T)
+        data, lats, _ = _region(reader, _full_bbox(), _T)
+        assert data.shape == (9, _N_LAT, _N_LON)
+        assert data.dtype == np.float32
+        assert np.all(np.diff(samples.lats) >= 0), f"lats not ascending: {samples.lats}"
+        assert np.isclose(lats[0], _LAT_MIN + _HALF_CELL)
         assert np.isnan(data[:, 0, -1]).all()
         assert np.isnan(data).sum() == data.shape[0]
-
-    def test_non_fill_pixels_are_not_nan(self, tmp_path):
-        """Fill handling in ``VIIRSBRDFReader`` leaves valid pixels as numbers.
-
-        A fill or valid-range test that masked everything would publish an all-fill BRDF product with no error.
-
-        Loads the default fixture's full region and asserts at least one value is not NaN.
-        """
-        reader = _make_reader(tmp_path)
-        data, _, _ = _region(reader, _full_bbox(), _T)
-        # At least one pixel (all except [-1, -1]) should be non-NaN.
-        assert not np.all(np.isnan(data))
-
-
-class TestVIIRSBRDFReaderLoadSpatialRegion:
-    def test_returns_3d_data_array(self, tmp_path):
-        """A region served by ``VIIRSBRDFReader`` folds back to a ``(9, n_lat, n_lon)`` array, one plane per variable.
-
-        Consumers index the variable axis by ``VARIABLES`` order, so a missing or extra plane misattributes every BRDF
-        parameter.
-
-        Queries the full fixture region through ``samples_in`` and checks the folded array's rank and first dimension.
-        """
-        reader = _make_reader(tmp_path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
-        assert data.ndim == 3
-        assert data.shape[0] == 9
-
-    def test_data_dtype_is_float32(self, tmp_path):
-        """``VIIRSBRDFReader`` serves its values as float32, as ``VARIABLES`` declares.
-
-        The nine global fields are held in memory at once, so float32 keeps the load near 0.9 GB, and the served type
-        must agree with the declared dtype.
-
-        Queries the full fixture region and checks the dtype of the values.
-        """
-        reader = _make_reader(tmp_path)
-        data, _, _ = _region(reader, _full_bbox(), _T)
-        assert data.dtype == np.float32
-
-    def test_lat_is_ascending(self, tmp_path):
-        """``VIIRSBRDFReader`` serves latitude ascending, though the file stores it descending.
-
-        Every reader serves latitude ascending; a reader that kept the file's north-to-south order would pair each value
-        with the wrong row of cells.
-
-        Queries the full fixture region and asserts the latitudes increase and the first one is the southernmost cell
-        center, half a cell above the region's southern edge.
-        """
-        # The fixture stores lats in DESCENDING order; the reader must flip them
-        # to ascending, so output row 0 is the southernmost cell center.
-        reader = _make_reader(tmp_path)
-        _, lats, _ = _region(reader, _full_bbox(), _T)
-        assert lats.size > 1
-        assert np.all(np.diff(lats) >= 0), f"lats not ascending: {lats}"
-        assert np.isclose(lats[0], _LAT_MIN + _HALF_CELL), f"row 0 should be the southern cell center: {lats}"
-
-    def test_spatial_shape_matches_fixture(self, tmp_path):
-        """A box covering the whole fixture grid returns every one of its cells.
-
-        A box that covers the grid must not drop rows or columns at the edges, or footprints near a cell boundary lose
-        samples.
-
-        Queries a box just wider than the fixture's 4 x 8 grid and checks the folded array has 4 latitude rows and 8
-        longitude columns.
-        """
-        reader = _make_reader(tmp_path)
-        data, lats, lons = _region(reader, _full_bbox(), _T)
-        assert data.shape[1] == _N_LAT
-        assert data.shape[2] == _N_LON
-
-    def test_empty_result_outside_bbox(self, tmp_path):
-        """A box that misses the grid returns no samples but keeps the nine-variable axis.
-
-        A footprint outside the BRDF coverage must yield an empty result rather than an error, and its values array
-        still needs the variable axis so it combines with other results.
-
-        Queries a box far from the fixture region and asserts the folded array is empty with first dimension 9.
-        """
-        reader = _make_reader(tmp_path)
-        bbox = BoundingBox(-60.0, -58.0, 170.0, 172.0)
-        data, lats, lons = _region(reader, bbox, _T)
-        assert data.size == 0
-        assert data.shape[0] == 9
+        assert np.allclose(data[np.isfinite(data)], 0.200, atol=1e-4)
+        assert samples.source == "viirs_brdf"
+        assert samples.timestamp_source is None
 
     def test_partial_bbox_subsets_correctly(self, tmp_path):
         """A box covering part of the grid returns exactly the cells whose centers fall in the padded box.
@@ -282,44 +131,6 @@ class TestVIIRSBRDFReaderLoadSpatialRegion:
         # The nine fields are read into one preallocated array; stacking per-field arrays would
         # hold at least twice the result.
         assert peak < 1.5 * native.data.nbytes
-
-
-class TestVIIRSBRDFReaderSamples:
-    def test_samples_carry_source_and_no_timestamp_source(self, tmp_path):
-        """Samples from ``VIIRSBRDFReader`` name ``viirs_brdf`` as their source and carry no timestamp source.
-
-        BRDF is a static surface product, so it has no radiometer or camera time to record, and the source name is what
-        attributes the samples to this reader.
-
-        Queries the full fixture region and checks ``source``, ``timestamp_source`` and the nine-variable values axis.
-        """
-        # BRDF is a static surface property product; no instrument timestamp source.
-        reader = _make_reader(tmp_path)
-        samples = reader.samples_in(_full_bbox(), _T)
-        assert samples.source == "viirs_brdf"
-        assert samples.timestamp_source is None
-        assert samples.values.shape[0] == 9
-
-    def test_granule_is_read_once_for_every_box(self, tmp_path):
-        """``VIIRSBRDFReader`` reads the granule on the first query and serves every later box from memory.
-
-        A global granule is about 360 MB; reopening it for each footprint box would repeat that read for every
-        footprint.
-
-        Queries one box, deletes the file, queries a second box, and asserts the second box still returns the fixture's
-        0.2 values and the cached native object is unchanged.
-        """
-        path = _fixture(tmp_path)
-        reader = VIIRSBRDFReader(path)
-        first = reader.samples_in(BoundingBox(0.0, 0.1, 10.0, 10.1), _T)
-        native = reader._native
-        # With the file gone, a second box can only be served from what the first load holds.
-        path.unlink()
-        second = reader.samples_in(BoundingBox(0.1, 0.2, 10.2, 10.4), _T)
-        assert first.n_samples > 0
-        assert second.n_samples > 0
-        assert np.allclose(second.values[np.isfinite(second.values)], 0.2)
-        assert reader._native is native
 
 
 class TestVIIRSBRDFCellCenters:

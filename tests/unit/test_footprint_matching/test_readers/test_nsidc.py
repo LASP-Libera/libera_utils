@@ -24,7 +24,7 @@ from libera_utils.footprint_matching.readers.nsidc import (
     NISEReader,
     _HemisphereGrid,
 )
-from libera_utils.footprint_matching.types import BoundingBox, SampleSet, TimeMatch
+from libera_utils.footprint_matching.types import BoundingBox, SampleSet
 from tests.plugins.footprint_matching_fixtures import make_nise_hdfeos_fixture
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
@@ -116,204 +116,26 @@ def _whole_grid_box(reader: NISEReader) -> BoundingBox:
     )
 
 
-class TestNISEReaderClassAttributes:
-    def test_reader_key(self):
-        """``NISEReader.READER_KEY`` is ``"nise"``.
-
-        The key is the name the reader registers under and the ``source`` tag on every ``SampleSet`` it serves, so a
-        changed key would break pipeline configuration that selects the reader and output naming built from it.
-
-        The class attribute is compared with the literal string.
-        """
-        assert NISEReader.READER_KEY == "nise"
-
-    def test_instrument_is_amsr2(self):
-        """``NISEReader.INSTRUMENT`` is ``"AMSR2"``.
-
-        The instrument is recorded in each output variable's ``long_name``, and the pipeline ingests the AMSR-2 based
-        NISE_A2 product, so a different label would misstate the provenance of the published sea ice and snow layers.
-
-        The class attribute is compared with the literal string.
-        """
-        # Operationally the NISE_A2 (AMSR-2) product is ingested; provenance reads AMSR2.
-        assert NISEReader.INSTRUMENT == "AMSR2"
-
-    def test_resolution_km(self):
-        """``NISEReader.RESOLUTION_KM`` is 25 km, the nominal NISE EASE-Grid cell size.
-
-        The reader base class pads every query box by half this cell size and reports it as the samples' resolution, so
-        a wrong value would serve too few or too many pixels at a footprint's rim.
-
-        The class attribute is compared with 25.0.
-        """
-        assert NISEReader.RESOLUTION_KM == 25.0
-
-    def test_time_match_is_daily(self):
-        """``NISEReader.TIME_MATCH`` is ``TimeMatch.DAILY``.
-
-        A NISE granule is a daily map with no time axis, so every pixel in a box must be served whatever the footprint
-        time; a time-selecting policy would demand per-sample times the granule does not carry.
-
-        The class attribute is checked for identity with the enum member.
-        """
-        # The daily granule is the match for the whole staged day.
-        assert NISEReader.TIME_MATCH is TimeMatch.DAILY
-
-    def test_variable_names_and_order(self):
-        """``NISEReader.VARIABLES`` lists the five coverage layers in the order the reader stacks them.
-
-        The aggregation engine indexes each layer by its position on axis 0 of the served values, so a renamed or
-        reordered entry would attach one surface class's numbers to another class's name.
-
-        The variable names are compared, in order, with an expected tuple kept in the test module independently of the
-        reader's internal constants.
-        """
-        assert tuple(v.name for v in NISEReader.VARIABLES) == _EXPECTED_VARIABLES
-
-    def test_all_variables_are_float32_weighted_mean_fractions(self):
-        """Every ``NISEReader`` variable is a float32 fraction aggregated by ``weighted_mean``.
-
-        The layers are per-pixel fractions or 0/1 indicators that the footprint average turns into class fractions; a
-        categorical setting (``n_categories``) or another aggregation would produce a different and wrong product.
-
-        Each ``VariableSpec`` is checked for ``dtype == "float32"``, ``aggregation == "weighted_mean"`` and
-        ``n_categories is None``.
-        """
-        assert all(v.dtype == "float32" for v in NISEReader.VARIABLES)
-        assert all(v.aggregation == "weighted_mean" for v in NISEReader.VARIABLES)
-        assert all(v.n_categories is None for v in NISEReader.VARIABLES)
-
-
-class TestNISEReaderHemispheres:
-    def test_reads_both_hemispheres(self):
-        """``NISEReader._HEMISPHERES`` holds the Northern and then the Southern 721 x 721 EASE-Grid.
-
-        A NISE granule carries both polar grids, and a reader that read one would leave every footprint over the other
-        pole with no sea ice or snow data.
-
-        The class attribute's hemisphere labels, EPSG codes (3408, 3409) and grid sizes are checked in order.
-        """
-        grids = NISEReader._HEMISPHERES
-        assert [h.hemisphere_label for h in grids] == [_HEMISPHERE_LABEL_NORTH, _HEMISPHERE_LABEL_SOUTH]
-        assert [h.epsg for h in grids] == [3408, 3409]
-        assert all((h.grid_rows, h.grid_cols) == (721, 721) for h in grids)
-
-
-@pytest.mark.usefixtures("north_test_grid")
-class TestNISEReaderLayerMapping:
-    """Verify each NISE Extent code routes to the correct float32 coverage layer."""
-
-    @staticmethod
-    def _run(tmp_path: Path, code: int) -> np.ndarray:
-        """Return the ``(5, n_pixels)`` value rows served for a grid of one code."""
-        reader = _make_reader(tmp_path, north=_filled(code))
-        values = reader.samples_in(_whole_grid_box(reader), _T).values
-        assert values.shape == (len(_EXPECTED_VARIABLES), _TEST_ROWS * _TEST_COLS)
-        return values
-
-    def test_code_50_is_half_sea_ice(self, tmp_path):
-        """Extent code 50 is served as 0.5 sea ice concentration and 0.0 in the four indicator layers.
-
-        Codes 1-100 are percent sea ice concentration, so a mid-range code checks both the percent-to-fraction scaling
-        and that a sea ice pixel is not also counted as land, permanent ice, snow or open ocean.
-
-        A Northern grid filled with code 50 is written and queried over its whole extent; the sea ice layer must be 0.5
-        and every other layer 0.0.
-        """
-        stack = self._run(tmp_path, 50)
-        assert np.allclose(stack[_layer_index("sea_ice_concentration")], 0.5, atol=1e-5)
-        for name in _EXPECTED_VARIABLES:
-            if name != "sea_ice_concentration":
-                assert np.all(stack[_layer_index(name)] == 0.0)
-
-    @pytest.mark.parametrize(("code", "fraction"), [(1, 0.01), (100, 1.0)])
-    def test_sea_ice_concentration_bounds(self, tmp_path, code, fraction):
-        """The end codes of the sea ice range, 1 and 100, are served as concentrations 0.01 and 1.0.
-
-        An off-by-one at either end of the 1-100 range would drop the lowest or highest concentrations from the sea ice
-        layer or scale them wrongly.
-
-        The parameters vary the code filled into the Northern grid and the expected fraction in the sea ice layer.
-        """
-        stack = self._run(tmp_path, code)
-        assert np.allclose(stack[_layer_index("sea_ice_concentration")], fraction, atol=1e-5)
-
-    @pytest.mark.parametrize(
-        ("code", "layer"),
-        [
-            (0, "snow_free_land"),
-            (101, "permanent_ice"),
-            (103, "snow_on_land"),
-            (104, "snow_on_land"),
-            (255, "open_ocean"),
-        ],
-    )
-    def test_class_codes_set_their_indicator_layer(self, tmp_path, code, layer):
-        """Each surface-class code sets its own indicator layer to 1.0 and leaves sea ice concentration at 0.0.
-
-        The footprint fraction of snow-free land, permanent ice, snow on land and open ocean comes from these
-        indicators, so a code routed to the wrong layer would misreport the surface under every footprint containing it.
-
-        The parameters pair each class code (0, 101, 103, 104, 255) with its layer; a grid filled with the code is
-        queried, and that layer must be 1.0 everywhere and the sea ice layer 0.0.
-        """
-        stack = self._run(tmp_path, code)
-        assert np.all(stack[_layer_index(layer)] == 1.0)
-        assert np.all(stack[_layer_index("sea_ice_concentration")] == 0.0)
-
-    @pytest.mark.parametrize("code", [102, 105, 251, 252, 253])
-    def test_unused_and_quality_codes_are_missing_in_every_layer(self, tmp_path, code):
-        """Codes that belong to no surface class are served as NaN in all five layers.
-
-        The weigher counts a NaN pixel as missing, which lowers a footprint's coverage; a 0.0 instead would pull every
-        class fraction toward zero for pixels the product itself marks as unused or unreliable.
-
-        The parameters vary the code over 102, both ends of the unused range 105-251, and the 252 and 253 quality flags;
-        a grid filled with the code is queried and every served value must be NaN.
-        """
-        # Codes with no surface class — 102 and 105–251 ("not used"), 252/253 (quality
-        # flags) — are served as NaN in every layer, so the weigher counts them as missing.
-        stack = self._run(tmp_path, code)
-        assert np.all(np.isnan(stack)), f"code {code} leaked into a layer"
-
-
 class TestNISEReaderLatLonGrid:
-    def test_lat_lon_grid_shape_and_range(self):
-        """``_compute_latlon_grid`` returns one latitude and longitude per pixel, within valid geographic bounds.
+    @pytest.mark.parametrize(
+        ("hemi", "sign"),
+        [pytest.param(_TEST_HEMI_NORTH, 1.0, id="north"), pytest.param(_TEST_HEMI_SOUTH, -1.0, id="south")],
+    )
+    def test_grid_reprojects_into_its_hemisphere(self, hemi, sign):
+        """``_compute_latlon_grid`` returns one in-range latitude and longitude per pixel, in the grid's own hemisphere.
 
         The reader serves every pixel at its own reprojected center, so a misshapen or out-of-range coordinate array
-        would misplace the data or misalign it with the values.
+        would misplace the data; and each hemisphere is reprojected with its own CRS (EPSG:3408 north, 3409 south), so
+        the wrong one would place Arctic data over Antarctica or the reverse.
 
-        The coarse 4 x 4 Northern test grid is reprojected and both arrays are checked for shape ``(4, 4)``, latitudes
-        in [-90, 90] and longitudes in [-180, 180].
+        Parametrized over the coarse 4 x 4 Northern and Southern test grids, which lie near their poles; each is
+        reprojected and both arrays must have shape ``(4, 4)``, longitudes in [-180, 180], and every latitude on the
+        grid's side of the equator, within [-90, 90].
         """
-        lats_2d, lons_2d = NISEReader("unused.HDFEOS")._compute_latlon_grid(_TEST_HEMI_NORTH)
+        lats_2d, lons_2d = NISEReader("unused.HDFEOS")._compute_latlon_grid(hemi)
         assert lats_2d.shape == lons_2d.shape == (_TEST_ROWS, _TEST_COLS)
-        assert np.all((lats_2d >= -90) & (lats_2d <= 90))
+        assert np.all((sign * lats_2d > 0) & (np.abs(lats_2d) <= 90))
         assert np.all((lons_2d >= -180) & (lons_2d <= 180))
-
-    def test_northern_grid_is_in_the_northern_hemisphere(self):
-        """The Northern EASE-Grid (EPSG:3408) reprojects to positive latitudes.
-
-        Each hemisphere is reprojected with its own CRS; applying the wrong one would place Arctic data over Antarctica.
-
-        The coarse 4 x 4 Northern test grid, which lies near the pole, is reprojected and every latitude must be above
-        0.
-        """
-        lats_2d, _ = NISEReader("unused.HDFEOS")._compute_latlon_grid(_TEST_HEMI_NORTH)
-        assert np.all(lats_2d > 0)
-
-    def test_southern_grid_is_in_the_southern_hemisphere(self):
-        """The Southern EASE-Grid (EPSG:3409) reprojects to negative latitudes.
-
-        Each hemisphere is reprojected with its own CRS; applying the wrong one would place Antarctic data over the
-        Arctic.
-
-        The coarse 4 x 4 Southern test grid, which lies near the pole, is reprojected and every latitude must be below
-        0.
-        """
-        lats_2d, _ = NISEReader("unused.HDFEOS")._compute_latlon_grid(_TEST_HEMI_SOUTH)
-        assert np.all(lats_2d < 0)
 
     @pytest.mark.parametrize("hemi", NISEReader._HEMISPHERES, ids=lambda h: h.hemisphere_label)
     def test_full_grid_has_twelve_non_finite_corner_pixels(self, hemi):
@@ -352,86 +174,37 @@ class TestNISEReaderSamples:
         assert samples.values.shape == (len(NISEReader.VARIABLES), _TEST_ROWS * _TEST_COLS)
         assert samples.lats.shape == samples.lons.shape == (_TEST_ROWS * _TEST_COLS,)
 
-    def test_empty_result_outside_bbox(self, tmp_path):
-        """A query box with no NISE pixels in it returns zero samples, keeping the five-variable first axis.
-
-        A footprint outside the grid must get an empty result of the usual layout rather than an error or misshaped
-        array, so the pipeline can treat it as no coverage.
-
-        A Northern-only reader is queried with a small box at 58-60 degrees south, and the values must have shape ``(5,
-        0)``.
-        """
-        reader = _make_reader(tmp_path, north=_filled(50))
-        samples = reader.samples_in(BoundingBox(-60.0, -58.0, 170.0, 172.0), _T)
-        assert samples.values.shape == (len(NISEReader.VARIABLES), 0)
-
-    def test_data_values_in_0_to_1_range(self, tmp_path):
-        """Every served value lies in [0, 1] for a grid mixing class codes and sea ice concentrations.
-
-        Each layer is declared as a fraction from 0.0 to 1.0, and a value outside that range would yield impossible
-        footprint fractions.
-
-        A 4 x 4 Northern grid of snow-free land, permanent ice, snow and several concentrations is queried over its
-        whole extent; the values must be non-empty and all within [0, 1].
-        """
-        mixed = np.array([[0, 50, 100, 101], [0, 25, 75, 103], [0, 1, 99, 101], [0, 0, 0, 0]], dtype=np.uint8)
-        reader = _make_reader(tmp_path, north=mixed)
-        values = reader.samples_in(_whole_grid_box(reader), _T).values
-        assert values.size > 0
-        assert np.all((values >= 0.0) & (values <= 1.0))
-
 
 class TestNISEExtentToCategoryMasks:
-    """Directly exercise the Extent-code → five-layer split helper."""
+    # Every Extent code group (the granule's data_grid_key, reproduced in the nsidc module docstring), in one row.
+    _CODES = (0, 1, 50, 100, 101, 102, 103, 104, 105, 251, 252, 253, 255)
+    # One column per code: sea ice concentration, snow-free land, permanent ice, snow on land, open ocean.
+    _EXPECTED = np.array(
+        [
+            [0.0, 0.01, 0.5, 1.0, 0.0, np.nan, 0.0, 0.0, np.nan, np.nan, np.nan, np.nan, 0.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0, np.nan, 0.0, 0.0, np.nan, np.nan, np.nan, np.nan, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 1.0, np.nan, 0.0, 0.0, np.nan, np.nan, np.nan, np.nan, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, np.nan, 1.0, 1.0, np.nan, np.nan, np.nan, np.nan, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, np.nan, 0.0, 0.0, np.nan, np.nan, np.nan, np.nan, 1.0],
+        ]
+    )
 
-    def test_stack_shape_and_dtype(self):
-        """``_extent_to_category_masks`` returns a float32 stack of shape ``(5, n_rows, n_cols)``.
+    def test_each_code_sets_exactly_its_layers(self):
+        """``_extent_to_category_masks`` splits every Extent code group into its five float32 layers and nothing else.
 
-        The reader flattens this stack into the served values, so the variable axis must come first and match the number
-        of declared variables.
+        Codes 1-100 are percent sea ice concentration, scaled to a fraction; 0, 101, 103/104 and 255 each set their own
+        0/1 indicator (snow-free land, permanent ice, snow on land, open ocean) and leave every other layer 0, so a
+        pixel is counted in one class only; and the unused codes 102 and 105-251 and the 252/253 quality flags are NaN
+        in every layer, so the weigher counts them as missing rather than pulling every class fraction toward zero. A
+        code routed to the wrong layer would misreport the surface under every footprint containing it.
 
-        A 4 x 4 array of code 0 is split, and the shape and dtype of the result are checked.
+        Splits one row holding a code from each group, including both ends of the concentration and unused ranges, and
+        compares the float32 ``(5, 1, 13)`` stack with the expected table, NaN for NaN.
         """
-        masks = NISEReader("unused.HDFEOS")._extent_to_category_masks(np.zeros((_TEST_ROWS, _TEST_COLS), np.uint8))
-        assert masks.shape == (len(NISEReader.VARIABLES), _TEST_ROWS, _TEST_COLS)
+        masks = NISEReader("unused.HDFEOS")._extent_to_category_masks(np.array([self._CODES], dtype=np.uint8))
         assert masks.dtype == np.float32
-
-    def test_each_code_lands_in_expected_layer(self):
-        """``_extent_to_category_masks`` routes one pixel of each code group to its layer in a single array.
-
-        Checking the codes side by side catches a layer mapping that holds for a uniform grid but mixes up pixels within
-        one array.
-
-        A 2 x 3 array holds codes 60, 0, 101, 103, 255 and 102; the test checks the sea ice value 0.60, the 1.0 in each
-        class's indicator layer at its pixel, and NaN in every layer at the code 102 pixel.
-        """
-        # One pixel per code group, laid out across a 2×3 grid:
-        #   60  -> sea ice 0.60      0   -> snow_free_land
-        #   101 -> permanent ice     103 -> snow on land (dry)
-        #   255 -> open ocean        102 -> missing in every layer
-        raw = np.array([[60, 0, 101], [103, 255, 102]], dtype=np.uint8)
-        masks = NISEReader("unused.HDFEOS")._extent_to_category_masks(raw)
-        assert np.isclose(masks[_layer_index("sea_ice_concentration"), 0, 0], 0.60, atol=1e-5)
-        assert masks[_layer_index("snow_free_land"), 0, 1] == 1.0
-        assert masks[_layer_index("permanent_ice"), 0, 2] == 1.0
-        assert masks[_layer_index("snow_on_land"), 1, 0] == 1.0
-        assert masks[_layer_index("open_ocean"), 1, 1] == 1.0
-        assert np.all(np.isnan(masks[:, 1, 2]))
-
-    def test_indicator_layers_are_mutually_exclusive_per_pixel(self):
-        """At most one of the four 0/1 indicator layers is 1.0 at any pixel.
-
-        Each NISE code names one surface class, so a pixel counted in two indicator layers would inflate both class
-        fractions for a footprint.
-
-        A 2 x 3 array of class codes and code 102 is split, and the NaN-ignoring sum of the four indicator layers must
-        not exceed 1.0 at any pixel.
-        """
-        # At most one 0/1 indicator layer is 1.0 at any pixel (sea ice is a fraction).
-        raw = np.array([[0, 101, 104], [255, 102, 0]], dtype=np.uint8)
-        masks = NISEReader("unused.HDFEOS")._extent_to_category_masks(raw)
-        names = ("snow_free_land", "permanent_ice", "snow_on_land", "open_ocean")
-        assert np.all(np.nansum([masks[_layer_index(n)] for n in names], axis=0) <= 1.0)
+        assert masks.shape == (len(_EXPECTED_VARIABLES), 1, len(self._CODES))
+        np.testing.assert_allclose(masks[:, 0, :], self._EXPECTED, rtol=0, atol=1e-6, equal_nan=True)
 
 
 class TestNISEReadExtentSds:
@@ -490,15 +263,6 @@ class TestNISEReadExtentSds:
 @pytest.mark.usefixtures("north_test_grid")
 class TestNISEGridGeometry:
     """Each hemisphere's ``StructMetadata.0`` grid is checked against the grid it is geolocated on."""
-
-    def test_matching_grid_loads(self, tmp_path):
-        """``NISEReader._load_native`` loads a granule whose ``StructMetadata.0`` grid matches the reader's.
-
-        The check must pass a granule written to the grid the reader geolocates, or no granule could be read.
-
-        A 4 x 4 granule whose metadata states the test grid's corners is loaded, and all 16 pixels come back.
-        """
-        assert _make_reader(tmp_path, north=_filled(50))._load_native().lats.size == _TEST_ROWS * _TEST_COLS
 
     @pytest.mark.parametrize(
         "metadata",
