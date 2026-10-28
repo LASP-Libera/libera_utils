@@ -18,6 +18,7 @@ class LiberaDataBucketName(StrEnum):
     L1A_ARCHIVE_BUCKET = "libera-l1a-data"
     SPICE_ARCHIVE_BUCKET = "libera-spice-kernels"
     AUXILIARY_ARCHIVE_BUCKET = "libera-auxiliary-data"
+    ANCILLARY_ARCHIVE_BUCKET = "libera-ancillary-data"
     CALIBRATION_ARCHIVE_BUCKET = "libera-calibration-data"
     L1B_ARCHIVE_BUCKET = "libera-l1b-data"
     L2_ARCHIVE_BUCKET = "libera-l2-data"

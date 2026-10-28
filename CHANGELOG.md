@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-10-28
+
 ### Added
 
 - The `libera_utils.footprint_matching.readers` plugin subsystem: an `AncillaryReader` base with auto-registration (`StaticReader` for a daily composite, map or time-stamped swath held in memory; `SteppedGridReader` for a time series of global grids served one step at a time), a `ReaderRegistry`, and HDF4 and HDF-EOS5 I/O helpers. A reader serves the _native samples_ of its source inside a footprint's bounding box as a `SampleSet` (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), matched to the footprint time by its `TimeMatch` policy: `DAILY` (IGBP, NISE, VIIRS BRDF and AOD) or `NEAREST_STEP` (ERA5). A reader whose `READER_KEY` is already registered to another class is rejected when its module is imported. A query raises `ValueError` when a point cloud holds a coordinate outside latitude [-90, 90] or longitude [-180, 180], when a `NEAREST_PASS` reader serves samples without times, or when the footprint time a time-selecting reader needs is NaT. This release adds the gridded readers:
@@ -17,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - NSIDC NISE sea ice (AMSR-2 provenance), with the unused Extent codes (102, 105-251) and the coastline and suspect-ice quality codes (252, 253) missing (NaN) in every layer. Each hemisphere's HDF-EOS `StructMetadata.0` grid is checked against the 721 x 721 25 km EASE-Grid it is geolocated on (dimensions, corners and `GCTP_LAMAZ` projection), and a granule that differs raises `ValueError`.
 - `notebooks/02_readers_gridded.ipynb`, a demonstration of the gridded readers.
 - `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available, as on aarch64; the Docker image installs it.
+- `DataLevel.ANC` for ancillary inputs produced outside the SDC and ingested from their upstream providers. It archives to `libera-ancillary-data` (`LiberaDataBucketName.ANCILLARY_ARCHIVE_BUCKET`); `AUX` keeps the non-leveled products the SDC produces.
+- Twelve `DataProductIdentifier` members at `DataLevel.ANC`, one per external input product, with ProductIDs of the form `<SOURCE>-<PRODUCT>`, PRODUCT led by the observing platform where the upstream product is made per platform: `anc_ceres_noaa20_cldpix` (`CERES-NOAA20-CLDPIX`), `anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`), `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`), `anc_nsidc_land_ocean_mask` (`NSIDC-LAND-OCEAN-MASK`), `anc_nsidc_ice_snow` (`NSIDC-ICE-SNOW`), `anc_modis_igbp` (`MODIS-IGBP`), `anc_era5_pressure_level` (`ERA5-PRESSURE-LEVEL`), `anc_era5_single_level` (`ERA5-SINGLE-LEVEL`), `anc_viirs_noaa20_aod` (`VIIRS-NOAA20-AOD`), `anc_viirs_noaa20_brdf` (`VIIRS-NOAA20-BRDF`), `anc_viirs_noaa20_cloud_properties` (`VIIRS-NOAA20-CLOUD-PROPERTIES`) and `anc_viirs_noaa20_m4_sdr` (`VIIRS-NOAA20-M4-SDR`). No processing step produces them. The `DataProductIdentifier` docstring states the ancillary ProductID pattern.
 
 ### Changed
 
@@ -892,7 +896,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...HEAD
+[5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0
 [5.14.0]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...5.14.0
 [5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0
 [5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0

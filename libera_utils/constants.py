@@ -22,7 +22,11 @@ class ManifestType(StrEnum):
 
 
 class DataLevel(StrEnum):
-    """Data product level"""
+    """Data product level
+
+    ``AUX`` holds non-leveled products the SDC produces. ``ANC`` holds ancillary inputs produced outside the SDC
+    and ingested from their upstream providers.
+    """
 
     L0 = "L0"
     SPICE = "SPICE"
@@ -31,6 +35,7 @@ class DataLevel(StrEnum):
     L1B = "L1B"
     L2 = "L2"
     AUX = "AUX"
+    ANC = "ANC"
 
     @property
     def archive_bucket_name(self) -> str:
@@ -55,6 +60,8 @@ class DataLevel(StrEnum):
                 return f"{LiberaDataBucketName.AUXILIARY_ARCHIVE_BUCKET}"
             case "CAL":
                 return f"{LiberaDataBucketName.CALIBRATION_ARCHIVE_BUCKET}"
+            case "ANC":
+                return f"{LiberaDataBucketName.ANCILLARY_ARCHIVE_BUCKET}"
             case _:
                 raise ValueError(f"Unknown data level {self.value}")
 
@@ -65,7 +72,10 @@ class DataProductIdentifier(StrEnum):
     These IDs refer to the data products (files) themselves, NOT the processing steps (since processing steps
     may produce multiple products). The string values are the product names used in filenames.
 
-    This enum replaces the old ProductName enum from filenaming.py to provide a single source of truth.
+    Ancillary (``DataLevel.ANC``) values follow the pattern ``<SOURCE>-<PRODUCT>``: SOURCE is the mission or dataset
+    family the product belongs to (``CERES``, ``ERA5``, ``MODIS``, ``VIIRS``), or the distributing provider where no
+    mission name fits (``NSIDC``), and PRODUCT names the product within it, led by the observing platform where the
+    upstream product is made per platform, e.g. ``CERES-NOAA20-SSF``, ``ERA5-PRESSURE-LEVEL``, ``VIIRS-NOAA20-AOD``.
 
     Each member is defined as a tuple: (product_name, data_level)
     - product_name: The string value used in filenames and AWS resources
@@ -74,8 +84,8 @@ class DataProductIdentifier(StrEnum):
     Example:
         >>> product = DataProductIdentifier.l1b_rad
         >>> str(product)  # Returns "RAD-4CH"
-        >>> product.level  # Returns DataLevel.L1B
-        >>> product.level.archive_bucket_name  # Returns "libera-l1b-data"
+        >>> product.data_level  # Returns DataLevel.L1B
+        >>> product.data_level.archive_bucket_name  # Returns "libera-l1b-data"
 
     When adding new products:
         1. Add the enum member with its product name and DataLevel
@@ -324,6 +334,36 @@ class DataProductIdentifier(StrEnum):
         "ADM-IMAGER",
         DataLevel.AUX,
     )  # TRMM-like + ERBE-like ADMs using RBSP + VIIRS imager data for cloud properties
+
+    # Ancillary Products: externally produced inputs, ingested from their upstream providers
+    # ======================================================================================
+    # Each comment names the distributing provider and the upstream product.
+    # NASA Langley ASDC, CERES Cloud Pixel L2 imager-resolution cloud retrievals (CER_CLDPIX, NOAA-20 FM6)
+    anc_ceres_noaa20_cldpix = ("CERES-NOAA20-CLDPIX", DataLevel.ANC)
+    # NASA Langley ASDC, CERES FLASHFlux L2 rapid-release TOA and surface fluxes (FLASH_SSF, NOAA-20 FM6)
+    anc_ceres_noaa20_flashflux = ("CERES-NOAA20-FLASHFLUX", DataLevel.ANC)
+    # NASA Langley ASDC, CERES Single Scanner Footprint L2 TOA and surface fluxes and clouds (CER_SSF, NOAA-20 FM6)
+    anc_ceres_noaa20_ssf = ("CERES-NOAA20-SSF", DataLevel.ANC)
+    # NSIDC, EASE-Grid 2.0 Land-Ocean-Coastline-Ice Masks (NSIDC-0607)
+    anc_nsidc_land_ocean_mask = ("NSIDC-LAND-OCEAN-MASK", DataLevel.ANC)
+    # NSIDC, Near-real-time Ice and Snow Extent from SSM/I-SSMIS (NISE) and from AMSR2 (NISE-A2)
+    anc_nsidc_ice_snow = ("NSIDC-ICE-SNOW", DataLevel.ANC)
+    # LP DAAC, MODIS land cover type with the IGBP classification (MCD12Q1)
+    anc_modis_igbp = ("MODIS-IGBP", DataLevel.ANC)
+    # ECMWF Copernicus Climate Data Store, ERA5 hourly data on pressure levels, ERA5T preliminary data included
+    # (reanalysis-era5-pressure-levels)
+    anc_era5_pressure_level = ("ERA5-PRESSURE-LEVEL", DataLevel.ANC)
+    # ECMWF Copernicus Climate Data Store, ERA5 hourly data on single levels, ERA5T preliminary data included
+    # (reanalysis-era5-single-levels)
+    anc_era5_single_level = ("ERA5-SINGLE-LEVEL", DataLevel.ANC)
+    # LAADS DAAC, NOAA-20 VIIRS L3 Deep Blue daily aerosol optical depth (AERDB_D3_VIIRS_NOAA20)
+    anc_viirs_noaa20_aod = ("VIIRS-NOAA20-AOD", DataLevel.ANC)
+    # LP DAAC, NOAA-20 VIIRS L3 BRDF/Albedo model parameters, daily CMG (VJ143C1)
+    anc_viirs_noaa20_brdf = ("VIIRS-NOAA20-BRDF", DataLevel.ANC)
+    # LAADS DAAC, NOAA-20 VIIRS L3 daily cloud properties (CLDPROP_D3_VIIRS_NOAA20)
+    anc_viirs_noaa20_cloud_properties = ("VIIRS-NOAA20-CLOUD-PROPERTIES", DataLevel.ANC)
+    # NOAA CLASS, unaggregated NOAA-20 VIIRS M4 SDR radiances (SVM04) with terrain-corrected geolocation (GMTCO)
+    anc_viirs_noaa20_m4_sdr = ("VIIRS-NOAA20-M4-SDR", DataLevel.ANC)
 
     @property
     def product_name(self) -> str:
