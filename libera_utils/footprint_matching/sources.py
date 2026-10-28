@@ -113,8 +113,8 @@ def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[P
     """Instantiate the readers active for ``mode`` over their staged granules.
 
     Selects the active reader classes via
-    :meth:`ReaderRegistry.get_readers_for_mode`, instantiates each with the granule
-    paths supplied in ``source_file_paths``, and wraps them in an
+    :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
+    instantiates each with the granule paths supplied in ``source_file_paths``, and wraps them in an
     :class:`AncillarySources`. This is the single construction helper the product code
     calls so the reader wiring lives in one place. Construction checks only the
     mapping; it opens no granule, so a missing or unreadable staged file raises from
