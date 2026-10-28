@@ -3,6 +3,7 @@
 import itertools
 import logging
 import os
+import tempfile
 import zlib
 from enum import StrEnum
 from pathlib import Path
@@ -12,7 +13,6 @@ import h5py
 import numpy as np
 import xarray as xr
 from cloudpathlib import AnyPath, CloudPath
-from cloudpathlib.enums import FileCacheMode
 from dask import delayed
 from distributed import as_completed, get_client
 from numpy.typing import NDArray
@@ -221,41 +221,30 @@ def _write_dataset(
     '_io.BufferedRandom' object`; a path can, so the workers must share this process's
     filesystem, as those of a `LocalCluster` do.
 
-    A cloud destination is written to the path's cloudpathlib cache file and uploaded, as
-    `CloudPath.open` does on close, so a later read of `path` in this process is served from
-    local disk. The cache file's modification time is then set
-    to the object's, because the cache treats an older file as stale, and under
-    `FileCacheMode.close_file` the cache file is removed. The upload replaces any existing object
-    at the key (`libera_utils/D-005`); `force_overwrite_to_cloud=True` is needed because the
-    default compares the local clock against S3's and could refuse the replacement.
+    A cloud destination is written to a file in a temporary directory, uploaded, and the local
+    file removed, so a product as large as local disk allows leaves no copy behind once uploaded.
+    The upload replaces any existing object at the key (`libera_utils/D-005`);
+    `force_overwrite_to_cloud=True` is needed because the default compares the local clock
+    against S3's and could refuse the replacement.
 
     Parameters
     ----------
     dataset : xr.Dataset
         Dataset to write.
     path : PathType
-        Destination path. A `CloudPath` is written to its cache file and uploaded; a `Path` is
-        written directly. An existing file or object at this path is replaced.
+        Destination path. A `CloudPath` is written to a temporary local file and uploaded; a
+        `Path` is written directly. An existing file or object at this path is replaced.
     engine : T_XarrayNetcdfEngine
         NetCDF engine to write with.
     worker_compressed_variables : tuple[str, ...]
         Variables written by `_write_worker_compressed`; empty writes with ``to_netcdf``.
     """
     if isinstance(path, CloudPath):
-        # cloudpathlib has no public accessor for the cache location that does not first
-        # download an existing object, so this reads `_local` directly.
-        cache_file = path._local
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        if worker_compressed_variables:
-            _write_worker_compressed(dataset, cache_file, worker_compressed_variables)
-        else:
-            dataset.to_netcdf(cache_file, engine=engine)
-        logger.info(f"Uploading {cache_file} to {path}")
-        path.upload_from(cache_file, force_overwrite_to_cloud=True)
-        cloud_mtime = path.stat().st_mtime
-        os.utime(cache_file, times=(cloud_mtime, cloud_mtime))
-        if path.client.file_cache_mode == FileCacheMode.close_file:
-            path.clear_cache()
+        with tempfile.TemporaryDirectory() as local_dir:
+            local_file = Path(local_dir) / path.name
+            _write_dataset(dataset, local_file, engine, worker_compressed_variables)
+            logger.info(f"Uploading {local_file} to {path}")
+            path.upload_from(local_file, force_overwrite_to_cloud=True)
     elif worker_compressed_variables:
         _write_worker_compressed(dataset, path, worker_compressed_variables)
     else:

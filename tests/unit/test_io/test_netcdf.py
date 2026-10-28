@@ -1,6 +1,7 @@
 """Unit tests for netcdf.py module"""
 
 import logging
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
@@ -14,8 +15,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 import yaml
-from cloudpathlib import AnyPath, S3Client, S3Path
-from cloudpathlib.enums import FileCacheMode
+from cloudpathlib import AnyPath, S3Path
 from distributed import Client
 
 from libera_utils.io import netcdf, product_definition
@@ -875,43 +875,19 @@ class TestNetcdfEngineConfig:
         for target in seen:
             assert isinstance(target, str | Path), f"{engine} was handed {type(target).__name__}"
 
-    def test_reading_back_an_s3_product_does_not_download_it(
-        self, test_product_definition, test_data_dict, create_mock_bucket
+    def test_s3_product_is_uploaded_and_leaves_no_local_copy(
+        self, test_product_definition, test_data_dict, create_mock_bucket, tmp_path, monkeypatch
     ):
-        """The written product stays in the cache, as it did through CloudPath.open
+        """The product is written to a temporary file, uploaded, and the temporary file removed"""
+        local_tmp = tmp_path / "tmp"
+        local_tmp.mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(local_tmp))
+        output_path = S3Path(f"s3://{create_mock_bucket().name}/test-prefix")
 
-        A read of the product in the same process right after it is written is served from the
-        cache. If the cache were empty, that read would download the whole product from S3 again.
-        """
-        client = S3Client(file_cache_mode=FileCacheMode.tmp_dir)
-        output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict,
-            output_path=output_path,
-            time_variable="radiometer_time",
-        )
-
-        with patch.object(client, "_download_file", side_effect=AssertionError("product was downloaded")):
-            read_back = result.path.read_bytes()
-
-        assert read_back == result.path._local.read_bytes()
-
-    def test_close_file_cache_mode_removes_the_cache_file_after_upload(
-        self, test_product_definition, test_data_dict, create_mock_bucket
-    ):
-        """Under close_file the cache file is removed once uploaded, as CloudPath.open does on close"""
-        client = S3Client(file_cache_mode=FileCacheMode.close_file)
-        output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
-        result = write_libera_data_product(
-            data_product_definition=test_product_definition,
-            data=test_data_dict,
-            output_path=output_path,
-            time_variable="radiometer_time",
-        )
+        result = write_libera_data_product(test_product_definition, test_data_dict, output_path, "radiometer_time")
 
         assert result.path.exists()
-        assert not result.path._local.exists()
+        assert list(local_tmp.iterdir()) == []
 
 
 def test_load_netcdf_into_memory_reads_the_file_and_closes_it(tmp_path):
