@@ -2,8 +2,8 @@
 
 import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime
-from hashlib import md5
 from pathlib import Path
 from typing import Any, Union
 
@@ -33,56 +33,11 @@ class ManifestError(Exception):
     pass
 
 
-_CHECKSUM_BLOCK_BYTES = 16 * 2**20
-
 _MANIFEST_NAME_HELP = (
     "expected LIBERA_INPUT_MANIFEST_<ULID>.json or LIBERA_OUTPUT_MANIFEST_<ULID>.json, where <ULID> is a "
     "26-character ULID, for example LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json. Manifest.write() "
     "generates this name when out_path is a directory or S3 prefix, so it need not be given."
 )
-
-
-def calculate_checksum(file: str | Path | S3Path) -> str:
-    """Compute the MD5 checksum of the given file, reading it in fixed-size blocks.
-
-    The checksum is taken over the bytes as they are stored on disk. For a ``*.gz`` file that means
-    the compressed bytes, so the value can be compared against the file a data provider delivered.
-    Hence ``enable_gzip=False``: letting smart_open transparently decompress would checksum content
-    that exists nowhere on disk, and would change if the file were ever recompressed at a different
-    level. Memory use is one block regardless of file size, so a product larger than the host's
-    memory can still be checksummed.
-
-    Parameters
-    ----------
-    file : str, Path or S3Path
-        Path of the file. A gzipped file is not decompressed, so the checksum is of its bytes on disk.
-
-    Returns
-    -------
-    str
-        Hex digest of the file's bytes.
-    """
-    digest = md5(usedforsecurity=False)
-    with smart_open(file, "rb", enable_gzip=False) as fh:
-        while block := fh.read(_CHECKSUM_BLOCK_BYTES):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-class ManifestFileRecord(BaseModel):
-    """Pydantic model for an individual data product file recorded within a manifest file.
-
-    Attributes
-    ----------
-    filename : str
-        Absolute local or S3 path of the file.
-    checksum : str
-        MD5 hex digest of the file's bytes as stored on disk; a gzipped file is not decompressed. Required: a null
-        checksum is a validation error.
-    """
-
-    filename: str = Field(description="Absolute local or S3 path of the file")
-    checksum: str = Field(description="MD5 hex digest of the file's bytes as stored")
 
 
 class Manifest(BaseModel):
@@ -92,10 +47,10 @@ class Manifest(BaseModel):
     ----------
     manifest_type : ManifestType
         INPUT or OUTPUT.
-    files : list of ManifestFileRecord
-        Files listed in the manifest. May be given as paths, dicts or ``ManifestFileRecord`` objects; paths, and
-        dicts without a ``checksum``, are checksummed with MD5. A file that cannot be found raises
-        ``FileNotFoundError``.
+    files : list of str
+        Absolute local or S3 paths of the files listed in the manifest. May be given as str, Path or S3Path, and are
+        stored as str. Files are never read, so files with identical content are each listed; a path listed twice is
+        a validation error. Only ``add_files`` checks that a file exists.
     configuration : dict
         Freeform JSON-compatible configuration items.
     filename : ManifestFilename or None
@@ -110,7 +65,7 @@ class Manifest(BaseModel):
     """
 
     manifest_type: ManifestType = Field(description="Either INPUT or OUTPUT.")
-    files: list[ManifestFileRecord] = Field(default_factory=list, description="Files listed in the manifest.")
+    files: list[str] = Field(default_factory=list, description="Absolute paths of the files listed in the manifest.")
     configuration: dict[str, Any] = Field(
         default_factory=dict, description="Freeform json-compatible dictionary of configuration items."
     )
@@ -252,94 +207,72 @@ class Manifest(BaseModel):
         return manifest_type
 
     @classmethod
-    def check_file_structure(
-        cls, file_structure: ManifestFileRecord, existing_names: set[str], existing_checksums: set[str]
-    ) -> bool:
-        """Check whether a file record can be added to a list of records.
+    def _normalize_files(cls, raw_files: Iterable[str | Path | S3Path], existing_names: set[str]) -> list[str]:
+        """Convert paths to absolute path strings, rejecting any path listed twice.
+
+        Files are not opened or checked for existence.
 
         Parameters
         ----------
-        file_structure : ManifestFileRecord
-            Record to check.
+        raw_files : iterable of str, Path or S3Path
+            Absolute local or S3 paths of the files.
         existing_names : set of str
-            Filenames already in the list.
-        existing_checksums : set of str
-            Checksums already in the list.
+            Paths already listed in the manifest.
 
         Returns
         -------
-        bool
-            False, with a warning, if the record duplicates an existing filename or checksum; True otherwise.
+        list of str
+            The paths as strings, in order.
 
         Raises
         ------
         ValueError
-            If the record's path is not absolute.
+            If an entry is not a path, a path is not absolute, or a path is already listed or appears twice.
         """
-        file = file_structure.filename
-        # S3 paths are always absolute so this is always valid for them
-        if not AnyPath(file).is_absolute():
-            raise ValueError(f"The file path for {file} must be an absolute path.")
-        if file in existing_names:
-            logger.warning(f"Attempting to add {file} to manifest but it is already included.")
-            return False
-        if file_structure.checksum in existing_checksums:
-            logger.warning(
-                f"Attempting to add {file} to manifest but another file with the same checksum is already included."
-            )
-            return False
-        return True
+        result = []
+        seen = set(existing_names)
+        for raw_file in raw_files:
+            if not isinstance(raw_file, str | Path | S3Path):
+                raise ValueError(
+                    f"Manifest file entry {raw_file!r} is not a path. A manifest lists each file as an absolute local "
+                    'or S3 path string, for example "s3://bucket/LIBERA_L1B_RAD-4CH_...nc".'
+                )
+            file = str(AnyPath(raw_file))
+            # S3 paths are always absolute so this is always valid for them
+            if not AnyPath(file).is_absolute():
+                raise ValueError(f"The file path for {file} must be an absolute path.")
+            if file in seen:
+                raise ValueError(
+                    f"The file {file} is already listed in the manifest. A manifest lists each file once; remove the "
+                    "repeated path."
+                )
+            result.append(file)
+            seen.add(file)
+        return result
 
     @field_validator("files", mode="before")  # noqa  avoid type warning
     @classmethod
-    def transform_files(
-        cls, raw_list: list[dict | str | Path | S3Path | ManifestFileRecord] | None
-    ) -> list[ManifestFileRecord]:
-        """Convert the incoming files to ManifestFileRecords, dropping duplicates.
+    def transform_files(cls, raw_list: list[str | Path | S3Path] | None) -> list[str]:
+        """Convert the incoming paths to absolute path strings.
 
-        A path, or a dict with no ``checksum`` key, is checksummed with MD5.
+        Files are not opened or checked for existence.
 
         Parameters
         ----------
-        raw_list : list of dict, str, Path, S3Path or ManifestFileRecord, or None
-            Files to convert.
+        raw_list : list of str, Path or S3Path, or None
+            Absolute local or S3 paths of the files.
 
         Returns
         -------
-        list of ManifestFileRecord
-            The converted records.
+        list of str
+            The paths as strings.
 
         Raises
         ------
-        FileNotFoundError
-            If a file to be checksummed cannot be found.
         ValueError
-            If a path is not absolute, or a record's checksum is null.
+            If an entry is not a path, a path is not absolute, or a path appears twice.
         """
-        result = []
-        existing_names = set()
-        existing_checksums = set()
-        for raw_file in raw_list or []:
-            if isinstance(raw_file, ManifestFileRecord):
-                file_structure = raw_file
-            elif isinstance(raw_file, dict) and "checksum" in raw_file:
-                file_structure = ManifestFileRecord(filename=raw_file.get("filename"), checksum=raw_file["checksum"])
-            else:
-                file = raw_file.get("filename") if isinstance(raw_file, dict) else str(AnyPath(raw_file))
-                # Checked before existence so a relative path is reported as relative, not as missing
-                if not AnyPath(file).is_absolute():
-                    raise ValueError(f"The file path for {file} must be an absolute path.")
-                if not AnyPath(file).exists():
-                    raise FileNotFoundError(
-                        f"File {file} cannot be found. A file must exist when it is added to a manifest so its "
-                        "checksum can be calculated; check the path and that the file has been written."
-                    )
-                file_structure = ManifestFileRecord(filename=file, checksum=calculate_checksum(file))
-            if cls.check_file_structure(file_structure, existing_names, existing_checksums):
-                result.append(file_structure)
-                existing_names.add(str(file_structure.filename))
-                existing_checksums.add(file_structure.checksum)
-        return result
+        return cls._normalize_files(raw_list or [], set())
 
     @computed_field
     @property
@@ -419,7 +352,9 @@ class Manifest(BaseModel):
         return cls.model_validate(contents)
 
     def add_files(self, *files: str | Path | S3Path) -> None:
-        """Add files to the manifest, checksumming each one.
+        """Add files to the manifest after checking that each one exists.
+
+        Files are not read, so an S3 file is not downloaded and a file larger than local disk can be listed.
 
         Parameters
         ----------
@@ -431,35 +366,19 @@ class Manifest(BaseModel):
         FileNotFoundError
             If a file cannot be found. No file is added.
         ValueError
-            If a path is not absolute.
+            If a path is not absolute, or is already listed or given twice. No file is added.
         """
-        self.files = [*self.files, *files]
-
-    def validate_checksums(self) -> None:
-        """Check every listed file against its recorded checksum.
-
-        Raises
-        ------
-        ManifestError
-            Listing every file that cannot be found or whose checksum differs.
-        """
-        failed_filenames = []
-        for file_structure in self.files:
-            checksum_expected = file_structure.checksum
-            filename = file_structure.filename
-            if not AnyPath(filename).exists():
-                logger.error(f"Checksum validation for {filename} failed. The file cannot be found.")
-            else:
-                checksum_calculated = calculate_checksum(filename)
-                if checksum_expected == checksum_calculated:
-                    continue
-                logger.error(
-                    f"Checksum validation for {filename} failed. "
-                    f"Expected {checksum_expected} but got {checksum_calculated}."
+        # Every path is checked before any existence check, so a relative or repeated path is reported as such,
+        # not as missing, and costs no request to S3
+        new_files = self._normalize_files(files, set(self.files))
+        for file in new_files:
+            if not AnyPath(file).exists():
+                raise FileNotFoundError(
+                    f"File {file} cannot be found. A file must exist when it is added to a manifest; check the path "
+                    "and that the file has been written."
                 )
-            failed_filenames.append(str(filename))
-        if failed_filenames:
-            raise ManifestError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
+        # Extended in place: the new paths are already validated against the list, so assignment would only repeat it
+        self.files.extend(new_files)
 
     def write(self, out_path: str | Path | S3Path | ManifestFilename, *, overwrite: bool = False) -> Path | S3Path:
         """Write the manifest to a file and set ``filename`` to the path written.
@@ -592,7 +511,8 @@ class Manifest(BaseModel):
                 "The configuration passed to output_manifest_from_input_manifest contains input_manifest_files; it "
                 "is replaced by the files of the input manifest."
             )
-        configuration["input_manifest_files"] = input_manifest.files
+        # A copy, since add_files extends the input manifest's list in place
+        configuration["input_manifest_files"] = list(input_manifest.files)
 
         return cls(
             manifest_type=ManifestType.OUTPUT,
