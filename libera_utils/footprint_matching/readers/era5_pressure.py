@@ -14,16 +14,17 @@ separate file, hence a separate reader from
 :class:`~libera_utils.footprint_matching.readers.era5_surface.ERA5SurfaceReader` (each reader
 reads one source).
 
-Why per-level variables?
-------------------------
-FMATCH products are strictly 1-D per footprint (every product variable lives on
-the single time dimension) and a reader's samples carry one value row per
-variable. So instead of adding a vertical dimension, each (variable, pressure
-level) pair is flattened into its own ``VariableSpec`` -- e.g.
-``temperature_500hPa`` -- keeping the sample/aggregation contract and the
-product schema unchanged. The retained levels are the ``_ERA5_PRESSURE_LEVELS``
-module constant — the full ERA5 set of 37 levels; changing the level list is a
-one-line edit there (the specs and product-definition cross-check derive from it).
+Read planes and product variables
+---------------------------------
+A reader's samples carry one value row per ``VariableSpec``, and each row is PSF-weighted
+and aggregated on its own. Each (variable, pressure level) pair is therefore its own
+spec -- e.g. ``temperature_500hPa`` -- so every level is aggregated as the 2-D field it
+is. In the product, ``PRODUCT_STACKS`` collects each variable's levels back into one
+variable on ``(RADIOMETER_TIME, PRESSURE_LEVEL)`` -- e.g. ``era5_pressure_temperature``
+-- with the ``PRESSURE_LEVEL`` coordinate taken from ``_ERA5_PRESSURE_LEVELS``. That
+constant holds the full ERA5 set of 37 levels; changing the level list there changes
+the specs and the stacks, and the ``PRESSURE_LEVEL`` size in ``libera_dimensions.yml``
+must change with it (a unit test checks they agree).
 
 Variables read (at each retained pressure level)
 ------------------------------------------------
@@ -54,11 +55,11 @@ import numpy as np
 import xarray as xr
 
 from libera_utils.footprint_matching.readers.era5_surface import ERA5ReaderBase
-from libera_utils.footprint_matching.types import OperationalMode, VariableSpec
+from libera_utils.footprint_matching.types import OperationalMode, ProductStack, VariableSpec
 
 # Pressure levels (hPa) retained for FMATCH, ascending — the full ERA5 set of 37
 # levels (1–1000 hPa). Carrying all of them yields 5 × 37 × 2 = 370 product
-# variables. The CDS download AND this constant must agree: the reader raises if a
+# variables, stacked into 5 × 2 product variables on PRESSURE_LEVEL. The CDS download AND this constant must agree: the reader raises if a
 # configured level is missing from the file.
 _ERA5_PRESSURE_LEVELS: tuple[int, ...] = (
     1,
@@ -119,6 +120,9 @@ _PRESSURE_LEVEL_COORD: str = "pressure_level"
 # pressure levels are a radiometer-timescale quantity.
 _MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
 
+# Product dimension the levels are stacked along (libera_dimensions.yml).
+_PRESSURE_LEVEL_DIMENSION: str = "PRESSURE_LEVEL"
+
 
 def _pressure_level_layers() -> Iterator[tuple[str, str, int]]:
     """Yield ``(spec name, ERA5 variable name, level hPa)`` for every reader output layer.
@@ -150,6 +154,19 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
     )
 
 
+def _build_pressure_level_stacks() -> tuple[ProductStack, ...]:
+    """Stack each variable's per-level specs, levels ascending, into one product variable on ``PRESSURE_LEVEL``."""
+    return tuple(
+        ProductStack(
+            name=base_name,
+            dimension=_PRESSURE_LEVEL_DIMENSION,
+            coordinate_values=_ERA5_PRESSURE_LEVELS,
+            members=tuple(name for name, layer_nc_name, _ in _pressure_level_layers() if layer_nc_name == nc_name),
+        )
+        for base_name, nc_name in _ERA5_PRESSURE_LEVEL_VARIABLES
+    )
+
+
 class ERA5PressureLevelReader(ERA5ReaderBase):
     """Read ERA5 pressure-level fields from a CDS NetCDF4 file.
 
@@ -167,6 +184,8 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
         28 km (the 0.25 degree ERA5 grid spacing at the equator).
     VARIABLES : tuple[VariableSpec, ...]
         One continuous float32 spec per (variable, level) pair.
+    PRODUCT_STACKS : tuple[ProductStack, ...]
+        One stack per variable, its levels ascending along ``PRESSURE_LEVEL`` (hPa).
 
     Parameters
     ----------
@@ -178,13 +197,14 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
 
     READER_KEY: str = "era5_pressure"
     # Same producing-center token as the single-level reader so the long_name
-    # provenance tag stays uniform: "Air temperature at 500 hPa (ECMWF)" etc.
-    # Variable names are era5_pressure_temperature_500hPa (no instrument token).
+    # provenance tag stays uniform: "Air temperature on ERA5 pressure levels (ECMWF)" etc.
+    # Product variable names are era5_pressure_temperature etc. (no instrument token).
     INSTRUMENT: str = "ECMWF"
     # The 0.25 degree grid spacing at the equator. A sample covers a cell of this side in
     # the coverage measure, so the cells abut and a footprint inside the grid is complete.
     RESOLUTION_KM: float = 28.0
     VARIABLES: tuple[VariableSpec, ...] = _build_pressure_level_specs()
+    PRODUCT_STACKS: tuple[ProductStack, ...] = _build_pressure_level_stacks()
 
     def _read_step_layers(self, step: xr.Dataset, path: Path, out: np.ndarray) -> None:
         """Read every (variable, level) layer from one time step into ``out``.
