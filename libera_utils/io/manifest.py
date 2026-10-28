@@ -214,7 +214,7 @@ class Manifest(BaseModel):
 
         Parameters
         ----------
-        raw_files : iterable of str, Path or S3Path
+        raw_files : collections.abc.Iterable[str | pathlib.Path | cloudpathlib.S3Path]
             Absolute local or S3 paths of the files.
         existing_names : set of str
             Paths already listed in the manifest.
