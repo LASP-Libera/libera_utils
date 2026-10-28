@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). FLASHFlux files are the CERES SSF format, named `CER_SSF_...`, and are identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`).
+
 ## [5.15.0] - 2026-10-28
 
 ### Added
