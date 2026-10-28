@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The `h5netcdf` dependency is declared with its `h5py` extra (`h5netcdf[h5py]`), since `h5netcdf` no longer installs `h5py` by default.
+- The `dev` dependency group depends on `pyjpegls` instead of `pillow-jpls` for JPEG-LS decoding in the WFOV integration test. `pillow-jpls` 1.3.2, its latest release, publishes wheels only through cp312, so Python 3.13 and 3.14 installs build it from source, which fails on gcc 14 hosts; `pyjpegls` binds the same CharLS codec.
 
 ## [5.14.0] - 2026-10-27
 

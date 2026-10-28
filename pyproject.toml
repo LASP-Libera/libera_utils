@@ -98,7 +98,7 @@ memory-profiler = "*"
 moto = {extras = ["s3"], version = "*"}
 pre-commit = "*"
 psutil = "*"  # Speeds up memory-profiler
-pillow-jpls = "*"
+pyjpegls = "*"
 pytest-cov = "*"
 pytest-profiling = "*"
 pytest-randomly = "*"
