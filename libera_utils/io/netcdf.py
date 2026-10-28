@@ -157,8 +157,8 @@ def _write_dataset(dataset: xr.Dataset, path: PathType, engine: T_XarrayNetcdfEn
     filesystem, as those of a `LocalCluster` do.
 
     A cloud destination is written to the path's cloudpathlib cache file and uploaded, as
-    `CloudPath.open` does on close, so a later read of `path` in this process, such as the
-    manifest checksum, is served from local disk. The cache file's modification time is then set
+    `CloudPath.open` does on close, so a later read of `path` in this process is served from
+    local disk. The cache file's modification time is then set
     to the object's, because the cache treats an older file as stale, and under
     `FileCacheMode.close_file` the cache file is removed. The upload replaces any existing object
     at the key (`libera_utils/D-005`); `force_overwrite_to_cloud=True` is needed because the

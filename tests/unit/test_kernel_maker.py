@@ -16,7 +16,7 @@ from libera_utils import kernel_maker
 from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier, LiberaApid
 from libera_utils.io import filenaming
-from libera_utils.io.manifest import Manifest, ManifestFileRecord
+from libera_utils.io.manifest import Manifest
 from libera_utils.l1a.l1a_packet_configs import PacketConfiguration
 
 
@@ -157,7 +157,7 @@ def test_create_kernel_from_l1a_missing_encoder_columns_raises(
 )
 @mock.patch(
     "libera_utils.io.manifest.Manifest.from_file",
-    return_value=mock.MagicMock(Manifest, files=[mock.MagicMock(ManifestFileRecord, filename="/fake/fake_l1a.nc")]),
+    return_value=mock.MagicMock(Manifest, files=["/fake/fake_l1a.nc"]),
 )
 @mock.patch("libera_utils.kernel_maker.create_kernel_from_l1a", return_value=AnyPath("/fake/kernel.spk"))
 def test_from_manifest(mock_create_kernel_from_l1a, mock_mani, mock_pedi):
@@ -170,7 +170,6 @@ def test_from_manifest(mock_create_kernel_from_l1a, mock_mani, mock_pedi):
     )
     assert isinstance(pedi, Manifest)
     assert pedi is mock_pedi.return_value
-    mock_mani.return_value.validate_checksums.assert_called_once()
     mock_pedi.assert_called_once_with(mock_mani.return_value)
     mock_pedi.return_value.add_files.assert_called_once_with(Path("/fake/kernel.spk"))
     mock_create_kernel_from_l1a.assert_called_once_with(
@@ -209,9 +208,7 @@ def test_kernel_cli_handler(mock_from_manifest, cli_handler, dpis, monkeypatch):
 def test_from_manifest_multi_kernel_processing(mock_manifest_class, mock_create_kernel_from_l1a):
     """Test that from_manifest correctly creates multiple kernels from a single manifest"""
     mock_mani = mock.Mock()
-    mock_mani.files = [
-        mock.Mock(filename="l1a_file.nc"),
-    ]
+    mock_mani.files = ["l1a_file.nc"]
     mock_manifest_class.from_file.return_value = mock_mani
     mock_manifest_class.output_manifest_from_input_manifest.return_value = mock.Mock()
 
@@ -250,7 +247,7 @@ def test_from_manifest_multi_kernel_processing(mock_manifest_class, mock_create_
 def test_from_manifest_exception_handling(mock_manifest_class, create_kernel_from_l1a, mock_logger):
     """Test that from_manifest handles exceptions properly and continues processing"""
     mock_mani = mock.Mock()
-    mock_mani.files = [mock.Mock(filename="l1a_file.nc")]
+    mock_mani.files = ["l1a_file.nc"]
     mock_manifest_class.from_file.return_value = mock_mani
     mock_pedi = mock.Mock()
     mock_manifest_class.output_manifest_from_input_manifest.return_value = mock_pedi

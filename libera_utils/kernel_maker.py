@@ -780,12 +780,6 @@ def create_kernels_from_manifest(
     logger.info("Starting SPICE kernel generation from manifest: %s", input_manifest)
     # Process input manifest
     mani = Manifest.from_file(input_manifest)
-    mani.validate_checksums()
-
-    logger.debug("Checksum validation passed for input manifest: %s", input_manifest)
-
-    # Files containing decoded L1A packet data
-    input_l1a_files = mani.files
 
     if isinstance(kernel_product_ids, str):
         _kernel_list = [kernel_product_ids]
@@ -802,7 +796,7 @@ def create_kernels_from_manifest(
             )
 
     # Verify expectations for processing L1A files to SPICE kernels
-    input_file_names = [file_entry.filename for file_entry in input_l1a_files]
+    input_file_names = mani.files
     if len(input_file_names) == 0:
         raise ValueError("Input manifest contains no input files.")
     elif len(input_file_names) > 1:

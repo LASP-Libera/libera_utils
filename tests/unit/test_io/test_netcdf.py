@@ -2,7 +2,6 @@
 
 import logging
 from datetime import UTC, datetime
-from hashlib import md5
 from pathlib import Path
 from unittest import mock
 from unittest.mock import patch
@@ -17,7 +16,6 @@ from cloudpathlib.enums import FileCacheMode
 
 from libera_utils.io import netcdf, product_definition
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import calculate_checksum
 from libera_utils.io.netcdf import NetcdfEngine, write_libera_data_product
 from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
@@ -873,8 +871,8 @@ class TestNetcdfEngineConfig:
     ):
         """The written product stays in the cache, as it did through CloudPath.open
 
-        The manifest checksums each output file right after it is written. If the cache were
-        empty, that read would download the whole product from S3 again.
+        A read of the product in the same process right after it is written is served from the
+        cache. If the cache were empty, that read would download the whole product from S3 again.
         """
         client = S3Client(file_cache_mode=FileCacheMode.tmp_dir)
         output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
@@ -886,9 +884,9 @@ class TestNetcdfEngineConfig:
         )
 
         with patch.object(client, "_download_file", side_effect=AssertionError("product was downloaded")):
-            checksum = calculate_checksum(result.path)
+            read_back = result.path.read_bytes()
 
-        assert checksum == md5(result.path._local.read_bytes(), usedforsecurity=False).hexdigest()
+        assert read_back == result.path._local.read_bytes()
 
     def test_close_file_cache_mode_removes_the_cache_file_after_upload(
         self, test_product_definition, test_data_dict, create_mock_bucket
