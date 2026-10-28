@@ -22,6 +22,9 @@ Two layers
    reader's *product* variable specifications, picks the right value row for each,
    dispatches to the correct strategy, and returns the single scalar the product
    definition stores for that variable, once per footprint per source.
+   :func:`stack_product_values` then collects a reader's stacked specs (its
+   ``PRODUCT_STACKS``, e.g. ERA5 pressure levels) into one array per stacked
+   product variable.
 
 CERES heritage
 --------------
@@ -53,7 +56,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from libera_utils.footprint_matching.readers.base import AncillaryReader
-    from libera_utils.footprint_matching.types import SampleSet, VariableSpec
+    from libera_utils.footprint_matching.types import ProductStack, SampleSet, VariableSpec
     from libera_utils.footprint_matching.weighting import WeightField
 
 # CERES coverage thresholds (design doc section 2.4.2.7 / 2.8.1.1.3). The coverage
@@ -674,4 +677,56 @@ def aggregate_sample_variables(
             else:
                 result = _ranked_mode_from_histogram(*histogram(read_index, n_categories), _CATEGORICAL_RANK[strategy])
         out[spec.name] = float(result[_SCALAR_KEY[strategy]])
+    return out
+
+
+@cache
+def _product_stacks(reader_cls: Any) -> tuple[ProductStack, ...]:
+    """Return ``reader_cls.product_stacks()``, computed once per reader class.
+
+    The stacks are a static property of the reader, so :func:`stack_product_values`
+    reuses them for every footprint rather than rebuilding them.
+    """
+    return reader_cls.product_stacks()
+
+
+def stack_product_values(reader_cls: Any, scalars: dict[str, float]) -> dict[str, float | np.ndarray]:
+    """Shape one footprint's per-spec scalars from one source into its product variables.
+
+    Each of the reader's stacks (``reader_cls.product_stacks()``) becomes one 1-D array
+    holding its members' scalars in coordinate order, the footprint's row of a
+    ``(time, dimension)`` product variable. Every scalar that is not a stack member is
+    passed through as the 1-D product variable it already is.
+
+    Parameters
+    ----------
+    reader_cls : type[AncillaryReader]
+        The reader class whose product variables to shape.
+    scalars : dict[str, float]
+        ``{spec.name: scalar}`` for the footprint, as :func:`aggregate_sample_variables`
+        returns it.
+
+    Returns
+    -------
+    dict[str, float | np.ndarray]
+        A float64 array of length ``len(stack.members)`` under each stack's name, and
+        every unstacked scalar under its own name. Names are bare, as in ``scalars``.
+
+    Raises
+    ------
+    ValueError
+        If ``scalars`` lacks a member of one of the reader's stacks, so a stacked
+        variable would be missing a level.
+    """
+    stacks = _product_stacks(reader_cls)
+    stacked_members = {member for stack in stacks for member in stack.members}
+    out: dict[str, float | np.ndarray] = {name: value for name, value in scalars.items() if name not in stacked_members}
+    for stack in stacks:
+        missing = [member for member in stack.members if member not in scalars]
+        if missing:
+            raise ValueError(
+                f"Reader {reader_cls.__name__!r}: no scalar for {missing}, members of the stacked product "
+                f"variable {stack.name!r}. Pass the full output of aggregate_sample_variables for this reader."
+            )
+        out[stack.name] = np.array([scalars[member] for member in stack.members], dtype=np.float64)
     return out

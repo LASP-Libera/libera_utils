@@ -535,3 +535,54 @@ def with_standard_deviation_companions(specs: tuple[VariableSpec, ...]) -> tuple
                 )
             )
     return tuple(expanded)
+
+
+@dataclass(frozen=True)
+class ProductStack:
+    """A product variable that stacks several read planes along a second product dimension.
+
+    A reader serves each plane of a multi-level field as its own :class:`VariableSpec`,
+    and the aggregation engine reduces each plane to its own scalar. A stack declares that
+    the product stores those scalars as one variable on ``(time, dimension)``: element
+    ``k`` of the product variable is the scalar of ``members[k]``, at coordinate value
+    ``coordinate_values[k]``.
+
+    Attributes
+    ----------
+    name : str
+        Bare product variable name (the caller prefixes it with ``<source>_``, as for any
+        product variable), e.g. ``"temperature"``.
+    dimension : str
+        The product dimension the stack runs along, as named in the Libera standard
+        dimensions file, e.g. ``"PRESSURE_LEVEL"``.
+    coordinate_values : tuple[float, ...]
+        The coordinate value of each element along ``dimension``, in the units the
+        product definition's coordinate of that name declares.
+    members : tuple[str, ...]
+        The product spec names stacked, one per coordinate value, in coordinate order.
+
+    Raises
+    ------
+    ValueError
+        If ``members`` is empty or names a spec twice, or if it has a different length
+        than ``coordinate_values``.
+    """
+
+    name: str
+    dimension: str
+    coordinate_values: tuple[float, ...]
+    members: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.members:
+            raise ValueError(f"ProductStack {self.name!r} has no members; list the spec names it stacks.")
+        if len(set(self.members)) != len(self.members):
+            raise ValueError(
+                f"ProductStack {self.name!r} lists a member more than once: {list(self.members)}. "
+                "Each element along the stack's dimension must come from its own spec."
+            )
+        if len(self.members) != len(self.coordinate_values):
+            raise ValueError(
+                f"ProductStack {self.name!r} has {len(self.members)} members but {len(self.coordinate_values)} "
+                f"coordinate values along {self.dimension!r}; give one coordinate value per member."
+            )

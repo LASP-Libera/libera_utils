@@ -6,6 +6,7 @@ Tests confirm:
 - antimeridian and polar boxes are served whole
 - ``DAILY`` ignores time, ``NEAREST_PASS`` keeps one pass, ``NEAREST_STEP`` serves one step
 - the registration hook rejects a reader whose time attributes do not match its policy
+- the registration hook rejects a ``PRODUCT_STACKS`` declaration the product could not be built from
 - a reader missing any one abstract method cannot be instantiated, and is never registered
 """
 
@@ -28,6 +29,7 @@ from libera_utils.footprint_matching.types import (
     GridSamples,
     OperationalMode,
     PointSamples,
+    ProductStack,
     SampleSet,
     TimeMatch,
     VariableSpec,
@@ -919,6 +921,111 @@ class TestRegistrationValidation:
         }
         with pytest.raises(TypeError, match=match):
             type(base)("_Inconsistent", (base,), namespace)
+
+
+def _level_spec(name: str, aggregation: str = "weighted_mean") -> VariableSpec:
+    return VariableSpec(name=name, dtype="float32", aggregation=aggregation, modes=frozenset({OperationalMode.CAM}))
+
+
+def _stack(name: str, members: tuple[str, ...]) -> ProductStack:
+    return ProductStack(
+        name=name, dimension="PRESSURE_LEVEL", coordinate_values=tuple(range(len(members))), members=members
+    )
+
+
+_STACKED_SPECS = (_level_spec("t_1"), _level_spec("t_2"), _level_spec("c_1", "weighted_mode"), _level_spec("u"))
+
+
+class _Stacked(StaticReader):
+    """Stacks the continuous ``t_1``/``t_2`` into ``t``."""
+
+    READER_KEY = "_base_test_stacked"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 1.0
+    TIME_MATCH = TimeMatch.DAILY
+    VARIABLES = _STACKED_SPECS
+    PRODUCT_STACKS = (_stack("t", ("t_1", "t_2")),)
+
+    def _load_native(self):
+        raise NotImplementedError
+
+
+class _CategoricalStack(StaticReader):
+    """Stacks only the categorical ``c_1`` into ``c``."""
+
+    READER_KEY = "_base_test_categorical_stack"
+    INSTRUMENT = "FAKE"
+    RESOLUTION_KM = 1.0
+    TIME_MATCH = TimeMatch.DAILY
+    VARIABLES = _STACKED_SPECS
+    PRODUCT_STACKS = (_stack("c", ("c_1",)),)
+
+    def _load_native(self):
+        raise NotImplementedError
+
+
+class TestProductStacks:
+    def test_continuous_stack_gains_standard_deviation_stack(self):
+        """``product_stacks`` follows a stack of continuous specs with a stack of their standard-deviation companions.
+
+        Every continuous product variable reports its within-footprint spread, so a stacked variable needs a stacked
+        companion along the same dimension, or the spread of each level would be dropped from the product.
+
+        A reader stacking ``t_1``/``t_2`` must return the declared stack, then ``t_standard_deviation`` over
+        ``t_1_standard_deviation``/``t_2_standard_deviation`` with the same dimension and coordinate values.
+        """
+        declared, companion = _Stacked.product_stacks()
+        assert declared == _Stacked.PRODUCT_STACKS[0]
+        assert companion == ProductStack(
+            name="t_standard_deviation",
+            dimension="PRESSURE_LEVEL",
+            coordinate_values=(0, 1),
+            members=("t_1_standard_deviation", "t_2_standard_deviation"),
+        )
+
+    def test_categorical_stack_has_no_standard_deviation_stack(self):
+        """A stack of mode-aggregated specs gets no standard-deviation stack.
+
+        A categorical spec has no standard-deviation companion, so a companion stack would name variables the reader
+        never produces.
+
+        A reader stacking only the categorical ``c_1`` must return just that stack.
+        """
+        assert _CategoricalStack.product_stacks() == _CategoricalStack.PRODUCT_STACKS
+
+    @pytest.mark.parametrize(
+        ("stacks", "message"),
+        [
+            pytest.param((_stack("t", ("t_1", "t_9")),), "not among", id="unknown-member"),
+            pytest.param((_stack("u", ("t_1", "t_2")),), "has the name", id="name-collides"),
+            pytest.param((_stack("m", ("t_1", "c_1")),), "mixes members", id="mixed-companions"),
+            pytest.param((_stack("a", ("t_1",)), _stack("b", ("t_1", "t_2"))), "more than one", id="stacked-twice"),
+        ],
+    )
+    def test_invalid_stacks_are_rejected_at_import(self, stacks, message):
+        """A ``PRODUCT_STACKS`` declaration the product cannot be built from raises ``TypeError`` at class creation.
+
+        A stack naming a spec the reader does not produce would leave a level empty, a stack named like a product
+        spec would put two variables of one name in the product, a stack mixing continuous and categorical specs
+        would have a companion stack with gaps, and a spec in two stacks would be published twice.
+
+        Each case defines a reader with the bad declaration inside ``pytest.raises`` and matches the message naming
+        the defect.
+        """
+        with pytest.raises(TypeError, match=message):
+
+            class _BadStacks(StaticReader):
+                READER_KEY = "_base_test_bad_stacks"
+                INSTRUMENT = "FAKE"
+                RESOLUTION_KM = 1.0
+                TIME_MATCH = TimeMatch.DAILY
+                VARIABLES = _STACKED_SPECS
+                PRODUCT_STACKS = stacks
+
+                def _load_native(self):
+                    raise NotImplementedError
+
+        assert "_base_test_bad_stacks" not in ReaderRegistry.list_readers()
 
 
 class TestLoadedShapeValidation:
