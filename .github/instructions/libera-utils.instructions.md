@@ -53,6 +53,13 @@ generation, Libera file naming, and AWS pipeline integration.
 - **AWS/HTTP mocking**: Use `moto[s3]` and `responses` — never call real AWS endpoints in
   unit tests.
 - **Fixtures**: Provided via plugins in `tests/plugins/`; prefer them over ad-hoc setup.
+- **Docs build**: Build the docs as part of testing any change to code, docstrings or `doc/`:
+  `poetry install --with docgen` (Python 3.12 or newer), then `make html` in `doc/`. The Makefile passes
+  `-W --keep-going`, so the build fails on any warning and lists them all. Read the Docs builds with
+  `fail_on_warning: true`, and GitHub Actions does not build the docs, so a warning here is a failed
+  docs check on the pull request. The build is nitpicky and documents private members, so a type in a
+  private method's numpydoc `Parameters` section must resolve too: write `collections.abc.Iterable[str]`,
+  not `iterable of str`.
 
 ## Key Patterns
 
