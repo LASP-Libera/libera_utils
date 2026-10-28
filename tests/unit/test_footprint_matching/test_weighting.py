@@ -82,7 +82,6 @@ class TestRadialWeigher:
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
         center = wf.weights[_center_index(lats, lons)]
         assert center == pytest.approx(wf.weights.max())
-        # A corner is farther from the boresight than an edge, so weighs no more.
         assert wf.weights[0] <= wf.weights[1] + 1e-12
 
     def test_symmetric_about_boresight(self):
@@ -98,7 +97,6 @@ class TestRadialWeigher:
         lons = np.array([-0.1, 0.0, 0.1])
         wf = RadialWeigher().weight_field(_grid_samples(lats, lons), 0.0, 0.0, **_GEOM)
         grid = wf.weights.reshape(3, 3)
-        # Mirror symmetry in latitude and longitude about the centered boresight.
         np.testing.assert_allclose(grid, grid[::-1, :], rtol=1e-6)
         np.testing.assert_allclose(grid, grid[:, ::-1], rtol=1e-6)
 
