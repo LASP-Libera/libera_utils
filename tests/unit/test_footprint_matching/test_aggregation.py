@@ -176,9 +176,11 @@ class TestWeightedLogMean:
         """
         specs = with_standard_deviation_companions(
             (
-                VariableSpec(name="a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
                 VariableSpec(
-                    name="b", dtype="float32", aggregation="weighted_log_mean", required_mode=OperationalMode.CAM
+                    name="a", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM})
+                ),
+                VariableSpec(
+                    name="b", dtype="float32", aggregation="weighted_log_mean", modes=frozenset({OperationalMode.CAM})
                 ),
             )
         )
@@ -454,15 +456,17 @@ class _ParityReader:
 
     __name__ = "_ParityReader"
     VARIABLES = (
-        VariableSpec(name="field_a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
         VariableSpec(
-            name="field_b", dtype="float32", aggregation="weighted_log_mean", required_mode=OperationalMode.CAM
+            name="field_a", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM})
+        ),
+        VariableSpec(
+            name="field_b", dtype="float32", aggregation="weighted_log_mean", modes=frozenset({OperationalMode.CAM})
         ),
         VariableSpec(
             name="surface",
             dtype="int16",
             aggregation="weighted_mode",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset({OperationalMode.CAM}),
             n_categories=5,
         ),
     )
@@ -471,21 +475,21 @@ class _ParityReader:
             name="surface_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset({OperationalMode.CAM}),
             n_categories=5,
         ),
         VariableSpec(
             name="surface_secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset({OperationalMode.CAM}),
             n_categories=5,
         ),
         VariableSpec(
             name="surface_tertiary",
             dtype="int16",
             aggregation="weighted_mode_tertiary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset({OperationalMode.CAM}),
             n_categories=5,
         ),
     )
@@ -655,7 +659,9 @@ class _CloudFractionReader:
 
     __name__ = "_CloudFractionReader"
     VARIABLES = (
-        VariableSpec(name="cloud", dtype="float32", aggregation="coverage_fraction", required_mode=OperationalMode.CAM),
+        VariableSpec(
+            name="cloud", dtype="float32", aggregation="coverage_fraction", modes=frozenset({OperationalMode.CAM})
+        ),
     )
 
     @classmethod
@@ -668,14 +674,16 @@ class _UnmappableReader:
 
     __name__ = "_UnmappableReader"
     VARIABLES = (
-        VariableSpec(name="field_a", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM),
+        VariableSpec(
+            name="field_a", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM})
+        ),
     )
 
     @classmethod
     def product_variable_specs(cls) -> tuple[VariableSpec, ...]:
         return cls.VARIABLES + (
             VariableSpec(
-                name="other_thing", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM
+                name="other_thing", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM})
             ),
         )
 
@@ -685,7 +693,7 @@ class _NonScalarReader:
 
     __name__ = "_NonScalarReader"
     VARIABLES = (
-        VariableSpec(name="field_a", dtype="float32", aggregation="report_all", required_mode=OperationalMode.CAM),
+        VariableSpec(name="field_a", dtype="float32", aggregation="report_all", modes=frozenset({OperationalMode.CAM})),
     )
 
     @classmethod
