@@ -9,8 +9,9 @@ reader its whole indexed body of data, a stepped reader the one hourly step
 nearest the current footprint, a pass reader the hourly granules within
 ``MAX_TIME_OFFSET`` of the current footprint), and every query is answered from that.
 
-A reader that cannot read its source raises, and the run stops: a product with a
-source silently missing would be wrong, and a crash gets noticed.
+A reader that cannot read its source raises from the first query that loads the
+granule, and the run stops: a product with a source silently missing would be wrong,
+and a crash gets noticed.
 """
 
 from __future__ import annotations
@@ -99,26 +100,33 @@ class AncillarySources:
         TypeError
             Propagated from the reader; see
             :meth:`~libera_utils.footprint_matching.readers.base.AncillaryReader.samples_in`.
+        OSError
+            If a staged granule is missing (``FileNotFoundError``) or cannot be opened,
+            raised by the first query that loads it rather than at construction. A reader
+            whose I/O library has its own error raises that instead, such as
+            ``pyhdf.error.HDF4Error`` from the HDF4 readers (IGBP, NISE).
         """
         return self.reader(source).samples_in(bbox, time)
 
 
-def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[Path] | Path]) -> AncillarySources:
+def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[Path]]) -> AncillarySources:
     """Instantiate the readers active for ``mode`` over their staged granules.
 
     Selects the active reader classes via
     :meth:`ReaderRegistry.get_readers_for_mode`, instantiates each with the granule
-    path(s) supplied in ``source_file_paths``, and wraps them in an
+    paths supplied in ``source_file_paths``, and wraps them in an
     :class:`AncillarySources`. This is the single construction helper the product code
-    calls so the reader wiring lives in one place.
+    calls so the reader wiring lives in one place. Construction checks only the
+    mapping; it opens no granule, so a missing or unreadable staged file raises from
+    the first :meth:`AncillarySources.query` that loads it.
 
     Parameters
     ----------
     mode : OperationalMode
         Operational mode whose active readers should be built.
-    source_file_paths : dict[str, Sequence[Path] | Path]
-        Mapping of reader registry key to the staged local granule(s) for that source.
-        Must contain an entry for every reader active in ``mode``.
+    source_file_paths : dict[str, Sequence[Path]]
+        Mapping of reader registry key to the staged local granules for that source.
+        Its keys must be exactly the readers active in ``mode``.
 
     Returns
     -------
@@ -127,11 +135,18 @@ def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[P
     Raises
     ------
     KeyError
-        If ``source_file_paths`` is missing an entry for any active reader.
+        If ``source_file_paths`` holds a key for a source ``mode`` does not use, or is
+        missing an entry for any active reader.
     ValueError
         If an entry holds no granule.
     """
     reader_classes = ReaderRegistry.get_readers_for_mode(mode)
+    unexpected = sorted(set(source_file_paths) - set(reader_classes))
+    if unexpected:
+        raise KeyError(
+            f"source_file_paths has keys {unexpected} that mode {mode.value!r} does not use. "
+            f"Remove them, or correct a misspelled key; required sources: {sorted(reader_classes)}"
+        )
     readers: dict[str, AncillaryReader] = {}
     for key, reader_cls in reader_classes.items():
         if key not in source_file_paths:
