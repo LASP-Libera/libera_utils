@@ -384,9 +384,11 @@ class TestReadersForMode:
 
     @pytest.mark.parametrize("mode", [OperationalMode.CAM, OperationalMode.CAM_CAMTIME])
     def test_camera_modes_exclude_the_climate_quality_readers(self, mode):
-        """The CAM products take none of the AOD, SSF, CLDPIX or ERA5 pressure-level readers.
+        """``FMATCH_MODE_READERS`` gives the CAM products none of the AOD, SSF, CLDPIX or ERA5 pressure-level readers.
 
-        Those sources are climate-quality inputs written only to the FMATCH-IMAGER products.
+        Those sources are inputs to the Climate Quality FMATCH-IMAGER products only. The CAM products run at
+        near-real-time latency from mission start; a ``modes`` entry that named a CAM product by mistake would add
+        these variables to products whose definitions do not declare them.
 
         Parametrized over the two CAM modes; asserts none of the four keys is in the mode's set.
         """
@@ -395,7 +397,9 @@ class TestReadersForMode:
     def test_era5_pressure_levels_are_radiometer_timescale_only(self):
         """``era5_pressure`` contributes to FMATCH-IMAGER but not to FMATCH-IMAGER-CAMTIME.
 
-        The ERA5 pressure-level fields are a radiometer-timescale quantity, so the camera-timescale product omits them.
+        The ERA5 pressure-level fields are a radiometer-timescale quantity, so the camera-timescale product omits them;
+        this is the one reader that tells the two Climate Quality products apart, so it is the case most likely to be
+        mis-declared.
 
         Asserts the key is in the IMAGER set and absent from the IMAGER_CAMTIME set.
         """
@@ -433,7 +437,9 @@ class TestReadersForMode:
     def test_derive_puts_a_reader_in_exactly_the_modes_its_specs_name(self, monkeypatch):
         """``_derive_mode_readers`` adds a reader to exactly the products its variables name.
 
-        This is the rule the table is built by: a reader contributes to a product when any of its variables names it.
+        A reader contributes to a product when any of its variables names it. A derivation that added a reader to
+        more products than its variables name would run it for products that carry none of its variables. A stub
+        with a single mode tests that rule directly, independent of how the built-in readers happen to be declared.
 
         Copies the registry with ``monkeypatch``, defines a stub whose one variable names FMATCH-CAM, and asserts the
         derived table lists the stub under CAM and under no other mode.

@@ -618,14 +618,15 @@ class TestNearestPass:
         )
 
     def test_pass_in_the_padding_only_does_not_win(self):
-        """A pass that only clips the padding does not displace a pass that covers the footprint's own box.
+        """A ``NEAREST_PASS`` reader picks its pass from samples in the footprint's box, not from the padding around it.
 
         The padding exists so a sample whose cell overlaps the box is served, but its PSF weight is zero; choosing the
         nearest pass from padding samples would serve a pass that contributes nothing and drop one that covers the
         footprint completely.
 
-        Two padding-only samples 5 minutes from the query and three in-box samples 60 minutes away; asserts the three
-        in-box samples are served and the two padding samples are not.
+        Builds a 44 km-spaced reader with two samples 5 minutes from the query in the padding only (11.1 N) and three
+        samples 60 minutes away inside the 10..11 N box; asserts the three in-box samples are served and the two
+        padding samples are not.
         """
         reader = _HeldPassReader(self._padding_and_box_passes(include_box_pass=True))
         samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
@@ -633,12 +634,13 @@ class TestNearestPass:
         assert set(samples.values[0].tolist()) == {2.0}
 
     def test_padding_pass_is_served_when_none_is_inside_the_box(self):
-        """With no sample inside the footprint's own box, the nearest pass is chosen from the padding samples.
+        """A ``NEAREST_PASS`` reader falls back to the padding samples when none lies in the footprint's own box.
 
         A footprint smaller than one native cell can hold no sample center; choosing only from samples inside the box
         would leave it with no match although a cell covers it.
 
-        Only the two padding-only samples exist; asserts both are served.
+        Builds the same reader with only the two padding samples (11.1 N, outside the 10..11 N box) and asserts both
+        are served.
         """
         reader = _HeldPassReader(self._padding_and_box_passes(include_box_pass=False))
         samples = reader.samples_in(BoundingBox(10.0, 11.0, 20.0, 21.0), _T0)
