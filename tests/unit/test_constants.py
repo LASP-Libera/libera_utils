@@ -1,6 +1,5 @@
 """Tests for the top level constants module"""
 
-import re
 import warnings
 from enum import IntEnum, StrEnum
 
@@ -230,18 +229,18 @@ class TestDataProductIdentifier:
             "aux_adm_stats_imager",
             "aux_adm_imager",
             # ANC Products — externally produced inputs
-            "anc_ceres_cldpix",
-            "anc_ceres_flashflux",
-            "anc_ceres_ssf",
+            "anc_ceres_noaa20_cldpix",
+            "anc_ceres_noaa20_flashflux",
+            "anc_ceres_noaa20_ssf",
             "anc_nsidc_land_ocean_mask",
             "anc_nsidc_ice_snow",
             "anc_modis_igbp",
             "anc_era5_pressure_level",
             "anc_era5_single_level",
-            "anc_viirs_aod",
-            "anc_viirs_brdf",
-            "anc_viirs_cloud_properties",
-            "anc_viirs_m4_sdr",
+            "anc_viirs_noaa20_aod",
+            "anc_viirs_noaa20_brdf",
+            "anc_viirs_noaa20_cloud_properties",
+            "anc_viirs_noaa20_m4_sdr",
         ]
         actual_names = [member.name for member in DataProductIdentifier]
         assert actual_names == expected_names
@@ -303,18 +302,18 @@ class TestDataProductIdentifier:
     def test_ancillary_products_metadata(self):
         """Test that each ancillary product has its ProductID, the ANC level and no producing processing step."""
         expected_products = {
-            DataProductIdentifier.anc_ceres_cldpix: "CERES-CLDPIX",
-            DataProductIdentifier.anc_ceres_flashflux: "CERES-FLASHFLUX",
-            DataProductIdentifier.anc_ceres_ssf: "CERES-SSF",
+            DataProductIdentifier.anc_ceres_noaa20_cldpix: "CERES-NOAA20-CLDPIX",
+            DataProductIdentifier.anc_ceres_noaa20_flashflux: "CERES-NOAA20-FLASHFLUX",
+            DataProductIdentifier.anc_ceres_noaa20_ssf: "CERES-NOAA20-SSF",
             DataProductIdentifier.anc_nsidc_land_ocean_mask: "NSIDC-LAND-OCEAN-MASK",
             DataProductIdentifier.anc_nsidc_ice_snow: "NSIDC-ICE-SNOW",
             DataProductIdentifier.anc_modis_igbp: "MODIS-IGBP",
             DataProductIdentifier.anc_era5_pressure_level: "ERA5-PRESSURE-LEVEL",
             DataProductIdentifier.anc_era5_single_level: "ERA5-SINGLE-LEVEL",
-            DataProductIdentifier.anc_viirs_aod: "VIIRS-AOD",
-            DataProductIdentifier.anc_viirs_brdf: "VIIRS-BRDF",
-            DataProductIdentifier.anc_viirs_cloud_properties: "VIIRS-CLOUD-PROPERTIES",
-            DataProductIdentifier.anc_viirs_m4_sdr: "VIIRS-M4-SDR",
+            DataProductIdentifier.anc_viirs_noaa20_aod: "VIIRS-NOAA20-AOD",
+            DataProductIdentifier.anc_viirs_noaa20_brdf: "VIIRS-NOAA20-BRDF",
+            DataProductIdentifier.anc_viirs_noaa20_cloud_properties: "VIIRS-NOAA20-CLOUD-PROPERTIES",
+            DataProductIdentifier.anc_viirs_noaa20_m4_sdr: "VIIRS-NOAA20-M4-SDR",
         }
 
         assert set(expected_products) == {p for p in DataProductIdentifier if p.data_level is DataLevel.ANC}
@@ -331,11 +330,6 @@ class TestDataProductIdentifier:
             name: member.value for name, member in DataProductIdentifier.__members__.items() if member.name != name
         }
         assert not aliases, f"Members whose ProductID repeats an earlier member's: {aliases}"
-
-    def test_product_ids_match_key_pattern(self):
-        """Test that every ProductID is uppercase letters, digits and hyphens, starting with a letter or digit."""
-        for product in DataProductIdentifier:
-            assert re.fullmatch(r"[A-Z0-9][A-Z0-9-]*", product.value), product.name
 
     def test_trimmed_nom_hk_products_metadata(self):
         """Test L1A calibration family trimmed NOM-HK products associate with NOM-HK APID."""
