@@ -76,13 +76,13 @@ _FLASHFLUX_EXTENDED = (
         )
         for layer in ("lower", "upper")
     ),
-    _log_mean("cloud_optical_depth_upper", _ONLY_IMAGER),
+    _mean("cloud_optical_depth_upper", _ONLY_IMAGER),
     _mean("cloud_water_particle_radius_upper", _ONLY_IMAGER),
     _mean("cloud_ice_particle_radius_upper", _ONLY_IMAGER),
-    _log_mean("match_aot", _ONLY_IMAGER),
+    _mean("match_aot", _ONLY_IMAGER),
     *(_mean(f"aerosol_type_percentage_type{i}", _ONLY_IMAGER) for i in range(7)),
-    _log_mean("imager_dark_target_land_055um_corrected_aerosol_optical_depth", _ONLY_IMAGER),
-    _log_mean("imager_deep_blue_ocean_055um_aerosol_optical_depth", _ONLY_IMAGER),
+    _mean("imager_dark_target_land_055um_corrected_aerosol_optical_depth", _ONLY_IMAGER),
+    _mean("imager_deep_blue_ocean_055um_aerosol_optical_depth", _ONLY_IMAGER),
     _mean("surface_albedo", _ONLY_IMAGER),
     _mean("toa_incoming_solar_radiation", _ONLY_IMAGER),
 )
@@ -148,7 +148,7 @@ _DECLARED = [
         None,
         None,
         (
-            _log_mean("aod_550", _IMAGER_PAIR),
+            _mean("aod_550", _IMAGER_PAIR),
             _code("aerosol_type", 8, _IMAGER_PAIR),
         ),
         _ranked("aerosol_type", 8, _IMAGER_PAIR),
@@ -176,7 +176,7 @@ _DECLARED = [
         TimeMatch.DAILY,
         None,
         None,
-        (_log_mean("cloud_optical_thickness", _ALL), _mean("cloud_top_pressure", _ALL)),
+        (_mean("cloud_optical_thickness", _ALL), _mean("cloud_top_pressure", _ALL)),
         (),
     ),
     (
@@ -188,9 +188,9 @@ _DECLARED = [
         _PASS_WINDOW,
         _PASS_MAX_OFFSET,
         (
-            _log_mean("aerosol_optical_depth", _FLASHFLUX_BASE),
+            _mean("aerosol_optical_depth", _FLASHFLUX_BASE),
             _mean("clear_coverage", _FLASHFLUX_BASE),
-            _log_mean("cloud_optical_depth_lower", _FLASHFLUX_BASE),
+            _mean("cloud_optical_depth_lower", _FLASHFLUX_BASE),
             _mean("cloud_water_particle_radius_lower", _FLASHFLUX_BASE),
             _mean("cloud_ice_particle_radius_lower", _FLASHFLUX_BASE),
             _code("cloud_classification", None, _FLASHFLUX_BASE),

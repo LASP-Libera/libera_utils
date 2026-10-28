@@ -48,8 +48,11 @@ from libera_utils.io.netcdf import field_fill_value
 
 # Each output variable, the (group, variable) it reads in the CLDPROP_D3 NetCDF4 file,
 # and its aggregation. This order is VARIABLES order and axis 0 of the reader's data array.
+# Cloud_Optical_Thickness_Combined/Mean is each cell's linear mean optical thickness (the
+# product carries its log statistics separately, as Cloud_Optical_Thickness_Log_Combined;
+# L3 CLDPROP User Guide v2.1, p. 60), so cells combine with the arithmetic mean.
 _D3_FIELDS: tuple[tuple[str, str, str, str], ...] = (
-    ("cloud_optical_thickness", "Cloud_Optical_Thickness_Combined", "Mean", "weighted_log_mean"),
+    ("cloud_optical_thickness", "Cloud_Optical_Thickness_Combined", "Mean", "weighted_mean"),
     ("cloud_top_pressure", "Cloud_Top_Pressure", "Mean", "weighted_mean"),
 )
 

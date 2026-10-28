@@ -27,9 +27,17 @@ CERES heritage
 --------------
 The weighted statistics implement CERES ATBD v2.2 Eq. 4.4-17
 ``xbar = sum(w*x) / sum(w)`` and its companions. The cloud-path strategies follow
-CERES SSF conventions (geometric mean for optical depth, cloud-conditional means,
-overcast fraction). See
+CERES SSF conventions (log-space averaging of pixel cloud optical depth,
+cloud-conditional means, overcast fraction). See
 https://ceres.larc.nasa.gov/documents/ATBD/pdf/r2_2/ceres-atbd2.2-s4.4.pdf
+
+Optical depth is averaged in log space only where the samples are imager pixels, as
+CERES does when it convolves pixels into a footprint (see :func:`weighted_log_mean`).
+An optical depth a source has already averaged over its own footprint or grid cell,
+and every aerosol optical depth, is combined with the arithmetic mean: CERES takes "an
+arithmetic mean ... of all imager pixels in the angular bin before they are weighted
+by the PSF" for aerosol optical depth (SSF-137, CERES SSF Collection Guide, Release 2,
+p. 101, https://ceres.larc.nasa.gov/documents/collect_guide/pdf/SSF_CG_R2V1.pdf).
 """
 
 from __future__ import annotations
@@ -249,13 +257,21 @@ def weighted_std(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str,
 
 
 def weighted_log_mean(values: np.ndarray, weights: np.ndarray, **_: Any) -> dict[str, float]:
-    """PSF-weighted geometric mean ``exp(sum(w*ln x)/sum(w))`` (CERES SSF convention).
+    """PSF-weighted geometric mean ``exp(sum(w*ln x)/sum(w))``.
 
-    Used for optical depths, where the distribution is closer to log-normal so a
-    geometric mean is the physically meaningful average. Only strictly positive
-    values contribute -- ``ln`` is undefined at and below zero -- so those samples are
-    dropped in addition to the usual NaN exclusion. Its ``_standard_deviation``
-    companion is :func:`weighted_positive_std`, over the same positive samples.
+    Used for pixel-level cloud optical depth, which CERES averages in log space:
+    "Cloud optical depth is averaged in logarithm form, since the logarithm of the
+    cloud optical depth is proportional to the visible radiance" (CERES FluxByCldTyp
+    Ed4A Data Quality Summary, p. 9,
+    https://ceres.larc.nasa.gov/documents/DQ_summaries/CERES_FluxByCldTyp_Ed4A_DQS.pdf),
+    and the SSF records the PSF-weighted mean of the natural logarithms of the pixels'
+    visible optical depth (SSF-85, CERES SSF Collection Guide, Release 2, p. 76,
+    https://ceres.larc.nasa.gov/documents/collect_guide/pdf/SSF_CG_R2V1.pdf). This
+    strategy returns the exponential of that mean, so the value stays in optical-depth
+    units. Only strictly positive values contribute -- ``ln`` is undefined at and
+    below zero -- so those samples are dropped in addition to the usual NaN exclusion.
+    Its ``_standard_deviation`` companion is :func:`weighted_positive_std`, over the
+    same positive samples.
     """
     return _log_mean_from_partials(_prepare(values, weights))
 

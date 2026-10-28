@@ -154,13 +154,20 @@ _FLASHFLUX_BASE_MODES: frozenset[OperationalMode] = frozenset(
     {OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME}
 )
 
+# Each FLASHFlux optical depth is already a linear mean over its CERES footprint, so FMATCH combines
+# footprints with the arithmetic mean: cloud_optical_depth_mean ("Mean visible optical depth for
+# cloud layer") is SSF-83, the PSF-weighted mean of the pixels' optical depths, and
+# aerosol optical depth is "an arithmetic mean ... of all imager pixels in the angular bin before
+# they are weighted by the PSF" (SSF-137). CERES SSF Collection Guide, Release 2, pp. 75 and 101,
+# https://ceres.larc.nasa.gov/documents/collect_guide/pdf/SSF_CG_R2V1.pdf.
+
 # The base FLASHFlux fields (see module docstring).
 _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
     _FlashFluxField(
         "aerosol_optical_depth",
         "Auxillary_Properties",
         "aerosol_optical_depth",
-        "weighted_log_mean",
+        "weighted_mean",
         _FOOTPRINT_DIMS,
         None,
         None,
@@ -180,7 +187,7 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
         "cloud_optical_depth_lower",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
-        "weighted_log_mean",
+        "weighted_mean",
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
@@ -322,7 +329,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         "cloud_optical_depth",
         "Cloudy_Imager_Footprint_Layer",
         "cloud_optical_depth_mean",
-        "weighted_log_mean",
+        "weighted_mean",
         _LAYER_DIMS,
         _UPPER_LAYER_ONLY,
     ),
@@ -343,7 +350,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         _UPPER_LAYER_ONLY,
     ),
     # --- Aerosol fields ---
-    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_log_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
+    ("match_aot", "Assimilated_Aerosol_Properties", "match_aot", "weighted_mean", _FOOTPRINT_DIMS, _SCALAR_MEMBER),
     # aerosol_type_percentage is (Footprints, AeroTypePct=7). The seven type labels are
     # not recorded in the file; flattened to placeholder _type0.._type6 suffixes.
     (
@@ -358,7 +365,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
         "Imager_Land_Aerosols",
         "imager_dark_target_land_055um_corrected_aerosol_optical_depth",
-        "weighted_log_mean",
+        "weighted_mean",
         _FOOTPRINT_DIMS,
         _SCALAR_MEMBER,
     ),
@@ -366,7 +373,7 @@ _IMAGER_FLASHFLUX_SOURCES: tuple[
         "imager_deep_blue_ocean_055um_aerosol_optical_depth",
         "Imager_Ocean_Aerosols",
         "imager_deep_blue_ocean_055um_aerosol_optical_depth",
-        "weighted_log_mean",
+        "weighted_mean",
         _FOOTPRINT_DIMS,
         _SCALAR_MEMBER,
     ),
