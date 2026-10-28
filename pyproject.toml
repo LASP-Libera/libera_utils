@@ -1,6 +1,6 @@
 [project]
 name = "libera_utils"
-version = "5.12.0"
+version = "5.14.0"
 description = "Utility package for Libera Science Data Processing and the Libera Science Data Center. Copyright 2022 University of Colorado."
 authors = [  # Alphabetical
     { name = "Stephane Beland" },
@@ -43,8 +43,7 @@ dependencies = [
     "cloudpathlib[s3]>=0.14.0,<1.0",
     "dask[distributed]>=2026.1.1",  # Worker-compressed product writes run on a dask.distributed Client
     "lasp-curryer >= 0.5.2, <1.0",
-    "h5netcdf>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray
-    "h5py>=3.0,<4.0",  # Imported directly by io/netcdf.py for worker-compressed writes; h5netcdf also requires it
+    "h5netcdf[h5py]>=1.0.0,<2.0.0",  # h5netcdf engine support for xarray; h5py comes only with the extra
     "netCDF4>=1.7.0,<2.0.0,!=1.7.3",  # netcdf4 engine support for xarray
     "numpy>=1.21",  # Numpy 2.0 is up for release very soon
     "pydantic>2.0.3",
@@ -61,8 +60,17 @@ dependencies = [
     "python-ulid>=2.4.0,<3",
     "pyyaml>=6.0.2,<7",
     "pandas (>=2.3.2,<3.0.0)",
-    # pyproj — WGS84 geodesic distances (pyproj.Geod) in footprint_matching.geometry. https://pyproj4.github.io/pyproj/stable/
+    # IMPORTANT: pyhdf requires the HDF4 C library (libhdf4-dev) to be installed on the system before
+    # pip/poetry can build its wheel when no prebuilt wheel is available for the target interpreter.
+    # On Debian/Ubuntu: ``sudo apt-get install libhdf4-dev``. conda-forge provides a bundled binary:
+    # ``conda install -c conda-forge pyhdf``. h5py and pyproj ship manylinux wheels (no system lib).
+    #   pyproj  — WGS84 geodesic distances (pyproj.Geod) in footprint_matching.geometry, and
+    #             NISEReader EASE-Grid North (EPSG:3408) → lat/lon reprojection.   https://pyproj4.github.io/pyproj/stable/
+    #   pyhdf   — IGBPReader / NISEReader HDF4 / HDF-EOS reads.                     https://fhs.github.io/pyhdf/
+    #   h5py    — VIIRSBRDFReader HDF5 / HDF-EOS5 (VJ143C1) reads.                  https://docs.h5py.org/en/stable/
     "pyproj>=3.0.0",
+    "pyhdf>=0.11.0",
+    "h5py>=3.0.0",
 ]
 
 [project.urls]
@@ -91,7 +99,7 @@ memory-profiler = "*"
 moto = {extras = ["s3"], version = "*"}
 pre-commit = "*"
 psutil = "*"  # Speeds up memory-profiler
-pillow-jpls = "*"
+pyjpegls = "*"
 pytest-cov = "*"
 pytest-profiling = "*"
 pytest-randomly = "*"

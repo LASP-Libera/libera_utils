@@ -34,7 +34,7 @@ from libera_utils.config import config
 from libera_utils.constants import DataProductIdentifier
 from libera_utils.io.filenaming import LiberaDataProductFilename
 from libera_utils.io.netcdf import write_libera_data_product
-from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_definition import ALGORITHM_VERSION_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.logutil import configure_task_logging
 from libera_utils.scene_identification import FootprintData
 from libera_utils.scene_identification.scene_id import standard_scene_definitions
@@ -270,8 +270,7 @@ def collect_input_files(input_manifest: Manifest, input_product_id: DataProductI
     """
     input_label = input_product_id.value if input_product_id is not None else "CERES SSF (placeholder)"
     input_file_paths: list[str] = []
-    for file_record in input_manifest.files:
-        filename = file_record.filename
+    for filename in input_manifest.files:
         try:
             libera_filename = LiberaDataProductFilename.from_file_path(filename)
         except Exception:
@@ -390,7 +389,7 @@ def create_and_write_data_product(
             product_dataset = product_dataset.assign_coords({name: (name, index)})
 
     product_dataset.attrs["InputGranules"] = input_file_name
-    product_dataset.attrs["algorithm_version"] = version()
+    product_dataset.attrs[ALGORITHM_VERSION_ATTRIBUTE] = version()
 
     logger.info("Writing %s data product for input %s", config.output_product_id.value, input_file_name)
     output_file_path = write_libera_data_product(

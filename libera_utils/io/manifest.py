@@ -2,17 +2,26 @@
 
 import json
 import logging
-from datetime import UTC, datetime
-from hashlib import md5
+from collections.abc import Iterable
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Union
 
 from cloudpathlib import AnyPath, S3Path
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from ulid import ULID
 
 from libera_utils.constants import ManifestType
-from libera_utils.io.filenaming import AbstractValidFilename, ManifestFilename
+from libera_utils.io.filenaming import ManifestFilename
 from libera_utils.io.smart_open import smart_open
 
 logger = logging.getLogger(__name__)
@@ -24,270 +33,491 @@ class ManifestError(Exception):
     pass
 
 
-_CHECKSUM_BLOCK_BYTES = 16 * 2**20
-
-
-def calculate_checksum(file: str | Path | S3Path) -> str:
-    """Compute the MD5 checksum of the given file, reading it in fixed-size blocks.
-
-    The checksum is taken over the bytes as they are stored on disk. For a ``*.gz`` file that means
-    the compressed bytes, so the value can be compared against the file a data provider delivered.
-    Hence ``enable_gzip=False``: letting smart_open transparently decompress would checksum content
-    that exists nowhere on disk, and would change if the file were ever recompressed at a different
-    level. Memory use is one block regardless of file size, so a product larger than the host's
-    memory can still be checksummed.
-    """
-    digest = md5(usedforsecurity=False)
-    with smart_open(file, "rb", enable_gzip=False) as fh:
-        while block := fh.read(_CHECKSUM_BLOCK_BYTES):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def get_ulid_code(filename: str | Path | S3Path | ManifestFilename | None) -> ULID | None:
-    """Get ULID code from filename."""
-    if not filename:
-        return None
-    if isinstance(filename, ManifestFilename):
-        return filename.filename_parts.ulid_code
-    return AbstractValidFilename.from_file_path(filename).filename_parts.ulid_code
-
-
-class ManifestFileRecord(BaseModel):
-    """Pydantic model for an individual data product file recorded within a manifest file."""
-
-    filename: str = Field(description="Manifest file name")
-    checksum: str = Field(description="Manifest file checksum, calculated if not provided")
+_MANIFEST_NAME_HELP = (
+    "expected LIBERA_INPUT_MANIFEST_<ULID>.json or LIBERA_OUTPUT_MANIFEST_<ULID>.json, where <ULID> is a "
+    "26-character ULID, for example LIBERA_INPUT_MANIFEST_01GDHWG4R0W8KXWY0KRDD6BZTT.json. Manifest.write() "
+    "generates this name when out_path is a directory or S3 prefix, so it need not be given."
+)
 
 
 class Manifest(BaseModel):
-    """Pydantic model for a manifest file."""
+    """Pydantic model for a manifest file.
+
+    Attributes
+    ----------
+    manifest_type : ManifestType
+        INPUT or OUTPUT.
+    files : list of str
+        Absolute local or S3 paths of the files listed in the manifest. May be given as str, Path or S3Path, and are
+        stored as str. Files are never read, so files with identical content are each listed; a path listed twice is
+        a validation error. Only ``add_files`` checks that a file exists.
+    configuration : dict
+        Freeform JSON-compatible configuration items.
+    filename : ManifestFilename or None
+        Path or bare name of the manifest file. Its INPUT/OUTPUT label must match ``manifest_type``. Assignment is
+        validated.
+    ulid_code : ULID or None
+        Read-only ULID that uniquely identifies the manifest, taken from ``filename``. As a constructor argument:
+        without ``filename``, it sets a bare manifest filename carrying this ULID, which ``write()`` uses when
+        ``out_path`` is a directory; with ``filename``, it must match the ULID in it. With neither, ``write()`` takes
+        the ULID from a full manifest path given as ``out_path``, or generates a new one when ``out_path`` is a
+        directory.
+    """
 
     manifest_type: ManifestType = Field(description="Either INPUT or OUTPUT.")
-    files: list[ManifestFileRecord] = Field(default_factory=list, description="List of ManifestFileStructure.")
+    files: list[str] = Field(default_factory=list, description="Absolute paths of the files listed in the manifest.")
     configuration: dict[str, Any] = Field(
         default_factory=dict, description="Freeform json-compatible dictionary of configuration items."
     )
-    filename: ManifestFilename | None = Field(default=None, description="Preset filename, optional.")
-    ulid_code: ULID | None = Field(
-        default_factory=lambda data: get_ulid_code(data.get("filename")), description="ULID code from input filename."
+    filename: ManifestFilename | None = Field(default=None, description="Path or bare name of the manifest file.")
+
+    model_config = ConfigDict(
+        # Allow using ManifestFilename as a field
+        arbitrary_types_allowed=True,
+        validate_assignment=True,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reconcile_ulid_code(cls, data: Any) -> Any:
+        """Fold a ``ulid_code`` input into ``filename``.
+
+        Parameters
+        ----------
+        data : Any
+            Raw model input.
+
+        Returns
+        -------
+        Any
+            The input without ``ulid_code``, with a bare manifest filename added if there was no ``filename``.
+
+        Raises
+        ------
+        ValueError
+            If ``ulid_code`` is not a valid ULID or disagrees with the ULID in ``filename``.
+        """
+        if not isinstance(data, dict) or "ulid_code" not in data:
+            return data
+        data = dict(data)
+        ulid_code = data.pop("ulid_code")
+        if ulid_code is None:
+            return data
+        ulid_code = ULID.from_str(str(ulid_code))
+
+        filename = data.get("filename")
+        if filename is None:
+            if data.get("manifest_type") is not None:
+                data["filename"] = ManifestFilename.from_filename_parts(
+                    manifest_type=ManifestType(data["manifest_type"]), ulid_code=ulid_code
+                )
+            return data
+
+        filename_ulid = cls.transform_filename(filename).filename_parts.ulid_code
+        if filename_ulid != ulid_code:
+            raise ValueError(f"ulid_code {ulid_code} disagrees with the ULID {filename_ulid} in filename {filename}.")
+        return data
 
     @field_validator("filename", mode="before")  # noqa  avoid type warning
     @classmethod
-    def transform_filename(cls, raw_filename: str | ManifestFilename | None) -> ManifestFilename | None:
-        """Convert raw filename to ManifestFilename class if necessary."""
+    def transform_filename(cls, raw_filename: str | Path | S3Path | ManifestFilename | None) -> ManifestFilename | None:
+        """Convert a raw filename to a ManifestFilename.
+
+        Parameters
+        ----------
+        raw_filename : str, Path, S3Path, ManifestFilename or None
+            Filename to convert.
+
+        Returns
+        -------
+        ManifestFilename or None
+            The converted filename.
+
+        Raises
+        ------
+        ValueError
+            If the filename is not a valid manifest filename.
+        """
         if raw_filename is None:
             return None
         if isinstance(raw_filename, ManifestFilename):
             return raw_filename
         return ManifestFilename(raw_filename)
 
+    # The type-label checks are field validators rather than a model validator because a failed field validator
+    # leaves the previous value in place on assignment, while a failed model validator keeps the new, invalid one.
+    @field_validator("filename")
     @classmethod
-    def check_file_structure(
-        cls, file_structure: ManifestFileRecord, existing_names: set[str], existing_checksums: set[str]
-    ) -> bool:
-        """Check file structure, returning True if it is good."""
-        file = file_structure.filename
-        # S3 paths are always absolute so this is always valid for them
-        if not AnyPath(file).is_absolute():
-            raise ValueError(f"The file path for {file} must be an absolute path.")
-        if file in existing_names:
-            logger.warning(f"Attempting to add {file} to manifest but it is already included.")
-            return False
-        checksum_calculated = file_structure.checksum if file_structure.checksum else calculate_checksum(file)
-        if checksum_calculated in existing_checksums:
-            logger.warning(
-                f"Attempting to add {file} to manifest but another file with the same checksum is already included."
-            )
-            return False
-        return True
-
-    @field_validator("files", mode="before")  # noqa  avoid type warning
-    @classmethod
-    def transform_files(
-        cls, raw_list: list[dict | str | Path | S3Path | ManifestFileRecord] | None
-    ) -> list[ManifestFileRecord]:
-        """Allow for the incoming files list to have varying types.
-        Convert to a standardized list of ManifestFileStructure."""
-        result = []
-        existing_names = set()
-        existing_checksums = set()
-        for raw_file in raw_list or []:
-            if isinstance(raw_file, ManifestFileRecord):
-                file_structure = raw_file
-            elif isinstance(raw_file, dict):
-                file_structure = ManifestFileRecord(
-                    filename=raw_file.get("filename"),
-                    checksum=raw_file.get("checksum") or calculate_checksum(raw_file.get("filename")),
-                )
-            else:
-                file_structure = ManifestFileRecord(
-                    filename=str(AnyPath(raw_file)), checksum=calculate_checksum(raw_file)
-                )
-            if cls.check_file_structure(file_structure, existing_names, existing_checksums):
-                result.append(file_structure)
-                existing_names.add(str(file_structure.filename))
-                existing_checksums.add(file_structure.checksum)
-        return result
-
-    @field_serializer("filename")
-    def serialize_filename(self, filename: str | Path | S3Path | ManifestFilename | None, _info) -> str:
-        """Custom serializer for the manifest filename."""
-        return str(filename)
-
-    model_config = ConfigDict(
-        # Allow using ManifestFilename as a field
-        arbitrary_types_allowed=True
-    )
-
-    @classmethod
-    def from_file(cls, filepath: str | Path | S3Path):
-        """Read a manifest file and return a Manifest object (factory method).
+    def check_filename_type_label(
+        cls, filename: ManifestFilename | None, info: ValidationInfo
+    ) -> ManifestFilename | None:
+        """Reject a filename whose INPUT/OUTPUT label disagrees with ``manifest_type``.
 
         Parameters
         ----------
-        filepath : Union[str, Path, S3Path]
-            Location of manifest file to read.
+        filename : ManifestFilename or None
+            Filename to check.
+        info : pydantic.ValidationInfo
+            Holds the already validated ``manifest_type``.
+
+        Returns
+        -------
+        ManifestFilename or None
+            The unchanged filename.
+
+        Raises
+        ------
+        ValueError
+            If the labels disagree.
+        """
+        manifest_type = info.data.get("manifest_type")
+        if (
+            filename is not None
+            and manifest_type is not None
+            and filename.filename_parts.manifest_type != manifest_type
+        ):
+            raise ValueError(f"Manifest filename {filename} is not named as a {manifest_type} manifest.")
+        return filename
+
+    @field_validator("manifest_type")
+    @classmethod
+    def check_manifest_type_label(cls, manifest_type: ManifestType, info: ValidationInfo) -> ManifestType:
+        """Reject assigning a ``manifest_type`` that disagrees with the label of the current filename.
+
+        Parameters
+        ----------
+        manifest_type : ManifestType
+            Manifest type to check.
+        info : pydantic.ValidationInfo
+            Holds the current ``filename`` on assignment.
+
+        Returns
+        -------
+        ManifestType
+            The unchanged manifest type.
+
+        Raises
+        ------
+        ValueError
+            If the labels disagree.
+        """
+        filename = info.data.get("filename")
+        if filename is not None and filename.filename_parts.manifest_type != manifest_type:
+            raise ValueError(f"Manifest filename {filename} is not named as a {manifest_type} manifest.")
+        return manifest_type
+
+    @classmethod
+    def _normalize_files(cls, raw_files: Iterable[str | Path | S3Path], existing_names: set[str]) -> list[str]:
+        """Convert paths to absolute path strings, rejecting any path listed twice.
+
+        Files are not opened or checked for existence.
+
+        Parameters
+        ----------
+        raw_files : collections.abc.Iterable[str | pathlib.Path | cloudpathlib.S3Path]
+            Absolute local or S3 paths of the files.
+        existing_names : set of str
+            Paths already listed in the manifest.
+
+        Returns
+        -------
+        list of str
+            The paths as strings, in order.
+
+        Raises
+        ------
+        ValueError
+            If an entry is not a path, a path is not absolute, or a path is already listed or appears twice.
+        """
+        result = []
+        seen = set(existing_names)
+        for raw_file in raw_files:
+            if not isinstance(raw_file, str | Path | S3Path):
+                raise ValueError(
+                    f"Manifest file entry {raw_file!r} is not a path. A manifest lists each file as an absolute local "
+                    'or S3 path string, for example "s3://bucket/LIBERA_L1B_RAD-4CH_...nc".'
+                )
+            file = str(AnyPath(raw_file))
+            # S3 paths are always absolute so this is always valid for them
+            if not AnyPath(file).is_absolute():
+                raise ValueError(f"The file path for {file} must be an absolute path.")
+            if file in seen:
+                raise ValueError(
+                    f"The file {file} is already listed in the manifest. A manifest lists each file once; remove the "
+                    "repeated path."
+                )
+            result.append(file)
+            seen.add(file)
+        return result
+
+    @field_validator("files", mode="before")  # noqa  avoid type warning
+    @classmethod
+    def transform_files(cls, raw_list: list[str | Path | S3Path] | None) -> list[str]:
+        """Convert the incoming paths to absolute path strings.
+
+        Files are not opened or checked for existence.
+
+        Parameters
+        ----------
+        raw_list : list of str, Path or S3Path, or None
+            Absolute local or S3 paths of the files.
+
+        Returns
+        -------
+        list of str
+            The paths as strings.
+
+        Raises
+        ------
+        ValueError
+            If an entry is not a path, a path is not absolute, or a path appears twice.
+        """
+        return cls._normalize_files(raw_list or [], set())
+
+    @computed_field
+    @property
+    def ulid_code(self) -> ULID | None:
+        """ULID from ``filename``, or None if there is no filename."""
+        return None if self.filename is None else self.filename.filename_parts.ulid_code
+
+    @field_serializer("filename")
+    def serialize_filename(self, filename: ManifestFilename | None, _info) -> str | None:
+        """Serialize the filename as a string, or None.
+
+        Parameters
+        ----------
+        filename : ManifestFilename or None
+            Filename to serialize.
+        _info : pydantic.SerializationInfo
+            Unused.
+
+        Returns
+        -------
+        str or None
+            The filename's path as a string.
+        """
+        return None if filename is None else str(filename)
+
+    @classmethod
+    def from_file(cls, filepath: str | Path | S3Path | ManifestFilename) -> "Manifest":
+        """Read a manifest file.
+
+        Parameters
+        ----------
+        filepath : str, Path, S3Path or ManifestFilename
+            Local or S3 path of the manifest file.
 
         Returns
         -------
         Manifest
-            Pydantic model built from the json of the given manifest file.
+            The manifest, with ``filename`` set to ``filepath``.
+
+        Raises
+        ------
+        ManifestError
+            If the path is not a valid manifest filename, or the filename or ULID stored in the file disagrees with
+            the ULID in the path.
+        pydantic_core.ValidationError
+            If the contents are not a valid manifest, or their manifest_type disagrees with the INPUT/OUTPUT label in
+            the path.
         """
-        with smart_open(filepath) as manifest_file:
+        try:
+            filename = filepath if isinstance(filepath, ManifestFilename) else ManifestFilename(filepath)
+        except ValueError as err:
+            raise ManifestError(
+                f"Manifest file {filepath} does not have a valid manifest filename; {_MANIFEST_NAME_HELP}"
+            ) from err
+
+        with smart_open(filename.path) as manifest_file:
             contents = json.loads(manifest_file.read())
-        contents["filename"] = filepath if isinstance(filepath, ManifestFilename) else ManifestFilename(filepath)
-        contents["ulid_code"] = get_ulid_code(filepath)
-        return Manifest.model_validate(contents)
 
-    def add_files(self, *files: str | Path | S3Path):
-        """Add files to the manifest from filename
-
-        Parameters
-        ----------
-        files : Union[str, Path, S3Path]
-            Path to the file to add to the manifest.
-
-        Returns
-        -------
-        None
-        """
-        # get existing files and checksums as sets to check for duplicates
-        existing_names = set()
-        existing_checksums = set()
-        for f in self.files:
-            existing_names.add(f.filename)
-            existing_checksums.add(f.checksum)
-
-        for file in files:
-            checksum_calculated = calculate_checksum(file) if AnyPath(file).exists() else None
-            file_structure = ManifestFileRecord(filename=str(file), checksum=checksum_calculated)
-            if self.check_file_structure(file_structure, existing_names, existing_checksums):
-                self.files.append(file_structure)
-                existing_names.add(str(file_structure.filename))
-                existing_checksums.add(file_structure.checksum)
-
-    def validate_checksums(self) -> None:
-        """Validate checksums of listed files"""
-        failed_filenames = []
-        for file_structure in self.files:
-            checksum_expected = file_structure.checksum
-            filename = file_structure.filename
-            checksum_calculated = calculate_checksum(filename)
-            if checksum_expected != checksum_calculated:
-                logger.error(
-                    f"Checksum validation for {filename} failed. "
-                    f"Expected {checksum_expected} but got {checksum_calculated}."
+        path_ulid = filename.filename_parts.ulid_code
+        stored_ulid = contents.pop("ulid_code", None)
+        stored_filename = contents.pop("filename", None)
+        if stored_ulid is not None and str(stored_ulid) != str(path_ulid):
+            raise ManifestError(
+                f"Manifest file {filepath} stores ulid_code {stored_ulid}, which disagrees with its name."
+            )
+        if stored_filename is not None:
+            try:
+                stored_filename_ulid = ManifestFilename(stored_filename).filename_parts.ulid_code
+            except ValueError:
+                stored_filename_ulid = None
+            if stored_filename_ulid is not None and stored_filename_ulid != path_ulid:
+                raise ManifestError(
+                    f"Manifest file {filepath} stores filename {stored_filename}, whose ULID disagrees with its name."
                 )
-                failed_filenames.append(str(filename))
-        if failed_filenames:
-            raise ValueError(f"Files failed checksum validation: {', '.join(failed_filenames)}")
 
-    def _generate_filename(self) -> ManifestFilename:
-        """Generate a valid manifest filename"""
-        mfn = ManifestFilename.from_filename_parts(
-            manifest_type=self.manifest_type, ulid_code=ULID.from_datetime(datetime.now(UTC))
-        )
-        return mfn
+        contents["filename"] = filename
+        return cls.model_validate(contents)
 
-    def write(self, out_path: str | Path | S3Path, filename: str = None) -> Path | S3Path:
-        """Write a manifest file from a Manifest object (self).
+    def add_files(self, *files: str | Path | S3Path) -> None:
+        """Add files to the manifest after checking that each one exists.
+
+        Files are not read, so an S3 file is not downloaded and a file larger than local disk can be listed.
 
         Parameters
         ----------
-        out_path : Union[str, Path, S3Path]
-            Directory path to write to (directory being used loosely to refer also to an S3 bucket path).
-        filename : str, Optional
-            must be a valid manifest filename.
-            If not provided, the method uses the objects internal filename attribute. If that is
-            not set, then a filename is automatically generated.
+        *files : str, Path or S3Path
+            Absolute local or S3 paths of the files to add.
+
+        Raises
+        ------
+        FileNotFoundError
+            If a file cannot be found. No file is added.
+        ValueError
+            If a path is not absolute, or is already listed or given twice. No file is added.
+        """
+        # Every path is checked before any existence check, so a relative or repeated path is reported as such,
+        # not as missing, and costs no request to S3
+        new_files = self._normalize_files(files, set(self.files))
+        for file in new_files:
+            if not AnyPath(file).exists():
+                raise FileNotFoundError(
+                    f"File {file} cannot be found. A file must exist when it is added to a manifest; check the path "
+                    "and that the file has been written."
+                )
+        # Extended in place: the new paths are already validated against the list, so assignment would only repeat it
+        self.files.extend(new_files)
+
+    def write(self, out_path: str | Path | S3Path | ManifestFilename, *, overwrite: bool = False) -> Path | S3Path:
+        """Write the manifest to a file and set ``filename`` to the path written.
+
+        Parameters
+        ----------
+        out_path : str, Path, S3Path or ManifestFilename
+            Full path of the manifest file, or a directory or S3 prefix to write into under the name in
+            ``filename`` (or a generated name with a new ULID). A path whose last component has an extension is
+            taken as a file name and must be a valid manifest filename, so a directory such as ``/data/v1.2`` is
+            refused; give the full manifest file path inside it instead. An S3 bucket root is always a prefix, even
+            when the bucket name contains a dot.
+        overwrite : bool, optional
+            Whether to overwrite an existing file. Default False.
 
         Returns
         -------
-        Union[Path, S3Path]
-            The path where the manifest file is written.
+        Path or S3Path
+            The path written.
+
+        Raises
+        ------
+        ManifestError
+            If ``out_path`` names a manifest file whose INPUT/OUTPUT label or ULID disagrees with this manifest, or
+            has an extension but is not a valid manifest filename.
+        FileExistsError
+            If the target exists and ``overwrite`` is False.
         """
-        if filename is None:
-            filename = self._generate_filename() if self.filename is None else self.filename
-        else:
-            filename = ManifestFilename(filename)
-        filepath = AnyPath(out_path) / filename.path
+        has_directory = self.filename is not None and str(self.filename) != self.filename.path.name
+        directory = out_path.path if isinstance(out_path, ManifestFilename) else AnyPath(out_path)
+        try:
+            target = ManifestFilename(directory)  # out_path names the manifest file itself
+        except ValueError:
+            # Note: If a user provides a manifest filename without an extension, it reads as a directory
+            is_bucket_root = isinstance(directory, S3Path) and not directory.key  # a bucket name may contain dots
+            if directory.suffix and not is_bucket_root:
+                raise ManifestError(
+                    f"Refusing to write to {directory}, which has an extension but is not a valid manifest "
+                    f"filename; {_MANIFEST_NAME_HELP}"
+                ) from None
+            if self.filename is not None:
+                name = self.filename.path.name
+            else:
+                name = ManifestFilename.from_filename_parts(
+                    manifest_type=self.manifest_type, ulid_code=ULID()
+                ).path.name
+            target = ManifestFilename(directory / name)
 
-        # Update object's filename to the filepath we just wrote
-        self.filename = ManifestFilename(filepath)
+        target_parts = target.filename_parts
+        if target_parts.manifest_type != self.manifest_type:
+            raise ManifestError(
+                f"Refusing to write a {self.manifest_type} manifest to {target}, which is named as a "
+                f"{target_parts.manifest_type} manifest."
+            )
+        if self.ulid_code is not None and target_parts.ulid_code != self.ulid_code:
+            message = (
+                f"Refusing to write manifest with ULID {self.ulid_code} to {target}, which carries ULID "
+                f"{target_parts.ulid_code}."
+            )
+            if self.manifest_type == ManifestType.OUTPUT:
+                message += (
+                    " You should never need to change the ULID of an output manifest; use the filename already on "
+                    "the output manifest object."
+                )
+            raise ManifestError(message)
 
-        with smart_open(self.filename.path, "x") as manifest_file:
-            manifest_file.write(self.model_dump_json())
-        return self.filename.path
+        text = self.model_copy(update={"filename": target}).model_dump_json()
+        with smart_open(target.path, "w" if overwrite else "x") as manifest_file:
+            manifest_file.write(text)
 
-    def add_desired_time_range(self, start_datetime: datetime, end_datetime: datetime):
+        if has_directory and self.filename.path != target.path:
+            logger.warning(
+                f"Internal manifest filename was updated by the latest write from {self.filename} to {target}"
+            )
+        self.filename = target
+        return target.path
+
+    def add_desired_time_range(self, start_datetime: datetime, end_datetime: datetime) -> None:
         """Add a time range to the configuration section of the manifest.
 
         Parameters
         ----------
         start_datetime : datetime.datetime
             The desired start time for the range of data in this manifest
-
         end_datetime : datetime.datetime
             The desired end time for the range of data in this manifest
-
-        Returns
-        -------
-        None
         """
         self.configuration["start_time"] = start_datetime.strftime("%Y-%m-%d:%H:%M:%S")
         self.configuration["end_time"] = end_datetime.strftime("%Y-%m-%d:%H:%M:%S")
 
     @classmethod
-    def output_manifest_from_input_manifest(cls, input_manifest: Union[Path, S3Path, "Manifest"]) -> "Manifest":
-        """Create Output manifest from input manifest file path, adds input files to output manifest configuration
+    def output_manifest_from_input_manifest(
+        cls,
+        input_manifest: Union[str, Path, S3Path, ManifestFilename, "Manifest"],
+        configuration: dict[str, Any] | None = None,
+    ) -> "Manifest":
+        """Create an output manifest with the input manifest's ULID.
+
+        The input manifest's files are recorded in ``configuration["input_manifest_files"]``.
 
         Parameters
         ----------
-        input_manifest : Path | S3Path | Manifest
-            An S3 or regular path to an input_manifest object, or the input manifest object itself
+        input_manifest : str, Path, S3Path, ManifestFilename or Manifest
+            Path to an input manifest file, or an input manifest read with ``from_file``.
+        configuration : dict, optional
+            Additional configuration items for the output manifest. An ``input_manifest_files`` key is overwritten,
+            with a warning.
 
         Returns
         -------
-        output_manifest : Manifest
-            The newly created output manifest
+        Manifest
+            The new output manifest, with a bare filename.
+
+        Raises
+        ------
+        ManifestError
+            If the input manifest has no ULID.
         """
-
         if not isinstance(input_manifest, cls):
-            input_manifest = Manifest.from_file(input_manifest)
+            input_manifest = cls.from_file(input_manifest)
 
-        input_filename = input_manifest.filename
-        input_manifest_ulid_code = input_filename.filename_parts.ulid_code
+        if input_manifest.ulid_code is None:
+            raise ManifestError(
+                "The input manifest has no ULID (no filename), so an output manifest cannot preserve its lineage."
+            )
 
-        output_filename = ManifestFilename.from_filename_parts(
-            manifest_type=ManifestType.OUTPUT, ulid_code=input_manifest_ulid_code
-        )
+        configuration = dict(configuration or {})
+        if "input_manifest_files" in configuration:
+            logger.warning(
+                "The configuration passed to output_manifest_from_input_manifest contains input_manifest_files; it "
+                "is replaced by the files of the input manifest."
+            )
+        # A copy, since add_files extends the input manifest's list in place
+        configuration["input_manifest_files"] = list(input_manifest.files)
 
-        output_manifest = Manifest(
+        return cls(
             manifest_type=ManifestType.OUTPUT,
-            filename=output_filename,
-            configuration={"input_manifest_files": input_manifest.files},
+            filename=ManifestFilename.from_filename_parts(
+                manifest_type=ManifestType.OUTPUT, ulid_code=input_manifest.ulid_code
+            ),
+            configuration=configuration,
         )
-
-        return output_manifest

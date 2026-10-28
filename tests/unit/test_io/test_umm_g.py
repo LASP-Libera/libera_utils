@@ -29,7 +29,9 @@ from libera_utils.io.umm_g import (
 
 # Valid LiberaDataProductFilename used across UMMGDatasetTransformer tests.
 # GranuleUR is derived from filepath.path.stem, so assertions should reference this constant.
-_TEST_FILEPATH = LiberaDataProductFilename("LIBERA_L1B_RAD-4CH_V1-0-0_20240101T000000_20240101T235959_R24001120000.nc")
+_TEST_FILEPATH = LiberaDataProductFilename(
+    "LIBERA_L1B_RAD-4CH_V1-0-0_20240101T000000_20240101T235959_R20240101T120000000000.nc"
+)
 
 
 def create_test_libera_dataset(
@@ -139,7 +141,7 @@ def create_test_libera_dataset(
         ds.attrs["input_files"] = ["LIBERA_L0_PKT_V1-0-0_20240101T000000_20240101T235959_R20240102T120000.nc"]
 
         # Dynamic Spatiotemporal Metadata (from DynamicSpatioTemporalMetadata)
-        ds.attrs["ProductionDateTime"] = datetime.now(UTC).isoformat()
+        ds.attrs["date_created"] = datetime.now(UTC).isoformat()
         ds.attrs["RangeBeginningDate"] = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC).isoformat()
         ds.attrs["RangeBeginningTime"] = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC).isoformat()
         ds.attrs["RangeEndingDate"] = datetime(2024, 1, 1, 23, 59, 59, tzinfo=UTC).isoformat()
@@ -402,8 +404,9 @@ def test_umm_g_dataset_transformer_from_dataset_classmethod():
 def test_umm_g_dataset_transformer_minimal_metadata():
     """Test UMMGDatasetTransformer with minimal metadata triggers warnings."""
 
-    # Create a minimal dataset
+    # Create a minimal dataset, carrying only the date_created that UMM-G requires
     test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    test_dataset.attrs["date_created"] = "2027-01-03T08:09:10.123456+00:00"
 
     # Create transformer
     transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
@@ -445,3 +448,24 @@ def test_granule_ur_equals_filename_stem():
     transformer = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
 
     assert transformer.umm_granule.GranuleUR == _TEST_FILEPATH.path.stem
+
+
+def test_umm_g_requires_date_created():
+    """Test that UMM-G generation raises for a dataset without date_created."""
+    test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    assert "date_created" not in test_dataset.attrs
+
+    with pytest.raises(ValueError, match="date_created"):
+        UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False)
+
+
+def test_production_datetime_is_date_created():
+    """Test that the UMM-G ProductionDateTime and Create provider date are the dataset's date_created."""
+    test_dataset = create_test_libera_dataset(n_samples=10, include_all_metadata=False)
+    test_dataset.attrs["date_created"] = "2027-01-03T08:09:10.123456+00:00"
+
+    umm_granule = UMMGDatasetTransformer(test_dataset, _TEST_FILEPATH, log_warnings=False).umm_granule
+
+    expected = datetime(2027, 1, 3, 8, 9, 10, 123456, tzinfo=UTC)
+    assert umm_granule.DataGranule.ProductionDateTime == expected
+    assert [provider_date.Date for provider_date in umm_granule.ProviderDates] == [expected]

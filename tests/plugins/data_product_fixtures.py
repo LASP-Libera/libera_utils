@@ -67,6 +67,7 @@ def test_dataset():
         attrs={
             "ProductID": "RAD-4CH",
             "algorithm_version": "0.0.1",
+            "date_created": "2027-01-03T08:09:10.123456+00:00",
             "Format": "NetCDF-4",
             "Conventions": "CF-1.8",
             "ProjectLongName": "Libera",

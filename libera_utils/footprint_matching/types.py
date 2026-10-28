@@ -222,7 +222,7 @@ class PointSamples:
     """A reader's native data as geolocated points.
 
     The native form of swath, footprint and projected-grid sources (CERES SSF and
-    CLDPIX, MODIS sinusoidal IGBP tiles, NISE EASE-Grid pixels): each sample carries its
+    CLDPIX, IGBP tiles on the MODIS sinusoidal grid, NISE EASE-Grid pixels): each sample carries its
     own latitude and longitude, and for a ``NEAREST_PASS`` source its own time.
 
     Attributes
@@ -239,8 +239,7 @@ class PointSamples:
         1-D ``(n,)`` ``datetime64[ns]`` observation time per sample. Required for a
         ``NEAREST_PASS`` reader; ``None`` otherwise.
     spacing_km : float or None
-        The samples' native spacing, km, measured on this body of data (see
-        ``libera_utils.footprint_matching.readers._points.neighbor_spacing_km``).
+        The samples' native spacing, km, measured on this body of data.
         ``None`` means the reader's declared ``RESOLUTION_KM`` applies. A swath that is
         subsampled on delivery is served with its true spacing, so the coverage measure
         credits each sample with the cell it really stands for.
@@ -516,7 +515,7 @@ _MEAN_AGGREGATIONS: frozenset[str] = frozenset({"weighted_mean", "weighted_log_m
 
 # Suffix appended to a continuous variable's name to form its std-dev companion.
 # Kept as a module constant so the readers, product definitions, and tests all
-# agree on the exact spelling (e.g. ``era5_wind_u10_standard_deviation``).
+# agree on the exact spelling (e.g. ``era5_surface_wind_u10_standard_deviation``).
 STANDARD_DEVIATION_SUFFIX: str = "_standard_deviation"
 
 

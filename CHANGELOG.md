@@ -11,25 +11,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `write_libera_data_product` takes `worker_compressed_variables`, a tuple of Dask-backed data variables whose chunks are shuffled and deflated on the `dask.distributed` workers instead of one at a time under the HDF5 write lock. The writing process stores the compressed chunks with h5py `write_direct_chunk`, and the file reads back identical to a normal write. It requires the `h5netcdf` engine and an active `distributed.Client`, and each named variable's Dask chunks must be whole multiples of its on-disk chunk shape, its filters deflate with or without shuffle, and its dtype integer or floating point; otherwise `ValueError` before any data is computed. A write that fails after creating the file deletes it. The default, an empty tuple, writes with `to_netcdf` as before.
 - `KernelManager.populate_cache()` fills the on-disk NAIF and static kernel caches and leaves the SPICE kernel pool empty, for a process to call before starting workers that each load their own kernels.
-- `h5py` and `dask[distributed]` are declared dependencies; worker-compressed writes import both, and `h5netcdf` already required `h5py`.
-- The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
-- Link the UMM-G granule page from the user docs index.
+- `dask[distributed]` is a declared dependency; worker-compressed writes import it and `h5py`.
+- The `libera_utils.footprint_matching.readers` plugin subsystem: an `AncillaryReader` base with auto-registration (`StaticReader` for a daily composite, map or time-stamped swath held in memory; `SteppedGridReader` for a time series of global grids served one step at a time), a `ReaderRegistry`, and HDF4 and HDF-EOS5 I/O helpers. A reader serves the _native samples_ of its source inside a footprint's bounding box as a `SampleSet` (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), matched to the footprint time by its `TimeMatch` policy: `DAILY` (IGBP, NISE, VIIRS BRDF and AOD) or `NEAREST_STEP` (ERA5). A reader whose `READER_KEY` is already registered to another class is rejected when its module is imported. A query raises `ValueError` when a point cloud holds a coordinate outside latitude [-90, 90] or longitude [-180, 180], when a `NEAREST_PASS` reader serves samples without times, or when the footprint time a time-selecting reader needs is NaT. This release adds the gridded readers:
+  - ERA5 single-level (`era5_surface`, 7 variables) and 37-level pressure (`era5_pressure`) fields, serving the hourly step nearest each footprint's time (none beyond 1 h), rejecting a file with no time axis, and declaring `RESOLUTION_KM = 28.0`, the 0.25 degree grid spacing.
+  - VIIRS Deep Blue AOD (`AERDB_D3_VIIRS_NOAA20`) with a categorical `aerosol_type`, applying each field's own `_FillValue` and `valid_range` (AOD 0 to 10).
+  - VIIRS BRDF (`VJ143C1`), served at the 0.05 degree cell centers (the file's `lat`/`lon` are cell edges, checked against the grid's HDF-EOS5 `StructMetadata.0` corners), applying each field's own `_FillValue`, `valid_range`, `scale_factor` and `add_offset`.
+  - IGBP land cover (MCD12Q1), held as its uint8 sinusoidal tiles and geolocated per query, declaring `RESOLUTION_KM = 0.463`, the 463.3 m sinusoidal cell.
+  - NSIDC NISE sea ice (AMSR-2 provenance), with the unused Extent codes (102, 105-251) and the coastline and suspect-ice quality codes (252, 253) missing (NaN) in every layer. Each hemisphere's HDF-EOS `StructMetadata.0` grid is checked against the 721 x 721 25 km EASE-Grid it is geolocated on (dimensions, corners and `GCTP_LAMAZ` projection), and a granule that differs raises `ValueError`.
+- `notebooks/02_readers_gridded.ipynb`, a demonstration of the gridded readers.
+- `pyhdf` (IGBP and NISE HDF4 reads) and `h5py` (VIIRS BRDF HDF5 reads) are runtime dependencies. `pyhdf` needs the HDF4 C library (`libhdf4-dev`) at build time when no prebuilt wheel is available, as on aarch64; the Docker image installs it.
 
 ### Changed
 
+- The `h5netcdf` dependency is declared with its `h5py` extra (`h5netcdf[h5py]`), since `h5netcdf` no longer installs `h5py` by default.
+- The `dev` dependency group depends on `pyjpegls` instead of `pillow-jpls` for JPEG-LS decoding in the WFOV integration test. `pillow-jpls` 1.3.2, its latest release, publishes wheels only through cp312, so Python 3.13 and 3.14 installs build it from source, which fails on gcc 14 hosts; `pyjpegls` binds the same CharLS codec.
+- **BREAKING:** Manifest files no longer record checksums, input or output. `Manifest.files` is a list of absolute path strings, written as `"files": ["s3://...", ...]`. A manifest in the previous `{"filename": ..., "checksum": ...}` record format raises `ValidationError` when read. A reader on libera_utils 5.14.0 or earlier treats each listed path as a file to checksum, so it downloads every listed file; move readers and writers of a manifest to this version together.
+- `Manifest.add_files()` checks that each file exists but no longer reads it, so an S3 file is not downloaded and a file larger than local disk can be listed.
+- **BREAKING:** The `Manifest` constructor no longer checks that a listed path exists; only `add_files()` does.
+- **BREAKING:** A path listed twice in a manifest is an error, where it was skipped with a warning: `Manifest.add_files()` raises `ValueError` for a path already listed or given twice, adding nothing, and the constructor and `Manifest.from_file()` raise `ValidationError`.
+- `create_kernels_from_manifest` no longer validates input checksums.
 - `kernel_maker.create_kernels_from_manifest` reads the input L1A product once and creates each requested SPICE kernel at the same time, each in its own forked process, so the Az/El and JPSS kernel steps take about as long as their slowest kernel rather than the sum. It requires Linux and raises `ValueError` on any other platform before reading the L1A. Kernel filenames and the output manifest are unchanged. The `ValueError` raised after every kernel was attempted when any kernel fails now also gives each failed kernel's reason: its process's traceback, or its exit code when the process sent nothing; a kernel process killed by the operating system counts as that kernel failing. A kernel process flushes CloudWatch log handlers before it exits. Peak memory is about the sum of the concurrent kernels' (an estimated 18 GB for a full-day Az/El run, from about 9 GB measured per kernel). A kernel identifier repeated in `kernel_product_ids` raises `ValueError`.
 - **BREAKING:** `kernel_maker.create_kernels_from_manifest` raises a shared-setup failure before any kernel is attempted, with its own exception type, instead of the aggregated `ValueError` listing every kernel as failed: an unreadable L1A file raises `ValueError`, a kernel work directory path too long for curryer raises `RuntimeError` (set `LIBERA_TEMP_DIR` to a shorter base path), and a failure populating the kernel cache raises `RuntimeError`, `FileNotFoundError` or a `requests.RequestException`.
+
+### Removed
+
+- **BREAKING:** `ManifestFileRecord`, `Manifest.validate_checksums()`, `Manifest.check_file_structure()` and `libera_utils.io.manifest.calculate_checksum`.
+
+### Fixed
+
+- A file whose content matched another listed file's was dropped, with a warning, by `Manifest.add_files()`, the constructor and `Manifest.from_file()`. Every file is now listed under its own name.
+
+## [5.14.0] - 2026-10-27
+
+### Added
+
+- `create_product_dataset` (array input) and `write_libera_data_product` (Dataset input) set the ACDD `date_created` attribute to the creation time, ISO 8601 UTC at microsecond precision. A value already present is overwritten with a warning.
+- `libera_utils.io.product_definition.DATE_CREATED_ATTRIBUTE` and `ALGORITHM_VERSION_ATTRIBUTE`, the names of those product attributes.
+
+### Changed
+
+- **BREAKING:** The revision in Libera data product filenames is the UTC creation time at microsecond precision, `R%Y%m%dT%H%M%S%f`, e.g. `LIBERA_L1B_RAD-4CH_V1-2-3_20270102T112233_20270102T122233_R20270103T080910123456.nc`, so files produced within the same second no longer clobber each other in the dropbox bucket. Names with the earlier second-resolution `R%y%j%H%M%S` revision no longer parse: `LiberaDataProductFilename` raises `ValueError` for them. The UMM-G GranuleUR, which is the filename stem, and the `.cmr.json` metadata name follow the new form.
+- **BREAKING:** `libera_utils.io.filenaming.REVISION_TS_FORMAT` is now `R%Y%m%dT%H%M%S%f`.
+- **BREAKING:** `date_created` is a required standard product attribute, and `generate_data_product_filename` takes the filename revision from it. A strict conformance check on a Dataset built neither by `create_product_dataset` nor by `write_libera_data_product` reports it missing.
+- **BREAKING:** A product definition YAML that gives `date_created` a value raises `ValueError`.
+- **BREAKING:** UMM-G generation (`UMMGranule.from_dataset`, `write_data_product_metadata_ummg`) raises `ValueError` when a Dataset has no `date_created`, and emits it as the `DataGranule` `ProductionDateTime` and the `Create` provider date. It previously read a `ProductionDateTime` attribute and, without one, warned and used the current time.
+- UMM-G `TemporalExtent` no longer falls back to a `ProductionDateTime` attribute; without the `Range*` attributes it is omitted.
+- `from_filename_parts` takes `revision: datetime | None`; the default `None` uses the current UTC time at the call.
+- L1A packet parsing and the NOM-HK trimmer no longer set `date_created`; the trimmer drops the parent product's value so the writer sets a fresh one.
+- `kernel_maker` no longer builds a revision for SPICE kernel filenames; the default applies.
+
+### Removed
+
+- **BREAKING:** `.h5` is no longer an accepted data product filename extension.
+
+### Fixed
+
+- The `revision` default in `from_filename_parts` was `datetime.now(tz=UTC)` evaluated once at import, so every product written by one process shared a single revision. Revisions are now generated per call.
+- `LiberaDataProductFilename` raises `ValueError` at construction, or when its path is assigned, when a date or time in the name does not exist, such as month 13. The error previously surfaced at the first `filename_parts` access.
+- A stray debug `print` in `UMMGDatasetTransformer.extract_temporal_extent` is removed.
+
+## [5.13.0] - 2026-10-26
+
+### Added
+
+- The API docs now include `libera_utils.l1a`. The package had no `__init__.py`, so Sphinx skipped it.
+- Link the UMM-G granule page from the user docs index.
+- `Manifest.write()` takes a keyword-only `overwrite=False`, and `out_path` may be a directory, an S3 prefix, or a full manifest file path.
+- `Manifest.output_manifest_from_input_manifest()` takes an optional `configuration=` dict, and raises `ManifestError` for an input manifest with no ULID.
+
+### Changed
+
 - The docs build fails on any warning: `doc/Makefile` runs `sphinx-build -W --keep-going`, and `.readthedocs.yaml` sets `fail_on_warning`.
 - ReadTheDocs builds the docs on Python 3.13 (Ubuntu 24.04), and the `docgen` dependency group requires Sphinx 9.1 or newer on Python 3.12 or newer.
+- **BREAKING:** `Manifest.ulid_code` is a read-only property derived from `filename`. Assigning to it raises; assign `filename` instead. `ulid_code=` is still accepted by the constructor.
+- **BREAKING:** `Manifest.write()` sets `filename` to the path it wrote.
+- **BREAKING:** `Manifest.write()` no longer takes a `filename` argument; pass the full manifest file path as `out_path` instead. The old positional form `write(out_path, filename)` raises `TypeError`.
+- **BREAKING:** `Manifest.write()` raises `FileExistsError` for an existing target unless `overwrite=True` is passed, and `ManifestError` for a target whose INPUT/OUTPUT label disagrees with `manifest_type` or that would change the manifest's ULID, and `ManifestError` for an `out_path` that has an extension but is not a valid manifest filename.
+- **BREAKING:** `Manifest.validate_checksums()` raises `ManifestError` instead of `ValueError`. A file that cannot be found fails validation.
+- **BREAKING:** `Manifest.from_file()` raises `ManifestError` for a path that is not a valid manifest filename, or when the filename or `ulid_code` stored in the file disagrees with the ULID in the path.
+- **BREAKING:** `Manifest.filename` is validated on assignment, and a `filename` or `manifest_type` whose INPUT/OUTPUT label disagrees with the other raises `ValidationError`.
+- **BREAKING:** A file record with a null checksum, such as one read from a manifest file, raises `ValidationError` instead of being recomputed.
+- **BREAKING:** `MANIFEST_FILE_REGEX` must match the whole basename, so names such as `LIBERA_INPUT_MANIFEST_<ULID>.json.bak` are no longer valid manifest filenames.
 
 ### Removed
 
 - `numpydoc` from the `docgen` dependency group. `sphinx.ext.napoleon` parses the numpy style docstrings.
+- **BREAKING:** `libera_utils.io.manifest.get_ulid_code`. Use `Manifest.ulid_code`, or `ManifestFilename(path).filename_parts.ulid_code`.
 
 ### Fixed
 
 - Fix the docstring, markdown and Sphinx config defects behind the docs build's 9841 warnings, including cross-references to private or renamed targets (`create_l1a_dataset` is now `parse_packets_to_l1a_dataset`).
 - Fix the docs build warnings and errors in the `footprint_matching` and `scene_identification` docstrings and the `write_libera_data_product` and `LiberaVariableDefinition` `Raises` sections, which the build now treats as failures.
+- A second `Manifest.write()` to a different directory no longer writes to the first location.
+- A manifest with no filename serializes `filename` as `null`, not the string `"None"`.
 
 ## [5.12.0] - 2026-10-21
 
@@ -836,7 +910,9 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...HEAD
+[5.14.0]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...5.14.0
+[5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0
 [5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0
 [5.11.5]: https://github.com/LASP-Libera/libera_utils/compare/5.11.4...5.11.5
 [5.11.4]: https://github.com/LASP-Libera/libera_utils/compare/5.11.3...5.11.4

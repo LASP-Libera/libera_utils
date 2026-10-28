@@ -1,7 +1,9 @@
 """Unit tests for netcdf.py module"""
 
-from hashlib import md5
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest import mock
 from unittest.mock import patch
 
 import dask
@@ -16,15 +18,15 @@ from cloudpathlib import AnyPath, S3Client, S3Path
 from cloudpathlib.enums import FileCacheMode
 from distributed import Client
 
+from libera_utils.io import netcdf, product_definition
 from libera_utils.io.filenaming import LiberaDataProductFilename
-from libera_utils.io.manifest import calculate_checksum
 from libera_utils.io.netcdf import (
     NetcdfEngine,
     _load_netcdf_into_memory,
     _write_worker_compressed,
     write_libera_data_product,
 )
-from libera_utils.io.product_definition import LiberaDataProductDefinition
+from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE, LiberaDataProductDefinition
 from libera_utils.io.smart_open import smart_open
 from tests.marks import strict_warnings
 
@@ -63,6 +65,9 @@ class TestWriteLiberaDataProduct:
 
     def test_write_libera_data_product_from_dataset(self, test_product_definition, test_dataset, tmp_path):
         """Test successful writing of a data product with valid data as a Dataset"""
+        # The writer sets date_created, so an input Dataset does not carry it
+        del test_dataset.attrs["date_created"]
+
         # Write the data product
         result = write_libera_data_product(
             data_product_definition=test_product_definition,
@@ -135,6 +140,8 @@ class TestWriteLiberaDataProduct:
         # Indicate this attribute is required but dynamic (set it to None in the definition object)
         modified_product_definition.attributes["algorithm_version"] = None
         # The test dataset fixture already contains the algorithm_version attribute
+        # The writer sets date_created, so an input Dataset does not carry it
+        del test_dataset.attrs["date_created"]
 
         # Write the data product
         with pytest.raises(ValueError, match="dynamic_product_attributes is invalid when passing in a Dataset"):
@@ -435,6 +442,88 @@ class TestWriteLiberaDataProduct:
         # Read back the file and check conformance in strict mode
         with xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config()) as ds:
             definition.check_dataset_conformance(ds, strict=True)
+
+    def test_write_libera_data_product_same_second_writes_get_distinct_names(
+        self, test_product_definition, test_data_dict, tmp_path
+    ):
+        """Two writes within the same second get different filenames, each with a microsecond revision"""
+        first_now = datetime(2027, 1, 3, 8, 9, 10, 1, tzinfo=UTC)
+        second_now = datetime(2027, 1, 3, 8, 9, 10, 2, tzinfo=UTC)
+        with patch.object(product_definition, "datetime", mock.Mock(wraps=datetime)) as mock_datetime:
+            mock_datetime.now.side_effect = [first_now, second_now]
+            first = write_libera_data_product(
+                data_product_definition=test_product_definition,
+                data=test_data_dict,
+                output_path=tmp_path,
+                time_variable="radiometer_time",
+            )
+            second = write_libera_data_product(
+                data_product_definition=test_product_definition,
+                data=test_data_dict,
+                output_path=tmp_path,
+                time_variable="radiometer_time",
+            )
+
+        assert first.path.name != second.path.name
+        assert first.path.name.endswith("_R20270103T080910000001.nc")
+        assert second.path.name.endswith("_R20270103T080910000002.nc")
+        assert first.path.exists()
+        assert second.path.exists()
+
+    def test_write_libera_data_product_sets_date_created(self, test_product_definition, test_data_dict, tmp_path):
+        """The written product carries a date_created equal to its filename revision"""
+        result = write_libera_data_product(
+            data_product_definition=test_product_definition,
+            data=test_data_dict,
+            output_path=tmp_path,
+            time_variable="radiometer_time",
+        )
+
+        with xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config()) as ds:
+            date_created = datetime.fromisoformat(ds.attrs[DATE_CREATED_ATTRIBUTE])
+        assert date_created == result.filename_parts.revision
+
+    @pytest.mark.parametrize("from_dataset", [False, True])
+    def test_write_libera_data_product_sets_date_created_once(
+        self, test_product_definition, test_data_dict, test_dataset, tmp_path, from_dataset
+    ):
+        """date_created is set exactly once per write, for array input and for Dataset input"""
+        if from_dataset:
+            del test_dataset.attrs["date_created"]
+        with (
+            patch.object(netcdf, "_set_date_created", wraps=product_definition._set_date_created) as mock_writer_stamp,
+            patch.object(
+                product_definition, "_set_date_created", wraps=product_definition._set_date_created
+            ) as mock_dataset_stamp,
+        ):
+            write_libera_data_product(
+                data_product_definition=test_product_definition,
+                data=test_dataset if from_dataset else test_data_dict,
+                output_path=tmp_path,
+                time_variable="radiometer_time",
+            )
+        assert mock_writer_stamp.call_count + mock_dataset_stamp.call_count == 1
+
+    def test_write_libera_data_product_overwrites_date_created(
+        self, test_product_definition, test_dataset, tmp_path, caplog
+    ):
+        """An input date_created is replaced by the write time, with a warning"""
+        test_dataset.attrs["date_created"] = "2000-01-01T00:00:00+00:00"
+
+        with caplog.at_level(logging.WARNING, logger="libera_utils.io.product_definition"):
+            with pytest.warns(UserWarning, match="'date_created' was set to '2000-01-01T00:00:00\\+00:00'"):
+                result = write_libera_data_product(
+                    data_product_definition=test_product_definition,
+                    data=test_dataset,
+                    output_path=tmp_path,
+                    time_variable="radiometer_time",
+                )
+
+        assert "Overwrote global attribute 'date_created'" in caplog.text
+        with xr.open_dataset(result.path, engine=NetcdfEngine.get_from_config()) as ds:
+            date_created = datetime.fromisoformat(ds.attrs[DATE_CREATED_ATTRIBUTE])
+        assert date_created == result.filename_parts.revision
+        assert date_created.year != 2000
 
     def test_write_libera_data_product_overwrite_existing(self, test_product_definition, test_data_dict, tmp_path):
         """Test that write_libera_data_product overwrites existing files"""
@@ -791,8 +880,8 @@ class TestNetcdfEngineConfig:
     ):
         """The written product stays in the cache, as it did through CloudPath.open
 
-        The manifest checksums each output file right after it is written. If the cache were
-        empty, that read would download the whole product from S3 again.
+        A read of the product in the same process right after it is written is served from the
+        cache. If the cache were empty, that read would download the whole product from S3 again.
         """
         client = S3Client(file_cache_mode=FileCacheMode.tmp_dir)
         output_path = client.CloudPath(f"s3://{create_mock_bucket().name}/test-prefix")
@@ -804,9 +893,9 @@ class TestNetcdfEngineConfig:
         )
 
         with patch.object(client, "_download_file", side_effect=AssertionError("product was downloaded")):
-            checksum = calculate_checksum(result.path)
+            read_back = result.path.read_bytes()
 
-        assert checksum == md5(result.path._local.read_bytes(), usedforsecurity=False).hexdigest()
+        assert read_back == result.path._local.read_bytes()
 
     def test_close_file_cache_mode_removes_the_cache_file_after_upload(
         self, test_product_definition, test_data_dict, create_mock_bucket
@@ -961,6 +1050,8 @@ class TestWorkerCompression:
             for name in names:
                 assert actual[name].id.get_num_chunks() == expected[name].id.get_num_chunks(), name
         with xr.open_dataset(reference.path) as expected, xr.open_dataset(direct_path) as actual:
+            # Each write stamps its own creation time.
+            del actual.attrs[DATE_CREATED_ATTRIBUTE], expected.attrs[DATE_CREATED_ATTRIBUTE]
             assert actual.identical(expected)
 
     def test_a_task_shared_by_variables_runs_once_per_block(self, tmp_path, distributed_client):

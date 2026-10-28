@@ -1,7 +1,7 @@
 """File for describing pydantic model and utility functions for UMM Granules."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated
 
@@ -9,6 +9,7 @@ import xarray as xr
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from libera_utils.io.filenaming import LiberaDataProductFilename
+from libera_utils.io.product_definition import DATE_CREATED_ATTRIBUTE
 
 logger = logging.getLogger(__name__)
 
@@ -1091,6 +1092,26 @@ class UMMGranule(BaseModel):
 
     @classmethod
     def from_dataset(cls, input_dataset: xr.Dataset, filepath: LiberaDataProductFilename, **kwargs):
+        """Create a UMMGranule from a data product Dataset.
+
+        Parameters
+        ----------
+        input_dataset : xr.Dataset
+            The data product Dataset to convert.
+        filepath : LiberaDataProductFilename
+            Filename object containing the full path to the data product file.
+        **kwargs
+            Passed to UMMGDatasetTransformer.
+
+        Returns
+        -------
+        : UMMGranule
+
+        Raises
+        ------
+        ValueError
+            If the Dataset has no ``date_created`` attribute.
+        """
         transformer = UMMGDatasetTransformer(input_dataset, filepath, **kwargs)
         return transformer.umm_granule
 
@@ -1119,7 +1140,17 @@ class UMMGDatasetTransformer:
             or only stored in the "warnings" attribute. Note that this does not affect validation
             warnings or errors, only warnings from the transformation step within the class.
 
+        Raises
+        ------
+        ValueError
+            If the Dataset has no ``date_created`` attribute.
         """
+        if input_dataset.attrs.get(DATE_CREATED_ATTRIBUTE) is None:
+            raise ValueError(
+                f"Dataset for {filepath} has no '{DATE_CREATED_ATTRIBUTE}' attribute, which UMM-G uses as its "
+                "ProductionDateTime. "
+                "Write the product with libera_utils.io.netcdf.write_libera_data_product, which sets it."
+            )
         self.dataset_attrs = input_dataset.attrs
         self.science_variable_names = [var for var in input_dataset.data_vars]
 
@@ -1142,19 +1173,7 @@ class UMMGDatasetTransformer:
 
     def extract_provider_dates(self) -> list[ProviderDateType]:
         """Extract provider dates from dataset attributes."""
-        # Not totally sure what the correct dates for this in the dataset will be
-        provider_datetime_attributes = ["ProductionDateTime"]
-        output_dates = []
-        for attribute in provider_datetime_attributes:
-            if attribute in self.dataset_attrs:
-                output_dates.append(
-                    ProviderDateType(Date=self.dataset_attrs[attribute], Type=ProviderDateTypeEnum.CREATE)
-                )
-
-        if not output_dates:
-            self._warn(f"Unable to find ProviderDate values from attributes {provider_datetime_attributes} in dataset.")
-            output_dates.append(ProviderDateType(Date=datetime.now(UTC).isoformat(), Type=ProviderDateTypeEnum.CREATE))
-        return output_dates
+        return [ProviderDateType(Date=self.dataset_attrs[DATE_CREATED_ATTRIBUTE], Type=ProviderDateTypeEnum.CREATE)]
 
     def extract_collection_reference(self) -> CollectionReferenceType:
         """Extract collection reference from dataset attributes."""
@@ -1191,17 +1210,11 @@ class UMMGDatasetTransformer:
                 FormatType=FormatTypeEnum.NATIVE,
             )
 
-        production_datetime = self.dataset_attrs.get("ProductionDateTime", None)
-
         if file_type is not None:
-            if production_datetime is None:
-                production_datetime = datetime.now(UTC).isoformat()
-                self._warn("No production datetime found while creating DataGranule; using current time.")
-
             data_granule = DataGranuleType(
                 ArchiveAndDistributionInformation=[file_type],
                 DayNightFlag=DayNightFlagEnum.UNSPECIFIED,
-                ProductionDateTime=production_datetime,
+                ProductionDateTime=self.dataset_attrs[DATE_CREATED_ATTRIBUTE],
             )
         else:
             data_granule = None
@@ -1212,28 +1225,28 @@ class UMMGDatasetTransformer:
         """Extract PGE version information from dataset attributes."""
         return None
 
+    # TODO[LIBSDC-822]: Derive the temporal extent from the data; it comes only from the Range* attributes for now.
     def extract_temporal_extent(self) -> TemporalExtentType | None:
-        """Extract temporal extent from dataset attributes."""
-        temporal_extent = None
+        """Extract temporal extent from dataset attributes.
+
+        Returns
+        -------
+        TemporalExtentType | None
+            A RangeDateTime built from the ``RangeBeginningDate``, ``RangeBeginningTime``, ``RangeEndingDate`` and
+            ``RangeEndingTime`` attributes when all four are set, otherwise None.
+        """
         start_date = self.dataset_attrs.get("RangeBeginningDate", None)
         end_date = self.dataset_attrs.get("RangeEndingDate", None)
         start_time = self.dataset_attrs.get("RangeBeginningTime", None)
         end_time = self.dataset_attrs.get("RangeEndingTime", None)
 
-        production_datetime = self.dataset_attrs.get("ProductionDateTime", None)
-        print(f"Production datetime: {production_datetime}")
-
         if start_date and start_time and end_date and end_time:
             beginning_datetime = f"{start_date}T{start_time}Z"
             ending_datetime = f"{end_date}T{end_time}Z"
             range = RangeDateTimeType(BeginningDateTime=beginning_datetime, EndingDateTime=ending_datetime)
-            temporal_extent = TemporalExtentType(RangeDateTime=range)
+            return TemporalExtentType(RangeDateTime=range)
 
-        # Default to the range, but take the single time if it exists
-        if production_datetime and temporal_extent is None:
-            temporal_extent = TemporalExtentType(SingleDateTime=production_datetime)
-
-        return temporal_extent
+        return None
 
     def extract_spatial_extent(self) -> SpatialExtentType | None:
         """Extract spatial extent from dataset attributes."""

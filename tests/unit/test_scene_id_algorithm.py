@@ -40,12 +40,8 @@ class TestCollectInputFiles:
     _INPUT_DIR = "/dropbox/inputs"
 
     def _manifest(self, *filenames: str) -> Manifest:
-        # collect_input_files selects purely by filename, so records need no real files;
-        # a placeholder checksum satisfies the required field (cf. test_manifest.py validation cases).
-        return Manifest(
-            manifest_type=ManifestType.INPUT,
-            files=[{"filename": f"{self._INPUT_DIR}/{name}", "checksum": "fakesum"} for name in filenames],
-        )
+        # collect_input_files selects purely by filename, so the listed files need not exist
+        return Manifest(manifest_type=ManifestType.INPUT, files=[f"{self._INPUT_DIR}/{name}" for name in filenames])
 
     def test_product_mode_keeps_only_matching_product(self):
         """In Libera-product mode only files with the configured product id are kept."""
