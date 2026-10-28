@@ -101,9 +101,8 @@ class AncillarySources:
             Propagated from the reader; see
             :meth:`~libera_utils.footprint_matching.readers.base.AncillaryReader.samples_in`.
         OSError
-            If a staged granule is missing (``FileNotFoundError``) or cannot be opened,
-            raised by the first query that loads it rather than at construction. A reader
-            whose I/O library has its own error raises that instead, such as
+            If a staged granule cannot be opened, raised by the first query that loads it.
+            A reader whose I/O library has its own error raises that instead, such as
             ``pyhdf.error.HDF4Error`` from the HDF4 readers (IGBP, NISE).
         """
         return self.reader(source).samples_in(bbox, time)
@@ -116,9 +115,9 @@ def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[P
     :meth:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry.get_readers_for_mode`,
     instantiates each with the granule paths supplied in ``source_file_paths``, and wraps them in an
     :class:`AncillarySources`. This is the single construction helper the product code
-    calls so the reader wiring lives in one place. Construction checks only the
-    mapping; it opens no granule, so a missing or unreadable staged file raises from
-    the first :meth:`AncillarySources.query` that loads it.
+    calls so the reader wiring lives in one place. Each reader checks at construction
+    that its staged granules exist but opens none of them, so an unreadable staged file
+    raises from the first :meth:`AncillarySources.query` that loads it.
 
     Parameters
     ----------
@@ -137,8 +136,12 @@ def build_sources(mode: OperationalMode, source_file_paths: dict[str, Sequence[P
     KeyError
         If ``source_file_paths`` holds a key for a source ``mode`` does not use, or is
         missing an entry for any active reader.
+    TypeError
+        If an entry is a single ``str`` or ``Path`` rather than a sequence of them.
     ValueError
         If an entry holds no granule.
+    FileNotFoundError
+        If any staged granule path is not an existing file.
     """
     reader_classes = ReaderRegistry.get_readers_for_mode(mode)
     unexpected = sorted(set(source_file_paths) - set(reader_classes))

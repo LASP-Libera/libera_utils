@@ -1,7 +1,7 @@
 """Unit tests for AncillarySources and build_sources.
 
-Readers open no granule at construction, so every source except the one a test queries
-is given a placeholder path that is never read.
+Readers check at construction that their granules exist but open none of them, so every
+source except the one a test queries is given an empty placeholder file that is never read.
 """
 
 from pathlib import Path
@@ -22,8 +22,11 @@ INACTIVE_SOURCE = "cldpix"
 
 
 def _placeholder_paths(tmp_path: Path) -> dict[str, list[Path]]:
-    """Map every source active in ``MODE`` to a granule path that is never opened."""
-    return {key: [tmp_path / f"{key}.nc"] for key in ReaderRegistry.get_readers_for_mode(MODE)}
+    """Map every source active in ``MODE`` to an empty granule file that is never opened."""
+    paths = {key: [tmp_path / f"{key}.nc"] for key in ReaderRegistry.get_readers_for_mode(MODE)}
+    for (path,) in paths.values():
+        path.touch()
+    return paths
 
 
 def test_inactive_source_is_registered_but_not_in_mode():
@@ -72,9 +75,16 @@ def test_query_inactive_source_raises_keyerror(tmp_path):
         sources.query(INACTIVE_SOURCE, BoundingBox(0.5, 1.5, 10.5, 11.5), ERA5_FIXTURE_TIME)
 
 
-def test_missing_granule_raises_at_first_query_not_at_construction(tmp_path):
+def test_build_sources_missing_granule_raises_filenotfounderror(tmp_path):
+    paths = _placeholder_paths(tmp_path)
+    paths["era5_surface"] = [tmp_path / "absent.nc"]
+    with pytest.raises(FileNotFoundError, match="ERA5SurfaceReader .* not existing files"):
+        build_sources(MODE, paths)
+
+
+def test_unreadable_granule_raises_at_first_query_not_at_construction(tmp_path):
     sources = build_sources(MODE, _placeholder_paths(tmp_path))
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(OSError, match="Unknown file format"):
         sources.query("era5_surface", BoundingBox(0.5, 1.5, 10.5, 11.5), ERA5_FIXTURE_TIME)
 
 
