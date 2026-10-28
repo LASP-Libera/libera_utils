@@ -257,9 +257,8 @@ _FLASHFLUX_BASE_FIELDS: tuple[_FlashFluxField, ...] = (
 # These FLASHFlux cloud-layer, aerosol, and surface-albedo fields go on FMATCH-IMAGER
 # *only* -- not IMAGER-FLASH or IMAGER-CAMTIME, which carry the base FLASHFlux fields.
 #
-# FMATCH products are strictly 1-D per footprint, so multi-valued source fields are flattened
-# (like era5_pressure's per-level split): LowerUpper (2) -> _lower/_upper, AeroTypePct (7) ->
-# _typeN. Genuinely 1-D fields (surface_albedo, toa_incoming_solar_radiation) stay a single
+# Multi-valued source fields are flattened into one 1-D product variable per member:
+# LowerUpper (2) -> _lower/_upper, AeroTypePct (7) -> _typeN. Genuinely 1-D fields (surface_albedo, toa_incoming_solar_radiation) stay a single
 # spec via _SCALAR_MEMBER. All are continuous float32 and so also gain a _standard_deviation
 # companion in product_variable_specs().
 _FLASHFLUX_IMAGER_ONLY_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
