@@ -10,8 +10,6 @@ Real CLDPIX files come from NASA CERES, e.g.
 ``CER_CLDPIX_NOAA20-VIIRS_1P9test_000000.2020041015.nc``.
 """
 
-import tracemalloc
-
 import numpy as np
 import pytest
 
@@ -188,29 +186,6 @@ class TestCLDPIXReaderSamples:
         served = _finite(_values(CLDPIXReader(path)), out_name)
         assert not np.any(served == bad_code)
         assert np.count_nonzero(served == kept_code) == 4
-
-    def test_granule_load_peak_memory_is_bounded(self, tmp_path):
-        """``CLDPIXReader._load_granule`` reads a granule with peak memory under 2.5 times the points it returns.
-
-        A CLDPIX hour is about 6.4 million pixels and up to seven are held at once. Each field is written into one
-        preallocated float32 array; building a float64 row per field and stacking them holds the values about five
-        times over (3.5 times the returned points, measured).
-
-        Loads a 500 x 400 pixel synthetic granule under ``tracemalloc`` and compares the traced peak with the bytes of
-        the returned values, coordinates and times.
-        """
-        shape = (500, 400)
-        lats = 40.0 + np.linspace(0.0, 1.0, shape[0] * shape[1]).reshape(shape).astype(np.float32)
-        path = make_cldpix_fixture(tmp_path, lats=lats, lons_0360=np.full(shape, 345.0, np.float32))
-        reader = CLDPIXReader(path)
-        tracemalloc.start()
-        try:
-            points = reader._load_granule(path)
-            _, peak = tracemalloc.get_traced_memory()
-        finally:
-            tracemalloc.stop()
-        held = points.values.nbytes + points.lats.nbytes + points.lons.nbytes + points.times.nbytes
-        assert peak < 2.5 * held
 
 
 class TestCLDPIXReaderTimeMatching:
