@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.0] - 2026-10-28
+
 ### Added
 
 - The `libera_utils.footprint_matching.readers` plugin subsystem: an `AncillaryReader` base with auto-registration (`StaticReader` for a daily composite, map or time-stamped swath held in memory; `SteppedGridReader` for a time series of global grids served one step at a time), a `ReaderRegistry`, and HDF4 and HDF-EOS5 I/O helpers. A reader serves the _native samples_ of its source inside a footprint's bounding box as a `SampleSet` (every pixel, footprint or grid point at its own position, no averaging, binning or interpolation), matched to the footprint time by its `TimeMatch` policy: `DAILY` (IGBP, NISE, VIIRS BRDF and AOD) or `NEAREST_STEP` (ERA5). A reader whose `READER_KEY` is already registered to another class is rejected when its module is imported. A query raises `ValueError` when a point cloud holds a coordinate outside latitude [-90, 90] or longitude [-180, 180], when a `NEAREST_PASS` reader serves samples without times, or when the footprint time a time-selecting reader needs is NaT. This release adds the gridded readers:
@@ -894,7 +896,8 @@ _Note:_ NOM-HK L1A changes the shape and dtype of five variables (replacing per-
 - Stub out project structure
 - Switch to Poetry for project dependency configuration and build management
 
-[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...HEAD
+[Unreleased]: https://github.com/LASP-Libera/libera_utils/compare/5.15.0...HEAD
+[5.15.0]: https://github.com/LASP-Libera/libera_utils/compare/5.14.0...5.15.0
 [5.14.0]: https://github.com/LASP-Libera/libera_utils/compare/5.13.0...5.14.0
 [5.13.0]: https://github.com/LASP-Libera/libera_utils/compare/5.12.0...5.13.0
 [5.12.0]: https://github.com/LASP-Libera/libera_utils/compare/5.11.5...5.12.0
