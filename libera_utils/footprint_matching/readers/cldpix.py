@@ -1,6 +1,7 @@
 """CERES CLDPIX imager-pixel cloud reader plugin.
 
 Data source: CERES Cloud Pixel (CLDPIX) imager-resolution cloud retrievals
+
 - Example product: CER_CLDPIX_NOAA20-VIIRS
 - Format: NetCDF4 with flat (root-level) variables on a 2-D imager swath
   ``(Scanlines, Pixels)`` grid (e.g. 16120 × 400).
@@ -24,7 +25,7 @@ Reading the raw values as latitudes would place every pixel at the wrong
 latitude *and* discard the entire southern hemisphere (colatitude > 90 falls
 outside a −90..90 valid-range filter), so the conversion below is mandatory.
 Longitude uses the CERES 0..360 degrees-east convention and is wrapped to
-−180..180 by :func:`~libera_utils.footprint_matching.readers._longitude.normalize_longitude`.
+−180..180 by ``normalize_longitude``.
 
 Native pixels, matched by time
 ------------------------------

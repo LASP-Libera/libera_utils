@@ -38,10 +38,10 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Per-product reader membership
 # ---------------------------------------------------------------------------
-# The readers that contribute to each shipped FMATCH product, keyed by OperationalMode. A
-# reader contributes to a product when any of its product variables names that product in
-# its ``VariableSpec.modes``. ``readers/__init__.py`` fills this once, from the built-in
-# readers, after they have all registered; it is empty while that package is importing.
+#: The readers that contribute to each shipped FMATCH product, keyed by OperationalMode. A
+#: reader contributes to a product when any of its product variables names that product in
+#: its ``VariableSpec.modes``. ``readers/__init__.py`` fills this once, from the built-in
+#: readers, after they have all registered; it is empty while that package is importing.
 FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {}
 
 

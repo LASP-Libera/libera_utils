@@ -2,6 +2,7 @@
 
 Data source: NOAA-20 (JPSS-1) VIIRS Daily Level-3 Cloud Properties
 - Product: CLDPROP_D3_VIIRS_NOAA20 (Collection 011)
+
 - Format: NetCDF4 with nested groups
 - Spatial resolution: 1° × 1° (~111 km at equator)
 - Grid: 360 × 180 regular lat/lon (global)
@@ -12,13 +13,15 @@ Data source: NOAA-20 (JPSS-1) VIIRS Daily Level-3 Cloud Properties
 
 NetCDF4 group layout (CLDPROP_D3)
 ----------------------------------
-Root:
-  latitude  (180,)   — 1° bin centers, −89.5 to 89.5
-  longitude (360,)   — 1° bin centers, −179.5 to 179.5
-  Cloud_Optical_Thickness_Combined/
-    Mean      (360, 180) — daily mean cloud optical thickness
-  Cloud_Top_Pressure/
-    Mean      (360, 180) — daily mean cloud top pressure [hPa]
+::
+
+  Root:
+    latitude  (180,)   — 1° bin centers, −89.5 to 89.5
+    longitude (360,)   — 1° bin centers, −179.5 to 179.5
+    Cloud_Optical_Thickness_Combined/
+      Mean      (360, 180) — daily mean cloud optical thickness
+    Cloud_Top_Pressure/
+      Mean      (360, 180) — daily mean cloud top pressure [hPa]
 
 Fill value: each field's own ``_FillValue`` (−9999.0 in the distributed files), applied by
 netCDF4's automatic masking and replaced with NaN before output.

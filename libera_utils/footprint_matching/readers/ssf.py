@@ -1,6 +1,7 @@
 """CERES SSF (and FLASHFlux) footprint reader plugin.
 
 Data source: CERES Single Scanner Footprint TOA/Surface Fluxes and Clouds (SSF)
+
 - Example product: CER_SSF_NOAA20-FM6-VIIRS
 - Format: NetCDF4, organized by **CERES footprint** (a 1-D ``Footprints``
   dimension), grouped into thematic groups (Time_and_Position, Scene_Type,
@@ -532,7 +533,7 @@ class SSFReader(PassReader):
         ------
         ValueError
             If the granule's time variable cannot be decoded (see
-            :func:`~libera_utils.footprint_matching.readers._points.decode_cf_times`),
+            ``decode_cf_times``),
             if its footprint latitude is not in ``degrees_north``, if a group or
             variable read is missing, if a field's dimensions differ from the ones the
             reader expects, or if a field read (geolocation and time included) has no
