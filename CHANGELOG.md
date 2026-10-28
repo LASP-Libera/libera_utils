@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING:** Remove the ten calibration family TRIMMED products `l1a_icie_nom_hk_{gain,swc,lwc,solar,lunar,rad_viirs_lunar,ct_video,raps_video,darks,wfov_viirs_lunar}_family_trimmed` (`NOM-HK-*-FAMILY-TRIMMED`) and the four family steps `ProcessingStepIdentifier.cal_{gain,swc,lwc,solar}_family`; use the per-ObsID TRIMMED products and `cal_combine_*` steps.
 - **BREAKING:** Remove `libera_utils.obsids.TRIM_FAMILIES`, `get_family_specs`, `FAMILY_INPUTS`, `get_family_inputs` and `TRIM_FAMILY_INPUTS_CSV`; use `get_trimmed_obsid_spec`, `get_combiner_step`, `COMBINER_INPUTS` and `get_combiner_inputs`. A calibration family is no longer recorded in any catalog file.
+- **BREAKING:** `DataProductIdentifier.anc_ceres_noaa20_flashflux` (`CERES-NOAA20-FLASHFLUX`). FLASHFlux files are the CERES SSF format, named `CER_SSF_...`, and are identified as `anc_ceres_noaa20_ssf` (`CERES-NOAA20-SSF`).
 
 ## [5.25.0] - 2026-11-11
 
