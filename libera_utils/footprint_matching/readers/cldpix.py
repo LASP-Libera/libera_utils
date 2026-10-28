@@ -36,14 +36,6 @@ PSF weigher is the first place a value is weighted. The reader base class sorts
 the points into 1 degree bins once, at load, and answers each footprint's box
 query from that index.
 
-Memory note
------------
-A CLDPIX granule covers one hour and holds about 6.4 million pixels; with the nine
-variables read here that is a few hundred MB indexed. A day is 24 granules, so the
-reader holds only the granules within ``MAX_TIME_OFFSET`` (3 h) of the current
-footprint time, at most seven at once, and releases a granule once the footprints
-have moved past its window.
-
 Variable set
 ------------
 The CLDPIX cloud properties: seven continuous cloud properties (optical depth, water
