@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from libera_utils.footprint_matching import aggregation as agg
+from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLevelReader
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     OperationalMode,
@@ -750,3 +751,52 @@ class TestAggregateSampleVariablesErrors:
         values = np.ones((3, 3))
         with pytest.raises(ValueError, match="2 weights for 3 samples"):
             agg.aggregate_sample_variables(_ParityReader, _sample_set(values), _weight_field(np.ones(2)))
+
+
+class TestStackProductValues:
+    """stack_product_values shapes a reader's per-spec scalars into its product variables."""
+
+    @staticmethod
+    def _scalars() -> dict[str, float]:
+        # A distinct value per spec, so a member stacked out of order or under the wrong stack shows up.
+        specs = ERA5PressureLevelReader.product_variable_specs()
+        return {spec.name: float(i) for i, spec in enumerate(specs)}
+
+    def test_each_stack_is_its_members_in_coordinate_order(self):
+        """Every stacked product variable is the array of its members' scalars, in member (level) order.
+
+        Element ``k`` is published at the stack's ``k``-th coordinate value; out of order, one pressure level's
+        value would be published at another's.
+
+        Stacks distinct scalars for every ERA5 pressure-level spec and compares each stack's array with its
+        members' scalars taken in order.
+        """
+        scalars = self._scalars()
+        stacks = ERA5PressureLevelReader.product_stacks()
+        got = agg.stack_product_values(ERA5PressureLevelReader, scalars)
+        assert set(got) == {stack.name for stack in stacks}
+        for stack in stacks:
+            np.testing.assert_array_equal(got[stack.name], [scalars[member] for member in stack.members])
+
+    def test_unstacked_scalars_pass_through(self):
+        """A scalar that is not a stack member is returned unchanged under its own name.
+
+        A reader may contribute 1-D product variables alongside its stacks; dropping them would leave those
+        variables empty.
+
+        Adds an extra ``surface_pressure`` scalar to the ERA5 scalars and asserts it comes back as is.
+        """
+        scalars = self._scalars() | {"surface_pressure": 1013.0}
+        assert agg.stack_product_values(ERA5PressureLevelReader, scalars)["surface_pressure"] == 1013.0
+
+    def test_missing_member_raises(self):
+        """A missing member scalar raises ``ValueError`` rather than publishing a stack with a level missing.
+
+        Without the check, a stacked variable would be built one element short and misaligned with its coordinate.
+
+        Drops ``temperature_500hPa`` from the scalars and asserts the error names it.
+        """
+        scalars = self._scalars()
+        del scalars["temperature_500hPa"]
+        with pytest.raises(ValueError, match="temperature_500hPa"):
+            agg.stack_product_values(ERA5PressureLevelReader, scalars)

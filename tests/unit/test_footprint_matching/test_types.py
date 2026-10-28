@@ -8,6 +8,7 @@ import pytest
 from libera_utils.footprint_matching.types import (
     BoundingBox,
     OperationalMode,
+    ProductStack,
     RadiometerFootprint,
     VariableSpec,
     with_standard_deviation_companions,
@@ -129,3 +130,27 @@ class TestVariableSpec:
         _, companion = with_standard_deviation_companions((parent,))
         assert companion.name == "v_standard_deviation"
         assert companion.modes == modes
+
+
+class TestProductStack:
+    """A ``ProductStack`` has one distinct member per coordinate value."""
+
+    @pytest.mark.parametrize(
+        ("members", "coordinate_values", "message"),
+        [
+            pytest.param((), (), "no members", id="empty"),
+            pytest.param(("t_1", "t_1"), (1, 2), "more than once", id="duplicate"),
+            pytest.param(("t_1", "t_2"), (1,), "coordinate values", id="length-mismatch"),
+        ],
+    )
+    def test_invalid_stack_raises(self, members, coordinate_values, message):
+        """An empty, repeating or length-mismatched ``ProductStack`` raises ``ValueError`` at construction.
+
+        Element ``k`` of a stacked variable is member ``k`` at coordinate value ``k``, so a stack with no members,
+        a member used twice, or a member without a coordinate value would publish a level with the wrong value or
+        none.
+
+        Each case constructs the stack and matches the message naming the defect.
+        """
+        with pytest.raises(ValueError, match=message):
+            ProductStack(name="t", dimension="PRESSURE_LEVEL", coordinate_values=coordinate_values, members=members)
