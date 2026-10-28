@@ -114,6 +114,10 @@ def _cell_centers(edges: np.ndarray, first_edge: float, last_edge: float, axis_n
     return edges + direction * 0.5 * cell
 
 
+# The products that carry the VIIRS BRDF variables: every FMATCH product.
+_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+
+
 class VIIRSBRDFReader(StaticReader):
     """Read VIIRS surface BRDF model parameters from a VJ143C1 HDF5 file.
 
@@ -150,7 +154,7 @@ class VIIRSBRDFReader(StaticReader):
             name=name,
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         )
         for name, _ in _BRDF_FIELDS

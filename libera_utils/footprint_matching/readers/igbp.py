@@ -48,6 +48,10 @@ _IGBP_VALID_MAX: int = 17
 _N_IGBP_CATEGORIES: int = 20
 
 
+# The products that carry the IGBP variables: every FMATCH product.
+_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+
+
 class IGBPReader(StaticReader):
     """Read IGBP land cover classification from MODIS MCD12Q1 HDF4 tile files.
 
@@ -98,7 +102,7 @@ class IGBPReader(StaticReader):
             name="surface_type",
             dtype="int16",
             aggregation="weighted_mode",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )
@@ -111,21 +115,21 @@ class IGBPReader(StaticReader):
             name="surface_type_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
             name="surface_type_secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
         VariableSpec(
             name="surface_type_tertiary",
             dtype="int16",
             aggregation="weighted_mode_tertiary",
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=_N_IGBP_CATEGORIES,
         ),
     )

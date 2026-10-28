@@ -33,7 +33,7 @@ from libera_utils.footprint_matching.types import (
 )
 
 _T0 = np.datetime64("2026-01-01T12:00:00", "ns")
-_SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM)
+_SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM}))
 
 # ---------------------------------------------------------------------------
 # Minimal concrete readers used only in tests
@@ -949,13 +949,13 @@ class TestProductVariableSpecs:
         in order, the mean variable, its companion, the mode variable, and the additional one.
         """
         categorical = VariableSpec(
-            name="c", dtype="int16", aggregation="weighted_mode", required_mode=OperationalMode.CAM, n_categories=4
+            name="c", dtype="int16", aggregation="weighted_mode", modes=frozenset({OperationalMode.CAM}), n_categories=4
         )
         ranked = VariableSpec(
             name="c_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.CAM,
+            modes=frozenset({OperationalMode.CAM}),
             n_categories=4,
         )
 

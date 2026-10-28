@@ -4,7 +4,8 @@ Tests confirm:
 - importing the readers package registers every built-in reader under its key, with its declared
   instrument, resolution, time policy and variables
 - an unknown key raises a KeyError naming the registered keys
-- each operational mode resolves to its per-product reader set (FMATCH_MODE_READERS)
+- each operational mode resolves to its reader set (FMATCH_MODE_READERS), derived from the readers'
+  VariableSpec.modes, and carries exactly today's variables
 - a second class registering a key another class holds is rejected at definition
 """
 
@@ -25,13 +26,15 @@ from libera_utils.footprint_matching.readers import (
     VIIRSBRDFReader,
     VIIRSCldpropD3Reader,
 )
-from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS
+from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS, _derive_mode_readers
 from libera_utils.footprint_matching.types import OperationalMode, TimeMatch, VariableSpec
 
-_SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", required_mode=OperationalMode.CAM)
-_CAM = OperationalMode.CAM
-_FLASH = OperationalMode.IMAGER_FLASH
-_IMAGER = OperationalMode.IMAGER
+_SPEC = VariableSpec(name="v", dtype="float32", aggregation="weighted_mean", modes=frozenset({OperationalMode.CAM}))
+# The product sets the readers declare, written out independently of the reader modules.
+_ALL = frozenset(OperationalMode)
+_IMAGER_PAIR = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+_SSF_BASE = frozenset({OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+_ONLY_IMAGER = frozenset({OperationalMode.IMAGER})
 _HOUR = np.timedelta64(1, "h")
 _PASS_WINDOW = np.timedelta64(15, "m")
 _PASS_MAX_OFFSET = np.timedelta64(3, "h")
@@ -41,30 +44,29 @@ _PRESSURE_LEVELS_HPA = (1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150, 175, 2
 _PRESSURE_LEVELS_HPA += (500, 550, 600, 650, 700, 750, 775, 800, 825, 850, 875, 900, 925, 950, 975, 1000)
 
 
-def _mean(name: str, mode: OperationalMode, only_modes: tuple | None = None) -> tuple:
-    return (name, "float32", "weighted_mean", None, mode, only_modes)
+def _mean(name: str, modes: frozenset[OperationalMode]) -> tuple:
+    return (name, "float32", "weighted_mean", None, modes)
 
 
-def _log_mean(name: str, mode: OperationalMode, only_modes: tuple | None = None) -> tuple:
-    return (name, "float32", "weighted_log_mean", None, mode, only_modes)
+def _log_mean(name: str, modes: frozenset[OperationalMode]) -> tuple:
+    return (name, "float32", "weighted_log_mean", None, modes)
 
 
-def _code(name: str, n_categories: int | None, mode: OperationalMode) -> tuple:
-    return (name, "int16", "weighted_mode", n_categories, mode, None)
+def _code(name: str, n_categories: int | None, modes: frozenset[OperationalMode]) -> tuple:
+    return (name, "int16", "weighted_mode", n_categories, modes)
 
 
-def _ranked(base: str, n_categories: int, mode: OperationalMode) -> tuple[tuple, ...]:
+def _ranked(base: str, n_categories: int, modes: frozenset[OperationalMode]) -> tuple[tuple, ...]:
     return tuple(
-        (f"{base}_{rank}", "int16", f"weighted_mode_{rank}", n_categories, mode, None)
+        (f"{base}_{rank}", "int16", f"weighted_mode_{rank}", n_categories, modes)
         for rank in ("primary", "secondary", "tertiary")
     )
 
 
-# The SSF fields pinned to FMATCH-IMAGER alone.
-_IMAGER_ONLY = (_IMAGER,)
-_SSF_IMAGER_ONLY = (
+# The SSF fields carried by FMATCH-IMAGER alone.
+_SSF_EXTENDED = (
     *(
-        _mean(f"{base}_{layer}", _IMAGER, _IMAGER_ONLY)
+        _mean(f"{base}_{layer}", _ONLY_IMAGER)
         for base in (
             "layer_coverage",
             "cloud_coverage_multilayer",
@@ -74,22 +76,22 @@ _SSF_IMAGER_ONLY = (
         )
         for layer in ("lower", "upper")
     ),
-    _log_mean("cloud_optical_depth_upper", _IMAGER, _IMAGER_ONLY),
-    _mean("cloud_water_particle_radius_upper", _IMAGER, _IMAGER_ONLY),
-    _mean("cloud_ice_particle_radius_upper", _IMAGER, _IMAGER_ONLY),
-    _log_mean("match_aot", _IMAGER, _IMAGER_ONLY),
-    *(_mean(f"aerosol_type_percentage_type{i}", _IMAGER, _IMAGER_ONLY) for i in range(7)),
-    _log_mean("imager_dark_target_land_055um_corrected_aerosol_optical_depth", _IMAGER, _IMAGER_ONLY),
-    _log_mean("imager_deep_blue_ocean_055um_aerosol_optical_depth", _IMAGER, _IMAGER_ONLY),
-    _mean("surface_albedo", _IMAGER, _IMAGER_ONLY),
-    _mean("toa_incoming_solar_radiation", _IMAGER, _IMAGER_ONLY),
+    _log_mean("cloud_optical_depth_upper", _ONLY_IMAGER),
+    _mean("cloud_water_particle_radius_upper", _ONLY_IMAGER),
+    _mean("cloud_ice_particle_radius_upper", _ONLY_IMAGER),
+    _log_mean("match_aot", _ONLY_IMAGER),
+    *(_mean(f"aerosol_type_percentage_type{i}", _ONLY_IMAGER) for i in range(7)),
+    _log_mean("imager_dark_target_land_055um_corrected_aerosol_optical_depth", _ONLY_IMAGER),
+    _log_mean("imager_deep_blue_ocean_055um_aerosol_optical_depth", _ONLY_IMAGER),
+    _mean("surface_albedo", _ONLY_IMAGER),
+    _mean("toa_incoming_solar_radiation", _ONLY_IMAGER),
 )
 
 
 # Each built-in reader's declared attributes, written out independently of the reader modules:
 # (key, class, INSTRUMENT, RESOLUTION_KM, TIME_MATCH, PASS_WINDOW, MAX_TIME_OFFSET, VARIABLES,
 #  ADDITIONAL_PRODUCT_VARIABLES), each variable as
-#  (name, dtype, aggregation, n_categories, required_mode, only_modes).
+#  (name, dtype, aggregation, n_categories, modes).
 # VARIABLES is None for era5_pressure, whose 185 specs are pinned separately.
 _DECLARED = [
     (
@@ -101,13 +103,13 @@ _DECLARED = [
         None,
         _HOUR,
         (
-            _mean("wind_u10", _CAM),
-            _mean("wind_v10", _CAM),
-            _mean("temperature_2m", _IMAGER),
-            _mean("dew_point_temperature_2m", _IMAGER),
-            _mean("surface_pressure", _IMAGER),
-            _mean("surface_geopotential", _IMAGER),
-            _mean("forecast_albedo", _IMAGER),
+            _mean("wind_u10", _ALL),
+            _mean("wind_v10", _ALL),
+            _mean("temperature_2m", _IMAGER_PAIR),
+            _mean("dew_point_temperature_2m", _IMAGER_PAIR),
+            _mean("surface_pressure", _IMAGER_PAIR),
+            _mean("surface_geopotential", _IMAGER_PAIR),
+            _mean("forecast_albedo", _IMAGER_PAIR),
         ),
         (),
     ),
@@ -120,8 +122,8 @@ _DECLARED = [
         TimeMatch.DAILY,
         None,
         None,
-        (_code("surface_type", 20, _CAM),),
-        _ranked("surface_type", 20, _CAM),
+        (_code("surface_type", 20, _ALL),),
+        _ranked("surface_type", 20, _ALL),
     ),
     (
         "nise",
@@ -132,7 +134,7 @@ _DECLARED = [
         None,
         None,
         tuple(
-            _mean(name, _CAM)
+            _mean(name, _ALL)
             for name in ("sea_ice_concentration", "snow_free_land", "permanent_ice", "snow_on_land", "open_ocean")
         ),
         (),
@@ -146,10 +148,10 @@ _DECLARED = [
         None,
         None,
         (
-            _log_mean("aod_550", _IMAGER),
-            _code("aerosol_type", 8, _IMAGER),
+            _log_mean("aod_550", _IMAGER_PAIR),
+            _code("aerosol_type", 8, _IMAGER_PAIR),
         ),
-        _ranked("aerosol_type", 8, _IMAGER),
+        _ranked("aerosol_type", 8, _IMAGER_PAIR),
     ),
     (
         "viirs_brdf",
@@ -160,7 +162,7 @@ _DECLARED = [
         None,
         None,
         tuple(
-            _mean(f"brdf_{band}_{param}", _CAM)
+            _mean(f"brdf_{band}_{param}", _ALL)
             for band in ("shortwave", "vis", "nir")
             for param in ("fiso", "fvol", "fgeo")
         ),
@@ -174,7 +176,7 @@ _DECLARED = [
         TimeMatch.DAILY,
         None,
         None,
-        (_log_mean("cloud_optical_thickness", _CAM), _mean("cloud_top_pressure", _CAM)),
+        (_log_mean("cloud_optical_thickness", _ALL), _mean("cloud_top_pressure", _ALL)),
         (),
     ),
     (
@@ -186,15 +188,15 @@ _DECLARED = [
         _PASS_WINDOW,
         _PASS_MAX_OFFSET,
         (
-            _log_mean("aerosol_optical_depth", _FLASH),
-            _mean("clear_coverage", _FLASH),
-            _log_mean("cloud_optical_depth_lower", _FLASH),
-            _mean("cloud_water_particle_radius_lower", _FLASH),
-            _mean("cloud_ice_particle_radius_lower", _FLASH),
-            _code("cloud_classification", None, _FLASH),
-            _code("shortwave_adm_type", None, _FLASH),
-            _code("longwave_adm_type", None, _FLASH),
-            *_SSF_IMAGER_ONLY,
+            _log_mean("aerosol_optical_depth", _SSF_BASE),
+            _mean("clear_coverage", _SSF_BASE),
+            _log_mean("cloud_optical_depth_lower", _SSF_BASE),
+            _mean("cloud_water_particle_radius_lower", _SSF_BASE),
+            _mean("cloud_ice_particle_radius_lower", _SSF_BASE),
+            _code("cloud_classification", None, _SSF_BASE),
+            _code("shortwave_adm_type", None, _SSF_BASE),
+            _code("longwave_adm_type", None, _SSF_BASE),
+            *_SSF_EXTENDED,
         ),
         (),
     ),
@@ -207,24 +209,58 @@ _DECLARED = [
         _PASS_WINDOW,
         _PASS_MAX_OFFSET,
         (
-            _log_mean("cloud_optical_depth", _IMAGER),
-            _mean("cloud_water_path", _IMAGER),
-            _mean("cloud_effective_temperature", _IMAGER),
-            _mean("cloud_effective_height", _IMAGER),
-            _mean("cloud_effective_pressure", _IMAGER),
-            _mean("cloud_top_height", _IMAGER),
-            _mean("cloud_particle_radius", _IMAGER),
-            _code("cloud_particle_phase", 5, _IMAGER),
-            _code("cloud_mask", 4, _IMAGER),
+            _log_mean("cloud_optical_depth", _IMAGER_PAIR),
+            _mean("cloud_water_path", _IMAGER_PAIR),
+            _mean("cloud_effective_temperature", _IMAGER_PAIR),
+            _mean("cloud_effective_height", _IMAGER_PAIR),
+            _mean("cloud_effective_pressure", _IMAGER_PAIR),
+            _mean("cloud_top_height", _IMAGER_PAIR),
+            _mean("cloud_particle_radius", _IMAGER_PAIR),
+            _code("cloud_particle_phase", 5, _IMAGER_PAIR),
+            _code("cloud_mask", 4, _IMAGER_PAIR),
         ),
         (),
     ),
 ]
 _BUILT_IN = {row[0]: row[1] for row in _DECLARED}
 
+# The readers each product draws on, written out independently of the readers' specs.
+_CAM_READERS = frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"})
+_EXPECTED_MODE_READERS = {
+    OperationalMode.CAM: _CAM_READERS,
+    OperationalMode.CAM_CAMTIME: _CAM_READERS,
+    OperationalMode.IMAGER_FLASH: _CAM_READERS | {"ssf"},
+    OperationalMode.IMAGER: _CAM_READERS | {"viirs_aod", "era5_pressure", "cldpix", "ssf"},
+    OperationalMode.IMAGER_CAMTIME: _CAM_READERS | {"viirs_aod", "cldpix", "ssf"},
+}
+# Each product's variable count, standard-deviation companions and additional variables included.
+_EXPECTED_PRODUCT_VARIABLE_COUNTS = {
+    OperationalMode.CAM: 40,
+    OperationalMode.CAM_CAMTIME: 40,
+    OperationalMode.IMAGER_FLASH: 53,
+    OperationalMode.IMAGER: 505,
+    OperationalMode.IMAGER_CAMTIME: 85,
+}
+
+
+def _stub_reader(key: str, modes: frozenset[OperationalMode]) -> type[StaticReader]:
+    """Define and return a stub StaticReader under ``key`` with one variable carried by ``modes``."""
+
+    class _Stub(StaticReader):
+        READER_KEY = key
+        INSTRUMENT = "FAKE"
+        RESOLUTION_KM = 1.0
+        TIME_MATCH = TimeMatch.DAILY
+        VARIABLES = (VariableSpec(name="v", dtype="int16", aggregation="weighted_mode", modes=modes),)
+
+        def _load_native(self):
+            raise NotImplementedError
+
+    return _Stub
+
 
 def _as_tuples(specs: tuple[VariableSpec, ...]) -> tuple[tuple, ...]:
-    return tuple((v.name, v.dtype, v.aggregation, v.n_categories, v.required_mode, v.only_modes) for v in specs)
+    return tuple((v.name, v.dtype, v.aggregation, v.n_categories, v.modes) for v in specs)
 
 
 class TestLookup:
@@ -251,11 +287,11 @@ class TestLookup:
         each variable's ``long_name``; the query box is padded by half of ``RESOLUTION_KM`` and the weigher sizes its
         coverage measure from it; ``TIME_MATCH``, ``PASS_WINDOW`` and ``MAX_TIME_OFFSET`` decide which samples a footprint is paired
         with; and ``VARIABLES`` fixes the order of the served planes, each variable's aggregation, dtype, category
-        count and the products that carry it (``only_modes`` pins a variable to exact products). A change to any of them renames, mis-aggregates or drops a product
+        count and the products that carry it. A change to any of them renames, mis-aggregates or drops a product
         variable, or pairs a footprint with the wrong data.
 
         Parametrized over the nine built-in readers; asserts ``get(key)`` is the class and that its class attributes
-        equal the table's, with every variable's name, dtype, aggregation, category count and gating modes, in order.
+        equal the table's, with every variable's name, dtype, aggregation, category count and products, in order.
         """
         assert ReaderRegistry.get(key) is cls
         assert cls.READER_KEY == key
@@ -275,13 +311,13 @@ class TestLookup:
         order is the order of the planes the reader writes, so names and planes must agree.
 
         Asserts the 185 spec names are ``<field>_<level>hPa`` for the five fields in turn, each over the 37 levels
-        ascending from 1 to 1000 hPa, and that all are IMAGER-gated continuous float32 weighted means.
+        ascending from 1 to 1000 hPa, and that all are continuous float32 weighted means carried by FMATCH-IMAGER alone.
         """
         variables = ERA5PressureLevelReader.VARIABLES
         assert [v.name for v in variables] == [
             f"{field}_{level}hPa" for field in _PRESSURE_FIELDS for level in _PRESSURE_LEVELS_HPA
         ]
-        assert {_as_tuples((v,))[0][1:] for v in variables} == {("float32", "weighted_mean", None, _IMAGER, None)}
+        assert {_as_tuples((v,))[0][1:] for v in variables} == {("float32", "weighted_mean", None, _ONLY_IMAGER)}
 
     def test_unknown_key_raises(self):
         """``ReaderRegistry.get`` raises ``KeyError`` for a key with no registered reader.
@@ -365,6 +401,76 @@ class TestReadersForMode:
         """
         assert "era5_pressure" in FMATCH_MODE_READERS[OperationalMode.IMAGER]
         assert "era5_pressure" not in FMATCH_MODE_READERS[OperationalMode.IMAGER_CAMTIME]
+
+    def test_derived_table_equals_the_expected_reader_sets(self):
+        """``FMATCH_MODE_READERS``, derived from the readers' ``VariableSpec.modes``, holds the expected reader sets.
+
+        Each product's readers follow from the products its variables name, so a ``modes`` set that names a product
+        by mistake adds a reader to it, and one that leaves a product out drops a reader.
+
+        Asserts the derived table equals the reader sets written out in this module.
+        """
+        assert FMATCH_MODE_READERS == _EXPECTED_MODE_READERS
+
+    @pytest.mark.parametrize("mode", list(OperationalMode))
+    def test_each_product_carries_the_expected_variable_count(self, mode):
+        """Each product carries its expected number of variables, companions and additional variables included.
+
+        ``_DECLARED`` pins each reader's ``VARIABLES`` and ``ADDITIONAL_PRODUCT_VARIABLES`` but not the
+        standard-deviation companions, which inherit their parent's ``modes``; this count pins the totals the product
+        definitions are built from.
+
+        Parametrized over every mode; asserts the specs of the mode's readers that name the mode number as expected.
+        """
+        specs = [
+            spec
+            for reader in ReaderRegistry.get_readers_for_mode(mode).values()
+            for spec in reader.product_variable_specs()
+            if mode in spec.modes
+        ]
+        assert len(specs) == _EXPECTED_PRODUCT_VARIABLE_COUNTS[mode]
+
+    def test_derive_puts_a_reader_in_exactly_the_modes_its_specs_name(self, monkeypatch):
+        """``_derive_mode_readers`` adds a reader to exactly the products its variables name.
+
+        This is the rule the table is built by: a reader contributes to a product when any of its variables names it.
+
+        Copies the registry with ``monkeypatch``, defines a stub whose one variable names FMATCH-CAM, and asserts the
+        derived table lists the stub under CAM and under no other mode.
+        """
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        _stub_reader("_registry_test_cam_only", frozenset({OperationalMode.CAM}))
+
+        derived = _derive_mode_readers(ReaderRegistry._registry)
+
+        assert {mode for mode, keys in derived.items() if "_registry_test_cam_only" in keys} == {OperationalMode.CAM}
+
+    def test_derive_raises_when_a_mode_has_no_reader(self):
+        """``_derive_mode_readers`` raises ``ValueError`` naming each product no reader supplies.
+
+        A product with no reader would carry no ancillary variables, so the table must not be built with one.
+
+        Derives from the IMAGER-only ``era5_pressure`` reader alone and asserts a ``ValueError`` naming FMATCH-CAM.
+        """
+        with pytest.raises(ValueError, match="No reader supplies a variable for FMATCH-CAM, "):
+            _derive_mode_readers({"era5_pressure": ERA5PressureLevelReader})
+
+    def test_a_reader_registered_after_import_is_not_in_the_table(self, monkeypatch):
+        """A reader defined after the package import joins the registry but not ``FMATCH_MODE_READERS``.
+
+        The table is filled once, from the built-in readers, so a stub defined by a test or a script cannot add itself
+        to a product.
+
+        Copies the registry with ``monkeypatch``, defines a stub naming every product, and asserts it is registered
+        but absent from every mode's reader set and from ``get_readers_for_mode``.
+        """
+        monkeypatch.setattr(ReaderRegistry, "_registry", dict(ReaderRegistry._registry))
+        stub = _stub_reader("_registry_test_late", frozenset(OperationalMode))
+
+        assert ReaderRegistry.get("_registry_test_late") is stub
+        for mode in OperationalMode:
+            assert "_registry_test_late" not in FMATCH_MODE_READERS[mode]
+            assert "_registry_test_late" not in ReaderRegistry.get_readers_for_mode(mode)
 
 
 class TestDuplicateKey:

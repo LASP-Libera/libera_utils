@@ -137,15 +137,9 @@ class _SSFField(NamedTuple):
     n_categories : int or None
         Category count for categorical variables; ``None`` for continuous variables
         and for the mode-aggregated scene and ADM type codes, which have no fixed count.
-    required_mode : OperationalMode
-        Minimum operational mode for the emitted spec (see
-        :class:`~libera_utils.footprint_matching.types.VariableSpec`). Defaults to
-        ``IMAGER_FLASH`` -- the latency at which the SSF/FLASHFlux reader first
-        contributes.
-    only_modes : tuple[OperationalMode, ...] or None
-        When set, pins the emitted spec to exactly these products (bypassing the
-        ``required_mode`` rank rule). Used to keep the extended cloud/aerosol/albedo
-        fields in FMATCH-IMAGER only. ``None`` (default) uses the rank rule.
+    modes : frozenset[OperationalMode]
+        The products that carry the emitted spec (see
+        :class:`~libera_utils.footprint_matching.types.VariableSpec`).
     """
 
     out_name: str
@@ -155,11 +149,15 @@ class _SSFField(NamedTuple):
     dimensions: tuple[str, ...]
     layer_index: int | None
     n_categories: int | None
-    required_mode: OperationalMode = OperationalMode.IMAGER_FLASH
-    only_modes: tuple[OperationalMode, ...] | None = None
+    modes: frozenset[OperationalMode]
 
 
-# The base SSF fields, carried by every product SSF feeds (see module docstring).
+# The products that carry the base SSF fields: every product SSF feeds.
+_SSF_BASE_MODES: frozenset[OperationalMode] = frozenset(
+    {OperationalMode.IMAGER_FLASH, OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME}
+)
+
+# The base SSF fields (see module docstring).
 _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
     _SSFField(
         "aerosol_optical_depth",
@@ -169,6 +167,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
+        _SSF_BASE_MODES,
     ),
     _SSFField(
         "clear_coverage",
@@ -178,6 +177,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
+        _SSF_BASE_MODES,
     ),
     _SSFField(
         "cloud_optical_depth_lower",
@@ -187,6 +187,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
+        _SSF_BASE_MODES,
     ),
     # Effective cloud particle radius separated by thermodynamic phase (μm).
     # SSF stores water and ice radii in separate 2-D (Footprints, LowerUpper)
@@ -201,6 +202,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
+        _SSF_BASE_MODES,
     ),
     _SSFField(
         "cloud_ice_particle_radius_lower",
@@ -210,6 +212,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _LAYER_DIMS,
         _CLOUD_LAYER_LOWER_INDEX,
         None,
+        _SSF_BASE_MODES,
     ),
     _SSFField(
         "cloud_classification",
@@ -219,6 +222,7 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
+        _SSF_BASE_MODES,
     ),
     _SSFField(
         "shortwave_adm_type",
@@ -228,8 +232,18 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
         _FOOTPRINT_DIMS,
         None,
         None,
+        _SSF_BASE_MODES,
     ),
-    _SSFField("longwave_adm_type", "Scene_Type", "longwave_adm_type", "weighted_mode", _FOOTPRINT_DIMS, None, None),
+    _SSFField(
+        "longwave_adm_type",
+        "Scene_Type",
+        "longwave_adm_type",
+        "weighted_mode",
+        _FOOTPRINT_DIMS,
+        None,
+        None,
+        _SSF_BASE_MODES,
+    ),
 )
 
 
@@ -237,16 +251,14 @@ _SSF_BASE_FIELDS: tuple[_SSFField, ...] = (
 # Extended SSF field set carried by FMATCH-IMAGER only.
 # ---------------------------------------------------------------------------
 # These CERES SSF cloud-layer, aerosol, and surface-albedo fields go on FMATCH-IMAGER
-# *only* -- not IMAGER-FLASH or IMAGER-CAMTIME, which also activate this reader. The
-# required_mode rank rule can't express that (IMAGER-CAMTIME outranks IMAGER), so each
-# field is pinned with only_modes=(IMAGER,); see VariableSpec.only_modes / spec_active_in_mode.
+# *only* -- not IMAGER-FLASH or IMAGER-CAMTIME, which carry the base SSF fields.
 #
 # FMATCH products are strictly 1-D per footprint, so multi-valued source fields are flattened
 # (like era5_pressure's per-level split): LowerUpper (2) -> _lower/_upper, AeroTypePct (7) ->
 # _typeN. Genuinely 1-D fields (surface_albedo, toa_incoming_solar_radiation) stay a single
 # spec via _SCALAR_MEMBER. All are continuous float32 and so also gain a _standard_deviation
 # companion in product_variable_specs().
-_IMAGER_ONLY: tuple[OperationalMode, ...] = (OperationalMode.IMAGER,)
+_SSF_IMAGER_ONLY_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
 
 # Zero-axis members for a 1-D (Footprints,) source field: one output, no index.
 _SCALAR_MEMBER: tuple[tuple[str, int | None], ...] = (("", None),)
@@ -380,8 +392,8 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
     """Flatten the FMATCH-IMAGER-only SSF sources into one _SSFField per output variable.
 
     Each source field is flattened along its second axis (or emitted as a single 1-D
-    value), named with a suffix, and pinned to FMATCH-IMAGER via ``only_modes``. All
-    fields are continuous float32.
+    value), named with a suffix, and given ``modes`` {FMATCH-IMAGER}. All fields are
+    continuous float32.
 
     Returns
     -------
@@ -401,8 +413,7 @@ def _build_imager_only_ssf_fields() -> tuple[_SSFField, ...]:
                     dimensions,
                     index,
                     None,
-                    OperationalMode.IMAGER,
-                    _IMAGER_ONLY,
+                    _SSF_IMAGER_ONLY_MODES,
                 )
             )
     return tuple(fields)
@@ -488,9 +499,8 @@ class SSFReader(PassReader):
             name=f.out_name,
             dtype="int16" if f.aggregation == "weighted_mode" else "float32",
             aggregation=f.aggregation,
-            required_mode=f.required_mode,
+            modes=f.modes,
             n_categories=f.n_categories,
-            only_modes=f.only_modes,
         )
         for f in _SSF_FIELDS
     )

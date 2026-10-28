@@ -115,6 +115,10 @@ _ERA5_PRESSURE_LEVEL_VARIABLES: tuple[tuple[str, str], ...] = (
 # Name of the vertical coordinate in CDS pressure-level files (hPa values).
 _PRESSURE_LEVEL_COORD: str = "pressure_level"
 
+# The products that carry the ERA5 pressure-level variables: FMATCH-IMAGER only, since the
+# pressure levels are a radiometer-timescale quantity.
+_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER})
+
 
 def _pressure_level_layers() -> Iterator[tuple[str, str, int]]:
     """Yield ``(spec name, ERA5 variable name, level hPa)`` for every reader output layer.
@@ -139,7 +143,7 @@ def _build_pressure_level_specs() -> tuple[VariableSpec, ...]:
             name=name,
             dtype="float32",
             aggregation="weighted_mean",
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=None,
         )
         for name, _, _ in _pressure_level_layers()

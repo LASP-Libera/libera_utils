@@ -22,6 +22,7 @@ libera_utils.footprint_matching.readers.base.AncillaryReader :
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 # OperationalMode is imported at runtime (not just for type checking): it keys the
@@ -37,32 +38,49 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Per-product reader membership
 # ---------------------------------------------------------------------------
-# One fully-enumerated reader set per shipped FMATCH product -- the single source of truth
-# for which readers contribute to which product (readers do not self-gate by mode). Keyed by
-# OperationalMode. Each set is spelled out in full (names repeat by design) rather than
-# composed. Note FMATCH-IMAGER-CAMTIME omits ``era5_pressure``: the ERA5 pressure levels are a
-# radiometer-timescale quantity.
-FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {
-    OperationalMode.CAM: frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
-    OperationalMode.CAM_CAMTIME: frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3"}),
-    OperationalMode.IMAGER_FLASH: frozenset({"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "ssf"}),
-    OperationalMode.IMAGER: frozenset(
-        {
-            "era5_surface",
-            "igbp",
-            "nise",
-            "viirs_brdf",
-            "viirs_cldprop_d3",
-            "viirs_aod",
-            "era5_pressure",
-            "cldpix",
-            "ssf",
-        }
-    ),
-    OperationalMode.IMAGER_CAMTIME: frozenset(
-        {"era5_surface", "igbp", "nise", "viirs_brdf", "viirs_cldprop_d3", "viirs_aod", "cldpix", "ssf"}
-    ),
-}
+# The readers that contribute to each shipped FMATCH product, keyed by OperationalMode. A
+# reader contributes to a product when any of its product variables names that product in
+# its ``VariableSpec.modes``. ``readers/__init__.py`` fills this once, from the built-in
+# readers, after they have all registered; it is empty while that package is importing.
+FMATCH_MODE_READERS: dict[OperationalMode, frozenset[str]] = {}
+
+
+def _derive_mode_readers(readers: Mapping[str, type[AncillaryReader]]) -> dict[OperationalMode, frozenset[str]]:
+    """Return, for every operational mode, the keys of the readers that contribute to it.
+
+    A reader contributes to a mode when any spec in its ``product_variable_specs()``
+    names that mode in ``VariableSpec.modes``.
+
+    Parameters
+    ----------
+    readers : Mapping[str, type[AncillaryReader]]
+        Registry key to reader class, for the readers whose membership to derive.
+
+    Returns
+    -------
+    dict[OperationalMode, frozenset[str]]
+        One entry per :class:`OperationalMode`, holding the keys of its readers.
+
+    Raises
+    ------
+    ValueError
+        If a mode has no reader, so its product would carry no ancillary variables.
+    """
+    mode_readers = {
+        mode: frozenset(
+            key
+            for key, reader in readers.items()
+            if any(mode in spec.modes for spec in reader.product_variable_specs())
+        )
+        for mode in OperationalMode
+    }
+    empty = [mode.value for mode, keys in mode_readers.items() if not keys]
+    if empty:
+        raise ValueError(
+            f"No reader supplies a variable for {', '.join(empty)}: give at least one reader's "
+            "VariableSpec.modes each of these products, or remove the product."
+        )
+    return mode_readers
 
 
 class ReaderRegistry:
@@ -128,8 +146,8 @@ class ReaderRegistry:
     def get_readers_for_mode(mode: OperationalMode) -> dict[str, type[AncillaryReader]]:
         """Return the readers that contribute to a product's definition.
 
-        Membership is read directly from the per-product reader set
-        (:data:`FMATCH_MODE_READERS`).
+        Membership is read from :data:`FMATCH_MODE_READERS`, which is derived from the
+        built-in readers' ``VariableSpec.modes``.
 
         Parameters
         ----------
@@ -140,8 +158,8 @@ class ReaderRegistry:
         -------
         dict[str, type[AncillaryReader]]
             Mapping of registry key to reader class for every reader in the product's
-            set. Only production readers named in the sets are returned; throwaway
-            readers other code may have registered are not included.
+            set. Only the built-in readers are returned; readers other code registers
+            after the package import are not included.
 
         Examples
         --------

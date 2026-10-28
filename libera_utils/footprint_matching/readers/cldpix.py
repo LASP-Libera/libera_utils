@@ -184,6 +184,10 @@ _CLDPIX_FIELDS: tuple[_CLDPIXField, ...] = (
 )
 
 
+# The products that carry the CLDPIX variables.
+_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+
+
 class CLDPIXReader(PassReader):
     """Read CERES CLDPIX imager-pixel cloud data as time-stamped native points.
 
@@ -224,7 +228,7 @@ class CLDPIXReader(PassReader):
             name=f.out_name,
             dtype="int16" if f.aggregation == "weighted_mode" else "float32",
             aggregation=f.aggregation,
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=f.n_categories,
         )
         for f in _CLDPIX_FIELDS

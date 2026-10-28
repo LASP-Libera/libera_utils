@@ -88,6 +88,10 @@ _AEROSOL_TYPE_VARIABLE: str = "Aerosol_Type_Land_Ocean_Mode"
 _N_AEROSOL_TYPES: int = 8
 
 
+# The products that carry the VIIRS AOD variables.
+_MODES: frozenset[OperationalMode] = frozenset({OperationalMode.IMAGER, OperationalMode.IMAGER_CAMTIME})
+
+
 class VIIRSAODReader(StaticReader):
     """Read NOAA-20 VIIRS Deep Blue AOD + aerosol type from an AERDB_D3_VIIRS_NOAA20 file.
 
@@ -130,7 +134,7 @@ class VIIRSAODReader(StaticReader):
             # AOD is approximately log-normally distributed, so a geometric
             # (log) mean is the appropriate spatial aggregation.
             aggregation="weighted_log_mean",
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=None,
         ),
         VariableSpec(
@@ -140,7 +144,7 @@ class VIIRSAODReader(StaticReader):
             # the footprint. A std-dev companion is (correctly) not generated for
             # weighted_mode variables.
             aggregation="weighted_mode",
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=_N_AEROSOL_TYPES,
         ),
     )
@@ -154,21 +158,21 @@ class VIIRSAODReader(StaticReader):
             name="aerosol_type_primary",
             dtype="int16",
             aggregation="weighted_mode_primary",
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=_N_AEROSOL_TYPES,
         ),
         VariableSpec(
             name="aerosol_type_secondary",
             dtype="int16",
             aggregation="weighted_mode_secondary",
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=_N_AEROSOL_TYPES,
         ),
         VariableSpec(
             name="aerosol_type_tertiary",
             dtype="int16",
             aggregation="weighted_mode_tertiary",
-            required_mode=OperationalMode.IMAGER,
+            modes=_MODES,
             n_categories=_N_AEROSOL_TYPES,
         ),
     )

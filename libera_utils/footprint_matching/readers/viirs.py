@@ -51,6 +51,10 @@ _D3_FIELDS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
+# The products that carry the VIIRS cloud properties: every FMATCH product.
+_MODES: frozenset[OperationalMode] = frozenset(OperationalMode)
+
+
 class VIIRSCldpropD3Reader(StaticReader):
     """Read VIIRS daily cloud properties from a CLDPROP_D3 NetCDF4 file.
 
@@ -90,7 +94,7 @@ class VIIRSCldpropD3Reader(StaticReader):
             name=name,
             dtype="float32",
             aggregation=aggregation,
-            required_mode=OperationalMode.CAM,
+            modes=_MODES,
             n_categories=None,
         )
         for name, _, _, aggregation in _D3_FIELDS

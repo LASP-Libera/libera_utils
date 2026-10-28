@@ -5,7 +5,9 @@ subclasses via the ``__init_subclass__`` hook defined in
 :class:`~libera_utils.footprint_matching.readers.base.AncillaryReader`.
 After this import, :class:`~libera_utils.footprint_matching.readers.registry.ReaderRegistry`
 lists all readers: ``cldpix``, ``era5_pressure``, ``era5_surface``, ``igbp``,
-``nise``, ``ssf``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cldprop_d3``.
+``nise``, ``ssf``, ``viirs_aod``, ``viirs_brdf``, ``viirs_cldprop_d3``, and
+:data:`~libera_utils.footprint_matching.readers.registry.FMATCH_MODE_READERS` holds
+the readers each product draws on, derived from their ``VariableSpec.modes``.
 
 Public API
 ----------
@@ -30,9 +32,13 @@ from libera_utils.footprint_matching.readers.era5_pressure import ERA5PressureLe
 from libera_utils.footprint_matching.readers.era5_surface import ERA5SurfaceReader
 from libera_utils.footprint_matching.readers.igbp import IGBPReader
 from libera_utils.footprint_matching.readers.nsidc import NISEReader
-from libera_utils.footprint_matching.readers.registry import ReaderRegistry
+from libera_utils.footprint_matching.readers.registry import FMATCH_MODE_READERS, ReaderRegistry, _derive_mode_readers
 from libera_utils.footprint_matching.readers.ssf import SSFReader
 from libera_utils.footprint_matching.readers.viirs import VIIRSCldpropD3Reader
+
+# Every built-in reader has registered by this line, and no reader defined elsewhere can
+# have yet (defining one imports this package first), so the table holds exactly these.
+FMATCH_MODE_READERS.update(_derive_mode_readers(ReaderRegistry._registry))
 
 __all__ = [
     "AncillaryReader",
