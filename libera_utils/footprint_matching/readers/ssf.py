@@ -52,8 +52,9 @@ Note on encoded scene/ADM codes
 --------------------------------
 ``cloud_classification``, ``shortwave_adm_type`` and ``longwave_adm_type`` are
 *encoded* CERES identifiers spanning hundreds of values (not a small category
-set). They are mode-aggregated here so the dominant raw code in each cell is
-preserved, but downstream consumers will likely need to decode them; an exact
+set). Each footprint's raw code is served as read, and the codes are declared
+``weighted_mode``, the PSF aggregation that keeps the most common code over a
+Libera footprint. Downstream consumers will likely need to decode them; an exact
 decode is deferred (TODO[LIBSDC-785]).
 
 References
