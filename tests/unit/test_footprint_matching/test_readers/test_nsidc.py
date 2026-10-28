@@ -16,7 +16,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from pyhdf.error import HDF4Error
 
 from libera_utils.footprint_matching.readers.nsidc import (
     _HEMISPHERE_LABEL_NORTH,
@@ -25,7 +24,7 @@ from libera_utils.footprint_matching.readers.nsidc import (
     _HemisphereGrid,
 )
 from libera_utils.footprint_matching.types import BoundingBox, SampleSet
-from tests.plugins.footprint_matching_fixtures import make_nise_hdfeos_fixture
+from tests.plugins.footprint_matching_fixtures import UNREAD_GRANULE, make_nise_hdfeos_fixture
 
 _T = np.datetime64("2026-01-01T00:00:00", "ns")
 
@@ -103,7 +102,7 @@ def north_test_grid(monkeypatch):
 
 def _make_reader(tmp_path: Path, north: np.ndarray | None = None) -> NISEReader:
     """A NISEReader over a written 4 x 4 granule (use with ``north_test_grid``)."""
-    return NISEReader(_granule(tmp_path, north=north))
+    return NISEReader([_granule(tmp_path, north=north)])
 
 
 def _whole_grid_box(reader: NISEReader) -> BoundingBox:
@@ -132,7 +131,7 @@ class TestNISEReaderLatLonGrid:
         reprojected and both arrays must have shape ``(4, 4)``, longitudes in [-180, 180], and every latitude on the
         grid's side of the equator, within [-90, 90].
         """
-        lats_2d, lons_2d = NISEReader("unused.HDFEOS")._compute_latlon_grid(hemi)
+        lats_2d, lons_2d = NISEReader([UNREAD_GRANULE])._compute_latlon_grid(hemi)
         assert lats_2d.shape == lons_2d.shape == (_TEST_ROWS, _TEST_COLS)
         assert np.all((sign * lats_2d > 0) & (np.abs(lats_2d) <= 90))
         assert np.all((lons_2d >= -180) & (lons_2d <= 180))
@@ -149,7 +148,7 @@ class TestNISEReaderLatLonGrid:
         and longitude are non-finite at the same pixels.
         """
         # Of the 721 x 721 EASE-Grid, only 12 corner pixels lie outside the projection's domain.
-        lats_2d, lons_2d = NISEReader("unused.HDFEOS")._compute_latlon_grid(hemi)
+        lats_2d, lons_2d = NISEReader([UNREAD_GRANULE])._compute_latlon_grid(hemi)
         assert (~np.isfinite(lats_2d)).sum() == 12
         assert np.array_equal(np.isfinite(lats_2d), np.isfinite(lons_2d))
 
@@ -201,7 +200,7 @@ class TestNISEExtentToCategoryMasks:
         Splits one row holding a code from each group, including both ends of the concentration and unused ranges, and
         compares the float32 ``(5, 1, 13)`` stack with the expected table, NaN for NaN.
         """
-        masks = NISEReader("unused.HDFEOS")._extent_to_category_masks(np.array([self._CODES], dtype=np.uint8))
+        masks = NISEReader([UNREAD_GRANULE])._extent_to_category_masks(np.array([self._CODES], dtype=np.uint8))
         assert masks.dtype == np.float32
         assert masks.shape == (len(_EXPECTED_VARIABLES), 1, len(self._CODES))
         np.testing.assert_allclose(masks[:, 0, :], self._EXPECTED, rtol=0, atol=1e-6, equal_nan=True)
@@ -220,7 +219,7 @@ class TestNISEReadExtentSds:
         array.
         """
         north, south = _filled(50), _filled(101)
-        reader = NISEReader(_granule(tmp_path, north=north, south=south))
+        reader = NISEReader([_granule(tmp_path, north=north, south=south)])
         np.testing.assert_array_equal(reader._read_extent_sds(_HEMISPHERE_LABEL_NORTH), north)
         np.testing.assert_array_equal(reader._read_extent_sds(_HEMISPHERE_LABEL_SOUTH), south)
 
@@ -233,20 +232,9 @@ class TestNISEReadExtentSds:
         A valid granule is read with the label ``"Equatorial"``, and the error message is checked for its staging
         advice.
         """
-        reader = NISEReader(_granule(tmp_path))
+        reader = NISEReader([_granule(tmp_path)])
         with pytest.raises(KeyError, match="NISE or NISE_A2 HDF-EOS granule"):
             reader._read_extent_sds("Equatorial")
-
-    def test_missing_file_raises(self, tmp_path):
-        """``_read_extent_sds`` raises pyhdf's ``HDF4Error`` when the file does not exist.
-
-        A missing input must fail the run rather than read as an empty grid.
-
-        A reader is pointed at a path that was never written, and reading the Northern ``Extent`` must raise
-        ``HDF4Error``.
-        """
-        with pytest.raises(HDF4Error):
-            NISEReader(tmp_path / "absent.HDFEOS")._read_extent_sds(_HEMISPHERE_LABEL_NORTH)
 
     def test_extent_not_matching_the_grid_raises(self, tmp_path):
         """``NISEReader._load_native`` raises ``ValueError`` when an ``Extent`` SDS is not its grid's declared shape.
@@ -257,7 +245,7 @@ class TestNISEReadExtentSds:
         A 4 x 4 granule is read with the reader's 721 x 721 grids, and the error message must name both shapes.
         """
         with pytest.raises(ValueError, match=r"Extent SDS has shape \(4, 4\).*721 x 721"):
-            NISEReader(_granule(tmp_path))._load_native()
+            NISEReader([_granule(tmp_path)])._load_native()
 
 
 @pytest.mark.usefixtures("north_test_grid")
@@ -281,7 +269,7 @@ class TestNISEGridGeometry:
         must raise a message naming the grid, both sets of corners and what to stage.
         """
         with pytest.raises(ValueError, match=r"grid 'Northern Hemisphere' YDim=4, XDim=4, corners .*stage the 25 km"):
-            NISEReader(_granule(tmp_path, **metadata))._load_native()
+            NISEReader([_granule(tmp_path, **metadata)])._load_native()
 
     def test_other_projection_raises(self, tmp_path):
         """``NISEReader._load_native`` raises ``ValueError`` when a grid names a projection other than ``GCTP_LAMAZ``.
@@ -292,7 +280,7 @@ class TestNISEGridGeometry:
         A granule whose grids name ``GCTP_GEO`` is loaded, and the error must name both projections.
         """
         with pytest.raises(ValueError, match="Projection=GCTP_GEO .* not the EASE-Grid GCTP_LAMAZ"):
-            NISEReader(_granule(tmp_path, projection="GCTP_GEO"))._load_native()
+            NISEReader([_granule(tmp_path, projection="GCTP_GEO")])._load_native()
 
     def test_missing_struct_metadata_raises(self, tmp_path):
         """``NISEReader._load_native`` raises ``ValueError`` when the granule has no ``StructMetadata.0`` grid.
@@ -303,7 +291,7 @@ class TestNISEGridGeometry:
         A granule written without ``StructMetadata.0`` is loaded, and the error must name the missing grid.
         """
         with pytest.raises(ValueError, match="has no grid named 'Northern Hemisphere'"):
-            NISEReader(_granule(tmp_path, struct_metadata=False))._load_native()
+            NISEReader([_granule(tmp_path, struct_metadata=False)])._load_native()
 
 
 class TestNISEReaderBothHemispheres:
@@ -319,7 +307,7 @@ class TestNISEReaderBothHemispheres:
         equator, 32 points and a ``(5, 32)`` value array.
         """
         monkeypatch.setattr(NISEReader, "_HEMISPHERES", (_TEST_HEMI_NORTH, _TEST_HEMI_SOUTH))
-        points = NISEReader(_granule(tmp_path, north=_filled(50), south=_filled(50)))._load_native()
+        points = NISEReader([_granule(tmp_path, north=_filled(50), south=_filled(50))])._load_native()
         # The point cloud spans both hemispheres and keeps every pixel (no code 254 to drop).
         assert np.any(points.lats > 0)
         assert np.any(points.lats < 0)
@@ -337,7 +325,7 @@ class TestNISEReaderBothHemispheres:
         over that grid; all 16 pixels must come back with 0.5 sea ice concentration.
         """
         monkeypatch.setattr(NISEReader, "_HEMISPHERES", (_TEST_HEMI_SOUTH,))
-        reader = NISEReader(_granule(tmp_path, north=_filled(255), south=_filled(50)))
+        reader = NISEReader([_granule(tmp_path, north=_filled(255), south=_filled(50))])
         values = reader.samples_in(_whole_grid_box(reader), _T).values
         assert values.shape[1] == _TEST_ROWS * _TEST_COLS
         assert np.allclose(values[_layer_index("sea_ice_concentration")], 0.5, atol=1e-5)
@@ -376,7 +364,7 @@ class TestNISEReaderRealSubset:
 
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
-        return NISEReader(fmatch_real_data_path / "NISE_AMSR2_20260610_subset.HDFEOS")
+        return NISEReader([fmatch_real_data_path / "NISE_AMSR2_20260610_subset.HDFEOS"])
 
     def test_reads_both_extent_sds_by_hemisphere(self, reader):
         """On the real granule, ``_read_extent_sds`` returns a different 721 x 721 grid for each hemisphere label.

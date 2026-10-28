@@ -63,7 +63,7 @@ class TestCLDPIXReaderSamples:
         float32 values of shape ``(len(VARIABLES), 12)``, every longitude at -15 degrees, the source ``"cldpix"``, no
         timestamp source and every pixel time at the fixture time.
         """
-        samples = CLDPIXReader(make_cldpix_fixture(tmp_path)).samples_in(_BBOX, _T)
+        samples = CLDPIXReader([make_cldpix_fixture(tmp_path)]).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(CLDPIXReader.VARIABLES), 12)
         assert samples.values.dtype == np.float32
         assert np.allclose(samples.lons, -15.0, atol=1e-4)
@@ -82,7 +82,7 @@ class TestCLDPIXReaderSamples:
         Reads the default fixture once and asserts, for every variable, the count and value of its finite pixels
         (``_FIXTURE_VALUES``).
         """
-        data = _values(CLDPIXReader(make_cldpix_fixture(tmp_path)))
+        data = _values(CLDPIXReader([make_cldpix_fixture(tmp_path)]))
         assert set(_FIXTURE_VALUES) == {v.name for v in CLDPIXReader.VARIABLES}
         for name, (count, value) in _FIXTURE_VALUES.items():
             served = _finite(data, name)
@@ -101,7 +101,7 @@ class TestCLDPIXReaderSamples:
         """
         lats = np.full((3, 4), -40.0, dtype=np.float32)
         fixture = make_cldpix_fixture(tmp_path, lats=lats)
-        reader = CLDPIXReader(fixture)
+        reader = CLDPIXReader([fixture])
 
         southern = reader.samples_in(BoundingBox(-41.0, -39.0, -16.0, -14.0), _T)
         assert southern.n_samples == 12
@@ -126,7 +126,7 @@ class TestCLDPIXReaderSamples:
         path = make_cldpix_fixture(tmp_path)
         with netCDF4.Dataset(str(path), "r+") as ds:
             ds.variables["Top_Cld_Height"].valid_range = np.array([0.0, 3.4028235e38], dtype=np.float32)
-        reader = CLDPIXReader(path)
+        reader = CLDPIXReader([path])
         data = _values(reader, _BBOX)
         heights = _finite(data, "cloud_top_height")
         assert heights.size > 0
@@ -155,7 +155,7 @@ class TestCLDPIXReaderSamples:
         path = make_cldpix_fixture(tmp_path)
         with netCDF4.Dataset(str(path), "r+") as ds:
             ds.variables[var][:] = np.float32(value)
-        served = _finite(_values(CLDPIXReader(path)), out_name)
+        served = _finite(_values(CLDPIXReader([path])), out_name)
         if kept:
             assert served.size == 12
             assert np.allclose(served, value)
@@ -183,7 +183,7 @@ class TestCLDPIXReaderSamples:
             codes[0, :] = bad_code
             codes[1, :] = kept_code
             ds.variables[var][:] = codes
-        served = _finite(_values(CLDPIXReader(path)), out_name)
+        served = _finite(_values(CLDPIXReader([path])), out_name)
         assert not np.any(served == bad_code)
         assert np.count_nonzero(served == kept_code) == 4
 
@@ -230,7 +230,7 @@ class TestCLDPIXReaderGranuleDate:
         with netCDF4.Dataset(str(path), "r+") as ds:
             ds.delncattr("time_coverage_start")
         with pytest.raises(ValueError, match="time_coverage_start"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
 
     def test_times_are_dated_by_the_granule(self, tmp_path):
         """``CLDPIXReader`` dates the fractional-hour ``Observation_Time`` by the granule's ``time_coverage_start``.
@@ -249,7 +249,7 @@ class TestCLDPIXReaderGranuleDate:
             for attr in ("time_coverage_start", "time_coverage_end"):
                 value = np.datetime64(ds.getncattr(attr).rstrip("Z")) + np.timedelta64(1, "D")
                 ds.setncattr(attr, np.datetime_as_string(value, unit="us") + "Z")
-        samples = CLDPIXReader(path).samples_in(_BBOX, next_day)
+        samples = CLDPIXReader([path]).samples_in(_BBOX, next_day)
         assert samples.n_samples == 12
         assert np.all(samples.times == next_day)
 
@@ -268,7 +268,7 @@ class TestCLDPIXReaderGranuleDate:
         before = midnight - np.timedelta64(400, "ms")
         times = np.array([before, midnight + np.timedelta64(10, "s"), midnight + np.timedelta64(20, "s")])
         path = make_cldpix_fixture(tmp_path, times=times, time_coverage_start=midnight + np.timedelta64(1400, "ms"))
-        samples = CLDPIXReader(path).samples_in(_BBOX, before)
+        samples = CLDPIXReader([path]).samples_in(_BBOX, before)
         early = samples.times[samples.times < midnight]
         assert early.size == 4
         assert np.all(np.abs(early - before) < np.timedelta64(10, "ms"))
@@ -286,7 +286,7 @@ class TestCLDPIXReaderTimeShape:
         """
         times = _T + np.array([0, 15, 30], dtype="timedelta64[s]").astype("timedelta64[ns]")
         path = make_cldpix_fixture(tmp_path, times=times, time_dims=("Scanlines",))
-        samples = CLDPIXReader(path).samples_in(_BBOX, _T)
+        samples = CLDPIXReader([path]).samples_in(_BBOX, _T)
         assert samples.n_samples == 12
         assert np.all(np.abs(np.sort(samples.times) - np.repeat(times, 4)) < np.timedelta64(10, "ms"))
 
@@ -300,7 +300,7 @@ class TestCLDPIXReaderTimeShape:
         """
         path = make_cldpix_fixture(tmp_path, time_dims=("Pixels",))
         with pytest.raises(ValueError, match="expected one time per scanline or per pixel"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
 
 
 class TestCLDPIXReaderGeolocationChecks:
@@ -315,7 +315,7 @@ class TestCLDPIXReaderGeolocationChecks:
         """
         path = make_cldpix_fixture(tmp_path, latitude_valid_range=(-90.0, 90.0))
         with pytest.raises(ValueError, match=r"Latitude declares valid_range"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
 
     def test_latitude_without_valid_range_raises(self, tmp_path):
         """``CLDPIXReader`` raises ``ValueError`` when ``Latitude`` declares no valid range.
@@ -328,7 +328,7 @@ class TestCLDPIXReaderGeolocationChecks:
         """
         path = make_cldpix_fixture(tmp_path, latitude_valid_range=None)
         with pytest.raises(ValueError, match=r"Latitude has no valid_range attribute"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
 
     @pytest.mark.parametrize(
         ("attribute", "name"),
@@ -368,7 +368,7 @@ class TestCLDPIXReaderGeolocationChecks:
         omit = {"omit_fill_value": (name,)} if attribute == "_FillValue" else {"omit_valid_range": (name,)}
         path = make_cldpix_fixture(tmp_path, **omit)
         with pytest.raises(ValueError, match=f"{name} has no {attribute} attribute"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
 
     def test_longitude_valid_range_comes_from_the_file(self, tmp_path):
         """``CLDPIXReader`` range-checks pixel longitude with the ``valid_range`` the file declares.
@@ -380,7 +380,7 @@ class TestCLDPIXReaderGeolocationChecks:
         no pixel is served in the fixture box.
         """
         path = make_cldpix_fixture(tmp_path, longitude_valid_range=(0.0, 340.0))
-        assert CLDPIXReader(path).samples_in(_BBOX, _T).n_samples == 0
+        assert CLDPIXReader([path]).samples_in(_BBOX, _T).n_samples == 0
 
     @pytest.mark.parametrize("name", ["Cloud_Particle_Phase", "CERES_Cloud_Mask"])
     def test_categorical_field_without_flags_raises(self, tmp_path, name):
@@ -394,7 +394,7 @@ class TestCLDPIXReaderGeolocationChecks:
         """
         path = make_cldpix_fixture(tmp_path, omit_flags=(name,))
         with pytest.raises(ValueError, match=f"{name} has no flag_values / flag_meanings"):
-            CLDPIXReader(path).samples_in(_BBOX, _T)
+            CLDPIXReader([path]).samples_in(_BBOX, _T)
 
 
 class TestBadDataFlags:

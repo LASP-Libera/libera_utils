@@ -484,7 +484,7 @@ class SSFReader(PassReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The CERES SSF or FLASHFlux NetCDF4 granule(s) covering the processing period.
     """
 

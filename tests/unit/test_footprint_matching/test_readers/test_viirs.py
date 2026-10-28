@@ -41,7 +41,7 @@ def _make_reader(tmp_path, **kwargs) -> tuple[VIIRSCldpropD3Reader, object]:
         lon_max=_LON_MAX,
         **kwargs,
     )
-    return VIIRSCldpropD3Reader(fixture_path), fixture_path
+    return VIIRSCldpropD3Reader([fixture_path]), fixture_path
 
 
 def _full_bbox() -> BoundingBox:
@@ -174,7 +174,7 @@ class TestVIIRSCldpropD3ReaderRealSubset:
     @pytest.fixture
     def reader(self, fmatch_real_data_path):
         return VIIRSCldpropD3Reader(
-            fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc"
+            [fmatch_real_data_path / "CLDPROP_D3_VIIRS_NOAA20.A2026147.011.2026151000710_subset.nc"]
         )
 
     def test_grid_is_transposed_to_latitude_by_longitude(self, reader):

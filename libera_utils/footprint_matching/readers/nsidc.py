@@ -246,7 +246,7 @@ class NISEReader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The one NISE HDF-EOS4 file (``*.HDFEOS``) for the processing day.
     """
 

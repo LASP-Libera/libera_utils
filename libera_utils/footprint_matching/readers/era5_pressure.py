@@ -170,7 +170,7 @@ class ERA5PressureLevelReader(ERA5ReaderBase):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The ERA5 pressure-levels NetCDF4 granule(s) covering the processing period,
         each containing ``t``, ``z``, ``o3``, ``q``, and ``r`` at (at least) every
         level in ``_ERA5_PRESSURE_LEVELS`` and an hourly time axis.

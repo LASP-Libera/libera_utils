@@ -116,7 +116,7 @@ class VIIRSAODReader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The one AERDB_D3_VIIRS_NOAA20 NetCDF4 file for the processing day.
     """
 

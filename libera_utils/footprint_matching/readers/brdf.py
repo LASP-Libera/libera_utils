@@ -138,7 +138,7 @@ class VIIRSBRDFReader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The one VJ143C1 HDF5 (HDF-EOS5) file for the processing day.
     """
 

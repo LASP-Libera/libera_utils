@@ -89,7 +89,7 @@ class ERA5ReaderBase(SteppedGridReader, abc.ABC):
     # step interval from every staged step gets no ERA5 samples (coverage 0, flagged).
     MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(1, "h")
 
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+    def __init__(self, file_paths: Sequence[Path]) -> None:
         super().__init__(file_paths)
         # (granule path, index along that granule's time dimension) per global step,
         # filled by _step_times in ascending time order.
@@ -206,7 +206,7 @@ class ERA5SurfaceReader(ERA5ReaderBase):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The ERA5 single-levels NetCDF4 granule(s) covering the processing period, each
         containing all the variables in ``_ERA5_SURFACE_VARIABLES`` and an hourly
         time axis.

@@ -77,6 +77,13 @@ _ERA5_SURFACE_ATTRS: dict[str, dict[str, str]] = {
 }
 
 
+UNREAD_GRANULE: Path = Path(__file__)
+"""An existing file to construct a reader whose test never opens its granule.
+
+A reader rejects a staged path that is not an existing file at construction; this is
+not a granule of any source, so a test that reads it fails.
+"""
+
 ERA5_FIXTURE_TIME = np.datetime64("2026-01-01T00:00:00", "ns")
 """The single hourly step the default ERA5 fixtures carry; query them at this time."""
 

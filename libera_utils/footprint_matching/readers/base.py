@@ -291,15 +291,20 @@ class AncillaryReader(abc.ABC):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
-        The staged granule(s) of this source, on the local filesystem. A reader that
-        reads one granule per period uses :attr:`single_file_path`; one that
-        concatenates granules uses :attr:`file_paths`.
+    file_paths : Sequence[Path]
+        The staged granules of this source, on the local filesystem; each element is
+        converted with ``Path``. A reader that reads one granule per period uses
+        :attr:`single_file_path`; one that concatenates granules uses :attr:`file_paths`.
 
     Raises
     ------
+    TypeError
+        If ``file_paths`` is a single ``str`` or ``Path`` rather than a sequence of them.
     ValueError
         If ``file_paths`` is empty.
+    FileNotFoundError
+        If any path in ``file_paths`` is not an existing file; the message names the
+        reader and every such path.
     """
 
     READER_KEY: str
@@ -394,12 +399,21 @@ class AncillaryReader(abc.ABC):
         """
         return with_standard_deviation_companions(cls.VARIABLES) + cls.ADDITIONAL_PRODUCT_VARIABLES
 
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+    def __init__(self, file_paths: Sequence[Path]) -> None:
         if isinstance(file_paths, (str, Path)):
-            file_paths = (Path(file_paths),)
+            raise TypeError(
+                f"{type(self).__name__} takes a sequence of staged granule paths; got the single path "
+                f"{str(file_paths)!r}. Wrap it in a list."
+            )
         paths = tuple(Path(p) for p in file_paths)
         if not paths:
             raise ValueError(f"{type(self).__name__} needs at least one staged granule; got none.")
+        missing = [str(p) for p in paths if not p.is_file()]
+        if missing:
+            raise FileNotFoundError(
+                f"{type(self).__name__} was given staged granule path(s) that are not existing files: {missing}. "
+                "Stage each granule before constructing the reader, or correct the path."
+            )
         self._file_paths = paths
 
     @property
@@ -729,7 +743,7 @@ class SteppedGridReader(AncillaryReader):
             )
         return steps
 
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+    def __init__(self, file_paths: Sequence[Path]) -> None:
         super().__init__(file_paths)
         self._loaded_step: tuple[int, GridSamples] | None = None
 
@@ -813,7 +827,7 @@ class PassReader(AncillaryReader):
     PASS_WINDOW: np.timedelta64 | None = np.timedelta64(15, "m")
     MAX_TIME_OFFSET: np.timedelta64 | None = np.timedelta64(3, "h")
 
-    def __init__(self, file_paths: Path | Sequence[Path]) -> None:
+    def __init__(self, file_paths: Sequence[Path]) -> None:
         super().__init__(file_paths)
         # Granule path -> its indexed points, for the granules inside the current window.
         self._loaded: dict[Path, _PointIndex] = {}

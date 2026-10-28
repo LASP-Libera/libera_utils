@@ -81,7 +81,7 @@ class VIIRSCldpropD3Reader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The one CLDPROP_D3 NetCDF4 file for the processing day.
     """
 

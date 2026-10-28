@@ -85,7 +85,7 @@ class TestSSFReaderSamples:
         ``(len(VARIABLES), 5)``, every longitude is -10 degrees (stored as 350), the source is ``"ssf"``,
         ``timestamp_source`` is None and every sample time is the fixture time.
         """
-        samples = SSFReader(make_ssf_fixture(tmp_path)).samples_in(_BBOX, _T)
+        samples = SSFReader([make_ssf_fixture(tmp_path)]).samples_in(_BBOX, _T)
         assert samples.values.shape == (len(SSFReader.VARIABLES), 5)
         assert samples.values.dtype == np.float32
         assert np.allclose(samples.lons, -10.0, atol=1e-4)
@@ -104,7 +104,7 @@ class TestSSFReaderSamples:
         Reads the default fixture over the cluster box once and asserts, for every variable, that its sorted finite
         values equal the fixture's (``_CLUSTER_VALUES``): the shortwave ADM row keeps three of its five codes.
         """
-        data = _values(SSFReader(make_ssf_fixture(tmp_path)))
+        data = _values(SSFReader([make_ssf_fixture(tmp_path)]))
         assert set(_CLUSTER_VALUES) == {v.name for v in SSFReader.VARIABLES}
         for name, expected in _CLUSTER_VALUES.items():
             np.testing.assert_allclose(_finite_values(data, name), expected, rtol=1e-5, err_msg=name)
@@ -128,7 +128,7 @@ class TestSSFReaderTimeMatching:
         lons = np.full(6, 350.0, dtype=np.float32)
         late_time = _T + np.timedelta64(2, "h")
         times = np.array([_T, _T, _T, late_time, late_time, late_time], dtype="datetime64[ns]")
-        reader = SSFReader(make_ssf_fixture(tmp_path, lats=lats, lons_0360=lons, times=times))
+        reader = SSFReader([make_ssf_fixture(tmp_path, lats=lats, lons_0360=lons, times=times)])
         near_early = reader.samples_in(_BBOX, _T + np.timedelta64(20, "m"))
         assert near_early.n_samples == 3
         assert np.allclose(_finite_values(near_early.values, "aerosol_optical_depth"), [0.10, 0.20, 0.30], atol=1e-4)
@@ -149,7 +149,7 @@ class TestSSFReaderSpacing:
         """
         # The default fixture lays five footprints 0.2 deg (~22 km) apart along one scan,
         # so the measured along-scan spacing, not the nominal 20 km, is served.
-        reader = SSFReader(make_ssf_fixture(tmp_path))
+        reader = SSFReader([make_ssf_fixture(tmp_path)])
         samples = reader.samples_in(_BBOX, _T)
         assert samples.resolution_km == pytest.approx(22.2, rel=0.03)
 
@@ -167,7 +167,7 @@ class TestSSFReaderGeolocationChecks:
         """
         path = make_ssf_fixture(tmp_path, latitude_units=units)
         with pytest.raises(ValueError, match="instrument_fov_latitude has units"):
-            SSFReader(path).samples_in(_BBOX, _T)
+            SSFReader([path]).samples_in(_BBOX, _T)
 
     @pytest.mark.parametrize(
         ("attribute", "name"),
@@ -196,7 +196,7 @@ class TestSSFReaderGeolocationChecks:
         omit = {"omit_fill_value": (name,)} if attribute == "_FillValue" else {"omit_valid_range": (name,)}
         path = make_ssf_fixture(tmp_path, **omit)
         with pytest.raises(ValueError, match=f"{name} has no {attribute} attribute"):
-            SSFReader(path).samples_in(_BBOX, _T)
+            SSFReader([path]).samples_in(_BBOX, _T)
 
 
 class TestSSFReaderValidRange:
@@ -215,7 +215,7 @@ class TestSSFReaderValidRange:
             cloud_ice_particle_radius_lower=np.full(n, 150.0, dtype=np.float32),
             cloud_water_particle_radius_lower=np.full(n, 50.0, dtype=np.float32),
         )
-        data = _values(SSFReader(path))
+        data = _values(SSFReader([path]))
         assert np.allclose(_finite_values(data, "cloud_ice_particle_radius_lower"), 150.0)
         assert _finite_values(data, "cloud_ice_particle_radius_lower").size == 5
         assert _finite_values(data, "cloud_water_particle_radius_lower").size == 0
@@ -230,7 +230,7 @@ class TestSSFReaderValidRange:
         degrees, and asserts no footprint is served in the cluster box.
         """
         path = make_ssf_fixture(tmp_path, longitude_valid_range=(0.0, 340.0))
-        assert SSFReader(path).samples_in(_BBOX, _T).n_samples == 0
+        assert SSFReader([path]).samples_in(_BBOX, _T).n_samples == 0
 
 
 class TestSSFReaderLayoutChecks:
@@ -245,7 +245,7 @@ class TestSSFReaderLayoutChecks:
         """
         path = make_ssf_fixture(tmp_path, layer_dim_name="Conditions")
         with pytest.raises(ValueError, match=r"read as cloud_optical_depth_lower\) has dimensions.*'alpha4'"):
-            SSFReader(path).samples_in(_BBOX, _T)
+            SSFReader([path]).samples_in(_BBOX, _T)
 
     def test_missing_variable_raises(self, tmp_path):
         """``SSFReader`` raises ``ValueError``, not ``KeyError``, naming a variable the granule lacks.
@@ -258,7 +258,7 @@ class TestSSFReaderLayoutChecks:
         """
         path = make_ssf_fixture(tmp_path, omit_variables=(("Scene_Type", "shortwave_adm_type"),))
         with pytest.raises(ValueError, match=r"no variable Scene_Type/shortwave_adm_type .*'alpha4'"):
-            SSFReader(path).samples_in(_BBOX, _T)
+            SSFReader([path]).samples_in(_BBOX, _T)
 
     def test_missing_group_raises(self, tmp_path):
         """``SSFReader`` raises ``ValueError``, not ``KeyError``, naming a group the granule lacks.
@@ -272,4 +272,4 @@ class TestSSFReaderLayoutChecks:
         omit = (("Auxillary_Properties", "aerosol_optical_depth"), ("Auxillary_Properties", "surface_albedo"))
         path = make_ssf_fixture(tmp_path, omit_variables=omit)
         with pytest.raises(ValueError, match="no group 'Auxillary_Properties'"):
-            SSFReader(path).samples_in(_BBOX, _T)
+            SSFReader([path]).samples_in(_BBOX, _T)

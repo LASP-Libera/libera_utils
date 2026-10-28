@@ -12,7 +12,7 @@ Import the readers subpackage to trigger registration of all built-in readers::
     from libera_utils.footprint_matching.readers.registry import ReaderRegistry
 
     cls = ReaderRegistry.get("igbp")
-    reader = cls(Path("MCD12Q1.A2023001.h09v05.061.hdf"))
+    reader = cls([Path("MCD12Q1.A2023001.h09v05.061.hdf")])
 
 See Also
 --------
@@ -118,7 +118,7 @@ class ReaderRegistry:
         -------
         type[AncillaryReader]
             The registered reader class. Callers can then instantiate it with a
-            file path: ``cls(Path("some_file.hdf"))``.
+            list of staged granule paths: ``cls([Path("some_file.hdf")])``.
 
         Raises
         ------

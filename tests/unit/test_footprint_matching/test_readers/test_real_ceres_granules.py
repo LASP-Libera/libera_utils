@@ -54,7 +54,7 @@ class TestRealSSF:
         Loads the real SSF cut and asserts every time is set (no NaT), the times span between 55 min and 1 h, the values
         array holds one row per declared variable and one column per footprint, and every longitude lies in [-180, 180).
         """
-        reader = SSFReader(ssf_path)
+        reader = SSFReader([ssf_path])
         points = reader._load_granule(ssf_path)
         assert points.times is not None
         assert np.isnat(points.times).sum() == 0
@@ -76,7 +76,7 @@ class TestRealSSF:
         upper ``layers_coverages``, ``clear_coverage`` and ``aerosol_type_percentage[:, 2]`` the file stores for it, so
         a wrong group, layer or type index fails; and that the same box four hours later serves none.
         """
-        reader = SSFReader(ssf_path)
+        reader = SSFReader([ssf_path])
         points = reader._load_granule(ssf_path)
         layers, layers_ok = _raw(ssf_path, "Cloudy_Imager_Footprint_Layer", "layers_coverages")
         clear, clear_ok = _raw(ssf_path, "Clear_Footprint_Area", "clear_coverage")
@@ -113,7 +113,7 @@ class TestRealCLDPIX:
         Loads the real CLDPIX cut and asserts it has set times spanning between 55 min and 1 h, and that they fall
         within 10 s of the granule's ``time_coverage_start``/``time_coverage_end`` as read by ``_granule_span``.
         """
-        reader = CLDPIXReader(cldpix_path)
+        reader = CLDPIXReader([cldpix_path])
         points = reader._load_granule(cldpix_path)
         assert points.times is not None
         finite = points.times[~np.isnat(points.times)]
@@ -137,7 +137,7 @@ class TestRealCLDPIX:
         Loads the real CLDPIX cut, which crosses the equator, and asserts every latitude lies in [-90, 90], that some
         are south and some north of the equator, and every longitude lies in [-180, 180).
         """
-        reader = CLDPIXReader(cldpix_path)
+        reader = CLDPIXReader([cldpix_path])
         points = reader._load_granule(cldpix_path)
         assert np.nanmin(points.lats) >= -90.0
         assert np.nanmax(points.lats) <= 90.0
@@ -155,7 +155,7 @@ class TestRealCLDPIX:
         with one value row per declared variable, and that the sample at that pixel serves the ``Cld_Radius`` the file
         stores for it.
         """
-        reader = CLDPIXReader(cldpix_path)
+        reader = CLDPIXReader([cldpix_path])
         points = reader._load_granule(cldpix_path)
         radius, radius_ok = _raw(cldpix_path, None, "Cld_Radius")
         usable = radius_ok.ravel() & np.isfinite(points.lats) & ~np.isnat(points.times)
@@ -180,7 +180,7 @@ class TestRealCLDPIX:
         Reads the real CLDPIX cut's span, asserts it lasts between 55 min and 1 h, and asserts ``granules_in_window``
         returns the granule for a time 30 min into the span and nothing for a time 24 h later.
         """
-        reader = CLDPIXReader(cldpix_path)
+        reader = CLDPIXReader([cldpix_path])
         start, end = reader._granule_span(cldpix_path)
         assert np.timedelta64(55, "m") < end - start <= np.timedelta64(1, "h")
         # A footprint inside the hour has the granule in its window; one a day away does not.

@@ -85,7 +85,7 @@ class IGBPReader(StaticReader):
 
     Parameters
     ----------
-    file_paths : Path or Sequence[Path]
+    file_paths : Sequence[Path]
         The MCD12Q1 HDF4 tile file(s) (e.g., ``MCD12Q1.A2023001.h09v05.061.hdf``).
     """
 
