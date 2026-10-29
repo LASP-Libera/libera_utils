@@ -20,7 +20,7 @@ aggregation engine reduces the weighted samples to one statistic per variable. N
 averages, bins, re-grids or interpolates a value before the weigher sees it.
 
 **Why.** An earlier design rasterized every source onto a regular 2 degree tile grid
-(0.05 degree cells for 1 km sources, 0.2 degree for CERES SSF) and then PSF-weighted the
+(0.05 degree cells for 1 km sources, 0.2 degree for CERES FLASHFlux) and then PSF-weighted the
 cells. That is two averaging stages. On a synthetic 1 km field the second stage reproduced
 the PSF-weighted mean to within 2 percent, but reported one fifth of the true
 within-footprint standard deviation (the variance between cell means, not between pixels)
@@ -52,11 +52,11 @@ time) and each reader declares a `TimeMatch` policy applied after the geographic
 | -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DAILY`        | IGBP land cover, NISE snow/ice, VIIRS BRDF, VIIRS Deep Blue AOD, VIIRS L3 cloud | Every sample in the box; the staged daily granule is the match                                                                              |
 | `NEAREST_STEP` | ERA5 single-level and pressure-level                                            | The hourly step nearest the footprint time, no interpolation; none beyond `MAX_TIME_OFFSET` (1 h)                                           |
-| `NEAREST_PASS` | CERES SSF, CERES CLDPIX                                                         | The samples within `PASS_WINDOW` (15 min) of the smallest sample-to-footprint offset; none when that offset exceeds `MAX_TIME_OFFSET` (3 h) |
+| `NEAREST_PASS` | CERES FLASHFlux, CERES CLDPIX                                                   | The samples within `PASS_WINDOW` (15 min) of the smallest sample-to-footprint offset; none when that offset exceeds `MAX_TIME_OFFSET` (3 h) |
 
 **Why.** A 24 h staging period holds several observations of one ground location: two or
 more swath passes, 24 reanalysis steps. Matching on location alone mixed them. The earlier
-ERA5 readers served the file's first step to every footprint of the day, and the SSF and
+ERA5 readers served the file's first step to every footprint of the day, and the FLASHFlux and
 CLDPIX readers read no time at all.
 
 **Consequence for interpretation.** An ERA5 value is the analysis up to 30 minutes from
@@ -207,7 +207,7 @@ Every reader already held its whole source in memory; the tile cache, the merged
 cache and the weigher's per-tile geometry cache were further copies of the same data, and
 the prefetch thread could only overlap one read with compute because the HDF5 stack is
 serialized by a global lock. All of it is gone. Memory is one copy per source (one step
-for ERA5, the granules in the time window for SSF and CLDPIX), and the per-footprint cost
+for ERA5, the granules in the time window for FLASHFlux and CLDPIX), and the per-footprint cost
 is one box query plus one PSF evaluation per sample.
 
 ### A reader failure stops the run
@@ -220,7 +220,7 @@ opt-in, when no ancillary data is staged at all.
 ### What a granule list means per reader
 
 Readers take the list of granules staged for their source. Stepped and pass readers
-index them (hourly ERA5 files by step, hourly SSF and CLDPIX granules by time span); a
+index them (hourly ERA5 files by step, hourly FLASHFlux and CLDPIX granules by time span); a
 daily-composite reader reads exactly one and raises on more. IGBP concatenates its MODIS
 tiles, so the staged tiles should be those under the day's orbits, not the global set. Staging must include the neighboring day's
 granules for footprints near 00:00 UTC, or those footprints will match a pass up to a day
@@ -233,7 +233,7 @@ four contiguous chunks per worker and runs them on a process pool. On Linux the 
 forked after every static source is loaded, so the workers read the parent's indexed
 sources through copy-on-write memory and the run holds one copy of each static source
 regardless of the worker count. A stepped ERA5 source loads at most one step per worker,
-and a pass-matched source (SSF, CLDPIX) loads the granules of its own chunk's time window
+and a pass-matched source (FLASHFlux, CLDPIX) loads the granules of its own chunk's time window
 per worker, so the CLDPIX working set scales with the worker count: size the workers for
 that. Each chunk is a
 time-ordered along-track segment, so the per-chunk loop is the single-process loop and the
